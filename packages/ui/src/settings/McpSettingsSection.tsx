@@ -6,7 +6,12 @@
  * Supports the unified ZCode Agent MCP source backed by settings directories.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { convertToZCodeAgentMcpServer } from "@zcode/shared";
+import {
+  COMMUNITY_MCP_PRESETS,
+  communityMcpPresetConfig,
+  convertToZCodeAgentMcpServer,
+  type CommunityMcpPreset,
+} from "@zcode/shared";
 import {
   TID_MCP_OPEN_AUTHORIZATION_BUTTON,
   TID_PLUGIN_MCP_SERVER_ROW,
@@ -631,6 +636,7 @@ export function McpSettingsSection({
   const [showForm, setShowForm] = useState(false);
   const [formScopeKey, setFormScopeKey] = useState(parentScopeKey);
   const [editingServer, setEditingServer] = useState<ZCodeMcpServer | null>(null);
+  const [presetDraft, setPresetDraft] = useState<ZCodeMcpServer | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
   const query = searchQuery;
@@ -1294,7 +1300,7 @@ export function McpSettingsSection({
     // currentProjectPath；保存目标必须使用表单已解析并完成加载的 workspace props。
     const projectPath = formScopeKey === "user" ? undefined : activeWorkspacePath;
 
-    if (prev) {
+    if (editingServer && prev) {
       await updateScopedMcpServer(DEFAULT_MCP_SOURCE, prev.name, config, projectPath);
     } else {
       await addScopedMcpServer(DEFAULT_MCP_SOURCE, form.name, config, projectPath);
@@ -1302,6 +1308,7 @@ export function McpSettingsSection({
 
     setShowForm(false);
     setEditingServer(null);
+    setPresetDraft(null);
     onFormScopeKeyChange?.(null);
   }
 
@@ -1340,6 +1347,7 @@ export function McpSettingsSection({
     setFormScopeKey(ownedScopeKey);
     onFormScopeKeyChange?.(ownedScopeKey);
     setEditingServer(server);
+    setPresetDraft(null);
     setShowForm(false);
     setEditorMode("form");
   }
@@ -1348,6 +1356,23 @@ export function McpSettingsSection({
     setFormScopeKey(parentScopeKey);
     onFormScopeKeyChange?.(parentScopeKey);
     setEditingServer(null);
+    setPresetDraft(null);
+    setEditorMode("form");
+    setShowForm(true);
+  }
+
+  function handleCreateFromPreset(preset: CommunityMcpPreset) {
+    setFormScopeKey(parentScopeKey);
+    onFormScopeKeyChange?.(parentScopeKey);
+    setEditingServer(null);
+    setPresetDraft({
+      id: "",
+      name: preset.id,
+      enabled: true,
+      source: "zcodeagentmcp",
+      scope: "user",
+      config: communityMcpPresetConfig(preset),
+    });
     setEditorMode("form");
     setShowForm(true);
   }
@@ -1372,6 +1397,7 @@ export function McpSettingsSection({
     const closeFormView = () => {
       setShowForm(false);
       setEditingServer(null);
+      setPresetDraft(null);
       setEditorMode("form");
       onFormScopeKeyChange?.(null);
     };
@@ -1429,7 +1455,7 @@ export function McpSettingsSection({
           </div>
 
           <McpServerForm
-            initial={editingServer ?? undefined}
+            initial={editingServer ?? presetDraft ?? undefined}
             editingId={editingServer?.id}
             editorMode={editorMode}
             source={editingServer?.source ?? DEFAULT_MCP_SOURCE}
@@ -1491,6 +1517,32 @@ export function McpSettingsSection({
         className={!mcpProjectionReady || hasEmptySearchResult ? "hidden" : "space-y-6"}
         data-mcp-list-layout="grouped"
       >
+        <section className="space-y-2" aria-labelledby="community-mcp-presets-title">
+          <div className="space-y-1">
+            <h3
+              id="community-mcp-presets-title"
+              className="text-ui-base font-medium text-foreground"
+            >
+              {intl.formatMessage({ id: "settings.mcp.communityPresets.title" })}
+            </h3>
+            <p className="text-ui-base text-foreground-subtle">
+              {intl.formatMessage({ id: "settings.mcp.communityPresets.description" })}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {COMMUNITY_MCP_PRESETS.map((preset) => (
+              <Button
+                key={preset.id}
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={() => handleCreateFromPreset(preset)}
+              >
+                {preset.name}
+              </Button>
+            ))}
+          </div>
+        </section>
         <section
           className={hideInstalledGroup ? "hidden" : "space-y-4"}
           data-mcp-plugin-group="installed"

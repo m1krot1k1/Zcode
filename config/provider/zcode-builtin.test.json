@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 33,
+  "revision": 34,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -527,6 +527,7 @@
               "kimi-k3",
               "kimi-k2.7-code",
               "deepseek-v4.1-flash",
+              "deepseek-v4.1-flash-free",
               "deepseek-v4-pro",
               "mimo-v2.5",
               "mimo-v2.5-pro",
@@ -3537,6 +3538,35 @@
           }
         },
         {
+          "modelMatch": "deepseek-v4\\.1-flash-free",
+          "apiTypeMatch": "openai-chat-completions",
+          "baseUrlMatch": "https://opencode\\.ai/zen/go/v1/?",
+          "config": {
+            "properties": {
+              "contextWindow": 200000,
+              "inputFormat": {
+                "supportsText": true,
+                "supportsImage": true,
+                "supportsVideo": false,
+                "supportsPdf": false,
+                "supportsAudio": false
+              },
+              "supportsJsonSchemaOutput": true,
+              "supportsNativeWebSearch": false
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "high", "max"],
+                "map": "{\"reasoning_effort\": reasoningLevel}"
+              },
+              "maxOutputTokens": {
+                "max": 32000,
+                "map": "{\"max_tokens\": maxOutputTokens}"
+              }
+            }
+          }
+        },
+        {
           "modelMatch": "deepseek-v4-pro",
           "apiTypeMatch": "openai-chat-completions",
           "baseUrlMatch": "https://opencode\\.ai/zen/go/v1/?",
@@ -4511,6 +4541,13 @@
         {
           "templateId": "opencode-go-chat",
           "modelId": "deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-go-chat",
+          "modelId": "deepseek-v4.1-flash-free",
           "config": {
             "enabled": true
           }

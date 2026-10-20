@@ -14,6 +14,7 @@ const members = {
     "kimi-k2.7-code",
     "kimi-k2.6",
     "deepseek-v4.1-flash",
+    "deepseek-v4.1-flash-free",
     "deepseek-v4-pro",
     "deepseek-v4-flash",
     "deepseek-v4-flash-vision-exp",
@@ -40,6 +41,7 @@ const enabled = new Set([
   "kimi-k3",
   "kimi-k2.7-code",
   "deepseek-v4.1-flash",
+  "deepseek-v4.1-flash-free",
   "deepseek-v4-pro",
   "mimo-v2.5",
   "mimo-v2.5-pro",
@@ -149,6 +151,7 @@ describe("Todo149 Go 模板与自建供应商共用站点规则", () => {
     ["kimi-k3", ["max"], 1048576, 131072],
     ["kimi-k2.7-code", ["enabled"], 262144, 262144],
     ["deepseek-v4-pro", ["high", "max"], 1000000, 384000],
+    ["deepseek-v4.1-flash-free", ["low", "high", "max"], 200000, 32000],
     ["hy3", ["none", "low", "high"], 256000, 128000],
     ["hy4-preview", ["none", "high"], 1024000, 64000],
   ] as const)("%s 使用 Go 能力而不是同名原厂默认", (id, levels, context, max) => {

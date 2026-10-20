@@ -3309,6 +3309,9 @@ const zhCN: Record<string, string> = {
   "settings.mcp.create.open": "新建 MCP 服务器",
   "settings.mcp.import.open": "从外部 Agent 导入 MCP 服务器",
   "settings.mcp.import.action": "导入",
+  "settings.mcp.communityPresets.title": "免费 MCP 服务器",
+  "settings.mcp.communityPresets.description":
+    "打开已填好的公开 stdio 表单。确认保存之前不会写入。不包含 API 密钥。",
   "settings.mcp.emptyTitle": "还没有 MCP 服务器",
   "settings.mcp.emptyDescription": "添加一个 MCP 服务器，让 Agent 获得额外能力。",
   "settings.mcp.searchPlaceholder": "搜索 MCP 服务器…",

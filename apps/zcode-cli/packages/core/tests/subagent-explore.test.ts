@@ -1694,7 +1694,8 @@ describe("Explore subagent", () => {
           modelFactory: createTestModelFactory({
             async generateText(request: any) {
               const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-              if (toolNames.includes("Agent")) {
+              // Child с унаследованным * тоже видит Agent. Родителя отличает отсутствие канала координатора.
+              if (toolNames.includes("Agent") && !toolNames.includes("RespondToCoordinator")) {
                 parentRequests.push(request);
                 if (parentRequests.length === 1) {
                   return {
@@ -1780,7 +1781,8 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            // Child с унаследованным * тоже видит Agent. Родителя отличает отсутствие канала координатора.
+            if (toolNames.includes("Agent") && !toolNames.includes("RespondToCoordinator")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 return {
@@ -1830,7 +1832,7 @@ describe("Explore subagent", () => {
     expect(childToolNames).toContain("Bash");
     expect(childToolNames).not.toContain("EnterPlanMode");
     expect(childToolNames).not.toContain("ExitPlanMode");
-    expect(childToolNames).not.toContain("Agent");
+    expect(childToolNames).toContain("Agent");
     expect(childToolNames).not.toContain("Task");
   });
 
@@ -2520,7 +2522,7 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("Agent") && !toolNames.includes("RespondToCoordinator")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 expect(toolNames).toContain(
@@ -2667,7 +2669,8 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            // Child с унаследованным * тоже видит Agent. Родителя отличает отсутствие канала координатора.
+            if (toolNames.includes("Agent") && !toolNames.includes("RespondToCoordinator")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 return {
@@ -2703,8 +2706,8 @@ describe("Explore subagent", () => {
             expect(childToolNames).not.toContain(blockedMcpToolName);
             expect(childToolNames).not.toContain(outOfScopeMcpToolName);
             expect(childToolNames).not.toContain(lateMcpToolName);
-            expect(childToolNames).not.toContain("Agent");
-            expect(childToolNames).not.toContain("Task");
+            expect(childToolNames).toContain("Agent");
+            expect(childToolNames).toContain("Task");
             expect(childToolNames).not.toContain("EnterPlanMode");
             expect(childToolNames).not.toContain("ExitPlanMode");
             return {
@@ -3235,7 +3238,7 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("Agent") && !toolNames.includes("RespondToCoordinator")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 return {
@@ -3369,7 +3372,7 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any, observation) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("Agent") && !toolNames.includes("RespondToCoordinator")) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {

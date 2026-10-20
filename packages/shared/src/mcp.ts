@@ -388,3 +388,58 @@ function isValidMcpOAuthConfig(value: unknown): value is McpOAuthConfig {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+export interface CommunityMcpPreset {
+  id: string;
+  name: string;
+  packageName: string;
+  command: "npx";
+  args: readonly string[];
+}
+
+/** Публичные stdio-серверы без ключей. Установка остаётся явным сохранением формы. */
+export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
+  {
+    id: "context7",
+    name: "Context7",
+    packageName: "@upstash/context7-mcp",
+    command: "npx",
+    args: ["-y", "@upstash/context7-mcp"],
+  },
+  {
+    id: "chrome-devtools",
+    name: "Chrome DevTools",
+    packageName: "chrome-devtools-mcp",
+    command: "npx",
+    args: ["-y", "chrome-devtools-mcp"],
+  },
+  {
+    id: "playwright",
+    name: "Playwright",
+    packageName: "@playwright/mcp",
+    command: "npx",
+    args: ["-y", "@playwright/mcp"],
+  },
+  {
+    id: "duckduckgo-search",
+    name: "DuckDuckGo",
+    packageName: "duckduckgo-mcp-server",
+    command: "npx",
+    args: ["-y", "duckduckgo-mcp-server"],
+  },
+  {
+    id: "web-fetch",
+    name: "Web Fetch",
+    packageName: "@yawlabs/fetch-mcp",
+    command: "npx",
+    args: ["-y", "@yawlabs/fetch-mcp"],
+  },
+] as const;
+
+export function communityMcpPresetConfig(preset: CommunityMcpPreset): McpServerConfig {
+  return {
+    type: "stdio",
+    command: preset.command,
+    args: [...preset.args],
+  };
+}

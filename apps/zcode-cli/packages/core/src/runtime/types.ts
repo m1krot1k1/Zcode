@@ -210,6 +210,11 @@ export interface AgentRuntimeConfig {
     timeoutMs?: number;
   };
   parentSessionId?: SessionId;
+  /**
+   * Глубина этого runtime в дереве Agent/Task. Корень — 0.
+   * Потолок задаёт resolveMaxSubagentDepth, а не это поле.
+   */
+  subagentDepth?: number;
   taskType?: SessionTaskType;
   /**
    * 动态工作流灰度门（docs/dynamic-workflow/launch.md「Gray release」）：Host 判定后经

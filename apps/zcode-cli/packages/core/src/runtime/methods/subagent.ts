@@ -44,7 +44,10 @@ import { mirrorSubagentToolEvent } from "../../subagent/tool-event-mirror.js";
 import { isBuiltInExploreAgentProfile } from "../../subagent/profile.js";
 import {
   buildSubagentChildDisallowRules,
+  decideChildNesting,
   filterSubagentChildToolNames,
+  resolveMaxSubagentDepth,
+  runtimeMaySpawnSubagents,
 } from "../../subagent/tool-policy.js";
 import { isSubagentDispatchToolName } from "../../tool/compat.js";
 import { resolveEmbeddedSearchBranchCapability } from "../../embedded-search/capability.js";
@@ -69,6 +72,15 @@ export function createDefaultSubagentPort(
   deps: AgentRuntimeDeps,
 ): SubagentPort | undefined {
   if (this.config.subagents?.enabled === false) {
+    return undefined;
+  }
+  // 0 и глубина на потолке не получают порт: иначе child снова регистрирует Agent/Task.
+  if (
+    !runtimeMaySpawnSubagents(
+      this.config.subagentDepth,
+      resolveMaxSubagentDepth(process.env.ZCODE_MAX_SUBAGENT_DEPTH),
+    )
+  ) {
     return undefined;
   }
 
@@ -270,6 +282,12 @@ export function createDefaultSubagentPort(
           childSessionId: request.sessionId,
           agentType: request.agentType,
         });
+        // Раньше child всегда получал enabled:false и не видел Agent/Task, поэтому рой
+        // обрывался на первом уровне. Глубина копируется, порт остаётся, пока не упрёмся в потолок.
+        const childNesting = decideChildNesting(
+          this.config.subagentDepth,
+          resolveMaxSubagentDepth(process.env.ZCODE_MAX_SUBAGENT_DEPTH),
+        );
         const childRuntime = new AgentRuntime(
           request.sessionId,
           {
@@ -303,6 +321,7 @@ export function createDefaultSubagentPort(
             agentName: `zcode-${request.agentType}`,
             maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
             parentSessionId: this.sessionId,
+            subagentDepth: childNesting.depth,
             taskType: "subagent_child",
             // 动态工作流灰度门必须结构性继承：
             // 父会话关着而子代理开着，等于 Agent 工具变成绕过灰度的后门。默认路径（child 继承
@@ -324,7 +343,18 @@ export function createDefaultSubagentPort(
             nativeSearchEnhancementsEnabled: this.config.nativeSearchEnhancementsEnabled,
             subagents: {
               backgroundBashMaxMs: this.config.subagents?.backgroundBashMaxMs,
-              enabled: false,
+              enabled: childNesting.maySpawn ? this.config.subagents?.enabled : false,
+              ...(childNesting.maySpawn
+                ? {
+                    inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
+                    autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
+                    maxTurns: this.config.subagents?.maxTurns,
+                    outputRootDir: this.config.subagents?.outputRootDir,
+                    profiles: this.config.subagents?.profiles,
+                    builtInModelSelectionOverrides:
+                      this.config.subagents?.builtInModelSelectionOverrides,
+                  }
+                : {}),
             },
             mcp: childMcpAccess.config,
           },
@@ -603,6 +633,14 @@ function resolveSubagentToolAllowlist(
     ...(this.config.toolDisallowlist ?? []),
     ...(request.disallowedTools ?? []),
   ]);
+  const childMayDispatch = decideChildNesting(
+    this.config.subagentDepth,
+    resolveMaxSubagentDepth(process.env.ZCODE_MAX_SUBAGENT_DEPTH),
+  ).maySpawn;
+  const withoutCappedDispatch = (toolNames: readonly string[]): readonly string[] =>
+    childMayDispatch
+      ? toolNames
+      : toolNames.filter((toolName) => !isSubagentDispatchToolName(toolName));
   const inheritsAvailableTools =
     request.allowedTools.length === 0 || request.allowedTools.includes("*");
   if (inheritsAvailableTools) {
@@ -619,14 +657,14 @@ function resolveSubagentToolAllowlist(
       ...parentAllowedMcpToolNames,
     ];
     return appendCoordinatorResponseTool(
-      [...new Set(availableToolNames)]
-        .filter((toolName) => !isSubagentDispatchToolName(toolName))
-        .filter((toolName) => filterSubagentChildToolNames([toolName], disallowedRules).length > 0),
+      withoutCappedDispatch([...new Set(availableToolNames)]).filter(
+        (toolName) => filterSubagentChildToolNames([toolName], disallowedRules).length > 0,
+      ),
     );
   }
   if (request.allowedTools.length > 0) {
     return appendCoordinatorResponseTool(
-      filterSubagentChildToolNames(request.allowedTools, disallowedRules),
+      withoutCappedDispatch(filterSubagentChildToolNames(request.allowedTools, disallowedRules)),
     );
   }
   return appendCoordinatorResponseTool([]);

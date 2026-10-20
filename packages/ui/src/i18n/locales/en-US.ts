@@ -3533,6 +3533,9 @@ const enUS: Record<string, string> = {
   "settings.mcp.create.open": "Add MCP server",
   "settings.mcp.import.open": "Import MCP servers from external agents",
   "settings.mcp.import.action": "Import",
+  "settings.mcp.communityPresets.title": "Free MCP servers",
+  "settings.mcp.communityPresets.description":
+    "Opens the form with a public stdio server. Nothing is saved until you confirm. No API keys are included.",
   "settings.mcp.emptyTitle": "No MCP servers yet",
   "settings.mcp.emptyDescription": "Add an MCP server to give the agent extra capabilities.",
   "settings.mcp.searchPlaceholder": "Search MCP servers…",
