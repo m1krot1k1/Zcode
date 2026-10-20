@@ -28,10 +28,13 @@ Opt-in пресеты, без env и oauth: context7, chrome-devtools, playwrigh
 
 ## Самоулучшение
 
-`node scripts/self-improve-pr.mjs --apply` открывает отдельную ветку и pull request. Токен берётся из `GITHUB_TOKEN` или `GH_TOKEN`, а если их нет в окружении — из gitignore-файла `.env.local`. Скрипт не печатает секрет. Вторая машина проверяет PR и ставит тег `vX.Y.Z`. Локальная сборка macOS — `pnpm release:macos -- minor|major|patch`.
+`node scripts/self-improve-pr.mjs --apply` открывает отдельную ветку и pull request. Токен берётся из `GITHUB_TOKEN` или `GH_TOKEN`, а если их нет в окружении — из gitignore-файла `.env.local`. Скрипт не печатает секрет и не мержит.
+
+## Релиз macOS
+
+`pnpm release:macos -- minor|major|patch` поднимает версию корня, собирает dmg и zip для архитектуры этого Mac и создаёт GitHub Release на ветке `dev`. Тег `vX.Y.Z`. В `main` релиз не сливается.
 
 ## Что этот инкремент не делает
 
-- Не выпускает релиз и не поднимает версию само.
 - Не мержит pull request и не пушит в `main`.
 - Не снимает серверный ответ 429.
