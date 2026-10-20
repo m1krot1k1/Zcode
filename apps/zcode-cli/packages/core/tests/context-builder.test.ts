@@ -1377,6 +1377,16 @@ describe("ContextBuilder meta user context", () => {
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("an AI assistant");
   });
 
+  it("appends the PRISM swarm protocol after the harness block", () => {
+    const section = buildIdentitySection();
+    const harness = section.content.indexOf("# Harness");
+    const protocol = section.content.indexOf("# PRISM Ω FULL 5.1");
+
+    expect(harness).toBeGreaterThanOrEqual(0);
+    expect(protocol).toBeGreaterThan(harness);
+    expect(section.content).toContain("You are an interactive ZCode agent");
+  });
+
   it("includes compact stable body boundaries", () => {
     const section = buildIdentitySection();
 

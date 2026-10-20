@@ -26,8 +26,12 @@
 
 Opt-in пресеты, без env и oauth: context7, chrome-devtools, playwright, duckduckgo-search, web-fetch. Команда `npx -y <пакет>`. Нажатие только заполняет форму; запись происходит после сохранения пользователем.
 
+## Самоулучшение
+
+`node scripts/self-improve-pr.mjs --apply` открывает отдельную ветку и pull request. Токен берётся из `GITHUB_TOKEN` или `GH_TOKEN`, а если их нет в окружении — из gitignore-файла `.env.local`. Скрипт не печатает секрет. Вторая машина проверяет PR и ставит тег `vX.Y.Z`. Локальная сборка macOS — `pnpm release:macos -- minor|major|patch`.
+
 ## Что этот инкремент не делает
 
 - Не выпускает релиз и не поднимает версию само.
-- Не создаёт агента, который сам мержит в `main`.
-- Самоулучшение, если его включать позже: `GITHUB_TOKEN` или `GH_TOKEN` только в окружении, отдельная ветка и PR, вторая машина проверяет и ставит тег `vX.Y.Z`. Локальная сборка macOS — `pnpm release:macos -- minor|major|patch`: скрипт поднимает версию корня и запускает `pnpm bundle:desktop`. Тег и push остаются ручными.
+- Не мержит pull request и не пушит в `main`.
+- Не снимает серверный ответ 429.
