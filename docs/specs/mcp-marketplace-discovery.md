@@ -6,6 +6,23 @@ This spec defines a bounded MCP marketplace discovery slice for the ZCode MCP se
 
 This is not a verified package marketplace. The remote feed is not signed, and ZCode does not verify npm package integrity or transitive dependency integrity. The UI must not claim that a Cline listing or a configured package is verified by ZCode.
 
+## Curated npm package pins and provenance
+
+Every curated npm stdio preset must name an exact direct-package version in both its `version` field and generated `npx` arguments (`package@version`). The following versions and license identifiers were checked against the npm registry package metadata on 2026-10-21. The repository links identify the upstream source recorded by npm; npm package pages are the package/version metadata source of record.
+
+| Preset          | npm package             | Exact version | npm license metadata | npm package metadata                                                       | Upstream repository                                                                         |
+| --------------- | ----------------------- | ------------- | -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Context7        | `@upstash/context7-mcp` | `4.4.1`       | MIT                  | [npm package](https://www.npmjs.com/package/@upstash/context7-mcp/v/4.4.1) | [upstash/context7](https://github.com/upstash/context7)                                     |
+| Chrome DevTools | `chrome-devtools-mcp`   | `1.9.0`       | Apache-2.0           | [npm package](https://www.npmjs.com/package/chrome-devtools-mcp/v/1.9.0)   | [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) |
+| Playwright      | `@playwright/mcp`       | `0.0.83`      | Apache-2.0           | [npm package](https://www.npmjs.com/package/@playwright/mcp/v/0.0.83)      | [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp)                     |
+| DuckDuckGo      | `duckduckgo-mcp-server` | `0.1.2`       | MIT                  | [npm package](https://www.npmjs.com/package/duckduckgo-mcp-server/v/0.1.2) | [zhsama/duckduckgo-mcp-server](https://github.com/zhsama/duckduckgo-mcp-server)             |
+| Web Fetch       | `@yawlabs/fetch-mcp`    | `0.8.5`       | MIT                  | [npm package](https://www.npmjs.com/package/@yawlabs/fetch-mcp/v/0.8.5)    | [YawLabs/fetch-mcp](https://github.com/YawLabs/fetch-mcp)                                   |
+| Firecrawl       | `firecrawl-mcp`         | `3.33.0`      | MIT                  | [npm package](https://www.npmjs.com/package/firecrawl-mcp/v/3.33.0)        | [firecrawl/firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server)         |
+
+These pins make the selected top-level package version explicit; they do not lock or attest its transitive dependencies, publisher identity, tarball integrity beyond npm's normal transport/metadata, or runtime behavior. License values are publisher-supplied npm metadata, not a legal review. A version/license change requires updating this record and the matching code/test pin together.
+
+Accepted case: each curated npm stdio preset has a non-empty exact `version`, and its setup arguments end in precisely `<packageName>@<version>`. Cline feed metadata cannot change those values.
+
 ## Ownership
 
 - `IMcpSyncService` is the only UI-facing service used to load MCP marketplace metadata. The service implementation performs network I/O and returns parsed metadata; the UI never fetches the feed directly.

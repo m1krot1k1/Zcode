@@ -323,8 +323,13 @@ $Msi  = "$env:TEMP\LibreOffice_${LoVer}_Win_${LoTag}.msi"
 
 Invoke-WebRequest -Uri "$Base/LibreOffice_${LoVer}_Win_${LoTag}.msi" -OutFile $Msi
 Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /qn" -Wait   # silent install (needs admin)
-& "C:\Program Files\LibreOffice\program\soffice.exe" --version    # verify
+$SofficePath = Read-Host "Enter the actual full path to the installed soffice.exe"
+& $SofficePath --version
 ```
+
+The bundled `setup_windows.ps1` loads the skill's discovery helper and searches `PATH`, configured
+system roots, and per-user roots on each run. It reports the resolved path when found; rerun it after
+installation to verify a default or non-C drive install.
 
 `winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.
 
@@ -343,9 +348,9 @@ only the registration step below, **not** a reinstall:
 command -v soffice || ls -d /opt/libreoffice*/program/soffice /Applications/LibreOffice.app/Contents/MacOS/soffice 2>/dev/null
 ```
 
-```powershell
-Get-Command soffice -ErrorAction SilentlyContinue; Test-Path "C:\Program Files\LibreOffice\program\soffice.exe"
-```
+On Windows, run the bundled `setup_windows.ps1` before deciding the binary is absent; its
+`Find-SofficeExecutable` helper checks `PATH`, `ProgramW6432`, `ProgramFiles`, `ProgramFiles(x86)`,
+`LOCALAPPDATA`, and `USERPROFILE`. The helper is read-only and does not install or launch LibreOffice.
 
 #### Linux — symlink into a directory already on `PATH`
 
@@ -370,11 +375,15 @@ On Apple Silicon, `/usr/local/bin` is not always on `PATH` — if the verify sti
 #### Windows — append the program directory to the user `PATH`
 
 ```powershell
-$LoDir = "C:\Program Files\LibreOffice\program"
+$SofficePath = Read-Host "Enter the actual full path to the installed soffice.exe"
+$LoDir = Split-Path -Parent $SofficePath
 $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($UserPath -notlike "*$LoDir*") { setx PATH "$UserPath;$LoDir" }
+if ($UserPath -notlike "*$LoDir*") {
+    [Environment]::SetEnvironmentVariable("PATH", (@($UserPath, $LoDir) -join ";"), "User")
+}
+& $SofficePath --version
 ```
 
-`setx` only affects **newly launched** shells. For the remainder of the current session, call the
-binary by its full path: `& "C:\Program Files\LibreOffice\program\soffice.exe" --version`.
+PATH changes apply to **newly launched** shells. For the current session, call the binary by the
+path returned by `Find-SofficeExecutable` (or the actual path entered above).
 

@@ -742,15 +742,16 @@ Every PPTX → PDF conversion and every rendered preview/thumbnail step depends 
    |----------|-------------|-------------|
    | Linux | `sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice` | `soffice --version` |
    | macOS | `sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice` | `soffice --version` |
-   | Windows | `setx PATH "$([Environment]::GetEnvironmentVariable('PATH','User'));C:\Program Files\LibreOffice\program"` | `& "C:\Program Files\LibreOffice\program\soffice.exe" --version` |
+   | Windows | Add the actual `program` directory containing `soffice.exe` to the user `PATH` | Start a new shell and run `soffice --version` |
 
    Notes: on Apple Silicon `/usr/local/bin` is not always on `PATH` — if the verify still fails, link
-   into `/opt/homebrew/bin` instead. On Windows `setx` only affects **newly launched** shells, so for
-   the rest of the current session call `soffice.exe` by its full path. Only continue once the verify
-   prints a version. Corollary: **probe before installing** — if the binary already exists on disk
+   into `/opt/homebrew/bin` instead. Windows PATH changes affect newly launched shells; in the
+   current session call `soffice.exe` by its full path. Only continue once the verify prints a
+   version. Corollary: **probe before installing** — if the binary already exists on disk
    but off-`PATH` (check `/opt/libreoffice*/program/soffice`,
-   `/Applications/LibreOffice.app/Contents/MacOS/soffice`,
-   `C:\Program Files\LibreOffice\program\soffice.exe`), register it instead of reinstalling.
+   `/Applications/LibreOffice.app/Contents/MacOS/soffice`, or the locations under Windows' configured
+   `ProgramW6432`, `ProgramFiles`, `ProgramFiles(x86)`, `LOCALAPPDATA`, and `USERPROFILE` roots),
+   register its actual `program` directory instead of reinstalling. Do not assume drive C.
 5. **Only after that install has actually been attempted AND failed** may you use software already
    on the user's machine (Keynote, PowerPoint, WPS). Report the install failure and what you
    switched to, and warn that the rendering may differ from this skill's normal checks.

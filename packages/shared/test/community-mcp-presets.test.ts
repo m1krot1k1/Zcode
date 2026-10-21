@@ -19,12 +19,14 @@ describe("community MCP presets", () => {
     ]);
     for (const preset of COMMUNITY_MCP_PRESETS) {
       const config = communityMcpPresetConfig(preset);
+      expect(preset.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
       expect(preset.sourceUrl).toMatch(/^https:\/\//u);
       expect(config).toMatchObject({
         type: "stdio",
         command: "npx",
-        args: ["-y", `${preset.packageName}${preset.version ? `@${preset.version}` : ""}`],
+        args: ["-y", `${preset.packageName}@${preset.version}`],
       });
+      expect(preset.args).toEqual(["-y", `${preset.packageName}@${preset.version}`]);
       expect(config.headers).toBeUndefined();
       expect(config.oauth).toBeUndefined();
       if (preset.authRequirement === "none") {

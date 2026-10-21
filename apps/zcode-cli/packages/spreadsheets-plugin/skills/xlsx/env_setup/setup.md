@@ -261,6 +261,11 @@ hdiutil detach "/Volumes/LibreOffice"
 
 ### Windows (PowerShell) — install from the mirror
 
+The bundled `setup_windows.ps1` uses `Find-SofficeExecutable`, which checks `PATH` and the current
+machine's `ProgramW6432`, `ProgramFiles`, `ProgramFiles(x86)`, `LOCALAPPDATA`, and `USERPROFILE`
+roots before recommending an install. It reports the resolved executable path and supports roots on
+any drive; it does not assume `C:`.
+
 ```powershell
 $LoVer = "26.8.0"
 $LoArch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "aarch64" } else { "x86_64" }

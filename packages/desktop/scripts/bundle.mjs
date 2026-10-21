@@ -9,7 +9,7 @@ import { readdirSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import process from "node:process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectRuntimeModuleClosureEntries } from "./runtime-dependency-closure.mjs";
 import { resolveDesktopProductIdentity } from "./desktop-product-identity.mjs";
@@ -32,6 +32,7 @@ const asarCliPath = resolve(
   "bin",
   "asar.js",
 );
+const extractAsarFile = requireFromBundle("@electron/asar").extractFile;
 const runtimeModuleLookupRoots = [
   desktopRoot,
   workspaceRoot,
@@ -433,6 +434,89 @@ function runAndReadStdout(command, args) {
   });
 }
 
+const requiredOpenCodeHostMarkers = [
+  "opencode.cli-missing",
+  "https://opencode.ai/v2/install",
+  "Anomaly.OpenCode",
+];
+const requiredOpenCodeRendererMarkers = ["opencode-agent-settings", "settings.openCode.install"];
+
+function normalizeAsarEntryPath(entryPath) {
+  return `/${posix.normalize(entryPath.replaceAll("\\", "/").replace(/^\/+/, ""))}`;
+}
+
+function collectReachableJavascript(entryPath, rootPath, entries, readFile) {
+  const root = normalizeAsarEntryPath(rootPath);
+  const entry = normalizeAsarEntryPath(entryPath);
+  const seen = new Set();
+  const queue = [entry];
+  const contents = [];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current || seen.has(current)) continue;
+    if (current !== root && !current.startsWith(`${root}/`)) {
+      throw new Error(`OpenCode bundle import escaped expected root: ${current}`);
+    }
+    if (!entries.has(current)) {
+      throw new Error(`打包产物缺少 OpenCode reachable asset: ${current}`);
+    }
+
+    seen.add(current);
+    const source = readFile(current).toString("utf8");
+    contents.push(source);
+    const importPattern = /(?:from\s*|import\s*(?:\(\s*)?)\s*["']([^"']+\.js(?:\?[^"']*)?)["']/gu;
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1].split(/[?#]/u, 1)[0];
+      if (!specifier.startsWith(".")) continue;
+      const dependencyPath = normalizeAsarEntryPath(
+        posix.join(posix.dirname(current.slice(1)), specifier),
+      );
+      if (dependencyPath.endsWith(".js")) queue.push(dependencyPath);
+    }
+  }
+
+  return contents.join("\n");
+}
+
+export function assertPackagedOpenCodeAssets(entryPaths, readFile) {
+  const entries = new Set(entryPaths.map(normalizeAsarEntryPath));
+  const hostEntry = "/out/host/index.js";
+  const rendererHtml = "/out/renderer/index.html";
+  if (!entries.has(hostEntry)) throw new Error(`打包产物缺少 OpenCode Host entry: ${hostEntry}`);
+  if (!entries.has(rendererHtml)) {
+    throw new Error(`打包产物缺少 OpenCode renderer entry: ${rendererHtml}`);
+  }
+
+  const hostContent = collectReachableJavascript(hostEntry, "/out/host", entries, readFile);
+  const htmlContent = readFile(rendererHtml).toString("utf8");
+  const rendererScript = /<script\b[^>]*\bsrc=["']([^"']+\.js)["'][^>]*>/iu.exec(htmlContent)?.[1];
+  if (!rendererScript) throw new Error("打包产物的 OpenCode renderer HTML 缺少 module entry");
+  const rendererEntry = posix.join(
+    "out/renderer",
+    rendererScript.replace(/^\.\//u, "").replace(/^\/+/, ""),
+  );
+  const rendererContent = collectReachableJavascript(
+    rendererEntry,
+    "/out/renderer",
+    entries,
+    readFile,
+  );
+  const missingHostMarkers = requiredOpenCodeHostMarkers.filter(
+    (marker) => !hostContent.includes(marker),
+  );
+  const missingRendererMarkers = requiredOpenCodeRendererMarkers.filter(
+    (marker) => !rendererContent.includes(marker),
+  );
+  if (missingHostMarkers.length > 0 || missingRendererMarkers.length > 0) {
+    const missing = [
+      ...missingHostMarkers.map((marker) => `host:${marker}`),
+      ...missingRendererMarkers.map((marker) => `renderer:${marker}`),
+    ];
+    throw new Error(`打包产物缺少 OpenCode ACP runtime/UI assets: ${missing.join(", ")}`);
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolvePromise) => {
     setTimeout(resolvePromise, ms);
@@ -666,6 +750,9 @@ function verifyPackagedRuntimeDependencies(os, arch) {
     runAndReadStdout(process.execPath, [asarCliPath, "list", "--is-pack", appAsarPath]),
   );
   const asarEntries = asarEntriesWithPackState.map((entry) => entry.path);
+  assertPackagedOpenCodeAssets(asarEntries, (entryPath) =>
+    extractAsarFile(appAsarPath, entryPath.replace(/^\/+/, "")),
+  );
 
   const targetPlatformKey = `${os === "mac" ? "darwin" : os === "win" ? "win32" : os}-${arch}`;
   const nativePackageViolations = findDesktopNativePackageViolations(
