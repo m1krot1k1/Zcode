@@ -1109,8 +1109,7 @@ function normalizeClineMcpConfig(config: McpServerConfig): McpServerConfig | nul
   const raw = config as Record<string, unknown>;
   const transport = isRecord(raw.transport) ? raw.transport : raw;
   const isNestedTransport = transport !== raw;
-  // Cline stores request timeouts in seconds. Keep its documented bounds so a
-  // milliseconds value accidentally written into that field cannot disable a server.
+  // Причина: Cline хранит timeout в секундах. Соблюдаем границы Cline, чтобы ошибочные миллисекунды не отключали сервер.
   const timeoutMs =
     typeof raw.timeout === "number" && Number.isFinite(raw.timeout)
       ? Math.round(Math.min(Math.max(raw.timeout, 1), 3600) * 1000)

@@ -880,6 +880,7 @@ describe("settingsSyncService MCP server import", () => {
             tokens: { access_token: oauthTokenSecret, refresh_token: oauthTokenSecret },
             codeVerifier: oauthTokenSecret,
           },
+          timeout: "30",
         },
         "http-server": {
           transport: {
