@@ -28,6 +28,7 @@ afterEach(() => {
   }
   vi.doUnmock("node:child_process");
   vi.doUnmock("node:fs");
+  vi.doUnmock("node:os");
   vi.doUnmock("../src/main/fileApplications.js");
   vi.restoreAllMocks();
   vi.resetModules();
@@ -118,6 +119,32 @@ describe("editors", () => {
     expect(editorIds).toEqual(
       expect.arrayContaining(["explorer", "vscode", "trae", "idea", "pycharm"]),
     );
+  });
+
+  it("Windows 缺少 LOCALAPPDATA 时从当前用户目录查找 IDE", async () => {
+    setProcessPlatform("win32");
+    const originalLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = "";
+    vi.doMock("node:os", async () => ({
+      ...(await vi.importActual<typeof import("node:os")>("node:os")),
+      homedir: () => "D:\\Users\\Alice",
+    }));
+
+    try {
+      const { getEditorDefsForCurrentPlatform } = await import("../src/main/editors.js");
+
+      expect(getEditorDefsForCurrentPlatform()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "vscode",
+            appPath: "D:\\Users\\Alice\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+          }),
+        ]),
+      );
+    } finally {
+      if (originalLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+      else process.env.LOCALAPPDATA = originalLocalAppData;
+    }
   });
 
   it("Windows requires PATH shims to resolve to a real app exe before showing gui editors", async () => {

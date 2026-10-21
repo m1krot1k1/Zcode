@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { join, win32 as pathWin32 } from "node:path";
 import { app, nativeImage } from "electron";
 import type { EditorInfo } from "@zcode/shared";
@@ -165,11 +166,10 @@ function getWindowsProgramFilesRoots(): string[] {
 }
 
 function getWindowsLocalProgramsRoot(): string {
-  const systemDrive = process.env.SystemDrive || "C:";
-  return pathWin32.join(
-    process.env.LOCALAPPDATA || `${systemDrive}\\Users\\Default\\AppData\\Local`,
-    "Programs",
-  );
+  // Без LOCALAPPDATA общий профиль Default указывал не на установку текущего пользователя.
+  // homedir() учитывает USERPROFILE/HOMEDRIVE на Windows и сохраняет поиск в его профиле.
+  const localAppData = process.env.LOCALAPPDATA || pathWin32.join(homedir(), "AppData", "Local");
+  return pathWin32.join(localAppData, "Programs");
 }
 
 function windowsLocalProgramCandidate(...segments: string[]): string {
