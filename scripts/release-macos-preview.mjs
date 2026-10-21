@@ -175,6 +175,22 @@ export function isMissingGitHubRelease(error) {
   return /HTTP 404: Not Found/u.test(message);
 }
 
+export function replaceRootPackageLockVersion(source, nextVersion) {
+  bumpSemver(nextVersion, "patch");
+  let lockfile;
+  try {
+    lockfile = JSON.parse(source);
+  } catch {
+    throw new Error("package-lock.json не является корректным JSON");
+  }
+  if (!lockfile || typeof lockfile !== "object" || !lockfile.packages?.[""]) {
+    throw new Error("В package-lock.json отсутствует запись корневого пакета");
+  }
+  lockfile.version = nextVersion;
+  lockfile.packages[""].version = nextVersion;
+  return `${JSON.stringify(lockfile, null, 2)}\n`;
+}
+
 function run(command, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command[0], command.slice(1), {
@@ -301,7 +317,9 @@ async function main() {
   assertPreviewReleaseBaseSha(baseSha, await capture(["git", "rev-parse", "origin/dev"]));
 
   const packagePath = path.join(root, "package.json");
+  const packageLockPath = path.join(root, "package-lock.json");
   const original = await readFile(packagePath, "utf8");
+  const originalLock = await readFile(packageLockPath, "utf8");
   const manifest = JSON.parse(original);
   const version = resume ? levelOrVersion : bumpSemver(manifest.version, levelOrVersion);
   if (resume && manifest.version !== version) {
@@ -349,7 +367,8 @@ async function main() {
         artifactSuffix: "_TEST",
       });
       await writeFile(packagePath, replacePackageVersion(original, version));
-      await run(["git", "add", "package.json"]);
+      await writeFile(packageLockPath, replaceRootPackageLockVersion(originalLock, version));
+      await run(["git", "add", "--", "package.json", "package-lock.json"]);
       const buildTreeSha = await capture(["git", "write-tree"]);
       const buildEnv = createPreviewBuildEnvironment({
         ...process.env,
@@ -364,7 +383,8 @@ async function main() {
         "--porcelain",
         "--untracked-files=all",
       ]);
-      if (statusAfterBuild !== "M  package.json") {
+      const expectedStagedStatus = ["M  package-lock.json", "M  package.json"].join("\n");
+      if (statusAfterBuild !== expectedStagedStatus) {
         throw new Error(
           `Сборка изменила рабочее дерево неожиданным образом: ${statusAfterBuild || "пусто"}`,
         );
@@ -453,8 +473,9 @@ async function main() {
     console.log(`Preview prerelease ${tag} commit ${commitSha}: ${releaseUrl}`);
   } catch (error) {
     if (!resume && !committed) {
-      await run(["git", "restore", "--staged", "--", "package.json"]);
+      await run(["git", "restore", "--staged", "--", "package.json", "package-lock.json"]);
       await writeFile(packagePath, original);
+      await writeFile(packageLockPath, originalLock);
     }
     throw error;
   }

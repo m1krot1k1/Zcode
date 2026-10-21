@@ -10,6 +10,7 @@ import {
   createPreviewBuildEnvironment,
   createPreviewReleasePlan,
   isMissingGitHubRelease,
+  replaceRootPackageLockVersion,
   validatePreviewTestEndpoint,
 } from "../release-macos-preview.mjs";
 
@@ -181,4 +182,19 @@ test("Preview resume treats only GitHub 404 as an absent release", () => {
   assert.equal(isMissingGitHubRelease(new Error("gh: HTTP 404: Not Found")), true);
   assert.equal(isMissingGitHubRelease(new Error("gh: HTTP 403: Forbidden")), false);
   assert.equal(isMissingGitHubRelease(new Error("network timeout")), false);
+});
+
+test("Preview version commit synchronizes both root package-lock version fields", () => {
+  const lockfile = {
+    name: "zcode",
+    version: "3.17.0",
+    lockfileVersion: 3,
+    packages: { "": { name: "zcode", version: "3.17.0" } },
+  };
+  const updated = JSON.parse(
+    replaceRootPackageLockVersion(JSON.stringify(lockfile, null, 2), "3.17.1"),
+  );
+  assert.equal(updated.version, "3.17.1");
+  assert.equal(updated.packages[""].version, "3.17.1");
+  assert.throws(() => replaceRootPackageLockVersion("{}", "3.17.1"), /корневого пакета/u);
 });

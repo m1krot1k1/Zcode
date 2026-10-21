@@ -839,6 +839,7 @@ export default {
   ],
   mac: {
     target: ["dmg", "zip"],
+    executableName: desktopProductIdentity.macExecutableName,
     category: "public.app-category.developer-tools",
     artifactName: buildDesktopArtifactName("mac"),
     extendInfo: {
