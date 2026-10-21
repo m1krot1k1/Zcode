@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { AgentInputSchema, BashInputJsonSchema, BashOutputJsonSchema } from "@zcode/contracts";
+import {
+  AgentErrorCode,
+  AgentInputSchema,
+  AgentTaskGraphSchema,
+  AGENT_TASK_GRAPH_MAX_BYTES,
+  AGENT_TASK_GRAPH_MAX_NODES,
+  BashInputJsonSchema,
+  BashOutputJsonSchema,
+  CoreErrorType,
+} from "@zcode/contracts";
 import { agentToolEntry } from "../src/tool/handlers/agent.js";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
@@ -1196,6 +1205,311 @@ describe("tool contract declarations", () => {
         ],
       }),
     ).toThrow();
+  });
+
+  it("validates bounded Agent task graphs and rejects invalid dependency shapes", () => {
+    const node = (id: string, depends_on?: string[]) => ({
+      id,
+      description: `Work on ${id}`,
+      prompt: `Complete task ${id}`,
+      ...(depends_on === undefined ? {} : { depends_on }),
+    });
+    const validInput = {
+      description: "Build independent tasks",
+      prompt: "Run the task graph and report the node outcomes.",
+    };
+    const parseGraph = (nodes: unknown[], max_parallel?: number) =>
+      AgentInputSchema.safeParse({
+        ...validInput,
+        task_graph: {
+          nodes,
+          ...(max_parallel === undefined ? {} : { max_parallel }),
+        },
+      });
+
+    expect(parseGraph([node("scan"), node("implement", ["scan"])], 2).success).toBe(true);
+    expect(parseGraph([node("same"), node("same")]).success).toBe(false);
+    expect(
+      parseGraph([
+        {
+          ...node("check"),
+          acceptance_criteria: [
+            {
+              id: "same-check",
+              description: "First check",
+              check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+            },
+            {
+              id: "same-check",
+              description: "Second check",
+              check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+            },
+          ],
+        },
+      ]).success,
+    ).toBe(false);
+    expect(
+      parseGraph([
+        {
+          ...node("utf8-bound"),
+          acceptance_criteria: [
+            {
+              id: "utf8-check",
+              description: "Я".repeat(500),
+              check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+            },
+          ],
+        },
+      ]).success,
+    ).toBe(false);
+    expect(parseGraph([node("scan", ["missing"])]).success).toBe(false);
+    expect(parseGraph([node("scan", ["scan"])]).success).toBe(false);
+    expect(parseGraph([node("scan"), node("implement", ["scan", "scan"])]).success).toBe(false);
+    expect(parseGraph([node("first", ["second"]), node("second", ["first"])]).success).toBe(false);
+    expect(parseGraph([node("scan")], 0).success).toBe(false);
+    expect(parseGraph([node("scan")], 25).success).toBe(false);
+    expect(parseGraph([node("scan")], 1.5).success).toBe(false);
+    expect(
+      parseGraph(
+        Array.from({ length: AGENT_TASK_GRAPH_MAX_NODES + 1 }, (_, index) => node(`n${index}`)),
+      ).success,
+    ).toBe(false);
+    expect(parseGraph([{ ...node("scan"), prompt: "x".repeat(20_001) }]).success).toBe(false);
+    expect(
+      parseGraph(
+        Array.from({ length: 7 }, (_, index) => ({
+          ...node(`n${index}`),
+          prompt: "x".repeat(19_000),
+        })),
+      ).success,
+    ).toBe(false);
+    expect(AGENT_TASK_GRAPH_MAX_BYTES).toBe(120_000);
+    const structureHeavyGraph = {
+      nodes: Array.from({ length: AGENT_TASK_GRAPH_MAX_NODES }, (_, nodeIndex) => ({
+        ...node(`heavy-${nodeIndex}`),
+        acceptance_criteria: Array.from({ length: 16 }, (_, criterionIndex) => ({
+          id: `criterion-${criterionIndex}`,
+          description: "x",
+          check: {
+            kind: "bash_exit_code" as const,
+            command: "x",
+            expectedExitCode: 0 as const,
+          },
+        })),
+      })),
+    };
+    expect(
+      new TextEncoder().encode(JSON.stringify(structureHeavyGraph)).byteLength,
+    ).toBeGreaterThan(AGENT_TASK_GRAPH_MAX_BYTES);
+    expect(AgentTaskGraphSchema.safeParse(structureHeavyGraph).success).toBe(false);
+    expect(
+      AgentTaskGraphSchema.safeParse({ nodes: [{ ...node("scan"), unexpected: true }] }).success,
+    ).toBe(false);
+  });
+
+  it("keeps task graph acceptance criteria node-scoped and disallows async wrapper mode", () => {
+    const graph = {
+      nodes: [
+        {
+          id: "typecheck",
+          description: "Run typecheck",
+          prompt: "Run the typecheck and report failures.",
+          acceptance_criteria: [
+            {
+              id: "typecheck-exit",
+              description: "Typecheck exits successfully",
+              check: {
+                kind: "bash_exit_code",
+                command: "pnpm typecheck",
+                expectedExitCode: 0,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const input = {
+      description: "Run typecheck",
+      prompt: "Execute the graph.",
+      task_graph: graph,
+    };
+
+    expect(AgentInputSchema.safeParse(input).success).toBe(true);
+    expect(AgentInputSchema.safeParse({ ...input, run_in_background: true }).success).toBe(false);
+    expect(AgentInputSchema.safeParse({ ...input, acceptance_criteria: [] }).success).toBe(false);
+    expect(AgentInputSchema.safeParse({ ...input, run_in_background: false }).success).toBe(true);
+  });
+
+  it("dispatches a validated task graph through runTaskDag with the inherited model and abort signal", async () => {
+    const calls: Array<{ request: Record<string, unknown>; options?: Record<string, unknown> }> =
+      [];
+    const abortSignal = new AbortController().signal;
+    const activeModel = {
+      providerId: "provider-a",
+      modelId: "model-a",
+      properties: {},
+      optionSpecs: {},
+      options: {},
+    };
+    const output = {
+      status: "completed" as const,
+      agentId: "agent_dag",
+      agentType: "general-purpose",
+      description: "Run task graph",
+      prompt: "Run task graph",
+      content: [{ type: "text" as const, text: "All nodes completed." }],
+      totalToolUseCount: 2,
+      totalDurationMs: 10,
+    };
+
+    await agentToolEntry.handler(
+      {
+        description: "Run task graph",
+        prompt: "Coordinate the listed work and report each outcome.",
+        task_graph: {
+          nodes: [
+            { id: "scan", description: "Scan files", prompt: "Inspect the source." },
+            {
+              id: "report",
+              description: "Write report",
+              prompt: "Summarize the scan.",
+              depends_on: ["scan"],
+              subagent_type: "Explore",
+            },
+          ],
+          max_parallel: 3,
+        },
+      },
+      {
+        abortSignal,
+        model: activeModel,
+        sessionId: "sess_parent",
+        toolCallId: "toolu_agent_dag",
+        traceId: "trace_parent",
+        spanId: "span_parent",
+        workingDirectory: "/workspace",
+        workspaceRoot: "/workspace",
+        subagentPort: {
+          async launch() {
+            throw new Error("task_graph must not use launch");
+          },
+          async runTaskDag(request: Record<string, unknown>, options: Record<string, unknown>) {
+            calls.push({ request, options });
+            return output;
+          },
+        },
+      } as any,
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.request).toMatchObject({
+      sessionId: "sess_parent",
+      parentToolCallId: "toolu_agent_dag",
+      agentType: "general-purpose",
+      description: "Run task graph",
+      prompt: "Coordinate the listed work and report each outcome.",
+      nodes: [
+        { id: "scan", description: "Scan files", prompt: "Inspect the source." },
+        {
+          id: "report",
+          depends_on: ["scan"],
+          subagent_type: "Explore",
+        },
+      ],
+      maxParallel: 3,
+    });
+    expect(calls[0]?.request).not.toHaveProperty("acceptanceCriteria");
+    expect(calls[0]?.request).not.toHaveProperty("runInBackground");
+    expect(calls[0]?.options).toEqual({ signal: abortSignal, model: activeModel });
+  });
+
+  it("returns a configuration error when task graph dispatch is unavailable", async () => {
+    await expect(
+      agentToolEntry.handler(
+        {
+          description: "Run task graph",
+          prompt: "Coordinate the listed work.",
+          task_graph: {
+            nodes: [{ id: "scan", description: "Scan files", prompt: "Inspect the source." }],
+          },
+        },
+        {
+          abortSignal: new AbortController().signal,
+          sessionId: "sess_parent",
+          toolCallId: "toolu_agent_dag_missing",
+          traceId: "trace_parent",
+          workingDirectory: "/workspace",
+          workspaceRoot: "/workspace",
+          subagentPort: {
+            async launch() {
+              throw new Error("must not launch");
+            },
+          },
+        } as any,
+      ),
+    ).rejects.toMatchObject({
+      type: CoreErrorType.ConfigurationError,
+      context: { code: AgentErrorCode.TASK_DAG_UNAVAILABLE },
+      recoverable: false,
+    });
+  });
+
+  it("rejects an invalid task graph before calling the subagent port", async () => {
+    let dispatchCount = 0;
+    await expect(
+      agentToolEntry.handler(
+        {
+          description: "Run task graph",
+          prompt: "Coordinate the listed work.",
+          task_graph: {
+            nodes: [
+              {
+                id: "first",
+                description: "First task",
+                prompt: "Run first.",
+                acceptance_criteria: [
+                  {
+                    id: "duplicate",
+                    description: "First check",
+                    check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+                  },
+                  {
+                    id: "duplicate",
+                    description: "Second check",
+                    check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+                  },
+                ],
+              },
+              {
+                id: "second",
+                description: "Second task",
+                prompt: "Run second.",
+                depends_on: ["first"],
+              },
+            ],
+          },
+        },
+        {
+          abortSignal: new AbortController().signal,
+          sessionId: "sess_parent",
+          toolCallId: "toolu_agent_dag_invalid",
+          traceId: "trace_parent",
+          workingDirectory: "/workspace",
+          workspaceRoot: "/workspace",
+          subagentPort: {
+            async launch() {
+              dispatchCount += 1;
+              throw new Error("invalid task graph must not launch");
+            },
+            async runTaskDag() {
+              dispatchCount += 1;
+              throw new Error("invalid task graph must not dispatch");
+            },
+          },
+        } as any,
+      ),
+    ).rejects.toThrow();
+    expect(dispatchCount).toBe(0);
   });
 
   it("aligns provider-visible hard schema diffs for P-12", () => {

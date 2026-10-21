@@ -203,16 +203,10 @@ const agentHandler: ToolHandler = async (input, context) => {
     );
   }
 
-  const request = {
+  const sharedRequest = {
     sessionId: context.sessionId,
     turnId: context.turnId,
     parentToolCallId: context.toolCallId,
-    agentType,
-    description: parsed.description,
-    prompt: parsed.prompt,
-    ...(parsed.acceptance_criteria === undefined
-      ? {}
-      : { acceptanceCriteria: parsed.acceptance_criteria }),
     callerCanReadOutputFile: canReadBackgroundOutputFile(context.providerVisibleToolNames),
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
@@ -224,16 +218,54 @@ const agentHandler: ToolHandler = async (input, context) => {
       turnId: context.turnId,
     } as TraceContext,
   };
+  const options = {
+    signal: context.abortSignal,
+    ...(context.model ? { model: context.model } : {}),
+    ...(context.subagentModelOverride ? { modelOverride: context.subagentModelOverride } : {}),
+  };
+
+  if (parsed.task_graph) {
+    if (!context.subagentPort.runTaskDag) {
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "SubagentPort.runTaskDag is not configured for Agent task_graph",
+        {
+          context: {
+            code: AgentErrorCode.TASK_DAG_UNAVAILABLE,
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: false,
+        },
+      );
+    }
+    return context.subagentPort.runTaskDag(
+      {
+        ...sharedRequest,
+        agentType,
+        description: parsed.description,
+        prompt: parsed.prompt,
+        nodes: parsed.task_graph.nodes,
+        ...(parsed.task_graph.max_parallel === undefined
+          ? {}
+          : { maxParallel: parsed.task_graph.max_parallel }),
+      },
+      options,
+    );
+  }
+
   return context.subagentPort.launch(
     {
-      ...request,
+      ...sharedRequest,
+      agentType,
+      description: parsed.description,
+      prompt: parsed.prompt,
+      ...(parsed.acceptance_criteria === undefined
+        ? {}
+        : { acceptanceCriteria: parsed.acceptance_criteria }),
       runInBackground: parsed.run_in_background === true,
     },
-    {
-      signal: context.abortSignal,
-      ...(context.model ? { model: context.model } : {}),
-      ...(context.subagentModelOverride ? { modelOverride: context.subagentModelOverride } : {}),
-    },
+    options,
   );
 };
 

@@ -2,7 +2,7 @@
 // Subagent Port - child agent execution boundary
 // ============================================================
 
-import type { AgentBackgroundedOutput, AgentOutput } from "../tools/agent.js";
+import type { AgentBackgroundedOutput, AgentOutput, AgentTaskGraph } from "../tools/agent.js";
 import type { Model, ModelSelection } from "../model/index.js";
 import type { ModelRequestDependencies } from "../model/invocation-context.js";
 import type { SessionId, ToolCallId, TurnId } from "./shared.js";
@@ -130,6 +130,12 @@ export interface SubagentRunRequest {
   acceptanceCriteria?: readonly PrismTaskAcceptanceRequestCriterion[];
 }
 
+/** Foreground DAG request; individual nodes own their prompts, agent types, and evidence criteria. */
+export type SubagentTaskDagRequest = Omit<SubagentRunRequest, "acceptanceCriteria"> & {
+  nodes: AgentTaskGraph["nodes"];
+  maxParallel?: number;
+};
+
 export interface SubagentRunOptions {
   signal?: AbortSignal;
   /** 未显式选模的 child 从父 Agent Loop 继承的不可变 Model。 */
@@ -216,6 +222,7 @@ export interface SubagentTaskSnapshot {
 export interface SubagentPort {
   launch(request: SubagentLaunchRequest, options?: SubagentLaunchOptions): Promise<AgentOutput>;
   run(request: SubagentRunRequest, options?: SubagentRunOptions): Promise<AgentOutput>;
+  runTaskDag?(request: SubagentTaskDagRequest, options?: SubagentRunOptions): Promise<AgentOutput>;
   start?(
     request: SubagentStartRequest,
     options?: SubagentStartOptions,

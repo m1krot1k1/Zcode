@@ -1633,6 +1633,7 @@ nodes:
     docs:
       - "docs/subagents-built-in-model-overrides.md"
       - "docs/subagent-session-side-tabs.md"
+      - "docs/specs/prism10-runtime-integration.md"
       - "docs/working-memory/provider-refactor/steps/todo-97-subagent-markdown-in-place-migration-and-legacy-read-audit.md"
       - "docs/working-memory/provider-refactor/design/execution/execution.md"
       - "docs/working-memory/provider-refactor/steps/04-model-execution-cutover.md"
@@ -1650,6 +1651,7 @@ nodes:
         file: "packages/shared/src/subagent-markdown-selection.ts"
     invariants:
       - "Host and standalone Agent await offline migration of user-directory Markdown and builtin state before formal reads. Markdown keeps model/thoughtLevel; intermediate modelSelection is not consumed. Only user Markdown provider values are rewritten, preserving unrelated bytes; project/plugin files and symlinks are excluded. JSON uses builtInModelSelectionOverrides after one-way import. Ordinary readers do not remap legacy identities or fall back to old fields. Explicit execution still validates its concrete selection; Host effective-selection protocol remains a separate Todo96 decision."
+      - "PRISM task_graph is a runtime dependency scheduler, separate from the display-only workflow graph. The root Agent invocation owns a validated request-local ready set; actual child lifecycle, admission and cancellation remain owned by the shared RuntimeTaskRegistry. Only completed dependencies without Host rejection release descendants; failed branches block their descendants while independent branches continue."
 
   - id: "capability.provider-registry"
     kind: "capability"

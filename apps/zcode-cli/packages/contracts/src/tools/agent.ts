@@ -16,43 +16,191 @@ export const AgentType = {
 
 export type AgentType = string;
 
-export const AgentInputSchema = z.object({
-  description: z.string().describe("A short (3-5 word) description of the task"),
-  prompt: z.string().describe("The task for the agent to perform"),
-  acceptance_criteria: z
-    .array(
-      z
-        .object({
-          id: z.string().min(1).max(128),
-          description: z.string().min(1).max(500),
-          check: z
-            .object({
-              kind: z.literal("bash_exit_code"),
-              command: z.string().min(1).max(2000),
-              expectedExitCode: z.literal(0),
-            })
-            .strict(),
-        })
-        .strict(),
-    )
-    .max(16)
-    .optional()
-    .describe(
-      "Optional Host-verifiable acceptance checks. Currently supports only an exact Bash command that must complete with exit code 0; omitted or unsupported evidence remains unknown.",
+const AgentAcceptanceCriterionSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    description: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine((description) => new TextEncoder().encode(description).byteLength <= 500, {
+        message: "Acceptance criterion description must not exceed 500 UTF-8 bytes",
+      }),
+    check: z
+      .object({
+        kind: z.literal("bash_exit_code"),
+        command: z.string().min(1).max(2000),
+        expectedExitCode: z.literal(0),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const AGENT_TASK_GRAPH_MAX_NODES = 128;
+export const AGENT_TASK_GRAPH_MAX_PARALLEL = 24;
+export const AGENT_TASK_GRAPH_MAX_BYTES = 120_000;
+
+const AgentTaskGraphNodeSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    description: z.string().min(1).max(500),
+    prompt: z.string().min(1).max(20_000),
+    depends_on: z.array(z.string().min(1).max(128)).max(AGENT_TASK_GRAPH_MAX_NODES).optional(),
+    subagent_type: z.string().min(1).max(128).optional(),
+    acceptance_criteria: z.array(AgentAcceptanceCriterionSchema).max(16).optional(),
+  })
+  .strict()
+  .superRefine((node, context) => {
+    const criterionIds = new Set<string>();
+    node.acceptance_criteria?.forEach((criterion, index) => {
+      if (criterionIds.has(criterion.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["acceptance_criteria", index, "id"],
+          message: `Duplicate acceptance criterion id for task_graph node ${node.id}: ${criterion.id}`,
+        });
+      }
+      criterionIds.add(criterion.id);
+    });
+  });
+
+export const AgentTaskGraphSchema = z
+  .object({
+    nodes: z.array(AgentTaskGraphNodeSchema).min(1).max(AGENT_TASK_GRAPH_MAX_NODES),
+    max_parallel: z.number().int().min(1).max(AGENT_TASK_GRAPH_MAX_PARALLEL).optional(),
+  })
+  .strict()
+  .superRefine((graph, context) => {
+    const firstIndexById = new Map<string, number>();
+    let hasDuplicateNodeId = false;
+    graph.nodes.forEach((node, index) => {
+      if (firstIndexById.has(node.id)) {
+        hasDuplicateNodeId = true;
+        context.addIssue({
+          code: "custom",
+          path: ["nodes", index, "id"],
+          message: `Duplicate task_graph node id: ${node.id}`,
+        });
+      } else {
+        firstIndexById.set(node.id, index);
+      }
+    });
+
+    let hasInvalidDependency = false;
+    graph.nodes.forEach((node, index) => {
+      const dependencies = new Set<string>();
+      for (const [dependencyIndex, dependencyId] of (node.depends_on ?? []).entries()) {
+        if (dependencies.has(dependencyId)) {
+          hasInvalidDependency = true;
+          context.addIssue({
+            code: "custom",
+            path: ["nodes", index, "depends_on", dependencyIndex],
+            message: `Duplicate dependency for task_graph node ${node.id}: ${dependencyId}`,
+          });
+        }
+        dependencies.add(dependencyId);
+        if (dependencyId === node.id) {
+          hasInvalidDependency = true;
+          context.addIssue({
+            code: "custom",
+            path: ["nodes", index, "depends_on", dependencyIndex],
+            message: `Task_graph node ${node.id} cannot depend on itself`,
+          });
+        } else if (!firstIndexById.has(dependencyId)) {
+          hasInvalidDependency = true;
+          context.addIssue({
+            code: "custom",
+            path: ["nodes", index, "depends_on", dependencyIndex],
+            message: `Unknown task_graph dependency: ${dependencyId}`,
+          });
+        }
+      }
+    });
+
+    const graphBytes = new TextEncoder().encode(JSON.stringify(graph)).byteLength;
+    if (graphBytes > AGENT_TASK_GRAPH_MAX_BYTES) {
+      context.addIssue({
+        code: "custom",
+        path: ["nodes"],
+        message: `task_graph exceeds the ${AGENT_TASK_GRAPH_MAX_BYTES}-byte input limit`,
+      });
+    }
+
+    if (hasDuplicateNodeId || hasInvalidDependency) return;
+
+    const stateById = new Map<string, "visiting" | "visited">();
+    const hasCycleFrom = (nodeId: string): boolean => {
+      const state = stateById.get(nodeId);
+      if (state === "visiting") return true;
+      if (state === "visited") return false;
+
+      stateById.set(nodeId, "visiting");
+      const node = graph.nodes[firstIndexById.get(nodeId)!];
+      for (const dependencyId of node?.depends_on ?? []) {
+        if (hasCycleFrom(dependencyId)) return true;
+      }
+      stateById.set(nodeId, "visited");
+      return false;
+    };
+
+    for (const node of graph.nodes) {
+      if (hasCycleFrom(node.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["nodes"],
+          message: "task_graph dependencies must be acyclic",
+        });
+        break;
+      }
+    }
+  });
+
+export type AgentTaskGraph = z.infer<typeof AgentTaskGraphSchema>;
+
+export const AgentInputSchema = z
+  .object({
+    description: z.string().describe("A short (3-5 word) description of the task"),
+    prompt: z.string().describe("The task for the agent to perform"),
+    acceptance_criteria: z
+      .array(AgentAcceptanceCriterionSchema)
+      .max(16)
+      .optional()
+      .describe(
+        "Optional Host-verifiable acceptance checks. Currently supports only an exact Bash command that must complete with exit code 0; omitted or unsupported evidence remains unknown.",
+      ),
+    task_graph: AgentTaskGraphSchema.optional().describe(
+      "Optional bounded foreground task graph. Every dependency must reference a unique node in the graph; dependencies cannot contain cycles. Do not combine with run_in_background:true or top-level acceptance_criteria.",
     ),
-  subagent_type: z
-    .string()
-    .optional()
-    .describe("The type of specialized agent to use for this task"),
-  // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
-  // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
-  run_in_background: z
-    .boolean()
-    .optional()
-    .describe(
-      "Set to true to run this agent in the background. You will be notified when it completes.",
-    ),
-});
+    subagent_type: z
+      .string()
+      .optional()
+      .describe("The type of specialized agent to use for this task"),
+    // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
+    // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
+    run_in_background: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set to true to run this agent in the background. You will be notified when it completes.",
+      ),
+  })
+  .superRefine((input, context) => {
+    if (input.task_graph && input.run_in_background === true) {
+      context.addIssue({
+        code: "custom",
+        path: ["run_in_background"],
+        message: "task_graph cannot be combined with run_in_background:true",
+      });
+    }
+    if (input.task_graph && input.acceptance_criteria !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["acceptance_criteria"],
+        message:
+          "task_graph nodes own acceptance criteria; top-level acceptance_criteria is not allowed",
+      });
+    }
+  });
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;
 
@@ -163,6 +311,7 @@ export interface AgentToolResult {
 
 export const AgentErrorCode = {
   SUBAGENT_UNAVAILABLE: "agent_subagent_unavailable",
+  TASK_DAG_UNAVAILABLE: "agent_task_dag_unavailable",
   BACKGROUND_UNAVAILABLE: "agent_background_unavailable",
   UNKNOWN_AGENT_TYPE: "agent_unknown_type",
   CHILD_RUNTIME_FAILED: "agent_child_runtime_failed",

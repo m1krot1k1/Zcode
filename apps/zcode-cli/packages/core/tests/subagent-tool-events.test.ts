@@ -20,6 +20,333 @@ import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
 import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
 
 describe("subagent tool event projection", () => {
+  it("runs a DAG in real child sessions and waits for every dependency", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-dag-root");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = createRecordingSubagentSessionStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const nodeIds = ["alpha", "beta", "dependent"] as const;
+    const nodeDescriptions = new Map(nodeIds.map((id) => [id, `DAG ${id}`]));
+    const childSessionByNode = new Map<string, SessionId>();
+    const terminalByNode = new Map(
+      nodeIds.map((id) => [id, createDeferred<SubagentExecutionTerminalPayload>()]),
+    );
+    const startedByNode = new Map(nodeIds.map((id) => [id, createDeferred<void>()]));
+    const releaseByNode = new Map([
+      ["alpha", createDeferred<void>()],
+      ["beta", createDeferred<void>()],
+    ]);
+    const modelRequestCount = new Map<SessionId, number>();
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("dag-runtime-model"),
+        },
+        workingDirectory: "/workspace/project",
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        eventSink: {
+          onSessionEvent(event) {
+            if (event.type === SessionEventType.SubagentSpawned) {
+              const payload = event.payload as {
+                childSessionId?: SessionId;
+                description?: string;
+              };
+              const nodeId = [...nodeDescriptions].find(
+                ([, description]) => description === payload.description,
+              )?.[0];
+              if (nodeId && payload.childSessionId) {
+                childSessionByNode.set(nodeId, payload.childSessionId);
+              }
+              return;
+            }
+            if (event.type !== SessionEventType.SubagentExecutionTerminal) return;
+            const payload = event.payload as SubagentExecutionTerminalPayload;
+            const nodeId = [...childSessionByNode].find(
+              ([, childSessionId]) => childSessionId === payload.childSessionId,
+            )?.[0];
+            if (nodeId && payload.terminalStatus === "completed")
+              terminalByNode.get(nodeId)?.resolve(payload);
+          },
+        },
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+            const count = (modelRequestCount.get(sessionId) ?? 0) + 1;
+            modelRequestCount.set(sessionId, count);
+
+            if (sessionId === rootSessionId && count === 1) {
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: "call_root_task_dag",
+                    name: "Agent",
+                    input: {
+                      description: "Run independent research before synthesis",
+                      prompt: "Complete the three-node plan.",
+                      task_graph: {
+                        max_parallel: 2,
+                        nodes: [
+                          {
+                            id: "alpha",
+                            description: nodeDescriptions.get("alpha"),
+                            prompt: "Complete alpha.",
+                          },
+                          {
+                            id: "beta",
+                            description: nodeDescriptions.get("beta"),
+                            prompt: "Complete beta.",
+                          },
+                          {
+                            id: "dependent",
+                            description: nodeDescriptions.get("dependent"),
+                            prompt: "Synthesize alpha and beta.",
+                            depends_on: ["alpha", "beta"],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            if (sessionId === rootSessionId) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "DAG complete.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            const nodeId = [...childSessionByNode].find(
+              ([, childSessionId]) => childSessionId === sessionId,
+            )?.[0];
+            if (!nodeId) throw new Error(`Unexpected DAG child session: ${sessionId}`);
+            startedByNode.get(nodeId)?.resolve();
+            if (nodeId === "alpha" || nodeId === "beta") {
+              await releaseByNode.get(nodeId)!.promise;
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: `Result for ${nodeId}`,
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+
+    const turn = runtime.executeTurn("Run a task DAG with two independent nodes.");
+    try {
+      await Promise.all([startedByNode.get("alpha")!.promise, startedByNode.get("beta")!.promise]);
+      expect(childSessionByNode.size).toBe(2);
+
+      releaseByNode.get("alpha")!.resolve();
+      const alphaTerminal = await terminalByNode.get("alpha")!.promise;
+      expect(alphaTerminal.terminalStatus).toBe("completed");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const rootSpawnsAfterAlpha = (await eventStore.getEvents(rootSessionId)).filter(
+        (event) => event.type === SessionEventType.SubagentSpawned,
+      );
+      expect(rootSpawnsAfterAlpha).toHaveLength(2);
+      expect(childSessionByNode.has("dependent")).toBe(false);
+
+      releaseByNode.get("beta")!.resolve();
+      await startedByNode.get("dependent")!.promise;
+      expect(childSessionByNode.size).toBe(3);
+      await turn;
+      await expect(terminalByNode.get("beta")!.promise).resolves.toMatchObject({
+        terminalStatus: "completed",
+      });
+      await expect(terminalByNode.get("dependent")!.promise).resolves.toMatchObject({
+        terminalStatus: "completed",
+      });
+      const terminalEntries = await sessionStore.sessionEntries?.({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      });
+      expect(terminalEntries).toHaveLength(3);
+    } finally {
+      releaseByNode.get("alpha")!.resolve();
+      releaseByNode.get("beta")!.resolve();
+      await runtime.closeBrowserSession();
+      await turn.catch(() => undefined);
+    }
+  });
+
+  it("cancels a real DAG child, waits for settlement, and never starts pending nodes", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-dag-cancel-root");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = createRecordingSubagentSessionStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const childStarted = createDeferred<void>();
+    const childAbortObserved = createDeferred<void>();
+    const childMaySettle = createDeferred<void>();
+    const childTerminal = createDeferred<SubagentExecutionTerminalPayload>();
+    const modelRequestCount = new Map<SessionId, number>();
+    let childSessionId: SessionId | undefined;
+    let closeSettled = false;
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("dag-cancel-model"),
+        },
+        workingDirectory: "/workspace/project",
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        eventSink: {
+          onSessionEvent(event) {
+            if (event.type !== SessionEventType.SubagentExecutionTerminal) return;
+            const payload = event.payload as SubagentExecutionTerminalPayload;
+            if (payload.childSessionId === childSessionId) childTerminal.resolve(payload);
+          },
+        },
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+            const count = (modelRequestCount.get(sessionId) ?? 0) + 1;
+            modelRequestCount.set(sessionId, count);
+            if (sessionId === rootSessionId && count === 1) {
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: "call_root_task_dag_cancel",
+                    name: "Agent",
+                    input: {
+                      description: "Cancel a running node",
+                      prompt: "Cancel while a node is running.",
+                      task_graph: {
+                        max_parallel: 1,
+                        nodes: [
+                          {
+                            id: "active",
+                            description: "DAG active",
+                            prompt: "Wait for cancellation.",
+                          },
+                          {
+                            id: "pending",
+                            description: "DAG pending",
+                            prompt: "Must not start after cancellation.",
+                            depends_on: ["active"],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            if (sessionId === rootSessionId) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Unexpected root continuation.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            childSessionId = sessionId;
+            childStarted.resolve();
+            const signal = request.abortSignal;
+            if (!signal) throw new Error("DAG child model request did not receive an abort signal");
+            return new Promise((resolve) => {
+              const onAbort = () => {
+                childAbortObserved.resolve();
+                void childMaySettle.promise.then(() => {
+                  resolve({
+                    finishReason: "stop",
+                    providerMetadata: undefined,
+                    text: "Child settled after cancellation.",
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  });
+                });
+              };
+              if (signal.aborted) onAbort();
+              else signal.addEventListener("abort", onAbort, { once: true });
+            });
+          },
+        }),
+      },
+    );
+
+    const turn = runtime.executeTurn("Cancel the active task DAG child.");
+    try {
+      await childStarted.promise;
+      expect(childSessionId).toBeDefined();
+      const spawnedBeforeCancel = (await eventStore.getEvents(rootSessionId)).filter(
+        (event) => event.type === SessionEventType.SubagentSpawned,
+      );
+      expect(spawnedBeforeCancel).toHaveLength(1);
+
+      const close = runtime.closeBrowserSession().finally(() => {
+        closeSettled = true;
+      });
+      await childAbortObserved.promise;
+      expect(closeSettled).toBe(false);
+      expect(
+        Object.values(runtimeTaskRegistry.all()).map((task) => task.description),
+      ).not.toContain("DAG pending");
+
+      childMaySettle.resolve();
+      await close;
+      await turn.catch(() => undefined);
+      const spawnedAfterCancel = (await eventStore.getEvents(rootSessionId)).filter(
+        (event) => event.type === SessionEventType.SubagentSpawned,
+      );
+      expect(spawnedAfterCancel).toHaveLength(1);
+      expect(
+        Object.values(runtimeTaskRegistry.all()).map((task) => task.description),
+      ).not.toContain("DAG pending");
+
+      const spawn = spawnedAfterCancel[0]?.payload as { agentId?: string } | undefined;
+      expect(spawn?.agentId).toBeTruthy();
+      expect(runtimeTaskRegistry.get(spawn!.agentId!)?.status).toBe("killed");
+      await expect(childTerminal.promise).resolves.toMatchObject({
+        childSessionId,
+        taskId: spawn!.agentId,
+        terminalStatus: "killed",
+      });
+      const terminalEntries = await sessionStore.sessionEntries?.({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      });
+      expect(terminalEntries).toHaveLength(1);
+      expect(terminalEntries?.[0]?.data).toMatchObject({
+        terminal: { taskId: spawn!.agentId, terminalStatus: "killed" },
+      });
+    } finally {
+      childMaySettle.resolve();
+      await runtime.closeBrowserSession();
+      await turn.catch(() => undefined);
+    }
+  });
+
   it("cascades root shutdown through a real grandchild and waits for persisted settlement", async () => {
     const rootSessionId = createSessionId("runtime-subagent-tree-root");
     const eventStore = createTestSessionEventStore();
