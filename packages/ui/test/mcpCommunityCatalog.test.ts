@@ -33,11 +33,44 @@ describe("MCP curated catalog", () => {
     if (!(entry instanceof HTMLElement)) throw new Error("Firecrawl catalog card is missing");
     const card = within(entry);
     expect(card.getByText("Optional API key for account features")).toBeTruthy();
-    fireEvent.click(card.getByRole("button", { name: "Open Firecrawl package source" }));
+    fireEvent.click(card.getByRole("button", { name: "Open Firecrawl source" }));
     expect(onOpenSource).toHaveBeenCalledWith("https://github.com/firecrawl/firecrawl-mcp-server");
 
     fireEvent.click(card.getByRole("button", { name: "Configure" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(preset);
+  });
+
+  it("shows hosted auth and usage warnings while creating only a portable endpoint draft", () => {
+    const onSelect = vi.fn();
+    const onOpenSource = vi.fn();
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "apify");
+    if (!preset) throw new Error("Apify catalog entry is missing");
+    const { container } = render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(McpCommunityCatalog, {
+          presets: [preset],
+          discoveredEntries: [],
+          discoveryState: "ready",
+          rejectedEntryCount: 0,
+          onRefreshDiscovery: vi.fn(),
+          onSelect,
+          onOpenSource,
+        }),
+      ),
+    );
+    const entry = container.querySelector('[data-mcp-catalog-entry="apify"]');
+    if (!(entry instanceof HTMLElement)) throw new Error("Apify catalog card is missing");
+    const card = within(entry);
+    expect(card.getByText("Provider OAuth or API key")).toBeTruthy();
+    expect(
+      card.getByText(
+        "Actor runs and platform usage may cost money; individual Actor pricing varies.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(card.getByRole("button", { name: "Configure" }));
     expect(onSelect).toHaveBeenCalledWith(preset);
   });
 

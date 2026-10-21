@@ -13,6 +13,7 @@ import type {
   OpenCodeAcpPermissionRequest,
   OpenCodeAcpSession,
   OpenCodeAcpSessionUpdate,
+  OpenCodeCliModelCatalog,
   OpenCodeCliStatus,
 } from "../contract.js";
 import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.js";
@@ -23,6 +24,7 @@ import {
   resolveCliCommand,
   resolveWingetCommand,
   runVersion,
+  runModelCatalog,
   spawnOptions,
 } from "./childProcessSupport.js";
 import { createOpenCodeCliInstaller } from "./cliInstaller.js";
@@ -46,6 +48,7 @@ interface OpenCodeAcpRuntimeOptions {
   resolveCli?: (cliPath?: string) => OpenCodeCliResolution | Promise<OpenCodeCliResolution>;
   resolveWinget?: () => Promise<string | undefined>;
   runVersion?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
+  runModelCatalog?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliModelCatalog>;
   installPosixCli?: (timeoutMs: number) => Promise<boolean>;
   resolvePosixInstallerCommands?: () => Promise<{ bash: string; curl: string } | undefined>;
   installWingetPackage?: (wingetPath: string, timeoutMs: number) => Promise<boolean>;
@@ -103,6 +106,9 @@ export function createOpenCodeAcpRuntime(
   const runVersionCommand =
     options.runVersion ??
     ((spec: OpenCodeCommandSpec) => runVersion(spec, childEnvironment, platform));
+  const runModelCatalogCommand =
+    options.runModelCatalog ??
+    ((spec: OpenCodeCommandSpec) => runModelCatalog(spec, childEnvironment, platform));
   const cliInstaller = createOpenCodeCliInstaller({
     resolveCli: options.resolveCli ?? resolveCliCommand,
     resolveWinget: options.resolveWinget ?? resolveWingetCommand,
@@ -478,6 +484,16 @@ export function createOpenCodeAcpRuntime(
 
   return {
     ...cliInstaller,
+    listModels: async ({ cliPath } = {}) => {
+      const resolution = await (options.resolveCli ?? resolveCliCommand)(cliPath);
+      if (resolution.status !== "resolved") {
+        return {
+          status: "unavailable",
+          diagnostic: resolution.diagnostic ?? "opencode.cli-missing",
+        };
+      }
+      return await runModelCatalogCommand(resolution.spec);
+    },
 
     startSession: async ({ cwd, cliPath }): Promise<OpenCodeAcpSession> => {
       if (!isAbsolute(cwd)) throw new Error("opencode.workspace-path-must-be-absolute");

@@ -8,6 +8,7 @@ export type {
   OpenCodeAcpPromptResult,
   OpenCodeAcpSession,
   OpenCodeAcpSessionUpdate,
+  OpenCodeCliModelCatalog,
   OpenCodeCliStatus,
   OpenCodeInstallResult,
 } from "./contract.js";

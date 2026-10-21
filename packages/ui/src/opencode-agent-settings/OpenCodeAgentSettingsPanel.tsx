@@ -14,11 +14,13 @@ import { usePlatform, useSelectDirectory } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { OpenCodePermissionRequests } from "./OpenCodePermissionRequests.js";
+import { OpenCodeCliModelCatalogSection } from "./OpenCodeCliModelCatalog.js";
 import {
   findOpenCodeConfigOption,
   getOpenCodeSelectValues,
   type OpenCodeAgentConfigOption,
   type OpenCodeAgentCliStatus,
+  type OpenCodeAgentModelCatalog,
   type OpenCodeAgentPermissionRequest,
   type OpenCodeAgentSession,
 } from "./contract.js";
@@ -109,6 +111,7 @@ export function OpenCodeAgentSettingsPanel({
     (!remoteWorkspaceActive || Boolean(runtime)) && Boolean(initialWorkspacePath.trim()),
   );
   const [cliStatus, setCliStatus] = useState<OpenCodeAgentCliStatus>();
+  const [modelCatalog, setModelCatalog] = useState<OpenCodeAgentModelCatalog>();
   const [session, setSession] = useState<OpenCodeAgentSession>();
   const [modelDraft, setModelDraft] = useState("");
   const [modeDraft, setModeDraft] = useState("");
@@ -155,6 +158,18 @@ export function OpenCodeAgentSettingsPanel({
       setDiagnostic(intl.formatMessage({ id: "settings.openCode.diagnosticFailed" }));
     }
   }, [cliPath, intl, runtime]);
+
+  const refreshModelCatalog = useCallback(async () => {
+    if (!runtime || cliStatus?.status !== "available") return;
+    setWorking(true);
+    try {
+      setModelCatalog(await runtime.listModels({ cliPath: cliPath || undefined }));
+    } catch {
+      setModelCatalog({ status: "unavailable", diagnostic: "opencode.models-failed" });
+    } finally {
+      setWorking(false);
+    }
+  }, [cliPath, cliStatus?.status, runtime]);
 
   useEffect(() => {
     void refreshStatus();
@@ -526,6 +541,14 @@ export function OpenCodeAgentSettingsPanel({
           </Button>
         ) : null}
       </div>
+
+      {cliStatus?.status === "available" ? (
+        <OpenCodeCliModelCatalogSection
+          catalog={modelCatalog}
+          disabled={working || !runtime}
+          onRefresh={() => void refreshModelCatalog()}
+        />
+      ) : null}
 
       {!runtime ? (
         <p role="status" className="text-ui-base text-foreground-subtle">

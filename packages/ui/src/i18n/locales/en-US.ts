@@ -3541,9 +3541,18 @@ const enUS: Record<string, string> = {
     "Choose a server to review its source and configuration. Selecting it opens a draft; it is saved only when you confirm.",
   "settings.mcp.communityPresets.authNone": "No API key required",
   "settings.mcp.communityPresets.authOptionalApiKey": "Optional API key for account features",
+  "settings.mcp.communityPresets.auth.oauth": "Connect with provider OAuth",
+  "settings.mcp.communityPresets.auth.api-key-required": "Provider API key required",
+  "settings.mcp.communityPresets.auth.oauth-or-api-key": "Provider OAuth or API key",
+  "settings.mcp.communityPresets.usage.todoist-account-free":
+    "Free with a Todoist account, according to Todoist developer docs.",
+  "settings.mcp.communityPresets.usage.webflow-site-plan":
+    "Available on Webflow Site plans, including Starter; AI tool plan limits may apply.",
+  "settings.mcp.communityPresets.usage.apify-actor-usage-may-cost":
+    "Actor runs and platform usage may cost money; individual Actor pricing varies.",
   "settings.mcp.communityPresets.configure": "Configure",
-  "settings.mcp.communityPresets.source": "Open {name} package source",
-  "settings.mcp.communityPresets.sourceLabel": "Package source",
+  "settings.mcp.communityPresets.source": "Open {name} source",
+  "settings.mcp.communityPresets.sourceLabel": "Provider source",
   "settings.mcp.marketplace.discovery.title": "Discover MCP servers from Cline",
   "settings.mcp.marketplace.discovery.unverified":
     "Listings are unverified metadata. Only ZCode's built-in presets can be configured here.",
@@ -3785,6 +3794,12 @@ const enUS: Record<string, string> = {
   "settings.openCode.authModeCli": "Host CLI · no API key",
   "settings.openCode.ownership":
     "OpenCode runs as a separate agent on the Host that owns this workspace. It owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
+  "settings.openCode.cliModelCatalogTitle": "Models reported by the local OpenCode CLI",
+  "settings.openCode.cliAuthNotChecked":
+    "Sign-in status is not checked here. Run `opencode auth login` in a terminal; this list does not enable these models in the ZCode composer.",
+  "settings.openCode.refreshModels": "Refresh model list",
+  "settings.openCode.noCliModels": "The OpenCode CLI did not report any models.",
+  "settings.openCode.modelsUnavailable": "Could not read the OpenCode model list.",
   "settings.openCode.checking": "Checking the OpenCode CLI…",
   "settings.openCode.available": "OpenCode CLI detected ({version})",
   "settings.openCode.missing": "OpenCode CLI is not installed",

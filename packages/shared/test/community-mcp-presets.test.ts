@@ -10,6 +10,9 @@ import {
 describe("community MCP presets", () => {
   it("не вшивает секреты, показывает происхождение и использует пользовательскую авторизацию", () => {
     expect(COMMUNITY_MCP_PRESETS.map((preset) => preset.id)).toEqual([
+      "todoist",
+      "webflow",
+      "apify",
       "context7",
       "chrome-devtools",
       "playwright",
@@ -19,8 +22,16 @@ describe("community MCP presets", () => {
     ]);
     for (const preset of COMMUNITY_MCP_PRESETS) {
       const config = communityMcpPresetConfig(preset);
-      expect(preset.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
       expect(preset.sourceUrl).toMatch(/^https:\/\//u);
+      if (preset.kind === "hosted") {
+        expect(preset.url).toMatch(/^https:\/\//u);
+        expect(config).toEqual({ type: "http", url: preset.url });
+        expect(config.headers).toBeUndefined();
+        expect(config.oauth).toBeUndefined();
+        expect(JSON.stringify(preset)).not.toMatch(/token|secret|password/i);
+        continue;
+      }
+      expect(preset.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
       expect(config).toMatchObject({
         type: "stdio",
         command: "npx",
@@ -49,6 +60,35 @@ describe("community MCP presets", () => {
       expect.objectContaining({ id: "playwright" }),
     ]);
     expect(filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, "not installed")).toEqual([]);
+    expect(filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, "https://mcp.webflow.com/mcp")).toEqual(
+      [expect.objectContaining({ id: "webflow" })],
+    );
+  });
+
+  it("создаёт переносимые hosted HTTP черновики с точными endpoint и labels", () => {
+    expect(COMMUNITY_MCP_PRESETS.filter((preset) => preset.kind === "hosted")).toEqual([
+      expect.objectContaining({
+        id: "todoist",
+        url: "https://ai.todoist.net/mcp",
+        authRequirement: "oauth",
+        usageLabel: "todoist-account-free",
+      }),
+      expect.objectContaining({
+        id: "webflow",
+        url: "https://mcp.webflow.com/mcp",
+        authRequirement: "oauth",
+        usageLabel: "webflow-site-plan",
+      }),
+      expect.objectContaining({
+        id: "apify",
+        url: "https://mcp.apify.com",
+        authRequirement: "oauth-or-api-key",
+        usageLabel: "apify-actor-usage-may-cost",
+      }),
+    ]);
+    for (const preset of COMMUNITY_MCP_PRESETS.filter((item) => item.kind === "hosted")) {
+      expect(communityMcpPresetConfig(preset)).toEqual({ type: "http", url: preset.url });
+    }
   });
 
   it("парсит только MCP metadata и выбрасывает исполняемые поля из Cline feed", () => {

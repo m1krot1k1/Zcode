@@ -149,9 +149,18 @@ export function McpCommunityCatalog({
                     id:
                       preset.authRequirement === "none"
                         ? "settings.mcp.communityPresets.authNone"
-                        : "settings.mcp.communityPresets.authOptionalApiKey",
+                        : preset.authRequirement === "api-key-optional"
+                          ? "settings.mcp.communityPresets.authOptionalApiKey"
+                          : `settings.mcp.communityPresets.auth.${preset.authRequirement}`,
                   })}
                 </p>
+                {preset.usageLabel ? (
+                  <p className="text-ui-sm text-warning-surface-foreground">
+                    {intl.formatMessage({
+                      id: `settings.mcp.communityPresets.usage.${preset.usageLabel}`,
+                    })}
+                  </p>
+                ) : null}
               </div>
               <Button type="button" variant="outline" size="sm" onClick={() => onSelect(preset)}>
                 {intl.formatMessage({ id: "settings.mcp.communityPresets.configure" })}

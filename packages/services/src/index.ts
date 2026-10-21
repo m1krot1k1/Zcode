@@ -295,6 +295,7 @@ export type {
   OpenCodeAcpPromptResult,
   OpenCodeAcpSession,
   OpenCodeAcpSessionUpdate,
+  OpenCodeCliModelCatalog,
   OpenCodeCliStatus,
   OpenCodeInstallResult,
 } from "./opencode-acp-runtime/index.js";

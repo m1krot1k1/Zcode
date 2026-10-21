@@ -3317,9 +3317,18 @@ const zhCN: Record<string, string> = {
     "选择服务器以查看来源和配置。选择后只会打开草稿；确认保存后才会写入。",
   "settings.mcp.communityPresets.authNone": "无需 API 密钥",
   "settings.mcp.communityPresets.authOptionalApiKey": "账户功能可选使用 API 密钥",
+  "settings.mcp.communityPresets.auth.oauth": "使用服务提供商 OAuth 授权",
+  "settings.mcp.communityPresets.auth.api-key-required": "需要服务提供商 API 密钥",
+  "settings.mcp.communityPresets.auth.oauth-or-api-key": "服务提供商 OAuth 或 API 密钥",
+  "settings.mcp.communityPresets.usage.todoist-account-free":
+    "根据 Todoist 开发者文档，Todoist 账户可免费使用。",
+  "settings.mcp.communityPresets.usage.webflow-site-plan":
+    "所有 Webflow Site 计划（包括 Starter）均可使用；AI 工具计划额度可能适用。",
+  "settings.mcp.communityPresets.usage.apify-actor-usage-may-cost":
+    "Actor 运行和平台资源可能收费；各 Actor 的价格不同。",
   "settings.mcp.communityPresets.configure": "配置",
-  "settings.mcp.communityPresets.source": "打开 {name} 软件包来源",
-  "settings.mcp.communityPresets.sourceLabel": "软件包来源",
+  "settings.mcp.communityPresets.source": "打开 {name} 来源",
+  "settings.mcp.communityPresets.sourceLabel": "服务提供商来源",
   "settings.mcp.marketplace.discovery.title": "从 Cline 发现 MCP 服务器",
   "settings.mcp.marketplace.discovery.unverified":
     "目录项仅为未经 ZCode 验证的元数据；这里只能配置 ZCode 内置预设。",
@@ -3536,6 +3545,12 @@ const zhCN: Record<string, string> = {
   "settings.openCode.authModeCli": "Host CLI · 无需 API 密钥",
   "settings.openCode.ownership":
     "OpenCode 作为独立智能体运行在拥有当前工作区的 Host 上，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
+  "settings.openCode.cliModelCatalogTitle": "本地 OpenCode CLI 报告的模型",
+  "settings.openCode.cliAuthNotChecked":
+    "此处不会检查登录状态。请在终端运行 `opencode auth login`；此列表中的模型尚不能在 ZCode 输入框中使用。",
+  "settings.openCode.refreshModels": "刷新模型列表",
+  "settings.openCode.noCliModels": "OpenCode CLI 未报告可用模型。",
+  "settings.openCode.modelsUnavailable": "无法读取 OpenCode 模型列表。",
   "settings.openCode.checking": "正在检查 OpenCode CLI…",
   "settings.openCode.available": "已检测到 OpenCode CLI（{version}）",
   "settings.openCode.missing": "未安装 OpenCode CLI",

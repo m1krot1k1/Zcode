@@ -38,6 +38,11 @@ export type OpenCodeInstallResult =
   | { status: "already-installed"; version: string; executablePath: string }
   | { status: "failed"; diagnostic: string };
 
+/** Read-only OpenCode CLI catalog. Authentication is intentionally not queried by this call. */
+export type OpenCodeCliModelCatalog =
+  | { status: "available"; models: string[]; authentication: "not-checked" }
+  | { status: "unavailable" | "timed-out"; diagnostic: string };
+
 export interface OpenCodeAcpSession {
   sessionId: string;
   cwd: string;
@@ -63,6 +68,9 @@ export interface IOpenCodeAcpRuntime {
    * --no-upgrade. Re-probes before install and never replaces an already discoverable CLI.
    */
   installCli(params?: { cliPath?: string }): Promise<OpenCodeInstallResult>;
+
+  /** Lists bounded provider/model IDs via `opencode models`; it never starts an ACP session or prompt. */
+  listModels(params?: { cliPath?: string }): Promise<OpenCodeCliModelCatalog>;
 
   /** Starts ACP and creates a durable OpenCode session. Calling this is the user's explicit start action. */
   startSession(params: { cwd: string; cliPath?: string }): Promise<OpenCodeAcpSession>;

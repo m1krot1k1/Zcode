@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This spec defines a bounded MCP marketplace discovery slice for the ZCode MCP settings surface. It adds read-only discovery from Cline's known catalog endpoint while keeping ZCode's bundled catalog as the only source of executable install configuration.
+This spec defines a bounded MCP marketplace discovery slice for the ZCode MCP settings surface. It adds read-only discovery from Cline's known catalog endpoint while keeping ZCode's bundled catalog as the only source of executable install configuration. The bundled catalog may contain reviewed, OS-neutral hosted MCP endpoint presets as well as pinned local stdio packages.
 
 This is not a verified package marketplace. The remote feed is not signed, and ZCode does not verify npm package integrity or transitive dependency integrity. The UI must not claim that a Cline listing or a configured package is verified by ZCode.
 
@@ -20,6 +20,20 @@ Every curated npm stdio preset must name an exact direct-package version in both
 | Firecrawl       | `firecrawl-mcp`         | `3.33.0`      | MIT                  | [npm package](https://www.npmjs.com/package/firecrawl-mcp/v/3.33.0)        | [firecrawl/firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server)         |
 
 These pins make the selected top-level package version explicit; they do not lock or attest its transitive dependencies, publisher identity, tarball integrity beyond npm's normal transport/metadata, or runtime behavior. License values are publisher-supplied npm metadata, not a legal review. A version/license change requires updating this record and the matching code/test pin together.
+
+## Curated hosted endpoint presets
+
+These hosted endpoints are independent of local OS paths and package installation. Authentication is performed by the user through the existing MCP HTTP connection flow; the catalog never contains tokens, OAuth state, account-specific site IDs, or local paths. Product access and the provider's pricing terms still apply. Labels in the UI are descriptive requirements, not guarantees of free usage.
+
+| Preset  | Official endpoint / source                                                                                                                                                                               | Authentication                                                            | Usage label and scope                                                                                                                                                                                   |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Todoist | [official MCP setup](https://developer.todoist.com/), [official server repository](https://github.com/Doist/todoist-mcp)                                                                                 | Provider-hosted OAuth authorization; no token is bundled.                 | Official developer hub says the MCP is free to use with any Todoist account; account/service conditions may apply.                                                                                      |
+| Webflow | [official MCP setup](https://developers.webflow.com/mcp/reference/getting-started), [plan and permission details](https://help.webflow.com/hc/en-us/articles/52536562285203-Webflow-MCP-server-overview) | Provider-hosted OAuth; user selects the sites or Workspaces to authorize. | Available on Webflow Site plans including Starter. MCP usage does not consume Webflow AI credits; the connected AI tool's plan/credits may apply. No public official server source/license is asserted. |
+| Apify   | [official MCP guide](https://docs.apify.com/mcp), [official repository](https://github.com/apify/apify-mcp-server)                                                                                       | Provider-hosted OAuth or user-supplied Bearer token.                      | Discovery/docs subset can be used without auth; Actor execution and account data require auth and may incur Actor/platform charges. Never describe arbitrary Actors as free.                            |
+
+The endpoint and auth claims above were checked against vendor primary sources on 2026-10-22. Prices, included quotas, and provider product behavior can change; do not encode them as guaranteed entitlements. Browserbase is deliberately excluded: its [official setup](https://docs.browserbase.com/integrations/mcp/setup) requires the API key as a query parameter, while the current MCP HTTP config contract safely supports OAuth or request headers only. Putting that credential in the persisted URL would leak it into configuration and diagnostics; add this provider only after the contract supports secret query parameters without persistence or logging. Its old stdio repository reports Apache-2.0 but is archived (2026-07-20). Todoist's official npm package currently reports MIT and Node >=24/npm >=11; it is not used by this remote preset. Apify's official repository reports MIT; the hosted preset does not bundle its package. Webflow publishes hosted setup documentation but no official server source/license was established here.
+
+Accepted case: hosted presets produce only HTTP MCP configs with the vendor endpoint and empty auth configuration. The existing MCP protocol handshake performs OAuth when supported; for API-key providers the user enters their credential in the existing HTTP headers editor. Catalog selection remains a draft and never persists a server or starts a connection. UI must show the auth method and any relevant usage scope before selection. No preset may contain credentials or static absolute paths.
 
 Accepted case: each curated npm stdio preset has a non-empty exact `version`, and its setup arguments end in precisely `<packageName>@<version>`. Cline feed metadata cannot change those values.
 
@@ -56,7 +70,9 @@ Open MCP settings -> UI requests IMcpSyncService.loadMarketplaceCatalog
                   -> UI displays discovery records and local bundled presets
 Select a known bundled entry -> local preset creates editable draft
 Save in existing settings form -> existing MCP settings owner persists config
-Later normal MCP lifecycle -> Host starts/checks configured server
+Later normal MCP lifecycle -> Host connects to configured HTTP endpoint
+                  -> OAuth challenge opens existing authorization action, or
+                     user-provided API key header authenticates the request
 ```
 
 Closing settings or discarding a draft does not persist or launch the selected listing. Status checks for already saved MCP servers continue through the existing lifecycle. A stale catalog response from an earlier refresh cannot overwrite a later refresh result.
@@ -72,6 +88,7 @@ Closing settings or discarding a draft does not persist or launch the selected l
 | MCPDISC-05 | Feed is unavailable.                                                                                                | Static bundled presets remain available, error state and retry are shown, and no preset/config state changes.                                                    |
 | MCPDISC-06 | Load settings, refresh, select a bundled preset, then discard the form.                                             | Loading/refreshing/selecting/discarding creates no persistent config and does not launch that unsaved preset; existing saved-server status checks are unchanged. |
 | MCPDISC-07 | Select a bundled preset and explicitly save via existing form.                                                      | Existing settings owner writes the locally owned config; existing status/handshake path is responsible for runtime evidence.                                     |
+| MCPDISC-08 | Select each hosted preset and inspect the generated draft and catalog warnings.                                     | Draft is HTTP with exact vendor URL, no embedded secret. UI states OAuth/API-key requirement and usage limits before Configure.                                  |
 
 ## Evidence limits
 
@@ -92,7 +109,7 @@ Parser and service fixture tests prove input bounds, fail-closed handling, sanit
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Browse built-in presets                        | existing settings component; immutable shared presets                                           | none until existing form Save                     | works offline; never starts a process on render                              |
 | Browse Cline feed                              | settings component holds loading/result/error projection; Host `IMcpSyncService` fetches/parses | none                                              | fixed HTTPS origin; no renderer fetch; feed fields never configure execution |
-| Configure a feed ID present in local allowlist | existing form draft from the matching local preset                                              | existing MCP settings service after explicit Save | command/args/auth/version/source come from local code only                   |
+| Configure a feed ID present in local allowlist | existing form draft from the matching local preset                                              | existing MCP settings service after explicit Save | endpoint/command/args/auth/version/source come from local code only          |
 | Browse an unknown feed ID                      | external listing card                                                                           | none                                              | visible metadata only; no configure/install action                           |
 
 | Candidate                                    | Disposition | Guard / reason                                                                                     |

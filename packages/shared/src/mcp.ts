@@ -389,18 +389,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export interface CommunityMcpPreset {
+interface CommunityMcpPresetBase {
   id: string;
   name: string;
-  packageName: string;
-  version?: string;
-  command: "npx";
-  args: readonly string[];
-  /** Require the user to provide their own credential; no token is bundled in the catalog. */
-  authRequirement: "none" | "api-key-optional";
   sourceUrl: string;
-  env?: Readonly<Record<string, string>>;
+  usageLabel?: "todoist-account-free" | "webflow-site-plan" | "apify-actor-usage-may-cost";
 }
+
+export type CommunityMcpPreset = CommunityMcpPresetBase &
+  (
+    | {
+        kind: "stdio";
+        packageName: string;
+        version: string;
+        command: "npx";
+        args: readonly string[];
+        /** Require the user to provide their own credential; no token is bundled in the catalog. */
+        authRequirement: "none" | "api-key-optional";
+        env?: Readonly<Record<string, string>>;
+      }
+    | {
+        kind: "hosted";
+        url: string;
+        authRequirement: "oauth" | "api-key-required" | "oauth-or-api-key";
+      }
+  );
 
 /** Metadata from the fixed Cline marketplace feed. It deliberately has no install config fields. */
 export interface ClineMcpMarketplaceEntry {
@@ -565,11 +578,39 @@ export function filterClineMcpMarketplaceEntries(
   );
 }
 
-/** Immutable, provenance-labelled stdio catalog. Selection only creates an editable draft. */
+/** Immutable, provenance-labelled catalog. Selection only creates an editable draft. */
 export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
+  {
+    id: "todoist",
+    name: "Todoist",
+    kind: "hosted",
+    url: "https://ai.todoist.net/mcp",
+    authRequirement: "oauth",
+    usageLabel: "todoist-account-free",
+    sourceUrl: "https://developer.todoist.com/",
+  },
+  {
+    id: "webflow",
+    name: "Webflow",
+    kind: "hosted",
+    url: "https://mcp.webflow.com/mcp",
+    authRequirement: "oauth",
+    usageLabel: "webflow-site-plan",
+    sourceUrl: "https://developers.webflow.com/mcp/reference/getting-started",
+  },
+  {
+    id: "apify",
+    name: "Apify",
+    kind: "hosted",
+    url: "https://mcp.apify.com",
+    authRequirement: "oauth-or-api-key",
+    usageLabel: "apify-actor-usage-may-cost",
+    sourceUrl: "https://docs.apify.com/mcp",
+  },
   {
     id: "context7",
     name: "Context7",
+    kind: "stdio",
     packageName: "@upstash/context7-mcp",
     version: "4.4.1",
     command: "npx",
@@ -580,6 +621,7 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {
     id: "chrome-devtools",
     name: "Chrome DevTools",
+    kind: "stdio",
     packageName: "chrome-devtools-mcp",
     version: "1.9.0",
     command: "npx",
@@ -590,6 +632,7 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {
     id: "playwright",
     name: "Playwright",
+    kind: "stdio",
     packageName: "@playwright/mcp",
     version: "0.0.83",
     command: "npx",
@@ -600,6 +643,7 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {
     id: "duckduckgo-search",
     name: "DuckDuckGo",
+    kind: "stdio",
     packageName: "duckduckgo-mcp-server",
     version: "0.1.2",
     command: "npx",
@@ -610,6 +654,7 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {
     id: "web-fetch",
     name: "Web Fetch",
+    kind: "stdio",
     packageName: "@yawlabs/fetch-mcp",
     version: "0.8.5",
     command: "npx",
@@ -620,6 +665,7 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {
     id: "firecrawl",
     name: "Firecrawl",
+    kind: "stdio",
     packageName: "firecrawl-mcp",
     version: "3.33.0",
     command: "npx",
@@ -631,6 +677,9 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
 ] as const;
 
 export function communityMcpPresetConfig(preset: CommunityMcpPreset): McpServerConfig {
+  if (preset.kind === "hosted") {
+    return { type: "http", url: preset.url };
+  }
   return {
     type: "stdio",
     command: preset.command,
@@ -646,7 +695,7 @@ export function filterCommunityMcpPresets(
   const normalizedQuery = query.trim().toLocaleLowerCase();
   if (!normalizedQuery) return [...presets];
   return presets.filter((preset) =>
-    `${preset.name} ${preset.id} ${preset.packageName} ${preset.authRequirement}`
+    `${preset.name} ${preset.id} ${preset.kind === "stdio" ? preset.packageName : preset.url} ${preset.authRequirement} ${preset.usageLabel ?? ""}`
       .toLocaleLowerCase()
       .includes(normalizedQuery),
   );

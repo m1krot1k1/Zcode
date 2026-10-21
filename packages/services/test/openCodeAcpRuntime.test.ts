@@ -254,6 +254,53 @@ describe("POSIX OpenCode command resolution", () => {
 });
 
 describe("OpenCode ACP runtime", () => {
+  it("lists only validated local model IDs without creating an ACP session", async () => {
+    const directory = await makeTempDir();
+    const fakeCliPath = join(directory, "fake-model-list.mjs");
+    await writeFile(
+      fakeCliPath,
+      'if (process.argv[2] === "models") process.stdout.write("openai/gpt-test\\nlocal/test-model\\n"); else process.exit(2);\n',
+      "utf8",
+    );
+    const runtime = createOpenCodeAcpRuntime({
+      resolveCli: () => ({
+        status: "resolved",
+        executablePath: process.execPath,
+        spec: { command: process.execPath, prefixArgs: [fakeCliPath] },
+      }),
+    });
+
+    await expect(runtime.listModels()).resolves.toEqual({
+      status: "available",
+      models: ["openai/gpt-test", "local/test-model"],
+      authentication: "not-checked",
+    });
+    expect(runtime.onSessionUpdate).toBeDefined();
+    await runtime.disposeAllAndWait();
+  });
+
+  it("rejects arbitrary CLI output instead of returning it to the UI", async () => {
+    const directory = await makeTempDir();
+    const fakeCliPath = join(directory, "fake-model-list-invalid.mjs");
+    await writeFile(
+      fakeCliPath,
+      'if (process.argv[2] === "models") process.stdout.write("provider/model\\nsecret-token-value\\n"); else process.exit(2);\n',
+      "utf8",
+    );
+    const runtime = createOpenCodeAcpRuntime({
+      resolveCli: () => ({
+        status: "resolved",
+        executablePath: process.execPath,
+        spec: { command: process.execPath, prefixArgs: [fakeCliPath] },
+      }),
+    });
+
+    await expect(runtime.listModels()).resolves.toEqual({
+      status: "unavailable",
+      diagnostic: "opencode.models-output-invalid",
+    });
+  });
+
   it("classifies bounded startup failures without exposing child stderr", async () => {
     const directory = await makeTempDir();
     const secretMarker = "test-only-opencode-stderr-secret";

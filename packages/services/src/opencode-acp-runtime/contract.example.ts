@@ -26,3 +26,13 @@ export async function exampleOpenCodeAcpSession(
     value: modelOption.currentValue,
   });
 }
+
+/** Read-only CLI discovery: no ACP session is created and login is never inferred. */
+export async function exampleOpenCodeCliModelCatalog(
+  runtime: IOpenCodeAcpRuntime,
+): Promise<string[]> {
+  const catalog = await runtime.listModels();
+  if (catalog.status !== "available") return [];
+  // `authentication` intentionally remains `not-checked`; model discovery is not sign-in proof.
+  return catalog.models;
+}

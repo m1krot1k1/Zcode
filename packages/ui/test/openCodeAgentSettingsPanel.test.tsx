@@ -43,6 +43,45 @@ afterEach(() => {
 });
 
 describe("OpenCode agent settings panel", () => {
+  it("shows CLI model discovery while stating that login and composer use are not verified", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "available" as const,
+        version: "OpenCode 2.0.0",
+        executablePath: "/home/zcode/.opencode/bin/opencode",
+      })),
+      listModels: vi.fn(async () => ({
+        status: "available" as const,
+        models: ["provider/model-a"],
+        authentication: "not-checked" as const,
+      })),
+    };
+    const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
+    const platform = {
+      selectDirectory: vi.fn(),
+      openExternal: vi.fn(),
+    } as unknown as IPlatformService;
+    const view = render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <ServiceProvider services={services}>
+          <PlatformProvider platform={platform}>
+            <OpenCodeAgentSettingsPanel
+              initialWorkspacePath="/workspace"
+              remoteWorkspaceActive={false}
+            />
+          </PlatformProvider>
+        </ServiceProvider>
+      </ZCodeIntlProvider>,
+    );
+    testResources.push(view.unmount);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh model list" }));
+    await screen.findByText("provider/model-a");
+    expect(runtime.listModels).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Sign-in status is not checked/u)).toBeTruthy();
+    expect(screen.getByText(/does not enable these models in the ZCode composer/u)).toBeTruthy();
+  });
+
   it("uses the active server Host for a server remote workspace without selecting a local folder", async () => {
     const runtime = {
       getCliStatus: vi.fn(async () => ({
