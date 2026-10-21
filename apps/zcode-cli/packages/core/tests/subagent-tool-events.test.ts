@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SessionEventType,
   createSessionEvent,
   createModelId,
@@ -8,14 +9,262 @@ import {
   createTurnId,
   type SessionEvent,
   type SessionId,
+  type SubagentExecutionTerminalPayload,
 } from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { mirrorSubagentToolEvent } from "../src/subagent/tool-event-mirror.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
+import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
+import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
 
 describe("subagent tool event projection", () => {
+  it("cascades root shutdown through a real grandchild and waits for persisted settlement", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-tree-root");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = createRecordingSubagentSessionStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const grandchildStarted = createDeferred<void>();
+    const grandchildAbortObserved = createDeferred<void>();
+    const grandchildMaySettle = createDeferred<void>();
+    const modelRequestCount = new Map<SessionId, number>();
+    let childSessionId: SessionId | undefined;
+    let grandchildSessionId: SessionId | undefined;
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("recursive-agent-model"),
+        },
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "recursive",
+              description: "Can delegate one nested test task",
+              source: "user",
+              systemPrompt: "Delegate the nested task required by the test.",
+              tools: ["Agent"],
+            },
+          ],
+        },
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+
+            const count = (modelRequestCount.get(sessionId) ?? 0) + 1;
+            modelRequestCount.set(sessionId, count);
+            if (sessionId === rootSessionId) {
+              if (count === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [
+                    {
+                      id: "call_root_recursive_agent",
+                      name: "Agent",
+                      input: {
+                        description: "Start the first level",
+                        prompt: "Start the nested task.",
+                        subagent_type: "recursive",
+                      },
+                    },
+                  ],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Root finished after child shutdown.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            if (childSessionId === undefined) {
+              childSessionId = sessionId;
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: "call_child_recursive_agent",
+                    name: "Agent",
+                    input: {
+                      description: "Start the grandchild",
+                      prompt: "Start the grandchild task.",
+                      subagent_type: "recursive",
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            if (sessionId === childSessionId) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Child finished after grandchild shutdown.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            if (grandchildSessionId === undefined) grandchildSessionId = sessionId;
+            if (sessionId !== grandchildSessionId) {
+              throw new Error(`Unexpected runtime session in recursive fixture: ${sessionId}`);
+            }
+            if (count > 1) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Grandchild settled after cancellation.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            grandchildStarted.resolve();
+            if (!request.abortSignal) {
+              throw new Error("Grandchild model request did not receive an abort signal");
+            }
+            return new Promise((resolve) => {
+              const onAbort = () => {
+                grandchildAbortObserved.resolve();
+                void grandchildMaySettle.promise.then(() => {
+                  resolve({
+                    finishReason: "stop",
+                    providerMetadata: undefined,
+                    text: "Grandchild settled after cancellation.",
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  });
+                });
+              };
+              if (request.abortSignal.aborted) {
+                onAbort();
+              } else {
+                request.abortSignal.addEventListener("abort", onAbort, { once: true });
+              }
+            });
+          },
+        }),
+      },
+    );
+
+    const turn = runtime.executeTurn("Launch a recursive subagent tree.");
+    try {
+      await grandchildStarted.promise;
+      expect(childSessionId).toBeDefined();
+      expect(grandchildSessionId).toBeDefined();
+      expect(new Set([rootSessionId, childSessionId, grandchildSessionId]).size).toBe(3);
+
+      const rootSpawned = (await eventStore.getEvents(rootSessionId)).find(
+        (event) => event.type === SessionEventType.SubagentSpawned,
+      )?.payload as { agentId?: string; childSessionId?: SessionId } | undefined;
+      const childSpawned = (await eventStore.getEvents(childSessionId!)).find(
+        (event) => event.type === SessionEventType.SubagentSpawned,
+      )?.payload as { agentId?: string; childSessionId?: SessionId } | undefined;
+      expect(rootSpawned?.childSessionId).toBe(childSessionId);
+      expect(childSpawned?.childSessionId).toBe(grandchildSessionId);
+      expect(rootSpawned?.agentId).toBeTruthy();
+      expect(childSpawned?.agentId).toBeTruthy();
+
+      const rootChildTask = runtimeTaskRegistry.get(rootSpawned!.agentId!);
+      const grandchildTask = runtimeTaskRegistry.get(childSpawned!.agentId!);
+      expect(rootChildTask).toMatchObject({
+        childSessionId,
+        parentSessionId: rootSessionId,
+        rootSessionId,
+      });
+      expect(grandchildTask).toMatchObject({
+        childSessionId: grandchildSessionId,
+        parentSessionId: childSessionId,
+        rootSessionId,
+      });
+
+      let closeSettled = false;
+      const close = runtime.closeBrowserSession().finally(() => {
+        closeSettled = true;
+      });
+      await grandchildAbortObserved.promise;
+      expect(closeSettled).toBe(false);
+
+      grandchildMaySettle.resolve();
+      await close;
+      await turn;
+
+      expect(closeSettled).toBe(true);
+      expect(runtimeTaskRegistry.get(rootSpawned!.agentId!)?.status).toBe("killed");
+      expect(runtimeTaskRegistry.get(childSpawned!.agentId!)?.status).toBe("killed");
+
+      const [rootEvents, childEvents, grandchildEvents] = await Promise.all([
+        eventStore.getEvents(rootSessionId),
+        eventStore.getEvents(childSessionId!),
+        eventStore.getEvents(grandchildSessionId!),
+      ]);
+      const rootChildTerminal = rootEvents.find(
+        (event) => event.type === SessionEventType.SubagentExecutionTerminal,
+      );
+      const grandchildTerminal = childEvents.find(
+        (event) => event.type === SessionEventType.SubagentExecutionTerminal,
+      );
+      expect(rootChildTerminal?.payload as SubagentExecutionTerminalPayload).toMatchObject({
+        childSessionId,
+        taskId: rootSpawned!.agentId,
+        rootRunId: rootChildTask!.rootRunId,
+        terminalStatus: "killed",
+      });
+      expect(grandchildTerminal?.payload as SubagentExecutionTerminalPayload).toMatchObject({
+        childSessionId: grandchildSessionId,
+        taskId: childSpawned!.agentId,
+        parentTaskId: rootSpawned!.agentId,
+        rootRunId: rootChildTask!.rootRunId,
+        terminalStatus: "killed",
+      });
+      const durableTerminalEntries = await sessionStore.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      });
+      const durableTerminalPayloads = durableTerminalEntries.map(
+        (entry) => (entry.data as { terminal?: SubagentExecutionTerminalPayload }).terminal,
+      );
+      expect(durableTerminalPayloads).toHaveLength(2);
+      expect(durableTerminalPayloads).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            taskId: rootSpawned!.agentId,
+            childSessionId,
+            terminalStatus: "killed",
+          }),
+          expect.objectContaining({
+            taskId: childSpawned!.agentId,
+            parentTaskId: rootSpawned!.agentId,
+            childSessionId: grandchildSessionId,
+            terminalStatus: "killed",
+          }),
+        ]),
+      );
+      for (const events of [rootEvents, childEvents, grandchildEvents]) {
+        expect(events.some((event) => event.type === SessionEventType.TurnComplete)).toBe(true);
+      }
+    } finally {
+      grandchildMaySettle.resolve();
+      await runtime.closeBrowserSession();
+      await turn.catch(() => undefined);
+    }
+  });
+
   it("mirrors child blocking interactions into the parent live projection", async () => {
     const sessionId = createSessionId("runtime-subagent-interaction-events");
     const eventStore = createTestSessionEventStore();
@@ -50,9 +299,11 @@ describe("subagent tool event projection", () => {
           },
         },
         modelFactory: createTestModelFactory({
-          async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+          async generateText(request: any, observation: any) {
+            const invocationSessionId = observation.invocationContext?.traceContext?.sessionId;
+            // 根因：允许递归委派后，child 也会暴露 Agent；仅按工具列表识别 root 会把 child 请求误判成父请求。
+            // 修复依据：模型调用 observation 携带真实 sessionId，测试按唯一会话所有者分流两层响应。
+            if (invocationSessionId === sessionId) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {

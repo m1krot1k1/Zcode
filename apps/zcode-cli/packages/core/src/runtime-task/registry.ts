@@ -130,7 +130,7 @@ export type RuntimeTaskAdmissionResult =
     };
 
 export const SUBAGENT_ROOT_MAX_TASKS = 128;
-/** Across all root runs in one session; background children can outlive their launch turn. */
+/** Per-root-session worker ceiling: foreground children replace waiting parents; background children use another slot. */
 export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 24;
 
 export type PrismTaskContractInput = Omit<PrismTaskContract, "schema" | "contractSha256">;
@@ -1140,6 +1140,7 @@ export interface RuntimeTaskRegistry {
   getBranchGenerationForSession(sessionId: SessionId): number;
   setBranchGenerationForSession(sessionId: SessionId, generation: number): void;
   remove(id: string): void;
+  /** Returns false without changing state when backgrounding would exceed the root-session worker quota. */
   requestBackground(id: string): boolean;
   setActiveBranchGeneration?(generation: number): void;
   update(
@@ -1276,14 +1277,16 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     if (totalBeforeAdmission >= SUBAGENT_ROOT_MAX_TASKS) {
       return { accepted: false, reason: "total_limit" };
     }
-    const activeBeforeAdmission = [...this.tasks.values()].filter(
-      (candidate) =>
-        candidate.type === "local_agent" &&
-        candidate.rootSessionId === rootSessionId &&
-        candidate.taskId !== task.taskId &&
-        candidate.status === "running",
-    ).length;
-    if (activeBeforeAdmission >= SUBAGENT_ROOT_MAX_ACTIVE_TASKS) {
+    const activeWorkItems = this.getActiveSubagentWorkItems(rootSessionId);
+    const foregroundParentTransfersSlot =
+      task.isBackgrounded !== true &&
+      parentTask?.status === "running" &&
+      activeWorkItems.some((activeTask) => activeTask.taskId === parentTask.taskId);
+    // 根因：旧逻辑把等待 foreground child 的祖先也计入并发额度，使并发上限变成隐式 depth cap；
+    // 修复依据：foreground Agent 调用会挂起父级，子级应接管该 worker slot，background child 则另计。
+    const projectedActiveCount =
+      activeWorkItems.length - (foregroundParentTransfersSlot ? 1 : 0);
+    if (projectedActiveCount >= SUBAGENT_ROOT_MAX_ACTIVE_TASKS) {
       return { accepted: false, reason: "active_limit" };
     }
 
@@ -1420,6 +1423,32 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     );
   }
 
+  private getActiveSubagentWorkItems(
+    rootSessionId: SessionId,
+    taskOverride?: RuntimeTaskSnapshot,
+  ): RuntimeTaskSnapshot[] {
+    const runningTasks = [...this.tasks.values()]
+      .map((storedTask) =>
+        storedTask.taskId === taskOverride?.taskId ? taskOverride : storedTask,
+      )
+      .filter(
+        (task) =>
+          task.type === "local_agent" &&
+          task.rootSessionId === rootSessionId &&
+          task.status === "running",
+      );
+    const ownersWithForegroundChild = new Set(
+      runningTasks
+        .filter((task) => task.isBackgrounded !== true && task.parentSessionId)
+        .map((task) => task.parentSessionId!),
+    );
+    // A foreground child means its parent runtime is waiting on this exact tool call. Background
+    // children do not suspend the parent, so both remain separately charged to the root session.
+    return runningTasks.filter(
+      (task) => !task.childSessionId || !ownersWithForegroundChild.has(task.childSessionId),
+    );
+  }
+
   private wouldCreateSubagentCycle(parentSessionId: SessionId, childSessionId: SessionId): boolean {
     let currentSessionId: SessionId | undefined = parentSessionId;
     const seen = new Set<SessionId>();
@@ -1472,6 +1501,26 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const task = this.tasks.get(id);
     if (!task || isTerminalRuntimeTask(task)) return false;
     const next: RuntimeTaskSnapshot = { ...task, isBackgrounded: true };
+    if (
+      task.isBackgrounded !== true &&
+      task.type === "local_agent" &&
+      task.status === "running"
+    ) {
+      const rootSessionId =
+        task.rootSessionId ??
+        (task.parentSessionId
+          ? this.getRootSessionIdForSession(task.parentSessionId)
+          : undefined);
+      if (rootSessionId) {
+        const projectedActiveCount = this.getActiveSubagentWorkItems(
+          rootSessionId,
+          next,
+        ).length;
+        // 根因：foreground→background 会唤醒父级继续执行，若只在 spawn 检查并发额度，转换会额外释放一个 worker。
+        // 修复依据：用转换后的 registry 投影重新计数；超额时拒绝状态变更，waiter 继续等待 foreground child。
+        if (projectedActiveCount > SUBAGENT_ROOT_MAX_ACTIVE_TASKS) return false;
+      }
+    }
     this.tasks.set(id, next);
     this.resolveBackgroundWaiters(id, next);
     this.changed();

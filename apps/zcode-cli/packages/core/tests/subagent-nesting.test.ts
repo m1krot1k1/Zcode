@@ -18,7 +18,7 @@ import {
 } from "../src/runtime-task/registry.js";
 
 describe("subagent root admission and ownership", () => {
-  it("permits recursive nesting while the root active quota has room", () => {
+  it("permits recursive nesting to the root node budget without counting waiting ancestors as workers", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-unbounded-depth-root");
     const turnId = createTurnId("subagent-unbounded-depth-turn");
@@ -26,7 +26,7 @@ describe("subagent root admission and ownership", () => {
 
     for (
       let depth = 0;
-      depth < SUBAGENT_ROOT_MAX_ACTIVE_TASKS - 1;
+      depth < SUBAGENT_ROOT_MAX_TASKS;
       depth += 1
     ) {
       const childSessionId = createSessionId(`subagent-depth-${depth}`);
@@ -46,8 +46,19 @@ describe("subagent root admission and ownership", () => {
     }
 
     expect(Object.keys(registry.all())).toHaveLength(
-      SUBAGENT_ROOT_MAX_ACTIVE_TASKS - 1,
+      SUBAGENT_ROOT_MAX_TASKS,
     );
+    expect(
+      registry.registerSubagentTask(
+        createTask(
+          "agent_depth_over_budget",
+          parentSessionId,
+          createSessionId("agent_depth_over_budget_session"),
+          turnId,
+        ),
+        settledCancellation(),
+      ),
+    ).toEqual({ accepted: false, reason: "total_limit" });
   });
 
   it("accepts only complete Host receipts for the current attempt and branch", () => {
@@ -257,7 +268,7 @@ describe("subagent root admission and ownership", () => {
     expect(Object.keys(registry.all())).toHaveLength(SUBAGENT_ROOT_MAX_TASKS);
   });
 
-  it("admits 24 active nodes and rejects the 25th", () => {
+  it("admits 24 active work items and rejects the 25th", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-active-budget-root");
     const turnId = createTurnId("subagent-active-budget-turn");
@@ -289,6 +300,93 @@ describe("subagent root admission and ownership", () => {
     expect(Object.keys(registry.all())).toHaveLength(
       SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
     );
+  });
+
+  it("transfers a foreground worker slot from its waiting parent to the child", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const rootSessionId = createSessionId("subagent-foreground-slot-root");
+    const turnId = createTurnId("subagent-foreground-slot-turn");
+
+    for (let index = 0; index < SUBAGENT_ROOT_MAX_ACTIVE_TASKS; index += 1) {
+      const taskId = `agent_foreground_slot_${index}`;
+      const admission = registry.registerSubagentTask(
+        createTask(
+          taskId,
+          rootSessionId,
+          createSessionId(`${taskId}_session`),
+          turnId,
+        ),
+        settledCancellation(),
+      );
+      expect(admission.accepted).toBe(true);
+    }
+
+    const parent = registry.get("agent_foreground_slot_0")!;
+    const childAdmission = registry.registerSubagentTask(
+      createTask(
+        "agent_foreground_slot_nested",
+        parent.childSessionId!,
+        createSessionId("agent_foreground_slot_nested_session"),
+        turnId,
+      ),
+      settledCancellation(),
+    );
+    expect(childAdmission.accepted).toBe(true);
+
+    expect(registry.requestBackground("agent_foreground_slot_nested")).toBe(false);
+    expect(registry.get("agent_foreground_slot_nested")?.isBackgrounded).not.toBe(true);
+
+    registry.update("agent_foreground_slot_1", (task) => ({
+      ...task,
+      status: "completed",
+    }));
+    expect(registry.requestBackground("agent_foreground_slot_nested")).toBe(true);
+    expect(registry.get("agent_foreground_slot_nested")?.isBackgrounded).toBe(true);
+
+    const additionalSibling = registry.registerSubagentTask(
+      createTask(
+        "agent_foreground_slot_overflow",
+        rootSessionId,
+        createSessionId("agent_foreground_slot_overflow_session"),
+        turnId,
+      ),
+      settledCancellation(),
+    );
+    expect(additionalSibling).toEqual({ accepted: false, reason: "active_limit" });
+  });
+
+  it("charges a background child as separate work while its parent can continue", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const rootSessionId = createSessionId("subagent-background-slot-root");
+    const turnId = createTurnId("subagent-background-slot-turn");
+
+    for (let index = 0; index < SUBAGENT_ROOT_MAX_ACTIVE_TASKS; index += 1) {
+      const taskId = `agent_background_slot_${index}`;
+      const admission = registry.registerSubagentTask(
+        createTask(
+          taskId,
+          rootSessionId,
+          createSessionId(`${taskId}_session`),
+          turnId,
+        ),
+        settledCancellation(),
+      );
+      expect(admission.accepted).toBe(true);
+    }
+
+    const parent = registry.get("agent_background_slot_0")!;
+    const child = createTask(
+      "agent_background_slot_nested",
+      parent.childSessionId!,
+      createSessionId("agent_background_slot_nested_session"),
+      turnId,
+    );
+    const admission = registry.registerSubagentTask(
+      { ...child, isBackgrounded: true },
+      settledCancellation(),
+    );
+
+    expect(admission).toEqual({ accepted: false, reason: "active_limit" });
   });
 
   it("applies the active ceiling across root runs from different turns", () => {
