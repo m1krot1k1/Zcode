@@ -42,18 +42,16 @@ export function validatePreviewTestEndpoint(value) {
   } catch {
     throw new Error("ZCODE_PREVIEW_TEST_BASE_URL должен быть корректным HTTPS URL");
   }
-  const normalizedPath = endpoint.pathname.replace(/\/+$/u, "") || "/";
   const production = new URL(productionZCodeEndpoint);
-  const isProductionRoute =
-    endpoint.origin === production.origin &&
-    normalizedPath === (production.pathname.replace(/\/+$/u, "") || "/");
+  // Причина: другой путь на production origin всё равно может направить Preview в production API.
+  const isProductionOrigin = endpoint.origin === production.origin;
   if (
     endpoint.protocol !== "https:" ||
     endpoint.username ||
     endpoint.password ||
     endpoint.hash ||
     endpoint.search ||
-    isProductionRoute
+    isProductionOrigin
   ) {
     throw new Error(
       "ZCODE_PREVIEW_TEST_BASE_URL должен отличаться от production endpoint и использовать HTTPS без credentials или fragment",

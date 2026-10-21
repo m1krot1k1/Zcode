@@ -176,7 +176,7 @@ test("major и minor сбрасывают младшие разряды", () => 
 test("Preview identity использует тестовый backend и не наследует секреты подписи или GitHub", () => {
   const env = createPreviewBuildEnvironment({
     PATH: "/usr/bin",
-    ZCODE_PREVIEW_TEST_BASE_URL: "https://zcode.z.ai/test/api/v1",
+    ZCODE_PREVIEW_TEST_BASE_URL: "https://preview.example.invalid/api/v1",
     APPLE_API_KEY: "must-not-be-forwarded",
     APPLE_ID: "must-not-be-forwarded",
     CSC_LINK: "must-not-be-forwarded",

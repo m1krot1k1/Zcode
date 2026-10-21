@@ -39,9 +39,9 @@ test("Preview build requires a separate HTTPS endpoint and pins every ZCode URL 
     validatePreviewTestEndpoint("https://preview.example.invalid/api/v1/"),
     "https://preview.example.invalid/api/v1",
   );
-  assert.equal(
-    validatePreviewTestEndpoint("https://zcode.z.ai/test/api/v1"),
-    "https://zcode.z.ai/test/api/v1",
+  assert.throws(
+    () => validatePreviewTestEndpoint("https://zcode.z.ai/test/api/v1"),
+    /отличаться от production endpoint/u,
   );
 
   const env = createPreviewBuildEnvironment({
