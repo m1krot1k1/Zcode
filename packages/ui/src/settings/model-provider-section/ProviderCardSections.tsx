@@ -70,6 +70,7 @@ export function shouldShowProviderApiFormat(
 
 export function ProviderCardHeader({
   providerName,
+  credentialModeLabel,
   logo,
   editingName,
   nameValue,
@@ -86,6 +87,7 @@ export function ProviderCardHeader({
   providerToggle,
 }: {
   providerName: string;
+  credentialModeLabel?: string;
   logo?: ProviderConfigObject["logo"];
   editingName: boolean;
   nameValue: string;
@@ -131,6 +133,11 @@ export function ProviderCardHeader({
             </div>
           </>
         )}
+        {credentialModeLabel ? (
+          <span className="shrink-0 rounded-md border border-border px-2 py-0.5 text-ui-xs text-foreground-subtle">
+            {credentialModeLabel}
+          </span>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {providerToggle}

@@ -456,6 +456,9 @@ export function OpenCodeAgentSettingsPanel({
         <h2 id="local-opencode-agent-title" className="text-ui-settings-title font-semibold">
           {intl.formatMessage({ id: "settings.openCode.title" })}
         </h2>
+        <span className="inline-flex rounded-md border border-border px-2 py-0.5 text-ui-xs text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.openCode.authModeCli" })}
+        </span>
         <p className="text-ui-base leading-6 text-foreground-subtle">
           {intl.formatMessage({ id: "settings.openCode.ownership" })}
         </p>

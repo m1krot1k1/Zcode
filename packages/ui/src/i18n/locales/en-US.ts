@@ -3780,7 +3780,9 @@ const enUS: Record<string, string> = {
   "settings.plugins.toggle.failed": "Couldn't update {plugin}. Try again.",
   "settings.modelProviderDescription":
     "Manage custom model providers. Once configured, they can be selected during chat.",
+  "settings.modelProvider.credentialModeApiKey": "API key",
   "settings.openCode.title": "Local OpenCode agent",
+  "settings.openCode.authModeCli": "Local CLI · no API key",
   "settings.openCode.ownership":
     "OpenCode runs as a separate local agent and owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
   "settings.openCode.checking": "Checking the OpenCode CLI…",

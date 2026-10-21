@@ -5559,6 +5559,7 @@ nodes:
       - "No ACP child or durable OpenCode session starts until the user selects Start OpenCode session in this separate panel."
       - "Model and agent pickers contain only live session/new and session/set_config_option values returned by ACP; absent model options display OpenCode default."
       - "OpenCode output and session state remain separate from ZCode conversation state, and only a local workspace path can be sent to this Host-local runtime."
+      - "The local ACP panel is visibly labeled as CLI-backed with no ZCode API key; API-key Provider cards display their credential mode without joining the two configuration or runtime owners."
   - id: "evidence.opencode-acp-runtime-tests"
     kind: "evidence"
     label: "Fake-child OpenCode ACP lifecycle contract tests"

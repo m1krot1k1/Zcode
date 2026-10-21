@@ -757,6 +757,11 @@ export function InlineEditableProviderCard({
       {effectiveHeaderVisible ? (
         <ProviderCardHeader
           providerName={headerProviderName}
+          credentialModeLabel={
+            isApiKeyProvider
+              ? intl.formatMessage({ id: "settings.modelProvider.credentialModeApiKey" })
+              : undefined
+          }
           logo={provider.config.logo}
           editingName={editingName}
           nameValue={nameValue}

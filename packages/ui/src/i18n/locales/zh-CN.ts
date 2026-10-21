@@ -3531,7 +3531,9 @@ const zhCN: Record<string, string> = {
   "settings.plugins.toggle.workspaceDisabled": "已在当前工作区停用 {plugin}（覆盖 User 默认）",
   "settings.plugins.toggle.failed": "无法更新 {plugin}，请重试。",
   "settings.modelProviderDescription": "管理自定义模型供应商，配置后可在聊天时选择使用。",
+  "settings.modelProvider.credentialModeApiKey": "API 密钥",
   "settings.openCode.title": "本地 OpenCode 智能体",
+  "settings.openCode.authModeCli": "本地 CLI · 无需 API 密钥",
   "settings.openCode.ownership":
     "OpenCode 作为独立的本地智能体运行，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
   "settings.openCode.checking": "正在检查 OpenCode CLI…",
