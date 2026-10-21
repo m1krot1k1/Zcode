@@ -866,6 +866,7 @@ describe("settingsSyncService MCP server import", () => {
             env: { MCP_TOKEN: envSecret },
           },
           disabled: true,
+          timeout: 2,
         },
         "sse-oauth": {
           transport: {
@@ -890,6 +891,7 @@ describe("settingsSyncService MCP server import", () => {
         "legacy-http-server": {
           transportType: "http",
           url: "https://mcp.example.test/legacy",
+          timeout: 60000,
         },
         protected: {
           transport: { type: "stdio", command: "node", args: ["cline.js"] },
@@ -949,6 +951,7 @@ describe("settingsSyncService MCP server import", () => {
         cwd: join(home, "mcp"),
         env: { MCP_TOKEN: envSecret },
         enabled: false,
+        timeoutMs: 2000,
       });
       expect(config.mcp?.servers?.["sse-oauth"]).toEqual({
         type: "sse",
@@ -968,6 +971,7 @@ describe("settingsSyncService MCP server import", () => {
       expect(config.mcp?.servers?.["legacy-http-server"]).toEqual({
         type: "http",
         url: "https://mcp.example.test/legacy",
+        timeoutMs: 3600000,
       });
       expect(config.mcp?.servers?.protected).toEqual({
         type: "stdio",
@@ -1006,6 +1010,7 @@ describe("settingsSyncService MCP server import", () => {
             args: ["server.js"],
             env: { TOKEN: envSecret },
           },
+          timeout: 15,
         },
         "sse-server": {
           transport: {
@@ -1051,6 +1056,7 @@ describe("settingsSyncService MCP server import", () => {
       type: "stdio",
       command: "node",
       args: ["server.js"],
+      timeoutMs: 15000,
     });
     expect(config.mcp?.servers?.["sse-server"]).toEqual({
       type: "sse",

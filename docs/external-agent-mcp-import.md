@@ -21,26 +21,28 @@
 
 首批支持外部 MCP 来源：
 
-| Agent          | Global                             | Project                                                      | Format                            |
-| -------------- | ---------------------------------- | ------------------------------------------------------------ | --------------------------------- |
-| Claude Code    | `~/.claude/settings.json`          | `<workspace>/.claude/settings.json`, `<workspace>/.mcp.json` | `mcpServers` JSON                 |
-| Codex CLI      | `~/.codex/config.toml`             | `<workspace>/.codex/config.toml`                             | `mcp_servers` / `mcpServers` TOML |
-| OpenCode       | `~/.config/opencode/opencode.json` | `<workspace>/.opencode/opencode.json`                        | `mcp` JSON                        |
-| OpenClaw       | `~/.openclaw/settings.json`        | `<workspace>/settings.json`                                  | `mcpServers` JSON                 |
-| Qwen Code      | `~/.qwen/settings.json`            | `<workspace>/.qwen/settings.json`                            | `mcpServers` JSON                 |
-| Qoder          | `~/.qoder/settings.json`           | `<workspace>/.qoder/settings.json`                           | `mcpServers` JSON                 |
-| Qoder CN       | `~/.qoder-cn/settings.json`        | `<workspace>/.qoder/settings.json`                           | `mcpServers` JSON                 |
-| Trae           | `~/.trae/settings.json`            | `<workspace>/.trae/settings.json`                            | `mcpServers` JSON                 |
-| Kiro CLI       | `~/.kiro/settings.json`            | `<workspace>/.kiro/settings.json`                            | `mcpServers` JSON                 |
-| Roo Code       | `~/.roo/settings.json`             | `<workspace>/.roo/settings.json`                             | `mcpServers` JSON                 |
-| CodeBuddy      | `~/.codebuddy/settings.json`       | `<workspace>/.codebuddy/settings.json`                       | `mcpServers` JSON                 |
-| 通用 `.agents` | `~/.agents/mcp.json`               | `<workspace>/.agents/mcp.json`                               | `mcpServers` JSON                 |
+| Agent          | Global                                           | Project                                                      | Format                                        |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------ | --------------------------------------------- |
+| Claude Code    | `~/.claude/settings.json`                        | `<workspace>/.claude/settings.json`, `<workspace>/.mcp.json` | `mcpServers` JSON                             |
+| Cline          | `~/.cline/data/settings/cline_mcp_settings.json` | —                                                            | `mcpServers` JSON; nested or legacy transport |
+| Codex CLI      | `~/.codex/config.toml`                           | `<workspace>/.codex/config.toml`                             | `mcp_servers` / `mcpServers` TOML             |
+| OpenCode       | `~/.config/opencode/opencode.json`               | `<workspace>/.opencode/opencode.json`                        | `mcp` JSON                                    |
+| OpenClaw       | `~/.openclaw/settings.json`                      | `<workspace>/settings.json`                                  | `mcpServers` JSON                             |
+| Qwen Code      | `~/.qwen/settings.json`                          | `<workspace>/.qwen/settings.json`                            | `mcpServers` JSON                             |
+| Qoder          | `~/.qoder/settings.json`                         | `<workspace>/.qoder/settings.json`                           | `mcpServers` JSON                             |
+| Qoder CN       | `~/.qoder-cn/settings.json`                      | `<workspace>/.qoder/settings.json`                           | `mcpServers` JSON                             |
+| Trae           | `~/.trae/settings.json`                          | `<workspace>/.trae/settings.json`                            | `mcpServers` JSON                             |
+| Kiro CLI       | `~/.kiro/settings.json`                          | `<workspace>/.kiro/settings.json`                            | `mcpServers` JSON                             |
+| Roo Code       | `~/.roo/settings.json`                           | `<workspace>/.roo/settings.json`                             | `mcpServers` JSON                             |
+| CodeBuddy      | `~/.codebuddy/settings.json`                     | `<workspace>/.codebuddy/settings.json`                       | `mcpServers` JSON                             |
+| 通用 `.agents` | `~/.agents/mcp.json`                             | `<workspace>/.agents/mcp.json`                               | `mcpServers` JSON                             |
 
 ## 兼容性
 
 - JSON 读写使用结构化解析，保留目标文件其他顶层字段。
 - TOML 只作为外部来源读取；写入目标始终为 ZCode JSON。
 - OpenCode 的 `command: string[]` 会转换为 ZCode/Claude 兼容的 `command + args`。
+- Cline 的 server `timeout` 是秒；导入时读取 server 注册项上的有限数值，将秒夹到 Cline 支持的 1–3600 范围，再换算成 ZCode `timeoutMs`。缺失或非数值时省略该字段，保留 ZCode 默认值。嵌套与旧式 transport 均从注册项读取 timeout。
 - Project 目标在没有 workspace 时禁用。
 
 ## Диагностика источников

@@ -1109,6 +1109,12 @@ function normalizeClineMcpConfig(config: McpServerConfig): McpServerConfig | nul
   const raw = config as Record<string, unknown>;
   const transport = isRecord(raw.transport) ? raw.transport : raw;
   const isNestedTransport = transport !== raw;
+  // Cline stores request timeouts in seconds. Keep its documented bounds so a
+  // milliseconds value accidentally written into that field cannot disable a server.
+  const timeoutMs =
+    typeof raw.timeout === "number" && Number.isFinite(raw.timeout)
+      ? Math.round(Math.min(Math.max(raw.timeout, 1), 3600) * 1000)
+      : undefined;
   const rawType = isNestedTransport
     ? transport.type
     : (raw.type ?? (raw.transportType === "http" ? "streamableHttp" : raw.transportType));
@@ -1149,6 +1155,7 @@ function normalizeClineMcpConfig(config: McpServerConfig): McpServerConfig | nul
       ...(typeof transport.cwd === "string" ? { cwd: transport.cwd } : {}),
       ...(isStringRecord(transport.env) ? { env: transport.env } : {}),
       ...(enabled === false ? { enabled } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     };
   }
 
@@ -1172,6 +1179,7 @@ function normalizeClineMcpConfig(config: McpServerConfig): McpServerConfig | nul
     ...(isStringRecord(transport.headers) ? { headers: transport.headers } : {}),
     ...(oauthClient ? { oauth: oauthClient } : {}),
     ...(enabled === false ? { enabled } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
 }
 
