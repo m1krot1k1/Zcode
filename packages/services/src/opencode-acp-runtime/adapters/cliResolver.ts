@@ -63,6 +63,8 @@ export function getPosixOpenCodeCandidates(input: {
     env.XDG_BIN_HOME ?? "",
     // OpenCode 官方安装脚本写入 ~/.opencode/bin；GUI Host 可能没有加载用户 shell 的 PATH 配置。
     join(home, ".opencode", "bin"),
+    // Linuxbrew 也支持安装到用户目录；GUI Host 可能没有继承 ~/.linuxbrew/bin 的 PATH。
+    join(home, ".linuxbrew", "bin"),
     join(home, ".local", "bin"),
     join(home, ".npm-global", "bin"),
     join(home, "npm", "bin"),

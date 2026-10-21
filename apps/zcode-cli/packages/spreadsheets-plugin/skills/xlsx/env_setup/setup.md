@@ -270,7 +270,8 @@ $Msi  = "$env:TEMP\LibreOffice_${LoVer}_Win_${LoTag}.msi"
 
 Invoke-WebRequest -Uri "$Base/LibreOffice_${LoVer}_Win_${LoTag}.msi" -OutFile $Msi
 Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /qn" -Wait   # silent install (needs admin)
-& "C:\Program Files\LibreOffice\program\soffice.exe" --version    # verify
+Get-Command soffice.exe, soffice -CommandType Application -ErrorAction SilentlyContinue |
+  Select-Object -First 1 | ForEach-Object { & $_.Source --version }  # verify if registered on PATH
 ```
 
 `winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.
@@ -291,7 +292,7 @@ command -v soffice || ls -d /opt/libreoffice*/program/soffice /Applications/Libr
 ```
 
 ```powershell
-Get-Command soffice -ErrorAction SilentlyContinue; Test-Path "C:\Program Files\LibreOffice\program\soffice.exe"
+Get-Command soffice.exe, soffice -CommandType Application -ErrorAction SilentlyContinue
 ```
 
 #### Linux — symlink into a directory already on `PATH`
@@ -317,11 +318,15 @@ On Apple Silicon, `/usr/local/bin` is not always on `PATH` — if the verify sti
 #### Windows — append the program directory to the user `PATH`
 
 ```powershell
-$LoDir = "C:\Program Files\LibreOffice\program"
+$SofficePath = Read-Host "Enter the full path to the installed soffice.exe"
+$LoDir = Split-Path -Parent $SofficePath
 $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($UserPath -notlike "*$LoDir*") { setx PATH "$UserPath;$LoDir" }
+if ($UserPath -notlike "*$LoDir*") {
+    [Environment]::SetEnvironmentVariable("PATH", (@($UserPath, $LoDir) -join ";"), "User")
+}
+& $SofficePath --version
 ```
 
-`setx` only affects **newly launched** shells. For the remainder of the current session, call the
-binary by its full path: `& "C:\Program Files\LibreOffice\program\soffice.exe" --version`.
+The path is supplied from the actual installation on this machine. Opening a new shell makes the
+updated user `PATH` available to the setup helper; for the current shell, use `$SofficePath` directly.
 
