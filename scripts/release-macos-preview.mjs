@@ -10,6 +10,7 @@ import { tmpdir, arch } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { desktopProductIdentities } from "../packages/desktop/scripts/desktop-product-identity.mjs";
 import {
   assertAssetHashes,
   assertMacReleaseAssetPair,
@@ -27,6 +28,7 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const previewProductName = "ZCode Preview";
+const previewAppBundleName = `${desktopProductIdentities.preview.macExecutableName}.app`;
 const previewBundleId = "dev.zcode.app.preview";
 const productionZCodeEndpoint = "https://zcode.z.ai/api/v1";
 
@@ -421,6 +423,7 @@ async function main() {
         targetArch,
         distDir,
         productName: previewProductName,
+        appBundleName: previewAppBundleName,
         artifactSuffix: "_TEST",
         expectedBundleId: previewBundleId,
         requireStaple: false,
@@ -450,6 +453,7 @@ async function main() {
         targetArch,
         distDir,
         productName: previewProductName,
+        appBundleName: previewAppBundleName,
         artifactSuffix: "_TEST",
         expectedBundleId: previewBundleId,
         requireStaple: false,

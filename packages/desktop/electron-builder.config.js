@@ -207,7 +207,7 @@ function assertPackagedCuaHelper(context) {
   if (targetPlatform.os !== "darwin" || !shouldPackageComputerUseHelper) return;
   const appPath = join(
     context.appOutDir,
-    `${desktopProductIdentity.productName}.app`,
+    `${desktopProductIdentity.macExecutableName}.app`,
     "Contents",
     "Resources",
     "cua-helper",

@@ -75,13 +75,14 @@ async function createReleaseFixture(
     zipEntries,
     doctorRejectAt,
     productName = "ZCode",
+    appBundleName = `${productName}.app`,
     bundleId = "dev.zcode.app",
     unsigned = false,
     artifactSuffix = "",
   } = {},
 ) {
   const distDir = path.join(root, "dist");
-  const appName = `${productName}.app`;
+  const appName = appBundleName;
   const sourceAppPath = path.join(distDir, "mac-arm64", appName);
   const zipAppPath = path.join(root, "zip-payload", appName);
   const dmgAppPath = path.join(root, "dmg-payload", appName);
@@ -488,6 +489,7 @@ test("Preview preflight validates preview identity, architecture and unsigned ar
   try {
     const fixture = await createReleaseFixture(root, {
       productName: "ZCode Preview",
+      appBundleName: "ZCodePreview.app",
       bundleId: "dev.zcode.app.preview",
       unsigned: true,
       artifactSuffix: "_TEST",
@@ -497,6 +499,7 @@ test("Preview preflight validates preview identity, architecture and unsigned ar
       targetArch: "arm64",
       distDir: fixture.distDir,
       productName: "ZCode Preview",
+      appBundleName: "ZCodePreview.app",
       artifactSuffix: "_TEST",
       expectedBundleId: "dev.zcode.app.preview",
       requireStaple: false,
@@ -505,7 +508,7 @@ test("Preview preflight validates preview identity, architecture and unsigned ar
       captureCommand: fixture.captureCommand,
       hashDirectory: async () => "preview-app-tree",
     });
-    assert.equal(path.basename(result.appPath), "ZCode Preview.app");
+    assert.equal(path.basename(result.appPath), "ZCodePreview.app");
     assert.deepEqual(result.assetNames, [
       "ZCode Preview-3.17.1-mac-arm64_TEST.dmg",
       "ZCode Preview-3.17.1-mac-arm64_TEST.zip",
