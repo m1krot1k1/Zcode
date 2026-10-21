@@ -21,20 +21,20 @@
 
 首批支持外部 MCP 来源：
 
-| Agent | Global | Project | Format |
-| --- | --- | --- | --- |
-| Claude Code | `~/.claude/settings.json` | `<workspace>/.claude/settings.json`, `<workspace>/.mcp.json` | `mcpServers` JSON |
-| Codex CLI | `~/.codex/config.toml` | `<workspace>/.codex/config.toml` | `mcp_servers` / `mcpServers` TOML |
-| OpenCode | `~/.config/opencode/opencode.json` | `<workspace>/.opencode/opencode.json` | `mcp` JSON |
-| OpenClaw | `~/.openclaw/settings.json` | `<workspace>/settings.json` | `mcpServers` JSON |
-| Qwen Code | `~/.qwen/settings.json` | `<workspace>/.qwen/settings.json` | `mcpServers` JSON |
-| Qoder | `~/.qoder/settings.json` | `<workspace>/.qoder/settings.json` | `mcpServers` JSON |
-| Qoder CN | `~/.qoder-cn/settings.json` | `<workspace>/.qoder/settings.json` | `mcpServers` JSON |
-| Trae | `~/.trae/settings.json` | `<workspace>/.trae/settings.json` | `mcpServers` JSON |
-| Kiro CLI | `~/.kiro/settings.json` | `<workspace>/.kiro/settings.json` | `mcpServers` JSON |
-| Roo Code | `~/.roo/settings.json` | `<workspace>/.roo/settings.json` | `mcpServers` JSON |
-| CodeBuddy | `~/.codebuddy/settings.json` | `<workspace>/.codebuddy/settings.json` | `mcpServers` JSON |
-| 通用 `.agents` | `~/.agents/mcp.json` | `<workspace>/.agents/mcp.json` | `mcpServers` JSON |
+| Agent          | Global                             | Project                                                      | Format                            |
+| -------------- | ---------------------------------- | ------------------------------------------------------------ | --------------------------------- |
+| Claude Code    | `~/.claude/settings.json`          | `<workspace>/.claude/settings.json`, `<workspace>/.mcp.json` | `mcpServers` JSON                 |
+| Codex CLI      | `~/.codex/config.toml`             | `<workspace>/.codex/config.toml`                             | `mcp_servers` / `mcpServers` TOML |
+| OpenCode       | `~/.config/opencode/opencode.json` | `<workspace>/.opencode/opencode.json`                        | `mcp` JSON                        |
+| OpenClaw       | `~/.openclaw/settings.json`        | `<workspace>/settings.json`                                  | `mcpServers` JSON                 |
+| Qwen Code      | `~/.qwen/settings.json`            | `<workspace>/.qwen/settings.json`                            | `mcpServers` JSON                 |
+| Qoder          | `~/.qoder/settings.json`           | `<workspace>/.qoder/settings.json`                           | `mcpServers` JSON                 |
+| Qoder CN       | `~/.qoder-cn/settings.json`        | `<workspace>/.qoder/settings.json`                           | `mcpServers` JSON                 |
+| Trae           | `~/.trae/settings.json`            | `<workspace>/.trae/settings.json`                            | `mcpServers` JSON                 |
+| Kiro CLI       | `~/.kiro/settings.json`            | `<workspace>/.kiro/settings.json`                            | `mcpServers` JSON                 |
+| Roo Code       | `~/.roo/settings.json`             | `<workspace>/.roo/settings.json`                             | `mcpServers` JSON                 |
+| CodeBuddy      | `~/.codebuddy/settings.json`       | `<workspace>/.codebuddy/settings.json`                       | `mcpServers` JSON                 |
+| 通用 `.agents` | `~/.agents/mcp.json`               | `<workspace>/.agents/mcp.json`                               | `mcpServers` JSON                 |
 
 ## 兼容性
 
@@ -42,3 +42,10 @@
 - TOML 只作为外部来源读取；写入目标始终为 ZCode JSON。
 - OpenCode 的 `command: string[]` 会转换为 ZCode/Claude 兼容的 `command + args`。
 - Project 目标在没有 workspace 时禁用。
+
+## Диагностика источников
+
+- Наличие файла конфигурации и наличие пригодных серверов — разные результаты. Повреждённый JSON или неверная структура `mcpServers` должны отображаться как ошибка источника, а не как пустой каталог.
+- Некорректные отдельные записи пропускаются, валидные записи из того же файла остаются доступны для импорта; интерфейс сообщает число пропущенных записей.
+- Диагностика содержит только путь к источнику, стабильный код причины и число некорректных записей. Текст исключения, содержимое конфигурации, env, headers, OAuth client secrets и токены не возвращаются и не пишутся в логи.
+- Удалённый marketplace feed этим контрактом не считается: он требует отдельной схемы provenance, размера/версии, проверки целостности и политики отзыва.

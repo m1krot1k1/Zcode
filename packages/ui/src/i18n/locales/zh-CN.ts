@@ -3473,6 +3473,12 @@ const zhCN: Record<string, string> = {
   "settings.mcpServers.import.scope.global": "全局",
   "settings.mcpServers.import.scope.project": "项目",
   "settings.mcpServers.import.scopeEmpty": "当前范围下没有可导入 MCP 服务器。",
+  "settings.mcpServers.import.diagnostic.invalidConfig":
+    "{agent} 配置 {path} 已损坏或缺少 MCP 服务器映射；此文件中的条目均未导入。",
+  "settings.mcpServers.import.diagnostic.invalidEntries":
+    "{agent} 配置 {path} 中有 {count} 个无效 MCP 条目；有效条目仍可导入。",
+  "settings.mcpServers.import.diagnostic.unreadable":
+    "无法读取 {agent} 配置 {path}；此文件中的条目均未导入。",
   "settings.mcpServers.import.selectAll": "全选",
   "settings.mcpServers.import.clearAll": "取消全选",
   "settings.mcpServers.import.selectionCount": "已选 {selected}/{total}",

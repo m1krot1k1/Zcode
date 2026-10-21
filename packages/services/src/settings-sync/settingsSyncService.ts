@@ -20,6 +20,7 @@ import type {
   SettingsSyncSkillSkipReason,
   SettingsSyncSourceScope,
   SettingsSyncSourceRootSummary,
+  SettingsSyncSourceDiagnostic,
   SettingsSyncTaskImportResult,
 } from "@zcode/shared";
 import {
@@ -131,6 +132,11 @@ interface McpImportCandidate {
   sourceRootScope: SettingsSyncSourceScope;
   sourceRootPath: string;
   sourcePath: string;
+}
+
+interface McpSourceFileReadResult {
+  servers: Record<string, McpServerConfig>;
+  diagnostics: SettingsSyncSourceDiagnostic[];
 }
 
 interface McpSourceRoot {
@@ -1169,14 +1175,39 @@ function normalizeClineMcpConfig(config: McpServerConfig): McpServerConfig | nul
   };
 }
 
-function readClineMcpServers(parsed: Record<string, unknown>): Record<string, McpServerConfig> {
-  const candidates = normalizeMcpServerMap(parsed.mcpServers);
-  return Object.fromEntries(
-    Object.entries(candidates).flatMap(([name, config]) => {
-      const normalized = normalizeClineMcpConfig(config);
-      return normalized ? [[name, normalized]] : [];
-    }),
-  );
+function readClineMcpServers(
+  parsed: Record<string, unknown>,
+  sourcePath: string,
+): McpSourceFileReadResult {
+  if (!isRecord(parsed.mcpServers)) {
+    return {
+      servers: {},
+      diagnostics: [{ path: sourcePath, code: "invalidConfig" }],
+    };
+  }
+
+  const servers: Record<string, McpServerConfig> = {};
+  let invalidEntryCount = 0;
+  for (const [name, config] of Object.entries(parsed.mcpServers)) {
+    if (!name.trim() || !isRecord(config)) {
+      invalidEntryCount += 1;
+      continue;
+    }
+    const normalized = normalizeClineMcpConfig(config as McpServerConfig);
+    if (!normalized) {
+      invalidEntryCount += 1;
+      continue;
+    }
+    servers[name] = normalized;
+  }
+
+  return {
+    servers,
+    diagnostics:
+      invalidEntryCount > 0
+        ? [{ path: sourcePath, code: "invalidEntries", count: invalidEntryCount }]
+        : [],
+  };
 }
 
 function prepareMcpConfigForTargetScope(
@@ -1254,26 +1285,55 @@ function readTomlMcpServers(parsed: Record<string, unknown>): Record<string, Mcp
 async function readMcpServersFromSourceFile(
   filePath: string,
   format: McpConfigFormat,
-): Promise<Record<string, McpServerConfig>> {
+): Promise<McpSourceFileReadResult> {
+  let raw: string;
   try {
-    const raw = await readFile(filePath, "utf-8");
+    raw = await readFile(filePath, "utf-8");
+  } catch {
+    return {
+      servers: {},
+      diagnostics: format === "clineMcpJson" ? [{ path: filePath, code: "unreadable" }] : [],
+    };
+  }
+
+  if (format === "clineMcpJson") {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return {
+        servers: {},
+        diagnostics: [{ path: filePath, code: "invalidConfig" }],
+      };
+    }
+    if (!isRecord(parsed)) {
+      return {
+        servers: {},
+        diagnostics: [{ path: filePath, code: "invalidConfig" }],
+      };
+    }
+    return readClineMcpServers(parsed, filePath);
+  }
+
+  try {
     if (format === "codexToml") {
-      return readTomlMcpServers(parseToml(raw) as Record<string, unknown>);
+      return {
+        servers: readTomlMcpServers(parseToml(raw) as Record<string, unknown>),
+        diagnostics: [],
+      };
     }
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed)) {
-      return {};
+      return { servers: {}, diagnostics: [] };
     }
     switch (format) {
       case "mcpJson":
-        return readOpenCodeMcpServers(parsed);
-      case "clineMcpJson":
-        return readClineMcpServers(parsed);
+        return { servers: readOpenCodeMcpServers(parsed), diagnostics: [] };
       default:
-        return readWrappedMcpServers(parsed);
+        return { servers: readWrappedMcpServers(parsed), diagnostics: [] };
     }
   } catch {
-    return {};
+    return { servers: {}, diagnostics: [] };
   }
 }
 
@@ -1820,15 +1880,20 @@ async function collectPluginImportCandidates(
   return candidates;
 }
 
-async function collectMcpImportCandidates(workspacePath?: string): Promise<McpImportCandidate[]> {
+async function scanMcpImportSources(workspacePath?: string): Promise<{
+  candidates: McpImportCandidate[];
+  diagnostics: SettingsSyncSourceDiagnostic[];
+}> {
   const candidates: McpImportCandidate[] = [];
+  const diagnostics: SettingsSyncSourceDiagnostic[] = [];
   const seenSourceNames = new Set<string>();
   for (const root of getExternalMcpRoots(workspacePath)) {
     if (!(await pathExists(root.rootPath))) {
       continue;
     }
-    const serverMap = await readMcpServersFromSourceFile(root.rootPath, root.format);
-    for (const [name, config] of Object.entries(serverMap)) {
+    const readResult = await readMcpServersFromSourceFile(root.rootPath, root.format);
+    diagnostics.push(...readResult.diagnostics);
+    for (const [name, config] of Object.entries(readResult.servers)) {
       const sourcePath = `${root.rootPath}#${name}`;
       const seenKey = `${root.agent}:${sourcePath}`;
       if (seenSourceNames.has(seenKey)) {
@@ -1846,7 +1911,11 @@ async function collectMcpImportCandidates(workspacePath?: string): Promise<McpIm
       });
     }
   }
-  return candidates;
+  return { candidates, diagnostics };
+}
+
+async function collectMcpImportCandidates(workspacePath?: string): Promise<McpImportCandidate[]> {
+  return (await scanMcpImportSources(workspacePath)).candidates;
 }
 
 async function buildSkillsDiscovery(workspacePath?: string): Promise<SettingsSyncDiscoveryResult> {
@@ -1972,13 +2041,25 @@ async function buildPluginsDiscovery(workspacePath?: string): Promise<SettingsSy
 }
 
 async function buildMcpDiscovery(workspacePath?: string): Promise<SettingsSyncDiscoveryResult> {
-  const candidates = await collectMcpImportCandidates(workspacePath);
+  const scan = await scanMcpImportSources(workspacePath);
+  const candidates = scan.candidates;
+  const sourceRootsByPath = new Map(
+    getExternalMcpRoots(workspacePath).map((root) => [root.rootPath, root]),
+  );
   const agents: SettingsSyncDiscoveryResult["agents"] = [];
   for (const { agent } of SUPPORTED_MCP_AGENT_SOURCES) {
     const agentCandidates = candidates.filter((candidate) => candidate.agent === agent);
     const discoveredCount = agentCandidates.length;
     const sourcePaths = [
-      ...new Set(agentCandidates.map((candidate) => candidate.sourceRootPath)),
+      ...new Set(
+        [
+          ...agentCandidates.map((candidate) => candidate.sourceRootPath),
+          ...scan.diagnostics.map((diagnostic) => diagnostic.path),
+        ].filter((path) => {
+          const source = sourceRootsByPath.get(path);
+          return source?.agent === agent;
+        }),
+      ),
     ].sort((left, right) => left.localeCompare(right));
     const sourceRoots = await buildMcpSourceRootSummaries(agentCandidates, workspacePath);
     let importableCount = 0;
@@ -1994,9 +2075,12 @@ async function buildMcpDiscovery(workspacePath?: string): Promise<SettingsSyncDi
         importableCount += 1;
       }
     }
+    const sourceDiagnostics = scan.diagnostics.filter(
+      (diagnostic) => sourceRootsByPath.get(diagnostic.path)?.agent === agent,
+    );
     agents.push({
       agent,
-      discovered: discoveredCount > 0,
+      discovered: discoveredCount > 0 || sourcePaths.length > 0,
       categories: [
         {
           category: "mcpServers",
@@ -2005,6 +2089,7 @@ async function buildMcpDiscovery(workspacePath?: string): Promise<SettingsSyncDi
           skippedCount: discoveredCount - importableCount,
           sourcePaths,
           sourceRoots,
+          ...(sourceDiagnostics.length > 0 ? { diagnostics: sourceDiagnostics } : {}),
           selectedByDefault: false,
         },
       ],

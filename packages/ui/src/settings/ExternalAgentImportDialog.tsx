@@ -1251,6 +1251,21 @@ function ImportSelectionList({
   });
   const hasClineMcpSource =
     category === "mcpServers" && discovery.agents.some((agent) => agent.agent === "cline");
+  const sourceDiagnostics =
+    category === "mcpServers"
+      ? discovery.agents.flatMap((agent) =>
+          agent.categories
+            .filter((summary) => summary.category === "mcpServers")
+            .flatMap((summary) =>
+              (summary.diagnostics ?? [])
+                .filter(
+                  (diagnostic) =>
+                    inferSourceRootScope(diagnostic.path, workspacePath) === activeScope,
+                )
+                .map((diagnostic) => ({ agent: agent.agent, ...diagnostic })),
+            ),
+        )
+      : [];
 
   return (
     <div className="flex w-full flex-col gap-1">
@@ -1264,6 +1279,22 @@ function ImportSelectionList({
           })}
         </div>
       ) : null}
+      {sourceDiagnostics.map((diagnostic) => (
+        <div
+          key={`${diagnostic.agent}:${diagnostic.path}:${diagnostic.code}`}
+          role="alert"
+          className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-ui-base text-foreground"
+        >
+          {intl.formatMessage(
+            { id: `settings.mcpServers.import.diagnostic.${diagnostic.code}` },
+            {
+              agent: formatAgentName(diagnostic.agent, intl),
+              path: diagnostic.path,
+              count: String(diagnostic.count ?? 0),
+            },
+          )}
+        </div>
+      ))}
       {activeImportableResourceKeys.length > 0 ? (
         <div className="mb-1 flex min-w-0 items-center justify-between gap-2 px-2">
           <button

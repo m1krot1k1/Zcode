@@ -793,6 +793,58 @@ describe("settingsSyncService MCP server import", () => {
     }
   });
 
+  it("reports malformed Cline MCP sources and counts invalid entries without exposing their values", async () => {
+    const home = makeTempHome();
+    const settingsPath = process.env.CLINE_MCP_SETTINGS_PATH;
+    if (!settingsPath) throw new Error("Cline MCP settings path is not configured");
+    process.env.HOME = home;
+    const secretMarker = "invalid-cline-entry-secret-marker";
+    writeJsonConfig(settingsPath, {
+      mcpServers: {
+        valid: { transport: { type: "stdio", command: "node", args: ["server.js"] } },
+        " ": { transport: { type: "stdio", command: "node", env: { TOKEN: secretMarker } } },
+        invalid: { transport: { type: "stdio", command: "" } },
+      },
+    });
+
+    const { createSettingsSyncService } =
+      await import("../src/settings-sync/settingsSyncService.js");
+    const service = createSettingsSyncService({ settingService: createSettingService() });
+    const partialDiscovery = await service.detect({
+      categories: ["mcpServers"],
+      intent: "manualImport",
+    });
+    const partialCline = partialDiscovery.agents.find((agent) => agent.agent === "cline");
+    expect(partialCline?.categories[0]?.diagnostics).toEqual([
+      { path: settingsPath, code: "invalidEntries", count: 2 },
+    ]);
+    expect(partialCline?.categories[0]?.discoveredCount).toBe(1);
+    expect(JSON.stringify(partialDiscovery)).not.toContain(secretMarker);
+
+    writeTextConfig(settingsPath, "{ not-json");
+    const malformedDiscovery = await service.detect({
+      categories: ["mcpServers"],
+      intent: "manualImport",
+    });
+    const malformedCline = malformedDiscovery.agents.find((agent) => agent.agent === "cline");
+    expect(malformedCline?.discovered).toBe(true);
+    expect(malformedCline?.categories[0]?.diagnostics).toEqual([
+      { path: settingsPath, code: "invalidConfig" },
+    ]);
+    expect(malformedCline?.categories[0]?.discoveredCount).toBe(0);
+
+    rmSync(settingsPath, { force: true });
+    mkdirSync(settingsPath);
+    const unreadableDiscovery = await service.detect({
+      categories: ["mcpServers"],
+      intent: "manualImport",
+    });
+    const unreadableCline = unreadableDiscovery.agents.find((agent) => agent.agent === "cline");
+    expect(unreadableCline?.categories[0]?.diagnostics).toEqual([
+      { path: settingsPath, code: "unreadable" },
+    ]);
+  });
+
   it("imports Cline stdio, SSE, and HTTP config without OAuth session or secret leakage", async () => {
     const home = makeTempHome();
     const workspacePath = join(home, "workspace");

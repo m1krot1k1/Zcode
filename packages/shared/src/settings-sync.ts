@@ -94,6 +94,14 @@ export interface SettingsSyncSourceRootSummary {
   mcpServers?: SettingsSyncSourceMcpServerSummary[];
 }
 
+export type SettingsSyncSourceDiagnosticCode = "invalidConfig" | "invalidEntries" | "unreadable";
+
+export interface SettingsSyncSourceDiagnostic {
+  path: string;
+  code: SettingsSyncSourceDiagnosticCode;
+  count?: number;
+}
+
 export interface SettingsSyncCategorySummary {
   category: SettingsSyncCategory;
   discoveredCount: number;
@@ -101,6 +109,7 @@ export interface SettingsSyncCategorySummary {
   skippedCount?: number;
   sourcePaths?: string[];
   sourceRoots?: SettingsSyncSourceRootSummary[];
+  diagnostics?: SettingsSyncSourceDiagnostic[];
   selectedByDefault: boolean;
 }
 

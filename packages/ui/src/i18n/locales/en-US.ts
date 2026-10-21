@@ -3717,6 +3717,12 @@ const enUS: Record<string, string> = {
   "settings.mcpServers.import.scope.global": "Global",
   "settings.mcpServers.import.scope.project": "Project",
   "settings.mcpServers.import.scopeEmpty": "No MCP servers found in this scope.",
+  "settings.mcpServers.import.diagnostic.invalidConfig":
+    "{agent} configuration at {path} is malformed or missing its MCP server map. No entries from this file were imported.",
+  "settings.mcpServers.import.diagnostic.invalidEntries":
+    "{agent} configuration at {path} has {count} invalid MCP entries. Valid entries remain available to import.",
+  "settings.mcpServers.import.diagnostic.unreadable":
+    "Could not read {agent} configuration at {path}. No entries from this file were imported.",
   "settings.mcpServers.import.selectAll": "Select all",
   "settings.mcpServers.import.clearAll": "Clear all",
   "settings.mcpServers.import.selectionCount": "{selected}/{total} selected",
