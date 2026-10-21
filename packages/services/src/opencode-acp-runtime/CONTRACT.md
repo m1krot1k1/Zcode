@@ -9,4 +9,5 @@ Host-local adapter for an explicitly delegated OpenCode ACP child. The settings 
 - ACP `configOptions` are passed through unchanged; they are not ZCode Provider Registry models.
 - OpenCode owns auth, model/provider selection, tool loop, workspace modifications, and session history.
 - The service owns only child-process lifecycle and ACP transport. Client permission requests are exposed to the session UI; only an option advertised by that ACP request can be selected, and cancellation replies with ACP `cancelled` before sending `session/cancel`.
+- ACP startup keeps only a bounded stderr tail in memory to classify allowlisted local-listener/spawn/early-exit failures. Raw stderr and ACP error text are never returned, logged, or persisted.
 - A local runtime never accepts a remote workspace path and is disposed with the owning Local Host.

@@ -1598,15 +1598,21 @@ nodes:
     kind: "capability"
     label: "Curated MCP server catalog with explicit provenance and auth metadata"
     aliases: ["MCP catalog", "MCP marketplace", "каталог MCP", "маркетплейс MCP"]
-    docs: ["docs/specs/prism10-runtime-integration.md"]
+    docs: ["docs/specs/prism10-runtime-integration.md", "docs/specs/mcp-marketplace-discovery.md"]
     codeSeeds:
       - symbol: "COMMUNITY_MCP_PRESETS"
         file: "packages/shared/src/mcp.ts"
       - symbol: "filterCommunityMcpPresets"
         file: "packages/shared/src/mcp.ts"
+      - symbol: "parseClineMcpMarketplaceCatalog"
+        file: "packages/shared/src/mcp.ts"
+      - symbol: "loadMarketplaceCatalog"
+        file: "packages/services/src/mcp-sync/mcpSyncService.ts"
       - symbol: "McpCommunityCatalog"
         file: "packages/ui/src/settings/McpSettingsSection.tsx"
       - symbol: "handleCreateFromPreset"
+        file: "packages/ui/src/settings/McpSettingsSection.tsx"
+      - symbol: "loadClineMcpCatalog"
         file: "packages/ui/src/settings/McpSettingsSection.tsx"
       - symbol: "handleSave"
         file: "packages/ui/src/settings/McpSettingsSection.tsx"
@@ -1614,6 +1620,7 @@ nodes:
       - "Catalog entries are immutable metadata; selecting a card creates an editable draft and only the existing Save action writes through the MCP settings owner."
       - "No API key, OAuth token or profile secret is embedded in a catalog entry. Account-backed Cline endpoints remain user imports until their ZCode auth flow is independently verified."
       - "The curated MCP catalog is separate from Plugin Marketplace listing and lifecycle."
+      - "The fixed Cline catalog feed is untrusted discovery metadata; its command, args, environment, headers, auth, version and source never become executable configuration. Unknown feed entries have no configure/install action; a matching ID can only open the local curated preset draft."
 
   - id: "capability.subagents"
     kind: "capability"

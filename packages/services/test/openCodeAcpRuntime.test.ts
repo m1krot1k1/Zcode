@@ -225,6 +225,183 @@ describe("POSIX OpenCode command resolution", () => {
 });
 
 describe("OpenCode ACP runtime", () => {
+  it("classifies bounded startup failures without exposing child stderr", async () => {
+    const directory = await makeTempDir();
+    const secretMarker = "test-only-opencode-stderr-secret";
+    const scenarios = [
+      {
+        stderr: `${secretMarker}${"x".repeat(5_000)}\nError: listen EADDRNOTAVAIL 127.0.0.1`,
+        diagnostic: "opencode.acp-local-server-unavailable",
+      },
+      {
+        stderr: `${secretMarker}failed before ACP initialize`,
+        diagnostic: "opencode.acp-process-exited",
+      },
+    ];
+
+    for (const [index, scenario] of scenarios.entries()) {
+      const fakeAgentPath = join(directory, `fake-acp-startup-failure-${index}.mjs`);
+      await writeFile(
+        fakeAgentPath,
+        `if (process.argv[2] === "--version") process.stdout.write("Fake OpenCode CLI\\n"); else { process.stderr.write(${JSON.stringify(scenario.stderr)}); process.exit(19); }\n`,
+        "utf8",
+      );
+      const runtime = createOpenCodeAcpRuntime({
+        resolveCli: () => ({
+          status: "resolved",
+          executablePath: process.execPath,
+          spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
+        }),
+        runVersion: async () => ({
+          status: "available",
+          version: "Fake OpenCode CLI",
+          executablePath: process.execPath,
+        }),
+        requestTimeoutMs: 2_000,
+      });
+
+      try {
+        const error = await runtime.startSession({ cwd: directory }).then(
+          () => new Error("Expected ACP startup to fail"),
+          (reason: unknown) => reason,
+        );
+        expect(error).toMatchObject({ message: scenario.diagnostic });
+        expect(String(error)).not.toContain(secretMarker);
+      } finally {
+        await runtime.disposeAllAndWait();
+      }
+    }
+  });
+
+  it.each(["opencode.injected-secret-value", "opencode.cli-missing"])(
+    "does not accept an ACP peer error (%s) as a local diagnostic code",
+    async (peerError) => {
+      const directory = await makeTempDir();
+      const fakeAgentPath = join(directory, "fake-acp-forged-diagnostic.mjs");
+      const sdkUrl = import.meta.resolve("@agentclientprotocol/sdk");
+      await writeFile(
+        fakeAgentPath,
+        fakeAcpAgentSource(sdkUrl, { initializeError: peerError }),
+        "utf8",
+      );
+      const runtime = createOpenCodeAcpRuntime({
+        resolveCli: () => ({
+          status: "resolved",
+          executablePath: process.execPath,
+          spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
+        }),
+        requestTimeoutMs: 2_000,
+      });
+
+      try {
+        const error = await runtime.startSession({ cwd: directory }).then(
+          () => new Error("Expected ACP initialize to fail"),
+          (reason: unknown) => reason,
+        );
+        expect(error).toMatchObject({ message: "opencode.acp-initialize-failed" });
+        expect(String(error)).not.toContain(peerError);
+      } finally {
+        await runtime.disposeAllAndWait();
+      }
+    },
+  );
+
+  it("preserves the local connection-closed diagnostic while a failed ACP process remains alive", async () => {
+    const directory = await makeTempDir();
+    const fakeAgentPath = join(directory, "fake-acp-closed-transport.mjs");
+    const pidCapturePath = join(directory, "acp-child-pid.txt");
+    const sdkUrl = import.meta.resolve("@agentclientprotocol/sdk");
+    await writeFile(
+      fakeAgentPath,
+      fakeAcpAgentSource(sdkUrl, { closeTransportDuringInitialize: true, pidCapturePath }),
+      "utf8",
+    );
+    const runtime = createOpenCodeAcpRuntime({
+      resolveCli: () => ({
+        status: "resolved",
+        executablePath: process.execPath,
+        spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
+      }),
+      requestTimeoutMs: 2_000,
+    });
+
+    try {
+      const error = await runtime.startSession({ cwd: directory }).then(
+        () => new Error("Expected ACP transport to close during initialize"),
+        (reason: unknown) => reason,
+      );
+      expect(error).toMatchObject({ message: "opencode.acp-connection-closed" });
+      expect(Number(await readFile(pidCapturePath, "utf8"))).toBeGreaterThan(0);
+    } finally {
+      await runtime.disposeAllAndWait();
+    }
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "starts bounded cleanup without waiting for a descendant-held stdio pipe",
+    async () => {
+      const directory = await makeTempDir();
+      const fakeAgentPath = join(directory, "fake-acp-descendant-held-stdio.mjs");
+      await writeFile(
+        fakeAgentPath,
+        `import { spawn } from "node:child_process";\nif (process.argv[2] === "--version") process.stdout.write("Fake OpenCode CLI\\n"); else { const descendant = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "inherit" }); descendant.unref(); process.stderr.write("fake startup failure\\n"); process.exit(19); }\n`,
+        "utf8",
+      );
+      let spawnedChild: import("node:child_process").ChildProcess | undefined;
+      let childClosed = false;
+      const terminateProcessTreeAndWait = vi.fn(
+        async (child: import("node:child_process").ChildProcess) => {
+          spawnedChild = child;
+          child.once("close", () => {
+            childClosed = true;
+          });
+          return { remainingPids: [] };
+        },
+      );
+      const runtime = createOpenCodeAcpRuntime({
+        resolveCli: () => ({
+          status: "resolved",
+          executablePath: process.execPath,
+          spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
+        }),
+        runVersion: async () => ({
+          status: "available",
+          version: "Fake OpenCode CLI",
+          executablePath: process.execPath,
+        }),
+        requestTimeoutMs: 2_000,
+        terminateProcessTreeAndWait,
+      });
+
+      try {
+        await expect(runtime.startSession({ cwd: directory })).rejects.toMatchObject({
+          message: "opencode.acp-process-exited",
+        });
+        expect(terminateProcessTreeAndWait).toHaveBeenCalledTimes(1);
+        expect(spawnedChild?.pid).toBeDefined();
+        expect(childClosed).toBe(false);
+      } finally {
+        if (spawnedChild?.pid) {
+          try {
+            process.kill(-spawnedChild.pid, "SIGKILL");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+          if (!childClosed) {
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, 2_000);
+              spawnedChild?.once("close", () => {
+                clearTimeout(timer);
+                resolve();
+              });
+            });
+          }
+        }
+        await runtime.disposeAllAndWait();
+      }
+    },
+  );
+
   it("uses live ACP selectors, streams updates, cancels prompts, and disposes its child", async () => {
     const directory = await makeTempDir();
     const fakeAgentPath = join(directory, "fake-acp-agent.mjs");
@@ -363,6 +540,11 @@ describe("OpenCode ACP runtime", () => {
       const resolveInstalledCli = vi
         .fn()
         .mockResolvedValueOnce(fakeResolution)
+        .mockResolvedValueOnce({
+          status: "missing",
+          diagnostic: "opencode.cli-missing",
+          installSupported: true,
+        })
         .mockResolvedValueOnce(fakeResolution);
       const runVersion = vi
         .fn()
@@ -590,12 +772,79 @@ describe("OpenCode ACP runtime", () => {
     await runtime.disposeAllAndWait();
   });
 
+  it("rechecks for a CLI that appears before the installer runs", async () => {
+    const executablePath = "/usr/local/bin/opencode";
+    const missing = {
+      status: "missing" as const,
+      diagnostic: "opencode.cli-missing",
+      installSupported: true,
+    };
+    const resolved = {
+      status: "resolved" as const,
+      executablePath,
+      spec: { command: executablePath, prefixArgs: [] },
+    };
+
+    for (const platform of ["darwin", "linux"] as const) {
+      const resolveCli = vi.fn().mockResolvedValueOnce(missing).mockResolvedValueOnce(resolved);
+      const installPackage = vi.fn(async () => true);
+      const runtime = createOpenCodeAcpRuntime({
+        platform,
+        resolveCli,
+        runVersion: async () => ({
+          status: "available",
+          version: "OpenCode 1.19.3",
+          executablePath,
+        }),
+        installPackage,
+      });
+
+      await expect(runtime.installCli()).resolves.toEqual({
+        status: "already-installed",
+        version: "OpenCode 1.19.3",
+        executablePath,
+      });
+      expect(resolveCli).toHaveBeenCalledTimes(2);
+      expect(installPackage).not.toHaveBeenCalled();
+      await runtime.disposeAllAndWait();
+    }
+
+    const resolveWindowsCli = vi
+      .fn()
+      .mockResolvedValueOnce(missing)
+      .mockResolvedValueOnce(resolved);
+    const installWingetPackage = vi.fn(async () => true);
+    const windowsRuntime = createOpenCodeAcpRuntime({
+      platform: "win32",
+      resolveCli: resolveWindowsCli,
+      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
+      runVersion: async () => ({
+        status: "available",
+        version: "OpenCode 1.19.3",
+        executablePath,
+      }),
+      installWingetPackage,
+    });
+    await expect(windowsRuntime.installCli()).resolves.toEqual({
+      status: "already-installed",
+      version: "OpenCode 1.19.3",
+      executablePath,
+    });
+    expect(installWingetPackage).not.toHaveBeenCalled();
+    await windowsRuntime.disposeAllAndWait();
+  });
+
   it("installs a missing POSIX CLI from the explicit Install action on macOS and Linux", async () => {
     for (const platform of ["darwin", "linux"] as const) {
       const executablePath =
         platform === "darwin" ? "/opt/homebrew/bin/opencode" : "/usr/bin/opencode";
       const resolveCli = vi
         .fn()
+        .mockResolvedValueOnce({
+          status: "missing",
+          diagnostic: "opencode.cli-missing",
+          installSupported: true,
+        })
         .mockResolvedValueOnce({
           status: "missing",
           diagnostic: "opencode.cli-missing",
@@ -625,7 +874,7 @@ describe("OpenCode ACP runtime", () => {
         executablePath,
       });
       expect(installPackage).toHaveBeenCalledOnce();
-      expect(resolveCli).toHaveBeenCalledTimes(2);
+      expect(resolveCli).toHaveBeenCalledTimes(3);
       expect(runVersion).toHaveBeenCalledOnce();
       await runtime.disposeAllAndWait();
     }
@@ -699,6 +948,11 @@ describe("OpenCode ACP runtime", () => {
         installSupported: true,
       })
       .mockResolvedValueOnce({
+        status: "missing",
+        diagnostic: "opencode.cli-missing",
+        installSupported: true,
+      })
+      .mockResolvedValueOnce({
         status: "resolved",
         executablePath,
         spec: { command: executablePath, prefixArgs: [] },
@@ -725,7 +979,7 @@ describe("OpenCode ACP runtime", () => {
       "C:\\WindowsApps\\winget.exe",
       expect.any(Number),
     );
-    expect(resolveCli).toHaveBeenCalledTimes(2);
+    expect(resolveCli).toHaveBeenCalledTimes(3);
 
     const existingCliInstall = createOpenCodeAcpRuntime({
       platform: "win32",
@@ -904,6 +1158,8 @@ interface FakeAcpAgentOptions {
   tracePath?: string;
   envCapturePath?: string;
   pidCapturePath?: string;
+  initializeError?: string;
+  closeTransportDuringInitialize?: boolean;
   failFirstInitialize?: boolean;
   hangCancel?: boolean;
   hangClose?: boolean;
@@ -921,6 +1177,8 @@ const initializeAttemptPath = ${JSON.stringify(options.initializeAttemptPath ?? 
 const tracePath = ${JSON.stringify(options.tracePath ?? null)};
 const envCapturePath = ${JSON.stringify(options.envCapturePath ?? null)};
 const pidCapturePath = ${JSON.stringify(options.pidCapturePath ?? null)};
+const initializeError = ${JSON.stringify(options.initializeError ?? null)};
+const closeTransportDuringInitialize = ${JSON.stringify(options.closeTransportDuringInitialize ?? false)};
 const failFirstInitialize = ${JSON.stringify(options.failFirstInitialize ?? false)};
 const hangCancel = ${JSON.stringify(options.hangCancel ?? false)};
 const hangClose = ${JSON.stringify(options.hangClose ?? false)};
@@ -955,6 +1213,10 @@ if (process.argv[2] === "--version") {
   new acp.AgentSideConnection((connection) => ({
     async initialize() {
       await log("initialize:start");
+      if (closeTransportDuringInitialize) {
+        process.stdout.end();
+        await new Promise((resolve) => setTimeout(resolve, 30000));
+      }
       let initializeAttempt = 1;
       if (initializeAttemptPath) {
         initializeAttempt = Number(await readFile(initializeAttemptPath, "utf8").catch(() => "0")) + 1;
@@ -973,6 +1235,10 @@ if (process.argv[2] === "--version") {
       if (failFirstInitialize && initializeAttempt === 1) {
         await log("initialize:failed");
         throw new Error("fake initialize failure");
+      }
+      if (initializeError && initializeAttempt === 1) {
+        await log("initialize:failed");
+        throw new Error(initializeError);
       }
       await log("initialize:end");
       return { protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { sessionCapabilities: { close: {} } } };

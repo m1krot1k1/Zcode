@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, win32 } from "node:path";
 import type {
+  ClineMcpMarketplaceCatalog,
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
   McpScope,
@@ -18,6 +19,7 @@ import type {
   SettingsDirectoryLocation,
   SettingsDirectorySource,
 } from "@zcode/shared";
+import { parseClineMcpMarketplaceCatalog } from "@zcode/shared";
 import type { IMcpSyncService } from "./mcpSync.js";
 import { checkRemoteSyncDirectoryWriteAccess } from "../remote-sync/remoteSyncWriteAccess.js";
 
@@ -64,6 +66,9 @@ const ENABLED_KEY = "enabled";
 // 现在读写逻辑一律只认 enabled，这里只保留一次性迁移；存量配置清空后整块删除。
 const LEGACY_ENABLE_KEY = "enable";
 const SECRET_CONFIG_FILE_MODE = 0o600;
+const CLINE_MCP_MARKETPLACE_URL = "https://cline.github.io/marketplace/catalog.json";
+const CLINE_MCP_MARKETPLACE_TIMEOUT_MS = 8_000;
+const CLINE_MCP_MARKETPLACE_MAX_BYTES = 1_000_000;
 const DIRECTORY_MCP_DESCRIPTORS: readonly DirectoryMcpDescriptor[] = [
   ZCODE_MCP_DESCRIPTOR,
   AGENTS_MCP_DESCRIPTOR,
@@ -76,12 +81,83 @@ export interface McpSyncServiceDependencies {
    * 构造（纯目录同步用途/单测）调用 listWorkspaceMcpServerStatuses 会显式抛错。
    */
   listMcpServerStatuses?: IMcpSyncService["listWorkspaceMcpServerStatuses"];
+  /** Test seam for the fixed external discovery feed; production always uses the fixed URL. */
+  fetchClineMcpMarketplace?: typeof fetch;
+}
+
+async function readBoundedMarketplaceBody(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (
+    Number.isFinite(declaredLength) &&
+    declaredLength > CLINE_MCP_MARKETPLACE_MAX_BYTES
+  ) {
+    throw new Error("Cline MCP marketplace catalog exceeds the response limit");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Cline MCP marketplace catalog response is empty");
+
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let bytesRead = 0;
+  let body = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > CLINE_MCP_MARKETPLACE_MAX_BYTES) {
+        await reader.cancel();
+        throw new Error("Cline MCP marketplace catalog exceeds the response limit");
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    return body + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function loadClineMcpMarketplaceCatalog(
+  fetcher: typeof fetch = fetch,
+): Promise<ClineMcpMarketplaceCatalog> {
+  let response: Response;
+  try {
+    response = await fetcher(CLINE_MCP_MARKETPLACE_URL, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(CLINE_MCP_MARKETPLACE_TIMEOUT_MS),
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("Cline MCP marketplace catalog is unavailable");
+  }
+  if (!response.ok) {
+    throw new Error("Cline MCP marketplace catalog is unavailable");
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!/^application\/json(?:\s*;|$)/iu.test(contentType)) {
+    throw new Error("Cline MCP marketplace catalog returned an unsupported content type");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readBoundedMarketplaceBody(response)) as unknown;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error("Cline MCP marketplace catalog is invalid JSON");
+    }
+    throw error;
+  }
+  return parseClineMcpMarketplaceCatalog(parsed);
 }
 
 export function createMcpSyncService(
   dependencies: McpSyncServiceDependencies = {},
 ): IMcpSyncService {
   return {
+    async loadMarketplaceCatalog() {
+      return loadClineMcpMarketplaceCatalog(dependencies.fetchClineMcpMarketplace);
+    },
     async loadMcpFromUserDirectory(request) {
       return loadMcpFromUserDirectory(request);
     },

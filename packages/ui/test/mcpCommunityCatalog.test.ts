@@ -17,7 +17,15 @@ describe("MCP curated catalog", () => {
       createElement(
         ZCodeIntlProvider,
         { initialLocale: "en-US" },
-        createElement(McpCommunityCatalog, { presets: [preset], onSelect, onOpenSource }),
+        createElement(McpCommunityCatalog, {
+          presets: [preset],
+          discoveredEntries: [],
+          discoveryState: "ready",
+          rejectedEntryCount: 0,
+          onRefreshDiscovery: vi.fn(),
+          onSelect,
+          onOpenSource,
+        }),
       ),
     );
 
@@ -30,6 +38,76 @@ describe("MCP curated catalog", () => {
 
     fireEvent.click(card.getByRole("button", { name: "Configure" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith(preset);
+  });
+
+  it("shows unknown Cline listings as unverified metadata without install or configure actions", () => {
+    const onSelect = vi.fn();
+    const onOpenSource = vi.fn();
+    const { container } = render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(McpCommunityCatalog, {
+          presets: [],
+          discoveredEntries: [
+            {
+              id: "remote-search",
+              name: "Remote Search",
+              description: "Search a remote source",
+              tags: ["search"],
+              author: "Community",
+              sourceUrl: "https://github.com/example/search-mcp",
+            },
+          ],
+          discoveryState: "ready",
+          rejectedEntryCount: 0,
+          onRefreshDiscovery: vi.fn(),
+          onSelect,
+          onOpenSource,
+        }),
+      ),
+    );
+
+    const entry = container.querySelector('[data-mcp-marketplace-entry="remote-search"]');
+    if (!(entry instanceof HTMLElement)) throw new Error("External listing is missing");
+    const card = within(entry);
+    expect(card.getByText("Cline listing · unverified")).toBeTruthy();
+    expect(card.queryByRole("button", { name: /install|configure/i })).toBeNull();
+    fireEvent.click(card.getByRole("button", { name: "Open source for Remote Search" }));
+    expect(onOpenSource).toHaveBeenCalledWith("https://github.com/example/search-mcp");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps local presets available when discovery fails and offers retry", () => {
+    const onRefreshDiscovery = vi.fn();
+    const onSelect = vi.fn();
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "playwright");
+    if (!preset) throw new Error("Playwright catalog entry is missing");
+
+    const { container } = render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(McpCommunityCatalog, {
+          presets: [preset],
+          discoveredEntries: [],
+          discoveryState: "error",
+          rejectedEntryCount: 0,
+          onRefreshDiscovery,
+          onSelect,
+          onOpenSource: vi.fn(),
+        }),
+      ),
+    );
+
+    const view = within(container);
+    expect(
+      view.getByText("The Cline catalog is unavailable. Built-in presets are still available."),
+    ).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Refresh Cline catalog" }));
+    expect(onRefreshDiscovery).toHaveBeenCalledTimes(1);
+    fireEvent.click(view.getByRole("button", { name: "Configure" }));
     expect(onSelect).toHaveBeenCalledWith(preset);
   });
 });

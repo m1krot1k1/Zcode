@@ -402,6 +402,169 @@ export interface CommunityMcpPreset {
   env?: Readonly<Record<string, string>>;
 }
 
+/** Metadata from the fixed Cline marketplace feed. It deliberately has no install config fields. */
+export interface ClineMcpMarketplaceEntry {
+  id: string;
+  name: string;
+  tagline?: string;
+  description?: string;
+  tags: string[];
+  author?: string;
+  sourceUrl?: string;
+  homepageUrl?: string;
+  /** Set only when the listing ID maps to a local preset; executable values still come from that preset. */
+  localPresetId?: string;
+}
+
+export interface ClineMcpMarketplaceCatalog {
+  entries: ClineMcpMarketplaceEntry[];
+  rejectedEntryCount: number;
+}
+
+const MCP_MARKETPLACE_MAX_ENTRIES = 500;
+const MCP_MARKETPLACE_MAX_TAGS = 20;
+const MCP_MARKETPLACE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,127}$/u;
+
+function hasMarketplaceControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x061c ||
+      code === 0x200e ||
+      code === 0x200f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function readMarketplaceText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > maxLength ||
+    hasMarketplaceControlCharacter(normalized)
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function readMarketplaceHttpsUrl(value: unknown): string | undefined {
+  const normalized = readMarketplaceText(value, 2_048);
+  if (!normalized) return undefined;
+  try {
+    const parsed = new URL(normalized);
+    if (
+      parsed.protocol !== "https:" ||
+      !parsed.hostname ||
+      parsed.username.length > 0 ||
+      parsed.password.length > 0
+    ) {
+      return undefined;
+    }
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function readMarketplaceAuthor(value: unknown): string | undefined {
+  if (typeof value === "string") return readMarketplaceText(value, 120);
+  if (!isRecord(value)) return undefined;
+  return readMarketplaceText(value.name, 120);
+}
+
+function parseClineMarketplaceEntry(value: unknown): ClineMcpMarketplaceEntry | undefined {
+  if (!isRecord(value) || value.type !== "mcp") return undefined;
+  const id = readMarketplaceText(value.id, 128);
+  const name = readMarketplaceText(value.name ?? value.id, 120);
+  if (!id || !name || !MCP_MARKETPLACE_ID_PATTERN.test(id)) return undefined;
+
+  const tags = Array.isArray(value.tags)
+    ? value.tags
+        .slice(0, MCP_MARKETPLACE_MAX_TAGS)
+        .map((tag) => readMarketplaceText(tag, 48))
+        .filter((tag): tag is string => tag !== undefined)
+    : [];
+  const sourceUrl = readMarketplaceHttpsUrl(value.sourceUrl ?? value.repo);
+  const homepageUrl = readMarketplaceHttpsUrl(value.homepageUrl ?? value.homepage);
+  const normalizedId = id.toLocaleLowerCase("en-US");
+  const localPreset = COMMUNITY_MCP_PRESETS.find(
+    (preset) => preset.id.toLocaleLowerCase("en-US") === normalizedId,
+  );
+
+  return {
+    id,
+    name,
+    ...(readMarketplaceText(value.tagline, 280)
+      ? { tagline: readMarketplaceText(value.tagline, 280) }
+      : {}),
+    ...(readMarketplaceText(value.description, 1_000)
+      ? { description: readMarketplaceText(value.description, 1_000) }
+      : {}),
+    tags,
+    ...(readMarketplaceAuthor(value.author) ? { author: readMarketplaceAuthor(value.author) } : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(homepageUrl ? { homepageUrl } : {}),
+    ...(localPreset ? { localPresetId: localPreset.id } : {}),
+  };
+}
+
+/**
+ * Parses Cline marketplace responses as untrusted discovery metadata. Install fields are
+ * intentionally discarded; a matching ID only points to an independently bundled preset.
+ */
+export function parseClineMcpMarketplaceCatalog(value: unknown): ClineMcpMarketplaceCatalog {
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    throw new Error("Invalid Cline MCP marketplace catalog");
+  }
+  if (value.entries.length > MCP_MARKETPLACE_MAX_ENTRIES) {
+    throw new Error("Cline MCP marketplace catalog exceeds the entry limit");
+  }
+
+  const parsed: ClineMcpMarketplaceEntry[] = [];
+  let rejectedEntryCount = 0;
+  for (const rawEntry of value.entries) {
+    if (!isRecord(rawEntry) || rawEntry.type !== "mcp") continue;
+    const entry = parseClineMarketplaceEntry(rawEntry);
+    if (entry) parsed.push(entry);
+    else rejectedEntryCount++;
+  }
+
+  const counts = new Map<string, number>();
+  for (const entry of parsed) {
+    const key = entry.id.toLocaleLowerCase("en-US");
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const entries = parsed.filter((entry) => {
+    const isUnique = counts.get(entry.id.toLocaleLowerCase("en-US")) === 1;
+    if (!isUnique) rejectedEntryCount++;
+    return isUnique;
+  });
+  return { entries, rejectedEntryCount };
+}
+
+export function filterClineMcpMarketplaceEntries(
+  entries: readonly ClineMcpMarketplaceEntry[],
+  query: string,
+): ClineMcpMarketplaceEntry[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const externalEntries = entries.filter((entry) => !entry.localPresetId);
+  if (!normalizedQuery) return [...externalEntries];
+  return externalEntries.filter((entry) =>
+    `${entry.id} ${entry.name} ${entry.tagline ?? ""} ${entry.description ?? ""} ${entry.author ?? ""} ${entry.tags.join(" ")}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery),
+  );
+}
+
 /** Immutable, provenance-labelled stdio catalog. Selection only creates an editable draft. */
 export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {

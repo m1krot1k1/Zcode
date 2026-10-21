@@ -3320,6 +3320,19 @@ const zhCN: Record<string, string> = {
   "settings.mcp.communityPresets.configure": "配置",
   "settings.mcp.communityPresets.source": "打开 {name} 软件包来源",
   "settings.mcp.communityPresets.sourceLabel": "软件包来源",
+  "settings.mcp.marketplace.discovery.title": "从 Cline 发现 MCP 服务器",
+  "settings.mcp.marketplace.discovery.unverified":
+    "目录项仅为未经 ZCode 验证的元数据；这里只能配置 ZCode 内置预设。",
+  "settings.mcp.marketplace.discovery.loadingAction": "正在加载…",
+  "settings.mcp.marketplace.discovery.refresh": "刷新 Cline 目录",
+  "settings.mcp.marketplace.discovery.loading": "正在加载外部目录项…",
+  "settings.mcp.marketplace.discovery.error": "Cline 目录暂时不可用。内置预设仍可使用。",
+  "settings.mcp.marketplace.discovery.filtered": "已跳过 {count} 个无效或重复的目录项。",
+  "settings.mcp.marketplace.discovery.empty": "没有可用的外部 MCP 目录项。",
+  "settings.mcp.marketplace.discovery.externalBadge": "Cline 目录 · 未验证",
+  "settings.mcp.marketplace.discovery.author": "作者：{author}",
+  "settings.mcp.marketplace.discovery.openSource": "打开 {name} 的来源",
+  "settings.mcp.marketplace.discovery.sourceLabel": "目录项来源",
   "settings.mcp.emptyTitle": "还没有 MCP 服务器",
   "settings.mcp.emptyDescription": "添加一个 MCP 服务器，让 Agent 获得额外能力。",
   "settings.mcp.searchPlaceholder": "搜索 MCP 服务器…",
@@ -3524,6 +3537,8 @@ const zhCN: Record<string, string> = {
   "settings.openCode.checking": "正在检查 OpenCode CLI…",
   "settings.openCode.available": "已检测到 OpenCode CLI（{version}）",
   "settings.openCode.missing": "未安装 OpenCode CLI",
+  "settings.openCode.cli-missing":
+    "OpenCode CLI 已不可用，无法启动。请安装它或重新选择可执行文件，然后重试。",
   "settings.openCode.unavailable": "无法检查 OpenCode CLI",
   "settings.openCode.windowsShimUnsupported":
     "检测到的是 Windows .cmd/.bat 启动脚本，ZCode 无法安全启动。请安装原生可执行文件，或从终端启动。",
@@ -3604,6 +3619,12 @@ const zhCN: Record<string, string> = {
   "settings.openCode.acp-connection-closed": "OpenCode 进程已关闭 ACP 连接。请启动新会话。",
   "settings.openCode.acp-timeout": "OpenCode 未及时响应。请检查 CLI 后重试。",
   "settings.openCode.acp-initialize-failed": "当前 OpenCode CLI 不支持预期的 ACP 握手。",
+  "settings.openCode.acp-local-server-unavailable":
+    "OpenCode 无法启动本地服务。请检查本机网络访问后重试。",
+  "settings.openCode.acp-process-exited":
+    "OpenCode CLI 在 ACP 连接完成前退出。请在终端运行 `opencode` 检查配置和登录状态后重试。",
+  "settings.openCode.acp-process-start-failed":
+    "ZCode 无法启动 OpenCode CLI。请检查所选程序路径和执行权限。",
   "settings.openCode.acp-stdio-unavailable": "OpenCode 没有提供 ACP stdio 连接。",
   "settings.modelProvider.add": "添加供应商",
   "settings.modelProvider.createCustomProvider": "创建自定义供应商",

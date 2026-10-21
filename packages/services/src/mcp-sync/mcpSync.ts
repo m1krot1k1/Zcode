@@ -1,6 +1,7 @@
 import type {
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
+  ClineMcpMarketplaceCatalog,
   McpSyncCandidateListResult,
   McpSyncExportResult,
   McpSyncExportedServer,
@@ -16,6 +17,8 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 export interface IMcpSyncService {
+  /** Load untrusted, read-only MCP discovery metadata from the fixed Cline catalog. */
+  loadMarketplaceCatalog(): Promise<ClineMcpMarketplaceCatalog>;
   loadMcpFromUserDirectory(
     request?: LoadCliMcpFromUserDirectoryRequest,
   ): Promise<LoadCliMcpFromUserDirectoryResult>;

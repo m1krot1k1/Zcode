@@ -9,29 +9,17 @@ function makeHome() {
   return mkdtempSync(join(tmpdir(), "zcode-mcp-sync-home-"));
 }
 
-async function writeZcodeUserMcp(
-  home: string,
-  servers: Record<string, Record<string, unknown>>,
-) {
+async function writeZcodeUserMcp(home: string, servers: Record<string, Record<string, unknown>>) {
   const configPath = join(home, ".zcode", "cli", "config.json");
   await mkdir(join(home, ".zcode", "cli"), { recursive: true });
-  await writeFile(
-    configPath,
-    `${JSON.stringify({ mcp: { servers } }, null, 2)}\n`,
-  );
+  await writeFile(configPath, `${JSON.stringify({ mcp: { servers } }, null, 2)}\n`);
   return configPath;
 }
 
-async function writeAgentsUserMcp(
-  home: string,
-  servers: Record<string, Record<string, unknown>>,
-) {
+async function writeAgentsUserMcp(home: string, servers: Record<string, Record<string, unknown>>) {
   const configPath = join(home, ".agents", "mcp.json");
   await mkdir(join(home, ".agents"), { recursive: true });
-  await writeFile(
-    configPath,
-    `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`,
-  );
+  await writeFile(configPath, `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`);
   return configPath;
 }
 
@@ -52,6 +40,97 @@ describe("mcp sync service", () => {
 
   afterEach(() => {
     process.env.HOME = originalHome;
+  });
+
+  it("loads bounded Cline catalog metadata through the fixed Host-side endpoint", async () => {
+    let requestedUrl = "";
+    let requestedInit: RequestInit | undefined;
+    const service = createMcpSyncService({
+      fetchClineMcpMarketplace: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: "firecrawl",
+                type: "mcp",
+                name: "Remote display value is ignored for setup",
+                install: { args: ["firecrawl", "sh", "-c", "echo unsafe"] },
+              },
+              {
+                id: "external-search",
+                type: "mcp",
+                name: "External Search",
+                description: "A metadata-only listing",
+              },
+              { id: "a-skill", type: "skill", name: "Not MCP" },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      },
+    });
+
+    const result = await service.loadMarketplaceCatalog();
+
+    expect(requestedUrl).toBe("https://cline.github.io/marketplace/catalog.json");
+    expect(requestedInit).toMatchObject({
+      method: "GET",
+      redirect: "error",
+      cache: "no-store",
+      headers: { accept: "application/json" },
+    });
+    expect(requestedInit?.signal).toBeInstanceOf(AbortSignal);
+    expect(result).toEqual({
+      entries: [
+        {
+          id: "firecrawl",
+          name: "Remote display value is ignored for setup",
+          tags: [],
+          localPresetId: "firecrawl",
+        },
+        {
+          id: "external-search",
+          name: "External Search",
+          description: "A metadata-only listing",
+          tags: [],
+        },
+      ],
+      rejectedEntryCount: 0,
+    });
+    expect(JSON.stringify(result)).not.toContain("echo unsafe");
+  });
+
+  it("fails closed for non-JSON and oversized marketplace responses", async () => {
+    const wrongContentType = createMcpSyncService({
+      fetchClineMcpMarketplace: async () =>
+        new Response("{}", { status: 200, headers: { "content-type": "text/html" } }),
+    });
+    await expect(wrongContentType.loadMarketplaceCatalog()).rejects.toThrow(
+      "unsupported content type",
+    );
+
+    const oversized = createMcpSyncService({
+      fetchClineMcpMarketplace: async () =>
+        new Response(" ".repeat(1_000_001), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    await expect(oversized.loadMarketplaceCatalog()).rejects.toThrow("exceeds the response limit");
+  });
+
+  it("does not expose transport failures or remote response bodies", async () => {
+    const service = createMcpSyncService({
+      fetchClineMcpMarketplace: async () => {
+        throw new Error("remote body contains secret-token-value");
+      },
+    });
+
+    await expect(service.loadMarketplaceCatalog()).rejects.toThrow(
+      "Cline MCP marketplace catalog is unavailable",
+    );
   });
 
   it("lists user zcode MCP servers as local candidates", async () => {
@@ -341,8 +420,7 @@ describe("mcp sync service", () => {
         overwrite: false,
       });
 
-      const configMode = (await stat(join(remoteHome, ".zcode", "cli", "config.json")))
-        .mode;
+      const configMode = (await stat(join(remoteHome, ".zcode", "cli", "config.json"))).mode;
       expect(configMode & 0o777).toBe(0o600);
     } finally {
       process.umask(previousUmask);
@@ -411,9 +489,7 @@ describe("mcp sync service", () => {
         },
       },
     ]);
-    expect(result.servers[0]?.file?.filePath).toBe(
-      join(home, ".zcode", "cli", "config.json"),
-    );
+    expect(result.servers[0]?.file?.filePath).toBe(join(home, ".zcode", "cli", "config.json"));
   });
 
   it("loads workspace MCP before user MCP using the same directory precedence", async () => {

@@ -43,6 +43,84 @@ afterEach(() => {
 });
 
 describe("OpenCode agent settings panel", () => {
+  it("shows a safe actionable diagnostic when the local ACP service cannot start", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "available" as const,
+        version: "OpenCode 1.19.3",
+        executablePath: "/usr/local/bin/opencode",
+      })),
+      startSession: vi.fn(async () => {
+        throw new Error("opencode.acp-local-server-unavailable");
+      }),
+      disposeAllAndWait: vi.fn(async () => undefined),
+    };
+    const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
+    const platform = {
+      selectDirectory: vi.fn(async () => "/workspace"),
+      openExternal: vi.fn(),
+    } as unknown as IPlatformService;
+    const view = render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <ServiceProvider services={services}>
+          <PlatformProvider platform={platform}>
+            <OpenCodeAgentSettingsPanel
+              initialWorkspacePath="/workspace"
+              remoteWorkspaceActive={false}
+            />
+          </PlatformProvider>
+        </ServiceProvider>
+      </ZCodeIntlProvider>,
+    );
+    testResources.push(view.unmount);
+
+    await screen.findByText("OpenCode CLI detected (OpenCode 1.19.3)");
+    fireEvent.click(await screen.findByTestId("opencode-start-session"));
+    await screen.findByText(
+      "OpenCode could not start its local service. Check that local network access is available, then retry.",
+    );
+    expect(runtime.startSession).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/test-only-opencode-stderr-secret/u)).toBeNull();
+  });
+
+  it("localizes a CLI that disappears after the availability check", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "available" as const,
+        version: "OpenCode 1.19.3",
+        executablePath: "/usr/local/bin/opencode",
+      })),
+      startSession: vi.fn(async () => {
+        throw new Error("opencode.cli-missing");
+      }),
+      disposeAllAndWait: vi.fn(async () => undefined),
+    };
+    const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
+    const platform = {
+      selectDirectory: vi.fn(async () => "/workspace"),
+      openExternal: vi.fn(),
+    } as unknown as IPlatformService;
+    const view = render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <ServiceProvider services={services}>
+          <PlatformProvider platform={platform}>
+            <OpenCodeAgentSettingsPanel
+              initialWorkspacePath="/workspace"
+              remoteWorkspaceActive={false}
+            />
+          </PlatformProvider>
+        </ServiceProvider>
+      </ZCodeIntlProvider>,
+    );
+    testResources.push(view.unmount);
+
+    await screen.findByText("OpenCode CLI detected (OpenCode 1.19.3)");
+    fireEvent.click(await screen.findByTestId("opencode-start-session"));
+    await screen.findByText(
+      "OpenCode CLI could not be started because it is no longer available. Install it or select its executable, then retry.",
+    );
+  });
+
   it("starts only on explicit action and requires applying the live model and mode before prompting", async () => {
     const sessionId = "session-1";
     let options = [modelOption(), modeOption()];

@@ -25,13 +25,19 @@ import {
   resolveWingetCommand,
   runVersion,
   spawnOptions,
-  withTimeout,
 } from "./childProcessSupport.js";
+import {
+  classifyAcpStartupFailure,
+  OpenCodeDiagnosticError,
+  readOpenCodeErrorDiagnostic,
+} from "./startupDiagnostics.js";
 import { terminateProcessTreeAndWait } from "#src/process/processTreeTerminator.js";
 
 const ACP_REQUEST_TIMEOUT_MS = 20_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
 const CLEANUP_REQUEST_TIMEOUT_MS = 1_500;
+const MAX_ACP_STDERR_CAPTURE_BYTES = 4_096;
+const ACP_EXIT_DIAGNOSTIC_WAIT_MS = 250;
 const MAX_PERMISSION_INPUT_CHARS = 2_000;
 const MAX_PERMISSION_TITLE_CHARS = 512;
 const MAX_PERMISSION_OPTION_NAME_CHARS = 256;
@@ -83,11 +89,6 @@ function stripControlCharacters(value: string): string {
     .join("");
 }
 
-function readErrorDiagnostic(error: unknown, fallback: string): string {
-  // ACP error messages can contain agent output or workspace data. Expose only a stable code.
-  return error instanceof Error && error.message.startsWith("opencode.") ? error.message : fallback;
-}
-
 export function createOpenCodeAcpRuntime(
   options: OpenCodeAcpRuntimeOptions = {},
 ): IOpenCodeAcpRuntime {
@@ -108,6 +109,22 @@ export function createOpenCodeAcpRuntime(
     options.installWingetPackage ??
     ((wingetPath: string, timeoutMs: number) =>
       installOpenCodeWingetPackage(wingetPath, timeoutMs, childEnvironment, platform));
+  const checkCliBeforeInstall = async (): Promise<OpenCodeInstallResult | undefined> => {
+    const current = await (options.resolveCli ?? resolveCliCommand)();
+    if (current.status === "missing") return undefined;
+    if (current.status !== "resolved") {
+      return { status: "failed", diagnostic: "opencode.install-requires-missing-cli" };
+    }
+    const version = await runVersionCommand(current.spec);
+    if (version.status === "available") {
+      return {
+        status: "already-installed",
+        version: version.version,
+        executablePath: version.executablePath,
+      };
+    }
+    return { status: "failed", diagnostic: "opencode.install-requires-missing-cli" };
+  };
   const emitters = new Map<string, Emitter<OpenCodeAcpSessionUpdate>>();
   const permissionEmitters = new Map<string, Emitter<OpenCodeAcpPermissionEvent>>();
 
@@ -166,14 +183,38 @@ export function createOpenCodeAcpRuntime(
     fallback: string,
     timeoutMs = options.requestTimeoutMs ?? ACP_REQUEST_TIMEOUT_MS,
   ): Promise<T> => {
-    if (connection.connection.signal.aborted) throw new Error("opencode.acp-connection-closed");
-    const closed = connection.connection.closed.then(() => {
-      throw new Error("opencode.acp-connection-closed");
+    if (connection.connection.signal.aborted) {
+      throw new OpenCodeDiagnosticError("opencode.acp-connection-closed");
+    }
+    const closed = connection.connection.closed.then(
+      () => {
+        throw new OpenCodeDiagnosticError("opencode.acp-connection-closed");
+      },
+      () => {
+        throw new OpenCodeDiagnosticError("opencode.acp-connection-closed");
+      },
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new OpenCodeDiagnosticError("opencode.acp-timeout")),
+        timeoutMs,
+      );
+      timer.unref?.();
     });
     try {
-      return await withTimeout(Promise.race([promise, closed]), timeoutMs, "opencode.acp-timeout");
+      return await Promise.race([promise, closed, timeout]);
     } catch (error) {
-      throw new Error(readErrorDiagnostic(error, fallback));
+      if (error instanceof acp.RequestError) {
+        // JSON-RPC peer errors stay on the fixed operation fallback, even if the stream closes concurrently.
+        throw new OpenCodeDiagnosticError(fallback);
+      }
+      if (connection.connection.signal.aborted) {
+        throw new OpenCodeDiagnosticError("opencode.acp-connection-closed");
+      }
+      throw new OpenCodeDiagnosticError(readOpenCodeErrorDiagnostic(error, fallback));
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   };
 
@@ -201,12 +242,30 @@ export function createOpenCodeAcpRuntime(
       const child = spawn(
         spec.command,
         [...spec.prefixArgs, "acp"],
-        spawnOptions(cwd, ["pipe", "pipe", "ignore"], childEnvironment, platform),
+        spawnOptions(cwd, ["pipe", "pipe", "pipe"], childEnvironment, platform),
       );
       if (!child.stdin || !child.stdout) {
         child.kill();
         throw new Error("opencode.acp-stdio-unavailable");
       }
+      let stderrCapture = Buffer.alloc(0);
+      let spawnErrorCode: string | undefined;
+      let resolveChildExit: () => void = () => undefined;
+      const childExitObserved = new Promise<void>((resolve) => {
+        resolveChildExit = resolve;
+      });
+      child.stderr?.on("data", (chunk: Buffer | string) => {
+        const bytes = Buffer.from(chunk);
+        const tail = bytes.subarray(-MAX_ACP_STDERR_CAPTURE_BYTES);
+        stderrCapture = Buffer.from(
+          Buffer.concat([stderrCapture, tail]).subarray(-MAX_ACP_STDERR_CAPTURE_BYTES),
+        );
+      });
+      child.once("error", (error: NodeJS.ErrnoException) => {
+        spawnErrorCode = error.code;
+        resolveChildExit();
+      });
+      child.once("exit", resolveChildExit);
 
       const permissionRequests = new Map<string, PendingPermissionRequest>();
       const sessions = new Map<string, SessionState>();
@@ -281,22 +340,82 @@ export function createOpenCodeAcpRuntime(
         prompts,
         permissionRequests,
       };
-      child.once("error", () => undefined);
-      void connection.closed.then(() => {
+      let connectionClosed = false;
+      const onConnectionClosed = () => {
+        connectionClosed = true;
         cancelAllPermissions(created);
         if (runtime === created && !created.disposePromise) runtime = undefined;
-      });
+      };
+      void connection.closed.then(onConnectionClosed, onConnectionClosed);
 
       try {
-        const initialized = await request(
-          created,
-          connection.initialize({
-            protocolVersion: acp.PROTOCOL_VERSION,
-            clientInfo: { name: "ZCode", version: "1" },
-            clientCapabilities: {},
-          }),
-          "opencode.acp-initialize-failed",
-        );
+        const initializedPromise = connection.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientInfo: { name: "ZCode", version: "1" },
+          clientCapabilities: {},
+        });
+        let initialized: Awaited<typeof initializedPromise>;
+        try {
+          initialized = await request(
+            created,
+            initializedPromise,
+            "opencode.acp-initialize-failed",
+          );
+        } catch (error) {
+          const diagnostic = readOpenCodeErrorDiagnostic(error, "opencode.acp-initialize-failed");
+          const transportClosed = connectionClosed || created.connection.signal.aborted;
+          if (
+            transportClosed ||
+            spawnErrorCode ||
+            child.exitCode !== null ||
+            child.signalCode !== null
+          ) {
+            if (
+              transportClosed &&
+              !spawnErrorCode &&
+              child.exitCode === null &&
+              child.signalCode === null
+            ) {
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              await Promise.race([
+                childExitObserved,
+                new Promise<void>((resolve) => {
+                  timer = setTimeout(resolve, ACP_EXIT_DIAGNOSTIC_WAIT_MS);
+                }),
+              ]).finally(() => {
+                if (timer) clearTimeout(timer);
+              });
+            }
+            if (!spawnErrorCode && child.exitCode === null && child.signalCode === null) {
+              // 根因：进程存活时直接按 transport 状态覆盖请求结果，会抹掉先到的 ACP peer fallback。
+              // 修复：closed resolve/reject 在 request 内都变成 typed local error，保留 request 决定的来源诊断。
+              throw new OpenCodeDiagnosticError(diagnostic);
+            }
+            // 根因：子进程后代可能继承 stdio，导致 close 等到后代退出才触发；在这里等待会绕过有界进程树清理。
+            // 修复：只短暂观察 exit 事件收集退出码，然后立即进入 stopRuntime 的有界清理。
+            throw new OpenCodeDiagnosticError(
+              classifyAcpStartupFailure({
+                stderr: stderrCapture.toString("utf8"),
+                spawnErrorCode,
+                exitCode: child.exitCode,
+                signal: child.signalCode,
+              }),
+            );
+          }
+          // Обычная версия CLI не доказывает готовность ACP. До этой диагностики stderr дочернего процесса игнорировался, поэтому ранний exit и отказ loopback выглядели одинаково.
+          if (diagnostic === "opencode.acp-timeout") {
+            const classified = classifyAcpStartupFailure({
+              stderr: stderrCapture.toString("utf8"),
+              spawnErrorCode,
+              exitCode: child.exitCode,
+              signal: child.signalCode,
+            });
+            if (classified === "opencode.acp-local-server-unavailable") {
+              throw new OpenCodeDiagnosticError(classified);
+            }
+          }
+          throw new OpenCodeDiagnosticError(diagnostic);
+        }
         if (terminallyDisposed) throw new Error("opencode.runtime-disposed");
         created.canCloseSessions = Boolean(
           initialized.agentCapabilities?.sessionCapabilities?.close,
@@ -423,6 +542,8 @@ export function createOpenCodeAcpRuntime(
             status: "failed",
             diagnostic: "opencode.install-platform-unsupported",
           };
+        const cliBeforeInstall = await checkCliBeforeInstall();
+        if (cliBeforeInstall) return cliBeforeInstall;
         const installed = await installWingetPackage(
           wingetPath,
           options.installTimeoutMs ?? INSTALL_TIMEOUT_MS,
@@ -469,6 +590,8 @@ export function createOpenCodeAcpRuntime(
           diagnostic: "opencode.install-requires-missing-cli",
         };
       }
+      const cliBeforeInstall = await checkCliBeforeInstall();
+      if (cliBeforeInstall) return cliBeforeInstall;
       const installed = await installPackage(options.installTimeoutMs ?? INSTALL_TIMEOUT_MS);
       if (!installed) return { status: "failed", diagnostic: "opencode.install-failed" };
       const afterResolution = await (options.resolveCli ?? resolveCliCommand)();

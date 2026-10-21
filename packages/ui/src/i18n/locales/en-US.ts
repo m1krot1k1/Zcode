@@ -3544,6 +3544,20 @@ const enUS: Record<string, string> = {
   "settings.mcp.communityPresets.configure": "Configure",
   "settings.mcp.communityPresets.source": "Open {name} package source",
   "settings.mcp.communityPresets.sourceLabel": "Package source",
+  "settings.mcp.marketplace.discovery.title": "Discover MCP servers from Cline",
+  "settings.mcp.marketplace.discovery.unverified":
+    "Listings are unverified metadata. Only ZCode's built-in presets can be configured here.",
+  "settings.mcp.marketplace.discovery.loadingAction": "Loading…",
+  "settings.mcp.marketplace.discovery.refresh": "Refresh Cline catalog",
+  "settings.mcp.marketplace.discovery.loading": "Loading external listings…",
+  "settings.mcp.marketplace.discovery.error":
+    "The Cline catalog is unavailable. Built-in presets are still available.",
+  "settings.mcp.marketplace.discovery.filtered": "Skipped {count} invalid or duplicate listings.",
+  "settings.mcp.marketplace.discovery.empty": "No external MCP listings are available.",
+  "settings.mcp.marketplace.discovery.externalBadge": "Cline listing · unverified",
+  "settings.mcp.marketplace.discovery.author": "By {author}",
+  "settings.mcp.marketplace.discovery.openSource": "Open source for {name}",
+  "settings.mcp.marketplace.discovery.sourceLabel": "Listing source",
   "settings.mcp.emptyTitle": "No MCP servers yet",
   "settings.mcp.emptyDescription": "Add an MCP server to give the agent extra capabilities.",
   "settings.mcp.searchPlaceholder": "Search MCP servers…",
@@ -3772,6 +3786,8 @@ const enUS: Record<string, string> = {
   "settings.openCode.checking": "Checking the OpenCode CLI…",
   "settings.openCode.available": "OpenCode CLI detected ({version})",
   "settings.openCode.missing": "OpenCode CLI is not installed",
+  "settings.openCode.cli-missing":
+    "OpenCode CLI could not be started because it is no longer available. Install it or select its executable, then retry.",
   "settings.openCode.unavailable": "OpenCode CLI could not be checked",
   "settings.openCode.windowsShimUnsupported":
     "The detected Windows CLI is a .cmd/.bat shim and cannot be launched safely by ZCode. Install a native executable or launch it from a terminal.",
@@ -3864,6 +3880,12 @@ const enUS: Record<string, string> = {
   "settings.openCode.acp-timeout": "OpenCode did not respond in time. Check its CLI and try again.",
   "settings.openCode.acp-initialize-failed":
     "The installed OpenCode CLI does not support the expected ACP handshake.",
+  "settings.openCode.acp-local-server-unavailable":
+    "OpenCode could not start its local service. Check that local network access is available, then retry.",
+  "settings.openCode.acp-process-exited":
+    "OpenCode CLI exited before ACP connected. Run `opencode` in Terminal to check its setup and sign-in, then retry.",
+  "settings.openCode.acp-process-start-failed":
+    "ZCode could not start the OpenCode CLI. Check the selected executable and its permissions.",
   "settings.openCode.acp-stdio-unavailable": "OpenCode did not expose an ACP stdio connection.",
   "settings.modelProvider.add": "Add provider",
   "settings.modelProvider.createCustomProvider": "Create custom provider",
