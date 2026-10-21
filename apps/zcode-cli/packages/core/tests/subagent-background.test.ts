@@ -146,16 +146,18 @@ describe("subagent background notifications", () => {
       expect(payload).toMatchObject({
         acceptanceStatus: "unknown",
         branchGeneration: 7,
+        childStarted: true,
         childSessionId: task.childSessionId,
         parentTaskId,
         provenance: "runtime_lifecycle",
         rootRunId,
-        schema: "zcode.prism.subagent-terminal.v1",
+        schema: "zcode.prism.subagent-terminal.v3",
+        attemptId: task.attemptId,
         taskId,
         terminalStatus,
       });
       expect(payload.terminalId).toBe(
-        `${rootRunId}/${taskId}/7/${task.startedAt.getTime()}`,
+        `${rootRunId}/${taskId}/7/${task.attemptId}`,
       );
       expect(payload.observedAt).toEqual(task.completedAt);
       expect(payload).not.toHaveProperty("verified");
@@ -219,6 +221,7 @@ describe("subagent background notifications", () => {
       expect(payload).toMatchObject({
         acceptanceStatus: "unknown",
         branchGeneration: 7,
+        childStarted: true,
         parentTaskId,
         provenance: "runtime_lifecycle",
         rootRunId,
@@ -685,6 +688,7 @@ describe("subagent background notifications", () => {
         terminalEvents[0]!.payload as SubagentExecutionTerminalPayload,
       ).toMatchObject({
         acceptanceStatus: "unknown",
+        childStarted: true,
         taskId,
         terminalStatus: "killed",
       });
@@ -888,6 +892,7 @@ describe("subagent background notifications", () => {
 
     const completed = formatLocalAgentTaskNotification({
       ...base,
+      acceptanceStatus: "verified",
       result: "looks good",
       status: "completed",
       totalTokens: 7,
@@ -906,7 +911,7 @@ describe("subagent background notifications", () => {
     expect(completed).toContain("<status>completed</status>");
     expect(completed).toContain("<result>looks good</result>");
     expect(completed).toContain(
-      "<summary>Agent custom-reviewer task &quot;Review changes&quot; completed.</summary>",
+      "<summary>Agent custom-reviewer task &quot;Review changes&quot; completed. Host acceptance: verified.</summary>",
     );
     expect(completed).not.toContain("<error>");
     expect(completed).toContain("<subagent_tokens>7</subagent_tokens>");

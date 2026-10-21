@@ -6,6 +6,7 @@
 import { z } from "zod";
 import type { ToolCallId, TraceId } from "../interfaces/shared.js";
 import type { ModelUsage } from "../model/index.js";
+import type { PrismTaskAcceptanceDecision } from "../interfaces/subagent.port.js";
 import { toToolJsonSchema } from "./json-schema.js";
 
 export const AgentType = {
@@ -18,6 +19,27 @@ export type AgentType = string;
 export const AgentInputSchema = z.object({
   description: z.string().describe("A short (3-5 word) description of the task"),
   prompt: z.string().describe("The task for the agent to perform"),
+  acceptance_criteria: z
+    .array(
+      z
+        .object({
+          id: z.string().min(1).max(128),
+          description: z.string().min(1).max(500),
+          check: z
+            .object({
+              kind: z.literal("bash_exit_code"),
+              command: z.string().min(1).max(2000),
+              expectedExitCode: z.literal(0),
+            })
+            .strict(),
+        })
+        .strict(),
+    )
+    .max(16)
+    .optional()
+    .describe(
+      "Optional Host-verifiable acceptance checks. Currently supports only an exact Bash command that must complete with exit code 0; omitted or unsupported evidence remains unknown.",
+    ),
   subagent_type: z
     .string()
     .optional()
@@ -52,6 +74,8 @@ export interface AgentCompletedOutput {
   totalDurationMs: number;
   totalTokens?: number;
   usage?: ModelUsage;
+  /** Host-derived decision. A verified command criterion does not prove semantic task quality. */
+  acceptance?: PrismTaskAcceptanceDecision;
 }
 
 export interface AgentBackgroundedOutput {
@@ -88,6 +112,15 @@ export const AgentCompletedOutputSchema = z
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
     usage: z.record(z.unknown()).optional(),
+    acceptance: z
+      .object({
+        status: z.enum(["unknown", "verified", "rejected"]),
+        passedCriterionIds: z.array(z.string()),
+        failedCriterionIds: z.array(z.string()),
+        missingCriterionIds: z.array(z.string()),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

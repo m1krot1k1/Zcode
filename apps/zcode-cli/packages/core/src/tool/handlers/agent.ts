@@ -45,6 +45,17 @@ const AGENT_TOOL_OUTPUT_SCHEMA = {
         totalDurationMs: { type: "integer", minimum: 0 },
         totalTokens: { type: "integer", minimum: 0 },
         usage: { type: "object", additionalProperties: true },
+        acceptance: {
+          type: "object",
+          properties: {
+            status: { enum: ["unknown", "verified", "rejected"], type: "string" },
+            passedCriterionIds: { type: "array", items: { type: "string" } },
+            failedCriterionIds: { type: "array", items: { type: "string" } },
+            missingCriterionIds: { type: "array", items: { type: "string" } },
+          },
+          required: ["status", "passedCriterionIds", "failedCriterionIds", "missingCriterionIds"],
+          additionalProperties: false,
+        },
       },
       required: ["status", "agentId", "prompt", "content", "totalToolUseCount", "totalDurationMs"],
       additionalProperties: false,
@@ -135,6 +146,15 @@ function formatAgentOutputForModel(output: unknown): string {
       ...(data.totalTokens === undefined ? [] : [`subagent_tokens: ${data.totalTokens}`]),
       `tool_uses: ${data.totalToolUseCount}`,
       `duration_ms: ${data.totalDurationMs}`,
+      ...(data.acceptance === undefined
+        ? []
+        : [
+            `host_acceptance: ${data.acceptance.status}`,
+            `host_acceptance_passed: ${data.acceptance.passedCriterionIds.join(",") || "none"}`,
+            `host_acceptance_failed: ${data.acceptance.failedCriterionIds.join(",") || "none"}`,
+            `host_acceptance_missing: ${data.acceptance.missingCriterionIds.join(",") || "none"}`,
+            "host_acceptance_scope: exact declared checks only; does not prove semantic task quality",
+          ]),
     ];
     return [
       ...childContent,
@@ -190,6 +210,9 @@ const agentHandler: ToolHandler = async (input, context) => {
     agentType,
     description: parsed.description,
     prompt: parsed.prompt,
+    ...(parsed.acceptance_criteria === undefined
+      ? {}
+      : { acceptanceCriteria: parsed.acceptance_criteria }),
     callerCanReadOutputFile: canReadBackgroundOutputFile(context.providerVisibleToolNames),
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,

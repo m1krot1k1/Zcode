@@ -1165,6 +1165,39 @@ describe("tool contract declarations", () => {
     });
   });
 
+  it("accepts only the bounded PRISM Bash exit-code criterion contract", () => {
+    const parsed = AgentInputSchema.parse({
+      description: "Run typecheck",
+      prompt: "Run the typecheck and report failures.",
+      acceptance_criteria: [
+        {
+          id: "typecheck",
+          description: "The required typecheck exits with code zero",
+          check: {
+            kind: "bash_exit_code",
+            command: "pnpm typecheck",
+            expectedExitCode: 0,
+          },
+        },
+      ],
+    });
+
+    expect(parsed.acceptance_criteria).toHaveLength(1);
+    expect(() =>
+      AgentInputSchema.parse({
+        description: "Run arbitrary evaluator",
+        prompt: "Run check.",
+        acceptance_criteria: [
+          {
+            id: "untrusted",
+            description: "Untrusted evaluator",
+            check: { kind: "arbitrary_shell", command: "true", expectedExitCode: 0 },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("aligns provider-visible hard schema diffs for P-12", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {

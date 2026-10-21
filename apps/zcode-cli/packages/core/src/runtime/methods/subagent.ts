@@ -85,6 +85,8 @@ export function createDefaultSubagentPort(
     builtInModelSelectionOverrides:
       this.config.subagents?.builtInModelSelectionOverrides,
     runtimeTaskRegistry: this.runtimeTaskRegistry,
+    getChildEventCursor: (sessionId) => this.eventStore.getLatestSequenceNumber(sessionId),
+    getChildEventsAfter: (sessionId, cursor) => this.eventStore.getEventsAfter(sessionId, cursor),
     emitParentEvent: async (event, traceContext) => {
       if (isStaleBranchRuntimeTaskEvent(this, event)) return;
       await this.appendEvent(event, traceContext);

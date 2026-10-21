@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import {
+  PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA,
   createSessionId,
   createTurnId,
   type SessionId,
@@ -61,12 +63,22 @@ describe("subagent root admission and ownership", () => {
           description: "The focused tests pass",
           evaluatorId: "vitest",
           evaluatorVersion: "4.1.5",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("pnpm test"),
+            expectedExitCode: 0,
+          },
         },
         {
           id: "patch-review",
           description: "The patch has no rejected hunks",
           evaluatorId: "git-diff-check",
           evaluatorVersion: "1",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("git diff --check"),
+            expectedExitCode: 0,
+          },
         },
       ],
     });
@@ -86,8 +98,7 @@ describe("subagent root admission and ownership", () => {
       result: "pass",
       artifact: {
         uri: "zcode-artifact://tests/prism",
-        sha256: "a".repeat(64),
-        bytes: 123,
+        ...createTestArtifact(hashCommand("pnpm test")),
       },
       observedAt: 100,
     });
@@ -101,8 +112,7 @@ describe("subagent root admission and ownership", () => {
       result: "pass",
       artifact: {
         uri: "zcode-artifact://patches/prism",
-        sha256: "b".repeat(64),
-        bytes: 44,
+        ...createTestArtifact(hashCommand("git diff --check")),
       },
       observedAt: 101,
     });
@@ -157,8 +167,7 @@ describe("subagent root admission and ownership", () => {
             result: "fail",
             artifact: {
               uri: "zcode-artifact://tests/prism",
-              sha256: "c".repeat(64),
-              bytes: 123,
+              ...createTestArtifact(hashCommand("pnpm test"), 2),
             },
             observedAt: 102,
           }),
@@ -181,11 +190,17 @@ describe("subagent root admission and ownership", () => {
           description: "Valid criterion",
           evaluatorId: "host-check",
           evaluatorVersion: "1",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("pnpm typecheck"),
+            expectedExitCode: 0,
+          },
         },
       ],
     };
     const contract = createPrismTaskContract(input);
     expect(contract.contractSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(JSON.stringify(contract)).not.toContain("pnpm typecheck");
     expect(() =>
       createPrismTaskContract({
         ...input,
@@ -639,6 +654,44 @@ describe("subagent root admission and ownership", () => {
     ).toEqual({ accepted: false, reason: "owner_closed" });
   });
 });
+
+function hashCommand(command: string): string {
+  return createHash("sha256").update(command, "utf8").digest("hex");
+}
+
+function createTestArtifact(commandSha256: string, exitCode = 0) {
+  const evidence = {
+    schema: PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA,
+    childSessionId: createSessionId("prism-test-child"),
+    commandSha256,
+    scheduledEventId: "prism-schedule-event",
+    scheduledSequence: 1,
+    resultEventId: "prism-result-event",
+    resultSequence: 2,
+    toolCallId: "prism-tool-call",
+    turnId: createTurnId("prism-turn"),
+    status: "completed" as const,
+    exitCode,
+  };
+  const canonical = JSON.stringify([
+    evidence.schema,
+    evidence.childSessionId,
+    evidence.commandSha256,
+    evidence.scheduledEventId,
+    evidence.scheduledSequence,
+    evidence.resultEventId,
+    evidence.resultSequence,
+    evidence.toolCallId,
+    evidence.turnId,
+    evidence.status,
+    evidence.exitCode,
+  ]);
+  return {
+    sha256: createHash("sha256").update(canonical, "utf8").digest("hex"),
+    bytes: Buffer.byteLength(canonical, "utf8"),
+    evidence,
+  };
+}
 
 function createTask(
   taskId: string,

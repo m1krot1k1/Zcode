@@ -653,6 +653,8 @@ async function executeToolCallImpl(
         perf,
         skillTelemetryMetadata,
         pluginId,
+        executionInput,
+        output,
       );
 
       await backgroundTasks.trackBackgroundTask(canonicalToolCall, output, traceContext, turnId);

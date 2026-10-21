@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { createTestModelSelection } from "./test-model-selection.js";
 import { createTestModelFormatProperties } from "./test-runtime-model.js";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -6,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   CoreErrorType,
+  PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA,
   READ_IMAGE_MAX_BASE64_BYTES,
   READ_IMAGE_TARGET_BYTES,
   READ_MAX_FILE_SIZE_BYTES,
@@ -13,6 +15,7 @@ import {
   SESSION_ENTRY_MODEL_SELECTION,
   SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
   SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SESSION_ENTRY_USER_INPUT_AUTO_RESOLUTION,
   SESSION_ENTRY_WORKSPACE_CHECKPOINT,
   RewindScope,
@@ -167,6 +170,7 @@ describe("AgentRuntime session persistence", () => {
     const rootSessionId = createSessionId("prism-session-entry-root");
     const childSessionId = createSessionId("prism-session-entry-child");
     const turnId = createTurnId("prism-session-entry-turn");
+    const startedAt = new Date(100);
     const workingDirectory = "/tmp/zcode-prism-session-entry";
     const store = createRecordingSessionStore();
     await store.createSession({
@@ -198,7 +202,7 @@ describe("AgentRuntime session persistence", () => {
         agentType: "Explore",
         description: "Проверить путь durable evidence",
         status: "running",
-        startedAt: new Date(),
+        startedAt,
         childSessionId,
         parentSessionId: rootSessionId,
         turnId,
@@ -223,21 +227,61 @@ describe("AgentRuntime session persistence", () => {
           description: "Host verifier сохранил результат проверки",
           evaluatorId: "test-host-verifier",
           evaluatorVersion: "1",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("pnpm typecheck"),
+            expectedExitCode: 0,
+          },
         },
       ],
     });
     const traceContext = createRootTraceContext({ sessionId: rootSessionId, turnId });
-    await runtime.appendEvent(
+    const appendWithProjectionFailure = async (
+      event: Parameters<typeof runtime.appendEvent>[0],
+    ) => {
+      const appendToEventStore = eventStore.append.bind(eventStore);
+      eventStore.append = async (candidate) => {
+        if (candidate.id === event.id) {
+          throw new Error("fixture event projection failure");
+        }
+        return appendToEventStore(candidate);
+      };
+      try {
+        await expect(runtime.appendEvent(event, traceContext)).resolves.toBeUndefined();
+      } finally {
+        eventStore.append = appendToEventStore;
+      }
+      const sessionEntryType =
+        event.type === SessionEventType.PrismTaskContractDeclared
+          ? SESSION_ENTRY_PRISM_TASK_CONTRACT
+          : event.type === SessionEventType.PrismEvidenceReceiptObserved
+            ? SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT
+            : SESSION_ENTRY_PRISM_TASK_TERMINAL;
+      const durableEntries = await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: sessionEntryType,
+      });
+      const expectedData =
+        event.type === SessionEventType.SubagentExecutionTerminal
+          ? { terminal: event.payload }
+          : event.payload;
+      expect(
+        durableEntries.some(({ data }) => JSON.stringify(data) === JSON.stringify(expectedData)),
+      ).toBe(true);
+      expect(
+        (await eventStore.getEventsAfter(rootSessionId, 0)).some(({ id }) => id === event.id),
+      ).toBe(false);
+    };
+    await appendWithProjectionFailure(
       createSessionEvent(
         SessionEventType.PrismTaskContractDeclared,
         rootSessionId,
         { contract },
         { turnId, traceId: traceContext.traceId },
       ),
-      traceContext,
     );
 
-    // Синтетический receipt доказывает только контур хранения: в runtime пока нет живого verifier-вызова.
+    // Синтетический receipt здесь доказывает только persistence contract; live evaluator проверяется отдельно.
     const receipt = createPrismHostEvidenceReceipt({
       ...lineage,
       criterionId: "persisted-check",
@@ -248,11 +292,57 @@ describe("AgentRuntime session persistence", () => {
       result: "pass",
       artifact: {
         uri: "zcode-artifact://tests/prism-session-entry",
-        sha256: "d".repeat(64),
-        bytes: 17,
+        ...createTestPrismArtifact(hashCommand("pnpm typecheck"), childSessionId),
       },
       observedAt: 123,
     });
+    const receiptEvent = createSessionEvent(
+      SessionEventType.PrismEvidenceReceiptObserved,
+      rootSessionId,
+      { receipt },
+      { turnId, traceId: traceContext.traceId },
+    );
+    // PRISM receipt durable persistence is authoritative; a failed live/replay projection
+    // cannot make the caller discard a receipt that was already committed.
+    await appendWithProjectionFailure(receiptEvent);
+
+    const mismatchedReceipt = createPrismHostEvidenceReceipt({
+      ...lineage,
+      criterionId: "persisted-check",
+      contractSha256: contract.contractSha256,
+      evaluatorId: "test-host-verifier",
+      evaluatorVersion: "1",
+      verifierInvocationId: "wrong-child-invocation",
+      result: "pass",
+      artifact: {
+        uri: "zcode-artifact://tests/prism-wrong-child",
+        ...createTestPrismArtifact(
+          hashCommand("pnpm typecheck"),
+          createSessionId("prism-wrong-child"),
+        ),
+      },
+      observedAt: 122,
+    });
+    await expect(
+      runtime.appendEvent(
+        createSessionEvent(
+          SessionEventType.PrismEvidenceReceiptObserved,
+          rootSessionId,
+          { receipt: mismatchedReceipt },
+          { turnId, traceId: traceContext.traceId },
+        ),
+        traceContext,
+      ),
+    ).rejects.toThrow("child session does not match the registered task");
+    expect(
+      (await eventStore.getEventsAfter(rootSessionId, 0)).some(
+        (event) =>
+          event.type === SessionEventType.PrismEvidenceReceiptObserved &&
+          (event.payload as { receipt?: { receiptId?: string } }).receipt?.receiptId ===
+            mismatchedReceipt.receiptId,
+      ),
+    ).toBe(false);
+
     await runtime.appendEvent(
       createSessionEvent(
         SessionEventType.PrismEvidenceReceiptObserved,
@@ -262,11 +352,156 @@ describe("AgentRuntime session persistence", () => {
       ),
       traceContext,
     );
+
+    const terminalTask = registry.update(taskId, (task) => ({
+      ...task,
+      status: "completed",
+      completedAt: new Date(125),
+    }));
+    if (!terminalTask) throw new Error("PRISM terminal fixture task disappeared");
+    const terminalPayload = {
+      schema: "zcode.prism.subagent-terminal.v3" as const,
+      attemptId: terminalTask.attemptId!,
+      terminalId: `${terminalTask.rootRunId}/${taskId}/${terminalTask.branchGeneration}/${terminalTask.attemptId}`,
+      rootRunId: terminalTask.rootRunId!,
+      taskId,
+      branchGeneration: terminalTask.branchGeneration!,
+      childSessionId,
+      childStarted: true,
+      terminalStatus: "completed" as const,
+      provenance: "runtime_lifecycle" as const,
+      acceptanceStatus: "unknown" as const,
+      observedAt: new Date(125),
+    };
+    const terminalEvent = createSessionEvent(
+      SessionEventType.SubagentExecutionTerminal,
+      rootSessionId,
+      terminalPayload,
+      { turnId, traceId: traceContext.traceId },
+    );
+    await appendWithProjectionFailure(terminalEvent);
+    await runtime.appendEvent(terminalEvent, traceContext);
+    await expect(
+      runtime.appendEvent(
+        createSessionEvent(
+          SessionEventType.SubagentExecutionTerminal,
+          rootSessionId,
+          { ...terminalPayload, observedAt: new Date(126) },
+          { turnId, traceId: traceContext.traceId },
+        ),
+        traceContext,
+      ),
+    ).rejects.toThrow("Conflicting PRISM terminal lifecycle projection");
+
+    const retryAdmission = registry.registerSubagentTask(
+      {
+        taskId,
+        agentId: taskId,
+        agentType: "Explore",
+        description: "Повторная попытка с тем же task ID",
+        status: "running",
+        startedAt,
+        childSessionId,
+        parentSessionId: rootSessionId,
+        turnId,
+        type: "local_agent",
+      },
+      { abort: () => undefined, settled: Promise.resolve() },
+    );
+    if (!retryAdmission.accepted) throw new Error("PRISM retry fixture task was not admitted");
+    const retryTask = registry.update(taskId, (task) => ({
+      ...task,
+      status: "completed",
+      completedAt: new Date(130),
+    }));
+    if (!retryTask?.attemptId || retryTask.attemptId === terminalTask.attemptId) {
+      throw new Error("PRISM retry fixture did not receive a distinct attempt ID");
+    }
+    const retryTerminalPayload = {
+      ...terminalPayload,
+      attemptId: retryTask.attemptId,
+      terminalId: `${retryTask.rootRunId}/${taskId}/${retryTask.branchGeneration}/${retryTask.attemptId}`,
+      observedAt: new Date(130),
+    };
+    const conflictingRetryPayload = {
+      ...retryTerminalPayload,
+      observedAt: new Date(131),
+    };
+    const [retryResult, conflictResult] = await Promise.allSettled([
+      runtime.appendEvent(
+        createSessionEvent(
+          SessionEventType.SubagentExecutionTerminal,
+          rootSessionId,
+          retryTerminalPayload,
+          { turnId, traceId: traceContext.traceId },
+        ),
+        traceContext,
+      ),
+      runtime.appendEvent(
+        createSessionEvent(
+          SessionEventType.SubagentExecutionTerminal,
+          rootSessionId,
+          conflictingRetryPayload,
+          { turnId, traceId: traceContext.traceId },
+        ),
+        traceContext,
+      ),
+    ]);
+    expect([retryResult.status, conflictResult.status].sort()).toEqual(["fulfilled", "rejected"]);
+    const retryTerminalEvents = (await eventStore.getEventsAfter(rootSessionId, 0)).filter(
+      (event) =>
+        event.type === SessionEventType.SubagentExecutionTerminal &&
+        (event.payload as { attemptId?: string }).attemptId === retryTask.attemptId,
+    );
+    expect(retryTerminalEvents).toHaveLength(1);
+
+    const prestartTaskId = "prism-session-entry-prestart-cancel";
+    const prestartChildSessionId = createSessionId("prism-session-entry-prestart-child");
+    const prestartAdmission = registry.registerSubagentTask(
+      {
+        taskId: prestartTaskId,
+        agentId: prestartTaskId,
+        agentType: "Explore",
+        description: "Отмена до запуска дочерней сессии",
+        status: "running",
+        startedAt: new Date(140),
+        childSessionId: prestartChildSessionId,
+        parentSessionId: rootSessionId,
+        turnId,
+        type: "local_agent",
+      },
+      { abort: () => undefined, settled: Promise.resolve() },
+    );
+    if (!prestartAdmission.accepted) {
+      throw new Error("PRISM pre-start cancellation fixture task was not admitted");
+    }
+    const prestartTask = registry.update(prestartTaskId, (task) => ({
+      ...task,
+      status: "killed",
+      completedAt: new Date(141),
+    }));
+    if (!prestartTask?.attemptId || !prestartTask.rootRunId) {
+      throw new Error("PRISM pre-start cancellation fixture lost its lineage");
+    }
+    const prestartTerminalPayload = {
+      schema: "zcode.prism.subagent-terminal.v3" as const,
+      terminalId: `${prestartTask.rootRunId}/${prestartTaskId}/${prestartTask.branchGeneration}/${prestartTask.attemptId}`,
+      rootRunId: prestartTask.rootRunId,
+      taskId: prestartTaskId,
+      attemptId: prestartTask.attemptId,
+      branchGeneration: prestartTask.branchGeneration!,
+      childSessionId: prestartChildSessionId,
+      childStarted: false,
+      terminalStatus: "cancelled" as const,
+      provenance: "runtime_lifecycle" as const,
+      acceptanceStatus: "unknown" as const,
+      observedAt: new Date(141),
+    };
     await runtime.appendEvent(
       createSessionEvent(
-        SessionEventType.PrismEvidenceReceiptObserved,
+        SessionEventType.SubagentExecutionTerminal,
         rootSessionId,
-        { receipt },
+        prestartTerminalPayload,
         { turnId, traceId: traceContext.traceId },
       ),
       traceContext,
@@ -280,12 +515,28 @@ describe("AgentRuntime session persistence", () => {
       sessionID: rootSessionId,
       type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
     });
+    const terminalEntries = await store.sessionEntries!({
+      sessionID: rootSessionId,
+      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+    });
     expect(contractEntries).toHaveLength(1);
     expect(receiptEntries).toHaveLength(1);
+    expect(terminalEntries).toHaveLength(3);
     expect(contractEntries[0]?.sessionID).toBe(rootSessionId);
     expect(receiptEntries[0]?.sessionID).toBe(rootSessionId);
+    expect(terminalEntries[0]?.sessionID).toBe(rootSessionId);
     expect(contractEntries[0]?.data).toEqual({ contract });
     expect(receiptEntries[0]?.data).toEqual({ receipt });
+    expect(terminalEntries[0]?.data).toEqual({ terminal: terminalPayload });
+    expect(terminalEntries[1]?.data).toEqual({
+      terminal: retryTerminalEvents[0]?.payload,
+    });
+    expect((terminalEntries[2]?.data as { terminal?: unknown }).terminal).toMatchObject({
+      acceptanceStatus: "unknown",
+      childStarted: false,
+      taskId: prestartTaskId,
+      terminalStatus: "cancelled",
+    });
     expect(
       reducePrismTaskAcceptance({
         contract: (contractEntries[0]?.data as { contract?: unknown }).contract,
@@ -360,6 +611,11 @@ describe("AgentRuntime session persistence", () => {
           description: "Host receipt должен быть сохранен до acceptance",
           evaluatorId: "test-host-verifier",
           evaluatorVersion: "1",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("pnpm typecheck"),
+            expectedExitCode: 0,
+          },
         },
       ],
     });
@@ -383,8 +639,7 @@ describe("AgentRuntime session persistence", () => {
       result: "pass",
       artifact: {
         uri: "zcode-artifact://tests/prism-persistence-failure",
-        sha256: "e".repeat(64),
-        bytes: 17,
+        ...createTestPrismArtifact(hashCommand("pnpm typecheck"), childSessionId),
       },
       observedAt: 124,
     });
@@ -416,6 +671,72 @@ describe("AgentRuntime session persistence", () => {
         current: lineage,
       }).status,
     ).toBe("unknown");
+  });
+
+  it("отклоняет PRISM контракт без durable SessionStore до публикации в event store", async () => {
+    const rootSessionId = createSessionId("prism-no-session-store-root");
+    const childSessionId = createSessionId("prism-no-session-store-child");
+    const turnId = createTurnId("prism-no-session-store-turn");
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const eventStore = createTestSessionEventStore();
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory: "/tmp/zcode-prism-no-session-store" },
+      {
+        eventStore,
+        runtimeTaskRegistry: registry,
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    const taskId = "prism-no-session-store-task";
+    const admission = registry.registerSubagentTask(
+      {
+        taskId,
+        agentId: taskId,
+        agentType: "Explore",
+        description: "Fail closed without durable owner",
+        status: "running",
+        startedAt: new Date(100),
+        childSessionId,
+        parentSessionId: rootSessionId,
+        turnId,
+        type: "local_agent",
+      },
+      { abort: () => undefined, settled: Promise.resolve() },
+    );
+    if (!admission.accepted) throw new Error("PRISM no-store fixture task was not admitted");
+    const contract = createPrismTaskContract({
+      rootRunId: admission.task.rootRunId!,
+      taskId,
+      attemptId: admission.task.attemptId!,
+      branchGeneration: admission.task.branchGeneration!,
+      description: "Не принимать контракт без durable записи",
+      criteria: [
+        {
+          id: "store-required",
+          description: "Контракт хранится в root SessionEntry",
+          evaluatorId: "test-host-verifier",
+          evaluatorVersion: "1",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("pnpm typecheck"),
+            expectedExitCode: 0,
+          },
+        },
+      ],
+    });
+    const traceContext = createRootTraceContext({ sessionId: rootSessionId, turnId });
+    const event = createSessionEvent(
+      SessionEventType.PrismTaskContractDeclared,
+      rootSessionId,
+      { contract },
+      { turnId, traceId: traceContext.traceId },
+    );
+
+    await expect(runtime.appendEvent(event, traceContext)).rejects.toThrow(
+      "PRISM task contract persistence is unavailable",
+    );
+    expect(await eventStore.getEventsAfter(rootSessionId, 0)).toEqual([]);
   });
 
   it.each([true, false])(
@@ -4561,6 +4882,48 @@ describe("AgentRuntime session persistence", () => {
     expect(runtime.hasResidencyBlockingWork()).toBe(false);
   });
 });
+
+function hashCommand(command: string): string {
+  return createHash("sha256").update(command, "utf8").digest("hex");
+}
+
+function createTestPrismArtifact(
+  commandSha256: string,
+  childSessionId: ReturnType<typeof createSessionId>,
+  exitCode = 0,
+) {
+  const evidence = {
+    schema: PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA,
+    childSessionId,
+    commandSha256,
+    scheduledEventId: "prism-persisted-schedule",
+    scheduledSequence: 1,
+    resultEventId: "prism-persisted-result",
+    resultSequence: 2,
+    toolCallId: "prism-persisted-tool-call",
+    turnId: createTurnId("prism-persisted-turn"),
+    status: "completed" as const,
+    exitCode,
+  };
+  const canonical = JSON.stringify([
+    evidence.schema,
+    evidence.childSessionId,
+    evidence.commandSha256,
+    evidence.scheduledEventId,
+    evidence.scheduledSequence,
+    evidence.resultEventId,
+    evidence.resultSequence,
+    evidence.toolCallId,
+    evidence.turnId,
+    evidence.status,
+    evidence.exitCode,
+  ]);
+  return {
+    sha256: createHash("sha256").update(canonical, "utf8").digest("hex"),
+    bytes: Buffer.byteLength(canonical, "utf8"),
+    evidence,
+  };
+}
 
 interface RecordingSessionStore extends SessionStorePort, UsageStorePort {
   createdSessions: CreateSessionInput[];

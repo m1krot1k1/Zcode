@@ -4,6 +4,7 @@ import {
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
   SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
   SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SESSION_ENTRY_USER_INPUT_AUTO_RESOLUTION,
   SessionEventType,
   createMessageId,
@@ -22,6 +23,7 @@ import type {
   PrismTaskAcceptanceLineage,
   PrismTaskContract,
   PrismTaskContractDeclaredPayload,
+  SubagentExecutionTerminalPayload,
   TraceContext,
   TurnInputIntentMetadata,
   UserInputAutoResolutionUpdatedPayload,
@@ -38,6 +40,7 @@ import {
   persistWorkspaceFileRewindEntry,
 } from "./workspace-checkpoint-persistence.js";
 import {
+  isPrismReceiptForCriterion,
   isValidPrismHostEvidenceReceipt,
   isValidPrismTaskContract,
 } from "../../runtime-task/registry.js";
@@ -62,6 +65,13 @@ const LIFECYCLE_SESSION_EVENT_TYPES = new Set<SessionEventType>([
   SessionEventType.TurnError,
   SessionEventType.PrismTaskContractDeclared,
   SessionEventType.PrismEvidenceReceiptObserved,
+  SessionEventType.SubagentExecutionTerminal,
+]);
+
+const PERSIST_BEFORE_EVENT_STORE_TYPES = new Set<SessionEventType>([
+  SessionEventType.PrismTaskContractDeclared,
+  SessionEventType.PrismEvidenceReceiptObserved,
+  SessionEventType.SubagentExecutionTerminal,
 ]);
 
 interface SessionEventAppendAggregate {
@@ -78,6 +88,10 @@ interface SessionEventAppendAggregate {
 const sessionEventAppendAggregates = new WeakMap<
   AgentRuntimeInternal,
   Map<string, SessionEventAppendAggregate>
+>();
+const prismTerminalPersistenceLocks = new WeakMap<
+  AgentRuntimeInternal,
+  Map<string, Promise<void>>
 >();
 
 export function createEvent(
@@ -112,11 +126,20 @@ export async function appendEvent(
     });
   }
 
-  let phase = "event_store.append";
+  const persistBeforeEventStore = PERSIST_BEFORE_EVENT_STORE_TYPES.has(event.type);
+  let prismDurableCommitCompleted = false;
+  let phase = persistBeforeEventStore ? "session_event.persist_durable" : "event_store.append";
   try {
+    if (persistBeforeEventStore) {
+      await persistDurableSessionEvent.call(this, event, traceContext);
+      prismDurableCommitCompleted = true;
+    }
+    phase = "event_store.append";
     const storedEvent = await this.eventStore.append(event);
-    phase = "session_event.persist_durable";
-    await persistDurableSessionEvent.call(this, storedEvent, traceContext);
+    if (!persistBeforeEventStore) {
+      phase = "session_event.persist_durable";
+      await persistDurableSessionEvent.call(this, storedEvent, traceContext);
+    }
     phase = "session_event.record_usage";
     await recordToolUsageFromEvent(this, storedEvent, traceContext);
     phase = "session_event.notify_sinks";
@@ -144,6 +167,21 @@ export async function appendEvent(
       sessionEventType: storedEvent.type,
     });
   } catch (error) {
+    if (prismDurableCommitCompleted) {
+      // 原因：PRISM SessionEntry 是生命周期与验收的 durable 权威；内存 eventStore 和 live sink 是后续投影。
+      // 投影失败不能让调用方把已经提交的 receipt 当成失败，也不能撤销已保存的 terminal。
+      this.logger?.warn("PRISM durable event projection failed", {
+        ...traceContextToLogContext(traceContext),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "session.event.prism_projection_failed",
+        module: "core.runtime",
+        phase,
+        durableCommitCompleted: true,
+        sessionEventType: event.type,
+        status: "failed",
+      });
+      return;
+    }
     if (shouldLogLifecycle) {
       this.logger?.warn("Session event persistence failed", {
         ...traceContextToLogContext(traceContext),
@@ -279,6 +317,21 @@ async function persistDurableSessionEvent(
   event: SessionEvent,
   traceContext: TraceContext,
 ): Promise<void> {
+  if (event.type === SessionEventType.PrismTaskContractDeclared) {
+    await persistPrismTaskContract.call(this, event, traceContext);
+    return;
+  }
+
+  if (event.type === SessionEventType.PrismEvidenceReceiptObserved) {
+    await persistPrismEvidenceReceipt.call(this, event, traceContext);
+    return;
+  }
+
+  if (event.type === SessionEventType.SubagentExecutionTerminal) {
+    await persistSubagentExecutionTerminal.call(this, event, traceContext);
+    return;
+  }
+
   if (!this.sessionStore) return;
 
   if (event.type === SessionEventType.TurnComplete || event.type === SessionEventType.TurnError) {
@@ -294,16 +347,6 @@ async function persistDurableSessionEvent(
             : "completed",
       timeUpdated: event.timestamp.getTime(),
     });
-    return;
-  }
-
-  if (event.type === SessionEventType.PrismTaskContractDeclared) {
-    await persistPrismTaskContract.call(this, event, traceContext);
-    return;
-  }
-
-  if (event.type === SessionEventType.PrismEvidenceReceiptObserved) {
-    await persistPrismEvidenceReceipt.call(this, event, traceContext);
     return;
   }
 
@@ -535,7 +578,7 @@ async function persistPrismTaskContract(
 ): Promise<void> {
   const store = this.sessionStore;
   if (!store?.saveSessionEntry || !store.sessionEntries) {
-    throw new Error("PRISM evidence persistence is unavailable");
+    throw new Error("PRISM task contract persistence is unavailable");
   }
   const contract = (event.payload as PrismTaskContractDeclaredPayload | undefined)?.contract;
   if (!isValidPrismTaskContract(contract)) {
@@ -606,6 +649,10 @@ async function persistPrismEvidenceReceipt(
     // 原因：旧 branch generation 或旧 attempt 的结果在 rewind/resume 后不得成为当前证据。
     throw new Error("PRISM evidence receipt lineage is stale");
   }
+  if (receipt.artifact.evidence.childSessionId !== lineage.childSessionId) {
+    // 原因：receipt 的 lineage 还不足以证明 artifact 来自该任务的实际子会话。
+    throw new Error("PRISM evidence receipt child session does not match the registered task");
+  }
 
   const contractEntries = await store.sessionEntries({
     sessionID: lineage.rootSessionId,
@@ -618,15 +665,19 @@ async function persistPrismEvidenceReceipt(
   });
   const contractData = contractEntries.find((entry) => entry.id === contractEntryId)?.data;
   const contract = isRecord(contractData) ? contractData.contract : undefined;
+  const criterion = isValidPrismTaskContract(contract)
+    ? contract.criteria.find(
+        (candidate) =>
+          candidate.id === receipt.criterionId &&
+          candidate.evaluatorId === receipt.evaluatorId &&
+          candidate.evaluatorVersion === receipt.evaluatorVersion,
+      )
+    : undefined;
   if (
     !isValidPrismTaskContract(contract) ||
     contract.contractSha256 !== receipt.contractSha256 ||
-    !contract.criteria.some(
-      (criterion) =>
-        criterion.id === receipt.criterionId &&
-        criterion.evaluatorId === receipt.evaluatorId &&
-        criterion.evaluatorVersion === receipt.evaluatorVersion,
-    )
+    !criterion ||
+    !isPrismReceiptForCriterion(receipt, criterion)
   ) {
     throw new Error("PRISM evidence receipt does not match the persisted task contract");
   }
@@ -673,31 +724,147 @@ async function persistPrismEvidenceReceipt(
   }
 }
 
+async function persistSubagentExecutionTerminal(
+  this: AgentRuntimeInternal,
+  event: SessionEvent,
+  traceContext: TraceContext,
+): Promise<void> {
+  const store = this.sessionStore;
+  if (!store?.saveSessionEntry || !store.sessionEntries) {
+    throw new Error("PRISM terminal lifecycle persistence is unavailable");
+  }
+  const saveSessionEntry = store.saveSessionEntry.bind(store);
+  const readSessionEntries = store.sessionEntries.bind(store);
+  const candidate = event.payload;
+  if (
+    !isRecord(candidate) ||
+    candidate.schema !== "zcode.prism.subagent-terminal.v3" ||
+    typeof candidate.taskId !== "string" ||
+    typeof candidate.attemptId !== "string"
+  ) {
+    throw new Error("Invalid PRISM terminal lifecycle event");
+  }
+  const payload = candidate as unknown as SubagentExecutionTerminalPayload;
+  const lineage = resolveCurrentPrismTaskLineage.call(this, event.sessionId, payload.taskId);
+  const task = this.runtimeTaskRegistry.get(payload.taskId);
+  const expectedTerminalStatus =
+    payload.childStarted === false && task?.status === "killed" ? "cancelled" : task?.status;
+  const expectedAcceptanceStatus =
+    task?.status === "completed" && task.output?.status === "completed"
+      ? (task.output.acceptance?.status ?? "unknown")
+      : "unknown";
+  const expectedTerminalId = task
+    ? `${task.rootRunId}/${task.taskId}/${task.branchGeneration ?? 0}/${task.attemptId}`
+    : undefined;
+  if (
+    !task ||
+    task.status === "running" ||
+    typeof payload.terminalId !== "string" ||
+    payload.terminalId !== expectedTerminalId ||
+    payload.rootRunId !== lineage.rootRunId ||
+    payload.parentTaskId !== lineage.parentTaskId ||
+    payload.attemptId !== lineage.attemptId ||
+    payload.branchGeneration !== lineage.branchGeneration ||
+    payload.childSessionId !== lineage.childSessionId ||
+    typeof payload.childStarted !== "boolean" ||
+    payload.terminalStatus !== expectedTerminalStatus ||
+    payload.provenance !== "runtime_lifecycle" ||
+    payload.acceptanceStatus !== expectedAcceptanceStatus ||
+    !(payload.observedAt instanceof Date) ||
+    !Number.isFinite(payload.observedAt.getTime())
+  ) {
+    // 原因：不能将旧 attempt、伪造状态或其他 child 的 terminal 投影写入 root session。
+    throw new Error("PRISM terminal lifecycle does not match the registered task");
+  }
+
+  const entryId = prismTaskTerminalEntryId(lineage.rootSessionId, payload);
+  await serializePrismTerminalPersistence.call(this, entryId, async () => {
+    const entries = await readSessionEntries({
+      sessionID: lineage.rootSessionId,
+      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+    });
+    const existing = entries.find((entry) => entry.id === entryId);
+    if (existing) {
+      const existingPayload = isRecord(existing.data) ? existing.data.terminal : undefined;
+      if (JSON.stringify(existingPayload) === JSON.stringify(payload)) return;
+      // 原因：同一稳定 terminal id 只允许重复写入同一个终态快照。
+      throw new Error("Conflicting PRISM terminal lifecycle projection");
+    }
+
+    const timestamp = event.timestamp.getTime();
+    try {
+      await saveSessionEntry({
+        id: entryId,
+        sessionID: lineage.rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        touchSession: false,
+        time: { created: timestamp, updated: timestamp },
+        data: { terminal: payload },
+      });
+    } catch (error) {
+      this.logger?.warn("Failed to persist PRISM terminal lifecycle", {
+        ...traceContextToLogContext(traceContext),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "session_entry.prism_task_terminal.persist_failed",
+        module: "core.runtime",
+        status: "failed",
+        taskId: payload.taskId,
+        terminalId: payload.terminalId,
+      });
+      throw error;
+    }
+  });
+}
+
+async function serializePrismTerminalPersistence(
+  this: AgentRuntimeInternal,
+  key: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  let locks = prismTerminalPersistenceLocks.get(this);
+  if (!locks) {
+    locks = new Map();
+    prismTerminalPersistenceLocks.set(this, locks);
+  }
+  const previous = locks.get(key);
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  locks.set(key, current);
+  await previous;
+  try {
+    await operation();
+  } finally {
+    release();
+    if (locks.get(key) === current) locks.delete(key);
+  }
+}
+
 function resolveCurrentPrismTaskLineage(
   this: AgentRuntimeInternal,
   eventSessionId: SessionId,
   taskId: string,
-): PrismTaskAcceptanceLineage & { rootSessionId: SessionId } {
+): PrismTaskAcceptanceLineage & { childSessionId: SessionId; rootSessionId: SessionId } {
   const task = this.runtimeTaskRegistry.get(taskId);
   if (
     this.sessionId !== eventSessionId ||
     !task ||
     task.type !== "local_agent" ||
+    !task.childSessionId ||
     task.parentSessionId !== eventSessionId ||
     !task.rootRunId ||
     !task.rootSessionId ||
     !task.attemptId ||
     task.branchGeneration === undefined ||
-    this.runtimeTaskRegistry.getBranchGenerationForSession(eventSessionId) !==
-      task.branchGeneration
+    this.runtimeTaskRegistry.getBranchGenerationForSession(eventSessionId) !== task.branchGeneration
   ) {
     // 原因：只有直接 owner runtime 能发布子任务的证据，worker 不能把事件伪装到父会话。
     throw new Error("PRISM task is not registered in the current branch");
   }
   const parent = Object.values(this.runtimeTaskRegistry.all()).find(
     (candidate) =>
-      candidate.type === "local_agent" &&
-      candidate.childSessionId === task.parentSessionId,
+      candidate.type === "local_agent" && candidate.childSessionId === task.parentSessionId,
   );
   if (parent && parent.rootRunId !== task.rootRunId) {
     throw new Error("PRISM task parent belongs to a different root run");
@@ -709,6 +876,7 @@ function resolveCurrentPrismTaskLineage(
     parentTaskId: parent?.taskId,
     attemptId: task.attemptId,
     branchGeneration: task.branchGeneration,
+    childSessionId: task.childSessionId,
   };
 }
 
@@ -750,6 +918,13 @@ function prismEvidenceReceiptEntryId(
   receipt: Pick<PrismHostEvidenceReceipt, "receiptId">,
 ): string {
   return `prism-evidence-receipt:${rootSessionId}:${receipt.receiptId}`;
+}
+
+function prismTaskTerminalEntryId(
+  rootSessionId: SessionId,
+  terminal: Pick<SubagentExecutionTerminalPayload, "terminalId">,
+): string {
+  return `prism-task-terminal:${rootSessionId}:${terminal.terminalId}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

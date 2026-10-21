@@ -11,6 +11,7 @@ export interface LocalAgentTaskNotificationInput {
   agentType: string;
   description: string;
   error?: string;
+  acceptanceStatus?: "unknown" | "verified" | "rejected";
   outputFile: string;
   parentToolCallId: string;
   result?: string;
@@ -48,7 +49,7 @@ export function formatLocalAgentTaskNotification(
 function formatLocalAgentNotificationSummary(
   input: Pick<
     LocalAgentTaskNotificationInput,
-    "agentType" | "description" | "error" | "status"
+    "agentType" | "description" | "error" | "status" | "acceptanceStatus"
   >,
 ): string {
   const summary = `Agent ${input.agentType} task "${input.description}" ${input.status}.`;
@@ -56,5 +57,6 @@ function formatLocalAgentNotificationSummary(
     input.status === "failed" && input.error?.trim() ? input.error : undefined;
   // 修复原因：失败 summary 是 Agent 卡“子智能体输出”的来源，必须保留原前缀并
   // 直接追加与 <error> 相同的失败原因；completed/stopped 文案保持不变。
-  return error ? `${summary} ${error}` : summary;
+  const acceptance = input.acceptanceStatus ? ` Host acceptance: ${input.acceptanceStatus}.` : "";
+  return `${summary}${acceptance}${error ? ` ${error}` : ""}`;
 }

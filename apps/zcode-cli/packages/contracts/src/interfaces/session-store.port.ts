@@ -821,6 +821,8 @@ export const SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION =
 export const SESSION_ENTRY_PRISM_TASK_CONTRACT = "runtime/prism_task_contract" as const;
 export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT =
   "runtime/prism_evidence_receipt" as const;
+/** Root-session append-only projection of one admitted subagent attempt's terminal lifecycle. */
+export const SESSION_ENTRY_PRISM_TASK_TERMINAL = "runtime/prism_task_terminal" as const;
 
 export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -833,6 +835,7 @@ export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION,
   SESSION_ENTRY_PRISM_TASK_CONTRACT,
   SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
 ] as const;
 
 export type SessionEntryType = (typeof SESSION_ENTRY_TYPES)[number];

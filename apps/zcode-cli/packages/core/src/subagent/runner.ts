@@ -24,6 +24,7 @@ import {
   type AgentOutput,
   type Logger,
   type ModelUsage,
+  type PrismHostEvidenceReceipt,
   type SessionEvent,
   type SessionId,
   type SubagentLaunchOptions,
@@ -41,7 +42,15 @@ import {
   type SubagentExecutionTerminalPayload,
   type SubagentWaitOptions,
   type TraceContext,
+  type PrismTaskAcceptanceDecision,
+  type PrismTaskAcceptanceLineage,
+  type PrismTaskContract,
 } from "@zcode/contracts";
+import {
+  PRISM_BASH_EXIT_CODE_EVALUATOR_ID,
+  PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION,
+} from "@zcode/contracts";
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -66,6 +75,11 @@ import {
   type RuntimeTaskPendingMessage,
   type RuntimeTaskRegistry,
   type RuntimeTaskSnapshot,
+} from "../runtime-task/registry.js";
+import {
+  createPrismTaskContract,
+  evaluatePrismTaskAcceptance,
+  reducePrismTaskAcceptance,
 } from "../runtime-task/registry.js";
 
 export interface ExploreSubagentRuntimeRequest {
@@ -98,6 +112,12 @@ export interface ExploreSubagentRuntimeResult {
   events: SessionEvent[];
 }
 
+interface CompletedAgentRun {
+  events: SessionEvent[];
+  evidenceEvents: SessionEvent[];
+  output: AgentCompletedOutput;
+}
+
 export interface ParentTaskNotificationCommand {
   originMeta: BackgroundResultOriginMeta;
   text: string;
@@ -118,6 +138,9 @@ export interface ExploreSubagentPortOptions {
     event: SessionEvent,
     traceContext: TraceContext,
   ) => Promise<void>;
+  /** Reads child Host events around one execution; evaluator never trusts worker text. */
+  getChildEventCursor?: (sessionId: SessionId) => Promise<number>;
+  getChildEventsAfter?: (sessionId: SessionId, cursor: number) => Promise<SessionEvent[]>;
   // background completion 必须同步写入父 runtime command queue；
   // 返回 undefined 可让 TypeScript 拒绝 async enqueue，避免 fake-notified。
   enqueueParentTaskNotification?: EnqueueParentTaskNotification;
@@ -225,6 +248,16 @@ export function createExploreSubagentPort(
       }
       try {
         await writeAgentMetadataFile(lifecycle, request, "running");
+        if (taskAbort.signal.aborted) {
+          throw taskAbort.signal.reason ?? new Error("Subagent startup aborted");
+        }
+        await declarePrismTaskContractForAdmission(
+          options,
+          request,
+          registry,
+          admission.task,
+          lifecycle.runTraceContext,
+        );
         if (taskAbort.signal.aborted) {
           throw (
             taskAbort.signal.reason ?? new Error("Subagent startup aborted")
@@ -490,6 +523,16 @@ export function createExploreSubagentPort(
           winner.kind === "completed"
             ? winner.completed
             : await guardedCompletionPromise;
+        const acceptedOutput = {
+          ...completed.output,
+          acceptance: await evaluateAndPersistPrismAcceptance(
+            options,
+            registry,
+            lifecycle.agentId,
+            completed.evidenceEvents,
+            lifecycle.runTraceContext,
+          ),
+        } satisfies AgentCompletedOutput;
         autoBackgroundTimer?.cancel();
         activityWatchdog.stop();
         taskAbort.dispose();
@@ -500,18 +543,18 @@ export function createExploreSubagentPort(
         await writeCompletedAgentArtifacts(
           lifecycle,
           request,
-          completed.output,
+          acceptedOutput,
         );
         const terminalTask = registry.update(lifecycle.agentId, (task) => ({
           ...withoutRuntimeMessageState(task),
           status: "completed",
           completedAt: new Date(),
-          output: completed.output,
+          output: acceptedOutput,
           usage: {
-            durationMs: completed.output.totalDurationMs,
-            modelUsage: completed.output.usage,
-            toolUseCount: completed.output.totalToolUseCount,
-            totalTokens: completed.output.totalTokens,
+            durationMs: acceptedOutput.totalDurationMs,
+            modelUsage: acceptedOutput.usage,
+            toolUseCount: acceptedOutput.totalToolUseCount,
+            totalTokens: acceptedOutput.totalTokens,
           },
         }));
         if (terminalTask) {
@@ -566,7 +609,8 @@ export function createExploreSubagentPort(
           totalTokens: completed.output.totalTokens,
         });
 
-        return completed.output;
+        // 修复原因：之前只把 Host acceptance 写入 registry/产物，却向父 Agent 返回未经评估的 worker 输出。
+        return acceptedOutput;
       } catch (error) {
         activityWatchdog.stop();
         if (taskAbort.signal.aborted) {
@@ -725,6 +769,16 @@ export function createExploreSubagentPort(
       }
       try {
         await writeAgentMetadataFile(lifecycle, request, "running");
+        if (taskAbort.signal.aborted) {
+          throw taskAbort.signal.reason ?? new Error("Subagent startup aborted");
+        }
+        await declarePrismTaskContractForAdmission(
+          options,
+          request,
+          registry,
+          admission.task,
+          lifecycle.runTraceContext,
+        );
         if (taskAbort.signal.aborted) {
           throw (
             taskAbort.signal.reason ?? new Error("Subagent startup aborted")
@@ -969,11 +1023,160 @@ function registerSubagentTask(
   return registry.registerSubagentTask(task, cancellation);
 }
 
-function throwOnSubagentAdmissionFailure(
-  admission: RuntimeTaskAdmissionResult,
+async function declarePrismTaskContractForAdmission(
+  options: ExploreSubagentPortOptions,
   request: SubagentRunRequest,
-): void {
-  if (admission.accepted) return;
+  registry: RuntimeTaskRegistry,
+  admittedTask: RuntimeTaskSnapshot,
+  traceContext: TraceContext,
+): Promise<void> {
+  if (!request.acceptanceCriteria?.length) return;
+  if (
+    !admittedTask.parentSessionId ||
+    !admittedTask.rootRunId ||
+    !admittedTask.attemptId ||
+    admittedTask.branchGeneration === undefined
+  ) {
+    throw new Error("Cannot declare PRISM criteria without admitted task lineage");
+  }
+
+  const parentTask = Object.values(registry.all()).find(
+    (candidate) =>
+      candidate.type === "local_agent" &&
+      candidate.childSessionId === admittedTask.parentSessionId,
+  );
+  const contract: PrismTaskContract = createPrismTaskContract({
+    rootRunId: admittedTask.rootRunId,
+    taskId: admittedTask.taskId,
+    ...(parentTask ? { parentTaskId: parentTask.taskId } : {}),
+    attemptId: admittedTask.attemptId,
+    branchGeneration: admittedTask.branchGeneration,
+    description: request.description,
+    // 原因：原始命令可能含敏感参数；父会话 durable contract 只需哈希即可精确匹配。
+    criteria: request.acceptanceCriteria.map((criterion) => ({
+      id: criterion.id,
+      description: criterion.description,
+      check: {
+        kind: criterion.check.kind,
+        commandSha256: createHash("sha256").update(criterion.check.command, "utf8").digest("hex"),
+        expectedExitCode: criterion.check.expectedExitCode,
+      },
+      evaluatorId: PRISM_BASH_EXIT_CODE_EVALUATOR_ID,
+      evaluatorVersion: PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION,
+    })),
+  });
+  const taskWithContract = registry.update(admittedTask.taskId, (current) =>
+    current.attemptId === admittedTask.attemptId
+      ? { ...current, prismTaskContract: contract }
+      : current,
+  );
+  if (!taskWithContract?.prismTaskContract) {
+    throw new Error("PRISM task admission changed before contract declaration");
+  }
+
+  const event = createSessionEvent(
+    SessionEventType.PrismTaskContractDeclared,
+    admittedTask.parentSessionId,
+    { contract },
+    { turnId: request.turnId, traceId: traceContext.traceId },
+  );
+  await options.emitParentEvent(event, traceContext);
+}
+
+async function evaluateAndPersistPrismAcceptance(
+  options: ExploreSubagentPortOptions,
+  registry: RuntimeTaskRegistry,
+  taskId: string,
+  evidenceEvents: readonly SessionEvent[],
+  traceContext: TraceContext,
+): Promise<PrismTaskAcceptanceDecision> {
+  const task = registry.get(taskId);
+  const contract = task?.prismTaskContract;
+  if (!task || !contract || !task.childSessionId || !task.parentSessionId) {
+    return unknownPrismDecision(contract);
+  }
+
+  const current: PrismTaskAcceptanceLineage = {
+    rootRunId: task.rootRunId ?? contract.rootRunId,
+    taskId: task.taskId,
+    ...(contract.parentTaskId === undefined ? {} : { parentTaskId: contract.parentTaskId }),
+    attemptId: task.attemptId ?? contract.attemptId,
+    branchGeneration: task.branchGeneration ?? contract.branchGeneration,
+  };
+  if (
+    current.rootRunId !== contract.rootRunId ||
+    current.attemptId !== contract.attemptId ||
+    current.branchGeneration !== contract.branchGeneration ||
+    registry.getBranchGenerationForSession(task.parentSessionId) !== current.branchGeneration
+  ) {
+    return unknownPrismDecision(contract);
+  }
+
+  const evaluated = evaluatePrismTaskAcceptance({
+    contract,
+    current,
+    childSessionId: task.childSessionId,
+    events: evidenceEvents,
+  });
+  const persistedReceipts: PrismHostEvidenceReceipt[] = [];
+  for (const receipt of evaluated.receipts) {
+    const event = createSessionEvent(
+      SessionEventType.PrismEvidenceReceiptObserved,
+      task.parentSessionId,
+      { receipt },
+      { turnId: task.turnId, traceId: traceContext.traceId },
+    );
+    try {
+      await options.emitParentEvent(event, traceContext);
+      const latest = registry.get(taskId);
+      if (
+        !latest ||
+        latest.attemptId !== current.attemptId ||
+        latest.branchGeneration !== current.branchGeneration ||
+        registry.getBranchGenerationForSession(task.parentSessionId) !== current.branchGeneration
+      ) {
+        break;
+      }
+      persistedReceipts.push(receipt);
+    } catch (error) {
+      options.logger?.warn("PRISM evidence receipt could not be persisted", {
+        event: "subagent.prism.receipt_persist_failed",
+        module: "core.subagent",
+        taskId,
+        criterionId: receipt.criterionId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const decision = reducePrismTaskAcceptance({
+    contract,
+    receipts: persistedReceipts,
+    current,
+  });
+  registry.update(taskId, (latest) =>
+    latest.attemptId === current.attemptId && latest.branchGeneration === current.branchGeneration
+      ? { ...latest, prismAcceptance: decision }
+      : latest,
+  );
+  return decision;
+}
+
+function unknownPrismDecision(
+  contract: PrismTaskContract | undefined,
+): PrismTaskAcceptanceDecision {
+  return {
+    status: "unknown",
+    passedCriterionIds: [],
+    failedCriterionIds: [],
+    missingCriterionIds: contract?.criteria.map(({ id }) => id) ?? [],
+  };
+}
+
+function throwOnSubagentAdmissionFailure(
+  admission: Extract<RuntimeTaskAdmissionResult, { accepted: false }>,
+  request: SubagentRunRequest,
+): never {
   const isQuota =
     admission.reason === "active_limit" || admission.reason === "total_limit";
   throw createCoreError(
@@ -1557,7 +1760,16 @@ async function runAgentToCompletion(
   runOptions?: SubagentRunOptions,
   monitorOptions: { reportActivity?: () => void } = {},
   executionOptions: SubagentExecutionOptions = {},
-): Promise<{ events: SessionEvent[]; output: AgentCompletedOutput }> {
+): Promise<CompletedAgentRun> {
+  let evidenceCursor: number | undefined;
+  if (registry.get(lifecycle.agentId)?.prismTaskContract && options.getChildEventCursor) {
+    try {
+      evidenceCursor = await options.getChildEventCursor(lifecycle.childSessionId);
+    } catch {
+      // A verifier cannot infer success when it cannot establish the event-log boundary.
+      evidenceCursor = undefined;
+    }
+  }
   let sessionReady = false;
   const notifySessionReady = async () => {
     if (sessionReady) return;
@@ -1614,6 +1826,23 @@ async function runAgentToCompletion(
   // persist 后调用。回落只保证兼容，不改变生产链路的 persist-before-spawn 顺序。
   await notifySessionReady();
 
+  let evidenceEvents: SessionEvent[] = [];
+  if (evidenceCursor !== undefined && options.getChildEventsAfter) {
+    try {
+      evidenceEvents = await options.getChildEventsAfter(
+        lifecycle.childSessionId,
+        evidenceCursor,
+      );
+    } catch (error) {
+      options.logger?.warn("PRISM verifier could not read child events", {
+        event: "subagent.prism.child_events_unavailable",
+        module: "core.subagent",
+        taskId: lifecycle.agentId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const usage = aggregateModelUsage(childResult.events);
   const totalTokens = usage?.totalTokens;
   const totalToolUseCount = resolveSubagentToolUseCount(childResult.events);
@@ -1637,7 +1866,7 @@ async function runAgentToCompletion(
     ...(usage === undefined ? {} : { usage }),
   };
 
-  return { events: childResult.events, output };
+  return { events: childResult.events, evidenceEvents, output };
 }
 
 function createSubagentActivityWatchdog(options: {
@@ -2002,37 +2231,49 @@ async function finalizeBackgroundCompletion(
   request: SubagentRunRequest,
   lifecycle: SubagentLifecycle,
   registry: RuntimeTaskRegistry,
-  completed: { output: AgentCompletedOutput },
+  completed: CompletedAgentRun,
 ): Promise<void> {
   const current = registry.get(lifecycle.agentId);
   if (!current || isTerminalRuntimeTask(current)) return;
   registry.beginSubagentTaskFinalization(lifecycle.agentId);
 
-  await writeCompletedAgentArtifacts(lifecycle, request, completed.output);
+  const acceptedOutput: AgentCompletedOutput = {
+    ...completed.output,
+    acceptance: await evaluateAndPersistPrismAcceptance(
+      options,
+      registry,
+      lifecycle.agentId,
+      completed.evidenceEvents,
+      lifecycle.runTraceContext,
+    ),
+  };
+
+  await writeCompletedAgentArtifacts(lifecycle, request, acceptedOutput);
   const notification = formatLocalAgentTaskNotification({
-    agentId: completed.output.agentId,
-    agentType: completed.output.agentType,
-    description: completed.output.description,
+    agentId: acceptedOutput.agentId,
+    agentType: acceptedOutput.agentType,
+    description: acceptedOutput.description,
     outputFile: lifecycle.outputFile,
     parentToolCallId: String(request.parentToolCallId),
-    result: completed.output.content.map((block) => block.text).join("\n\n"),
+    acceptanceStatus: acceptedOutput.acceptance?.status ?? "unknown",
+    result: acceptedOutput.content.map((block) => block.text).join("\n\n"),
     status: "completed",
-    totalDurationMs: completed.output.totalDurationMs,
-    totalTokens: completed.output.totalTokens,
-    totalToolUseCount: completed.output.totalToolUseCount,
-    usage: completed.output.usage,
+    totalDurationMs: acceptedOutput.totalDurationMs,
+    totalTokens: acceptedOutput.totalTokens,
+    totalToolUseCount: acceptedOutput.totalToolUseCount,
+    usage: acceptedOutput.usage,
   });
   const completedAt = new Date();
   const task = registry.update(lifecycle.agentId, (current) => ({
     ...withoutRuntimeMessageState(current),
     status: "completed",
     completedAt,
-    output: completed.output,
+    output: acceptedOutput,
     usage: {
-      durationMs: completed.output.totalDurationMs,
-      modelUsage: completed.output.usage,
-      toolUseCount: completed.output.totalToolUseCount,
-      totalTokens: completed.output.totalTokens,
+      durationMs: acceptedOutput.totalDurationMs,
+      modelUsage: acceptedOutput.usage,
+      toolUseCount: acceptedOutput.totalToolUseCount,
+      totalTokens: acceptedOutput.totalTokens,
     },
   }));
   if (task) {
@@ -2222,12 +2463,14 @@ async function finalizeBackgroundStopped(
   ) {
     return committed;
   }
-  if (wasSpawned) {
+  // 修复依据：contract 已写入父会话后，即使 child 尚未启动也必须写 terminal，关闭这次 attempt。
+  if (wasSpawned || committed.prismTaskContract) {
     await emitSubagentExecutionTerminal(
       options,
       registry,
       committed,
       traceContext,
+      wasSpawned,
     );
   }
 
@@ -2394,9 +2637,10 @@ async function emitSubagentExecutionTerminal(
   registry: RuntimeTaskRegistry,
   task: RuntimeTaskSnapshot,
   traceContext: TraceContext,
+  childStarted = true,
 ): Promise<void> {
   if (task.status === "running") return;
-  if (!task.parentSessionId || !task.childSessionId || !task.rootRunId) {
+  if (!task.parentSessionId || !task.childSessionId || !task.rootRunId || !task.attemptId) {
     options.logger?.warn("Skipped subagent terminal event with incomplete lineage", {
       event: "subagent.execution_terminal.lineage_missing",
       module: "core.subagent",
@@ -2413,21 +2657,28 @@ async function emitSubagentExecutionTerminal(
     task.rootRunId,
     task.taskId,
     String(branchGeneration),
-    String(task.startedAt.getTime()),
+    task.attemptId,
   ].join("/");
   const observedAt = task.completedAt ?? new Date();
   const payload: SubagentExecutionTerminalPayload = {
-    acceptanceStatus: "unknown",
+    // completed task 的 Host acceptance 已写入 output；terminal 不得再固定报告 unknown。
+    acceptanceStatus:
+      task.status === "completed" && task.output?.status === "completed"
+        ? (task.output.acceptance?.status ?? "unknown")
+        : "unknown",
     branchGeneration,
+    attemptId: task.attemptId,
+    childStarted,
     childSessionId: task.childSessionId,
     observedAt,
     parentTaskId: parentTask?.taskId,
     provenance: "runtime_lifecycle",
     rootRunId: task.rootRunId,
-    schema: "zcode.prism.subagent-terminal.v1",
+    schema: "zcode.prism.subagent-terminal.v3",
     taskId: task.taskId,
     terminalId,
-    terminalStatus: task.status,
+    // 原因：Registry 的 killed 表示启动流程已被中止；child 从未启动时对外应报告 cancelled。
+    terminalStatus: !childStarted && task.status === "killed" ? "cancelled" : task.status,
   };
   const event = createSessionEvent(
     SessionEventType.SubagentExecutionTerminal,

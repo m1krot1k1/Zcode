@@ -1007,21 +1007,20 @@ export interface BackgroundTaskPayloadBase {
   terminalId?: string;
 }
 
-/**
- * Stable terminal lifecycle projection for one registered subagent task.
- * This records runtime state and lineage only; it never verifies task acceptance or claims.
- */
+/** Stable terminal lifecycle projection with the Host acceptance status for one task attempt. */
 export interface SubagentExecutionTerminalPayload {
-  schema: "zcode.prism.subagent-terminal.v1";
+  schema: "zcode.prism.subagent-terminal.v3";
   terminalId: string;
   rootRunId: string;
   taskId: string;
+  attemptId: string;
   parentTaskId?: string;
   branchGeneration: number;
   childSessionId: SessionId;
+  childStarted: boolean;
   terminalStatus: Exclude<SubagentTaskStatus, "running">;
   provenance: "runtime_lifecycle";
-  acceptanceStatus: "unknown";
+  acceptanceStatus: "unknown" | "verified" | "rejected";
   observedAt: Date;
 }
 
@@ -1222,6 +1221,16 @@ export interface ToolCallPayload {
 export interface ToolResultPayload {
   success: boolean;
   content: string;
+  /** Host-generated process outcome for deterministic evaluators; never model-authored. */
+  executionEvidence?: {
+    kind: "bash_process";
+    commandSha256: string;
+    status: "completed" | "failed" | "timed_out" | "cancelled" | "spawn_error" | "backgrounded";
+    exitCode?: number;
+    signal?: string;
+    timedOut?: boolean;
+    cancelled?: boolean;
+  };
   display?: ToolResultDisplayPayload;
   perf?: import("../tools/performance.js").ToolExecutionTelemetry;
   error?: ErrorPayload;

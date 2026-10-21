@@ -8,12 +8,25 @@ import type { ModelRequestDependencies } from "../model/invocation-context.js";
 import type { SessionId, ToolCallId, TurnId } from "./shared.js";
 import type { TraceContext } from "../tracing/tracer.js";
 
-export const PRISM_TASK_CONTRACT_SCHEMA = "zcode.prism.task-contract.v1" as const;
-export const PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA =
-  "zcode.prism.evidence-receipt.v1" as const;
+export const PRISM_TASK_CONTRACT_SCHEMA = "zcode.prism.task-contract.v2" as const;
+export const PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA = "zcode.prism.evidence-receipt.v2" as const;
+export const PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA = "zcode.prism.bash-evidence.v1" as const;
 export const PRISM_TASK_CONTRACT_MAX_CRITERIA = 16;
 export const PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES = 500;
 export const PRISM_EVIDENCE_RECEIPT_MAX_BYTES = 32 * 1024;
+export const PRISM_BASH_EXIT_CODE_EVALUATOR_ID = "zcode.bash-exit-code" as const;
+export const PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION = "1" as const;
+
+/** Caller request is deliberately narrower than Host evaluator registration. */
+export interface PrismTaskAcceptanceRequestCriterion {
+  id: string;
+  description: string;
+  check: {
+    kind: "bash_exit_code";
+    command: string;
+    expectedExitCode: 0;
+  };
+}
 
 /** Критерий задачи. `evaluatorId/version` задаются Host-контрактом, а не выводятся из ответа агента. */
 export interface PrismTaskAcceptanceCriterion {
@@ -21,6 +34,27 @@ export interface PrismTaskAcceptanceCriterion {
   description: string;
   evaluatorId: string;
   evaluatorVersion: string;
+  check: {
+    kind: "bash_exit_code";
+    /** SHA-256 of the exact request command; raw text is not copied to the persisted contract. */
+    commandSha256: string;
+    expectedExitCode: 0;
+  };
+}
+
+/** Small, self-contained evidence snapshot; source events can be unavailable after process restart. */
+export interface PrismBashEvidenceArtifact {
+  schema: typeof PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA;
+  childSessionId: SessionId;
+  commandSha256: string;
+  scheduledEventId: string;
+  scheduledSequence: number;
+  resultEventId: string;
+  resultSequence: number;
+  toolCallId: string;
+  turnId?: string;
+  status: "completed";
+  exitCode: number;
 }
 
 /** Неизменяемый Host-контракт одной попытки узла в конкретном поколении ветки. */
@@ -57,9 +91,11 @@ export interface PrismHostEvidenceReceipt {
   verifierInvocationId: string;
   result: "pass" | "fail";
   artifact: {
+    /** Trace locator only. The inline artifact snapshot is the replay-verification source. */
     uri: string;
     sha256: string;
     bytes: number;
+    evidence: PrismBashEvidenceArtifact;
   };
   observedAt: number;
 }
@@ -90,6 +126,8 @@ export interface SubagentRunRequest {
   workingDirectory: string;
   workspaceRoot: string;
   trace: TraceContext;
+  /** Explicit machine-checkable criteria; absent criteria must remain acceptance=unknown. */
+  acceptanceCriteria?: readonly PrismTaskAcceptanceRequestCriterion[];
 }
 
 export interface SubagentRunOptions {
