@@ -39,6 +39,7 @@ export function mirrorSubagentToolEvent(
   event: SessionEvent,
   context: SubagentToolEventMirrorContext,
 ): SessionEvent | undefined {
+  if (isMirroredSubagentEvent(event)) return undefined;
   if (
     !MIRRORED_TOOL_EVENT_TYPES.has(event.type) &&
     !MIRRORED_INTERACTION_EVENT_TYPES.has(event.type)
@@ -80,6 +81,20 @@ export function mirrorSubagentToolEvent(
     traceId: event.traceId,
     turnId: context.parentTurnId,
   });
+}
+
+/** A parent projection must never be forwarded and wrapped as a new child projection. */
+export function isMirroredSubagentEvent(event: SessionEvent): boolean {
+  const payload = asRecord(event.payload);
+  const isMarkedToolProjection =
+    payload.source === SUBAGENT_EVENT_SOURCE &&
+    typeof payload.childSessionId === "string" &&
+    typeof payload.childToolCallId === "string";
+  const isWrappedInteractionProjection =
+    MIRRORED_INTERACTION_EVENT_TYPES.has(event.type) &&
+    typeof payload.childSessionId === "string" &&
+    stringField(payload, "toolCallId")?.startsWith(`${SUBAGENT_TOOL_CALL_ID_PREFIX}_`) === true;
+  return isMarkedToolProjection || isWrappedInteractionProjection;
 }
 
 /**

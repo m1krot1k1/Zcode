@@ -15,7 +15,10 @@ import {
   type SubagentExecutionTerminalPayload,
 } from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
-import { mirrorSubagentToolEvent } from "../src/subagent/tool-event-mirror.js";
+import {
+  isMirroredSubagentEvent,
+  mirrorSubagentToolEvent,
+} from "../src/subagent/tool-event-mirror.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
@@ -598,6 +601,226 @@ describe("subagent tool event projection", () => {
     }
   });
 
+  it("runs a real AgentRuntime chain deeper than the active-work quota and reports its last stage", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-deep-chain-root");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = createRecordingSubagentSessionStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const targetDepth = SUBAGENT_ROOT_MAX_ACTIVE_TASKS + 1;
+    const depthBySession = new Map<SessionId, number>([[rootSessionId, 0]]);
+    const lastStageBySession = new Map<SessionId, string>();
+    const taskIdsByChildSession = new Map<SessionId, string>();
+    const admittedTaskIds = new Set<string>();
+    const modelRequestsBySession = new Map<SessionId, number>();
+    const modelFactorySessions = new Set<SessionId>();
+    const mirroredEvents: Array<{
+      agentId?: string;
+      childSessionId?: SessionId;
+      childToolCallId?: string;
+    }> = [];
+    const memorySamples: Array<{ depth: number; heapUsed: number; rss: number }> = [];
+    let memoryBudgetTrip:
+      | {
+          depth: number;
+          heapUsed: number;
+          taskCount: number;
+          lastStage: string | undefined;
+          samples: typeof memorySamples;
+        }
+      | undefined;
+    let modelFactoryCalls = 0;
+
+    const recordStage = (sessionId: SessionId, stage: string) => {
+      lastStageBySession.set(sessionId, stage);
+    };
+
+    const unsubscribeRegistry = runtimeTaskRegistry.subscribe?.(() => {
+      for (const task of Object.values(runtimeTaskRegistry.all())) {
+        if (!task.childSessionId || !task.parentSessionId) continue;
+        const parentDepth = depthBySession.get(task.parentSessionId);
+        if (parentDepth === undefined) continue;
+        depthBySession.set(task.childSessionId, parentDepth + 1);
+        taskIdsByChildSession.set(task.childSessionId, task.taskId);
+        if (admittedTaskIds.has(task.taskId)) continue;
+        admittedTaskIds.add(task.taskId);
+        recordStage(task.childSessionId, "admitted");
+      }
+    });
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("deep-chain-model"),
+        },
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "recursive",
+              description: "Can delegate the next node in a bounded test chain",
+              source: "user",
+              systemPrompt: "Delegate the next nested task until the leaf is reached.",
+              tools: ["Agent"],
+            },
+          ],
+        },
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        eventSink: {
+          onSessionEvent(event) {
+            recordStage(event.sessionId, `event:${event.type}`);
+            const eventPayload = event.payload as { source?: unknown; childToolCallId?: unknown };
+            if (
+              eventPayload.source === "subagent" &&
+              typeof eventPayload.childToolCallId === "string"
+            ) {
+              const mirrorPayload = event.payload as {
+                agentId?: string;
+                childSessionId?: SessionId;
+                childToolCallId?: string;
+              };
+              mirroredEvents.push(mirrorPayload);
+            }
+            if (event.type !== SessionEventType.SubagentSpawned) return;
+            const payload = event.payload as { agentId?: string; childSessionId?: SessionId };
+            if (!payload.agentId || !payload.childSessionId) return;
+            const parentDepth = depthBySession.get(event.sessionId);
+            if (parentDepth === undefined) return;
+            depthBySession.set(payload.childSessionId, parentDepth + 1);
+            taskIdsByChildSession.set(payload.childSessionId, payload.agentId);
+            recordStage(payload.childSessionId, "SubagentSpawned");
+          },
+        },
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+            const depth = depthBySession.get(sessionId);
+            if (depth === undefined) {
+              throw new Error(`Missing depth mapping for runtime session ${sessionId}`);
+            }
+            modelFactoryCalls += 1;
+            const requestCount = (modelRequestsBySession.get(sessionId) ?? 0) + 1;
+            modelRequestsBySession.set(sessionId, requestCount);
+            modelFactorySessions.add(sessionId);
+            recordStage(sessionId, "model_factory");
+            if (modelFactoryCalls > (targetDepth + 1) * 4) {
+              throw new Error(
+                `Recursive model loop exceeded the bounded test allowance: depth=${depth}, totalCalls=${modelFactoryCalls}, perSession=${requestCount}, stages=${JSON.stringify([...taskIdsByChildSession.entries()].map(([childSessionId, taskId]) => ({ childSessionId, depth: depthBySession.get(childSessionId), taskId, status: runtimeTaskRegistry.get(taskId)?.status, lastStage: lastStageBySession.get(childSessionId) })))}`,
+              );
+            }
+            const heapUsed = process.memoryUsage().heapUsed;
+            memorySamples.push({ depth, heapUsed, rss: process.memoryUsage().rss });
+            if (heapUsed > 1_500 * 1024 * 1024) {
+              memoryBudgetTrip ??= {
+                depth,
+                heapUsed,
+                taskCount: Object.keys(runtimeTaskRegistry.all()).length,
+                lastStage: lastStageBySession.get(sessionId),
+                samples: [...memorySamples],
+              };
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: `Test stopped before the Node heap approached its limit at depth ${depth}.`,
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            if (depth < targetDepth && requestCount === 1) {
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: `call_deep_chain_${depth}`,
+                    name: "Agent",
+                    input: {
+                      description: `Create chain node ${depth + 1}`,
+                      prompt: `Continue the nested chain at depth ${depth + 1}.`,
+                      subagent_type: "recursive",
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: `Reached leaf at depth ${depth}.`,
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+
+    const turn = runtime.executeTurn("Run a bounded recursive subagent chain.");
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        turn,
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            const taskStages = Object.values(runtimeTaskRegistry.all()).map((task) => ({
+              sessionId: task.childSessionId,
+              depth: task.childSessionId ? depthBySession.get(task.childSessionId) : undefined,
+              taskId: task.taskId,
+              status: task.status,
+              lastStage: task.childSessionId
+                ? lastStageBySession.get(task.childSessionId)
+                : undefined,
+              modelRequests: task.childSessionId
+                ? (modelRequestsBySession.get(task.childSessionId) ?? 0)
+                : undefined,
+            }));
+            reject(
+              new Error(
+                `Deep AgentRuntime chain stalled; deepest=${Math.max(...depthBySession.values())}; tasks=${JSON.stringify(taskStages)}`,
+              ),
+            );
+          }, 90_000);
+        }),
+      ]);
+
+      expect(memoryBudgetTrip).toBeUndefined();
+      expect(Math.max(...memorySamples.map((sample) => sample.heapUsed))).toBeLessThan(
+        1_500 * 1024 * 1024,
+      );
+      expect(Math.max(...depthBySession.values())).toBe(targetDepth);
+      // Every non-leaf turn makes one follow-up request after its child returns.
+      expect(modelFactoryCalls).toBe(targetDepth * 2 + 1);
+      expect(taskIdsByChildSession.size).toBe(targetDepth);
+      expect(
+        [...taskIdsByChildSession.values()].every(
+          (taskId) => runtimeTaskRegistry.get(taskId)?.status === "completed",
+        ),
+      ).toBe(true);
+      expect(modelFactorySessions.size).toBe(targetDepth + 1);
+      expect(mirroredEvents.length).toBeGreaterThan(0);
+      expect(
+        mirroredEvents.every(
+          ({ agentId, childSessionId, childToolCallId }) =>
+            !childToolCallId?.startsWith("tool_subagent_") &&
+            depthBySession.get(childSessionId!) === 1 &&
+            taskIdsByChildSession.get(childSessionId!) === agentId,
+        ),
+      ).toBe(true);
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      unsubscribeRegistry?.();
+      await runtime.closeBrowserSession();
+      await turn.catch(() => undefined);
+    }
+  }, 120_000);
+
   it("mirrors child blocking interactions into the parent live projection", async () => {
     const sessionId = createSessionId("runtime-subagent-interaction-events");
     const eventStore = createTestSessionEventStore();
@@ -1146,6 +1369,74 @@ describe("subagent tool event projection", () => {
       childSessionId,
       toolCallId: "tool_subagent_agent_background_call_child_bash",
     });
+  });
+
+  it("does not recursively mirror an already projected subagent tool event", () => {
+    const childSessionId = createSessionId("runtime-mirrored-child");
+    const parentSessionId = createSessionId("runtime-mirrored-parent");
+    const mirrored = mirrorSubagentToolEvent(
+      createSessionEvent(SessionEventType.ToolCallStarted, childSessionId, {
+        agentId: "agent_inner",
+        childSessionId,
+        childToolCallId: "call_leaf_read",
+        source: "subagent",
+        toolCallId: "tool_subagent_agent_inner_call_leaf_read",
+        toolName: "Read",
+      }),
+      {
+        agentId: "agent_outer",
+        agentType: "general-purpose",
+        background: false,
+        childSessionId,
+        description: "Nested owner",
+        parentSessionId,
+        parentToolCallId: "call_parent_agent",
+      },
+    );
+
+    expect(
+      isMirroredSubagentEvent(
+        createSessionEvent(SessionEventType.ToolCallStarted, childSessionId, {
+          childSessionId,
+          childToolCallId: "call_leaf_read",
+          source: "subagent",
+        }),
+      ),
+    ).toBe(true);
+    expect(mirrored).toBeUndefined();
+  });
+
+  it("does not re-forward an already wrapped nested permission interaction", () => {
+    const childSessionId = createSessionId("runtime-mirrored-permission-child");
+    const parentSessionId = createSessionId("runtime-mirrored-permission-parent");
+    const original = createSessionEvent(SessionEventType.PermissionRequested, childSessionId, {
+      requestId: "permission-nested",
+      toolCallId: "call_leaf_bash",
+      toolName: "Bash",
+    });
+    const mirrored = mirrorSubagentToolEvent(original, {
+      agentId: "agent_inner",
+      agentType: "general-purpose",
+      background: false,
+      childSessionId,
+      description: "Nested permission owner",
+      parentSessionId,
+      parentToolCallId: "call_parent_agent",
+    });
+
+    expect(mirrored).toBeDefined();
+    expect(isMirroredSubagentEvent(mirrored!)).toBe(true);
+    expect(
+      mirrorSubagentToolEvent(mirrored!, {
+        agentId: "agent_outer",
+        agentType: "general-purpose",
+        background: false,
+        childSessionId,
+        description: "Outer permission owner",
+        parentSessionId: createSessionId("runtime-mirrored-permission-root"),
+        parentToolCallId: "call_root_agent",
+      }),
+    ).toBeUndefined();
   });
 });
 

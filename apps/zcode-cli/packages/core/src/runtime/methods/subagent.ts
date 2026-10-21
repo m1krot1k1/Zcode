@@ -40,7 +40,10 @@ import {
   extractRequiredMcpServerNames,
   matchesRequiredMcpServer,
 } from "../../subagent/mcp-config.js";
-import { mirrorSubagentToolEvent } from "../../subagent/tool-event-mirror.js";
+import {
+  isMirroredSubagentEvent,
+  mirrorSubagentToolEvent,
+} from "../../subagent/tool-event-mirror.js";
 import { isBuiltInExploreAgentProfile } from "../../subagent/profile.js";
 import {
   buildSubagentChildDisallowRules,
@@ -439,6 +442,10 @@ export function createDefaultSubagentPort(
             appVersion: this.appVersion,
             eventSink: {
               onSessionEvent: async (event) => {
+                // Причина по source trace: mirror descendant event повторно поднимался через
+                // каждого предка и получал новые mirror-обёртки. Mirror принадлежит текущему
+                // parent runtime; выше передаются только raw events.
+                if (isMirroredSubagentEvent(event)) return;
                 request.reportActivity?.();
                 // child runtime 的事件已经按 childSessionId 落库，但旧链路只把
                 // 少量工具事件镜像给 parent sink，导致 UI 订阅 child topic 后只能拿到打开时
@@ -449,6 +456,9 @@ export function createDefaultSubagentPort(
                   ...request.traceContext,
                   sessionId: request.sessionId,
                 });
+                // Raw descendant events поднимаются для их владельцев, но проекция принадлежит
+                // только runtime непосредственного child; иначе предок исказит agentId/childSessionId.
+                if (event.sessionId !== request.sessionId) return;
                 const mirroredEvent = mirrorSubagentToolEvent(event, {
                   agentId: request.agentId,
                   agentType: request.agentType,

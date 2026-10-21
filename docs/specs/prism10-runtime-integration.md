@@ -198,6 +198,16 @@ Admission не подменяет nesting cap другим cumulative node count
 
 Проверка реальной цепочки глубже 24 пока не закрыта: ограниченный AgentRuntime прогон на 25 узлов не достиг leaf; по истечении 45 секунд registry содержал 23 задачи на глубине 23, было 23 model requests, `backgrounded=0`, все задачи оставались `running`. Прогон завершился до root close и turn settlement, поэтому не устанавливает причину stall. Отдельная попытка цепочки из 129 runtime уровней завершилась OOM и также не подтверждает рабочую глубину. Эти результаты — незакрытые проверки; не заявлять production-поддержку глубины выше 23 до диагностики и успешного bounded runtime evidence.
 
+### Диагностика глубокой цепочки и границ готовности (2026-10-21)
+
+В коде не найден отдельный depth guard. Root concurrency quota 24 не объясняет остановку линейной foreground-цепочки: ожидающий родитель передаёт свой слот ребёнку. Наблюдение цепочки на глубине 23 не содержит stage telemetry и потому не устанавливает причину.
+
+Source trace выявил два дефекта маршрутизации: уже помеченный `source="subagent"` mirror мог повторно идти в ancestor sinks; raw event descendant также зеркалировался каждым предком с чужим `agentId`/`childSessionId`. Mirror должен оставаться проекцией своего непосредственного parent и не передаваться выше повторно. Raw event продолжает подниматься как raw; runtime создаёт mirror только когда `event.sessionId` совпадает с session ID его непосредственного child. Первый OOM-прогон тестовой цепочки был ошибочным: fake model создавал новый Agent при каждом follow-up запросе и строил ветвление вместо линейной цепочки, поэтому OOM не доказывал дефект production runtime. После исправления mock-а реальная цепочка из 25 вложенных child завершилась, а тест закрепляет правильный direct-child owner, отсутствие повторного mirror и heap ниже 1.5 GiB.
+
+Регрессия доказывается bounded интеграционным тестом реальных `AgentRuntime` с линейной вложенностью больше `SUBAGENT_ROOT_MAX_ACTIVE_TASKS`. Один запуск записывает по каждому `childSessionId` task admission, последнюю lifecycle event и вызовы model factory; успех требует завершения всех child и предков. Timeout только ограничивает тест и включает самый глубокий узел и последний этап каждого активного узла. Production sink/store не подменяется тестовым timeout.
+
+Если будущая цепочка остановится на одном этапе, исправлять только подтверждённого владельца этого ожидания, сохраняя порядок durable event → notification → model request. Deadline не является production recovery или доказательством причины. Synthetic registry chain, рост RSS/OOM либо успешный ACP handshake без model request не доказывают реальную runtime-глубину. Отдельно остаются root-scoped cumulative resource accounting и ограниченное хранение terminal snapshots без возврата искусственного depth/node cap.
+
 ## Источники сравнения и выбор решений
 
 - Ouroboros: брать разделение discovery, task intake, agent-tree coordination и verifier/evidence; не копировать самостоятельный harness вместо Host/runtime ZCode.
