@@ -1137,7 +1137,7 @@ export interface RuntimeTaskRegistry {
   cancelSubagentChildren(parentSessionId: SessionId, reason?: unknown): Promise<void>;
   openSessionOwner(sessionId: SessionId): void;
   getRootSessionIdForSession(sessionId: SessionId): SessionId;
-  getRootRunIdForSession?(sessionId: SessionId, turnId?: TurnId): string | undefined;
+  getRootRunIdForSession(sessionId: SessionId, turnId?: TurnId): string | undefined;
   getBranchGenerationForSession(sessionId: SessionId): number;
   setBranchGenerationForSession(sessionId: SessionId, generation: number): void;
   remove(id: string): void;
@@ -1156,8 +1156,8 @@ export interface RuntimeTaskRegistry {
     id: string,
     options?: { signal?: AbortSignal },
   ): Promise<RuntimeTaskSnapshot | undefined>;
-  /** RootRun-owned accounting; optional on external registry implementations. */
-  beginRootRunBudget?(input: {
+  // Исправление: optional hooks могли молча отключить budget; интерфейс теперь требует весь lifecycle.
+  beginRootRunBudget(input: {
     rootRunId: string;
     rootSessionId: SessionId;
     turnId: TurnId;
@@ -1166,15 +1166,15 @@ export interface RuntimeTaskRegistry {
     tokenLimit?: number;
     onDeadline?: () => void;
   }): void;
-  reserveRootRunTokens?(input: {
+  reserveRootRunTokens(input: {
     rootRunId: string;
     sessionId: SessionId;
     contextWindow: number;
     maxTokens: number;
   }): RootRunReservationRelease;
-  recordRootRunUsage?(event: SessionEvent): void;
-  finishRootRunTurn?(rootRunId: string): void;
-  waitForRootRunCancellation?(rootRunId: string): Promise<void>;
+  recordRootRunUsage(event: SessionEvent): void;
+  finishRootRunTurn(rootRunId: string): void;
+  waitForRootRunCancellation(rootRunId: string): Promise<void>;
 }
 
 interface RootRunBudgetState {

@@ -96,7 +96,7 @@ function withRuntimeInvocationLayer(
   return withModelInvocationContext(model, (request) => {
     const context = getCurrentModelInvocationContext();
     const traceContext = context?.traceContext;
-    const rootRunId = runtime.runtimeTaskRegistry.getRootRunIdForSession?.(
+    const rootRunId = runtime.runtimeTaskRegistry.getRootRunIdForSession(
       runtime.sessionId,
       traceContext?.turnId,
     );
@@ -109,10 +109,7 @@ function withRuntimeInvocationLayer(
       configuredMaxTokens === undefined
         ? resolveNormalRequestMaxOutputTokens({ modelMaxOutputTokens: undefined })
         : configuredMaxTokens;
-    if (
-      !rootRunId ||
-      !runtime.runtimeTaskRegistry.reserveRootRunTokens
-    ) {
+    if (!rootRunId) {
       return layer;
     }
     return {
@@ -138,7 +135,7 @@ function withRootRunResourceBudgetAdmission(input: {
   sessionId: AgentRuntimeInternal["sessionId"];
 }): NonNullable<ModelInvocationContext["modelRequestAdmission"]> {
   const reserve = () =>
-    input.registry.reserveRootRunTokens!({
+    input.registry.reserveRootRunTokens({
       contextWindow: input.contextWindow,
       maxTokens: input.maxTokens,
       rootRunId: input.rootRunId,

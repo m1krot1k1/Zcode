@@ -182,7 +182,7 @@ export async function executeTurnCommand(
   const turnAbortScope = createTurnAbortScope(options?.abortSignal);
   const turnAbortSignal = turnAbortScope.signal;
   const rootRunId = `${this.sessionId}:${turnId}`;
-  this.runtimeTaskRegistry.beginRootRunBudget?.({
+  this.runtimeTaskRegistry.beginRootRunBudget({
     rootRunId,
     rootSessionId: this.sessionId,
     turnId,
@@ -1113,8 +1113,8 @@ export async function executeTurnCommand(
     this.finishActiveTurn(activeTurn);
     // 根因：预算到期后 root signal 与 child runtime 是异步收口，root 可能先于后代返回；
     // 修复依据：registry 作为唯一 cascade owner 暴露 settlement promise，root 等待同一把手柄收口。
-    await this.runtimeTaskRegistry.waitForRootRunCancellation?.(rootRunId);
-    this.runtimeTaskRegistry.finishRootRunTurn?.(rootRunId);
+    await this.runtimeTaskRegistry.waitForRootRunCancellation(rootRunId);
+    this.runtimeTaskRegistry.finishRootRunTurn(rootRunId);
     offPeakTurn.release(
       turnAbortSignal.aborted
         ? "stopped"
