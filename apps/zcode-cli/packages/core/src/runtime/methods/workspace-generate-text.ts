@@ -17,7 +17,7 @@ import type {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { recordModelUsageFact } from "./usage-observability.js";
-import { createRuntimeModel } from "./runtime-model.js";
+import { createRuntimeModel, getLatestCompletedModelRequestId } from "./runtime-model.js";
 import { normalizeStreamError } from "../helpers/index.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
@@ -230,10 +230,12 @@ async function generateWorkspaceTextImpl(
   });
 
   const toolCalls = this.extractToolCallsFromResult(result);
+  const completedRequestId = getLatestCompletedModelRequestId(events);
   const modelCompleteEvent = this.createEvent(
     SessionEventType.ModelComplete,
     {
       content: result.text,
+      ...(completedRequestId ? { requestId: completedRequestId } : {}),
       querySource,
       stopReason: result.finishReason,
       toolCallCount: toolCalls.length,

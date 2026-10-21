@@ -121,6 +121,7 @@ export type RuntimeTaskAdmissionResult =
       accepted: false;
       reason:
         | "active_limit"
+        | "root_run_budget_exceeded"
         | "lineage_conflict"
         | "owner_closed"
         | "parent_stopped"
@@ -1136,6 +1137,7 @@ export interface RuntimeTaskRegistry {
   cancelSubagentChildren(parentSessionId: SessionId, reason?: unknown): Promise<void>;
   openSessionOwner(sessionId: SessionId): void;
   getRootSessionIdForSession(sessionId: SessionId): SessionId;
+  getRootRunIdForSession?(sessionId: SessionId, turnId?: TurnId): string | undefined;
   getBranchGenerationForSession(sessionId: SessionId): number;
   setBranchGenerationForSession(sessionId: SessionId, generation: number): void;
   remove(id: string): void;
@@ -1154,7 +1156,53 @@ export interface RuntimeTaskRegistry {
     id: string,
     options?: { signal?: AbortSignal },
   ): Promise<RuntimeTaskSnapshot | undefined>;
+  /** RootRun-owned accounting; optional on external registry implementations. */
+  beginRootRunBudget?(input: {
+    rootRunId: string;
+    rootSessionId: SessionId;
+    turnId: TurnId;
+    startedAt?: number;
+    deadlineMs?: number;
+    tokenLimit?: number;
+    onDeadline?: () => void;
+  }): void;
+  reserveRootRunTokens?(input: {
+    rootRunId: string;
+    sessionId: SessionId;
+    contextWindow: number;
+    maxTokens: number;
+  }): RootRunReservationRelease;
+  recordRootRunUsage?(event: SessionEvent): void;
+  finishRootRunTurn?(rootRunId: string): void;
+  waitForRootRunCancellation?(rootRunId: string): Promise<void>;
 }
+
+interface RootRunBudgetState {
+  rootRunId: string;
+  deadlineAt: number;
+  rootSessionId: SessionId;
+  turnId: TurnId;
+  tokenLimit: number;
+  usedTokens: number;
+  reservedTokens: number;
+  activeReservationsBySession: Map<SessionId, RootRunReservation[]>;
+  seenUsageEvents: Set<string>;
+  turnFinished: boolean;
+  expired: boolean;
+  deadlineTimer?: ReturnType<typeof setTimeout>;
+  onDeadline?: () => void;
+  cancellationPromise?: Promise<void>;
+}
+
+interface RootRunReservation {
+  reservedTokens: number;
+  consumed: boolean;
+  requestId?: string;
+}
+
+export type RootRunReservationRelease = (() => void) & {
+  associateRequestId(requestId: string): void;
+};
 
 interface RuntimeTaskWaiter {
   onAbort?: () => void;
@@ -1201,6 +1249,205 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   private readonly subagentTaskIdsByParentSession = new Map<SessionId, Set<string>>();
   private readonly activeSubagentTaskIdsByRootSession = new Map<SessionId, Set<string>>();
   private readonly terminalWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
+  private readonly rootRunBudgets = new Map<string, RootRunBudgetState>();
+
+  beginRootRunBudget(input: {
+    rootRunId: string;
+    rootSessionId: SessionId;
+    turnId: TurnId;
+    startedAt?: number;
+    deadlineMs?: number;
+    tokenLimit?: number;
+    onDeadline?: () => void;
+  }): void {
+    if (this.rootRunBudgets.has(input.rootRunId)) return;
+    const deadlineAt = (input.startedAt ?? Date.now()) + (input.deadlineMs ?? 2 * 60 * 60 * 1000);
+    this.rootRunBudgets.set(input.rootRunId, {
+      rootRunId: input.rootRunId,
+      deadlineAt,
+      rootSessionId: input.rootSessionId,
+      turnId: input.turnId,
+      tokenLimit: input.tokenLimit ?? 500_000,
+      usedTokens: 0,
+      reservedTokens: 0,
+      activeReservationsBySession: new Map(),
+      seenUsageEvents: new Set(),
+      turnFinished: false,
+      expired: false,
+      onDeadline: input.onDeadline,
+    });
+    const state = this.rootRunBudgets.get(input.rootRunId)!;
+    state.deadlineTimer = setTimeout(() => {
+      if (!this.rootRunBudgets.has(input.rootRunId)) return;
+      this.expireRootRunBudget(state);
+    }, Math.max(0, deadlineAt - Date.now()));
+    state.deadlineTimer.unref?.();
+  }
+
+  reserveRootRunTokens(input: {
+    rootRunId: string;
+    sessionId: SessionId;
+    contextWindow: number;
+    maxTokens: number;
+  }): RootRunReservationRelease {
+    const state = this.rootRunBudgets.get(input.rootRunId);
+    const requestedReservation = input.contextWindow + input.maxTokens;
+    if (state && Date.now() >= state.deadlineAt) this.expireRootRunBudget(state);
+    if (
+      !state ||
+      state.expired ||
+      !Number.isSafeInteger(requestedReservation) ||
+      requestedReservation <= 0
+    ) {
+      throw new RootRunBudgetExceededError(input.rootRunId);
+    }
+    const remaining = state.tokenLimit - state.usedTokens - state.reservedTokens;
+    if (remaining <= 0) {
+      // Резерв другого запроса временно занимает остаток; это отказ admission, а не исчерпание фактического бюджета.
+      throw new RootRunBudgetExceededError(input.rootRunId);
+    }
+    // Каталог может объявлять окно больше бюджета RootRun. Ограничиваем оценку остатком:
+    // запрос допускается эксклюзивно, а фактический provider usage после ответа всё равно списывается целиком.
+    const reservation = Math.min(requestedReservation, remaining);
+    state.reservedTokens += reservation;
+    const reservations = state.activeReservationsBySession.get(input.sessionId) ?? [];
+    const entry: RootRunReservation = { reservedTokens: reservation, consumed: false };
+    reservations.push(entry);
+    state.activeReservationsBySession.set(input.sessionId, reservations);
+    let released = false;
+    const release = (() => {
+      if (released) return;
+      released = true;
+      const current = state.activeReservationsBySession.get(input.sessionId) ?? [];
+      const index = current.indexOf(entry);
+      if (index >= 0) current.splice(index, 1);
+      if (current.length === 0) state.activeReservationsBySession.delete(input.sessionId);
+      else state.activeReservationsBySession.set(input.sessionId, current);
+      if (!entry.consumed) state.reservedTokens = Math.max(0, state.reservedTokens - reservation);
+    }) as RootRunReservationRelease;
+    release.associateRequestId = (requestId: string) => {
+      if (requestId.trim()) entry.requestId = requestId;
+    };
+    return release;
+  }
+
+  recordRootRunUsage(event: SessionEvent): void {
+    const state = this.findRootRunBudgetForEvent(event);
+    if (!state) return;
+    const key = JSON.stringify([state.rootRunId, event.sessionId, event.id]);
+    if (state.seenUsageEvents.has(key)) return;
+    if (!isRootRunUsageEvent(event)) return;
+    const usage = extractProviderUsage(event);
+    state.seenUsageEvents.add(key);
+    const requestId = getRootRunUsageRequestId(event);
+    const pending = state.activeReservationsBySession.get(event.sessionId);
+    const reservation = requestId
+      ? pending?.find((item) => !item.consumed && item.requestId === requestId)
+      : undefined;
+    if (reservation) {
+      reservation.consumed = true;
+      state.reservedTokens = Math.max(0, state.reservedTokens - reservation.reservedTokens);
+      const reservations = pending ?? [];
+      const index = reservations.indexOf(reservation);
+      if (index >= 0) reservations.splice(index, 1);
+      if (reservations.length === 0) state.activeReservationsBySession.delete(event.sessionId);
+    }
+    // 缺少 usage 的终态事件代表 provider 成本未知，按该 attempt 的完整 reservation 扣账；
+    // 没有对应 reservation 时 fail closed，避免未知请求被误当作零成本。
+    const debitedTokens = usage?.totalTokens ?? reservation?.reservedTokens ?? state.tokenLimit;
+    state.usedTokens += debitedTokens;
+    if (state.usedTokens + state.reservedTokens >= state.tokenLimit) {
+      this.expireRootRunBudget(state);
+    }
+    this.changed();
+  }
+
+  finishRootRunTurn(rootRunId: string): void {
+    const state = this.rootRunBudgets.get(rootRunId);
+    if (!state) return;
+    state.turnFinished = true;
+    if (!this.hasActiveRootRunChildren(rootRunId)) this.deleteRootRunBudget(rootRunId);
+  }
+
+  async cancelRootRunChildren(rootRunId: string, reason?: unknown): Promise<void> {
+    const active = [...this.tasks.values()].filter(
+      (task) =>
+        task.rootRunId === rootRunId &&
+        (task.status === "running" || this.finalizingSubagentTasks.has(task.taskId)),
+    );
+    const activeIds = new Set(active.map((task) => task.taskId));
+    const roots = active.filter((task) => {
+      const parent = task.parentSessionId ? this.findTaskByChildSession(task.parentSessionId) : undefined;
+      return !parent || !activeIds.has(parent.taskId);
+    });
+    await Promise.all(roots.map((task) => this.cancelSubagentSubtree(task.taskId, reason)));
+  }
+
+  waitForRootRunCancellation(rootRunId: string): Promise<void> {
+    return this.rootRunBudgets.get(rootRunId)?.cancellationPromise ?? Promise.resolve();
+  }
+
+  isRootRunBudgetExpired(rootRunId: string): boolean {
+    const state = this.rootRunBudgets.get(rootRunId);
+    return state !== undefined && (state.expired || Date.now() >= state.deadlineAt);
+  }
+
+  getRootRunBudgetSnapshot(rootRunId: string): {
+    deadlineAt: number;
+    reservedTokens: number;
+    tokenLimit: number;
+    usedTokens: number;
+  } | undefined {
+    const state = this.rootRunBudgets.get(rootRunId);
+    return state
+      ? {
+          deadlineAt: state.deadlineAt,
+          reservedTokens: state.reservedTokens,
+          tokenLimit: state.tokenLimit,
+          usedTokens: state.usedTokens,
+        }
+      : undefined;
+  }
+
+  private findRootRunBudgetForEvent(event: SessionEvent): RootRunBudgetState | undefined {
+    const childTask = this.getSubagentTaskByChildSession(event.sessionId);
+    if (childTask?.rootRunId) return this.rootRunBudgets.get(childTask.rootRunId);
+    if (!event.turnId) return undefined;
+    return this.rootRunBudgets.get(makeRootRunId(event.sessionId, event.turnId));
+  }
+
+  private hasActiveRootRunChildren(rootRunId: string): boolean {
+    return [...this.tasks.values()].some(
+      (task) =>
+        task.rootRunId === rootRunId &&
+        (task.status === "running" || this.finalizingSubagentTasks.has(task.taskId)),
+    );
+  }
+
+  private maybeReleaseRootRunBudget(rootRunId: string | undefined): void {
+    if (!rootRunId) return;
+    const state = this.rootRunBudgets.get(rootRunId);
+    if (state?.turnFinished && !this.hasActiveRootRunChildren(rootRunId)) {
+      this.deleteRootRunBudget(rootRunId);
+    }
+  }
+
+  private deleteRootRunBudget(rootRunId: string): void {
+    const state = this.rootRunBudgets.get(rootRunId);
+    if (!state) return;
+    if (state.deadlineTimer) clearTimeout(state.deadlineTimer);
+    this.rootRunBudgets.delete(rootRunId);
+  }
+
+  private expireRootRunBudget(state: RootRunBudgetState): void {
+    if (state.expired) return;
+    state.expired = true;
+    state.onDeadline?.();
+    state.cancellationPromise = this.cancelRootRunChildren(
+      state.rootRunId,
+      new RootRunBudgetExceededError(state.rootRunId),
+    );
+  }
 
   register(task: RuntimeTaskSnapshot): void {
     const ownerSessionId = task.ownerSessionId ?? task.parentSessionId;
@@ -1266,6 +1513,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       existing?.rootSessionId === rootSessionId && existing.rootRunId
         ? existing.rootRunId
         : (parentTask?.rootRunId ?? makeRootRunId(rootSessionId, task.turnId));
+    if (this.isRootRunBudgetExpired(rootRunId)) {
+      return { accepted: false, reason: "root_run_budget_exceeded" };
+    }
 
     const activeWorkItems = this.getActiveSubagentWorkItems(rootSessionId);
     const foregroundParentTransfersSlot =
@@ -1319,7 +1569,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const handles = taskIds.flatMap((id) => {
       const task = this.tasks.get(id);
       if (task?.childSessionId) this.closedSessionOwners.add(task.childSessionId);
-      const handle = this.cancellationHandles.get(id);
+      const handle =
+        this.cancellationHandles.get(id) ?? this.finalizingSubagentTasks.get(id);
       return handle ? [{ handle, id }] : [];
     });
 
@@ -1378,6 +1629,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       if (current.childSessionId) this.closedSessionOwners.delete(current.childSessionId);
       this.resolveTerminalWaiters(taskId, current);
     }
+    this.maybeReleaseRootRunBudget(current?.rootRunId);
     this.changed();
   }
 
@@ -1400,6 +1652,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   getRootSessionIdForSession(sessionId: SessionId): SessionId {
     return this.findTaskByChildSession(sessionId)?.rootSessionId ?? sessionId;
+  }
+
+  getRootRunIdForSession(sessionId: SessionId, turnId?: TurnId): string | undefined {
+    const task = this.findTaskByChildSession(sessionId);
+    return task?.rootRunId ?? (turnId ? makeRootRunId(sessionId, turnId) : undefined);
   }
 
   getBranchGenerationForSession(sessionId: SessionId): number {
@@ -1431,7 +1688,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const previous = this.tasks.get(task.taskId);
     if (previous) this.removeTaskIndexes(previous);
     this.tasks.set(task.taskId, task);
-    if (task.type !== "local_agent") return;
+    if (task.type !== "local_agent") {
+      this.maybeReleaseRootRunBudget(previous?.rootRunId ?? task.rootRunId);
+      return;
+    }
 
     if (task.childSessionId) this.subagentTaskIdByChildSession.set(task.childSessionId, task.taskId);
     if (task.parentSessionId) {
@@ -1443,6 +1703,37 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         task.rootSessionId,
         task.taskId,
       );
+    }
+    if (
+      previous &&
+      !isTerminalRuntimeTask(previous) &&
+      isTerminalRuntimeTask(task) &&
+      task.childSessionId &&
+      task.rootRunId
+    ) {
+      this.settleRootRunSessionReservations(task.rootRunId, task.childSessionId);
+    }
+    this.maybeReleaseRootRunBudget(previous?.rootRunId ?? task.rootRunId);
+  }
+
+  private settleRootRunSessionReservations(rootRunId: string, sessionId: SessionId): void {
+    const state = this.rootRunBudgets.get(rootRunId);
+    const reservations = state?.activeReservationsBySession.get(sessionId);
+    if (!state || !reservations?.length) return;
+
+    // 根因：子进程/流可能在写入终态 usage 前退出，遗留 reservation 会永久占住兄弟任务预算。
+    // 修复依据：子任务 terminal 是该 session 不会再完成此请求的生命周期边界；未知成本按 reservation 保守扣账。
+    let debitedTokens = 0;
+    for (const reservation of reservations) {
+      if (reservation.consumed) continue;
+      reservation.consumed = true;
+      debitedTokens += reservation.reservedTokens;
+    }
+    state.activeReservationsBySession.delete(sessionId);
+    state.reservedTokens = Math.max(0, state.reservedTokens - debitedTokens);
+    state.usedTokens += debitedTokens;
+    if (state.usedTokens + state.reservedTokens >= state.tokenLimit) {
+      this.expireRootRunBudget(state);
     }
   }
 
@@ -1736,6 +2027,55 @@ function removeTaskIdFromSessionIndex(
 
 function makeRootRunId(rootSessionId: SessionId, turnId: TurnId | undefined): string {
   return `${rootSessionId}:${turnId ?? "session"}`;
+}
+
+export class RootRunBudgetExceededError extends Error {
+  readonly code = "root_run_budget_exceeded";
+
+  constructor(rootRunId: string) {
+    super(`Root run resource budget is exhausted: ${rootRunId}`);
+    this.name = "RootRunBudgetExceededError";
+  }
+}
+
+function extractProviderUsage(event: SessionEvent):
+  | { totalTokens: number }
+  | undefined {
+  let usage: ModelUsage | undefined;
+  if (event.type === SessionEventType.ModelComplete) {
+    const payload = event.payload as { usage?: ModelUsage; requestId?: string };
+    usage = payload.usage;
+  } else if (event.type === SessionEventType.ModelNetworkStatus) {
+    const payload = event.payload as { type?: string; usage?: ModelUsage };
+    if (payload.type !== "model_request_failed") return undefined;
+    usage = payload.usage;
+  } else return undefined;
+  if (!usage) return undefined;
+  const inputTokens = usage.inputTokens ?? 0;
+  const outputTokens = usage.outputTokens ?? 0;
+  const totalTokens = usage.totalTokens ?? inputTokens + outputTokens;
+  if (!Number.isSafeInteger(totalTokens) || totalTokens < 0) return undefined;
+  return { totalTokens };
+}
+
+function getRootRunUsageRequestId(event: SessionEvent): string | undefined {
+  if (event.type === SessionEventType.ModelComplete) {
+    const requestId = (event.payload as { requestId?: unknown }).requestId;
+    return typeof requestId === "string" && requestId.length > 0 ? requestId : undefined;
+  }
+  if (event.type === SessionEventType.ModelNetworkStatus) {
+    const payload = event.payload as { requestId?: unknown };
+    return typeof payload.requestId === "string" && payload.requestId.length > 0
+      ? payload.requestId
+      : undefined;
+  }
+  return undefined;
+}
+
+function isRootRunUsageEvent(event: SessionEvent): boolean {
+  if (event.type === SessionEventType.ModelComplete) return true;
+  if (event.type !== SessionEventType.ModelNetworkStatus) return false;
+  return (event.payload as { type?: string }).type === "model_request_failed";
 }
 
 function compactTerminalSubagentSnapshot(task: RuntimeTaskSnapshot): RuntimeTaskSnapshot {

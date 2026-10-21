@@ -1,12 +1,15 @@
 import type { ModelRequestSessionType, ModelRetryBudget } from "@zcode/contracts";
+import type { ModelRequestAdmissionTicket, ModelRequestTarget } from "@zcode/contracts";
 import {
   CoreErrorType,
   createCoreError,
   getCurrentModelInvocationContext,
   runWithModelInvocationContext,
+  SessionEventType,
   type Model,
   type ModelInvocationContext,
   type ModelRequest,
+  type SessionEvent,
 } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelFactoryInput } from "../types.js";
@@ -15,6 +18,8 @@ import {
   resolveModelRetryBudgetFromTaskType,
 } from "./model-request-session-type.js";
 import { getOffPeakModelBinding } from "../off-peak/model-binding.js";
+import { DEFAULT_COMPACT_CONTEXT_WINDOW } from "../../compact/policy.js";
+import { resolveNormalRequestMaxOutputTokens } from "./model-token-limits.js";
 
 export function createRuntimeModel(
   runtime: AgentRuntimeInternal,
@@ -46,6 +51,22 @@ export function createRuntimeModel(
   return getOffPeakModelBinding(input.requestDependencies)?.wrap(model) ?? model;
 }
 
+/** Возвращает ID реально завершившейся успешной provider-попытки для ModelComplete. */
+export function getLatestCompletedModelRequestId(
+  events: readonly SessionEvent[],
+): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.type !== SessionEventType.ModelNetworkStatus) continue;
+    const payload = event.payload as { type?: string; requestId?: unknown };
+    if (payload.type !== "model_request_completed") continue;
+    return typeof payload.requestId === "string" && payload.requestId.length > 0
+      ? payload.requestId
+      : undefined;
+  }
+  return undefined;
+}
+
 /**
  * runtime 层调用上下文。
  *
@@ -72,7 +93,106 @@ function withRuntimeInvocationLayer(
       ? {}
       : { modelRequestAdmission: runtime.modelRequestAdmission }),
   };
-  return withModelInvocationContext(model, () => layer);
+  return withModelInvocationContext(model, (request) => {
+    const context = getCurrentModelInvocationContext();
+    const traceContext = context?.traceContext;
+    const rootRunId = runtime.runtimeTaskRegistry.getRootRunIdForSession?.(
+      runtime.sessionId,
+      traceContext?.turnId,
+    );
+    const contextWindow =
+      model.properties.contextWindow === undefined
+        ? DEFAULT_COMPACT_CONTEXT_WINDOW
+        : model.properties.contextWindow;
+    const configuredMaxTokens = request.options?.maxOutputTokens ?? model.options.maxOutputTokens;
+    const maxTokens =
+      configuredMaxTokens === undefined
+        ? resolveNormalRequestMaxOutputTokens({ modelMaxOutputTokens: undefined })
+        : configuredMaxTokens;
+    if (
+      !rootRunId ||
+      !runtime.runtimeTaskRegistry.reserveRootRunTokens
+    ) {
+      return layer;
+    }
+    return {
+      ...layer,
+      modelRequestAdmission: withRootRunResourceBudgetAdmission({
+        admission: runtime.modelRequestAdmission,
+        contextWindow,
+        maxTokens,
+        rootRunId,
+        registry: runtime.runtimeTaskRegistry,
+        sessionId: runtime.sessionId,
+      }),
+    };
+  });
+}
+
+function withRootRunResourceBudgetAdmission(input: {
+  admission: ModelInvocationContext["modelRequestAdmission"];
+  contextWindow: number;
+  maxTokens: number;
+  rootRunId: string;
+  registry: AgentRuntimeInternal["runtimeTaskRegistry"];
+  sessionId: AgentRuntimeInternal["sessionId"];
+}): NonNullable<ModelInvocationContext["modelRequestAdmission"]> {
+  const reserve = () =>
+    input.registry.reserveRootRunTokens!({
+      contextWindow: input.contextWindow,
+      maxTokens: input.maxTokens,
+      rootRunId: input.rootRunId,
+      sessionId: input.sessionId,
+    });
+  const withReservation = (
+    ticket: ModelRequestAdmissionTicket,
+    reservation: ReturnType<typeof reserve>,
+  ): ModelRequestAdmissionTicket => {
+    // 根因：adapter 的 attempt ticket 会在 ModelComplete 原始事件持久化前 release；
+    // 修复依据：token reservation 只能由 registry 观察到的 ModelComplete / model_request_failed 消费，
+    // 否则并发请求会在 provider 已返回、usage 尚未入账的窗口重复花费同一预算。
+    const wrapped: ModelRequestAdmissionTicket = {
+      publish: (event) => {
+        reservation.associateRequestId(event.requestId);
+        return ticket.publish(event);
+      },
+      release: () => {
+        ticket.release();
+      },
+    };
+    if (ticket.publishFailure) {
+      wrapped.publishFailure = (event, error) => {
+        reservation.associateRequestId(event.requestId);
+        return ticket.publishFailure!(event, error);
+      };
+    }
+    return wrapped;
+  };
+  const acquire = async (model: ModelRequestTarget, signal?: AbortSignal) => {
+    // acquire 失败后 adapter 仍写入 model_request_failed；保留 reservation，
+    // 让 durable raw event 负责消费它，避免与后续请求共用同一预算窗口。
+    const reservation = reserve();
+    const ticket = input.admission
+      ? await input.admission.acquire({ model, ...(signal ? { signal } : {}) })
+      : { publish() {}, release() {} };
+    return withReservation(ticket, reservation);
+  };
+  return {
+    ...(input.admission?.tryAcquire
+      ? {
+          tryAcquire: (request: { model: ModelRequestTarget }) => {
+            const reservation = reserve();
+            const ticket = input.admission!.tryAcquire!(request);
+            if (!ticket) {
+              reservation();
+              return undefined;
+            }
+            return withReservation(ticket, reservation);
+          },
+        }
+      : {}),
+    acquire: ({ model, signal }) => acquire(model, signal),
+  };
 }
 
 export function withModelInvocationContext(

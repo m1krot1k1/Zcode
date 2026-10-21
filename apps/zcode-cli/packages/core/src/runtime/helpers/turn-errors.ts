@@ -19,6 +19,7 @@ export { projectExecutionErrorPayload } from "../../errors/error-payload.js";
 
 interface TurnAbortScope {
   dispose: () => void;
+  abort: (reason?: unknown) => void;
   signal: AbortSignal;
 }
 
@@ -64,15 +65,19 @@ export function createTurnAbortScope(parentSignal?: AbortSignal): TurnAbortScope
       controller.abort(parentSignal?.reason);
     }
   };
+  const abort = (reason?: unknown) => {
+    if (!controller.signal.aborted) controller.abort(reason);
+  };
 
   if (parentSignal?.aborted) {
     abortTurn();
-    return { dispose: () => {}, signal: controller.signal };
+    return { abort, dispose: () => {}, signal: controller.signal };
   }
 
   parentSignal?.addEventListener("abort", abortTurn, { once: true });
 
   return {
+    abort,
     dispose: () => {
       parentSignal?.removeEventListener("abort", abortTurn);
     },

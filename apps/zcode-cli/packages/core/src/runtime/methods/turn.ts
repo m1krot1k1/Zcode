@@ -181,6 +181,14 @@ export async function executeTurnCommand(
 
   const turnAbortScope = createTurnAbortScope(options?.abortSignal);
   const turnAbortSignal = turnAbortScope.signal;
+  const rootRunId = `${this.sessionId}:${turnId}`;
+  this.runtimeTaskRegistry.beginRootRunBudget?.({
+    rootRunId,
+    rootSessionId: this.sessionId,
+    turnId,
+    startedAt: turnStartedAtMs,
+    onDeadline: () => turnAbortScope.abort(new Error("Root run time budget exhausted")),
+  });
   let activeTurn: ActiveTurnSteeringState | undefined;
   let startedTarget: SessionGoal | null = null;
   let targetRunHeartbeat: ReturnType<typeof setInterval> | undefined;
@@ -1103,6 +1111,10 @@ export async function executeTurnCommand(
     this.releaseTurnStart(turnId);
     clearBrowserTurnState(this.sessionId, turnId);
     this.finishActiveTurn(activeTurn);
+    // 根因：预算到期后 root signal 与 child runtime 是异步收口，root 可能先于后代返回；
+    // 修复依据：registry 作为唯一 cascade owner 暴露 settlement promise，root 等待同一把手柄收口。
+    await this.runtimeTaskRegistry.waitForRootRunCancellation?.(rootRunId);
+    this.runtimeTaskRegistry.finishRootRunTurn?.(rootRunId);
     offPeakTurn.release(
       turnAbortSignal.aborted
         ? "stopped"

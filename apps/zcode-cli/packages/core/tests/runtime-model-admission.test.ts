@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createSessionId,
+  createTurnId,
   runWithModelInvocationContext,
   type ModelInvocationContext,
   type ModelRequestAdmission,
@@ -11,6 +12,7 @@ import { createRuntimeModel } from "../src/runtime/methods/runtime-model.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
+import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
 
 // docs/dynamic-workflow/concurrency.md「Where the port is bound」：准入端口与重试预算绑定在 runtime 的模型工厂上，
 // runtime 交出的每一个句柄——turn step 与工具内部的模型调用——都带它们；调用层设什么都压不过。
@@ -100,9 +102,11 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     );
     expect(tool).toBeDefined();
     expect(turn).toBeDefined();
-    expect(tool!.modelRequestAdmission).toBe(admission);
+    expect(tool!.modelRequestAdmission).not.toBe(admission);
+    expect(tool!.modelRequestAdmission?.acquire).toBeTypeOf("function");
     expect(tool!.modelRetryBudget).toBe("unbounded");
-    expect(turn!.modelRequestAdmission).toBe(admission);
+    expect(turn!.modelRequestAdmission).not.toBe(admission);
+    expect(turn!.modelRequestAdmission?.acquire).toBeTypeOf("function");
     expect(turn!.modelRetryBudget).toBe("unbounded");
   });
 
@@ -111,7 +115,7 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     ["subagent_child", "subagent"],
     ["selection_side_chat", "side_chat"],
   ] as const)(
-    "%s 工具请求继承宿主类型，保持默认重试预算且无准入端口",
+    "%s 工具请求继承宿主类型并使用 RootRun 预算准入",
     async (taskType, expectedSessionType) => {
       const requests: SeenRequest[] = [];
       const runtime = createTestAgentRuntime(
@@ -128,7 +132,7 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
           (request.metadata as { querySource?: string })?.querySource === "web_search_tool",
       );
       expect(tool).toBeDefined();
-      expect(tool!.modelRequestAdmission).toBeUndefined();
+      expect(tool!.modelRequestAdmission?.acquire).toBeTypeOf("function");
       expect(tool!.modelRetryBudget).toBe("default");
       expect(tool!.modelRequestSessionType).toBe(expectedSessionType);
     },
@@ -167,6 +171,66 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
       },
       () => model.generateText({ messages: [{ role: "user", content: "hi" }] } as never),
     );
-    expect(seen).toEqual([[admission, "unbounded"]]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toEqual([other, "default"]);
+    expect((seen[0] as [unknown, unknown])[0]).toBe(admission);
+    expect((seen[0] as [unknown, unknown])[1]).toBe("unbounded");
+  });
+
+  it("在真实 runtime model admission 边界超预算时不调用 provider", async () => {
+    const sessionId = createSessionId("runtime-root-budget-admission");
+    const turnId = createTurnId("runtime-root-budget-admission-turn");
+    const rootRunId = `${sessionId}:${turnId}`;
+    const registry = new InMemoryRuntimeTaskRegistry();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: sessionId,
+      turnId,
+      tokenLimit: 100,
+      deadlineMs: 60_000,
+    });
+    const releaseConcurrentReservation = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId,
+      contextWindow: 100,
+      maxTokens: 0,
+    });
+    const providerCall = vi.fn(async () => ({
+      finishReason: "stop",
+      providerMetadata: undefined,
+      text: "should not run",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    }));
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { modelSelection, modelStreaming: "off", taskType: "interactive" },
+      {
+        eventStore: createTestSessionEventStore(),
+        runtimeTaskRegistry: registry,
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            const ticket = await observation.invocationContext?.modelRequestAdmission?.acquire({
+              model: {
+                providerId: observation.model.providerId,
+                modelId: observation.model.modelId,
+              },
+            });
+            ticket?.release();
+            return providerCall();
+          },
+          maxOutputTokens: 50,
+          properties: { contextWindow: 60 },
+        }),
+      },
+    );
+    const model = createRuntimeModel(runtime as never, { selection: modelSelection });
+    await expect(
+      runWithModelInvocationContext(
+        { traceContext: { sessionId, turnId } as never },
+        () => model.generateText({ messages: [{ role: "user", content: "test" }] }),
+      ),
+    ).rejects.toThrow("Root run resource budget is exhausted");
+    expect(providerCall).not.toHaveBeenCalled();
+    releaseConcurrentReservation();
   });
 });

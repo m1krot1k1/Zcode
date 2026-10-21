@@ -73,12 +73,18 @@ export function assertReleaseBranch(branchName) {
   }
 }
 
-export function selectMacReleaseAssets(fileNames, version, targetArch) {
+export function selectMacReleaseAssets(
+  fileNames,
+  version,
+  targetArch,
+  productName = "ZCode",
+  artifactSuffix = "",
+) {
   if (targetArch !== "arm64" && targetArch !== "x64") {
     throw new Error(`Нужна точная архитектура release asset: ${targetArch}`);
   }
   const expectedName = new RegExp(
-    `^ZCode-${version.replaceAll(".", "\\.")}-mac-${targetArch}\\.(?:dmg|zip)$`,
+    `^${productName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}-${version.replaceAll(".", "\\.")}-mac-${targetArch}${artifactSuffix.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\.(?:dmg|zip)$`,
   );
   return fileNames
     .filter((fileName) => {
@@ -88,8 +94,14 @@ export function selectMacReleaseAssets(fileNames, version, targetArch) {
     .sort();
 }
 
-export function assertMacReleaseAssetPair(assetNames, version, targetArch) {
-  const expected = expectedMacReleaseAssetNames(version, targetArch);
+export function assertMacReleaseAssetPair(
+  assetNames,
+  version,
+  targetArch,
+  productName = "ZCode",
+  artifactSuffix = "",
+) {
+  const expected = expectedMacReleaseAssetNames(version, targetArch, productName, artifactSuffix);
   const actual = [...assetNames].sort();
   if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
     throw new Error(
@@ -98,14 +110,19 @@ export function assertMacReleaseAssetPair(assetNames, version, targetArch) {
   }
 }
 
-export function expectedMacReleaseAssetNames(version, targetArch) {
+export function expectedMacReleaseAssetNames(
+  version,
+  targetArch,
+  productName = "ZCode",
+  artifactSuffix = "",
+) {
   bumpSemver(version, "patch");
   if (targetArch !== "arm64" && targetArch !== "x64") {
     throw new Error(`Нужна точная архитектура release asset: ${targetArch}`);
   }
   return [
-    `ZCode-${version}-mac-${targetArch}.dmg`,
-    `ZCode-${version}-mac-${targetArch}.zip`,
+    `${productName}-${version}-mac-${targetArch}${artifactSuffix}.dmg`,
+    `${productName}-${version}-mac-${targetArch}${artifactSuffix}.zip`,
   ].sort();
 }
 
@@ -113,23 +130,27 @@ export async function clearExpectedMacReleaseAssets({
   distDir,
   version,
   targetArch,
+  productName = "ZCode",
+  artifactSuffix = "",
   removeFile = (filePath) => rm(filePath, { force: true }),
 }) {
-  const paths = expectedMacReleaseAssetNames(version, targetArch).map((name) =>
-    path.join(distDir, name),
+  const paths = expectedMacReleaseAssetNames(version, targetArch, productName, artifactSuffix).map(
+    (name) => path.join(distDir, name),
   );
   for (const filePath of paths) await removeFile(filePath);
   return paths;
 }
 
-export function selectMacReleaseAppBundle(appEntries) {
+export function selectMacReleaseAppBundle(appEntries, expectedName = "ZCode.app") {
   const appNames = appEntries
     .filter((entry) => entry.isDirectory() && entry.name.endsWith(".app"))
     .map((entry) => entry.name);
-  if (appNames.length !== 1 || appNames[0] !== "ZCode.app") {
-    throw new Error(
-      `Для стабильного macOS релиза нужна ровно одна production-сборка ZCode.app; найдено: ${appNames.join(", ") || "ничего"}`,
-    );
+  if (appNames.length !== 1 || appNames[0] !== expectedName) {
+    const requirement =
+      expectedName === "ZCode.app"
+        ? "Для стабильного macOS релиза нужна ровно одна production-сборка ZCode.app"
+        : `Для macOS релиза нужна ровно одна сборка ${expectedName}`;
+    throw new Error(`${requirement}; найдено: ${appNames.join(", ") || "ничего"}`);
   }
   return appNames[0];
 }
@@ -223,7 +244,7 @@ export function assertAssetHashes(expectedHashes, downloadedHashes) {
   }
 }
 
-export function assertZipContainsOnlyReleaseApp(entries) {
+export function assertZipContainsOnlyReleaseApp(entries, appName = "ZCode.app") {
   if (!Array.isArray(entries) || entries.length === 0) {
     throw new Error("macOS ZIP не содержит записей приложения");
   }
@@ -240,10 +261,22 @@ export function assertZipContainsOnlyReleaseApp(entries) {
     const parts = normalized.split("/");
     if (
       parts.some((part) => part === "" || part === "." || part === "..") ||
-      (normalized !== "ZCode.app" && !normalized.startsWith("ZCode.app/"))
+      (normalized !== appName && !normalized.startsWith(`${appName}/`))
     ) {
-      throw new Error("macOS ZIP должен содержать только ZCode.app и его файлы");
+      throw new Error(`macOS ZIP должен содержать только ${appName} и его файлы`);
     }
+  }
+}
+
+export async function assertUnsignedMacApp(appRoot) {
+  for (const relativePath of ["Contents/_CodeSignature", "Contents/CodeResources"]) {
+    try {
+      await lstat(path.join(appRoot, relativePath));
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "ENOENT") continue;
+      throw error;
+    }
+    throw new Error(`Preview app содержит подпись ${relativePath}; ожидается unsigned сборка`);
   }
 }
 
@@ -312,6 +345,10 @@ async function verifyMacReleaseAppBundle({
   appPath,
   version,
   targetArch,
+  productName = "ZCode",
+  expectedBundleId = "dev.zcode.app",
+  requireStaple = true,
+  requireUnsigned = false,
   runCommand,
   captureCommand,
   hashDirectory,
@@ -336,6 +373,19 @@ async function verifyMacReleaseAppBundle({
     );
   }
 
+  const bundleId = await captureCommand([
+    "/usr/libexec/PlistBuddy",
+    "-c",
+    "Print :CFBundleIdentifier",
+    infoPlistPath,
+  ]);
+  if (bundleId.trim() !== expectedBundleId) {
+    throw new Error(
+      `Release app identity ${bundleId.trim() || "отсутствует"} не совпадает с ${expectedBundleId}`,
+    );
+  }
+  if (requireUnsigned) await assertUnsignedMacApp(appRoot);
+
   const executableName = await captureCommand([
     "/usr/libexec/PlistBuddy",
     "-c",
@@ -358,12 +408,17 @@ async function verifyMacReleaseAppBundle({
     );
   }
 
-  await runCommand(["bash", path.join(root, "scripts", "doctor-macos-release-app.sh"), appRoot], {
-    env: { ZCODE_MACOS_REQUIRE_APP_STAPLE: "1" },
-  });
+  if (requireStaple) {
+    await runCommand(["bash", path.join(root, "scripts", "doctor-macos-release-app.sh"), appRoot], {
+      env: { ZCODE_MACOS_REQUIRE_APP_STAPLE: "1" },
+    });
+  }
   return {
     version: bundleVersion.trim(),
     architecture: actualArchs[0],
+    productName,
+    bundleId: bundleId.trim(),
+    requireStaple,
     treeSha256: await hashDirectory(appRoot),
   };
 }
@@ -371,7 +426,9 @@ async function verifyMacReleaseAppBundle({
 function assertPackagedAppMatchesSource(sourceApp, packagedApp, label) {
   if (
     sourceApp.version !== packagedApp.version ||
-    sourceApp.architecture !== packagedApp.architecture
+    sourceApp.architecture !== packagedApp.architecture ||
+    sourceApp.productName !== packagedApp.productName ||
+    sourceApp.bundleId !== packagedApp.bundleId
   ) {
     throw new Error(`${label} app version/architecture отличается от проверенной сборки`);
   }
@@ -393,20 +450,26 @@ async function verifyZipPayload({
   createTemporaryDirectory,
   removeTemporaryDirectory,
 }) {
+  const appBundleName = sourceApp.productName;
+  const appDirectoryName = `${appBundleName}.app`;
   const listing = await captureCommand(["unzip", "-Z1", zipPath]);
   const entries = listing.split(/\r?\n/u).filter((entry) => entry.length > 0);
-  assertZipContainsOnlyReleaseApp(entries);
+  assertZipContainsOnlyReleaseApp(entries, appDirectoryName);
   const extractionDir = await createTemporaryDirectory("zcode-release-zip-");
   try {
     await runCommand(["ditto", "-x", "-k", zipPath, extractionDir]);
     const extractionRoot = await realpath(extractionDir);
-    const appPath = path.join(extractionRoot, "ZCode.app");
+    const appPath = path.join(extractionRoot, appDirectoryName);
     const appRealPath = await realpath(appPath);
     assertPathWithin(extractionRoot, appRealPath, "ZIP app bundle");
     const packagedApp = await verifyMacReleaseAppBundle({
       appPath,
       version,
       targetArch,
+      productName: appBundleName,
+      expectedBundleId: sourceApp.bundleId,
+      requireStaple: sourceApp.requireStaple,
+      requireUnsigned: !sourceApp.requireStaple,
       runCommand,
       captureCommand,
       hashDirectory,
@@ -444,12 +507,19 @@ async function verifyDmgPayload({
       dmgPath,
     ]);
     mounted = true;
-    const appName = selectMacReleaseAppBundle(await readdir(mountPoint, { withFileTypes: true }));
+    const appName = selectMacReleaseAppBundle(
+      await readdir(mountPoint, { withFileTypes: true }),
+      `${sourceApp.productName}.app`,
+    );
     const appPath = path.join(mountPoint, appName);
     const packagedApp = await verifyMacReleaseAppBundle({
       appPath,
       version,
       targetArch,
+      productName: sourceApp.productName,
+      expectedBundleId: sourceApp.bundleId,
+      requireStaple: sourceApp.requireStaple,
+      requireUnsigned: !sourceApp.requireStaple,
       runCommand,
       captureCommand,
       hashDirectory,
@@ -478,6 +548,11 @@ async function verifyDmgPayload({
 export async function preflightMacRelease({
   version,
   targetArch,
+  productName = "ZCode",
+  artifactSuffix = "",
+  expectedBundleId = "dev.zcode.app",
+  requireStaple = true,
+  requireUnsigned = false,
   distDir,
   runCommand,
   captureCommand = capture,
@@ -486,15 +561,28 @@ export async function preflightMacRelease({
   createTemporaryDirectory = (prefix) => mkdtemp(path.join(tmpdir(), prefix)),
   removeTemporaryDirectory = (directoryPath) => rm(directoryPath, { recursive: true, force: true }),
 }) {
-  const assetNames = selectMacReleaseAssets(await readdir(distDir), version, targetArch);
-  assertMacReleaseAssetPair(assetNames, version, targetArch);
+  const assetNames = selectMacReleaseAssets(
+    await readdir(distDir),
+    version,
+    targetArch,
+    productName,
+    artifactSuffix,
+  );
+  assertMacReleaseAssetPair(assetNames, version, targetArch, productName, artifactSuffix);
   const appDir = path.join(distDir, `mac-${targetArch}`);
-  const appBundleName = selectMacReleaseAppBundle(await readdir(appDir, { withFileTypes: true }));
+  const appBundleName = selectMacReleaseAppBundle(
+    await readdir(appDir, { withFileTypes: true }),
+    `${productName}.app`,
+  );
   const appPath = path.join(appDir, appBundleName);
   const sourceApp = await verifyMacReleaseAppBundle({
     appPath,
     version,
     targetArch,
+    productName,
+    expectedBundleId,
+    requireStaple,
+    requireUnsigned,
     runCommand,
     captureCommand,
     hashDirectory,

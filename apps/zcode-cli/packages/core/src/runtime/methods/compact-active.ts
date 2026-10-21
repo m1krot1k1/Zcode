@@ -68,7 +68,7 @@ import { resolveNormalRequestMaxOutputTokens } from "./model-token-limits.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { recordModelUsageFact } from "./usage-observability.js";
 import { resetProjectMemoryRecall } from "../helpers/project-memory-recall.js";
-import { createRuntimeModel } from "./runtime-model.js";
+import { createRuntimeModel, getLatestCompletedModelRequestId } from "./runtime-model.js";
 import {
   filterOutputTokenContinuationEntries,
   preserveCanonicalContextPrefix,
@@ -561,10 +561,12 @@ async function compactActiveConversationImpl(
         ...(toolAnnouncement ? [toolAnnouncement] : []),
       ];
 
+      const completedRequestId = getLatestCompletedModelRequestId(events);
       const modelCompleteEvent = this.createEvent(
         SessionEventType.ModelComplete,
         {
           content: summary,
+          ...(completedRequestId ? { requestId: completedRequestId } : {}),
           stopReason: result.finishReason,
           usage: result.usage,
           querySource: "compact",

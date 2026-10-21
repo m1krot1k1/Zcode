@@ -843,6 +843,8 @@ export interface NetworkRequestStatusPayload {
 }
 
 export interface ModelCompletePayload {
+  /** Provider attempt id linking this usage fact to its admission reservation. */
+  requestId?: string;
   cacheHit?: {
     inputTokens: number;
     cacheReadTokens: number;

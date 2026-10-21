@@ -20,6 +20,7 @@ import {
   assertReleaseBranch,
   assertReleaseMetadata,
   assertReleaseTargetSha,
+  assertUnsignedMacApp,
   bumpSemver,
   buildReleaseCreateArgs,
   clearExpectedMacReleaseAssets,
@@ -31,6 +32,10 @@ import {
   selectMacReleaseAssets,
   sha256,
 } from "../release-macos-local.mjs";
+import {
+  assertPreviewReleaseMetadata,
+  createPreviewBuildEnvironment,
+} from "../release-macos-preview.mjs";
 
 async function createAppBundle(
   appPath,
@@ -39,17 +44,21 @@ async function createAppBundle(
     architecture = "arm64",
     signature = "signed-stapled",
     ticket = "stapled-ticket",
+    bundleId = "dev.zcode.app",
+    unsigned = false,
   } = {},
 ) {
   await mkdir(path.join(appPath, "Contents", "MacOS"), { recursive: true });
-  await mkdir(path.join(appPath, "Contents", "_CodeSignature"), { recursive: true });
+  if (!unsigned) await mkdir(path.join(appPath, "Contents", "_CodeSignature"), { recursive: true });
   await writeFile(
     path.join(appPath, "Contents", "Info.plist"),
-    `CFBundleShortVersionString=${version}\nCFBundleExecutable=ZCode\n`,
+    `CFBundleShortVersionString=${version}\nCFBundleIdentifier=${bundleId}\nCFBundleExecutable=ZCode\n`,
   );
   await writeFile(path.join(appPath, "Contents", "MacOS", "ZCode"), architecture);
-  await writeFile(path.join(appPath, "Contents", "_CodeSignature", "CodeResources"), signature);
-  await writeFile(path.join(appPath, "Contents", "ticket"), ticket);
+  if (!unsigned) {
+    await writeFile(path.join(appPath, "Contents", "_CodeSignature", "CodeResources"), signature);
+    await writeFile(path.join(appPath, "Contents", "ticket"), ticket);
+  }
 }
 
 async function createReleaseFixture(
@@ -65,39 +74,49 @@ async function createReleaseFixture(
     dmgTicket = "stapled-ticket",
     zipEntries,
     doctorRejectAt,
+    productName = "ZCode",
+    bundleId = "dev.zcode.app",
+    unsigned = false,
+    artifactSuffix = "",
   } = {},
 ) {
   const distDir = path.join(root, "dist");
-  const sourceAppPath = path.join(distDir, "mac-arm64", "ZCode.app");
-  const zipAppPath = path.join(root, "zip-payload", "ZCode.app");
-  const dmgAppPath = path.join(root, "dmg-payload", "ZCode.app");
-  await createAppBundle(sourceAppPath);
+  const appName = `${productName}.app`;
+  const sourceAppPath = path.join(distDir, "mac-arm64", appName);
+  const zipAppPath = path.join(root, "zip-payload", appName);
+  const dmgAppPath = path.join(root, "dmg-payload", appName);
+  await createAppBundle(sourceAppPath, { bundleId, unsigned });
   await createAppBundle(zipAppPath, {
     version: zipVersion,
     architecture: zipArch,
     signature: zipSignature,
     ticket: zipTicket,
+    bundleId,
+    unsigned,
   });
   await createAppBundle(dmgAppPath, {
     version: dmgVersion,
     architecture: dmgArch,
     signature: dmgSignature,
     ticket: dmgTicket,
+    bundleId,
+    unsigned,
   });
-  const zipPath = path.join(distDir, "ZCode-3.17.1-mac-arm64.zip");
-  const dmgPath = path.join(distDir, "ZCode-3.17.1-mac-arm64.dmg");
+  const zipPath = path.join(distDir, `${productName}-3.17.1-mac-arm64${artifactSuffix}.zip`);
+  const dmgPath = path.join(distDir, `${productName}-3.17.1-mac-arm64${artifactSuffix}.dmg`);
   await writeFile(zipPath, "fake zip bytes");
   await writeFile(dmgPath, "fake dmg bytes");
   const commands = [];
   const doctorCalls = [];
   const entries = zipEntries ?? [
-    "ZCode.app/",
-    "ZCode.app/Contents/",
-    "ZCode.app/Contents/Info.plist",
-    "ZCode.app/Contents/MacOS/",
-    "ZCode.app/Contents/MacOS/ZCode",
-    "ZCode.app/Contents/_CodeSignature/CodeResources",
-    "ZCode.app/Contents/ticket",
+    `${appName}/`,
+    `${appName}/Contents/`,
+    `${appName}/Contents/Info.plist`,
+    `${appName}/Contents/MacOS/`,
+    `${appName}/Contents/MacOS/ZCode`,
+    ...(unsigned
+      ? []
+      : [`${appName}/Contents/_CodeSignature/CodeResources`, `${appName}/Contents/ticket`]),
   ];
   const captureCommand = async (command) => {
     commands.push(command);
@@ -124,12 +143,12 @@ async function createReleaseFixture(
       return;
     }
     if (command[0] === "ditto") {
-      await cp(zipAppPath, path.join(command[4], "ZCode.app"), { recursive: true });
+      await cp(zipAppPath, path.join(command[4], appName), { recursive: true });
       return;
     }
     if (command[0] === "hdiutil" && command[1] === "attach") {
       const mountPoint = command[6];
-      await cp(dmgAppPath, path.join(mountPoint, "ZCode.app"), { recursive: true });
+      await cp(dmgAppPath, path.join(mountPoint, appName), { recursive: true });
       return;
     }
     if (command[0] === "hdiutil" && command[1] === "detach") return;
@@ -151,6 +170,67 @@ test("major и minor сбрасывают младшие разряды", () => 
   assert.equal(bumpSemver("3.16.2", "patch"), "3.16.3");
   assert.equal(bumpSemver("3.16.2", "minor"), "3.17.0");
   assert.equal(bumpSemver("3.16.2", "major"), "4.0.0");
+});
+
+test("Preview identity использует тестовый backend и не наследует секреты подписи или GitHub", () => {
+  const env = createPreviewBuildEnvironment({
+    PATH: "/usr/bin",
+    ZCODE_PREVIEW_TEST_BASE_URL: "https://zcode.z.ai/test/api/v1",
+    APPLE_API_KEY: "must-not-be-forwarded",
+    APPLE_ID: "must-not-be-forwarded",
+    CSC_LINK: "must-not-be-forwarded",
+    CSC_NAME: "must-not-be-forwarded",
+    GH_TOKEN: "must-not-be-forwarded",
+    GITHUB_TOKEN: "must-not-be-forwarded",
+    ZCODE_ENV: "test",
+    ZCODE_PREVIEW_IDENTITY: "0",
+    ZCODE_ENABLE_MAC_SIGN: "1",
+    ZCODE_ENABLE_MAC_NOTARIZE: "1",
+  });
+  assert.equal(env.PATH, "/usr/bin");
+  assert.equal(env.ZCODE_ENV, "test");
+  assert.equal(env.ZCODE_PREVIEW_IDENTITY, "1");
+  assert.equal(env.ZCODE_ENABLE_MAC_SIGN, "0");
+  assert.equal(env.ZCODE_ENABLE_MAC_NOTARIZE, "0");
+  assert.equal(env.CSC_IDENTITY_AUTO_DISCOVERY, "false");
+  assert.equal("APPLE_API_KEY" in env, false);
+  assert.equal("APPLE_ID" in env, false);
+  assert.equal("CSC_LINK" in env, false);
+  assert.equal("CSC_NAME" in env, false);
+  assert.equal("GH_TOKEN" in env, false);
+  assert.equal("GITHUB_TOKEN" in env, false);
+});
+
+test("Preview release требует опубликованный prerelease", () => {
+  const metadata = {
+    tagName: "v3.17.1",
+    isDraft: false,
+    isPrerelease: true,
+    assets: [{ name: "ZCode Preview-3.17.1-mac-arm64_TEST.dmg" }],
+  };
+  assert.doesNotThrow(() =>
+    assertPreviewReleaseMetadata(metadata, "v3.17.1", ["ZCode Preview-3.17.1-mac-arm64_TEST.dmg"]),
+  );
+  assert.throws(
+    () =>
+      assertPreviewReleaseMetadata({ ...metadata, isPrerelease: false }, "v3.17.1", [
+        "ZCode Preview-3.17.1-mac-arm64_TEST.dmg",
+      ]),
+    /prerelease/u,
+  );
+});
+
+test("unsigned Preview отклоняет app bundle с подписью", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-preview-unsigned-"));
+  try {
+    const contents = path.join(root, "Contents");
+    await mkdir(contents, { recursive: true });
+    await assertUnsignedMacApp(root);
+    await mkdir(path.join(contents, "_CodeSignature"));
+    await assert.rejects(assertUnsignedMacApp(root), /ожидается unsigned/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("неизвестный уровень не молча становится patch", () => {
@@ -183,6 +263,24 @@ test("в релиз попадает точная пара dmg и zip этой �
   );
   assert.deepEqual(selected, ["ZCode-3.17.0-mac-arm64.dmg", "ZCode-3.17.0-mac-arm64.zip"]);
   assert.throws(() => selectMacReleaseAssets([], "3.17.0"), /точная архитектура/);
+});
+
+test("Preview assets используют тестовый backend suffix и отделены от stable assets", () => {
+  assert.deepEqual(
+    selectMacReleaseAssets(
+      [
+        "ZCode Preview-3.17.0-mac-arm64_TEST.dmg",
+        "ZCode Preview-3.17.0-mac-arm64_TEST.zip",
+        "ZCode-3.17.0-mac-arm64.dmg",
+        "ZCode Preview-3.17.0-mac-arm64.dmg",
+      ],
+      "3.17.0",
+      "arm64",
+      "ZCode Preview",
+      "_TEST",
+    ),
+    ["ZCode Preview-3.17.0-mac-arm64_TEST.dmg", "ZCode Preview-3.17.0-mac-arm64_TEST.zip"],
+  );
 });
 
 test("перед сборкой удаляются только точные DMG/ZIP текущей версии и архитектуры", async () => {
@@ -378,6 +476,43 @@ test("локальный release preflight проходит без публик�
     assert.doesNotThrow(() => assertAssetHashes(preflight.assetHashes, downloadedHashes));
     assert.equal(
       fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Preview preflight validates preview identity, architecture and unsigned archive payloads", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-preview-preflight-"));
+  try {
+    const fixture = await createReleaseFixture(root, {
+      productName: "ZCode Preview",
+      bundleId: "dev.zcode.app.preview",
+      unsigned: true,
+      artifactSuffix: "_TEST",
+    });
+    const result = await preflightMacRelease({
+      version: "3.17.1",
+      targetArch: "arm64",
+      distDir: fixture.distDir,
+      productName: "ZCode Preview",
+      artifactSuffix: "_TEST",
+      expectedBundleId: "dev.zcode.app.preview",
+      requireStaple: false,
+      requireUnsigned: true,
+      runCommand: fixture.runCommand,
+      captureCommand: fixture.captureCommand,
+      hashDirectory: async () => "preview-app-tree",
+    });
+    assert.equal(path.basename(result.appPath), "ZCode Preview.app");
+    assert.deepEqual(result.assetNames, [
+      "ZCode Preview-3.17.1-mac-arm64_TEST.dmg",
+      "ZCode Preview-3.17.1-mac-arm64_TEST.zip",
+    ]);
+    assert.equal(fixture.doctorCalls.length, 0);
+    assert.equal(
+      fixture.commands.some((command) => command[0] === "bash"),
       false,
     );
   } finally {

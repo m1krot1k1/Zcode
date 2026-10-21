@@ -140,6 +140,7 @@ export async function appendEvent(
       phase = "session_event.persist_durable";
       await persistDurableSessionEvent.call(this, storedEvent, traceContext);
     }
+    this.runtimeTaskRegistry.recordRootRunUsage?.(storedEvent);
     phase = "session_event.record_usage";
     await recordToolUsageFromEvent(this, storedEvent, traceContext);
     phase = "session_event.notify_sinks";
