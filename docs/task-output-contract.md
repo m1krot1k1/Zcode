@@ -59,22 +59,32 @@ Provider-facing 输入错误分为两层：
   `<tool_use_error>InputValidationError: ...</tool_use_error>`，并标记 `is_error:true`。
 - `task_id` 是空字符串：返回
   `<tool_use_error>Task ID is required</tool_use_error>`，并标记 `is_error:true`。
-- `task_id` 非空但 registry 中不存在：返回
+- `task_id` 非空，但 live registry 与当前 root session 的 durable terminal catalog 均不存在：返回
   `<tool_use_error>No task found with ID: <task_id></tool_use_error>`，并标记
   `is_error:true`。
 
-后两项由 `TaskOutput` 的 `validateInput` 在初始 schema validation 之后、
-`PreToolUse` 之前返回 `{ result:false, errorCode:1|2, message }`。失败时不运行
-`PreToolUse`、权限判断、handler 或 `PostToolUseFailure`。executor 不识别具体 tool
-name，只负责统一组装失败结果并结束 tool event；provider-facing `modelContent` 使用
-`<tool_use_error>`，UI、日志和结构化错误继续保留不带标签的原始 message。
+空 `task_id` 仍由 `validateInput` 在 `PreToolUse` 之前返回。非空 task id 的存在性需要
+异步查询 live registry 与当前 root session 的 terminal catalog，因此由 handler 在权限检查后
+返回 retrieval result；不运行任务或其他副作用。executor 不识别具体 tool name，只负责统一组装
+失败结果并结束 tool event；provider-facing `modelContent` 使用 `<tool_use_error>`，UI、日志和
+结构化错误继续保留不带标签的原始 message。
 
-handler 在实际读取前仍重新检查 registry，覆盖校验后任务被删除或 hook 修改输入的竞态；
-该防御性检查不改变正常任务读取和等待路径。
+handler 先读 registry；命中时保留现有等待/通知语义。未命中时只查询当前 root session 的
+`runtime/task_terminal` entries，并校验 schema、session owner、task ID 与最新 `attemptId`；
+已结束的 durable 记录在 `block=true` 和 `block=false` 下都直接读取，不启动轮询。Catalog
+损坏或 artifact 不可读时返回明确 retrieval failure，不伪造 `TASK_NOT_FOUND` 或任务结果。
+
+`RuntimeTaskRegistry` 的目标是将可安全逐出的 compact terminal snapshots 控制在 512 个以内；只逐出已成功持久化
+terminal catalog 且没有 active descendants、waiter 或 finalizer 的最旧任务。active/finalizing task、其
+祖先、waiter 所依赖的任务及尚未成功写入 catalog 的任务不可逐出，因此深层 active branch 可暂时
+使 cache 超过目标值。Entry 保存最小展示元数据和 attempt ID，不保存绝对路径、prompt
+或完整输出；root `SessionStorePort` 是 durable catalog 的唯一
+所有者。输出路径由 runtime 配置、root session 与等于 task ID 的 agent ID 重新计算。Entry ID 同时包含 root session、task ID 和 attempt ID；重复 task ID 按最近完成的 attempt
+查询，同毫秒内无法判定先后时拒绝返回结果，迟到的旧 attempt 不可覆盖新 attempt。Nested caller 经共享 Registry 解析 root session。`SendMessage` 可从目录恢复 terminal snapshot 后继续新 attempt；`TaskOutput` 只读历史，不恢复执行。
 
 ## 状态与通知
 
-`RuntimeTaskRegistry` 是唯一任务存在性和状态来源：
+`RuntimeTaskRegistry` 是当前 lifecycle 与 active-state 的唯一所有者；terminal catalog 只恢复已结束的展示快照：
 
 ```text
 running / pending + block=false -> not_ready + 当前 task
@@ -85,7 +95,7 @@ running / pending + block=true  -> 每 100ms 轮询
 terminal                         -> success + 当前 task
 ```
 
-- 初次查找不到任务：`No task found with ID: <task_id>`。
+- live registry 与当前 session catalog 都找不到 task：`No task found with ID: <task_id>`。
 - `block=true` 在等待前发出一次标准 `ToolCallProgress`。ZCode 复用现有 progress
   schema，不新增 TaskOutput 专属 Protocol 字段；该内部投影不影响
   provider-visible result。
@@ -107,7 +117,7 @@ terminal                         -> success + 当前 task
     头部超过预算后，运行中重复查询可能保持相同内容；最新进度来自 Bash 的有界尾读。
   - framework error、timeout/cancel 文本仍可能存在于结构化 stderr。TaskOutput 将其追加到 canonical command output 后；由于 canonical file 不包含这部分文本，此时不得把该文件描述为完整合并输出。
   - 历史 split-path snapshot 仍可按 stdout 后 stderr 读取，但两个不同文件共同组成结果时，不新增合并 artifact，也不把任一单流路径伪装成 `Full output`。超大文本交给 TaskOutput 自身的 100000 字符持久化边界处理。
-- `local_agent`：终态优先取 Agent result content blocks，以单个 `\n` 拼接；否则读取任务输出文件。输出文件缺失不影响任务存在性或状态。
+- `local_agent`：live 终态优先取 Agent result content blocks，以单个 `\n` 拼接；否则读取任务输出文件。Durable lookup 使用 catalog 中的 locator；输出文件缺失不影响历史任务身份，但结果标记为不可用。
 - 其他已注册 ZCode task type：读取 registry 记录的通用输出文件。
 - 输出文件读取失败或不存在时返回空字符串。
 - 通用及终态输出文件最多读取末尾 8 MiB；省略前部时添加

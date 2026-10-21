@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { join } from "node:path";
 import type {
   ModelUsage,
   PrismBashEvidenceArtifact,
@@ -8,11 +9,11 @@ import type {
   PrismTaskAcceptanceLineage,
   PrismTaskContract,
   SessionEntryInfo,
-  SessionEvent,
+  RuntimeTaskTerminalCatalogRecord,
   SessionId,
+  SessionEvent,
   SessionInfo,
   SubagentExecutionTerminalPayload,
-  SubagentTaskStatus,
   SubagentTaskSnapshot,
   TraceContext,
   TurnId,
@@ -30,6 +31,7 @@ import {
   SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
   SESSION_ENTRY_PRISM_TASK_CONTRACT,
   SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
   SessionEventType,
   type AgentOutput,
 } from "@zcode/contracts";
@@ -107,6 +109,132 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   traceContext?: TraceContext;
   turnId?: TurnId;
   usage?: RuntimeTaskUsageSnapshot;
+}
+
+export const MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS = 512;
+
+export function createRuntimeTaskTerminalCatalogEntry(
+  task: RuntimeTaskSnapshot,
+): SessionEntryInfo | undefined {
+  if (
+    task.type !== "local_agent" ||
+    !task.rootSessionId ||
+    !task.attemptId ||
+    !isTerminalRuntimeTask(task) ||
+    !task.completedAt
+  ) {
+    return undefined;
+  }
+  const record: RuntimeTaskTerminalCatalogRecord = {
+    schema: "zcode.runtime.task-terminal.v1",
+    taskId: task.taskId,
+    attemptId: task.attemptId,
+    taskType: "local_agent",
+    agentId: task.agentId,
+    agentType: task.agentType,
+    ...(task.childSessionId ? { childSessionId: task.childSessionId } : {}),
+    ...(task.parentToolCallId ? { parentToolCallId: String(task.parentToolCallId) } : {}),
+    ...(task.pid === undefined ? {} : { pid: task.pid }),
+    status: task.status,
+    description: task.description.slice(0, 4096),
+    ...(task.error ? { error: task.error.slice(0, 4096) } : {}),
+    ...(task.exitCode === undefined ? {} : { exitCode: task.exitCode }),
+    startedAt: task.startedAt.getTime(),
+    completedAt: task.completedAt.getTime(),
+  };
+  return {
+    id: `runtime-task-terminal:${task.rootSessionId}:${task.taskId}:${task.attemptId}`,
+    sessionID: task.rootSessionId,
+    type: SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
+    touchSession: false,
+    time: { created: record.completedAt, updated: record.completedAt },
+    data: { terminal: record },
+  };
+}
+
+export function readRuntimeTaskTerminalCatalogRecord(
+  entry: SessionEntryInfo,
+): RuntimeTaskTerminalCatalogRecord | undefined {
+  if (entry.type !== SESSION_ENTRY_RUNTIME_TASK_TERMINAL || !isRecord(entry.data)) return;
+  const record = entry.data.terminal;
+  if (!isRecord(record)) return;
+  if (
+    record.schema !== "zcode.runtime.task-terminal.v1" ||
+    typeof record.taskId !== "string" ||
+    record.taskId.length === 0 ||
+    typeof record.attemptId !== "string" ||
+    record.attemptId.length === 0 ||
+    record.taskType !== "local_agent" ||
+    typeof record.agentId !== "string" ||
+    typeof record.agentType !== "string" ||
+    record.agentId !== record.taskId ||
+    typeof record.description !== "string" ||
+    typeof record.status !== "string" ||
+    !TERMINAL_STATUSES.has(record.status as RuntimeTaskSnapshot["status"]) ||
+    typeof record.startedAt !== "number" ||
+    !Number.isFinite(record.startedAt) ||
+    typeof record.completedAt !== "number" ||
+    !Number.isFinite(record.completedAt) ||
+    (record.error !== undefined && typeof record.error !== "string") ||
+    (record.exitCode !== undefined && typeof record.exitCode !== "number") ||
+    (record.childSessionId !== undefined && typeof record.childSessionId !== "string") ||
+    (record.parentToolCallId !== undefined && typeof record.parentToolCallId !== "string") ||
+    (record.pid !== undefined && typeof record.pid !== "number")
+  ) {
+    return;
+  }
+  if (
+    entry.id !==
+    `runtime-task-terminal:${entry.sessionID}:${record.taskId}:${record.attemptId}`
+  ) {
+    return;
+  }
+  return record as unknown as RuntimeTaskTerminalCatalogRecord;
+}
+
+export function runtimeTaskSnapshotFromTerminalCatalog(
+  record: RuntimeTaskTerminalCatalogRecord,
+  rootSessionId: SessionId,
+  outputRootDir: string,
+): RuntimeTaskSnapshot {
+  return {
+    taskId: record.taskId,
+    agentId: record.agentId,
+    agentType: record.agentType,
+    description: record.description,
+    status: record.status,
+    startedAt: new Date(record.startedAt),
+    completedAt: new Date(record.completedAt),
+    ...(record.childSessionId ? { childSessionId: record.childSessionId } : {}),
+    ...(record.parentToolCallId ? { parentToolCallId: record.parentToolCallId } : {}),
+    ...(record.pid === undefined ? {} : { pid: record.pid }),
+    ...(record.error ? { error: record.error } : {}),
+    ...(record.exitCode === undefined ? {} : { exitCode: record.exitCode }),
+    outputFile: runtimeTaskOutputFile(outputRootDir, rootSessionId, record.taskId),
+    rootSessionId,
+    type: "local_agent",
+  };
+}
+
+export function runtimeTaskOutputFile(
+  outputRootDir: string,
+  rootSessionId: SessionId,
+  taskId: string,
+): string {
+  // 修复依据：catalog 是持久化输入；路径只能由可信 root session 和 task ID 决定，不能由记录内的 owner/path 选文件。
+  if (
+    rootSessionId.length === 0 ||
+    rootSessionId === "." ||
+    rootSessionId === ".." ||
+    /[\\/]/u.test(rootSessionId) ||
+    taskId.length === 0 ||
+    taskId === "." ||
+    taskId === ".." ||
+    /[\\/]/u.test(taskId)
+  ) {
+    throw new Error("Runtime task catalog contains an invalid task ID");
+  }
+  return join(outputRootDir, rootSessionId, taskId, "output.txt");
 }
 
 export interface RuntimeTaskCancellationHandle {
@@ -1119,6 +1247,8 @@ export interface RuntimeTaskRegistry {
   setOffPeakExecutionId?(executionId: string | undefined): void;
   all(): Record<string, RuntimeTaskSnapshot>;
   get(id: string): RuntimeTaskSnapshot | undefined;
+  isTerminalTaskArchived?(taskId: string, attemptId: string): boolean;
+  markTerminalTaskArchived?(taskId: string, attemptId: string): void;
   getSubagentTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined;
   drainMessages(id: string): RuntimeTaskPendingMessage[];
   queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
@@ -1245,6 +1375,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   >();
   private readonly closedSessionOwners = new Set<SessionId>();
   private readonly tasks = new Map<string, RuntimeTaskSnapshot>();
+  private readonly terminalSubagentTaskIds = new Set<string>();
+  private readonly archivedTerminalTaskAttempts = new Set<string>();
   private readonly subagentTaskIdByChildSession = new Map<SessionId, string>();
   private readonly subagentTaskIdsByParentSession = new Map<SessionId, Set<string>>();
   private readonly activeSubagentTaskIdsByRootSession = new Map<SessionId, Set<string>>();
@@ -1630,7 +1762,79 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       this.resolveTerminalWaiters(taskId, current);
     }
     this.maybeReleaseRootRunBudget(current?.rootRunId);
+    this.pruneArchivedTerminalSnapshots();
     this.changed();
+  }
+
+  markTerminalTaskArchived(taskId: string, attemptId: string): void {
+    const task = this.tasks.get(taskId);
+    if (!task || task.attemptId !== attemptId || !isTerminalRuntimeTask(task)) return;
+    this.archivedTerminalTaskAttempts.delete(terminalArchiveKey(taskId, attemptId));
+    this.archivedTerminalTaskAttempts.add(terminalArchiveKey(taskId, attemptId));
+    this.pruneArchivedTerminalSnapshots();
+    this.changed();
+  }
+
+  isTerminalTaskArchived(taskId: string, attemptId: string): boolean {
+    return this.archivedTerminalTaskAttempts.has(terminalArchiveKey(taskId, attemptId));
+  }
+
+  private pruneArchivedTerminalSnapshots(): void {
+    while (this.terminalSubagentTaskIds.size > MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS) {
+      let candidate: RuntimeTaskSnapshot | undefined;
+      for (const key of this.archivedTerminalTaskAttempts) {
+        const separator = key.indexOf("\0");
+        const taskId = key.slice(0, separator);
+        const attemptId = key.slice(separator + 1);
+        const task = this.tasks.get(taskId);
+        if (!task || task.attemptId !== attemptId || !isTerminalRuntimeTask(task)) {
+          this.archivedTerminalTaskAttempts.delete(key);
+          continue;
+        }
+        if (
+          task.pendingMessages?.length ||
+          this.terminalWaiters.get(taskId)?.size ||
+          this.finalizingSubagentTasks.has(taskId) ||
+          this.cancellationHandles.has(taskId) ||
+          this.hasActiveSubagentDescendant(task)
+        ) {
+          continue;
+        }
+        candidate = task;
+        break;
+      }
+      if (!candidate) return;
+      this.removeTaskIndexes(candidate);
+      this.tasks.delete(candidate.taskId);
+      this.terminalSubagentTaskIds.delete(candidate.taskId);
+      this.archivedTerminalTaskAttempts.delete(
+        terminalArchiveKey(candidate.taskId, candidate.attemptId ?? ""),
+      );
+    }
+  }
+
+  private hasActiveSubagentDescendant(task: RuntimeTaskSnapshot): boolean {
+    if (!task.childSessionId) return false;
+    const pendingSessions = [task.childSessionId];
+    const visitedSessions = new Set<SessionId>();
+    while (pendingSessions.length > 0) {
+      const sessionId = pendingSessions.pop();
+      if (!sessionId || visitedSessions.has(sessionId)) continue;
+      visitedSessions.add(sessionId);
+      for (const childTaskId of this.subagentTaskIdsByParentSession.get(sessionId) ?? []) {
+        const child = this.tasks.get(childTaskId);
+        if (!child) continue;
+        if (
+          !isTerminalRuntimeTask(child) ||
+          this.finalizingSubagentTasks.has(childTaskId) ||
+          this.cancellationHandles.has(childTaskId)
+        ) {
+          return true;
+        }
+        if (child.childSessionId) pendingSessions.push(child.childSessionId);
+      }
+    }
+    return false;
   }
 
   async cancelSubagentChildren(
@@ -1686,6 +1890,16 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
 
     const previous = this.tasks.get(task.taskId);
+    if (task.type === "local_agent" && isTerminalRuntimeTask(task)) {
+      this.terminalSubagentTaskIds.add(task.taskId);
+    } else {
+      this.terminalSubagentTaskIds.delete(task.taskId);
+    }
+    if (previous?.attemptId && previous.attemptId !== task.attemptId) {
+      this.archivedTerminalTaskAttempts.delete(
+        terminalArchiveKey(previous.taskId, previous.attemptId),
+      );
+    }
     if (previous) this.removeTaskIndexes(previous);
     this.tasks.set(task.taskId, task);
     if (task.type !== "local_agent") {
@@ -1872,6 +2086,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const task = this.tasks.get(id);
     if (task) this.removeTaskIndexes(task);
     this.tasks.delete(id);
+    this.terminalSubagentTaskIds.delete(id);
+    if (task?.attemptId) {
+      this.archivedTerminalTaskAttempts.delete(terminalArchiveKey(id, task.attemptId));
+    }
     this.cancellationHandles.delete(id);
     this.finalizingSubagentTasks.delete(id);
     this.resolveTerminalWaiters(id, undefined);
@@ -2101,6 +2319,10 @@ function isRuntimeTaskSnapshot(
   value: void | RuntimeTaskSnapshot | undefined,
 ): value is RuntimeTaskSnapshot {
   return typeof value === "object" && value !== null && "taskId" in value;
+}
+
+function terminalArchiveKey(taskId: string, attemptId: string): string {
+  return `${taskId}\0${attemptId}`;
 }
 
 export function hasRunningBackgroundRuntimeTask(registry: RuntimeTaskRegistry): boolean {

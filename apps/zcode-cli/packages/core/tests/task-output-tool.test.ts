@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +18,7 @@ import { createInMemoryHookRunner } from "../src/hooks/index.js";
 import { PermissionService, defaultPermissionConfig } from "../src/permission/service.js";
 import {
   InMemoryRuntimeTaskRegistry,
+  createRuntimeTaskTerminalCatalogEntry,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
 import { createToolExecutor } from "../src/tool/executor.js";
@@ -168,6 +169,174 @@ describe("TaskOutput tool", () => {
     } finally {
       await rm(outputDir, { force: true, recursive: true });
     }
+  });
+
+  it("resolves an evicted task from the root-session terminal catalog", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "zcode-archived-agent-output-"));
+    try {
+      const outputFile = join(outputDir, "sess_task_output", "agent_archived", "output.txt");
+      await mkdir(join(outputDir, "sess_task_output", "agent_archived"), { recursive: true });
+      await writeFile(outputFile, "durable terminal result", "utf8");
+      const older = runtimeTask({
+        taskId: "agent_archived",
+        agentId: "agent_archived",
+        rootSessionId: "sess_task_output" as never,
+        parentSessionId: "sess_task_output" as never,
+        attemptId: "attempt-old",
+        status: "completed",
+        completedAt: new Date("2026-07-25T00:00:01.000Z"),
+        outputFile: join(outputDir, "sess_task_output", "agent_archived", "old-output.txt"),
+      });
+      const latest = runtimeTask({
+        ...older,
+        attemptId: "attempt-latest",
+        completedAt: new Date("2026-07-25T00:00:02.000Z"),
+        outputFile,
+      });
+      const entries = [
+        createRuntimeTaskTerminalCatalogEntry(older),
+        createRuntimeTaskTerminalCatalogEntry(latest),
+      ];
+      const sessionStore = {
+        sessionEntries: vi.fn(async () => entries.filter(Boolean)),
+      };
+      const registry = new InMemoryRuntimeTaskRegistry();
+      registry.register(
+        runtimeTask({
+          taskId: "agent_parent",
+          rootSessionId: "sess_task_output" as never,
+          childSessionId: "nested-session" as never,
+          status: "running",
+        }),
+      );
+
+      const output = await taskOutputToolEntry.handler(
+        { task_id: "agent_archived", block: true },
+        toolContext(registry, {
+          sessionId: "nested-session" as never,
+          sessionStore: sessionStore as never,
+          runtimeTaskOutputRootDir: outputDir,
+        }),
+      );
+
+      expect(output).toMatchObject({
+        retrieval_status: "success",
+        task: {
+          task_id: "agent_archived",
+          status: "completed",
+          output: "durable terminal result",
+        },
+      });
+      expect(sessionStore.sessionEntries).toHaveBeenCalledWith({
+        sessionID: "sess_task_output",
+        type: "runtime/task_terminal",
+        idPrefix: "runtime-task-terminal:sess_task_output:agent_archived:",
+      });
+      await rm(outputFile, { force: true });
+      expect(
+        await taskOutputToolEntry.handler(
+          { task_id: "agent_archived", block: false },
+          toolContext(registry, {
+            sessionId: "nested-session" as never,
+            sessionStore: sessionStore as never,
+            runtimeTaskOutputRootDir: outputDir,
+          }),
+        ),
+      ).toMatchObject({ result: false, errorCode: 3 });
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects ambiguous archived attempts instead of choosing by storage order", async () => {
+    const completedAt = new Date("2026-07-25T00:00:02.000Z");
+    const entries = ["attempt-a", "attempt-b"].map((attemptId) =>
+      createRuntimeTaskTerminalCatalogEntry(
+        runtimeTask({
+          taskId: "agent_ambiguous",
+          agentId: "agent_ambiguous",
+          rootSessionId: "sess_task_output" as never,
+          parentSessionId: "sess_task_output" as never,
+          attemptId,
+          status: "completed",
+          completedAt,
+        }),
+      ),
+    );
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const sessionStore = {
+      sessionEntries: vi.fn(async () => entries.filter(Boolean)),
+    };
+
+    await expect(
+      taskOutputToolEntry.handler(
+        { task_id: "agent_ambiguous", block: true },
+        toolContext(registry, { sessionStore: sessionStore as never }),
+      ),
+    ).rejects.toThrow("ambiguous terminal attempts");
+  });
+
+  it("does not return an archived result when a new attempt is admitted during catalog lookup", async () => {
+    const archived = createRuntimeTaskTerminalCatalogEntry(
+      runtimeTask({
+        taskId: "agent_raced",
+        agentId: "agent_raced",
+        rootSessionId: "sess_task_output" as never,
+        parentSessionId: "sess_task_output" as never,
+        attemptId: "attempt-old",
+        status: "completed",
+        completedAt: new Date("2026-07-25T00:00:02.000Z"),
+      }),
+    );
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const sessionStore = {
+      sessionEntries: vi.fn(async () => {
+        registry.register(
+          runtimeTask({
+            taskId: "agent_raced",
+            agentId: "agent_raced",
+            attemptId: "attempt-new",
+            status: "running",
+          }),
+        );
+        return archived ? [archived] : [];
+      }),
+    };
+
+    const output = await taskOutputToolEntry.handler(
+      { task_id: "agent_raced", block: false },
+      toolContext(registry, { sessionStore: sessionStore as never }),
+    );
+
+    expect(output).toMatchObject({
+      retrieval_status: "not_ready",
+      task: { task_id: "agent_raced", status: "running" },
+    });
+  });
+
+  it("rejects catalog metadata that tries to redirect the task artifact to another task", async () => {
+    const entry = createRuntimeTaskTerminalCatalogEntry(
+      runtimeTask({
+        taskId: "agent_catalog_guard",
+        agentId: "agent_catalog_guard",
+        rootSessionId: "sess_task_output" as never,
+        parentSessionId: "sess_task_output" as never,
+        attemptId: "attempt-guard",
+        status: "completed",
+        completedAt: new Date("2026-07-25T00:00:02.000Z"),
+      }),
+    );
+    if (!entry) throw new Error("expected terminal catalog entry");
+    const data = entry.data as { terminal: { agentId: string } };
+    data.terminal.agentId = "another-task";
+    const sessionStore = { sessionEntries: vi.fn(async () => [entry]) };
+
+    await expect(
+      taskOutputToolEntry.handler(
+        { task_id: "agent_catalog_guard", block: true },
+        toolContext(new InMemoryRuntimeTaskRegistry(), { sessionStore: sessionStore as never }),
+      ),
+    ).rejects.toThrow("catalog entry is invalid");
   });
 
   it.each([false, true])(
@@ -1018,7 +1187,7 @@ describe("TaskOutput tool", () => {
     }
   });
 
-  it("rejects empty and unknown task IDs before tool hooks and execution start", async () => {
+  it("rejects empty IDs before hooks and reports unknown IDs through the retrieval handler", async () => {
     const sessionId = createSessionId("task-output-pre-hook-validation");
     const turnId = createTurnId("task-output-pre-hook-validation");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -1078,9 +1247,13 @@ describe("TaskOutput tool", () => {
       expect(result.modelContent).toBe(`<tool_use_error>${testCase.message}</tool_use_error>`);
     }
 
-    expect(preToolUseCalls).toBe(0);
-    expect(postToolUseFailureCalls).toBe(0);
-    expect(events).toEqual([SessionEventType.ToolCallError, SessionEventType.ToolCallError]);
+    expect(preToolUseCalls).toBe(1);
+    expect(postToolUseFailureCalls).toBe(1);
+    expect(events).toEqual([
+      SessionEventType.ToolCallError,
+      SessionEventType.ToolCallStarted,
+      SessionEventType.ToolCallError,
+    ]);
   });
 
   it("tails generic task output at 8 MiB with the omitted-output prefix", async () => {

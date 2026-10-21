@@ -29,8 +29,14 @@ import { createRuntimeCommandId } from "../src/runtime/command-queue.js";
 import type { PromptRuntimeCommand } from "../src/runtime/command-queue.js";
 import { createTurnFailureError } from "../src/runtime/helpers/turn-errors.js";
 import { createInMemoryHookRunner } from "../src/hooks/index.js";
-import { createExploreSubagentPort } from "../src/subagent/runner.js";
-import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
+import {
+  createExploreSubagentPort,
+  restorePreviousTerminalTaskAfterResumeFailure,
+} from "../src/subagent/runner.js";
+import {
+  InMemoryRuntimeTaskRegistry,
+  type RuntimeTaskSnapshot,
+} from "../src/runtime-task/registry.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 
@@ -232,6 +238,115 @@ describe("subagent background notifications", () => {
       expect(payload).not.toHaveProperty("verified");
     },
   );
+
+  it("prefers a newly admitted registry attempt over a stale catalog result during SendMessage", async () => {
+    const sessionId = createSessionId("subagent-send-message-catalog-race");
+    const turnId = createTurnId("subagent-send-message-catalog-race-turn");
+    const taskId = "agent_catalog_race";
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const delivered: string[] = [];
+    const staleCatalogTask: RuntimeTaskSnapshot = {
+      taskId,
+      agentId: taskId,
+      agentType: "general-purpose",
+      description: "old completion",
+      status: "completed",
+      startedAt: new Date(0),
+      completedAt: new Date(1),
+      attemptId: "attempt-old",
+      childSessionId: createSessionId("subagent-send-message-old-child"),
+      parentSessionId: sessionId,
+      type: "local_agent",
+    };
+    const port = createExploreSubagentPort({
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async () => {},
+      enqueueParentTaskNotification: () => undefined,
+      resolveTerminalTaskCatalog: async () => {
+        registry.register({
+          ...staleCatalogTask,
+          status: "running",
+          attemptId: "attempt-current",
+          messageSink: {
+            async send(message) {
+              delivered.push(message.message);
+              return "steered";
+            },
+          },
+        });
+        return staleCatalogTask;
+      },
+      runExploreAgent: async () => {
+        throw new Error("stale terminal task must not be resumed");
+      },
+    });
+
+    await expect(
+      port.sendMessage?.(createSendMessageRequest(sessionId, turnId, taskId)),
+    ).resolves.toMatchObject({ status: "success" });
+    expect(delivered).toHaveLength(1);
+  });
+
+  it("preserves messages accepted during failed resume setup rollback", () => {
+    const sessionId = createSessionId("subagent-resume-rollback-owner");
+    const previousTask: RuntimeTaskSnapshot = {
+      taskId: "agent_resume_rollback",
+      agentId: "agent_resume_rollback",
+      agentType: "general-purpose",
+      description: "completed task",
+      status: "completed",
+      startedAt: new Date(0),
+      completedAt: new Date(1),
+      attemptId: "attempt-old",
+      childSessionId: createSessionId("subagent-resume-rollback-child"),
+      parentSessionId: sessionId,
+      type: "local_agent",
+    };
+    const acceptedMessage = {
+      id: "message-accepted-during-setup",
+      message: "please continue",
+      queuedAt: new Date(2),
+    };
+    const registry = new InMemoryRuntimeTaskRegistry();
+    registry.register(previousTask);
+    registry.markTerminalTaskArchived(previousTask.taskId, "attempt-old");
+    registry.register({
+      ...previousTask,
+      status: "running",
+      completedAt: undefined,
+      attemptId: "attempt-resume",
+      pendingMessages: [acceptedMessage],
+    });
+
+    expect(
+      restorePreviousTerminalTaskAfterResumeFailure(
+        registry,
+        previousTask,
+        "attempt-resume",
+        true,
+      ),
+    ).toBe(true);
+    expect(registry.get(previousTask.taskId)).toMatchObject({
+      status: "completed",
+      attemptId: "attempt-old",
+      pendingMessages: [acceptedMessage],
+    });
+    expect(registry.isTerminalTaskArchived(previousTask.taskId, "attempt-old")).toBe(true);
+    for (let index = 0; index < 512; index += 1) {
+      const taskId = `agent_resume_rollback_fill_${index}`;
+      registry.register({
+        ...previousTask,
+        taskId,
+        agentId: taskId,
+        attemptId: `attempt-${index}`,
+        childSessionId: createSessionId(`subagent-resume-rollback-fill-${index}`),
+        pendingMessages: undefined,
+      });
+      registry.markTerminalTaskArchived(taskId, `attempt-${index}`);
+    }
+    expect(registry.get(previousTask.taskId)?.pendingMessages).toEqual([acceptedMessage]);
+    expect(Object.keys(registry.all())).toHaveLength(512);
+  });
 
   it("aborts SendMessage resume readiness and delays terminal state until runtime settlement", async () => {
     const sessionId = createSessionId("subagent-resume-signal-parent");

@@ -528,6 +528,7 @@ async function executeToolCallImpl(
         dynamicWorkflowSnippetPort: deps.dynamicWorkflowSnippetPort,
         modelCatalogPort: deps.modelCatalogPort,
         runtimeTaskRegistry: deps.runtimeTaskRegistry,
+        runtimeTaskOutputRootDir: deps.runtimeTaskOutputRootDir,
         readFileState: deps.readFileState,
         recordReadFileStateMetadata: (metadata) => {
           readFileStateMetadata = metadata;

@@ -1,6 +1,9 @@
+import { access, constants as fsConstants, lstat, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, relative, resolve, sep } from "node:path";
 import {
-  CoreErrorType,
   SessionEventType,
+  SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
   TASK_OUTPUT_ALIASES,
   TASK_OUTPUT_PROVIDER_DESCRIPTION,
   TASK_OUTPUT_TOOL_NAME,
@@ -8,12 +11,16 @@ import {
   TaskOutputResultSchema,
   TaskOutputResultJsonSchema,
   TaskOutputInputJsonSchema,
-  createCoreError,
+  type SessionId,
   type TaskOutputInput,
   type TaskOutputResult,
   type TaskOutputTask,
 } from "@zcode/contracts";
-import type { RuntimeTaskSnapshot } from "../../runtime-task/registry.js";
+import {
+  readRuntimeTaskTerminalCatalogRecord,
+  runtimeTaskSnapshotFromTerminalCatalog,
+  type RuntimeTaskSnapshot,
+} from "../../runtime-task/registry.js";
 import { formatPersistedOutputEnvelope } from "../result-persistence-format.js";
 import type {
   ToolEntry,
@@ -39,16 +46,16 @@ const TASK_OUTPUT_POLL_INTERVAL_MS = 100;
 const TASK_OUTPUT_ERROR_CODE = {
   TASK_ID_REQUIRED: 1,
   TASK_NOT_FOUND: 2,
+  OUTPUT_UNAVAILABLE: 3,
 } as const;
 
 const taskOutputHandler: ToolHandler = async (input, context) => {
   const parsed = TaskOutputInputSchema.parse(input) as TaskOutputInput;
-  const inputFailure = getTaskOutputInputFailure(parsed, context.runtimeTaskRegistry);
+  const inputFailure = getTaskOutputInputFailure(parsed);
   if (inputFailure) return inputFailure;
 
-  const registry = requireRuntimeTaskRegistry(context);
-
-  const initialTask = registry.get(parsed.task_id);
+  let initialTask = context.runtimeTaskRegistry?.get(parsed.task_id);
+  if (!initialTask) initialTask = await resolveArchivedTask(parsed.task_id, context);
   if (!initialTask) {
     return taskOutputFailure(
       TASK_OUTPUT_ERROR_CODE.TASK_NOT_FOUND,
@@ -56,16 +63,41 @@ const taskOutputHandler: ToolHandler = async (input, context) => {
     );
   }
 
+  const latestLiveTask = context.runtimeTaskRegistry?.get(parsed.task_id);
+  // 修复原因：catalog 查询期间 task ID 可能被重新 admission；始终以当前 Registry attempt 为准。
+  const isArchivedTask = !latestLiveTask;
+  if (latestLiveTask) initialTask = latestLiveTask;
+
   if (!parsed.block) {
     if (isTaskActive(initialTask.status)) {
       return taskOutputResult("not_ready", await projectTask(initialTask, context));
+    }
+    if (isArchivedTask && !(await archivedOutputIsReadable(initialTask.outputFile, context))) {
+      return taskOutputFailure(
+        TASK_OUTPUT_ERROR_CODE.OUTPUT_UNAVAILABLE,
+        "Saved task output is unavailable on this host",
+      );
     }
     const projectedTask = await projectTask(initialTask, context);
     // notified 是完成结果已成功交付的 claim；投影前写入会在读取失败或
     // abort 时吞掉后续 completion notification。异步投影不会被外层取消竞态强制
     // 停止，因此 await 返回后必须再次检查 signal，再提交 claim。
     throwIfAborted(context.abortSignal);
-    markTaskNotified(initialTask, context);
+    if (taskAttemptChanged(initialTask, context)) return retryTaskOutputFailure();
+    if (!isArchivedTask) markTaskNotified(initialTask, context);
+    return taskOutputResult("success", projectedTask);
+  }
+
+  if (isArchivedTask) {
+    if (!(await archivedOutputIsReadable(initialTask.outputFile, context))) {
+      return taskOutputFailure(
+        TASK_OUTPUT_ERROR_CODE.OUTPUT_UNAVAILABLE,
+        "Saved task output is unavailable on this host",
+      );
+    }
+    const projectedTask = await projectTask(initialTask, context);
+    throwIfAborted(context.abortSignal);
+    if (taskAttemptChanged(initialTask, context)) return retryTaskOutputFailure();
     return taskOutputResult("success", projectedTask);
   }
 
@@ -79,6 +111,7 @@ const taskOutputHandler: ToolHandler = async (input, context) => {
   }
   const projectedTask = await projectTask(task, context);
   throwIfAborted(context.abortSignal);
+  if (taskAttemptChanged(task, context)) return retryTaskOutputFailure();
   markTaskNotified(task, context);
   return taskOutputResult("success", projectedTask);
 };
@@ -152,28 +185,97 @@ function taskOutputFailure(errorCode: number, message: string): ToolHandlerFailu
   return { result: false, errorCode, message };
 }
 
+function retryTaskOutputFailure(): ToolHandlerFailure {
+  return taskOutputFailure(
+    TASK_OUTPUT_ERROR_CODE.OUTPUT_UNAVAILABLE,
+    "Task attempt changed while reading output; retry TaskOutput",
+  );
+}
+
+function taskAttemptChanged(task: RuntimeTaskSnapshot, context: ToolExecutionContext): boolean {
+  const current = context.runtimeTaskRegistry?.get(task.taskId);
+  return Boolean(
+    current &&
+      task.attemptId &&
+      current.attemptId &&
+      current.attemptId !== task.attemptId,
+  );
+}
+
 function validateTaskOutputInput(
   input: unknown,
-  context: ToolInputValidationContext,
+  _context: ToolInputValidationContext,
 ): ToolInputValidationResult {
   const parsed = TaskOutputInputSchema.parse(input) as TaskOutputInput;
-  return getTaskOutputInputFailure(parsed, context.runtimeTaskRegistry) ?? { result: true };
+  return getTaskOutputInputFailure(parsed) ?? { result: true };
 }
 
 function getTaskOutputInputFailure(
   input: TaskOutputInput,
-  registry: ToolInputValidationContext["runtimeTaskRegistry"],
 ): ToolHandlerFailure | undefined {
   if (!input.task_id) {
     return taskOutputFailure(TASK_OUTPUT_ERROR_CODE.TASK_ID_REQUIRED, "Task ID is required");
   }
-  if (registry && !registry.get(input.task_id)) {
-    return taskOutputFailure(
-      TASK_OUTPUT_ERROR_CODE.TASK_NOT_FOUND,
-      `No task found with ID: ${input.task_id}`,
-    );
-  }
   return undefined;
+}
+
+async function resolveArchivedTask(
+  taskId: string,
+  context: ToolExecutionContext,
+): Promise<RuntimeTaskSnapshot | undefined> {
+  if (!context.sessionStore?.sessionEntries || !context.sessionId) return undefined;
+  const rootSessionId =
+    context.runtimeTaskRegistry?.getRootSessionIdForSession(context.sessionId) ??
+    context.sessionId;
+  const entries = await context.sessionStore.sessionEntries({
+    sessionID: rootSessionId,
+    type: SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
+    idPrefix: `runtime-task-terminal:${rootSessionId}:${taskId}:`,
+  });
+  const ownedEntries = entries.filter((entry) => entry.sessionID === rootSessionId);
+  const records = ownedEntries
+    .map(readRuntimeTaskTerminalCatalogRecord)
+    .filter((record): record is NonNullable<typeof record> => record?.taskId === taskId);
+  const newestCompletion = Math.max(...records.map((record) => record.completedAt));
+  const latestCandidates = records.filter((record) => record.completedAt === newestCompletion);
+  if (latestCandidates.length > 1) {
+    throw new Error(`Saved task has ambiguous terminal attempts: ${taskId}`);
+  }
+  const latest = latestCandidates[0];
+  const malformedMatch = ownedEntries.some((entry) => {
+    const terminal = (entry.data as { terminal?: { taskId?: unknown } } | null)?.terminal;
+    return terminal?.taskId === taskId && !readRuntimeTaskTerminalCatalogRecord(entry);
+  });
+  if (malformedMatch) throw new Error(`Saved task catalog entry is invalid: ${taskId}`);
+  if (!latest) return undefined;
+  return runtimeTaskSnapshotFromTerminalCatalog(
+    latest,
+    rootSessionId as SessionId,
+    context.runtimeTaskOutputRootDir ?? join(tmpdir(), "zcode-agents"),
+  );
+}
+
+async function archivedOutputIsReadable(
+  outputFile: string | undefined,
+  context: ToolExecutionContext,
+): Promise<boolean> {
+  if (!outputFile) return false;
+  try {
+    const root = await realpath(
+      context.runtimeTaskOutputRootDir ?? join(tmpdir(), "zcode-agents"),
+    );
+    const directory = await realpath(join(outputFile, ".."));
+    const contained = relative(root, directory);
+    if (contained === ".." || contained.startsWith(`..${sep}`) || resolve(root) === resolve(directory)) {
+      return false;
+    }
+    const metadata = await lstat(outputFile);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) return false;
+    await access(outputFile, fsConstants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function formatTaskOutputModelContent(output: unknown): string {
@@ -291,21 +393,4 @@ function taskOutputResult(
     retrieval_status: retrievalStatus,
     task,
   };
-}
-
-function requireRuntimeTaskRegistry(context: ToolExecutionContext) {
-  const registry = context.runtimeTaskRegistry;
-  if (registry) return registry;
-
-  throw createCoreError(
-    CoreErrorType.ConfigurationError,
-    "Runtime task registry is not configured for TaskOutput",
-    {
-      context: {
-        toolCallId: context.toolCallId,
-        toolName: TASK_OUTPUT_TOOL_NAME,
-      },
-      recoverable: false,
-    },
-  );
 }

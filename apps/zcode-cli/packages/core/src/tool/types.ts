@@ -188,6 +188,8 @@ export interface ToolExecutionContext {
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
+  /** Настроенный runtime-каталог артефактов; сессия и имя файла вычисляются из проверенных метаданных задачи. */
+  runtimeTaskOutputRootDir?: string;
   readFileState?: ReadFileStateMap;
   recordReadFileStateMetadata?: (metadata: PersistedReadFileStateMetadata) => void;
   /** 记录 Skill resolved metadata；仅用于 telemetry，不改变模型可见结果。 */

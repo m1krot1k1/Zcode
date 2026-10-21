@@ -1,7 +1,10 @@
 /* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   SESSION_ENTRY_MODEL_SELECTION,
+  SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
   parseModelSelectionValue,
 } from "@zcode/contracts";
 import type { SubagentRunOptions } from "@zcode/contracts";
@@ -71,6 +74,11 @@ import {
   markTemporaryRuntimeSelection,
 } from "../off-peak/runtime.js";
 import { getOffPeakModelBinding } from "../off-peak/model-binding.js";
+import {
+  createRuntimeTaskTerminalCatalogEntry,
+  readRuntimeTaskTerminalCatalogRecord,
+  runtimeTaskSnapshotFromTerminalCatalog,
+} from "../../runtime-task/registry.js";
 
 export function createDefaultSubagentPort(
   this: AgentRuntimeInternal,
@@ -88,6 +96,36 @@ export function createDefaultSubagentPort(
     builtInModelSelectionOverrides:
       this.config.subagents?.builtInModelSelectionOverrides,
     runtimeTaskRegistry: this.runtimeTaskRegistry,
+    persistTerminalTaskCatalog: async (task) => {
+      const entry = createRuntimeTaskTerminalCatalogEntry(task);
+      if (!entry || !deps.sessionStore?.saveSessionEntry) return false;
+      await deps.sessionStore.saveSessionEntry(entry);
+      return true;
+    },
+    resolveTerminalTaskCatalog: async (taskId) => {
+      const sessionId = this.runtimeTaskRegistry.getRootSessionIdForSession(this.sessionId);
+      const entries = await deps.sessionStore?.sessionEntries?.({
+        sessionID: sessionId,
+        type: SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
+        idPrefix: `runtime-task-terminal:${sessionId}:${taskId}:`,
+      });
+      if (!entries) return undefined;
+      const records = entries
+        .filter((entry) => entry.sessionID === sessionId)
+        .map(readRuntimeTaskTerminalCatalogRecord)
+        .filter(
+          (record): record is NonNullable<typeof record> => record?.taskId === taskId,
+        );
+      const newestCompletion = Math.max(...records.map((record) => record.completedAt));
+      const latestCandidates = records.filter((record) => record.completedAt === newestCompletion);
+      if (latestCandidates.length > 1) {
+        throw new Error(`Saved task has ambiguous terminal attempts: ${taskId}`);
+      }
+      const latest = latestCandidates[0];
+      if (!latest) return undefined;
+      const outputRootDir = this.config.subagents?.outputRootDir ?? join(tmpdir(), "zcode-agents");
+      return runtimeTaskSnapshotFromTerminalCatalog(latest, sessionId, outputRootDir);
+    },
     getChildEventCursor: (sessionId) => this.eventStore.getLatestSequenceNumber(sessionId),
     getChildEventsAfter: (sessionId, cursor) => this.eventStore.getEventsAfter(sessionId, cursor),
     emitParentEvent: async (event, traceContext) => {

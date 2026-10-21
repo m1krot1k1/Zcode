@@ -73,6 +73,7 @@ import {
 import {
   InMemoryRuntimeTaskRegistry,
   isTerminalRuntimeTask,
+  runtimeTaskOutputFile,
   type RuntimeTaskAdmissionResult,
   type RuntimeTaskMessageSink,
   type RuntimeTaskPendingMessage,
@@ -151,6 +152,8 @@ export interface ExploreSubagentPortOptions {
     Record<"general-purpose" | "Explore", import("@zcode/shared").ModelSelection>
   >;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
+  persistTerminalTaskCatalog?: (task: RuntimeTaskSnapshot) => Promise<boolean>;
+  resolveTerminalTaskCatalog?: (taskId: string) => Promise<RuntimeTaskSnapshot | undefined>;
   createAgentId?: () => string;
   getAllowedTools?: (profile: AgentProfile) => readonly string[];
   inactivityTimeoutMs?: number;
@@ -247,7 +250,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (runOptions?.signal?.aborted) {
         throw runOptions.signal.reason ?? new Error("Subagent run aborted before admission");
       }
-      const lifecycle = createSubagentLifecycle(options, request, profile);
+      const lifecycle = createSubagentLifecycle(options, request, profile, registry);
       const startedAt = new Date(lifecycle.startedAt);
       const taskAbort = createSubagentTaskAbortController(runOptions?.signal);
       const admission = registerSubagentTask(
@@ -661,7 +664,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (startOptions?.signal?.aborted) {
         throw startOptions.signal.reason ?? new Error("Subagent start aborted before admission");
       }
-      const lifecycle = createSubagentLifecycle(options, request, profile);
+      const lifecycle = createSubagentLifecycle(options, request, profile, registry);
       const startedAt = new Date(lifecycle.startedAt);
       const output = createAgentBackgroundedOutput(request, lifecycle);
       const taskAbort = createSubagentTaskAbortController(startOptions?.signal);
@@ -785,13 +788,14 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
     },
 
     async getTask(taskId: string): Promise<SubagentTaskSnapshot | undefined> {
-      return registry.get(taskId);
+      return registry.get(taskId) ?? (await options.resolveTerminalTaskCatalog?.(taskId));
     },
 
     async backgroundTask(taskId: string): Promise<SubagentTaskSnapshot | undefined> {
       if (borrowedForegroundAgentIds.has(taskId)) {
         return registry.get(taskId);
       }
+      if (!registry.get(taskId)) return options.resolveTerminalTaskCatalog?.(taskId);
       registry.requestBackground(taskId);
       return registry.get(taskId);
     },
@@ -800,6 +804,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       taskId: string,
       waitOptions?: SubagentWaitOptions,
     ): Promise<SubagentTaskSnapshot | undefined> {
+      if (!registry.get(taskId)) return options.resolveTerminalTaskCatalog?.(taskId);
       return registry.waitForTerminal(taskId, { signal: waitOptions?.signal });
     },
 
@@ -1576,17 +1581,19 @@ function createSubagentLifecycle(
   options: ExploreSubagentPortOptions,
   request: SubagentRunRequest,
   profile: AgentProfile,
+  registry: RuntimeTaskRegistry,
 ): SubagentLifecycle {
   const agentId = options.createAgentId?.() ?? `agent_${crypto.randomUUID()}`;
   const childSessionId = createSessionId(`subagent_${agentId}`);
   const startedAt = Date.now();
-  const agentOutputDir = join(
-    options.outputRootDir ?? join(tmpdir(), "zcode-agents"),
-    request.sessionId,
+  const outputRootDir = options.outputRootDir ?? join(tmpdir(), "zcode-agents");
+  const outputFile = runtimeTaskOutputFile(
+    outputRootDir,
+    registry.getRootSessionIdForSession(request.sessionId),
     agentId,
   );
+  const agentOutputDir = dirname(outputFile);
   const metadataFile = join(agentOutputDir, "metadata.json");
-  const outputFile = join(agentOutputDir, "output.txt");
   const taskOutputFile = join(agentOutputDir, "task.output");
   const runTraceContext = createChildTraceContext(request.trace, {
     sessionId: request.sessionId,
@@ -1621,6 +1628,22 @@ function createSubagentLifecycle(
   };
 }
 
+export function restorePreviousTerminalTaskAfterResumeFailure(
+  registry: RuntimeTaskRegistry,
+  previousTask: RuntimeTaskSnapshot,
+  failedAttemptId: string | undefined,
+  previousTaskWasArchived: boolean,
+): boolean {
+  const current = registry.get(previousTask.taskId);
+  if (!current || current.attemptId !== failedAttemptId) return false;
+  // 修复依据：setup 等待文件 IO 时，SendMessage 可已排入 pendingMessages；回滚只恢复 terminal 状态，保留已接受消息。
+  registry.register({ ...previousTask, pendingMessages: current.pendingMessages });
+  if (previousTaskWasArchived && previousTask.attemptId) {
+    registry.markTerminalTaskArchived?.(previousTask.taskId, previousTask.attemptId);
+  }
+  return true;
+}
+
 function createSubagentLifecycleFromTask(
   options: ExploreSubagentPortOptions,
   request: SubagentRunRequest,
@@ -1633,7 +1656,13 @@ function createSubagentLifecycleFromTask(
   const startedAt = Date.now();
   const agentOutputDir = task.outputFile
     ? dirname(task.outputFile)
-    : join(options.outputRootDir ?? join(tmpdir(), "zcode-agents"), request.sessionId, agentId);
+    : dirname(
+        runtimeTaskOutputFile(
+          options.outputRootDir ?? join(tmpdir(), "zcode-agents"),
+          task.rootSessionId ?? request.sessionId,
+          task.taskId,
+        ),
+      );
   const metadataFile = join(agentOutputDir, "metadata.json");
   const outputFile = join(agentOutputDir, "output.txt");
   const taskOutputFile = join(agentOutputDir, "task.output");
@@ -1684,6 +1713,10 @@ async function sendMessageToLocalAgent(
   }
 
   let task = registry.get(request.to);
+  if (!task) {
+    const archivedTask = await options.resolveTerminalTaskCatalog?.(request.to);
+    task = registry.get(request.to) ?? archivedTask;
+  }
   if (!task || task.type !== "local_agent") {
     return createSendMessageFailure(
       request,
@@ -1695,7 +1728,7 @@ async function sendMessageToLocalAgent(
     await registry.waitForTerminal(task.taskId, {
       signal: sendOptions?.signal,
     });
-    task = registry.get(task.taskId);
+    task = registry.get(task.taskId) ?? (await options.resolveTerminalTaskCatalog?.(task.taskId));
     if (!task || task.type !== "local_agent") {
       return createSendMessageFailure(
         request,
@@ -1777,12 +1810,28 @@ async function resumeTerminalAgentInBackground(
   const startedAt = new Date(lifecycle.startedAt);
   const previousTask = task;
   const taskAbort = createSubagentTaskAbortController(sendOptions?.signal);
+  const latestTaskBeforeAdmission = registry.get(task.taskId);
+  const previousTaskWasArchived = latestTaskBeforeAdmission
+    ? Boolean(task.attemptId && registry.isTerminalTaskArchived?.(task.taskId, task.attemptId))
+    : true;
+  if (
+    latestTaskBeforeAdmission &&
+    latestTaskBeforeAdmission.attemptId !== task.attemptId
+  ) {
+    taskAbort.dispose();
+    taskAbort.settle(latestTaskBeforeAdmission);
+    return createSendMessageFailure(
+      request,
+      `Cannot resume local agent ${task.agentId}: task attempt changed; retry SendMessage.`,
+    );
+  }
   const admission = registerSubagentTask(
     registry,
     createRuntimeTaskSnapshot({
       isBackgrounded: true,
       lifecycle,
       request: resumeRequest,
+      pendingMessages: task.pendingMessages,
       startedAt,
       status: "running",
     }),
@@ -1809,7 +1858,12 @@ async function resumeTerminalAgentInBackground(
       await finalizeBackgroundStopped(options, resumeRequest, lifecycle, registry, false);
     } else {
       // 修复原因：setup 尚未启动 runtime；非取消失败恢复原 terminal snapshot，避免假 running。
-      registry.register(previousTask);
+      restorePreviousTerminalTaskAfterResumeFailure(
+        registry,
+        previousTask,
+        admission.task.attemptId,
+        previousTaskWasArchived,
+      );
     }
     taskAbort.dispose();
     registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
@@ -2322,6 +2376,7 @@ function createRuntimeTaskSnapshot(input: {
   isBackgrounded: boolean;
   lifecycle: SubagentLifecycle;
   request: SubagentRunRequest;
+  pendingMessages?: RuntimeTaskPendingMessage[];
   startedAt: Date;
   status: RuntimeTaskSnapshot["status"];
 }): RuntimeTaskSnapshot {
@@ -2335,6 +2390,7 @@ function createRuntimeTaskSnapshot(input: {
     outputFile: input.lifecycle.outputFile,
     parentToolCallId: input.request.parentToolCallId,
     parentSessionId: input.request.sessionId,
+    ...(input.pendingMessages?.length ? { pendingMessages: input.pendingMessages } : {}),
     prompt: input.request.prompt,
     startedAt: input.startedAt,
     status: input.status,
@@ -2576,11 +2632,6 @@ async function finalizeBackgroundStopped(
   if (!committed || committed.status !== BACKGROUND_AGENT_STOPPED_STATE.registryStatus) {
     return committed;
   }
-  // 修复依据：contract 已写入父会话后，即使 child 尚未启动也必须写 terminal，关闭这次 attempt。
-  if (wasSpawned || committed.prismTaskContract) {
-    await emitSubagentExecutionTerminal(options, registry, committed, traceContext, wasSpawned);
-  }
-
   // terminal state is published only after runBackgroundAgent/runAgentToCompletion has settled.
   // Artifact and notification failures must not roll the stopped runtime back to running.
   try {
@@ -2591,6 +2642,10 @@ async function finalizeBackgroundStopped(
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "subagent.background.stopped_artifact_failed",
     });
+  }
+  // 修复依据：terminal catalog 只能在 output artifact 写完后持久化，避免恢复到尚未完成的文件。
+  if (wasSpawned || committed.prismTaskContract) {
+    await emitSubagentExecutionTerminal(options, registry, committed, traceContext, wasSpawned);
   }
   if (!wasSpawned) return committed;
 
@@ -2783,6 +2838,19 @@ async function emitSubagentExecutionTerminal(
     // Receipt persistence is best-effort; never change a settled task or log untrusted error text.
     options.logger?.warn("Subagent terminal lifecycle event append failed", {
       event: "subagent.execution_terminal.append_failed",
+      module: "core.subagent",
+      taskId: task.taskId,
+    });
+  }
+  try {
+    const archived = await options.persistTerminalTaskCatalog?.(task);
+    if (archived) {
+      // 原因：compact snapshot 的数量随任务累计；只有 root-session catalog 已持久化后才允许逐出。
+      registry.markTerminalTaskArchived?.(task.taskId, task.attemptId);
+    }
+  } catch {
+    options.logger?.warn("Subagent terminal catalog persistence failed", {
+      event: "subagent.terminal_catalog.persist_failed",
       module: "core.subagent",
       taskId: task.taskId,
     });

@@ -1114,6 +1114,22 @@ describe("SQLite session store", () => {
           providerId: "zai",
         },
       });
+      await store.saveSessionEntry({
+        id: "runtime-task-terminal:task-1:attempt-1",
+        sessionID,
+        type: "runtime/task_terminal",
+        touchSession: false,
+        time: { created: entryOnlyTimestamp, updated: entryOnlyTimestamp },
+        data: { terminal: { taskId: "task-1" } },
+      });
+      await store.saveSessionEntry({
+        id: "runtime-task-terminal:task-2:attempt-1",
+        sessionID,
+        type: "runtime/task_terminal",
+        touchSession: false,
+        time: { created: entryOnlyTimestamp + 1, updated: entryOnlyTimestamp + 1 },
+        data: { terminal: { taskId: "task-2" } },
+      });
 
       await expect(
         store.sessionEntries({
@@ -1151,6 +1167,13 @@ describe("SQLite session store", () => {
       await expect(store.getSession(sessionID)).resolves.toMatchObject({
         time: { updated: defaultTouchTimestamp },
       });
+      await expect(
+        store.sessionEntries({
+          sessionID,
+          type: "runtime/task_terminal",
+          idPrefix: "runtime-task-terminal:task-1:",
+        }),
+      ).resolves.toMatchObject([{ id: "runtime-task-terminal:task-1:attempt-1" }]);
     } finally {
       store?.close();
       await rm(tempRoot, { force: true, recursive: true });

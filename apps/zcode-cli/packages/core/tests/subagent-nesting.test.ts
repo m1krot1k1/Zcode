@@ -321,6 +321,28 @@ describe("subagent root admission and ownership", () => {
     });
   });
 
+  it("bounds archived terminal snapshots without limiting cumulative admissions", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const rootSessionId = createSessionId("subagent-terminal-retention-root");
+    const turnId = createTurnId("subagent-terminal-retention-turn");
+
+    for (let index = 0; index <= 512; index += 1) {
+      const taskId = `agent_archived_${index}`;
+      registry.register({
+        ...createTask(taskId, rootSessionId, createSessionId(`${taskId}_session`), turnId),
+        rootSessionId,
+        attemptId: `attempt-${index}`,
+        status: "completed",
+        completedAt: new Date(Date.UTC(2026, 6, 25, 0, 0, index)),
+      });
+      registry.markTerminalTaskArchived(taskId, `attempt-${index}`);
+    }
+
+    expect(Object.keys(registry.all())).toHaveLength(512);
+    expect(registry.get("agent_archived_0")).toBeUndefined();
+    expect(registry.get("agent_archived_512")?.status).toBe("completed");
+  });
+
   it("keeps lineage indexes consistent across updates, re-admission, and removal", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-index-root");

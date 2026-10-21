@@ -30,6 +30,7 @@ import type { SessionGoal, GoalStatus } from "../tools/target.js";
 import type { PermissionRuleset } from "./permission.port.js";
 import type { CollaborationMode } from "./session.port.js";
 import type { EnvInfo } from "./context-source.port.js";
+import type { SubagentTaskStatus } from "./subagent.port.js";
 
 export const SESSION_TASK_TYPES = [
   "interactive",
@@ -823,6 +824,8 @@ export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT =
   "runtime/prism_evidence_receipt" as const;
 /** Root-session append-only projection of one admitted subagent attempt's terminal lifecycle. */
 export const SESSION_ENTRY_PRISM_TASK_TERMINAL = "runtime/prism_task_terminal" as const;
+/** Read-only metadata and output locator for terminal TaskOutput lookup after registry eviction. */
+export const SESSION_ENTRY_RUNTIME_TASK_TERMINAL = "runtime/task_terminal" as const;
 
 export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -836,9 +839,28 @@ export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_PRISM_TASK_CONTRACT,
   SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
   SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
 ] as const;
 
 export type SessionEntryType = (typeof SESSION_ENTRY_TYPES)[number];
+
+export interface RuntimeTaskTerminalCatalogRecord {
+  schema: "zcode.runtime.task-terminal.v1";
+  taskId: string;
+  attemptId: string;
+  taskType: "local_agent";
+  agentId: string;
+  agentType: string;
+  childSessionId?: SessionId;
+  parentToolCallId?: string;
+  pid?: number;
+  status: SubagentTaskStatus;
+  description: string;
+  error?: string;
+  exitCode?: number;
+  startedAt: number;
+  completedAt: number;
+}
 
 export interface SessionEntryInfo {
   id: string;
@@ -1151,6 +1173,7 @@ export interface SessionStorePort {
   sessionEntries?(input: {
     sessionID: SessionId;
     type?: SessionEntryType | string;
+    idPrefix?: string;
   }): Promise<SessionEntryInfo[]>;
   // ── session_input 账本（可选方法，旧宿主可不实现）──
   /** admission：输入已被接受（排队/待注入），durable 记账。幂等（同 id 重入更新 payload）。 */

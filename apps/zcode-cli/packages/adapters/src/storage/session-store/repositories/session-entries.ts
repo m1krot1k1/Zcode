@@ -53,27 +53,24 @@ export function saveSessionEntry(db: DatabaseSync, input: SessionEntryInfo): voi
 
 export function sessionEntries(
   db: DatabaseSync,
-  input: { sessionID: SessionId; type?: SessionEntryType | string },
+  input: { sessionID: SessionId; type?: SessionEntryType | string; idPrefix?: string },
 ): SessionEntryInfo[] {
-  const rows = input.type
-    ? db
-        .prepare(
-          `
-          select * from session_entry
-          where session_id = ? and type = ?
-          order by time_created, rowid
-          `,
-        )
-        .all(input.sessionID, input.type)
-    : db
-        .prepare(
-          `
-          select * from session_entry
-          where session_id = ?
-          order by time_created, rowid
-          `,
-        )
-        .all(input.sessionID);
+  const prefixFilter = input.idPrefix
+    ? " and substr(id, 1, length(?)) = ?"
+    : "";
+  const query = `
+    select * from session_entry
+    where session_id = ?
+    ${input.type ? "and type = ?" : ""}
+    ${prefixFilter}
+    order by time_created, rowid
+  `;
+  const parameters = [
+    input.sessionID,
+    ...(input.type ? [input.type] : []),
+    ...(input.idPrefix ? [input.idPrefix, input.idPrefix] : []),
+  ];
+  const rows = db.prepare(query).all(...parameters);
 
   return (rows as unknown as SessionEntryRow[]).map(decodeSessionEntryRow);
 }
