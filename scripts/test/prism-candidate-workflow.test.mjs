@@ -41,3 +41,11 @@ test("CI concurrency and evidence artifact have values for push events", () => {
     /name: prism-candidate-\$\{\{ github\.event\.pull_request\.number \|\| 'push' \}\}-\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u,
   );
 });
+
+test("job-level evidence directory uses an allowed GitHub Actions context", () => {
+  assert.match(
+    workflow,
+    /EVIDENCE_DIR: \$\{\{ github\.workspace \}\}\/prism-candidate-evidence/u,
+  );
+  assert.doesNotMatch(workflow, /EVIDENCE_DIR: \$\{\{ runner\.temp \}\}/u);
+});

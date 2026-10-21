@@ -15,7 +15,7 @@ Pull request в `dev` и прямой push в `dev` получают воспр�
 - Permissions: только `contents: read`; ни workflow, ни дочерние шаги не используют write token или secrets.
 - Runner и toolchain: `ubuntu-24.04`; Node и pnpm устанавливаются по `mise.toml`; dependency install использует `pnpm install --frozen-lockfile`. GitHub Actions фиксируются на проверенных полных commit SHA.
 - Gates: `pnpm typecheck`, `pnpm lint`, `pnpm architecture:check -- --changed --base <PR base SHA>`, `pnpm test:unit:affected --base <PR base SHA>` и `pnpm test:self-improve-pr`.
-- Result bundle: текстовый manifest с commit SHA, workflow run identity и командами/exit codes; загрузка выполняется и при провале gate. До checkout/setup создаётся начальный manifest, чтобы setup failure тоже оставил доказательство запуска. Никаких credential values, пользовательских данных или рабочих tree artifacts.
+- Result bundle: текстовый manifest с commit SHA, workflow run identity и командами/exit codes; загрузка выполняется и при провале gate. До checkout/setup создаётся начальный manifest, чтобы setup failure тоже оставил доказательство запуска. Каталог задаётся через доступный в job-level `env` контекст `github.workspace`, не через step-only `runner.temp`. Никаких credential values, пользовательских данных или рабочих tree artifacts.
 - Запрещено автоматически трактовать green check как разрешение на merge, promotion, release либо запуск evaluator на непроверенном artifact.
 
 ## Приёмка
@@ -32,3 +32,4 @@ Pull request в `dev` и прямой push в `dev` получают воспр�
 | CI-08 | Прямой push в `dev`                                  | На точном pushed SHA запускаются те же gates; база affected/architecture checks — SHA до push, а PR-only поля не требуются.                                |
 | CI-09 | Workflow run на `push` в `dev`                       | Run содержит job и checks; пустой run с `failure` и нулём jobs не считается проверкой и должен обнаруживаться как дефект конфигурации.                     |
 | CI-10 | Workflow ещё не установлен в default branch          | `push` в `dev` проверяется; PR gate явно считается неактивным до включения workflow в default branch.                                                      |
+| CI-11 | Контексты GitHub Actions                             | Workflow проходит `actionlint`; expressions используют только разрешённые в соответствующем поле contexts.                                                 |

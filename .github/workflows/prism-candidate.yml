@@ -25,7 +25,7 @@ jobs:
     env:
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-      EVIDENCE_DIR: ${{ runner.temp }}/prism-candidate-evidence
+      EVIDENCE_DIR: ${{ github.workspace }}/prism-candidate-evidence
     steps:
       - name: Initialize evidence manifest
         shell: bash
@@ -127,6 +127,6 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: prism-candidate-${{ github.event.pull_request.number || 'push' }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/prism-candidate-evidence/
+          path: ${{ github.workspace }}/prism-candidate-evidence/
           if-no-files-found: warn
           retention-days: 30
