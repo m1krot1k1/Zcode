@@ -157,6 +157,9 @@ test("Preview resume requires the exact pushed version commit and permits only i
       headSha: commitSha,
       originDevSha: commitSha,
       commitMessage: "Выпустить macOS Preview 3.17.1.",
+      changedPaths: ["package.json", "package-lock.json"],
+      packageJsonVersion: "3.17.1",
+      packageLock: { version: "3.17.1", packages: { "": { version: "3.17.1" } } },
     }),
   );
   assert.throws(
@@ -168,8 +171,41 @@ test("Preview resume requires the exact pushed version commit and permits only i
         headSha: commitSha,
         originDevSha: commitSha,
         commitMessage: "some other commit",
+        changedPaths: ["package.json", "package-lock.json"],
+        packageJsonVersion: "3.17.1",
+        packageLock: { version: "3.17.1", packages: { "": { version: "3.17.1" } } },
       }),
     /не является version commit/u,
+  );
+  assert.throws(
+    () =>
+      assertPreviewResumeCandidate({
+        version: "3.17.1",
+        branchName: "dev",
+        dirty: false,
+        headSha: commitSha,
+        originDevSha: commitSha,
+        commitMessage: "Выпустить macOS Preview 3.17.1.",
+        changedPaths: ["package.json", "packages/desktop/main.mjs"],
+        packageJsonVersion: "3.17.1",
+        packageLock: { version: "3.17.1", packages: { "": { version: "3.17.1" } } },
+      }),
+    /должен менять только/u,
+  );
+  assert.throws(
+    () =>
+      assertPreviewResumeCandidate({
+        version: "3.17.1",
+        branchName: "dev",
+        dirty: false,
+        headSha: commitSha,
+        originDevSha: commitSha,
+        commitMessage: "Выпустить macOS Preview 3.17.1.",
+        changedPaths: ["package.json", "package-lock.json"],
+        packageJsonVersion: "3.17.1",
+        packageLock: { version: "3.17.0", packages: { "": { version: "3.17.0" } } },
+      }),
+    /не совпадают/u,
   );
   assert.throws(
     () => assertPreviewResumeTagTarget("v3.17.1", "b".repeat(40), commitSha),

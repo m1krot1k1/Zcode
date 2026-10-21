@@ -156,12 +156,31 @@ export function assertPreviewResumeCandidate({
   headSha,
   originDevSha,
   commitMessage,
+  changedPaths,
+  packageJsonVersion,
+  packageLock,
 }) {
   if (!/^\d+\.\d+\.\d+$/u.test(version)) throw new Error(`Невалидная версия Preview: ${version}`);
   assertPreviewReleasePreconditions({ platform: "darwin", branchName, dirty });
   assertReleaseTargetSha(headSha, originDevSha);
   if (commitMessage !== `Выпустить macOS Preview ${version}.`) {
     throw new Error(`HEAD не является version commit для Preview ${version}`);
+  }
+  const expectedPaths = ["package-lock.json", "package.json"];
+  if (
+    !Array.isArray(changedPaths) ||
+    [...changedPaths].sort().join("\n") !== expectedPaths.join("\n")
+  ) {
+    throw new Error("Version commit Preview должен менять только package.json и package-lock.json");
+  }
+  if (
+    packageJsonVersion !== version ||
+    packageLock?.version !== version ||
+    packageLock?.packages?.[""]?.version !== version
+  ) {
+    throw new Error(
+      "Версии package.json и корневых записей package-lock.json не совпадают с Preview",
+    );
   }
 }
 
@@ -350,6 +369,13 @@ async function main() {
         headSha: baseSha,
         originDevSha: await capture(["git", "rev-parse", "origin/dev"]),
         commitMessage,
+        changedPaths: (
+          await capture(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+        )
+          .split("\n")
+          .filter(Boolean),
+        packageJsonVersion: manifest.version,
+        packageLock: JSON.parse(originalLock),
       });
       commitSha = baseSha;
       if (remoteTagEntry.trim()) {
