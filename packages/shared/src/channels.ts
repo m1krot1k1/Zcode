@@ -164,7 +164,7 @@ export const ServiceChannels = {
   PluginUiAppTools: "plugin-ui-app-tools",
   /** Subagents 管理服务 */
   Subagents: "subagents",
-  /** 本机 Desktop Host 承载的显式 OpenCode ACP delegated agent */
+  /** 当前 workspace 的进程所属 Host 承载的显式 OpenCode ACP delegated agent */
   OpenCodeAcp: "open-code-acp",
   /** Commands 管理服务 */
   Commands: "commands",

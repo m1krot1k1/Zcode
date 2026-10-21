@@ -5538,7 +5538,7 @@ nodes:
       - file: "packages/services/src/node.ts"
         symbol: "getOpenCodeAcpRuntime"
     invariants:
-      - "The window-scoped Host owns the opencode acp child and ACP transport; OpenCode owns auth, provider/model choice, session history, tools, and its agent loop."
+      - "The active process-owning Host owns the opencode acp child and ACP transport: window-scoped Local Host for local workspaces or standalone Source Server Host for Source Server workspaces; OpenCode owns auth, provider/model choice, session history, tools, and its agent loop."
       - "Version diagnostics do not authenticate, create sessions, or prove model availability; model options are read only from an explicitly created ACP session."
       - "OpenCode delegated work is not a ZCode CLI turn or Provider Registry model, and does not inherit ZCode permission policy without an explicit bridge."
   - id: "service.opencode-acp-runtime"
@@ -5552,7 +5552,7 @@ nodes:
         symbol: "disposeServiceResourcesAndWait"
   - id: "surface.opencode-agent-settings-ui"
     kind: "surface"
-    label: "Explicit local OpenCode agent settings panel"
+    label: "Explicit Host-owned OpenCode agent settings panel"
     docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
     codeSeeds:
       - file: "packages/ui/src/opencode-agent-settings/OpenCodeAgentSettingsPanel.tsx"
@@ -5560,8 +5560,8 @@ nodes:
     invariants:
       - "No ACP child or durable OpenCode session starts until the user selects Start OpenCode session in this separate panel."
       - "Model and agent pickers contain only live session/new and session/set_config_option values returned by ACP; absent model options display OpenCode default."
-      - "OpenCode output and session state remain separate from ZCode conversation state, and only a local workspace path can be sent to this Host-local runtime."
-      - "The local ACP panel is visibly labeled as CLI-backed with no ZCode API key; API-key Provider cards display their credential mode without joining the two configuration or runtime owners."
+      - "OpenCode output and session state remain separate from ZCode conversation state; only a path valid on the owning Host can be sent to its runtime."
+      - "The ACP panel is visibly labeled as Host CLI-backed with no ZCode API key; API-key Provider cards display their credential mode without joining the two configuration or runtime owners."
   - id: "evidence.opencode-acp-runtime-tests"
     kind: "evidence"
     label: "Fake-child OpenCode ACP lifecycle contract tests"
@@ -5575,12 +5575,12 @@ edges:
     to: "surface.opencode-agent-settings-ui"
     type: "renders-in"
     rank: "must-inspect"
-    condition: "Only the explicit local settings panel starts a delegated OpenCode session and displays its independent transcript and ownership boundary."
+    condition: "Only the explicit settings panel for the active owning Host starts a delegated OpenCode session and displays its independent transcript and ownership boundary."
   - from: "surface.opencode-agent-settings-ui"
     to: "service.opencode-acp-runtime"
     type: "commits-to"
     rank: "must-inspect"
-    condition: "UI consumes the local Host ACP service; remote workspace routes must not inherit or expose it."
+    condition: "UI consumes the active workspace's process-owning Host service; Source Server uses authenticated server RPC, while legacy desktop-attached remotes never inherit the Desktop Local Host process."
   - from: "capability.opencode-delegated-runtime"
     to: "service.opencode-acp-runtime"
     type: "owned-by"

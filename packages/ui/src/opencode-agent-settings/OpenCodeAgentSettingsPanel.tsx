@@ -106,7 +106,7 @@ export function OpenCodeAgentSettingsPanel({
   const [workspacePath, setWorkspacePath] = useState(initialWorkspacePath);
   const [cliPath, setCliPath] = useState("");
   const [workspaceExplicitlyChosen, setWorkspaceExplicitlyChosen] = useState(
-    !remoteWorkspaceActive && Boolean(initialWorkspacePath.trim()),
+    (!remoteWorkspaceActive || Boolean(runtime)) && Boolean(initialWorkspacePath.trim()),
   );
   const [cliStatus, setCliStatus] = useState<OpenCodeAgentCliStatus>();
   const [session, setSession] = useState<OpenCodeAgentSession>();
@@ -142,8 +142,10 @@ export function OpenCodeAgentSettingsPanel({
 
   useEffect(() => {
     if (initialWorkspacePath.trim()) setWorkspacePath(initialWorkspacePath);
-    setWorkspaceExplicitlyChosen(!remoteWorkspaceActive && Boolean(initialWorkspacePath.trim()));
-  }, [initialWorkspacePath, remoteWorkspaceActive]);
+    setWorkspaceExplicitlyChosen(
+      (!remoteWorkspaceActive || Boolean(runtime)) && Boolean(initialWorkspacePath.trim()),
+    );
+  }, [initialWorkspacePath, remoteWorkspaceActive, runtime]);
 
   const refreshStatus = useCallback(async () => {
     if (!runtime) return;
@@ -530,9 +532,14 @@ export function OpenCodeAgentSettingsPanel({
           {intl.formatMessage({ id: "settings.openCode.desktopLocalHostRequired" })}
         </p>
       ) : null}
-      {remoteWorkspaceActive ? (
+      {remoteWorkspaceActive && !runtime ? (
         <p role="status" className="rounded-lg bg-muted p-3 text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.openCode.localWorkspaceNotice" })}
+        </p>
+      ) : null}
+      {remoteWorkspaceActive && runtime ? (
+        <p role="status" className="rounded-lg bg-muted p-3 text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.openCode.remoteHostWorkspaceNotice" })}
         </p>
       ) : null}
 
@@ -547,14 +554,16 @@ export function OpenCodeAgentSettingsPanel({
                 placeholder={intl.formatMessage({ id: "settings.openCode.chooseWorkspace" })}
               />
             </label>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleChooseDirectory()}
-              disabled={working}
-            >
-              {intl.formatMessage({ id: "settings.openCode.chooseWorkspace" })}
-            </Button>
+            {!remoteWorkspaceActive ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleChooseDirectory()}
+                disabled={working}
+              >
+                {intl.formatMessage({ id: "settings.openCode.chooseWorkspace" })}
+              </Button>
+            ) : null}
           </div>
           <Button
             type="button"

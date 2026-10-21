@@ -3781,10 +3781,10 @@ const enUS: Record<string, string> = {
   "settings.modelProviderDescription":
     "Manage custom model providers. Once configured, they can be selected during chat.",
   "settings.modelProvider.credentialModeApiKey": "API key",
-  "settings.openCode.title": "Local OpenCode agent",
-  "settings.openCode.authModeCli": "Local CLI · no API key",
+  "settings.openCode.title": "OpenCode agent",
+  "settings.openCode.authModeCli": "Host CLI · no API key",
   "settings.openCode.ownership":
-    "OpenCode runs as a separate local agent and owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
+    "OpenCode runs as a separate agent on the Host that owns this workspace. It owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
   "settings.openCode.checking": "Checking the OpenCode CLI…",
   "settings.openCode.available": "OpenCode CLI detected ({version})",
   "settings.openCode.missing": "OpenCode CLI is not installed",
@@ -3814,10 +3814,12 @@ const enUS: Record<string, string> = {
   "settings.openCode.install-platform-unsupported":
     "Automatic installation is not supported on this platform. Follow the official instructions and install OpenCode manually.",
   "settings.openCode.desktopLocalHostRequired":
-    "OpenCode ACP is available only in the local ZCode Desktop Host.",
+    "OpenCode ACP is unavailable on the Host that owns this workspace.",
   "settings.openCode.localWorkspaceNotice":
     "OpenCode runs on this computer. Select a local folder; the remote workspace path will not be sent to it.",
-  "settings.openCode.workspace": "Local workspace folder",
+  "settings.openCode.remoteHostWorkspaceNotice":
+    "OpenCode runs on the Source Server that owns this workspace. Its CLI, sign-in, and models are managed on that Host.",
+  "settings.openCode.workspace": "Workspace folder",
   "settings.openCode.chooseWorkspace": "Choose folder",
   "settings.openCode.startSession": "Start OpenCode session",
   "settings.openCode.starting": "Starting session…",

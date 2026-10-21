@@ -120,6 +120,32 @@ describe("createLocalServices remote authority", () => {
     disposeServiceResources(services);
   });
 
+  it("registers OpenCode ACP only on the process-owning Host", async () => {
+    const desktopHome = makeTempHome();
+    const serverHome = makeTempHome();
+    process.env.HOME = desktopHome;
+    const [{ createLocalServices, disposeServiceResources }, { IOpenCodeAcpRuntime }] =
+      await Promise.all([import("../src/node.js"), import("../src/index.js")]);
+    const desktopAttached = createLocalServices({
+      zcodeBuiltinProviderConfigFilePath: writeZCodeBuiltinProviderConfig(desktopHome),
+      serviceAuthorityMode: "desktop-attached-remote",
+      enableOpenCodeAcpRuntime: true,
+    });
+    process.env.HOME = serverHome;
+    const serverHost = createLocalServices({
+      zcodeBuiltinProviderConfigFilePath: writeZCodeBuiltinProviderConfig(serverHome),
+      serviceAuthorityMode: "standalone-server",
+    });
+
+    try {
+      expect(desktopAttached.getOptional(IOpenCodeAcpRuntime)).toBeUndefined();
+      expect(serverHost.getOptional(IOpenCodeAcpRuntime)).toBeDefined();
+    } finally {
+      disposeServiceResources(desktopAttached);
+      disposeServiceResources(serverHost);
+    }
+  });
+
   it("desktop-attached Remote Host 不恢复旧 Model Preset 刷新", async () => {
     const home = makeTempHome();
     process.env.HOME = home;

@@ -34,6 +34,7 @@ function makeServices(id: string): IServiceAccessor {
     broadcastService: { id, service: "broadcast" },
     modelSelectionService: { id, service: "model-selection" },
     providerSettingsService: { id, service: "provider-settings" },
+    openCodeAcpRuntime: { id, service: "open-code-acp-runtime" },
   } as unknown as IServiceAccessor;
 }
 
@@ -70,6 +71,7 @@ describe("buildRemoteWorkspaceSessionServices", () => {
     // hooksService 曾被 ...baseServices 展开静默回落到本机 host，远程机器上的
     // workspace hooks（含待审项）永远加载不出来。hooks 读写与 trust 授权必须打到远端。
     expect(merged.hooksService).toBe(remoteServices.hooksService);
+    expect(merged.openCodeAcpRuntime).toBeUndefined();
 
     expect(merged.clientScenesService).toBe(baseServices.clientScenesService);
     expect(merged.settingService).toBe(baseServices.settingService);
@@ -85,6 +87,7 @@ describe("buildRemoteWorkspaceSessionServices", () => {
     const merged = buildServerRemoteWorkspaceSessionServices(baseServices, remoteServices);
 
     expect(merged.fileService).toBe(remoteServices.fileService);
+    expect(merged.openCodeAcpRuntime).toBe(remoteServices.openCodeAcpRuntime);
     expect(merged.zcodeTaskService).toBe(remoteServices.zcodeTaskService);
     expect(merged.promptAttachmentTransferService).toBe(
       remoteServices.promptAttachmentTransferService,

@@ -1186,7 +1186,7 @@ export function createLocalServices(options: {
     workspacePath: string;
     workspaceIdentity: string;
   }) => Promise<{ workspacePath: string; workspaceIdentity: string } | null>;
-  /** 仅本机窗口级 Desktop Host 显式开启；Server/SSH/WSL/Docker/phone Host 不提供。 */
+  /** 窗口级 Desktop Host 显式开启；standalone Source Server Host 自己拥有执行端 ACP 子进程。 */
   enableOpenCodeAcpRuntime?: boolean;
   /** Host 装配层注入的设置权威；与网络 transport 必须来自同一 Window Host 生命周期。 */
   settingService?: ISettingService;
@@ -2951,7 +2951,10 @@ export function createLocalServices(options: {
     )
     .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());
 
-  if (options?.enableOpenCodeAcpRuntime && !isDesktopAttachedRemote) {
+  if (
+    (options?.enableOpenCodeAcpRuntime || options?.serviceAuthorityMode === "standalone-server") &&
+    !isDesktopAttachedRemote
+  ) {
     services.register(IOpenCodeAcpRuntime, createOpenCodeAcpRuntime());
   }
 
@@ -3262,6 +3265,9 @@ export async function createServerHostServices(options: {
     zcodeBuiltinProviderConfigFilePath: options.zcodeBuiltinProviderConfigFilePath,
     providerProvisioningTargetEnabled: options.providerProvisioningTargetEnabled,
     serviceAuthorityMode: "standalone-server",
+    // Source Server является владельцем процесса на машине исполнения workspace;
+    // delegated OpenCode должен запускаться здесь, а не в Desktop окне с удалённым cwd.
+    enableOpenCodeAcpRuntime: true,
     topicResourceRelayChannel: options.topicResourceRelayChannel,
     projectStorageHostId,
     sourceServerWorkspaceService,

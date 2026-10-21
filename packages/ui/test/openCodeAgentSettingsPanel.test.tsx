@@ -43,6 +43,50 @@ afterEach(() => {
 });
 
 describe("OpenCode agent settings panel", () => {
+  it("uses the active server Host for a server remote workspace without selecting a local folder", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "available" as const,
+        version: "OpenCode 1.19.3",
+        executablePath: "/home/zcode/.opencode/bin/opencode",
+      })),
+      startSession: vi.fn(async ({ cwd }: { cwd: string }) => ({
+        sessionId: "server-session",
+        cwd,
+        configOptions: [],
+      })),
+      closeSession: vi.fn(async () => undefined),
+      onSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
+      onPermissionEvent: vi.fn(() => () => ({ dispose: () => undefined })),
+    };
+    const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
+    const platform = {
+      selectDirectory: vi.fn(async () => "/local/incorrect-path"),
+      openExternal: vi.fn(),
+    } as unknown as IPlatformService;
+    const view = render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <ServiceProvider services={services}>
+          <PlatformProvider platform={platform}>
+            <OpenCodeAgentSettingsPanel
+              initialWorkspacePath="/srv/workspaces/project"
+              remoteWorkspaceActive
+            />
+          </PlatformProvider>
+        </ServiceProvider>
+      </ZCodeIntlProvider>,
+    );
+    testResources.push(view.unmount);
+
+    await screen.findByText("OpenCode CLI detected (OpenCode 1.19.3)");
+    expect(screen.getByText(/OpenCode runs on the Source Server/u)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Choose folder" })).toBeNull();
+    fireEvent.click(screen.getByTestId("opencode-start-session"));
+    await screen.findByTestId("opencode-session-panel");
+    expect(runtime.startSession).toHaveBeenCalledWith({ cwd: "/srv/workspaces/project" });
+    expect(platform.selectDirectory).not.toHaveBeenCalled();
+  });
+
   it("shows a safe actionable diagnostic when the local ACP service cannot start", async () => {
     const runtime = {
       getCliStatus: vi.fn(async () => ({
@@ -75,7 +119,7 @@ describe("OpenCode agent settings panel", () => {
     testResources.push(view.unmount);
 
     await screen.findByText("OpenCode CLI detected (OpenCode 1.19.3)");
-    expect(screen.getByText("Local CLI · no API key")).toBeTruthy();
+    expect(screen.getByText("Host CLI · no API key")).toBeTruthy();
     fireEvent.click(await screen.findByTestId("opencode-start-session"));
     await screen.findByText(
       "OpenCode could not start its local service. Check that local network access is available, then retry.",

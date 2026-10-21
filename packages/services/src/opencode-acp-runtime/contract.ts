@@ -49,7 +49,7 @@ export interface OpenCodeAcpPromptResult {
 }
 
 /**
- * Local Desktop Host service for an explicitly delegated OpenCode ACP session.
+ * Process-owning Host service for an explicitly delegated OpenCode ACP session.
  * It never authenticates, reads OpenCode's auth store, starts a session for catalog discovery,
  * or forwards this work into the ZCode conversation/provider runtime.
  */

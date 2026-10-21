@@ -3532,10 +3532,10 @@ const zhCN: Record<string, string> = {
   "settings.plugins.toggle.failed": "无法更新 {plugin}，请重试。",
   "settings.modelProviderDescription": "管理自定义模型供应商，配置后可在聊天时选择使用。",
   "settings.modelProvider.credentialModeApiKey": "API 密钥",
-  "settings.openCode.title": "本地 OpenCode 智能体",
-  "settings.openCode.authModeCli": "本地 CLI · 无需 API 密钥",
+  "settings.openCode.title": "OpenCode 智能体",
+  "settings.openCode.authModeCli": "Host CLI · 无需 API 密钥",
   "settings.openCode.ownership":
-    "OpenCode 作为独立的本地智能体运行，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
+    "OpenCode 作为独立智能体运行在拥有当前工作区的 Host 上，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
   "settings.openCode.checking": "正在检查 OpenCode CLI…",
   "settings.openCode.available": "已检测到 OpenCode CLI（{version}）",
   "settings.openCode.missing": "未安装 OpenCode CLI",
@@ -3563,11 +3563,12 @@ const zhCN: Record<string, string> = {
     "检测到已有 CLI 或无法安全识别。ZCode 没有执行安装或升级。",
   "settings.openCode.install-platform-unsupported":
     "此平台不支持自动安装。请按官方说明手动安装 OpenCode。",
-  "settings.openCode.desktopLocalHostRequired":
-    "OpenCode ACP 仅可通过 ZCode Desktop 本地 Host 使用。",
+  "settings.openCode.desktopLocalHostRequired": "拥有当前工作区的 Host 未提供 OpenCode ACP。",
   "settings.openCode.localWorkspaceNotice":
     "OpenCode 在此电脑上运行。请选择本地文件夹；远程工作区路径不会发送给它。",
-  "settings.openCode.workspace": "本地工作区文件夹",
+  "settings.openCode.remoteHostWorkspaceNotice":
+    "OpenCode 运行在拥有当前工作区的 Source Server 上。CLI、登录状态和模型由该 Host 管理。",
+  "settings.openCode.workspace": "工作区文件夹",
   "settings.openCode.chooseWorkspace": "选择文件夹",
   "settings.openCode.startSession": "启动 OpenCode 会话",
   "settings.openCode.starting": "正在启动会话…",
