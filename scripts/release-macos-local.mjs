@@ -217,7 +217,7 @@ export function assertReleaseMetadata(release, expectedTag, expectedAssetNames) 
         .filter((name) => typeof name === "string")
         .sort()
     : [];
-  const expected = [...expectedAssetNames].sort();
+  const expected = expectedAssetNames.map(normalizeGitHubReleaseAssetName).sort();
   if (
     actualAssetNames.length !== expected.length ||
     actualAssetNames.some((name, index) => name !== expected[index])
@@ -233,15 +233,26 @@ export function sha256(value) {
 }
 
 export function assertAssetHashes(expectedHashes, downloadedHashes) {
-  for (const [name, expectedHash] of expectedHashes) {
-    const downloadedHash = downloadedHashes.get(name);
+  const localNameByGitHubName = new Map(
+    [...expectedHashes.keys()].map((name) => [normalizeGitHubReleaseAssetName(name), name]),
+  );
+  for (const [githubName, downloadedHash] of downloadedHashes) {
+    const localName = localNameByGitHubName.get(githubName);
+    if (!localName) {
+      throw new Error(`Неожиданный GitHub asset: ${githubName}`);
+    }
+    const expectedHash = expectedHashes.get(localName);
     if (!downloadedHash || downloadedHash !== expectedHash) {
-      throw new Error(`GitHub asset ${name} не совпадает с локальной сборкой`);
+      throw new Error(`GitHub asset ${localName} не совпадает с локальной сборкой`);
     }
   }
   if (downloadedHashes.size !== expectedHashes.size) {
     throw new Error("Набор скачанных GitHub assets не совпадает с локальной сборкой");
   }
+}
+
+export function normalizeGitHubReleaseAssetName(localName) {
+  return localName.replaceAll(" ", ".");
 }
 
 export function assertZipContainsOnlyReleaseApp(entries, appName = "ZCode.app") {

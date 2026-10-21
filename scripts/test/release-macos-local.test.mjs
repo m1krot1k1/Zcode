@@ -207,7 +207,7 @@ test("Preview release требует опубликованный prerelease", (
     tagName: "v3.17.1",
     isDraft: false,
     isPrerelease: true,
-    assets: [{ name: "ZCode Preview-3.17.1-mac-arm64_TEST.dmg" }],
+    assets: [{ name: "ZCode.Preview-3.17.1-mac-arm64_TEST.dmg" }],
   };
   assert.doesNotThrow(() =>
     assertPreviewReleaseMetadata(metadata, "v3.17.1", ["ZCode Preview-3.17.1-mac-arm64_TEST.dmg"]),
@@ -733,5 +733,34 @@ test("опубликованные файлы и их SHA-256 совпадают
         new Map([[assetNames[0], sha256("other")]]),
       ),
     /не совпадает/,
+  );
+
+  const previewAssetNames = [
+    "ZCode Preview-3.17.2-mac-arm64_TEST.dmg",
+    "ZCode Preview-3.17.2-mac-arm64_TEST.zip",
+  ];
+  const githubPreviewNames = previewAssetNames.map((name) => name.replaceAll(" ", "."));
+  assert.doesNotThrow(() =>
+    assertReleaseMetadata(
+      {
+        tagName: "v3.17.2",
+        isDraft: false,
+        assets: githubPreviewNames.map((name) => ({ name })),
+      },
+      "v3.17.2",
+      previewAssetNames,
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertAssetHashes(
+      new Map([
+        [previewAssetNames[0], sha256("preview dmg")],
+        [previewAssetNames[1], sha256("preview zip")],
+      ]),
+      new Map([
+        [githubPreviewNames[0], sha256("preview dmg")],
+        [githubPreviewNames[1], sha256("preview zip")],
+      ]),
+    ),
   );
 });
