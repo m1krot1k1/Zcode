@@ -868,6 +868,14 @@ describe("settingsSyncService MCP server import", () => {
           disabled: true,
           timeout: 2,
         },
+        "minimum-timeout": {
+          transport: {
+            type: "stdio",
+            command: "node",
+            args: ["minimum-timeout.js"],
+          },
+          timeout: 0,
+        },
         "sse-oauth": {
           transport: {
             type: "sse",
@@ -922,14 +930,14 @@ describe("settingsSyncService MCP server import", () => {
         intent: "manualImport",
       });
       const cline = discovery.agents.find((agent) => agent.agent === "cline");
-      expect(cline?.categories[0]?.discoveredCount).toBe(5);
+      expect(cline?.categories[0]?.discoveredCount).toBe(6);
       expect(cline?.categories[0]?.sourcePaths).toEqual([clineSettingsPath]);
 
       const result = await service.importSelected({
         workspacePath,
         selections: [{ agent: "cline", category: "mcpServers" }],
       });
-      expect(result.successCount).toBe(4);
+      expect(result.successCount).toBe(5);
       expect(result.skippedCount).toBe(1);
       expect(result.failedCount).toBe(0);
       expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
@@ -953,6 +961,12 @@ describe("settingsSyncService MCP server import", () => {
         env: { MCP_TOKEN: envSecret },
         enabled: false,
         timeoutMs: 2000,
+      });
+      expect(config.mcp?.servers?.["minimum-timeout"]).toEqual({
+        type: "stdio",
+        command: "node",
+        args: ["minimum-timeout.js"],
+        timeoutMs: 1000,
       });
       expect(config.mcp?.servers?.["sse-oauth"]).toEqual({
         type: "sse",

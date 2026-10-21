@@ -42,7 +42,7 @@
 - JSON 读写使用结构化解析，保留目标文件其他顶层字段。
 - TOML 只作为外部来源读取；写入目标始终为 ZCode JSON。
 - OpenCode 的 `command: string[]` 会转换为 ZCode/Claude 兼容的 `command + args`。
-- Cline 的 server `timeout` 是秒；导入时读取 server 注册项上的有限数值，将秒夹到 Cline 支持的 1–3600 范围，再换算成 ZCode `timeoutMs`。缺失或非数值时省略该字段，保留 ZCode 默认值。嵌套与旧式 transport 均从注册项读取 timeout。
+- Cline 的 server `timeout` 是秒；导入时读取 server 注册项上的有限数值，将秒夹到 Cline 支持的 1–3600 范围（包括 0 和负数输入映射到 1 秒），再换算成 ZCode `timeoutMs`。缺失或非数值时省略该字段，保留 ZCode 默认值。嵌套与旧式 transport 均从注册项读取 timeout。
 - Project 目标在没有 workspace 时禁用。
 
 ## Диагностика источников

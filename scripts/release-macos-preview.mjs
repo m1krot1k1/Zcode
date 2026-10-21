@@ -44,7 +44,12 @@ export function validatePreviewTestEndpoint(value) {
   }
   const production = new URL(productionZCodeEndpoint);
   // Причина: другой путь на production origin всё равно может направить Preview в production API.
-  const isProductionOrigin = endpoint.origin === production.origin;
+  // Причина: DNS считает имя с конечной точкой тем же хостом; URL.origin сравнивает строки и пропускает этот вариант.
+  const normalizeHostname = (hostname) => hostname.toLowerCase().replace(/\.$/u, "");
+  const isProductionOrigin =
+    endpoint.protocol === production.protocol &&
+    normalizeHostname(endpoint.hostname) === normalizeHostname(production.hostname) &&
+    endpoint.port === production.port;
   if (
     endpoint.protocol !== "https:" ||
     endpoint.username ||
