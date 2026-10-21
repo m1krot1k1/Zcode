@@ -862,10 +862,7 @@ function resolveCurrentPrismTaskLineage(
     // 原因：只有直接 owner runtime 能发布子任务的证据，worker 不能把事件伪装到父会话。
     throw new Error("PRISM task is not registered in the current branch");
   }
-  const parent = Object.values(this.runtimeTaskRegistry.all()).find(
-    (candidate) =>
-      candidate.type === "local_agent" && candidate.childSessionId === task.parentSessionId,
-  );
+  const parent = this.runtimeTaskRegistry.getSubagentTaskByChildSession(task.parentSessionId);
   if (parent && parent.rootRunId !== task.rootRunId) {
     throw new Error("PRISM task parent belongs to a different root run");
   }

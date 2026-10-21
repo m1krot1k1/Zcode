@@ -13,6 +13,7 @@ import { resolveNativeSearchReleasePlan } from "../../scripts/native-search-tool
 import { getBuildMetadata } from "./scripts/build-metadata.mjs";
 import { collectRuntimeModuleClosureEntries } from "./scripts/runtime-dependency-closure.mjs";
 import {
+  copyNodePtyRuntimePackage,
   resolvePackagedNodePtyPrebuildPath,
   restoreTargetNodePtyPrebuild,
 } from "./scripts/node-pty-package-assets.mjs";
@@ -95,6 +96,9 @@ const asarCliPath = resolve(
   "asar.js",
 );
 const REQUIRED_ASAR_RUNTIME_MODULES = [
+  // pnpm hoists node-pty to the workspace root, which electron-builder does not consistently copy
+  // from a nested desktop package. The packaged terminal needs its JS runtime and target native prebuild.
+  "node-pty",
   "module-details-from-path",
   "@opentelemetry/api-logs",
   // Bugfix: telemetry 的 OTLP exporter 会在启动阶段加载 sdk-metrics。pnpm 开发态可从
@@ -338,6 +342,13 @@ function resolveMissingRuntimeModules(appAsarPath) {
   });
   return resolvableRuntimeModules.filter((entry) => {
     const { moduleName } = entry;
+    if (
+      moduleName === "node-pty" &&
+      !asarEntrySet.has(`/node_modules/node-pty/prebuilds/${targetPlatform.key}/pty.node`)
+    ) {
+      // node-pty 的 JS 入口即使已进入 app.asar，也不能代替当前平台的 native PTY；缺失时完整补齐包。
+      return true;
+    }
     const moduleRoot = `/node_modules/${moduleName}`;
     if (asarEntrySet.has(moduleRoot)) {
       return false;
@@ -402,7 +413,15 @@ async function injectHoistedRuntimeModulesIntoAsar(context) {
         // 所以在 afterPack 阶段直接重写 app.asar，先把这些运行时包补进去，再交给后续签名和出包。
         mkdirSync(dirname(targetModulePath), { recursive: true });
         rmSync(targetModulePath, { force: true, recursive: true });
-        cpSync(sourceModulePath, targetModulePath, { recursive: true });
+        if (moduleName === "node-pty") {
+          copyNodePtyRuntimePackage({
+            sourcePackageRoot: sourceModulePath,
+            targetPackageRoot: targetModulePath,
+            targetPlatformKey: targetPlatform.key,
+          });
+        } else {
+          cpSync(sourceModulePath, targetModulePath, { recursive: true });
+        }
       }
     });
 

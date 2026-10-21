@@ -40,6 +40,37 @@ export function restoreTargetNodePtyPrebuild({ desktopPackageRoot, targetPlatfor
   console.log(`[beforePack] node-pty prebuild restored: ${targetBinaryPath}`);
 }
 
+export function shouldIncludeNodePtyRuntimePath(relativePath, targetPlatformKey) {
+  const normalizedPath = relativePath.replaceAll("\\", "/").replace(/^\.\/+/, "");
+  if (!normalizedPath) return true;
+
+  if (
+    normalizedPath === "build" ||
+    normalizedPath.startsWith("build/") ||
+    normalizedPath === "bin" ||
+    normalizedPath.startsWith("bin/")
+  ) {
+    return false;
+  }
+
+  const prebuildMatch = /^prebuilds\/([^/]+)(?:\/|$)/.exec(normalizedPath);
+  return !prebuildMatch || prebuildMatch[1] === targetPlatformKey;
+}
+
+export function copyNodePtyRuntimePackage({
+  sourcePackageRoot,
+  targetPackageRoot,
+  targetPlatformKey,
+}) {
+  cpSync(sourcePackageRoot, targetPackageRoot, {
+    recursive: true,
+    filter: (sourcePath) => {
+      const relativePath = sourcePath.slice(sourcePackageRoot.length).replace(/^[/\\]/, "");
+      return shouldIncludeNodePtyRuntimePath(relativePath, targetPlatformKey);
+    },
+  });
+}
+
 export function resolveSourceNodePtyPrebuildPath({ sourcePackageName, platformKey }) {
   const sourcePackageEntry = require.resolve(sourcePackageName);
   let currentDir = dirname(sourcePackageEntry);

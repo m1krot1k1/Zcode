@@ -3799,7 +3799,7 @@ const enUS: Record<string, string> = {
   "settings.openCode.diagnosticFailed": "Could not check the OpenCode CLI.",
   "settings.openCode.installConfirmTitle": "Install the OpenCode CLI?",
   "settings.openCode.installConfirmDescription":
-    "ZCode will install OpenCode and verify its version. On Windows, it uses OpenCode's official V2 WinGet package Anomaly.OpenCode and accepts WinGet agreements only after this confirmation. An existing CLI will not be upgraded or replaced.",
+    "ZCode will download OpenCode's official V2 installer and place the CLI in your user folder on macOS/Linux. On Windows, it uses the official WinGet package Anomaly.OpenCode and accepts WinGet agreements only after this confirmation. The install does not edit shell profiles or replace a detected CLI.",
   "settings.openCode.install": "Install OpenCode",
   "settings.openCode.installInstructions": "Install instructions",
   "settings.openCode.chooseCli": "Locate CLI file",

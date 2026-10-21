@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   SESSION_ENTRY_PRISM_TASK_TERMINAL,
@@ -17,7 +20,10 @@ import { MemoryFileSystem } from "./memory-test-utils.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
-import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
+import {
+  InMemoryRuntimeTaskRegistry,
+  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+} from "../src/runtime-task/registry.js";
 
 describe("subagent tool event projection", () => {
   it("runs a DAG in real child sessions and waits for every dependency", async () => {
@@ -1152,4 +1158,38 @@ function createDeferred<T>(): { promise: Promise<T>; resolve(value?: T): void } 
     promise,
     resolve: (value) => resolvePromise(value as T),
   };
+}
+
+function waitForRuntimeStage<T>(
+  stage: string,
+  promise: Promise<T>,
+  diagnostic: () => string,
+  timeoutMs: number,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${stage}: ${diagnostic()}`)),
+      timeoutMs,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+async function finishWithin(promise: Promise<unknown>, timeoutMs = 5_000): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const finished = await Promise.race([
+    promise.then(
+      () => true,
+      () => true,
+    ),
+    timeout,
+  ]);
+  if (timer) clearTimeout(timer);
+  return finished;
 }

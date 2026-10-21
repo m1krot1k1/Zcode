@@ -125,11 +125,9 @@ export type RuntimeTaskAdmissionResult =
         | "owner_closed"
         | "parent_stopped"
         | "task_already_running"
-        | "task_finalizing"
-        | "total_limit";
+        | "task_finalizing";
     };
 
-export const SUBAGENT_ROOT_MAX_TASKS = 128;
 /** Per-root-session worker ceiling: foreground children replace waiting parents; background children use another slot. */
 export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 24;
 
@@ -1120,6 +1118,7 @@ export interface RuntimeTaskRegistry {
   setOffPeakExecutionId?(executionId: string | undefined): void;
   all(): Record<string, RuntimeTaskSnapshot>;
   get(id: string): RuntimeTaskSnapshot | undefined;
+  getSubagentTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined;
   drainMessages(id: string): RuntimeTaskPendingMessage[];
   queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
   register(task: RuntimeTaskSnapshot): void;
@@ -1198,6 +1197,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   >();
   private readonly closedSessionOwners = new Set<SessionId>();
   private readonly tasks = new Map<string, RuntimeTaskSnapshot>();
+  private readonly subagentTaskIdByChildSession = new Map<SessionId, string>();
+  private readonly subagentTaskIdsByParentSession = new Map<SessionId, Set<string>>();
+  private readonly activeSubagentTaskIdsByRootSession = new Map<SessionId, Set<string>>();
   private readonly terminalWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
 
   register(task: RuntimeTaskSnapshot): void {
@@ -1214,7 +1216,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         (ownerSessionId ? this.branchGenerations.get(ownerSessionId) : undefined) ??
         this.activeBranchGeneration,
     };
-    this.tasks.set(stamped.taskId, stamped);
+    this.setTaskSnapshot(stamped);
     this.resolveIfTerminal(stamped.taskId, stamped);
     this.resolveIfBackgrounded(stamped.taskId, stamped);
     this.changed();
@@ -1251,14 +1253,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     if (existing && !isTerminalRuntimeTask(existing)) {
       return { accepted: false, reason: "task_already_running" };
     }
+    const existingChildOwner = this.getSubagentTaskByChildSession(task.childSessionId);
     if (
       (existing?.rootSessionId && existing.rootSessionId !== rootSessionId) ||
-      [...this.tasks.values()].some(
-        (candidate) =>
-          candidate.type === "local_agent" &&
-          candidate.childSessionId === task.childSessionId &&
-          candidate.taskId !== task.taskId,
-      )
+      (existingChildOwner && existingChildOwner.taskId !== task.taskId)
     ) {
       return { accepted: false, reason: "lineage_conflict" };
     }
@@ -1269,14 +1267,6 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         ? existing.rootRunId
         : (parentTask?.rootRunId ?? makeRootRunId(rootSessionId, task.turnId));
 
-    const currentRunTasks = [...this.tasks.values()].filter(
-      (candidate) => candidate.rootRunId === rootRunId,
-    );
-    const priorSameRunTask = existing?.rootRunId === rootRunId ? existing : undefined;
-    const totalBeforeAdmission = currentRunTasks.length - (priorSameRunTask ? 1 : 0);
-    if (totalBeforeAdmission >= SUBAGENT_ROOT_MAX_TASKS) {
-      return { accepted: false, reason: "total_limit" };
-    }
     const activeWorkItems = this.getActiveSubagentWorkItems(rootSessionId);
     const foregroundParentTransfersSlot =
       task.isBackgrounded !== true &&
@@ -1300,7 +1290,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       // 每次重新准入都生成新 attempt，防止旧 verifier receipt 命中相同 taskId 的新生命期。
       attemptId: randomUUID(),
     };
-    this.tasks.set(stamped.taskId, stamped);
+    this.setTaskSnapshot(stamped);
     this.cancellationHandles.set(stamped.taskId, cancellation);
     // 终态清理结束后才允许同一 task id 开启新生命期、唤醒 terminal waiter。
     void cancellation.settled.then(() => {
@@ -1378,9 +1368,14 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         completedAt: new Date(),
         error: "Subagent finalization ended without recording a terminal state.",
       };
-      this.tasks.set(taskId, current);
+      this.setTaskSnapshot(current);
       this.resolveIfTerminal(taskId, current);
     } else if (current) {
+      current = compactTerminalSubagentSnapshot(current);
+      this.setTaskSnapshot(current);
+      // A settled child owner cannot admit descendants because its parent task is terminal.
+      // Removing the close marker prevents one retained SessionId per completed tree node.
+      if (current.childSessionId) this.closedSessionOwners.delete(current.childSessionId);
       this.resolveTerminalWaiters(taskId, current);
     }
     this.changed();
@@ -1390,10 +1385,12 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     parentSessionId: SessionId,
     reason: unknown = new Error(`Subagent owner closed: ${parentSessionId}`),
   ): Promise<void> {
+    // Если предок уже закрыл владельца и ждёт всё поддерево, вложенное закрытие не запускает
+    // второй каскад: иначе потомки повторно обходят и ожидают одну ветку, а линейная цепочка
+    // приводит к квадратичному числу обходов.
+    if (this.closedSessionOwners.has(parentSessionId)) return;
     this.closedSessionOwners.add(parentSessionId);
-    const childIds = [...this.tasks.values()]
-      .filter((task) => task.type === "local_agent" && task.parentSessionId === parentSessionId)
-      .map((task) => task.taskId);
+    const childIds = [...(this.subagentTaskIdsByParentSession.get(parentSessionId) ?? [])];
     await Promise.all(childIds.map((taskId) => this.cancelSubagentSubtree(taskId, reason)));
   }
 
@@ -1417,25 +1414,79 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     this.activeBranchGeneration = generation;
   }
 
+  getSubagentTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined {
+    const taskId = this.subagentTaskIdByChildSession.get(sessionId);
+    return taskId ? this.tasks.get(taskId) : undefined;
+  }
+
+  private setTaskSnapshot(task: RuntimeTaskSnapshot): void {
+    const ownerOfChildSession =
+      task.type === "local_agent" && task.childSessionId
+        ? this.subagentTaskIdByChildSession.get(task.childSessionId)
+        : undefined;
+    if (ownerOfChildSession && ownerOfChildSession !== task.taskId) {
+      throw new Error(`Child session already belongs to subagent task ${ownerOfChildSession}`);
+    }
+
+    const previous = this.tasks.get(task.taskId);
+    if (previous) this.removeTaskIndexes(previous);
+    this.tasks.set(task.taskId, task);
+    if (task.type !== "local_agent") return;
+
+    if (task.childSessionId) this.subagentTaskIdByChildSession.set(task.childSessionId, task.taskId);
+    if (task.parentSessionId) {
+      addTaskIdToSessionIndex(this.subagentTaskIdsByParentSession, task.parentSessionId, task.taskId);
+    }
+    if (task.status === "running" && task.rootSessionId) {
+      addTaskIdToSessionIndex(
+        this.activeSubagentTaskIdsByRootSession,
+        task.rootSessionId,
+        task.taskId,
+      );
+    }
+  }
+
+  private removeTaskIndexes(task: RuntimeTaskSnapshot): void {
+    if (task.type !== "local_agent") return;
+    if (
+      task.childSessionId &&
+      this.subagentTaskIdByChildSession.get(task.childSessionId) === task.taskId
+    ) {
+      this.subagentTaskIdByChildSession.delete(task.childSessionId);
+    }
+    if (task.parentSessionId) {
+      removeTaskIdFromSessionIndex(
+        this.subagentTaskIdsByParentSession,
+        task.parentSessionId,
+        task.taskId,
+      );
+    }
+    if (task.status === "running" && task.rootSessionId) {
+      removeTaskIdFromSessionIndex(
+        this.activeSubagentTaskIdsByRootSession,
+        task.rootSessionId,
+        task.taskId,
+      );
+    }
+  }
+
   private findTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined {
-    return [...this.tasks.values()].find(
-      (task) => task.type === "local_agent" && task.childSessionId === sessionId,
-    );
+    return this.getSubagentTaskByChildSession(sessionId);
   }
 
   private getActiveSubagentWorkItems(
     rootSessionId: SessionId,
     taskOverride?: RuntimeTaskSnapshot,
   ): RuntimeTaskSnapshot[] {
-    const runningTasks = [...this.tasks.values()]
-      .map((storedTask) =>
-        storedTask.taskId === taskOverride?.taskId ? taskOverride : storedTask,
+    const activeTaskIds = this.activeSubagentTaskIdsByRootSession.get(rootSessionId) ?? new Set();
+    const runningTasks = [...activeTaskIds]
+      .map((taskId) =>
+        taskId === taskOverride?.taskId ? taskOverride : this.tasks.get(taskId),
       )
-      .filter(
-        (task) =>
-          task.type === "local_agent" &&
-          task.rootSessionId === rootSessionId &&
-          task.status === "running",
+      .filter((task): task is RuntimeTaskSnapshot =>
+        task?.type === "local_agent" &&
+        task.rootSessionId === rootSessionId &&
+        task.status === "running",
       );
     const ownersWithForegroundChild = new Set(
       runningTasks
@@ -1473,10 +1524,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       result.push(currentId);
       const childSessionId = current.childSessionId;
       if (childSessionId) {
-        for (const child of this.tasks.values()) {
-          if (child.type === "local_agent" && child.parentSessionId === childSessionId) {
-            pending.push(child.taskId);
-          }
+        const childTaskIds = this.subagentTaskIdsByParentSession.get(childSessionId);
+        if (childTaskIds) {
+          for (const childTaskId of childTaskIds) pending.push(childTaskId);
         }
       }
     }
@@ -1490,7 +1540,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const current = this.tasks.get(id);
     if (!current) return undefined;
     const next = patcher(current);
-    this.tasks.set(id, next);
+    this.setTaskSnapshot(next);
     this.resolveIfTerminal(id, next);
     this.resolveIfBackgrounded(id, next);
     this.changed();
@@ -1521,13 +1571,15 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         if (projectedActiveCount > SUBAGENT_ROOT_MAX_ACTIVE_TASKS) return false;
       }
     }
-    this.tasks.set(id, next);
+    this.setTaskSnapshot(next);
     this.resolveBackgroundWaiters(id, next);
     this.changed();
     return true;
   }
 
   remove(id: string): void {
+    const task = this.tasks.get(id);
+    if (task) this.removeTaskIndexes(task);
     this.tasks.delete(id);
     this.cancellationHandles.delete(id);
     this.finalizingSubagentTasks.delete(id);
@@ -1555,7 +1607,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const task = this.tasks.get(id);
     if (!task || !task.pendingMessages || task.pendingMessages.length === 0) return [];
     const messages = task.pendingMessages;
-    this.tasks.set(id, { ...task, pendingMessages: [] });
+    this.setTaskSnapshot({ ...task, pendingMessages: [] });
     this.changed();
     return messages;
   }
@@ -1658,8 +1710,47 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }
 }
 
+function addTaskIdToSessionIndex(
+  index: Map<SessionId, Set<string>>,
+  sessionId: SessionId,
+  taskId: string,
+): void {
+  let taskIds = index.get(sessionId);
+  if (!taskIds) {
+    taskIds = new Set();
+    index.set(sessionId, taskIds);
+  }
+  taskIds.add(taskId);
+}
+
+function removeTaskIdFromSessionIndex(
+  index: Map<SessionId, Set<string>>,
+  sessionId: SessionId,
+  taskId: string,
+): void {
+  const taskIds = index.get(sessionId);
+  if (!taskIds) return;
+  taskIds.delete(taskId);
+  if (taskIds.size === 0) index.delete(sessionId);
+}
+
 function makeRootRunId(rootSessionId: SessionId, turnId: TurnId | undefined): string {
   return `${rootSessionId}:${turnId ?? "session"}`;
+}
+
+function compactTerminalSubagentSnapshot(task: RuntimeTaskSnapshot): RuntimeTaskSnapshot {
+  if (task.type !== "local_agent") return task;
+  const compactedOutput =
+    task.output?.status === "completed"
+      ? { ...task.output, content: [], prompt: "" }
+      : task.output;
+  // Full result text and prompts are available through the durable output file and the
+  // just-completed Agent tool result. Keep only compact terminal metadata in the long-lived root registry.
+  return {
+    ...task,
+    prompt: "",
+    ...(compactedOutput === undefined ? {} : { output: compactedOutput }),
+  };
 }
 
 export function isTerminalRuntimeTask(task: Pick<RuntimeTaskSnapshot, "status">): boolean {

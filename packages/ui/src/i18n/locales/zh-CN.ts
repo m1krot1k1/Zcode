@@ -3550,7 +3550,7 @@ const zhCN: Record<string, string> = {
   "settings.openCode.diagnosticFailed": "无法检查 OpenCode CLI。",
   "settings.openCode.installConfirmTitle": "安装 OpenCode CLI？",
   "settings.openCode.installConfirmDescription":
-    "ZCode 将安装 OpenCode 并验证版本。Windows 使用 OpenCode 官方 V2 WinGet 软件包 Anomaly.OpenCode，只有确认后才会接受 WinGet 源和软件包协议。已检测到的 CLI 不会被升级或替换。",
+    "ZCode 将下载 OpenCode 官方 V2 安装程序，并在 macOS/Linux 上将 CLI 安装到当前用户目录。Windows 使用官方 WinGet 软件包 Anomaly.OpenCode，只有确认后才会接受 WinGet 源和软件包协议。安装不会修改 shell 配置，也不会替换已检测到的 CLI。",
   "settings.openCode.install": "安装 OpenCode",
   "settings.openCode.installInstructions": "安装说明",
   "settings.openCode.chooseCli": "定位 CLI 文件",

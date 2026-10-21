@@ -15,43 +15,97 @@ import {
   createPrismTaskContract,
   reducePrismTaskAcceptance,
   SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
-  SUBAGENT_ROOT_MAX_TASKS,
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
 import { executeSubagentTaskDag } from "../src/subagent/runner.js";
 
 describe("subagent root admission and ownership", () => {
-  it("permits recursive nesting to the root node budget without counting waiting ancestors as workers", () => {
+  it("admits deep recursive nesting without a cumulative node cap and indexes lineage", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-unbounded-depth-root");
     const turnId = createTurnId("subagent-unbounded-depth-turn");
+    const depth = 512;
     let parentSessionId = rootSessionId;
 
-    for (let depth = 0; depth < SUBAGENT_ROOT_MAX_TASKS; depth += 1) {
-      const childSessionId = createSessionId(`subagent-depth-${depth}`);
+    for (let index = 0; index < depth; index += 1) {
+      const childSessionId = createSessionId(`subagent-depth-${index}`);
+      const taskId = `agent_depth_${index}`;
       const admission = registry.registerSubagentTask(
-        createTask(`agent_depth_${depth}`, parentSessionId, childSessionId, turnId),
+        createTask(taskId, parentSessionId, childSessionId, turnId),
         settledCancellation(),
       );
       expect(admission.accepted).toBe(true);
-      if (!admission.accepted) break;
+      if (!admission.accepted) throw new Error(`unexpected admission refusal at depth ${index}`);
       expect(admission.task.rootSessionId).toBe(rootSessionId);
+      expect(registry.getSubagentTaskByChildSession(childSessionId)?.taskId).toBe(taskId);
       parentSessionId = childSessionId;
     }
 
-    expect(Object.keys(registry.all())).toHaveLength(SUBAGENT_ROOT_MAX_TASKS);
-    expect(
-      registry.registerSubagentTask(
-        createTask(
-          "agent_depth_over_budget",
-          parentSessionId,
-          createSessionId("agent_depth_over_budget_session"),
-          turnId,
-        ),
-        settledCancellation(),
-      ),
-    ).toEqual({ accepted: false, reason: "total_limit" });
+    const nextChild = createSessionId("agent_depth_512_session");
+    const next = registry.registerSubagentTask(
+      createTask("agent_depth_512", parentSessionId, nextChild, turnId),
+      settledCancellation(),
+    );
+    expect(next.accepted).toBe(true);
+    expect(Object.keys(registry.all())).toHaveLength(depth + 1);
+    expect(registry.getSubagentTaskByChildSession(rootSessionId)).toBeUndefined();
+  });
+
+  it("compacts completed terminal output only after lifecycle settlement", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const rootSessionId = createSessionId("subagent-compact-root");
+    const childSessionId = createSessionId("subagent-compact-child");
+    const turnId = createTurnId("subagent-compact-turn");
+    const cancellation = controlledCancellation();
+    const task = createTask("agent_compact", rootSessionId, childSessionId, turnId);
+    expect(registry.registerSubagentTask(task, cancellation).accepted).toBe(true);
+    expect(registry.beginSubagentTaskFinalization(task.taskId)).toBe(true);
+    registry.update(task.taskId, (current) => ({
+      ...current,
+      prompt: "p".repeat(20_000),
+      outputFile: "/tmp/agent_compact/output.txt",
+      status: "completed",
+      completedAt: new Date(),
+      output: {
+        status: "completed",
+        agentId: task.taskId,
+        agentType: task.agentType,
+        description: task.description,
+        prompt: "p".repeat(20_000),
+        content: [{ type: "text", text: "x".repeat(1_000_000) }],
+        totalToolUseCount: 1,
+        totalDurationMs: 10,
+        acceptance: {
+          status: "verified",
+          passedCriterionIds: ["tests"],
+          failedCriterionIds: [],
+          missingCriterionIds: [],
+        },
+      },
+    }));
+    const terminalWait = registry.waitForTerminal(task.taskId);
+    const preSettlementOutput = registry.get(task.taskId)?.output;
+    expect(preSettlementOutput?.status).toBe("completed");
+    if (preSettlementOutput?.status === "completed") {
+      expect(preSettlementOutput.content[0]?.text).toHaveLength(1_000_000);
+    }
+
+    cancellation.resolve();
+
+    const settledSnapshot = await terminalWait;
+    expect(settledSnapshot).toMatchObject({
+      status: "completed",
+      prompt: "",
+      outputFile: "/tmp/agent_compact/output.txt",
+      output: {
+        status: "completed",
+        prompt: "",
+        content: [],
+        acceptance: { status: "verified", passedCriterionIds: ["tests"] },
+      },
+    });
+    expect(registry.isSubagentTaskFinalizing(task.taskId)).toBe(false);
   });
 
   it("accepts only complete Host receipts for the current attempt and branch", () => {
@@ -226,32 +280,78 @@ describe("subagent root admission and ownership", () => {
     ).toBe("unknown");
   });
 
-  it("admits exactly 128 nodes and rejects node 129 before registration", () => {
+  it("keeps completed task snapshots readable and does not cap cumulative nodes", async () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-total-budget-root");
     const turnId = createTurnId("subagent-total-budget-turn");
 
-    for (let index = 0; index < SUBAGENT_ROOT_MAX_TASKS; index += 1) {
+    for (let index = 0; index < 512; index += 1) {
       const taskId = `agent_total_${index}`;
       const admission = registry.registerSubagentTask(
         createTask(taskId, rootSessionId, createSessionId(`${taskId}_session`), turnId),
         settledCancellation(),
       );
       expect(admission.accepted).toBe(true);
-      registry.update(taskId, (task) => ({ ...task, status: "completed" }));
+      registry.update(taskId, (task) => ({
+        ...task,
+        status: index === 1 ? "failed" : "completed",
+      }));
     }
 
-    const denied = registry.registerSubagentTask(
+    const admitted = registry.registerSubagentTask(
       createTask(
-        "agent_total_129",
+        "agent_total_512",
         rootSessionId,
-        createSessionId("agent_total_129_session"),
+        createSessionId("agent_total_512_session"),
         turnId,
       ),
       settledCancellation(),
     );
-    expect(denied).toEqual({ accepted: false, reason: "total_limit" });
-    expect(Object.keys(registry.all())).toHaveLength(SUBAGENT_ROOT_MAX_TASKS);
+    expect(admitted.accepted).toBe(true);
+    expect(Object.keys(registry.all())).toHaveLength(513);
+    expect(registry.get("agent_total_0")?.status).toBe("completed");
+    expect(registry.get("agent_total_1")?.status).toBe("failed");
+    expect(await registry.waitForTerminal("agent_total_0")).toMatchObject({
+      taskId: "agent_total_0",
+      status: "completed",
+    });
+    expect(await registry.waitForTerminal("agent_total_1")).toMatchObject({
+      taskId: "agent_total_1",
+      status: "failed",
+    });
+  });
+
+  it("keeps lineage indexes consistent across updates, re-admission, and removal", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const rootSessionId = createSessionId("subagent-index-root");
+    const turnId = createTurnId("subagent-index-turn");
+    const oldChildSessionId = createSessionId("subagent-index-old-child");
+    const newChildSessionId = createSessionId("subagent-index-new-child");
+    const task = createTask("agent_indexed", rootSessionId, oldChildSessionId, turnId);
+
+    expect(registry.registerSubagentTask(task, settledCancellation()).accepted).toBe(true);
+    expect(registry.getSubagentTaskByChildSession(oldChildSessionId)?.taskId).toBe(task.taskId);
+
+    registry.update(task.taskId, (current) => ({
+      ...current,
+      childSessionId: newChildSessionId,
+      status: "completed",
+    }));
+    expect(registry.getSubagentTaskByChildSession(oldChildSessionId)).toBeUndefined();
+    expect(registry.getSubagentTaskByChildSession(newChildSessionId)?.taskId).toBe(task.taskId);
+
+    const resumedChildSessionId = createSessionId("subagent-index-resumed-child");
+    const resumed = registry.registerSubagentTask(
+      createTask(task.taskId, rootSessionId, resumedChildSessionId, turnId),
+      settledCancellation(),
+    );
+    expect(resumed.accepted).toBe(true);
+    expect(registry.getSubagentTaskByChildSession(newChildSessionId)).toBeUndefined();
+    expect(registry.getSubagentTaskByChildSession(resumedChildSessionId)?.taskId).toBe(task.taskId);
+
+    registry.remove(task.taskId);
+    expect(registry.getSubagentTaskByChildSession(resumedChildSessionId)).toBeUndefined();
+    expect(registry.get(task.taskId)).toBeUndefined();
   });
 
   it("admits 24 active work items and rejects the 25th", () => {
@@ -654,6 +754,12 @@ describe("subagent root admission and ownership", () => {
       settled = true;
     });
     expect(direct.abort).toHaveBeenCalledTimes(1);
+    expect(nested.abort).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    // The root cascade already owns the nested session; its runtime close must unwind without
+    // starting and awaiting an overlapping descendant cascade.
+    await registry.cancelSubagentChildren(childSessionId);
     expect(nested.abort).toHaveBeenCalledTimes(1);
     expect(settled).toBe(false);
 

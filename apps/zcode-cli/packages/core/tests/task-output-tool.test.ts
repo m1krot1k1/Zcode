@@ -102,6 +102,74 @@ describe("TaskOutput tool", () => {
     );
   });
 
+  it("keeps old terminal Agent output readable after more than 128 tasks settle", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const taskCount = 512;
+
+    for (let index = 0; index < taskCount; index += 1) {
+      const taskId = `agent_retained_${index}`;
+      const resultText = `terminal result ${index}`;
+      registry.register(
+        runtimeTask({
+          agentId: taskId,
+          taskId,
+          description: `Agent ${index}`,
+          status: "completed",
+          completedAt: new Date("2026-07-25T00:00:01.000Z"),
+          output: {
+            ...completedAgentOutput(resultText),
+            agentId: taskId,
+            description: `Agent ${index}`,
+          },
+        }),
+      );
+    }
+
+    for (const taskId of ["agent_retained_0", `agent_retained_${taskCount - 1}`]) {
+      const output = await taskOutputToolEntry.handler(
+        { task_id: taskId, block: false },
+        toolContext(registry),
+      );
+      expect(output).toMatchObject({
+        retrieval_status: "success",
+        task: {
+          task_id: taskId,
+          status: "completed",
+          output: `terminal result ${taskId === "agent_retained_0" ? 0 : taskCount - 1}`,
+        },
+      });
+    }
+  });
+
+  it("reads compacted terminal Agent output from its saved file", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "zcode-compacted-agent-output-"));
+    const outputFile = join(outputDir, "output.txt");
+    await writeFile(outputFile, "saved completed result", "utf8");
+    const compactedOutput = { ...completedAgentOutput(""), content: [], prompt: "" };
+    const registry = registryWithTask(
+      runtimeTask({
+        status: "completed",
+        completedAt: new Date(),
+        outputFile,
+        prompt: "",
+        output: compactedOutput,
+      }),
+    );
+
+    try {
+      const output = await taskOutputToolEntry.handler(
+        { task_id: "agent_1", block: false },
+        toolContext(registry),
+      );
+      expect(output).toMatchObject({
+        retrieval_status: "success",
+        task: { task_id: "agent_1", output: "saved completed result" },
+      });
+    } finally {
+      await rm(outputDir, { force: true, recursive: true });
+    }
+  });
+
   it.each([false, true])(
     "does not consume the completion claim when terminal projection fails (block=%s)",
     async (block) => {

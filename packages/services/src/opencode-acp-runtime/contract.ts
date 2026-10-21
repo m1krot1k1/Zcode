@@ -58,8 +58,9 @@ export interface IOpenCodeAcpRuntime {
   getCliStatus(params?: { cliPath?: string }): Promise<OpenCodeCliStatus>;
 
   /**
-   * Installs the documented CLI only after an explicit UI confirmation. Re-probes before install
-   * and refuses to upgrade/replace any already discoverable CLI.
+   * Installs the official platform CLI only after explicit UI confirmation. POSIX installation
+   * runs in a temporary HOME and copies the verified binary with exclusive creation; WinGet uses
+   * --no-upgrade. Re-probes before install and never replaces an already discoverable CLI.
    */
   installCli(params?: { cliPath?: string }): Promise<OpenCodeInstallResult>;
 

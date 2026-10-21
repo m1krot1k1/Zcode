@@ -1274,10 +1274,7 @@ async function declarePrismTaskContractForAdmission(
     throw new Error("Cannot declare PRISM criteria without admitted task lineage");
   }
 
-  const parentTask = Object.values(registry.all()).find(
-    (candidate) =>
-      candidate.type === "local_agent" && candidate.childSessionId === admittedTask.parentSessionId,
-  );
+  const parentTask = registry.getSubagentTaskByChildSession(admittedTask.parentSessionId);
   const contract: PrismTaskContract = createPrismTaskContract({
     rootRunId: admittedTask.rootRunId,
     taskId: admittedTask.taskId,
@@ -1410,11 +1407,11 @@ function throwOnSubagentAdmissionFailure(
   admission: Extract<RuntimeTaskAdmissionResult, { accepted: false }>,
   request: SubagentRunRequest,
 ): never {
-  const isQuota = admission.reason === "active_limit" || admission.reason === "total_limit";
+  const isQuota = admission.reason === "active_limit";
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
     isQuota
-      ? `Subagent root-run ${admission.reason === "total_limit" ? "node" : "active task"} quota reached.`
+      ? "Subagent root-session active task quota reached."
       : "The parent runtime no longer accepts subagent work.",
     {
       context: {
@@ -2747,9 +2744,7 @@ async function emitSubagentExecutionTerminal(
     return;
   }
 
-  const parentTask = Object.values(registry.all()).find(
-    (candidate) => candidate.childSessionId === task.parentSessionId,
-  );
+  const parentTask = registry.getSubagentTaskByChildSession(task.parentSessionId);
   const branchGeneration = task.branchGeneration ?? 0;
   const terminalId = [task.rootRunId, task.taskId, String(branchGeneration), task.attemptId].join(
     "/",

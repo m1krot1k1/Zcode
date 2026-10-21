@@ -1,7 +1,18 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import {
+  access,
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  unlink,
+} from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join, posix } from "node:path";
 import {
   OPEN_CODE_WINGET_INSTALL_ARGS,
   resolveOpenCodeCli,
@@ -18,7 +29,9 @@ import type { OpenCodeCliStatus } from "../contract.js";
 const VERSION_TIMEOUT_MS = 4_000;
 export const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const MAX_VERSION_OUTPUT_CHARS = 512;
-const OPEN_CODE_PACKAGE = "@opencode/cli";
+const OPEN_CODE_INSTALLER_URL = "https://opencode.ai/v2/install";
+const MAX_INSTALLER_SCRIPT_BYTES = 512 * 1024;
+const INSTALLER_DOWNLOAD_TIMEOUT_MS = 60_000;
 // CLI и npm нужны пути, каталоги пользователя, временные каталоги и локаль; секреты Host не наследуем.
 const COMMON_CHILD_ENV_KEYS = new Set(
   [
@@ -65,14 +78,51 @@ const WINDOWS_CHILD_ENV_KEYS = new Set(
   ].map((key) => key.toUpperCase()),
 );
 
-async function isExecutableFile(candidate: string): Promise<boolean> {
+async function isExecutableFile(
+  candidate: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
   try {
     if (!(await stat(candidate)).isFile()) return false;
-    if (process.platform !== "win32") await access(candidate, constants.X_OK);
+    if (platform !== "win32") await access(candidate, constants.X_OK);
     return true;
   } catch {
     return false;
   }
+}
+
+export async function resolveOpenCodeInstallerCommands(input: {
+  pathValue: string | undefined;
+  platform: NodeJS.Platform;
+  isExecutableFile?: (candidate: string) => Promise<boolean>;
+}): Promise<{ bash: string; curl: string } | undefined> {
+  if (input.platform !== "darwin" && input.platform !== "linux") return undefined;
+  const directories = (input.pathValue ?? "")
+    .split(":")
+    .map((directory) => directory.trim())
+    .filter(Boolean);
+  const find = async (command: string): Promise<string | undefined> => {
+    for (const directory of directories) {
+      const candidate = posix.join(directory, command);
+      const executable =
+        input.isExecutableFile ?? ((path: string) => isExecutableFile(path, input.platform));
+      if (await executable(candidate)) return candidate;
+    }
+    return undefined;
+  };
+  const [bash, curl] = await Promise.all([find("bash"), find("curl")]);
+  return bash && curl ? { bash, curl } : undefined;
+}
+
+function waitForChildExit(child: ReturnType<typeof spawn>, timeoutMs: number): Promise<number> {
+  return withTimeout(
+    new Promise<number>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (code) => resolve(code ?? 1));
+    }),
+    timeoutMs,
+    "opencode.install-timeout",
+  );
 }
 
 export async function resolveCliCommand(cliPath?: string): Promise<OpenCodeCliResolution> {
@@ -198,29 +248,114 @@ export async function runVersion(
   });
 }
 
-export async function installOpenCodePackage(
+export async function installOpenCodeOfficialCli(
   timeoutMs: number,
   sourceEnvironment: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
-  const child = spawn(
-    "npm",
-    ["install", "--global", OPEN_CODE_PACKAGE],
-    spawnOptions(undefined, ["ignore", "ignore", "ignore"], sourceEnvironment, platform),
-  );
+  if (platform !== "darwin" && platform !== "linux") return false;
+  const installerCommands = await resolveOpenCodeInstallerCommands({
+    pathValue: sourceEnvironment.PATH,
+    platform,
+    isExecutableFile,
+  });
+  if (!installerCommands) return false;
+
+  let temporaryDirectory: string | undefined;
+  let activeChild: ReturnType<typeof spawn> | undefined;
+  let installedDestinationPath: string | undefined;
   try {
-    const exitCode = await withTimeout(
-      new Promise<number>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("close", (code) => resolve(code ?? 1));
-      }),
-      timeoutMs,
-      "opencode.install-timeout",
+    temporaryDirectory = await mkdtemp(join(tmpdir(), "zcode-opencode-install-"));
+    const temporaryHome = join(temporaryDirectory, "home");
+    const scriptPath = join(temporaryDirectory, "install.sh");
+    await mkdir(temporaryHome, { recursive: true, mode: 0o700 });
+
+    // Официальный install script должен писать только во временный HOME: это не даёт ему заменить существующий CLI и трогать shell-профили пользователя.
+    const isolatedEnvironment = {
+      ...sourceEnvironment,
+      HOME: temporaryHome,
+      TMPDIR: temporaryDirectory,
+      XDG_CONFIG_HOME: join(temporaryHome, ".config"),
+      XDG_DATA_HOME: join(temporaryHome, ".local", "share"),
+      XDG_CACHE_HOME: join(temporaryHome, ".cache"),
+      XDG_STATE_HOME: join(temporaryHome, ".local", "state"),
+    };
+
+    activeChild = spawn(
+      installerCommands.curl,
+      [
+        "-q",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
+        "--max-time",
+        String(Math.ceil(INSTALLER_DOWNLOAD_TIMEOUT_MS / 1000)),
+        "--max-filesize",
+        String(MAX_INSTALLER_SCRIPT_BYTES),
+        "--output",
+        scriptPath,
+        OPEN_CODE_INSTALLER_URL,
+      ],
+      spawnOptions(undefined, ["ignore", "ignore", "ignore"], sourceEnvironment, platform),
     );
-    return exitCode === 0;
+    const downloadExitCode = await waitForChildExit(activeChild, INSTALLER_DOWNLOAD_TIMEOUT_MS);
+    activeChild = undefined;
+    if (downloadExitCode !== 0) return false;
+
+    const scriptInfo = await stat(scriptPath).catch(() => null);
+    if (
+      !scriptInfo?.isFile() ||
+      scriptInfo.size === 0 ||
+      scriptInfo.size > MAX_INSTALLER_SCRIPT_BYTES
+    ) {
+      return false;
+    }
+    const script = await readFile(scriptPath);
+    if (!script.subarray(0, 64).toString("utf8").startsWith("#!/usr/bin/env bash")) return false;
+
+    activeChild = spawn(
+      installerCommands.bash,
+      [scriptPath, "--no-modify-path"],
+      spawnOptions(undefined, ["ignore", "ignore", "ignore"], isolatedEnvironment, platform),
+    );
+    const installExitCode = await waitForChildExit(activeChild, timeoutMs);
+    activeChild = undefined;
+    if (installExitCode !== 0) return false;
+
+    const stagedBinaryPath = join(temporaryHome, ".opencode", "bin", "opencode");
+    const binaryInfo = await stat(stagedBinaryPath).catch(() => null);
+    if (!binaryInfo?.isFile()) return false;
+    await access(stagedBinaryPath, constants.X_OK).catch(() => {
+      throw new Error("opencode.install-binary-not-executable");
+    });
+    const stagedVersion = await runVersion(
+      { command: stagedBinaryPath, prefixArgs: [] },
+      isolatedEnvironment,
+      platform,
+    );
+    if (stagedVersion.status !== "available") return false;
+
+    const destinationDirectory = join(sourceEnvironment.HOME || homedir(), ".opencode", "bin");
+    const destinationPath = join(destinationDirectory, "opencode");
+    await mkdir(destinationDirectory, { recursive: true, mode: 0o700 });
+    // COPYFILE_EXCL — если другой процесс установил CLI параллельно, не заменяем его файл.
+    await copyFile(stagedBinaryPath, destinationPath, constants.COPYFILE_EXCL);
+    installedDestinationPath = destinationPath;
+    await chmod(destinationPath, 0o755);
+    installedDestinationPath = undefined;
+    return true;
   } catch {
-    await terminateProcessTreeAndWait(child).catch(() => undefined);
+    if (activeChild) await terminateProcessTreeAndWait(activeChild).catch(() => undefined);
+    // Если копирование прошло, а проверка прав нет — удаляем только созданный нами неполный файл.
+    if (installedDestinationPath) await unlink(installedDestinationPath).catch(() => undefined);
     return false;
+  } finally {
+    if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
   }
 }
 

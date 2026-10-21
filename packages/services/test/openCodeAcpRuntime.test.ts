@@ -8,6 +8,10 @@ import {
   resolveOpenCodeCli,
   resolveOpenCodeWingetExecutable,
 } from "../src/opencode-acp-runtime/adapters/cliResolver.js";
+import {
+  installOpenCodeOfficialCli,
+  resolveOpenCodeInstallerCommands,
+} from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
 
 const temporaryPaths: string[] = [];
 
@@ -160,6 +164,31 @@ describe("Windows OpenCode command resolution", () => {
 });
 
 describe("POSIX OpenCode command resolution", () => {
+  it("offers official installation only when native bash and curl are available", async () => {
+    const available = new Set(["/usr/bin/bash", "/usr/bin/curl"]);
+    await expect(
+      resolveOpenCodeInstallerCommands({
+        pathValue: "/usr/bin:/bin",
+        platform: "linux",
+        isExecutableFile: async (candidate) => available.has(candidate),
+      }),
+    ).resolves.toEqual({ bash: "/usr/bin/bash", curl: "/usr/bin/curl" });
+    await expect(
+      resolveOpenCodeInstallerCommands({
+        pathValue: "/usr/bin:/bin",
+        platform: "darwin",
+        isExecutableFile: async (candidate) => candidate === "/usr/bin/bash",
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveOpenCodeInstallerCommands({
+        pathValue: "C:\\Windows\\System32",
+        platform: "win32",
+        isExecutableFile: async () => true,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("finds the official per-user install when a GUI Host has a narrow PATH", async () => {
     const officialInstall = join("/Users/test", ".opencode", "bin", "opencode");
     await expect(
@@ -373,6 +402,7 @@ describe("OpenCode ACP runtime", () => {
         terminateProcessTreeAndWait,
       });
 
+      let cleanupError: unknown;
       try {
         await expect(runtime.startSession({ cwd: directory })).rejects.toMatchObject({
           message: "opencode.acp-process-exited",
@@ -385,7 +415,7 @@ describe("OpenCode ACP runtime", () => {
           try {
             process.kill(-spawnedChild.pid, "SIGKILL");
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") cleanupError = error;
           }
           if (!childClosed) {
             await new Promise<void>((resolve) => {
@@ -399,6 +429,7 @@ describe("OpenCode ACP runtime", () => {
         }
         await runtime.disposeAllAndWait();
       }
+      if (cleanupError !== undefined) throw cleanupError;
     },
   );
 
@@ -472,7 +503,7 @@ describe("OpenCode ACP runtime", () => {
   });
 
   it.skipIf(process.platform === "win32")(
-    "passes only allowlisted environment variables to ACP and npm child processes",
+    "passes only allowlisted environment variables to the ACP child process",
     async () => {
       const directory = await makeTempDir();
       const sdkUrl = import.meta.resolve("@agentclientprotocol/sdk");
@@ -483,15 +514,6 @@ describe("OpenCode ACP runtime", () => {
         fakeAcpAgentSource(sdkUrl, { envCapturePath: acpEnvironmentPath }),
         "utf8",
       );
-      const fakeNpmPath = join(directory, "npm");
-      const npmEnvironmentPath = join(directory, "npm-environment.json");
-      await writeFile(
-        fakeNpmPath,
-        `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(npmEnvironmentPath)}, JSON.stringify(Object.keys(process.env)));\n`,
-        "utf8",
-      );
-      await chmod(fakeNpmPath, 0o755);
-
       const processEnv: NodeJS.ProcessEnv = {
         PATH: `${directory}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
         HOME: directory,
@@ -536,49 +558,65 @@ describe("OpenCode ACP runtime", () => {
       } finally {
         await runtime.disposeAllAndWait();
       }
+    },
+  );
 
-      const resolveInstalledCli = vi
-        .fn()
-        .mockResolvedValueOnce(fakeResolution)
-        .mockResolvedValueOnce({
-          status: "missing",
-          diagnostic: "opencode.cli-missing",
-          installSupported: true,
-        })
-        .mockResolvedValueOnce(fakeResolution);
-      const runVersion = vi
-        .fn()
-        .mockResolvedValueOnce({
-          status: "missing",
-          diagnostic: "opencode.cli-missing",
-        })
-        .mockResolvedValueOnce({
-          status: "available",
-          version: "Fake OpenCode CLI",
-          executablePath: process.execPath,
-        });
-      const installer = createOpenCodeAcpRuntime({
-        resolveCli: resolveInstalledCli,
-        runVersion,
-        processEnv,
-      });
-      try {
-        await expect(installer.installCli()).resolves.toMatchObject({
-          status: "installed",
-        });
-        const npmEnvironment = JSON.parse(await readFile(npmEnvironmentPath, "utf8")) as string[];
-        expect(npmEnvironment).toContain("PATH");
-        expect(npmEnvironment).toContain("HOME");
-        expect(npmEnvironment).toContain("NPM_CONFIG_PREFIX");
-        expect(npmEnvironment).not.toContain("OPENAI_API_KEY");
-        expect(npmEnvironment).not.toContain("GITHUB_TOKEN");
-        expect(npmEnvironment).not.toContain("GH_TOKEN");
-        expect(npmEnvironment).not.toContain("AWS_SECRET_ACCESS_KEY");
-        expect(npmEnvironment).not.toContain("NPM_CONFIG_USERCONFIG");
-        expect(npmEnvironment).not.toContain("ZCODE_SECRET_TEST_MARKER");
-      } finally {
-        await installer.disposeAllAndWait();
+  it.skipIf(process.platform === "win32")(
+    "runs the official POSIX installer in a temporary HOME without leaking credentials",
+    async () => {
+      const directory = await makeTempDir();
+      const userHome = join(directory, "user-home");
+      const curlEnvPath = join(directory, "curl-environment.json");
+      const curlArgsPath = join(directory, "curl-arguments.json");
+      const bashEnvPath = join(directory, "bash-environment.json");
+      const bashHomePath = join(directory, "installer-home.txt");
+      const curlPath = join(directory, "curl");
+      const bashPath = join(directory, "bash");
+      await writeFile(
+        curlPath,
+        `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nconst args = process.argv.slice(2);\nconst output = args[args.indexOf("--output") + 1];\nawait writeFile(${JSON.stringify(curlEnvPath)}, JSON.stringify(Object.keys(process.env)));\nawait writeFile(${JSON.stringify(curlArgsPath)}, JSON.stringify(args));\nawait writeFile(output, "#!/usr/bin/env bash\\nexit 0\\n");\n`,
+        "utf8",
+      );
+      await writeFile(
+        bashPath,
+        `#!/usr/bin/env node\nimport { chmod, mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\nawait writeFile(${JSON.stringify(bashEnvPath)}, JSON.stringify(Object.keys(process.env)));\nawait writeFile(${JSON.stringify(bashHomePath)}, process.env.HOME ?? "");\nconst binDir = join(process.env.HOME ?? "", ".opencode", "bin");\nawait mkdir(binDir, { recursive: true });\nconst binary = join(binDir, "opencode");\nawait writeFile(binary, "#!/usr/bin/env node\\nconsole.log('OpenCode test');\\n");\nawait chmod(binary, 0o755);\n`,
+        "utf8",
+      );
+      await chmod(curlPath, 0o755);
+      await chmod(bashPath, 0o755);
+      const processEnv: NodeJS.ProcessEnv = {
+        PATH: `${directory}:${process.env.PATH ?? ""}`,
+        HOME: userHome,
+        USER: "test-user",
+        TMPDIR: directory,
+        OPENAI_API_KEY: "test-only-secret-marker",
+        GITHUB_TOKEN: "test-only-secret-marker",
+        ZCODE_SECRET_TEST_MARKER: "test-only-secret-marker",
+      };
+
+      await expect(installOpenCodeOfficialCli(60_000, processEnv, "linux")).resolves.toBe(true);
+      const curlEnvironment = JSON.parse(await readFile(curlEnvPath, "utf8")) as string[];
+      const bashEnvironment = JSON.parse(await readFile(bashEnvPath, "utf8")) as string[];
+      const curlArguments = JSON.parse(await readFile(curlArgsPath, "utf8")) as string[];
+      const installerHome = await readFile(bashHomePath, "utf8");
+      expect(curlEnvironment).toContain("PATH");
+      expect(bashEnvironment).toContain("PATH");
+      expect(bashEnvironment).toContain("HOME");
+      expect(installerHome).not.toBe(userHome);
+      for (const environmentKeys of [curlEnvironment, bashEnvironment]) {
+        expect(environmentKeys).not.toContain("OPENAI_API_KEY");
+        expect(environmentKeys).not.toContain("GITHUB_TOKEN");
+        expect(environmentKeys).not.toContain("ZCODE_SECRET_TEST_MARKER");
       }
+      expect(curlArguments).toContain("-q");
+      expect(curlArguments).toContain("--proto");
+      expect(curlArguments).toContain("=https");
+      expect(curlArguments).toContain("https://opencode.ai/v2/install");
+      const installedBinary = await readFile(
+        join(userHome, ".opencode", "bin", "opencode"),
+        "utf8",
+      );
+      expect(installedBinary).toContain("OpenCode test");
     },
   );
 
@@ -748,7 +786,7 @@ describe("OpenCode ACP runtime", () => {
   });
 
   it("never calls the installer for a CLI that is already present", async () => {
-    const installPackage = vi.fn(async () => true);
+    const installPosixCli = vi.fn(async () => true);
     const runtime = createOpenCodeAcpRuntime({
       resolveCli: () => ({
         status: "resolved",
@@ -760,7 +798,7 @@ describe("OpenCode ACP runtime", () => {
         version: "OpenCode 1.19.3",
         executablePath: "opencode",
       }),
-      installPackage,
+      installPosixCli,
     });
 
     await expect(runtime.installCli()).resolves.toEqual({
@@ -768,7 +806,7 @@ describe("OpenCode ACP runtime", () => {
       version: "OpenCode 1.19.3",
       executablePath: "opencode",
     });
-    expect(installPackage).not.toHaveBeenCalled();
+    expect(installPosixCli).not.toHaveBeenCalled();
     await runtime.disposeAllAndWait();
   });
 
@@ -787,7 +825,7 @@ describe("OpenCode ACP runtime", () => {
 
     for (const platform of ["darwin", "linux"] as const) {
       const resolveCli = vi.fn().mockResolvedValueOnce(missing).mockResolvedValueOnce(resolved);
-      const installPackage = vi.fn(async () => true);
+      const installPosixCli = vi.fn(async () => true);
       const runtime = createOpenCodeAcpRuntime({
         platform,
         resolveCli,
@@ -796,7 +834,11 @@ describe("OpenCode ACP runtime", () => {
           version: "OpenCode 1.19.3",
           executablePath,
         }),
-        installPackage,
+        installPosixCli,
+        resolvePosixInstallerCommands: async () => ({
+          bash: "/usr/bin/bash",
+          curl: "/usr/bin/curl",
+        }),
       });
 
       await expect(runtime.installCli()).resolves.toEqual({
@@ -805,7 +847,7 @@ describe("OpenCode ACP runtime", () => {
         executablePath,
       });
       expect(resolveCli).toHaveBeenCalledTimes(2);
-      expect(installPackage).not.toHaveBeenCalled();
+      expect(installPosixCli).not.toHaveBeenCalled();
       await runtime.disposeAllAndWait();
     }
 
@@ -855,7 +897,7 @@ describe("OpenCode ACP runtime", () => {
           executablePath,
           spec: { command: executablePath, prefixArgs: [] },
         });
-      const installPackage = vi.fn(async () => true);
+      const installPosixCli = vi.fn(async () => true);
       const runVersion = vi.fn(async () => ({
         status: "available" as const,
         version: "OpenCode 1.19.3",
@@ -864,7 +906,11 @@ describe("OpenCode ACP runtime", () => {
       const runtime = createOpenCodeAcpRuntime({
         platform,
         resolveCli,
-        installPackage,
+        installPosixCli,
+        resolvePosixInstallerCommands: async () => ({
+          bash: "/usr/bin/bash",
+          curl: "/usr/bin/curl",
+        }),
         runVersion,
       });
 
@@ -873,11 +919,34 @@ describe("OpenCode ACP runtime", () => {
         version: "OpenCode 1.19.3",
         executablePath,
       });
-      expect(installPackage).toHaveBeenCalledOnce();
+      expect(installPosixCli).toHaveBeenCalledOnce();
       expect(resolveCli).toHaveBeenCalledTimes(3);
       expect(runVersion).toHaveBeenCalledOnce();
       await runtime.disposeAllAndWait();
     }
+  });
+
+  it("does not offer POSIX installation when bash or curl is unavailable", async () => {
+    const resolveCli = async () => ({
+      status: "missing" as const,
+      diagnostic: "opencode.cli-missing",
+      installSupported: true,
+    });
+    const runtime = createOpenCodeAcpRuntime({
+      platform: "linux",
+      resolveCli,
+      resolvePosixInstallerCommands: async () => undefined,
+    });
+
+    await expect(runtime.getCliStatus()).resolves.toMatchObject({
+      status: "missing",
+      installSupported: false,
+    });
+    await expect(runtime.installCli()).resolves.toEqual({
+      status: "failed",
+      diagnostic: "opencode.install-platform-unsupported",
+    });
+    await runtime.disposeAllAndWait();
   });
 
   it("starts ACP even when the unrelated serve command has no stdio flag", async () => {

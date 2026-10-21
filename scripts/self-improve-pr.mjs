@@ -6,20 +6,17 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readFile, realpath } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SELF_IMPROVE_RECEIPT_CRITERIA } from "./self-improve-contract.mjs";
 
 const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const RECEIPT_SCHEMA = "zcode.prism.receipt.v2";
+const RECEIPT_SCHEMA = "zcode.prism.receipt.v3";
 const MAX_EVIDENCE_BYTES = 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 10 * 1024 * 1024;
 
-export const SELF_IMPROVE_RECEIPT_CRITERIA = Object.freeze({
-  "SELF-IMPROVE-HELPER-TESTS": Object.freeze({
-    command: "node --test scripts/test/self-improve-pr.test.mjs",
-  }),
-});
+export { SELF_IMPROVE_RECEIPT_CRITERIA };
 
 export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -133,6 +130,7 @@ export async function parseCandidateEvidence(
         !hasExactKeys(value, [
           "schema",
           "criterion_id",
+          "evaluation_scope",
           "reported_status",
           "command",
           "exit_code",
@@ -145,6 +143,8 @@ export async function parseCandidateEvidence(
         value.schema !== RECEIPT_SCHEMA ||
         typeof value.criterion_id !== "string" ||
         value.criterion_id.trim() === "" ||
+        value.evaluation_scope !==
+          SELF_IMPROVE_RECEIPT_CRITERIA[value.criterion_id]?.evaluationScope ||
         value.reported_status !== "pass" ||
         typeof value.command !== "string" ||
         value.command !== SELF_IMPROVE_RECEIPT_CRITERIA[value.criterion_id]?.command ||
@@ -212,7 +212,10 @@ export function buildSelfImprovePlan({ branch, base, baseSha, candidateDiff, evi
     new Set(observedCriteria).size !== observedCriteria.length ||
     expectedCriteria.some((criterionId) => !observedCriteria.includes(criterionId)) ||
     evidenceRecords.some(
-      (record) => record.command !== SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id]?.command,
+      (record) =>
+        record.command !== SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id]?.command ||
+        record.evaluation_scope !==
+          SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id]?.evaluationScope,
     )
   ) {
     throw new Error(
@@ -232,7 +235,7 @@ export function buildSelfImprovePlan({ branch, base, baseSha, candidateDiff, evi
     "",
     `База: \`${base}\` (${baseSha})`,
     `SHA-256 staged patch: \`${patchHash}\``,
-    "Статус evidence: VALIDATED_LOCAL; результат не подтверждён внешним evaluator.",
+    "Статус evidence: VALIDATED_LOCAL / HEAD_INFRASTRUCTURE_ONLY. Запущен только trusted self-test из committed HEAD; staged candidate не исполнялся и не оценивался.",
     "",
     "## Allowlist checks и локальные artifacts",
     "",
@@ -241,7 +244,7 @@ export function buildSelfImprovePlan({ branch, base, baseSha, candidateDiff, evi
         `- ${record.criterion_id}: заявлена команда \`${SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id].command}\`; локально пересчитанный artifact SHA-256 \`${record.artifact_sha256}\``,
     ),
     "",
-    "Локальный файл проверен только на целостность bytes и соответствие hash. Receipt сам заявляет команду, exit status и artifact; этот helper не удостоверяет запуск команды, provenance, независимость оценки или улучшение системы. CI и независимое ревью должны выполнить собственную проверку. Этот Draft PR не мержится и не выпускается автоматически.",
+    "Artifact hash подтверждает целостность локальных bytes. Receipt scope ограничен инфраструктурным self-test committed HEAD и ничего не сообщает о качестве staged candidate. Фактический --apply заблокирован до подключения заранее существующего внешнего protected secret gate.",
   ].join("\n");
   return {
     branch,
@@ -282,21 +285,6 @@ function capture(command, trim = true, cwd = DEFAULT_ROOT) {
     throw new Error(`${file} завершился с кодом ${result.status}: ${(result.stderr || "").trim()}`);
   }
   return trim ? result.stdout.trim() : result.stdout;
-}
-
-function run(command, cwd = DEFAULT_ROOT) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command[0], command.slice(1), {
-      cwd,
-      stdio: "inherit",
-      env: process.env,
-    });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${command[0]} завершился с кодом ${code}`));
-    });
-  });
 }
 
 function assertOnlyStagedChanges(cwd, captureCommand = capture) {
@@ -357,14 +345,17 @@ export async function runSelfImproveCli(
   {
     rootDirectory = DEFAULT_ROOT,
     captureCommand = capture,
-    runCommand = run,
     branchExists = localBranchExists,
     log = console.log,
   } = {},
 ) {
   const options = parseArgs(argv);
+  if (options.apply) {
+    throw new Error(
+      "--apply запрещён: заранее существующий внешний protected secret gate не настроен; доступен только dry-run",
+    );
+  }
   const commandCapture = (command, trim = true) => captureCommand(command, trim, rootDirectory);
-  const commandRun = (command) => runCommand(command, rootDirectory);
   const branchName = commandCapture(["git", "branch", "--show-current"]);
   if (branchName !== "dev")
     throw new Error(`Открой staged candidate на dev; текущая ветка: ${branchName}`);
@@ -405,7 +396,9 @@ export async function runSelfImproveCli(
   }
   if (!options.apply) {
     log(`Готов candidate ${plan.candidatePatchSha256} для ${plan.branch}`);
-    log("Команды после явного --apply:");
+    log(
+      "Dry-run Draft PR plan; фактическое применение заблокировано до внешнего protected secret gate:",
+    );
     log(
       JSON.stringify(
         plan.commands.map((command) =>
@@ -417,16 +410,6 @@ export async function runSelfImproveCli(
     );
     return { plan, applied: false };
   }
-  await commandRun(["git", "fetch", "origin", "dev"]);
-  if (commandCapture(["git", "rev-parse", "origin/dev"]) !== baseSha) {
-    throw new Error(
-      "Локальный dev устарел относительно origin/dev; обнови базу и повтори evaluation",
-    );
-  }
-  const remoteBranch = commandCapture(["git", "ls-remote", "--heads", "origin", plan.branch]);
-  if (remoteBranch) throw new Error(`Удалённая ветка уже существует: ${plan.branch}`);
-  for (const command of plan.commands) await commandRun(command);
-  return { plan, applied: true };
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";

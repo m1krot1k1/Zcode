@@ -86,6 +86,8 @@ const artifactArchHintsByArch = {
 };
 const commandStdoutMaxBuffer = 64 * 1024 * 1024;
 const requiredRuntimeModules = [
+  // 终端运行时必须同时进入 app.asar；仅校验 afterPack 的 native 资源会漏掉缺失的 JS 包。
+  "node-pty",
   "module-details-from-path",
   "pngjs",
   // Bugfix: telemetry 的 OTLP exporter 在启动阶段依赖 sdk-metrics；开发态 hoist 会掩盖

@@ -14,18 +14,18 @@ import type {
   OpenCodeAcpSession,
   OpenCodeAcpSessionUpdate,
   OpenCodeCliStatus,
-  OpenCodeInstallResult,
 } from "../contract.js";
 import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.js";
 import {
-  INSTALL_TIMEOUT_MS,
-  installOpenCodePackage,
+  installOpenCodeOfficialCli,
   installOpenCodeWingetPackage,
+  resolveOpenCodeInstallerCommands,
   resolveCliCommand,
   resolveWingetCommand,
   runVersion,
   spawnOptions,
 } from "./childProcessSupport.js";
+import { createOpenCodeCliInstaller } from "./cliInstaller.js";
 import {
   classifyAcpStartupFailure,
   OpenCodeDiagnosticError,
@@ -46,7 +46,8 @@ interface OpenCodeAcpRuntimeOptions {
   resolveCli?: (cliPath?: string) => OpenCodeCliResolution | Promise<OpenCodeCliResolution>;
   resolveWinget?: () => Promise<string | undefined>;
   runVersion?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
-  installPackage?: (timeoutMs: number) => Promise<boolean>;
+  installPosixCli?: (timeoutMs: number) => Promise<boolean>;
+  resolvePosixInstallerCommands?: () => Promise<{ bash: string; curl: string } | undefined>;
   installWingetPackage?: (wingetPath: string, timeoutMs: number) => Promise<boolean>;
   platform?: NodeJS.Platform;
   processEnv?: NodeJS.ProcessEnv;
@@ -102,29 +103,23 @@ export function createOpenCodeAcpRuntime(
   const runVersionCommand =
     options.runVersion ??
     ((spec: OpenCodeCommandSpec) => runVersion(spec, childEnvironment, platform));
-  const installPackage =
-    options.installPackage ??
-    ((timeoutMs: number) => installOpenCodePackage(timeoutMs, childEnvironment, platform));
-  const installWingetPackage =
-    options.installWingetPackage ??
-    ((wingetPath: string, timeoutMs: number) =>
-      installOpenCodeWingetPackage(wingetPath, timeoutMs, childEnvironment, platform));
-  const checkCliBeforeInstall = async (): Promise<OpenCodeInstallResult | undefined> => {
-    const current = await (options.resolveCli ?? resolveCliCommand)();
-    if (current.status === "missing") return undefined;
-    if (current.status !== "resolved") {
-      return { status: "failed", diagnostic: "opencode.install-requires-missing-cli" };
-    }
-    const version = await runVersionCommand(current.spec);
-    if (version.status === "available") {
-      return {
-        status: "already-installed",
-        version: version.version,
-        executablePath: version.executablePath,
-      };
-    }
-    return { status: "failed", diagnostic: "opencode.install-requires-missing-cli" };
-  };
+  const cliInstaller = createOpenCodeCliInstaller({
+    resolveCli: options.resolveCli ?? resolveCliCommand,
+    resolveWinget: options.resolveWinget ?? resolveWingetCommand,
+    runVersion: runVersionCommand,
+    installPosixCli:
+      options.installPosixCli ??
+      ((timeoutMs) => installOpenCodeOfficialCli(timeoutMs, childEnvironment, platform)),
+    resolvePosixInstallerCommands:
+      options.resolvePosixInstallerCommands ??
+      (() => resolveOpenCodeInstallerCommands({ pathValue: childEnvironment.PATH, platform })),
+    installWingetPackage:
+      options.installWingetPackage ??
+      ((wingetPath, timeoutMs) =>
+        installOpenCodeWingetPackage(wingetPath, timeoutMs, childEnvironment, platform)),
+    platform,
+    installTimeoutMs: options.installTimeoutMs,
+  });
   const emitters = new Map<string, Emitter<OpenCodeAcpSessionUpdate>>();
   const permissionEmitters = new Map<string, Emitter<OpenCodeAcpPermissionEvent>>();
 
@@ -482,137 +477,7 @@ export function createOpenCodeAcpRuntime(
   };
 
   return {
-    getCliStatus: async ({ cliPath } = {}) => {
-      const resolution = await (options.resolveCli ?? resolveCliCommand)(cliPath);
-      if (resolution.status !== "resolved") {
-        const platform = options.platform ?? process.platform;
-        const installSupported =
-          resolution.status === "missing" &&
-          (platform === "win32"
-            ? Boolean(await (options.resolveWinget ?? resolveWingetCommand)())
-            : resolution.installSupported);
-        return {
-          status: resolution.status === "missing" ? "missing" : "unavailable",
-          diagnostic: resolution.diagnostic,
-          installSupported,
-        };
-      }
-      return await runVersionCommand(resolution.spec);
-    },
-
-    installCli: async ({ cliPath } = {}): Promise<OpenCodeInstallResult> => {
-      const resolution = await (options.resolveCli ?? resolveCliCommand)(cliPath);
-      const platform = options.platform ?? process.platform;
-      if (cliPath?.trim()) {
-        if (resolution.status === "resolved") {
-          const current = await runVersionCommand(resolution.spec);
-          if (current.status === "available") {
-            return {
-              status: "already-installed",
-              version: current.version,
-              executablePath: current.executablePath,
-            };
-          }
-        }
-        return {
-          status: "failed",
-          diagnostic: "opencode.install-explicit-path-selected",
-        };
-      }
-      if (platform === "win32") {
-        if (resolution.status === "resolved") {
-          const current = await runVersionCommand(resolution.spec);
-          if (current.status === "available") {
-            return {
-              status: "already-installed",
-              version: current.version,
-              executablePath: current.executablePath,
-            };
-          }
-        }
-        if (resolution.status !== "missing") {
-          return {
-            status: "failed",
-            diagnostic: "opencode.install-requires-missing-cli",
-          };
-        }
-        const wingetPath = await (options.resolveWinget ?? resolveWingetCommand)();
-        if (!wingetPath)
-          return {
-            status: "failed",
-            diagnostic: "opencode.install-platform-unsupported",
-          };
-        const cliBeforeInstall = await checkCliBeforeInstall();
-        if (cliBeforeInstall) return cliBeforeInstall;
-        const installed = await installWingetPackage(
-          wingetPath,
-          options.installTimeoutMs ?? INSTALL_TIMEOUT_MS,
-        );
-        if (!installed) return { status: "failed", diagnostic: "opencode.install-failed" };
-        const afterResolution = await (options.resolveCli ?? resolveCliCommand)();
-        if (afterResolution.status !== "resolved") {
-          return {
-            status: "failed",
-            diagnostic: "opencode.install-verification-failed",
-          };
-        }
-        const after = await runVersionCommand(afterResolution.spec);
-        return after.status === "available"
-          ? {
-              status: "installed",
-              version: after.version,
-              executablePath: after.executablePath,
-            }
-          : {
-              status: "failed",
-              diagnostic: "opencode.install-verification-failed",
-            };
-      }
-      // Причина: установка на POSIX ранее требовала resolved CLI и отказывала именно при отсутствии бинарника, хотя UI уже предлагал Install. Разрешаем установку для подтверждённого missing status и сохраняем повторную проверку версии после неё.
-      if (resolution.status === "resolved") {
-        const before = await runVersionCommand(resolution.spec);
-        if (before.status === "available") {
-          return {
-            status: "already-installed",
-            version: before.version,
-            executablePath: before.executablePath,
-          };
-        }
-        if (before.status !== "missing") {
-          return {
-            status: "failed",
-            diagnostic: "opencode.install-requires-missing-cli",
-          };
-        }
-      } else if (resolution.status !== "missing" || !resolution.installSupported) {
-        return {
-          status: "failed",
-          diagnostic: "opencode.install-requires-missing-cli",
-        };
-      }
-      const cliBeforeInstall = await checkCliBeforeInstall();
-      if (cliBeforeInstall) return cliBeforeInstall;
-      const installed = await installPackage(options.installTimeoutMs ?? INSTALL_TIMEOUT_MS);
-      if (!installed) return { status: "failed", diagnostic: "opencode.install-failed" };
-      const afterResolution = await (options.resolveCli ?? resolveCliCommand)();
-      if (afterResolution.status !== "resolved") {
-        return {
-          status: "failed",
-          diagnostic: "opencode.install-verification-failed",
-        };
-      }
-      const after = await runVersionCommand(afterResolution.spec);
-      return after.status === "available"
-        ? {
-            status: "installed",
-            version: after.version,
-            executablePath: after.executablePath,
-          }
-        : {
-            status: "failed",
-            diagnostic: "opencode.install-verification-failed",
-          };
-    },
+    ...cliInstaller,
 
     startSession: async ({ cwd, cliPath }): Promise<OpenCodeAcpSession> => {
       if (!isAbsolute(cwd)) throw new Error("opencode.workspace-path-must-be-absolute");

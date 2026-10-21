@@ -16,8 +16,9 @@ import {
 const baseSha = "1".repeat(40);
 const patch = "diff --git a/a.ts b/a.ts\n+change\n";
 const patchSha = sha256(patch);
-const criterionId = "SELF-IMPROVE-HELPER-TESTS";
+const criterionId = Object.keys(SELF_IMPROVE_RECEIPT_CRITERIA)[0];
 const command = SELF_IMPROVE_RECEIPT_CRITERIA[criterionId].command;
+const evaluationScope = SELF_IMPROVE_RECEIPT_CRITERIA[criterionId].evaluationScope;
 
 function git(cwd, args, { trim = true } = {}) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -31,8 +32,9 @@ async function createEvidenceDirectory(t) {
   const artifactBytes = Buffer.from("test output\n", "utf8");
   await writeFile(path.join(evidenceDirectory, "helper-tests.log"), artifactBytes);
   const receipt = {
-    schema: "zcode.prism.receipt.v2",
+    schema: "zcode.prism.receipt.v3",
     criterion_id: criterionId,
+    evaluation_scope: evaluationScope,
     reported_status: "pass",
     command,
     exit_code: 0,
@@ -86,8 +88,9 @@ async function createGitFixture(
   const artifactBytes = Buffer.from("self-improve test output\n", "utf8");
   await writeFile(path.join(evidenceDirectory, "helper-tests.log"), artifactBytes);
   const receipt = {
-    schema: "zcode.prism.receipt.v2",
+    schema: "zcode.prism.receipt.v3",
     criterion_id: criterionId,
+    evaluation_scope: evaluationScope,
     reported_status: "pass",
     command,
     exit_code: 0,
@@ -100,17 +103,6 @@ async function createGitFixture(
   const evidencePath = path.join(evidenceDirectory, "receipts.jsonl");
   await writeFile(evidencePath, `${JSON.stringify(receipt)}\n`);
   return { rootDirectory, originDirectory, evidenceDirectory, evidencePath, receipt };
-}
-
-function localGitRunner(rootDirectory, ghCalls) {
-  return async (commandArgs, cwd) => {
-    if (commandArgs[0] === "gh") {
-      ghCalls.push(commandArgs);
-      return;
-    }
-    assert.equal(commandArgs[0], "git");
-    git(cwd ?? rootDirectory, commandArgs.slice(1));
-  };
 }
 
 test("receipt принимает только repo allowlist и пересчитанный локальный artifact hash", async (t) => {
@@ -134,6 +126,8 @@ test("receipt принимает только repo allowlist и пересчит
     );
   };
   await rejects({ ...fixture.receipt, criterion_id: "OPEN-02" });
+  await rejects({ ...fixture.receipt, evaluation_scope: "CANDIDATE_EVALUATED" });
+  await rejects({ ...fixture.receipt, schema: "zcode.prism.receipt.v2" });
   await rejects({ ...fixture.receipt, command: "pnpm test --filter opencode-go" });
   await rejects({ ...fixture.receipt, artifact_sha256: "a".repeat(64) }, /не совпадает/u);
   await rejects({ ...fixture.receipt, artifact_url: "https://example.invalid/artifact" });
@@ -221,8 +215,9 @@ test("plan creates only a Draft PR command for the approved base", () => {
     candidateDiff: patch,
     evidenceRecords: [
       {
-        schema: "zcode.prism.receipt.v2",
+        schema: "zcode.prism.receipt.v3",
         criterion_id: criterionId,
+        evaluation_scope: evaluationScope,
         reported_status: "pass",
         command,
         exit_code: 0,
@@ -237,7 +232,9 @@ test("plan creates only a Draft PR command for the approved base", () => {
   assert.deepEqual(plan.commands[3].slice(0, 3), ["gh", "pr", "create"]);
   assert.ok(plan.commands[3].includes("--draft"));
   assert.ok(plan.body.includes("VALIDATED_LOCAL"));
-  assert.ok(plan.body.includes("не удостоверяет запуск команды"));
+  assert.ok(plan.body.includes("HEAD_INFRASTRUCTURE_ONLY"));
+  assert.ok(plan.body.includes("staged candidate не исполнялся"));
+  assert.ok(plan.body.includes("--apply заблокирован"));
   assert.ok(!plan.body.includes("helper-tests.log"));
   assert.ok(!plan.body.includes("https://"));
   assert.throws(
@@ -283,59 +280,44 @@ test("CLI default mode is read-only in a temporary Git repository", async (t) =>
   assert.equal(git(fixture.rootDirectory, ["status", "--porcelain"]), "A  candidate.txt");
 });
 
-test("CLI apply pushes only to local fixture and invokes fake gh with --draft", async (t) => {
+test("CLI blocks apply before any git or GitHub command without an external protected gate", async (t) => {
   const fixture = await createGitFixture(t);
-  const ghCalls = [];
-  const result = await runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
-    rootDirectory: fixture.rootDirectory,
-    runCommand: localGitRunner(fixture.rootDirectory, ghCalls),
-    log: () => {},
-  });
-  assert.equal(result.applied, true);
-  assert.equal(git(fixture.rootDirectory, ["branch", "--show-current"]), result.plan.branch);
-  assert.equal(ghCalls.length, 1);
-  assert.equal(ghCalls[0][0], "gh");
-  assert.deepEqual(ghCalls[0].slice(0, 3), ["gh", "pr", "create"]);
-  assert.ok(ghCalls[0].includes("--draft"));
-  assert.ok(ghCalls[0].includes("--base"));
-  assert.ok(ghCalls[0].includes("dev"));
-  assert.ok(git(fixture.originDirectory, ["rev-parse", `refs/heads/${result.plan.branch}`]));
-  assert.equal(git(fixture.rootDirectory, ["status", "--porcelain"]), "");
-});
-
-test("CLI apply routes all write commands through fake git/gh runners", async (t) => {
-  const fixture = await createGitFixture(t);
-  const writeCommands = [];
-  const result = await runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
-    rootDirectory: fixture.rootDirectory,
-    runCommand: async (commandArgs, cwd) => {
-      writeCommands.push(commandArgs);
-      assert.equal(cwd, fixture.rootDirectory);
-    },
-    log: () => {},
-  });
-  assert.equal(result.applied, true);
-  assert.deepEqual(
-    writeCommands.map((args) => args.slice(0, args[0] === "gh" ? 3 : 2)),
-    [
-      ["git", "fetch"],
-      ["git", "switch"],
-      ["git", "commit"],
-      ["git", "push"],
-      ["gh", "pr", "create"],
-    ],
+  const commands = [];
+  const captureCommands = [];
+  await assert.rejects(
+    runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
+      rootDirectory: fixture.rootDirectory,
+      captureCommand: async (commandArgs) => captureCommands.push(commandArgs),
+      runCommand: async (commandArgs) => commands.push(commandArgs),
+      log: () => {},
+    }),
+    /заранее существующий внешний protected secret gate/u,
   );
-  assert.ok(writeCommands.at(-1).includes("--draft"));
+  assert.deepEqual(captureCommands, []);
+  assert.deepEqual(commands, []);
   assert.equal(git(fixture.rootDirectory, ["branch", "--show-current"]), "dev");
   assert.equal(git(fixture.rootDirectory, ["status", "--porcelain"]), "A  candidate.txt");
   assert.equal(
-    git(fixture.originDirectory, [
-      "for-each-ref",
-      "--format=%(refname)",
-      "refs/heads/self-improve",
-    ]),
-    "",
+    git(fixture.originDirectory, ["for-each-ref", "--format=%(refname)", "refs/heads/dev"]),
+    "refs/heads/dev",
   );
+});
+
+test("apply remains blocked even when a caller injects a write runner", async (t) => {
+  const fixture = await createGitFixture(t);
+  const writeCommands = [];
+  await assert.rejects(
+    runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
+      rootDirectory: fixture.rootDirectory,
+      runCommand: async (commandArgs, cwd) => {
+        writeCommands.push(commandArgs);
+        assert.equal(cwd, fixture.rootDirectory);
+      },
+      log: () => {},
+    }),
+    /--apply запрещён/u,
+  );
+  assert.deepEqual(writeCommands, []);
 });
 
 test("CLI receipt rejection and branch collision happen before write commands", async (t) => {
@@ -345,12 +327,9 @@ test("CLI receipt rejection and branch collision happen before write commands", 
   const invalidReceipt = { ...fixture.receipt, command: "sh -c arbitrary" };
   await writeFile(fixture.evidencePath, `${JSON.stringify(invalidReceipt)}\n`);
   await assert.rejects(
-    runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
+    runSelfImproveCli(["--evidence", fixture.evidencePath], {
       rootDirectory: fixture.rootDirectory,
-      runCommand: async (commandArgs, cwd) => {
-        runCalls.push(commandArgs);
-        return localGitRunner(fixture.rootDirectory, ghCalls)(commandArgs, cwd);
-      },
+      runCommand: async (commandArgs) => runCalls.push(commandArgs),
       log: () => {},
     }),
     /receipt-контракт/u,
@@ -360,7 +339,7 @@ test("CLI receipt rejection and branch collision happen before write commands", 
 
   await writeFile(fixture.evidencePath, `${JSON.stringify(fixture.receipt)}\n`);
   await assert.rejects(
-    runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
+    runSelfImproveCli(["--evidence", fixture.evidencePath], {
       rootDirectory: fixture.rootDirectory,
       branchExists: () => true,
       runCommand: async (commandArgs) => runCalls.push(commandArgs),
@@ -376,7 +355,7 @@ test("CLI rejects an untracked workspace file before write commands", async (t) 
   await writeFile(path.join(fixture.rootDirectory, "untracked.txt"), "outside staged diff\n");
   const runCalls = [];
   await assert.rejects(
-    runSelfImproveCli(["--apply", "--evidence", fixture.evidencePath], {
+    runSelfImproveCli(["--evidence", fixture.evidencePath], {
       rootDirectory: fixture.rootDirectory,
       runCommand: async (commandArgs) => runCalls.push(commandArgs),
       log: () => {},
@@ -404,7 +383,7 @@ test("candidate secret paths are rejected before applying", async (t) => {
   await writeFile(evidence.evidencePath, `${JSON.stringify(receipt)}\n`);
   const runCalls = [];
   await assert.rejects(
-    runSelfImproveCli(["--apply", "--evidence", evidence.evidencePath], {
+    runSelfImproveCli(["--evidence", evidence.evidencePath], {
       rootDirectory: fixture.rootDirectory,
       runCommand: async (commandArgs) => runCalls.push(commandArgs),
       log: () => {},
@@ -428,7 +407,7 @@ test("candidate secret paths remain rejected after a staged rename", async (t) =
   await writeFile(evidence.evidencePath, `${JSON.stringify(receipt)}\n`);
   const runCalls = [];
   await assert.rejects(
-    runSelfImproveCli(["--apply", "--evidence", evidence.evidencePath], {
+    runSelfImproveCli(["--evidence", evidence.evidencePath], {
       rootDirectory: fixture.rootDirectory,
       runCommand: async (commandArgs) => runCalls.push(commandArgs),
       log: () => {},
