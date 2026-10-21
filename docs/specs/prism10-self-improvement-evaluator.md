@@ -47,6 +47,12 @@ dev + HEAD + staged index
 - `--apply` завершается отказом до `git fetch`, branch creation, commit, push или GitHub CLI вызовов, поскольку заранее существующий защищённый secret gate пока не настроен.
 - Возобновлять apply можно только после подключения и независимой проверки внешнего gate, который до публикации сканирует точный staged patch и защищает credentials. Сам факт receipt, env-переменная или post-push CI не удовлетворяют этому условию.
 
+### Текущее состояние candidate CI (2026-10-22)
+
+GitHub `default branch` репозитория — `main`; `.github/workflows/prism-candidate.yml` находится в `dev`. В проверенном commit `dev@9d3944889db5669a4d8bc1d8124928fa43d0c6d4` workflow использовал `pull_request_target`, checkout PR head и запуск install/build/test над этим кодом — небезопасное исполнение недоверенного PR кода. Текущая правка удаляет PR trigger полностью: один лишь `pull_request` не защищает same-repository PR от изменения workflow с обращением к доступным secrets. После commit/push workflow сможет проверять прямые trusted pushes в `dev`, но не PR; отдельный фиксированный trusted workflow с secret-free средой пока не реализован.
+
+Push `9d3944889db5669a4d8bc1d8124928fa43d0c6d4` создал Actions run `39692710606`, однако job завершился с `runner_id: 0`, без runner name и без шагов; это не подтверждает выполнение ни одного gate. Внешний protected gate для `--apply` должен исполнять фиксированную политику вне PR-controlled YAML в изолированной secret-free среде; требовать exact reviewed workflow revision, точный PR base/head SHA, фактически выделенный runner (`runner_id > 0`) и успех каждого обязательного gate. Workflow из PR нельзя считать доверенным независимо от trigger. Missing, queued, runnerless, skipped, cancelled, failed, stale или SHA-mismatched runs являются отказом. До получения этих доказательств `--apply` остаётся заблокированным.
+
 ## Критерии приёмки
 
 | ID           | Сценарий                                                              | Ожидаемый результат                                                                                                                   | Проверка                                                 |
@@ -60,6 +66,8 @@ dev + HEAD + staged index
 | EVO-LOCAL-07 | `self-improve-pr.mjs` повторно читает receipt                         | Принимаются только v3 receipt с exact allowlist, scope, base, patch hash и локально пересчитанным artifact                            | Integration с `parseCandidateEvidence`                   |
 | EVO-LOCAL-08 | `--apply` вызывается без pre-existing external protected gate         | Отказ до любого write/network command; dry-run продолжает работать                                                                    | Fake command runner проверяет ноль вызовов               |
 | EVO-LOCAL-09 | Ветка не `dev`, unstaged/untracked/rename/copy/secret-like path       | Отказ до snapshot, process execution и evidence                                                                                       | Temp Git admission tests                                 |
+| EVO-LOCAL-10 | PR-controlled workflow, отсутствующий/runnerless/неуспешный gate или evidence относится к другому SHA | `--apply` блокируется до Git/GitHub write; локальный HEAD/index и remote refs неизменны | Exact GitHub workflow/run metadata + fake runner cases |
+| EVO-LOCAL-11 | Фиксированный trusted secret-free gate завершил required checks на точном head/base SHA | Внешний проверяющий может выдать защищённое свидетельство, но автоматический merge/release всё равно запрещён | Trusted gate integration + stale/cancelled/mismatch cases |
 
 ## Ограничения
 

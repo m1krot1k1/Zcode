@@ -7,38 +7,36 @@ const workflow = await readFile(
   "utf8",
 );
 
-test("PRISM candidate workflow verifies pull requests and direct dev pushes", () => {
-  assert.match(workflow, /pull_request_target:\s*\n\s+branches: \[dev\]/u);
+test("PRISM candidate workflow runs trusted dev pushes without executing PR-controlled workflow policy", () => {
+  assert.doesNotMatch(workflow, /^\s*pull_request(?:_target)?:\s*$/mu);
   assert.match(workflow, /push:\s*\n\s+branches: \[dev\]/u);
+  assert.match(workflow, /permissions:\s*\n\s+contents: read/u);
+  assert.doesNotMatch(workflow, /secrets\./u);
 });
 
-test("PR and push contexts resolve exact head and comparison base SHAs", () => {
+test("push context resolves exact commit and comparison base SHAs", () => {
   assert.match(
     workflow,
-    /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u,
+    /PR_HEAD_SHA: \$\{\{ github\.sha \}\}/u,
   );
   assert.match(
     workflow,
-    /PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.before \}\}/u,
+    /PR_BASE_SHA: \$\{\{ github\.event\.before \}\}/u,
   );
   assert.match(
     workflow,
-    /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u,
-  );
-  assert.match(
-    workflow,
-    /repository: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository \}\}/u,
+    /ref: \$\{\{ github\.sha \}\}/u,
   );
 });
 
-test("CI concurrency and evidence artifact have values for push events", () => {
+test("CI concurrency and evidence artifact identify the pushed commit", () => {
   assert.match(
     workflow,
-    /group: prism-candidate-\$\{\{ github\.event\.pull_request\.number \|\| github\.sha \}\}/u,
+    /group: prism-candidate-\$\{\{ github\.ref \}\}/u,
   );
   assert.match(
     workflow,
-    /name: prism-candidate-\$\{\{ github\.event\.pull_request\.number \|\| 'push' \}\}-\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u,
+    /name: prism-candidate-push-\$\{\{ github\.sha \}\}/u,
   );
 });
 
