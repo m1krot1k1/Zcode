@@ -1,11 +1,23 @@
+import { createHash, randomUUID } from "node:crypto";
 import type {
   ModelUsage,
+  PrismHostEvidenceReceipt,
+  PrismTaskAcceptanceDecision,
+  PrismTaskAcceptanceLineage,
+  PrismTaskContract,
   SessionId,
   SubagentTaskSnapshot,
   TraceContext,
   TurnId,
 } from "@zcode/contracts";
-import type { AgentOutput } from "@zcode/contracts";
+import {
+  PRISM_EVIDENCE_RECEIPT_MAX_BYTES,
+  PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA,
+  PRISM_TASK_CONTRACT_MAX_CRITERIA,
+  PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES,
+  PRISM_TASK_CONTRACT_SCHEMA,
+  type AgentOutput,
+} from "@zcode/contracts";
 
 // local_dynamic_workflow 与 local_workflow 刻意分开：后者是 legacy `Workflow` 工具（不可取消），
 // 前者是 workflow run（经 DynamicWorkflowRunPort.cancel 可取消）。合成一个类型，取消分派就无法区分。
@@ -50,6 +62,8 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   rootSessionId?: SessionId;
   /** 同一根会话内一轮 coordinator turn 的稳定配额范围。 */
   rootRunId?: string;
+  /** 由唯一 registry 在每次新 admission 生成；旧 attempt 的 receipt 因此无法复用。 */
+  attemptId?: string;
   /** 创建通用后台任务的 runtime session，用于按 owner 盖 branch generation。 */
   ownerSessionId?: SessionId;
   exitCode?: number;
@@ -99,6 +113,341 @@ export type RuntimeTaskAdmissionResult =
 export const SUBAGENT_ROOT_MAX_TASKS = 128;
 /** Across all root runs in one session; background children can outlive their launch turn. */
 export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 24;
+
+export type PrismTaskContractInput = Omit<
+  PrismTaskContract,
+  "schema" | "contractSha256"
+>;
+
+export type PrismHostEvidenceReceiptInput = Omit<
+  PrismHostEvidenceReceipt,
+  "schema" | "receiptId" | "issuer"
+>;
+
+/**
+ * Строит hash по фиксированному порядку полей, чтобы JSON property order вызывающего кода
+ * не менял identity неизменяемого acceptance-контракта.
+ */
+export function createPrismTaskContract(input: PrismTaskContractInput): PrismTaskContract {
+  const contract = { ...input, schema: PRISM_TASK_CONTRACT_SCHEMA };
+  if (!isValidPrismTaskContractBody(contract)) {
+    throw new TypeError("Invalid or oversized PRISM task contract");
+  }
+  return {
+    ...contract,
+    contractSha256: hashPrismContract(contract),
+  };
+}
+
+/**
+ * Стабильный ключ вызова Host verifier. Helper только оформляет уже полученный результат;
+ * он не запускает verifier и вызывается Host-кодом после проверки artifact.
+ */
+export function createPrismHostEvidenceReceipt(
+  input: PrismHostEvidenceReceiptInput,
+): PrismHostEvidenceReceipt {
+  const receiptBase = {
+    ...input,
+    schema: PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA,
+    issuer: "host_evaluator" as const,
+  };
+  const receipt = {
+    ...receiptBase,
+    receiptId: createPrismEvidenceReceiptId(receiptBase),
+  };
+  if (!isValidPrismHostEvidenceReceipt(receipt)) {
+    throw new TypeError("Invalid or oversized PRISM Host evidence receipt");
+  }
+  return receipt;
+}
+
+export function createPrismEvidenceReceiptId(
+  input: Pick<
+    PrismHostEvidenceReceipt,
+    | "rootRunId"
+    | "taskId"
+    | "parentTaskId"
+    | "attemptId"
+    | "branchGeneration"
+    | "criterionId"
+    | "contractSha256"
+    | "evaluatorId"
+    | "evaluatorVersion"
+    | "verifierInvocationId"
+  >,
+): string {
+  const identity = JSON.stringify([
+    input.rootRunId,
+    input.taskId,
+    input.parentTaskId ?? null,
+    input.attemptId,
+    input.branchGeneration,
+    input.criterionId,
+    input.contractSha256,
+    input.evaluatorId,
+    input.evaluatorVersion,
+    input.verifierInvocationId,
+  ]);
+  return `prism-receipt-v1-${createHash("sha256").update(identity).digest("hex")}`;
+}
+
+export function isValidPrismTaskContract(value: unknown): value is PrismTaskContract {
+  if (!isRecord(value) || !isValidPrismTaskContractBody(value)) return false;
+  return isSha256(value.contractSha256) && value.contractSha256 === hashPrismContract(value);
+}
+
+export function isValidPrismHostEvidenceReceipt(
+  value: unknown,
+): value is PrismHostEvidenceReceipt {
+  if (!isRecord(value) || value.schema !== PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA) return false;
+  if (
+    !hasOnlyKeys(value, [
+      "schema",
+      "receiptId",
+      "issuer",
+      "rootRunId",
+      "taskId",
+      "parentTaskId",
+      "attemptId",
+      "branchGeneration",
+      "criterionId",
+      "contractSha256",
+      "evaluatorId",
+      "evaluatorVersion",
+      "verifierInvocationId",
+      "result",
+      "artifact",
+      "observedAt",
+    ]) ||
+    value.issuer !== "host_evaluator" ||
+    !isBoundedIdentifier(value.receiptId, 128) ||
+    !isBoundedIdentifier(value.rootRunId, 256) ||
+    !isBoundedIdentifier(value.taskId, 256) ||
+    (value.parentTaskId !== undefined && !isBoundedIdentifier(value.parentTaskId, 256)) ||
+    !isBoundedIdentifier(value.attemptId, 256) ||
+    !isNonNegativeSafeInteger(value.branchGeneration) ||
+    !isBoundedIdentifier(value.criterionId, 128) ||
+    !isSha256(value.contractSha256) ||
+    !isBoundedIdentifier(value.evaluatorId, 128) ||
+    !isBoundedIdentifier(value.evaluatorVersion, 128) ||
+    !isBoundedIdentifier(value.verifierInvocationId, 256) ||
+    (value.result !== "pass" && value.result !== "fail") ||
+    !isRecord(value.artifact) ||
+    !hasOnlyKeys(value.artifact, ["uri", "sha256", "bytes"]) ||
+    !isBoundedText(value.artifact.uri, 2048) ||
+    /[\u0000-\u001f\u007f]/u.test(value.artifact.uri) ||
+    !isSha256(value.artifact.sha256) ||
+    !isNonNegativeSafeInteger(value.artifact.bytes) ||
+    !isNonNegativeSafeInteger(value.observedAt)
+  ) {
+    return false;
+  }
+  const receipt = value as unknown as PrismHostEvidenceReceipt;
+  return (
+    receipt.receiptId === createPrismEvidenceReceiptId(receipt) &&
+    utf8ByteLength(JSON.stringify(receipt)) <= PRISM_EVIDENCE_RECEIPT_MAX_BYTES
+  );
+}
+
+/**
+ * Pure, fail-closed reducer. Missing, malformed, worker-authored, stale, conflicting, or
+ * mismatched receipts cannot satisfy a criterion. The reducer does not execute an evaluator.
+ */
+export function reducePrismTaskAcceptance(input: {
+  contract: unknown;
+  receipts: readonly unknown[];
+  current: PrismTaskAcceptanceLineage;
+}): PrismTaskAcceptanceDecision {
+  const contract = isValidPrismTaskContract(input.contract) ? input.contract : undefined;
+  if (!contract || !prismLineageMatchesContract(input.current, contract)) {
+    return {
+      status: "unknown",
+      passedCriterionIds: [],
+      failedCriterionIds: [],
+      missingCriterionIds: contract?.criteria.map(({ id }) => id) ?? [],
+    };
+  }
+
+  const passedCriterionIds: string[] = [];
+  const failedCriterionIds: string[] = [];
+  const missingCriterionIds: string[] = [];
+  for (const criterion of contract.criteria) {
+    const matching = input.receipts.filter((candidate): candidate is PrismHostEvidenceReceipt => {
+      if (!isValidPrismHostEvidenceReceipt(candidate)) return false;
+      return (
+        prismLineageMatchesReceipt(input.current, candidate) &&
+        candidate.contractSha256 === contract.contractSha256 &&
+        candidate.criterionId === criterion.id &&
+        candidate.evaluatorId === criterion.evaluatorId &&
+        candidate.evaluatorVersion === criterion.evaluatorVersion
+      );
+    });
+    if (matching.length === 0) {
+      missingCriterionIds.push(criterion.id);
+    } else if (matching.some(({ result }) => result === "fail")) {
+      // Любой Host fail или конфликтующий повтор требует нового явного task attempt.
+      failedCriterionIds.push(criterion.id);
+    } else {
+      passedCriterionIds.push(criterion.id);
+    }
+  }
+
+  return {
+    status:
+      failedCriterionIds.length > 0
+        ? "rejected"
+        : missingCriterionIds.length === 0
+          ? "verified"
+          : "unknown",
+    passedCriterionIds,
+    failedCriterionIds,
+    missingCriterionIds,
+  };
+}
+
+function prismLineageMatchesContract(
+  current: PrismTaskAcceptanceLineage,
+  contract: PrismTaskContract,
+): boolean {
+  return (
+    current.rootRunId === contract.rootRunId &&
+    current.taskId === contract.taskId &&
+    current.parentTaskId === contract.parentTaskId &&
+    current.attemptId === contract.attemptId &&
+    current.branchGeneration === contract.branchGeneration
+  );
+}
+
+function prismLineageMatchesReceipt(
+  current: PrismTaskAcceptanceLineage,
+  receipt: PrismHostEvidenceReceipt,
+): boolean {
+  return (
+    current.rootRunId === receipt.rootRunId &&
+    current.taskId === receipt.taskId &&
+    current.parentTaskId === receipt.parentTaskId &&
+    current.attemptId === receipt.attemptId &&
+    current.branchGeneration === receipt.branchGeneration
+  );
+}
+
+function isValidPrismTaskContractBody(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & Omit<PrismTaskContract, "contractSha256"> {
+  if (
+    !hasOnlyKeys(value, [
+      "schema",
+      "rootRunId",
+      "taskId",
+      "parentTaskId",
+      "attemptId",
+      "branchGeneration",
+      "description",
+      "criteria",
+      "contractSha256",
+    ]) ||
+    value.schema !== PRISM_TASK_CONTRACT_SCHEMA ||
+    !isBoundedIdentifier(value.rootRunId, 256) ||
+    !isBoundedIdentifier(value.taskId, 256) ||
+    (value.parentTaskId !== undefined && !isBoundedIdentifier(value.parentTaskId, 256)) ||
+    !isBoundedIdentifier(value.attemptId, 256) ||
+    !isNonNegativeSafeInteger(value.branchGeneration) ||
+    !isBoundedText(value.description, 1000) ||
+    !Array.isArray(value.criteria) ||
+    value.criteria.length === 0 ||
+    value.criteria.length > PRISM_TASK_CONTRACT_MAX_CRITERIA
+  ) {
+    return false;
+  }
+  const ids = new Set<string>();
+  for (const candidate of value.criteria) {
+    if (
+      !isRecord(candidate) ||
+      !hasOnlyKeys(candidate, ["id", "description", "evaluatorId", "evaluatorVersion"]) ||
+      !isBoundedIdentifier(candidate.id, 128) ||
+      ids.has(candidate.id) ||
+      !isBoundedText(
+        candidate.description,
+        PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES,
+      ) ||
+      !isBoundedIdentifier(candidate.evaluatorId, 128) ||
+      !isBoundedIdentifier(candidate.evaluatorVersion, 128)
+    ) {
+      return false;
+    }
+    ids.add(candidate.id);
+  }
+  return utf8ByteLength(JSON.stringify(value)) <= PRISM_EVIDENCE_RECEIPT_MAX_BYTES;
+}
+
+function hashPrismContract(
+  contract: Pick<
+    PrismTaskContract,
+    | "schema"
+    | "rootRunId"
+    | "taskId"
+    | "parentTaskId"
+    | "attemptId"
+    | "branchGeneration"
+    | "description"
+    | "criteria"
+  >,
+): string {
+  const canonical = JSON.stringify([
+    contract.schema,
+    contract.rootRunId,
+    contract.taskId,
+    contract.parentTaskId ?? null,
+    contract.attemptId,
+    contract.branchGeneration,
+    contract.description,
+    contract.criteria.map((criterion) => [
+      criterion.id,
+      criterion.description,
+      criterion.evaluatorId,
+      criterion.evaluatorVersion,
+    ]),
+  ]);
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key));
+}
+
+function isBoundedIdentifier(value: unknown, maxBytes: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !/[\u0000-\u001f\u007f]/u.test(value) &&
+    utf8ByteLength(value) <= maxBytes
+  );
+}
+
+function isBoundedText(value: unknown, maxBytes: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !value.includes("\u0000") &&
+    utf8ByteLength(value) <= maxBytes
+  );
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
 
 export interface RuntimeTaskRegistry {
   subscribe?(listener: () => void): () => void;
@@ -297,6 +646,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       branchGeneration: this.branchGenerations.get(parentSessionId) ?? 0,
       rootRunId,
       rootSessionId,
+      // 每次重新准入都生成新 attempt，防止旧 verifier receipt 命中相同 taskId 的新生命期。
+      attemptId: randomUUID(),
     };
     this.tasks.set(stamped.taskId, stamped);
     this.cancellationHandles.set(stamped.taskId, cancellation);

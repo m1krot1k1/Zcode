@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -160,6 +160,18 @@ describe("Windows OpenCode command resolution", () => {
 });
 
 describe("POSIX OpenCode command resolution", () => {
+  it("finds the official per-user install when a GUI Host has a narrow PATH", async () => {
+    const officialInstall = join("/Users/test", ".opencode", "bin", "opencode");
+    await expect(
+      resolveOpenCodeCli({
+        platform: "darwin",
+        pathValue: "/usr/bin:/bin",
+        homeDirectory: "/Users/test",
+        isExecutableFile: async (candidate) => candidate === officialInstall,
+      }),
+    ).resolves.toMatchObject({ status: "resolved", executablePath: officialInstall });
+  });
+
   it("searches inherited PATH before deterministic Homebrew and global install locations", async () => {
     const homebrew = "/opt/homebrew/bin/opencode";
     const candidates = new Set([homebrew]);
@@ -328,7 +340,6 @@ describe("OpenCode ACP runtime", () => {
           version: "Fake OpenCode CLI",
           executablePath: process.execPath,
         }),
-        checkStdioServeSupport: async () => true,
         processEnv,
       });
 
@@ -421,7 +432,6 @@ describe("OpenCode ACP runtime", () => {
           executablePath: process.execPath,
           spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
         }),
-        checkStdioServeSupport: async () => true,
         cleanupRequestTimeoutMs: 75,
         promptTimeoutMs: 10_000,
         terminateProcessTreeAndWait,
@@ -477,7 +487,6 @@ describe("OpenCode ACP runtime", () => {
         executablePath: process.execPath,
         spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
       }),
-      checkStdioServeSupport: async () => true,
       requestTimeoutMs: 5_000,
     });
 
@@ -524,7 +533,6 @@ describe("OpenCode ACP runtime", () => {
         executablePath: process.execPath,
         spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
       }),
-      checkStdioServeSupport: async () => true,
       requestTimeoutMs: 2_000,
     });
 
@@ -582,42 +590,75 @@ describe("OpenCode ACP runtime", () => {
     await runtime.disposeAllAndWait();
   });
 
-  it("rejects a CLI without serve stdio support before spawning ACP or invoking an installer", async () => {
+  it("installs a missing POSIX CLI from the explicit Install action on macOS and Linux", async () => {
+    for (const platform of ["darwin", "linux"] as const) {
+      const executablePath =
+        platform === "darwin" ? "/opt/homebrew/bin/opencode" : "/usr/bin/opencode";
+      const resolveCli = vi
+        .fn()
+        .mockResolvedValueOnce({
+          status: "missing",
+          diagnostic: "opencode.cli-missing",
+          installSupported: true,
+        })
+        .mockResolvedValueOnce({
+          status: "resolved",
+          executablePath,
+          spec: { command: executablePath, prefixArgs: [] },
+        });
+      const installPackage = vi.fn(async () => true);
+      const runVersion = vi.fn(async () => ({
+        status: "available" as const,
+        version: "OpenCode 1.19.3",
+        executablePath,
+      }));
+      const runtime = createOpenCodeAcpRuntime({
+        platform,
+        resolveCli,
+        installPackage,
+        runVersion,
+      });
+
+      await expect(runtime.installCli()).resolves.toEqual({
+        status: "installed",
+        version: "OpenCode 1.19.3",
+        executablePath,
+      });
+      expect(installPackage).toHaveBeenCalledOnce();
+      expect(resolveCli).toHaveBeenCalledTimes(2);
+      expect(runVersion).toHaveBeenCalledOnce();
+      await runtime.disposeAllAndWait();
+    }
+  });
+
+  it("starts ACP even when the unrelated serve command has no stdio flag", async () => {
     const directory = await makeTempDir();
-    const fakeCliPath = join(directory, "fake-opencode-cli.mjs");
-    const acpInvokedPath = join(directory, "acp-invoked");
+    const fakeAgentPath = join(directory, "fake-acp-agent.mjs");
+    const tracePath = join(directory, "acp-trace.txt");
+    const sdkUrl = import.meta.resolve("@agentclientprotocol/sdk");
     await writeFile(
-      fakeCliPath,
-      `
-import { writeFile } from "node:fs/promises";
-if (process.argv.includes("serve")) process.stdout.write("Options: --port --hostname\\n");
-if (process.argv.includes("acp")) await writeFile(${JSON.stringify(acpInvokedPath)}, "spawned");
-`,
+      fakeAgentPath,
+      fakeAcpAgentSource(sdkUrl, { tracePath, serveSupportsStdio: false }),
       "utf8",
     );
-    const installPackage = vi.fn(async () => true);
     const runtime = createOpenCodeAcpRuntime({
       resolveCli: () => ({
         status: "resolved",
         executablePath: process.execPath,
-        spec: { command: process.execPath, prefixArgs: [fakeCliPath] },
+        spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
       }),
       runVersion: async () => ({
         status: "available",
         version: "OpenCode 1.19.3",
         executablePath: process.execPath,
       }),
-      installPackage,
     });
 
     try {
-      await expect(runtime.startSession({ cwd: directory })).rejects.toThrow(
-        "opencode.acp-stdio-unsupported",
-      );
-      await expect(stat(acpInvokedPath)).rejects.toMatchObject({
-        code: "ENOENT",
-      });
-      expect(installPackage).not.toHaveBeenCalled();
+      const session = await runtime.startSession({ cwd: directory });
+      expect(session.configOptions.map((option) => option.id)).toContain("model");
+      expect(await readFile(tracePath, "utf8")).toContain("initialize:end");
+      await runtime.closeSession({ sessionId: session.sessionId });
     } finally {
       await runtime.disposeAllAndWait();
     }
@@ -751,7 +792,6 @@ if (process.argv.includes("acp")) await writeFile(${JSON.stringify(acpInvokedPat
         executablePath: process.execPath,
         spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
       }),
-      checkStdioServeSupport: async () => true,
       requestTimeoutMs: 2_000,
       promptTimeoutMs: 2_000,
     });
@@ -827,7 +867,6 @@ if (process.argv.includes("acp")) await writeFile(${JSON.stringify(acpInvokedPat
         executablePath: process.execPath,
         spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
       }),
-      checkStdioServeSupport: async () => true,
       requestTimeoutMs: 2_000,
       promptTimeoutMs: 2_000,
     });
@@ -868,6 +907,7 @@ interface FakeAcpAgentOptions {
   failFirstInitialize?: boolean;
   hangCancel?: boolean;
   hangClose?: boolean;
+  serveSupportsStdio?: boolean;
 }
 
 function fakeAcpAgentSource(sdkUrl: string, options: FakeAcpAgentOptions = {}): string {
@@ -884,6 +924,7 @@ const pidCapturePath = ${JSON.stringify(options.pidCapturePath ?? null)};
 const failFirstInitialize = ${JSON.stringify(options.failFirstInitialize ?? false)};
 const hangCancel = ${JSON.stringify(options.hangCancel ?? false)};
 const hangClose = ${JSON.stringify(options.hangClose ?? false)};
+const serveSupportsStdio = ${JSON.stringify(options.serveSupportsStdio ?? true)};
 const log = async (entry) => {
   if (tracePath) await appendFile(tracePath, entry + "\\n");
 };
@@ -906,7 +947,7 @@ const pendingPrompts = new Map();
 if (process.argv[2] === "--version") {
   process.stdout.write("Fake OpenCode CLI\\n");
 } else if (process.argv.includes("serve")) {
-  process.stdout.write("Options: --stdio --port\\n");
+  process.stdout.write(serveSupportsStdio ? "Options: --stdio --port\\n" : "Options: --port --hostname\\n");
 } else {
   if (envCapturePath) await writeFile(envCapturePath, JSON.stringify(Object.keys(process.env)));
   if (pidCapturePath) await writeFile(pidCapturePath, String(process.pid));

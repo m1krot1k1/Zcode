@@ -8,6 +8,77 @@ import type { ModelRequestDependencies } from "../model/invocation-context.js";
 import type { SessionId, ToolCallId, TurnId } from "./shared.js";
 import type { TraceContext } from "../tracing/tracer.js";
 
+export const PRISM_TASK_CONTRACT_SCHEMA = "zcode.prism.task-contract.v1" as const;
+export const PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA =
+  "zcode.prism.evidence-receipt.v1" as const;
+export const PRISM_TASK_CONTRACT_MAX_CRITERIA = 16;
+export const PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES = 500;
+export const PRISM_EVIDENCE_RECEIPT_MAX_BYTES = 32 * 1024;
+
+/** Критерий задачи. `evaluatorId/version` задаются Host-контрактом, а не выводятся из ответа агента. */
+export interface PrismTaskAcceptanceCriterion {
+  id: string;
+  description: string;
+  evaluatorId: string;
+  evaluatorVersion: string;
+}
+
+/** Неизменяемый Host-контракт одной попытки узла в конкретном поколении ветки. */
+export interface PrismTaskContract {
+  schema: typeof PRISM_TASK_CONTRACT_SCHEMA;
+  rootRunId: string;
+  taskId: string;
+  parentTaskId?: string;
+  attemptId: string;
+  branchGeneration: number;
+  description: string;
+  criteria: readonly PrismTaskAcceptanceCriterion[];
+  /** SHA-256 нормализованного контракта без самого поля hash. */
+  contractSha256: string;
+}
+
+/**
+ * Receipt выпускается только Host verifier после собственной проверки artifact.
+ * Эта структура не запускает verifier и не делает claim агента доказательством.
+ */
+export interface PrismHostEvidenceReceipt {
+  schema: typeof PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA;
+  receiptId: string;
+  issuer: "host_evaluator";
+  rootRunId: string;
+  taskId: string;
+  parentTaskId?: string;
+  attemptId: string;
+  branchGeneration: number;
+  criterionId: string;
+  contractSha256: string;
+  evaluatorId: string;
+  evaluatorVersion: string;
+  verifierInvocationId: string;
+  result: "pass" | "fail";
+  artifact: {
+    uri: string;
+    sha256: string;
+    bytes: number;
+  };
+  observedAt: number;
+}
+
+export interface PrismTaskAcceptanceLineage {
+  rootRunId: string;
+  taskId: string;
+  parentTaskId?: string;
+  attemptId: string;
+  branchGeneration: number;
+}
+
+export interface PrismTaskAcceptanceDecision {
+  status: "unknown" | "verified" | "rejected";
+  passedCriterionIds: string[];
+  failedCriterionIds: string[];
+  missingCriterionIds: string[];
+}
+
 export interface SubagentRunRequest {
   sessionId: SessionId;
   turnId?: TurnId;

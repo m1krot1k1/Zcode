@@ -213,6 +213,7 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
       const enabledVendors = new Set<string>();
       for (const templateId of [
         "openrouter",
+        "opencode-api",
         "opencode-zen-responses",
         "opencode-zen-messages",
         "opencode-zen-chat",
@@ -220,7 +221,7 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
         const template = snapshot.providerTemplates!.get(templateId)!;
         const api = template.config.api!;
         for (const modelId of template.config.builtinModelIds!) {
-          const config = snapshot.models.resolve({
+          const config = snapshot.models.resolveForModelApi({
             providerId: "aggregate-instance",
             templateId,
             modelId,
@@ -240,15 +241,20 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
               { reasoningLevel, maxOutputTokens: 1000 },
             );
             expect(request.model).toBe(modelId);
+            const effectiveApiType = config.api?.type ?? api.type;
+            const outputFields =
+              effectiveApiType === "anthropic-messages"
+                ? ["max_tokens"]
+                : effectiveApiType === "openai-responses"
+                  ? ["max_output_tokens"]
+                  : ["max_completion_tokens", "max_tokens"];
             expect(
-              request[
-                api.type === "openai-responses"
-                  ? "max_output_tokens"
-                  : api.type === "openai-chat-completions"
-                    ? "max_completion_tokens"
-                    : "max_tokens"
-              ],
-            ).toBe(1000);
+              outputFields.filter((field) => request[field] === 1000),
+              `${templateId}/${modelId} via ${effectiveApiType}: ${JSON.stringify(request)}`,
+            ).toHaveLength(1);
+            for (const field of ["max_output_tokens", "max_completion_tokens", "max_tokens"]) {
+              if (!outputFields.includes(field)) expect(request[field]).toBeUndefined();
+            }
           }
         }
       }
@@ -265,6 +271,94 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
           "z-ai",
         ].sort(),
       );
+    } finally {
+      source.dispose();
+    }
+  });
+
+  it("OpenCode показывает один объединённый API-шаблон и сохраняет старые маршруты", async () => {
+    const source = new NodeZCodeBuiltinProviderConfigSource({
+      bundledFilePath: fileURLToPath(
+        new URL("../../../config/provider/zcode-builtin.json", import.meta.url),
+      ),
+      watch: false,
+    });
+    try {
+      const snapshot = await source.read();
+      const openCodeTemplates = snapshot
+        .providerTemplates!.entries()
+        .filter(([id]) => id.startsWith("opencode-"));
+      const visible = openCodeTemplates.filter(([, template]) => !template.deprecated);
+      expect(visible.map(([id]) => id)).toEqual(["opencode-api"]);
+      expect(openCodeTemplates.filter(([, template]) => template.deprecated)).toHaveLength(7);
+
+      const template = snapshot.providerTemplates!.get("opencode-api")!;
+      const modelIds = template.config.builtinModelIds!;
+      expect(modelIds).toHaveLength(58);
+      expect(new Set(modelIds).size).toBe(modelIds.length);
+      expect(modelIds).toContain("deepseek-v4.1-flash-free");
+      const rules = snapshot.models
+        .rules()
+        .filter((rule) => rule.type === "template-model" && rule.templateId === "opencode-api");
+      expect(rules).toHaveLength(modelIds.length);
+      expect(rules.every((rule) => rule.config.api !== undefined)).toBe(true);
+
+      const resolve = (modelId: string) =>
+        snapshot.models.resolveForModelApi({
+          providerId: "opencode-instance",
+          templateId: "opencode-api",
+          modelId,
+          apiType: template.config.api!.type!,
+          baseUrl: template.config.api!.baseUrl!,
+        });
+      expect(resolve("deepseek-v4.1-flash-free")).toMatchObject({
+        enabled: true,
+        api: { type: "openai-chat-completions", baseUrl: "https://opencode.ai/zen/go/v1" },
+      });
+      expect(resolve("qwen3.7-max")).toMatchObject({
+        enabled: true,
+        api: { type: "anthropic-messages", baseUrl: "https://opencode.ai/zen/v1" },
+      });
+      expect(resolve("gpt-5.4")).toMatchObject({
+        enabled: false,
+        api: { type: "openai-responses", baseUrl: "https://opencode.ai/zen/v1" },
+      });
+
+      const previousGoTemplate = snapshot.providerTemplates!.get("opencode-go")!;
+      expect(previousGoTemplate.deprecated).toBe(true);
+      expect(previousGoTemplate.config.builtinModelIds).toHaveLength(26);
+      expect(previousGoTemplate.config.api).toMatchObject({
+        type: "openai-chat-completions",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+      });
+      const previousGoRules = snapshot.models
+        .rules()
+        .filter((rule) => rule.type === "template-model" && rule.templateId === "opencode-go");
+      expect(previousGoRules).toHaveLength(26);
+      expect(
+        snapshot.models.resolveForModelApi({
+          providerId: "saved-opencode-go",
+          templateId: "opencode-go",
+          modelId: "qwen3.7-max",
+          apiType: previousGoTemplate.config.api!.type!,
+          baseUrl: previousGoTemplate.config.api!.baseUrl!,
+        }),
+      ).toMatchObject({
+        enabled: false,
+        api: { type: "anthropic-messages", baseUrl: "https://opencode.ai/zen/go/v1" },
+      });
+
+      for (const id of [
+        "opencode-go",
+        "opencode-go-chat",
+        "opencode-go-messages",
+        "opencode-go-responses",
+        "opencode-zen-responses",
+        "opencode-zen-messages",
+        "opencode-zen-chat",
+      ]) {
+        expect(snapshot.providerTemplates!.get(id)?.deprecated).toBe(true);
+      }
     } finally {
       source.dispose();
     }

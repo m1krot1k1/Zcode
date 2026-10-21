@@ -43,6 +43,17 @@ describe("Provider Template", () => {
       },
     });
 
+    const compatibilityTemplate = parseProviderTemplateMap([
+      {
+        templateId: "legacy-opencode",
+        templateNameMap: { "en-US": "Legacy OpenCode" },
+        deprecated: true,
+        config: {},
+      },
+    ]).get("legacy-opencode");
+    expect(compatibilityTemplate?.deprecated).toBe(true);
+    expect(compatibilityTemplate?.toJSON()).toMatchObject({ deprecated: true });
+
     for (const forbidden of [
       { templateNameMap: { "en-US": "DeepSeek" }, group: "standard-personal" },
       { templateNameMap: { "en-US": "DeepSeek" }, config: { templateId: "nested" } },
@@ -63,6 +74,7 @@ describe("Provider Template", () => {
     const template = new ProviderTemplate({
       templateId: "deepseek",
       templateNameMap: { "en-US": "DeepSeek" },
+      deprecated: true,
       config: new ProviderConfig({
         access: new ApiKeyAccessConfig(),
         api: new ProviderApiConfig({
@@ -115,6 +127,9 @@ describe("Provider Template", () => {
       "template:deepseek",
     );
     expect(resolution.registryProviders[0]?.config.api?.baseUrl).toBe("https://api.example.com");
+    expect(
+      resolution.resolvedProviders.every((provider) => provider.providerIssues.length === 0),
+    ).toBe(true);
   });
 
   it("Built-in Rule 固定按 match、template-model、provider-model 排序", () => {

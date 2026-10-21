@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createServer, type ServerResponse } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeRelayV2 } from "@zcode/shared/testing/fake-relay-v2";
+import { WebRemoteControlV2ConnectionError } from "@zcode/shared/web-remote-relay";
 import {
   WebRemoteControlTerminalTransport,
   createWebRemoteControlV2TokenClient,
@@ -48,6 +49,7 @@ async function fixture(
   );
   const states: string[] = [];
   const failures: unknown[] = [];
+  const diagnostics: Array<{ type: string }> = [];
   const onSendReady = vi.fn();
   const terminal = new WebRemoteControlTerminalTransport({
     relayWsUrl: relay.wsUrl,
@@ -58,15 +60,18 @@ async function fixture(
     onPayload: vi.fn(),
     onStateChange: (state) => states.push(state),
     onFailure: (failure) => failures.push(failure),
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     onError: vi.fn(),
     onSendReady,
     reloadPage: vi.fn(),
   });
   cleanup.push(() => terminal.dispose());
-  return { relay, terminal, states, failures, sid, received, onSendReady };
+  return { relay, terminal, states, failures, diagnostics, sid, received, onSendReady };
 }
 
-function controlledTransport() {
+function controlledTransport(
+  getToken: (signal: AbortSignal) => Promise<string> = async () => "one-use",
+) {
   const sockets: FakeSocket[] = [];
   class FakeSocket extends EventTarget {
     static OPEN = 1;
@@ -89,20 +94,22 @@ function controlledTransport() {
   }
   const states: string[] = [];
   const failures: unknown[] = [];
+  const diagnostics: Array<{ type: string }> = [];
   const transport = new WebRemoteControlTerminalTransport({
     relayWsUrl: "wss://relay.example/api/v1/remote/ws2",
     deviceSid: "sid",
-    getToken: async () => "one-use",
+    getToken,
     WebSocketCtor: FakeSocket as unknown as typeof WebSocket,
     heartbeatAckTimeoutMs: 60000,
     onPayload: vi.fn(),
     onStateChange: (state) => states.push(state),
     onFailure: (failure) => failures.push(failure),
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     onError: vi.fn(),
     reloadPage: vi.fn(),
   });
   cleanup.push(() => transport.dispose());
-  return { transport, sockets, states, failures };
+  return { transport, sockets, states, failures, diagnostics };
 }
 
 describe("terminal 与 V2 假 relay 的线级契约", () => {
@@ -239,35 +246,45 @@ describe("terminal 与 V2 假 relay 的线级契约", () => {
     expect(h.onSendReady).toHaveBeenLastCalledWith({ kind: "reconnected-socket" });
   });
 
-  it("网络和5xx保持500ms指数退避，上限10秒", async () => {
-    let fail: "server" | "network" | undefined = "server";
-    const h = await fixture({
-      users: { jwt: "user-1" },
-      onHttp: (call) =>
-        (call.body as { role?: string }).role === "terminal" && fail
-          ? fail === "server"
-            ? { status: 503 }
-            : { networkError: true }
-          : undefined,
+  it("可重试 token 错误保持500ms指数退避并在10秒封顶", async () => {
+    // 使用内存传输验证退避时序；5xx 的 HTTP 分类由 token-client 测试单独覆盖，避免 fake timer 阻塞 undici。
+    vi.useFakeTimers();
+    let failuresBeforeSuccess = 8;
+    const getToken = vi.fn(async () => {
+      if (failuresBeforeSuccess > 0) {
+        failuresBeforeSuccess -= 1;
+        throw new WebRemoteControlV2ConnectionError("relay-unavailable", true);
+      }
+      return "one-use";
     });
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-    h.terminal.start();
-    await delay(60);
-    const tokens = () =>
-      h.relay.httpCalls.filter((r) => (r.body as { role?: string }).role === "terminal").length;
+    const h = controlledTransport(getToken);
+    h.transport.start();
+    const retrySchedules = () =>
+      h.diagnostics.filter((diagnostic) => diagnostic.type === "recover-scheduled").length;
+    const flushMicrotasks = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    await flushMicrotasks();
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(retrySchedules()).toBe(1);
     let count = 1;
     for (const ms of [500, 1000, 2000, 4000, 8000, 10000, 10000]) {
       await vi.advanceTimersByTimeAsync(ms - 1);
-      await delay(30);
-      expect(tokens()).toBe(count);
+      expect(getToken).toHaveBeenCalledTimes(count);
       await vi.advanceTimersByTimeAsync(1);
-      await delay(60);
-      expect(tokens()).toBe(++count);
-      fail = "network";
+      await flushMicrotasks();
+      expect(getToken).toHaveBeenCalledTimes(++count);
+      expect(retrySchedules()).toBe(count);
     }
-    fail = undefined;
+    failuresBeforeSuccess = 0;
     await vi.advanceTimersByTimeAsync(10000);
-    await delay(100);
+    await flushMicrotasks();
+    expect(getToken).toHaveBeenCalledTimes(9);
+    expect(h.sockets).toHaveLength(1);
+    h.sockets[0].open();
+    h.sockets[0].receive({ type: "auth_ack", device_sid: "sid", pair_status: "matched" });
+    await flushMicrotasks();
     expect(h.states.at(-1)).toBe("paired");
     expect(h.failures).toEqual([]);
   });

@@ -53,7 +53,11 @@ import type { ToolSideEffectScope } from "../tools/contract.js";
 import type { SavedWorkflowScope } from "../tools/saved-workflow.js";
 import type { GoalCompletionVerificationOutput, SessionGoal } from "../tools/target.js";
 import type { ToolResultDisplayPayload } from "../tools/tool-result-metadata.js";
-import type { SubagentTaskStatus } from "../interfaces/subagent.port.js";
+import type {
+  PrismHostEvidenceReceipt,
+  PrismTaskContract,
+  SubagentTaskStatus,
+} from "../interfaces/subagent.port.js";
 import type {
   StreamRecoveryAnchorPayload,
   StreamRecoveryAnchorSelectedPayload,
@@ -181,6 +185,8 @@ export const SessionEventType = {
   SubagentStopped: "subagent_stopped",
   // PRISM runtime projection records only the host-observed terminal lifecycle; it is not AC evidence.
   SubagentExecutionTerminal: "subagent_execution_terminal",
+  PrismTaskContractDeclared: "prism_task_contract_declared",
+  PrismEvidenceReceiptObserved: "prism_evidence_receipt_observed",
   Interrupt: "interrupt",
   Cancel: "cancel",
   Resume: "resume",
@@ -1019,6 +1025,16 @@ export interface SubagentExecutionTerminalPayload {
   observedAt: Date;
 }
 
+/** Host declares bounded acceptance criteria for one registered task attempt. */
+export interface PrismTaskContractDeclaredPayload {
+  contract: PrismTaskContract;
+}
+
+/** A Host verifier result; worker/LLM messages use other event types and cannot pass this contract. */
+export interface PrismEvidenceReceiptObservedPayload {
+  receipt: PrismHostEvidenceReceipt;
+}
+
 export type BackgroundTaskStartedPayload = BackgroundTaskPayloadBase & {
   status: "running";
 };
@@ -1365,6 +1381,8 @@ export type SessionEventPayload =
   | BackgroundTaskUpdatedPayload
   | BackgroundTaskCompletedPayload
   | SubagentExecutionTerminalPayload
+  | PrismTaskContractDeclaredPayload
+  | PrismEvidenceReceiptObservedPayload
   | DynamicWorkflowRunProgressPayload
   | PermissionRequestedPayload
   | PermissionResolvedPayload

@@ -301,7 +301,7 @@ describe("OpenCode agent settings panel", () => {
     );
   });
 
-  it("shows manual V2 instructions for an unsupported ACP runtime without attempting an upgrade", async () => {
+  it("reports an ACP handshake error without attempting an automatic upgrade", async () => {
     const runtime = {
       getCliStatus: vi.fn(async () => ({
         status: "available" as const,
@@ -313,7 +313,7 @@ describe("OpenCode agent settings panel", () => {
         diagnostic: "opencode.install-failed",
       })),
       startSession: vi.fn(async () => {
-        throw new Error("opencode.acp-stdio-unsupported");
+        throw new Error("opencode.acp-initialize-failed");
       }),
       closeSession: vi.fn(async () => undefined),
       onSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
@@ -342,15 +342,8 @@ describe("OpenCode agent settings panel", () => {
     expect(runtime.installCli).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("opencode-start-session"));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("does not advertise the `serve --stdio` mode");
+    expect(alert.textContent).toContain("does not support the expected ACP handshake");
     expect(runtime.installCli).not.toHaveBeenCalled();
-
-    fireEvent.click(
-      within(alert).getByRole("button", {
-        name: "Open official OpenCode V2 installation instructions",
-      }),
-    );
-    expect(platform.openExternal).toHaveBeenCalledWith("https://opencode.ai/v2/docs");
-    expect(runtime.installCli).not.toHaveBeenCalled();
+    expect(within(alert).queryByRole("button")).toBeNull();
   });
 });

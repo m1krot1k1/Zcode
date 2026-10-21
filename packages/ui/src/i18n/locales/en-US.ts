@@ -3533,9 +3533,14 @@ const enUS: Record<string, string> = {
   "settings.mcp.create.open": "Add MCP server",
   "settings.mcp.import.open": "Import MCP servers from external agents",
   "settings.mcp.import.action": "Import",
-  "settings.mcp.communityPresets.title": "Free MCP servers",
+  "settings.mcp.communityPresets.title": "Curated MCP catalog",
   "settings.mcp.communityPresets.description":
-    "Opens the form with a public stdio server. Nothing is saved until you confirm. No API keys are included.",
+    "Choose a server to review its source and configuration. Selecting it opens a draft; it is saved only when you confirm.",
+  "settings.mcp.communityPresets.authNone": "No API key required",
+  "settings.mcp.communityPresets.authOptionalApiKey": "Optional API key for account features",
+  "settings.mcp.communityPresets.configure": "Configure",
+  "settings.mcp.communityPresets.source": "Open {name} package source",
+  "settings.mcp.communityPresets.sourceLabel": "Package source",
   "settings.mcp.emptyTitle": "No MCP servers yet",
   "settings.mcp.emptyDescription": "Add an MCP server to give the agent extra capabilities.",
   "settings.mcp.searchPlaceholder": "Search MCP servers…",
@@ -3850,11 +3855,7 @@ const enUS: Record<string, string> = {
   "settings.openCode.acp-timeout": "OpenCode did not respond in time. Check its CLI and try again.",
   "settings.openCode.acp-initialize-failed":
     "The installed OpenCode CLI does not support the expected ACP handshake.",
-  "settings.openCode.acp-stdio-unsupported":
-    "This OpenCode CLI does not advertise the `serve --stdio` mode required by ACP. ZCode did not create a session. Update OpenCode manually using the official V2 instructions; automatic major-version upgrades are not supported.",
   "settings.openCode.acp-stdio-unavailable": "OpenCode did not expose an ACP stdio connection.",
-  "settings.openCode.manualUpdateInstructions":
-    "Open official OpenCode V2 installation instructions",
   "settings.modelProvider.add": "Add provider",
   "settings.modelProvider.createCustomProvider": "Create custom provider",
   "settings.modelProvider.templateCreateFailed":

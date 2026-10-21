@@ -21,12 +21,12 @@ import {
 } from "../../../helpers/model-provider-restart.js";
 import { prepareV4ConversationE2E } from "../../../helpers/v4-conversation.js";
 
-describe("Todo149 OpenCode Go 模板创建", () => {
+describe("OpenCode unified API template", () => {
   after(async () => {
     await browser.electron.restoreAllMocks();
     await clearAppData();
   });
-  it("G149-01：按协议创建并保存假 Key，保留成员和个人身份", async function () {
+  it("G149-01：只展示一个 API 模板，并保存统一模型目录", async function () {
     this.timeout(150_000);
     const repository = new NodePersonalProviderConfigRepository({
       filePath: getE2EAppDataPaths().configFile,
@@ -46,60 +46,67 @@ describe("Todo149 OpenCode Go 模板创建", () => {
       });
       await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
       await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "modelProvider"));
-      for (const [templateId, format, first, count] of [
-        ["opencode-go-chat", /Chat Completions/i, "glm-5.3-flash", 15],
-        ["opencode-go-messages", /Anthropic Messages/i, "minimax-m3", 8],
-        ["opencode-go-responses", /Responses/i, "gpt-5.6-luna", 2],
-      ] as const) {
-        const before = new Set((await repository.read()).providers.keys());
-        await clickTestIdByDom(TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON);
-        const card = $(
-          `[data-provider-template-group="other"] [data-testid="${testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, templateId)}"]`,
-        );
-        await card.waitForExist({ timeout: 15_000 });
-        await card.scrollIntoView({ block: "center" });
-        await card.click();
-        let providerId = "";
-        await browser.waitUntil(
-          async () => {
-            providerId =
-              (await repository.read()).providers.keys().find((id) => !before.has(id)) ?? "";
-            return providerId !== "";
-          },
-          { timeout: 15_000 },
-        );
-        await clickTestIdByDom(testId(TID_MODEL_PROVIDER_NAV_ITEM, `custom:${providerId}`));
-        await browser.waitUntil(
-          async () =>
-            (await $(`[data-testid="${TID_MODEL_PROVIDER_BASE_URL_INPUT}"]`).getValue()) ===
-            "https://opencode.ai/zen/go/v1",
-          { timeout: 15_000 },
-        );
+      const templateId = "opencode-api";
+      const before = new Set((await repository.read()).providers.keys());
+      await clickTestIdByDom(TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON);
+      const templateSelector = `[data-provider-template-group="other"] [data-testid="${testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, templateId)}"]`;
+      const card = $(templateSelector);
+      await card.waitForExist({ timeout: 15_000 });
+      for (const legacyId of [
+        "opencode-go-chat",
+        "opencode-go-messages",
+        "opencode-go-responses",
+        "opencode-zen-responses",
+        "opencode-zen-messages",
+        "opencode-zen-chat",
+      ]) {
         expect(
-          await $(`[data-testid="${TID_MODEL_PROVIDER_API_FORMAT_TRIGGER}"]`).getText(),
-        ).toMatch(format);
-        await $(`[data-model-provider-model-id="${first}"]`).waitForExist({ timeout: 15_000 });
-        expect(await $$("[data-model-provider-model-id]").length).toBe(count);
-        expect(
-          await $$(
-            '//button[normalize-space(.)="获取 API Key" or normalize-space(.)="Get API Key"]',
-          ).length,
-        ).toBe(1);
-        const key = $(`[data-testid="${TID_MODEL_PROVIDER_API_KEY_INPUT}"]`);
-        await key.setValue("E2E_GO_FAKE_KEY");
-        await browser.keys("Tab");
-        await browser.waitUntil(
-          async () => {
-            const access = (await repository.read()).providers.get(providerId)?.access;
-            return access?.type === "api-key" && access.apiKey === "E2E_GO_FAKE_KEY";
-          },
-          { timeout: 15_000 },
-        );
-        expect((await repository.read()).providers.getRule(providerId)?.templateId).toBe(
-          templateId,
-        );
-        // 假 Key 只验证创建与保存，不点击连接测试或发送聊天；协议 wire 由离线 Adapter 用例验证。
+          await $(
+            `[data-testid="${testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, legacyId)}"]`,
+          ).isExisting(),
+        ).toBe(false);
       }
+      await card.scrollIntoView({ block: "center" });
+      await card.click();
+      let providerId = "";
+      await browser.waitUntil(
+        async () => {
+          providerId =
+            (await repository.read()).providers.keys().find((id) => !before.has(id)) ?? "";
+          return providerId !== "";
+        },
+        { timeout: 15_000 },
+      );
+      await clickTestIdByDom(testId(TID_MODEL_PROVIDER_NAV_ITEM, `custom:${providerId}`));
+      await browser.waitUntil(
+        async () =>
+          (await $(`[data-testid="${TID_MODEL_PROVIDER_BASE_URL_INPUT}"]`).getValue()) ===
+          "https://opencode.ai/zen/go/v1",
+        { timeout: 15_000 },
+      );
+      expect(await $(`[data-testid="${TID_MODEL_PROVIDER_API_FORMAT_TRIGGER}"]`).getText()).toMatch(
+        /Chat Completions/i,
+      );
+      await $(`[data-model-provider-model-id="deepseek-v4.1-flash-free"]`).waitForExist({
+        timeout: 15_000,
+      });
+      expect(await $$("[data-model-provider-model-id]").length).toBe(58);
+      expect(
+        await $$('//button[normalize-space(.)="获取 API Key" or normalize-space(.)="Get API Key"]')
+          .length,
+      ).toBe(1);
+      const key = $(`[data-testid="${TID_MODEL_PROVIDER_API_KEY_INPUT}"]`);
+      await key.setValue("E2E_GO_FAKE_KEY");
+      await browser.keys("Tab");
+      await browser.waitUntil(
+        async () => {
+          const access = (await repository.read()).providers.get(providerId)?.access;
+          return access?.type === "api-key" && access.apiKey === "E2E_GO_FAKE_KEY";
+        },
+        { timeout: 15_000 },
+      );
+      expect((await repository.read()).providers.getRule(providerId)?.templateId).toBe(templateId);
+      // 假 Key 仅验证模板创建和存储；协议路由由离线模型配置测试验证。
     } finally {
       repository.dispose();
     }

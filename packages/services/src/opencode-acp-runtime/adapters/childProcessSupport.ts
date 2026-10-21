@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -16,10 +16,8 @@ import {
 import type { OpenCodeCliStatus } from "../contract.js";
 
 const VERSION_TIMEOUT_MS = 4_000;
-const ACP_COMPATIBILITY_TIMEOUT_MS = 4_000;
 export const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const MAX_VERSION_OUTPUT_CHARS = 512;
-const MAX_ACP_HELP_OUTPUT_CHARS = 8_000;
 const OPEN_CODE_PACKAGE = "@opencode/cli";
 // CLI и npm нужны пути, каталоги пользователя, временные каталоги и локаль; секреты Host не наследуем.
 const COMMON_CHILD_ENV_KEYS = new Set(
@@ -197,49 +195,6 @@ export async function runVersion(
           diagnostic: "opencode.version-failed",
         });
     });
-  });
-}
-
-export async function checkStdioServeSupport(
-  spec: OpenCodeCommandSpec,
-  sourceEnvironment: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform,
-): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    let output = "";
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (supported: boolean) => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      resolve(supported);
-    };
-    let child: ChildProcess;
-    try {
-      child = spawn(
-        spec.command,
-        [...spec.prefixArgs, "serve", "--help"],
-        spawnOptions(undefined, ["ignore", "pipe", "pipe"], sourceEnvironment, platform),
-      );
-    } catch {
-      resolve(false);
-      return;
-    }
-    const collect = (chunk: Buffer | string) => {
-      if (output.length < MAX_ACP_HELP_OUTPUT_CHARS) {
-        output += String(chunk).slice(0, MAX_ACP_HELP_OUTPUT_CHARS - output.length);
-      }
-    };
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
-    timer = setTimeout(() => {
-      finish(false);
-      void terminateProcessTreeAndWait(child);
-    }, ACP_COMPATIBILITY_TIMEOUT_MS);
-    timer.unref?.();
-    child.once("error", () => finish(false));
-    child.once("close", (code) => finish(code === 0 && output.includes("--stdio")));
   });
 }
 

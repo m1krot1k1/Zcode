@@ -393,11 +393,16 @@ export interface CommunityMcpPreset {
   id: string;
   name: string;
   packageName: string;
+  version?: string;
   command: "npx";
   args: readonly string[];
+  /** Require the user to provide their own credential; no token is bundled in the catalog. */
+  authRequirement: "none" | "api-key-optional";
+  sourceUrl: string;
+  env?: Readonly<Record<string, string>>;
 }
 
-/** Публичные stdio-серверы без ключей. Установка остаётся явным сохранением формы. */
+/** Immutable, provenance-labelled stdio catalog. Selection only creates an editable draft. */
 export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
   {
     id: "context7",
@@ -405,6 +410,8 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     packageName: "@upstash/context7-mcp",
     command: "npx",
     args: ["-y", "@upstash/context7-mcp"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@upstash/context7-mcp",
   },
   {
     id: "chrome-devtools",
@@ -412,6 +419,8 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     packageName: "chrome-devtools-mcp",
     command: "npx",
     args: ["-y", "chrome-devtools-mcp"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/chrome-devtools-mcp",
   },
   {
     id: "playwright",
@@ -419,6 +428,8 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     packageName: "@playwright/mcp",
     command: "npx",
     args: ["-y", "@playwright/mcp"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@playwright/mcp",
   },
   {
     id: "duckduckgo-search",
@@ -426,6 +437,8 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     packageName: "duckduckgo-mcp-server",
     command: "npx",
     args: ["-y", "duckduckgo-mcp-server"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/duckduckgo-mcp-server",
   },
   {
     id: "web-fetch",
@@ -433,6 +446,19 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     packageName: "@yawlabs/fetch-mcp",
     command: "npx",
     args: ["-y", "@yawlabs/fetch-mcp"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@yawlabs/fetch-mcp",
+  },
+  {
+    id: "firecrawl",
+    name: "Firecrawl",
+    packageName: "firecrawl-mcp",
+    version: "3.33.0",
+    command: "npx",
+    args: ["-y", "firecrawl-mcp@3.33.0"],
+    authRequirement: "api-key-optional",
+    sourceUrl: "https://github.com/firecrawl/firecrawl-mcp-server",
+    env: { FIRECRAWL_API_KEY: "" },
   },
 ] as const;
 
@@ -441,5 +467,19 @@ export function communityMcpPresetConfig(preset: CommunityMcpPreset): McpServerC
     type: "stdio",
     command: preset.command,
     args: [...preset.args],
+    ...(preset.env ? { env: { ...preset.env } } : {}),
   };
+}
+
+export function filterCommunityMcpPresets(
+  presets: readonly CommunityMcpPreset[],
+  query: string,
+): CommunityMcpPreset[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return [...presets];
+  return presets.filter((preset) =>
+    `${preset.name} ${preset.id} ${preset.packageName} ${preset.authRequirement}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery),
+  );
 }

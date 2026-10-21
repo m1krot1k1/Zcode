@@ -817,6 +817,10 @@ export const SESSION_ENTRY_WORKSPACE_FILE_REWIND = "runtime/workspace_file_rewin
 /** 动态工作流工具面已在本会话激活（docs/dynamic-workflow/launch.md「On demand: activation」）。 */
 export const SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION =
   "runtime/dynamic_workflow_activation" as const;
+/** 根会话唯一保存 PRISM task contract 与 Host evidence receipt；不引入平行队列或表。 */
+export const SESSION_ENTRY_PRISM_TASK_CONTRACT = "runtime/prism_task_contract" as const;
+export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT =
+  "runtime/prism_evidence_receipt" as const;
 
 export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -827,6 +831,8 @@ export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_WORKSPACE_CHECKPOINT,
   SESSION_ENTRY_WORKSPACE_FILE_REWIND,
   SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION,
+  SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
 ] as const;
 
 export type SessionEntryType = (typeof SESSION_ENTRY_TYPES)[number];

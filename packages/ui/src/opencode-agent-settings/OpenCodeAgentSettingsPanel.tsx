@@ -124,7 +124,6 @@ export function OpenCodeAgentSettingsPanel({
   const [busy, setBusy] = useState(false);
   const [working, setWorking] = useState(false);
   const [diagnostic, setDiagnostic] = useState("");
-  const [manualUpdateRequired, setManualUpdateRequired] = useState(false);
   const closingSessions = useRef(new Set<string>());
 
   const closeSessionOnce = useCallback(
@@ -148,7 +147,6 @@ export function OpenCodeAgentSettingsPanel({
 
   const refreshStatus = useCallback(async () => {
     if (!runtime) return;
-    setManualUpdateRequired(false);
     try {
       setCliStatus(await runtime.getCliStatus({ cliPath: cliPath || undefined }));
     } catch {
@@ -284,7 +282,6 @@ export function OpenCodeAgentSettingsPanel({
     if (!runtime || !workspacePath.trim() || !workspaceExplicitlyChosen) return;
     setWorking(true);
     setDiagnostic("");
-    setManualUpdateRequired(false);
     setTranscript([]);
     try {
       const created = await runtime.startSession({
@@ -300,7 +297,6 @@ export function OpenCodeAgentSettingsPanel({
       setModelSelectionConfirmed(false);
     } catch (error) {
       const code = error instanceof Error ? error.message : "settings.openCode.sessionStartFailed";
-      setManualUpdateRequired(code === "opencode.acp-stdio-unsupported");
       setDiagnostic(
         intl.formatMessage({
           id: diagnosticMessageId(code, "settings.openCode.sessionStartFailed"),
@@ -752,11 +748,6 @@ export function OpenCodeAgentSettingsPanel({
       {diagnostic ? (
         <div role="alert" className="space-y-2 text-ui-base text-destructive">
           <p>{diagnostic}</p>
-          {manualUpdateRequired ? (
-            <Button type="button" size="sm" variant="outline" onClick={openInstallInstructions}>
-              {intl.formatMessage({ id: "settings.openCode.manualUpdateInstructions" })}
-            </Button>
-          ) : null}
         </div>
       ) : null}
     </section>

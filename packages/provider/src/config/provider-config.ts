@@ -276,11 +276,13 @@ export type ProviderTemplateObject = Readonly<z.infer<typeof providerTemplateDat
 export class ProviderTemplate {
   readonly templateId: ProviderTemplateId;
   readonly templateNameMap: ProviderTemplateNameMap;
+  readonly deprecated: boolean;
   readonly config: ProviderConfig;
 
   constructor(input: ProviderTemplateInput) {
     this.templateId = input.templateId;
     this.templateNameMap = Object.freeze({ ...input.templateNameMap });
+    this.deprecated = input.deprecated ?? false;
     this.config = input.config;
     Object.freeze(this);
   }
@@ -289,6 +291,7 @@ export class ProviderTemplate {
     return {
       templateId: this.templateId,
       templateNameMap: this.templateNameMap,
+      ...(this.deprecated ? { deprecated: true } : {}),
       config: this.config.toJSON(),
     };
   }

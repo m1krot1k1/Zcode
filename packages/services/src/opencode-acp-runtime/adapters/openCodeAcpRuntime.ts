@@ -18,7 +18,6 @@ import type {
 } from "../contract.js";
 import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.js";
 import {
-  checkStdioServeSupport,
   INSTALL_TIMEOUT_MS,
   installOpenCodePackage,
   installOpenCodeWingetPackage,
@@ -41,7 +40,6 @@ interface OpenCodeAcpRuntimeOptions {
   resolveCli?: (cliPath?: string) => OpenCodeCliResolution | Promise<OpenCodeCliResolution>;
   resolveWinget?: () => Promise<string | undefined>;
   runVersion?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
-  checkStdioServeSupport?: (spec: OpenCodeCommandSpec) => Promise<boolean>;
   installPackage?: (timeoutMs: number) => Promise<boolean>;
   installWingetPackage?: (wingetPath: string, timeoutMs: number) => Promise<boolean>;
   platform?: NodeJS.Platform;
@@ -103,9 +101,6 @@ export function createOpenCodeAcpRuntime(
   const runVersionCommand =
     options.runVersion ??
     ((spec: OpenCodeCommandSpec) => runVersion(spec, childEnvironment, platform));
-  const checkStdioSupport =
-    options.checkStdioServeSupport ??
-    ((spec: OpenCodeCommandSpec) => checkStdioServeSupport(spec, childEnvironment, platform));
   const installPackage =
     options.installPackage ??
     ((timeoutMs: number) => installOpenCodePackage(timeoutMs, childEnvironment, platform));
@@ -452,21 +447,23 @@ export function createOpenCodeAcpRuntime(
               diagnostic: "opencode.install-verification-failed",
             };
       }
-      if (resolution.status !== "resolved") {
-        return {
-          status: "failed",
-          diagnostic: "opencode.install-requires-missing-cli",
-        };
-      }
-      const before = await runVersionCommand(resolution.spec);
-      if (before.status === "available") {
-        return {
-          status: "already-installed",
-          version: before.version,
-          executablePath: before.executablePath,
-        };
-      }
-      if (before.status !== "missing") {
+      // Причина: установка на POSIX ранее требовала resolved CLI и отказывала именно при отсутствии бинарника, хотя UI уже предлагал Install. Разрешаем установку для подтверждённого missing status и сохраняем повторную проверку версии после неё.
+      if (resolution.status === "resolved") {
+        const before = await runVersionCommand(resolution.spec);
+        if (before.status === "available") {
+          return {
+            status: "already-installed",
+            version: before.version,
+            executablePath: before.executablePath,
+          };
+        }
+        if (before.status !== "missing") {
+          return {
+            status: "failed",
+            diagnostic: "opencode.install-requires-missing-cli",
+          };
+        }
+      } else if (resolution.status !== "missing" || !resolution.installSupported) {
         return {
           status: "failed",
           diagnostic: "opencode.install-requires-missing-cli",
@@ -502,11 +499,7 @@ export function createOpenCodeAcpRuntime(
       if (resolution.status !== "resolved") throw new Error(resolution.diagnostic);
       const status = await runVersionCommand(resolution.spec);
       if (status.status !== "available") throw new Error("opencode.cli-not-ready");
-      // ACP v1.19.3 advertises `acp`, but its internal server rejects the `serve --stdio`
-      // mode required by this runtime. Check the underlying mode before launching ACP so the
-      // user receives a useful compatibility message instead of the CLI's generic ServeError.
-      const supportsStdioServe = await checkStdioSupport(resolution.spec);
-      if (!supportsStdioServe) throw new Error("opencode.acp-stdio-unsupported");
+      // `serve` 与 stdio ACP 是不同命令；此前检查 `serve --stdio` 会误拒绝官方 `opencode acp`。由真实 initialize 握手确认协议兼容。
       const activeRuntime = await ensureRuntime(cwd, resolution);
       try {
         const result = await request(

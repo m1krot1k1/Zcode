@@ -110,6 +110,7 @@ export const providerTemplateDataSchema = z
   .object({
     templateId: z.string().min(1),
     templateNameMap: providerTemplateNameMapDataSchema,
+    deprecated: z.boolean().optional(),
     config: providerConfigDataSchema,
   })
   .strict();

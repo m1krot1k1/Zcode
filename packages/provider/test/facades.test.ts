@@ -4,6 +4,7 @@ import {
   ModelConfigRules,
   ModelOptionSpecsConfig,
   ModelPropertiesConfig,
+  ProviderConfig,
   ModelSelectionFacade,
   ProviderConfigMap,
   ProviderRegistryService,
@@ -142,6 +143,33 @@ async function createService(
 }
 
 describe("Provider Facades", () => {
+  it("隐藏过期 Provider Template 的新建入口，同时保留当前 Template", async () => {
+    const service = await createService({
+      zcodeBuiltinProviderTemplates: new ProviderTemplateMap([
+        [
+          "opencode-api",
+          new ProviderTemplate({
+            templateId: "opencode-api",
+            templateNameMap: { "en-US": "OpenCode (API key)" },
+            config: new ProviderConfig({}),
+          }),
+        ],
+        [
+          "opencode-go-chat",
+          new ProviderTemplate({
+            templateId: "opencode-go-chat",
+            templateNameMap: { "en-US": "OpenCode Go (Chat)" },
+            deprecated: true,
+            config: new ProviderConfig({}),
+          }),
+        ],
+      ]),
+    });
+    const view = new ProviderSettingsFacade(service).getView();
+
+    expect(view.providerTemplates.map(({ templateId }) => templateId)).toEqual(["opencode-api"]);
+  });
+
   it("Settings View 同时投影 Personal、Effective、问题和调序能力", async () => {
     const service = await createService();
     const view = new ProviderSettingsFacade(service).getView();

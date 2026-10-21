@@ -389,7 +389,18 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       expect(openrouter?.builtinModelIds).toEqual(
         expect.arrayContaining(["openai/gpt-5.6-sol", "anthropic/claude-opus-5", "z-ai/glm-5.3"]),
       );
-      expect(snapshot.providerTemplates?.has("opencode-go")).toBe(true);
+      expect(snapshot.providerTemplates?.get("opencode-api")?.deprecated).toBe(false);
+      for (const templateId of [
+        "opencode-go",
+        "opencode-go-chat",
+        "opencode-go-messages",
+        "opencode-go-responses",
+        "opencode-zen-responses",
+        "opencode-zen-messages",
+        "opencode-zen-chat",
+      ]) {
+        expect(snapshot.providerTemplates?.get(templateId)?.deprecated).toBe(true);
+      }
     } finally {
       source.dispose();
     }
@@ -544,7 +555,14 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         "anthropic",
         "xai",
         "openrouter",
+        "opencode-api",
         "opencode-go",
+        "opencode-go-chat",
+        "opencode-go-messages",
+        "opencode-go-responses",
+        "opencode-zen-responses",
+        "opencode-zen-messages",
+        "opencode-zen-chat",
       ]);
       for (const [templateId, template] of snapshot.providerTemplates?.entries() ?? []) {
         expect(
@@ -982,7 +1000,14 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         "template:anthropic",
         "template:xai",
         "template:openrouter",
+        "template:opencode-api",
         "template:opencode-go",
+        "template:opencode-go-chat",
+        "template:opencode-go-messages",
+        "template:opencode-go-responses",
+        "template:opencode-zen-responses",
+        "template:opencode-zen-messages",
+        "template:opencode-zen-chat",
       ]);
 
       for (const provider of resolution.registryProviders) {

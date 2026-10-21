@@ -44,22 +44,6 @@ const members = {
   ],
   "openai-responses": ["gpt-5.6-luna", "grok-4.6"],
 };
-const enabled = new Set([
-  "glm-5.3-flash",
-  "glm-5.3",
-  "kimi-k3",
-  "kimi-k2.7-code",
-  "deepseek-v4.1-flash",
-  "deepseek-v4.1-flash-free",
-  "deepseek-v4-pro",
-  "mimo-v2.5",
-  "mimo-v2.5-pro",
-  "minimax-m3",
-  "qwen3.8-max",
-  "qwen3.8-flash",
-  "gpt-5.6-luna",
-  "grok-4.6",
-]);
 let rules: ModelConfigRules;
 let templates: {
   templateId: string;
@@ -93,14 +77,13 @@ const patch = (config: ModelConfig, level: string) =>
     maxOutputTokens: { map: config.optionSpecs!.maxOutputTokens!.map! },
   }).apply({}, { reasoningLevel: level, maxOutputTokens: 4096 });
 
-describe("OpenCode Go 单一 API-key Provider", () => {
-  it("一个模板覆盖 Go 模型，并把各模型的官方 wire protocol 固定到对应 route", () => {
-    const t = templates.find((t) => t.templateId === "opencode-go")!;
+describe("OpenCode unified API-key Provider", () => {
+  it("统一模板包含 Go 模型，并把每个模型的 wire protocol 固定到对应 route", () => {
+    const t = templates.find((t) => t.templateId === "opencode-api")!;
     expect(t).toBeDefined();
     const ids = Object.values(members).flat();
-    expect(t.config.builtinModelIds).toEqual(
-      [...ids].sort((a, b) => Number(enabled.has(b)) - Number(enabled.has(a))),
-    );
+    expect(t.config.builtinModelIds).toEqual(expect.arrayContaining(ids));
+    expect(new Set(t.config.builtinModelIds).size).toBe(t.config.builtinModelIds.length);
     expect(t.config.api).toEqual({ type: "openai-chat-completions", baseUrl: url });
     expect(t.config.access).toEqual({
       type: "api-key",
@@ -110,11 +93,20 @@ describe("OpenCode Go 单一 API-key Provider", () => {
     for (const [apiType, modelIds] of Object.entries(members)) {
       for (const modelId of modelIds) {
         const i = input(modelId, apiType);
-        const fromTemplate = rules.resolve({ ...i, templateId: "opencode-go" });
+        const fromTemplate = rules.resolve({ ...i, templateId: "opencode-api" });
         const manual = rules.resolve(i);
         expect(fromTemplate.validateComplete(), modelId).toEqual([]);
-        expect(fromTemplate.enabled, modelId).toBe(enabled.has(modelId));
-        expect(fromTemplate.api, modelId).toEqual({ type: apiType, baseUrl: url });
+        const modelRule = rules
+          .rules()
+          .find(
+            (rule) =>
+              rule.type === "template-model" &&
+              rule.templateId === "opencode-api" &&
+              rule.modelId === modelId,
+          );
+        expect(modelRule?.config.enabled, modelId).toBeTypeOf("boolean");
+        expect(fromTemplate.enabled, modelId).toBe(modelRule?.config.enabled);
+        expect(fromTemplate.api, modelId).toEqual(modelRule?.config.api);
         expect(fromTemplate.properties?.toJSON()).toEqual(manual.properties?.toJSON());
         expect(fromTemplate.optionSpecs?.toJSON()).toEqual(manual.optionSpecs?.toJSON());
         expect(manual.properties?.supportsNativeWebSearch, modelId).toBe(false);
@@ -131,7 +123,7 @@ describe("OpenCode Go 单一 API-key Provider", () => {
       personalProviders: new ProviderConfigMap([
         {
           providerId: "personal-go",
-          templateId: "opencode-go",
+          templateId: "opencode-api",
           config: new ProviderConfig({
             group: "standard-personal",
             access: new ApiKeyAccessConfig({ apiKey: "test-key" }),

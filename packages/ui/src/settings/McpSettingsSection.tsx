@@ -10,6 +10,7 @@ import {
   COMMUNITY_MCP_PRESETS,
   communityMcpPresetConfig,
   convertToZCodeAgentMcpServer,
+  filterCommunityMcpPresets,
   type CommunityMcpPreset,
 } from "@zcode/shared";
 import {
@@ -99,6 +100,69 @@ export function isMcpOAuthAuthorizationStatusRefreshExpired(
   now: () => number = Date.now,
 ): boolean {
   return now() >= deadline;
+}
+
+export function McpCommunityCatalog({
+  presets,
+  onSelect,
+  onOpenSource,
+}: {
+  presets: readonly CommunityMcpPreset[];
+  onSelect: (preset: CommunityMcpPreset) => void;
+  onOpenSource: (sourceUrl: string) => void;
+}) {
+  const { intl } = useZCodeIntl();
+
+  return (
+    <section className="space-y-2" aria-labelledby="community-mcp-presets-title">
+      <div className="space-y-1">
+        <h3 id="community-mcp-presets-title" className="text-ui-base font-medium text-foreground">
+          {intl.formatMessage({ id: "settings.mcp.communityPresets.title" })}
+        </h3>
+        <p className="text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.mcp.communityPresets.description" })}
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {presets.map((preset) => (
+          <article
+            key={preset.id}
+            className="flex min-w-0 flex-col justify-between gap-2 rounded-lg border border-border bg-card p-3"
+            data-mcp-catalog-entry={preset.id}
+          >
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <h4 className="truncate text-ui-base font-medium text-foreground">{preset.name}</h4>
+                <p className="text-ui-sm text-foreground-subtle">
+                  {intl.formatMessage({
+                    id:
+                      preset.authRequirement === "none"
+                        ? "settings.mcp.communityPresets.authNone"
+                        : "settings.mcp.communityPresets.authOptionalApiKey",
+                  })}
+                </p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => onSelect(preset)}>
+                {intl.formatMessage({ id: "settings.mcp.communityPresets.configure" })}
+              </Button>
+            </div>
+            <button
+              className="inline-flex w-fit items-center gap-1 text-ui-sm text-foreground-subtle underline-offset-2 hover:text-foreground hover:underline"
+              type="button"
+              onClick={() => onOpenSource(preset.sourceUrl)}
+              aria-label={intl.formatMessage(
+                { id: "settings.mcp.communityPresets.source" },
+                { name: preset.name },
+              )}
+            >
+              {intl.formatMessage({ id: "settings.mcp.communityPresets.sourceLabel" })}
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export type McpServerStatusListRefreshOutcome =
@@ -1170,6 +1234,10 @@ export function McpSettingsSection({
     () => filterLocalMcpServers(scopedServers, query),
     [query, scopedServers],
   );
+  const filteredCommunityMcpPresets = useMemo(
+    () => filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, query),
+    [query],
+  );
   const connectedRemoteSyncTarget =
     shouldShowRemoteSyncActions({
       remoteSessionId,
@@ -1217,7 +1285,8 @@ export function McpSettingsSection({
     () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
     [availablePlugins],
   );
-  const filteredMcpCount = filteredServers.length + pluginMcpServers.length;
+  const filteredMcpCount =
+    filteredServers.length + pluginMcpServers.length + filteredCommunityMcpPresets.length;
   const pluginMcpGroups = useMemo(
     () => groupPluginMcpServersByPlugin(pluginMcpServers),
     [pluginMcpServers],
@@ -1517,32 +1586,11 @@ export function McpSettingsSection({
         className={!mcpProjectionReady || hasEmptySearchResult ? "hidden" : "space-y-6"}
         data-mcp-list-layout="grouped"
       >
-        <section className="space-y-2" aria-labelledby="community-mcp-presets-title">
-          <div className="space-y-1">
-            <h3
-              id="community-mcp-presets-title"
-              className="text-ui-base font-medium text-foreground"
-            >
-              {intl.formatMessage({ id: "settings.mcp.communityPresets.title" })}
-            </h3>
-            <p className="text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "settings.mcp.communityPresets.description" })}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {COMMUNITY_MCP_PRESETS.map((preset) => (
-              <Button
-                key={preset.id}
-                type="button"
-                variant="outline"
-                size="lg"
-                onClick={() => handleCreateFromPreset(preset)}
-              >
-                {preset.name}
-              </Button>
-            ))}
-          </div>
-        </section>
+        <McpCommunityCatalog
+          presets={filteredCommunityMcpPresets}
+          onSelect={handleCreateFromPreset}
+          onOpenSource={(sourceUrl) => platform.openExternal(sourceUrl)}
+        />
         <section
           className={hideInstalledGroup ? "hidden" : "space-y-4"}
           data-mcp-plugin-group="installed"

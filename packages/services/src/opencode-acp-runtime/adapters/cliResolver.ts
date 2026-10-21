@@ -61,6 +61,8 @@ export function getPosixOpenCodeCandidates(input: {
       ? join(env.MISE_DATA_DIR, "shims")
       : join(home, ".local", "share", "mise", "shims"),
     env.XDG_BIN_HOME ?? "",
+    // OpenCode 官方安装脚本写入 ~/.opencode/bin；GUI Host 可能没有加载用户 shell 的 PATH 配置。
+    join(home, ".opencode", "bin"),
     join(home, ".local", "bin"),
     join(home, ".npm-global", "bin"),
     join(home, "npm", "bin"),

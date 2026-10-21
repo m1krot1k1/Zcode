@@ -139,7 +139,7 @@ describe("Todo95 专用 Map 合法请求等价", () => {
       rules[scope]!.flatMap((rule) =>
         rule.modelMatch !== ".*" &&
         !newModelMatchers.has(rule.modelMatch) &&
-        // Go 新站点不属于 Todo95 历史基线；成员/档位/请求由 opencode-go 独立用例验证。
+        // OpenCode 新站点不属于 Todo95 历史基线；成员/档位/请求由 opencode-api 独立用例验证。
         !(
           scope === "providerSiteRules" && rule.baseUrlMatch === "https://opencode\\.ai/zen/go/v1/?"
         ) &&

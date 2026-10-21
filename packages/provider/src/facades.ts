@@ -670,6 +670,8 @@ function createProviderSettingsView(input: {
     providerTemplates: Object.freeze(
       (input.zcodeBuiltinProviderTemplates ?? ProviderTemplateMap.empty())
         .entries()
+        // 兼容项只服务已保存的连接；不能再次作为新建入口暴露给用户。
+        .filter(([, template]) => !template.deprecated)
         .map(([templateId, template]) =>
           Object.freeze({
             templateId,

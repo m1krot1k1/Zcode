@@ -6,6 +6,9 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   InMemoryRuntimeTaskRegistry,
+  createPrismHostEvidenceReceipt,
+  createPrismTaskContract,
+  reducePrismTaskAcceptance,
   SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
   SUBAGENT_ROOT_MAX_TASKS,
   type RuntimeTaskCancellationHandle,
@@ -43,6 +46,167 @@ describe("subagent root admission and ownership", () => {
     expect(Object.keys(registry.all())).toHaveLength(
       SUBAGENT_ROOT_MAX_ACTIVE_TASKS - 1,
     );
+  });
+
+  it("accepts only complete Host receipts for the current attempt and branch", () => {
+    const contract = createPrismTaskContract({
+      rootRunId: "root-run-prism",
+      taskId: "agent-prism",
+      attemptId: "attempt-current",
+      branchGeneration: 3,
+      description: "Implement the requested behavior",
+      criteria: [
+        {
+          id: "unit-tests",
+          description: "The focused tests pass",
+          evaluatorId: "vitest",
+          evaluatorVersion: "4.1.5",
+        },
+        {
+          id: "patch-review",
+          description: "The patch has no rejected hunks",
+          evaluatorId: "git-diff-check",
+          evaluatorVersion: "1",
+        },
+      ],
+    });
+    const current = {
+      rootRunId: contract.rootRunId,
+      taskId: contract.taskId,
+      attemptId: contract.attemptId,
+      branchGeneration: contract.branchGeneration,
+    };
+    const firstReceipt = createPrismHostEvidenceReceipt({
+      ...current,
+      criterionId: "unit-tests",
+      contractSha256: contract.contractSha256,
+      evaluatorId: "vitest",
+      evaluatorVersion: "4.1.5",
+      verifierInvocationId: "host-run-1",
+      result: "pass",
+      artifact: {
+        uri: "zcode-artifact://tests/prism",
+        sha256: "a".repeat(64),
+        bytes: 123,
+      },
+      observedAt: 100,
+    });
+    const secondReceipt = createPrismHostEvidenceReceipt({
+      ...current,
+      criterionId: "patch-review",
+      contractSha256: contract.contractSha256,
+      evaluatorId: "git-diff-check",
+      evaluatorVersion: "1",
+      verifierInvocationId: "host-run-2",
+      result: "pass",
+      artifact: {
+        uri: "zcode-artifact://patches/prism",
+        sha256: "b".repeat(64),
+        bytes: 44,
+      },
+      observedAt: 101,
+    });
+
+    expect(
+      reducePrismTaskAcceptance({ contract, receipts: [], current }),
+    ).toMatchObject({ status: "unknown", missingCriterionIds: ["unit-tests", "patch-review"] });
+    expect(
+      reducePrismTaskAcceptance({
+        contract,
+        receipts: [firstReceipt, secondReceipt],
+        current,
+      }),
+    ).toMatchObject({ status: "verified", passedCriterionIds: ["unit-tests", "patch-review"] });
+    expect(
+      reducePrismTaskAcceptance({
+        contract,
+        receipts: [firstReceipt, secondReceipt],
+        current: { ...current, attemptId: "attempt-old" },
+      }).status,
+    ).toBe("unknown");
+    expect(
+      reducePrismTaskAcceptance({
+        contract,
+        receipts: [firstReceipt, secondReceipt],
+        current: { ...current, branchGeneration: 4 },
+      }).status,
+    ).toBe("unknown");
+    expect(
+      reducePrismTaskAcceptance({
+        contract,
+        receipts: [
+          { ...firstReceipt, issuer: "worker" },
+          secondReceipt,
+        ],
+        current,
+      }).status,
+    ).toBe("unknown");
+    expect(
+      reducePrismTaskAcceptance({
+        contract,
+        receipts: [
+          firstReceipt,
+          secondReceipt,
+          createPrismHostEvidenceReceipt({
+            ...current,
+            criterionId: "unit-tests",
+            contractSha256: contract.contractSha256,
+            evaluatorId: "vitest",
+            evaluatorVersion: "4.1.5",
+            verifierInvocationId: "host-run-failed",
+            result: "fail",
+            artifact: {
+              uri: "zcode-artifact://tests/prism",
+              sha256: "c".repeat(64),
+              bytes: 123,
+            },
+            observedAt: 102,
+          }),
+        ],
+        current,
+      }).status,
+    ).toBe("rejected");
+  });
+
+  it("bounds PRISM contracts and verifies their content hash", () => {
+    const input = {
+      rootRunId: "root-run-prism-bounds",
+      taskId: "agent-prism-bounds",
+      attemptId: "attempt-bounds",
+      branchGeneration: 0,
+      description: "Bounded contract",
+      criteria: [
+        {
+          id: "criterion",
+          description: "Valid criterion",
+          evaluatorId: "host-check",
+          evaluatorVersion: "1",
+        },
+      ],
+    };
+    const contract = createPrismTaskContract(input);
+    expect(contract.contractSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(() =>
+      createPrismTaskContract({
+        ...input,
+        criteria: Array.from({ length: 17 }, (_, index) => ({
+          ...input.criteria[0]!,
+          id: `criterion-${index}`,
+        })),
+      }),
+    ).toThrow(/Invalid or oversized/u);
+    expect(
+      reducePrismTaskAcceptance({
+        contract: { ...contract, description: "tampered" },
+        receipts: [],
+        current: {
+          rootRunId: contract.rootRunId,
+          taskId: contract.taskId,
+          attemptId: contract.attemptId,
+          branchGeneration: contract.branchGeneration,
+        },
+      }).status,
+    ).toBe("unknown");
   });
 
   it("admits exactly 128 nodes and rejects node 129 before registration", () => {

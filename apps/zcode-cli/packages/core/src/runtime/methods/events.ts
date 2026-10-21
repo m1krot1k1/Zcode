@@ -2,6 +2,8 @@ import type { WorkspaceId } from "@zcode/contracts";
 import { buildExecutionStateEntry, readRuntimeExecutionState } from "../execution-state.js";
 import {
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
+  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+  SESSION_ENTRY_PRISM_TASK_CONTRACT,
   SESSION_ENTRY_USER_INPUT_AUTO_RESOLUTION,
   SessionEventType,
   createMessageId,
@@ -15,6 +17,11 @@ import type {
   SessionEvent,
   SessionId,
   TargetCompletionVerificationPayload,
+  PrismEvidenceReceiptObservedPayload,
+  PrismHostEvidenceReceipt,
+  PrismTaskAcceptanceLineage,
+  PrismTaskContract,
+  PrismTaskContractDeclaredPayload,
   TraceContext,
   TurnInputIntentMetadata,
   UserInputAutoResolutionUpdatedPayload,
@@ -30,6 +37,10 @@ import {
   persistWorkspaceCheckpointEntry,
   persistWorkspaceFileRewindEntry,
 } from "./workspace-checkpoint-persistence.js";
+import {
+  isValidPrismHostEvidenceReceipt,
+  isValidPrismTaskContract,
+} from "../../runtime-task/registry.js";
 
 const SESSION_EVENT_APPEND_SUMMARY_FLUSH_COUNT = 100;
 
@@ -49,6 +60,8 @@ const LIFECYCLE_SESSION_EVENT_TYPES = new Set<SessionEventType>([
   SessionEventType.ModelComplete,
   SessionEventType.TurnComplete,
   SessionEventType.TurnError,
+  SessionEventType.PrismTaskContractDeclared,
+  SessionEventType.PrismEvidenceReceiptObserved,
 ]);
 
 interface SessionEventAppendAggregate {
@@ -284,6 +297,16 @@ async function persistDurableSessionEvent(
     return;
   }
 
+  if (event.type === SessionEventType.PrismTaskContractDeclared) {
+    await persistPrismTaskContract.call(this, event, traceContext);
+    return;
+  }
+
+  if (event.type === SessionEventType.PrismEvidenceReceiptObserved) {
+    await persistPrismEvidenceReceipt.call(this, event, traceContext);
+    return;
+  }
+
   if (event.type === SessionEventType.CheckpointCreated) {
     await persistWorkspaceCheckpointEntry(this, event, traceContext);
     return;
@@ -503,6 +526,234 @@ async function persistDurableSessionEvent(
       status: "failed",
     });
   }
+}
+
+async function persistPrismTaskContract(
+  this: AgentRuntimeInternal,
+  event: SessionEvent,
+  traceContext: TraceContext,
+): Promise<void> {
+  const store = this.sessionStore;
+  if (!store?.saveSessionEntry || !store.sessionEntries) {
+    throw new Error("PRISM evidence persistence is unavailable");
+  }
+  const contract = (event.payload as PrismTaskContractDeclaredPayload | undefined)?.contract;
+  if (!isValidPrismTaskContract(contract)) {
+    throw new Error("Invalid PRISM task contract");
+  }
+  const lineage = resolveCurrentPrismTaskLineage.call(this, event.sessionId, contract.taskId);
+  if (!lineageMatchesContract(lineage, contract)) {
+    // 原因：迟到的旧 attempt/branch 事件不能覆盖当前任务的证据来源。
+    throw new Error("PRISM task contract lineage is stale");
+  }
+
+  const entryId = prismTaskContractEntryId(lineage.rootSessionId, contract);
+  const entries = await store.sessionEntries({
+    sessionID: lineage.rootSessionId,
+    type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  });
+  const existing = entries.find((entry) => entry.id === entryId);
+  if (existing) {
+    const existingContract = isRecord(existing.data) ? existing.data.contract : undefined;
+    if (
+      isValidPrismTaskContract(existingContract) &&
+      existingContract.contractSha256 === contract.contractSha256
+    ) {
+      return;
+    }
+    // 原因：SessionEntry upsert 会静默覆盖同一个 id；冲突时必须 fail-closed 才能保持 append-only。
+    throw new Error("Conflicting PRISM task contract receipt");
+  }
+
+  const timestamp = event.timestamp.getTime();
+  try {
+    await store.saveSessionEntry({
+      id: entryId,
+      sessionID: lineage.rootSessionId,
+      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      touchSession: false,
+      time: { created: timestamp, updated: timestamp },
+      data: { contract },
+    });
+  } catch (error) {
+    this.logger?.warn("Failed to persist PRISM task contract", {
+      ...traceContextToLogContext(traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "session_entry.prism_task_contract.persist_failed",
+      module: "core.runtime",
+      taskId: contract.taskId,
+      status: "failed",
+    });
+    throw error;
+  }
+}
+
+async function persistPrismEvidenceReceipt(
+  this: AgentRuntimeInternal,
+  event: SessionEvent,
+  traceContext: TraceContext,
+): Promise<void> {
+  const store = this.sessionStore;
+  if (!store?.saveSessionEntry || !store.sessionEntries) {
+    throw new Error("PRISM evidence persistence is unavailable");
+  }
+  const receipt = (event.payload as PrismEvidenceReceiptObservedPayload | undefined)?.receipt;
+  if (!isValidPrismHostEvidenceReceipt(receipt)) {
+    throw new Error("Invalid PRISM Host evidence receipt");
+  }
+  const lineage = resolveCurrentPrismTaskLineage.call(this, event.sessionId, receipt.taskId);
+  if (!lineageMatchesReceipt(lineage, receipt)) {
+    // 原因：旧 branch generation 或旧 attempt 的结果在 rewind/resume 后不得成为当前证据。
+    throw new Error("PRISM evidence receipt lineage is stale");
+  }
+
+  const contractEntries = await store.sessionEntries({
+    sessionID: lineage.rootSessionId,
+    type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  });
+  const contractEntryId = prismTaskContractEntryId(lineage.rootSessionId, {
+    rootRunId: receipt.rootRunId,
+    taskId: receipt.taskId,
+    attemptId: receipt.attemptId,
+  });
+  const contractData = contractEntries.find((entry) => entry.id === contractEntryId)?.data;
+  const contract = isRecord(contractData) ? contractData.contract : undefined;
+  if (
+    !isValidPrismTaskContract(contract) ||
+    contract.contractSha256 !== receipt.contractSha256 ||
+    !contract.criteria.some(
+      (criterion) =>
+        criterion.id === receipt.criterionId &&
+        criterion.evaluatorId === receipt.evaluatorId &&
+        criterion.evaluatorVersion === receipt.evaluatorVersion,
+    )
+  ) {
+    throw new Error("PRISM evidence receipt does not match the persisted task contract");
+  }
+
+  const entryId = prismEvidenceReceiptEntryId(lineage.rootSessionId, receipt);
+  const entries = await store.sessionEntries({
+    sessionID: lineage.rootSessionId,
+    type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+  });
+  const existing = entries.find((entry) => entry.id === entryId);
+  if (existing) {
+    const existingReceipt = isRecord(existing.data) ? existing.data.receipt : undefined;
+    if (
+      isValidPrismHostEvidenceReceipt(existingReceipt) &&
+      JSON.stringify(existingReceipt) === JSON.stringify(receipt)
+    ) {
+      return;
+    }
+    // 原因：同一个 verifier invocation 的结果不可被后续 upsert 改写。
+    throw new Error("Conflicting PRISM evidence receipt");
+  }
+
+  const timestamp = event.timestamp.getTime();
+  try {
+    await store.saveSessionEntry({
+      id: entryId,
+      sessionID: lineage.rootSessionId,
+      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      touchSession: false,
+      time: { created: timestamp, updated: timestamp },
+      data: { receipt },
+    });
+  } catch (error) {
+    this.logger?.warn("Failed to persist PRISM evidence receipt", {
+      ...traceContextToLogContext(traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "session_entry.prism_evidence_receipt.persist_failed",
+      module: "core.runtime",
+      receiptId: receipt.receiptId,
+      status: "failed",
+      taskId: receipt.taskId,
+    });
+    throw error;
+  }
+}
+
+function resolveCurrentPrismTaskLineage(
+  this: AgentRuntimeInternal,
+  eventSessionId: SessionId,
+  taskId: string,
+): PrismTaskAcceptanceLineage & { rootSessionId: SessionId } {
+  const task = this.runtimeTaskRegistry.get(taskId);
+  if (
+    this.sessionId !== eventSessionId ||
+    !task ||
+    task.type !== "local_agent" ||
+    task.parentSessionId !== eventSessionId ||
+    !task.rootRunId ||
+    !task.rootSessionId ||
+    !task.attemptId ||
+    task.branchGeneration === undefined ||
+    this.runtimeTaskRegistry.getBranchGenerationForSession(eventSessionId) !==
+      task.branchGeneration
+  ) {
+    // 原因：只有直接 owner runtime 能发布子任务的证据，worker 不能把事件伪装到父会话。
+    throw new Error("PRISM task is not registered in the current branch");
+  }
+  const parent = Object.values(this.runtimeTaskRegistry.all()).find(
+    (candidate) =>
+      candidate.type === "local_agent" &&
+      candidate.childSessionId === task.parentSessionId,
+  );
+  if (parent && parent.rootRunId !== task.rootRunId) {
+    throw new Error("PRISM task parent belongs to a different root run");
+  }
+  return {
+    rootRunId: task.rootRunId,
+    rootSessionId: task.rootSessionId,
+    taskId: task.taskId,
+    parentTaskId: parent?.taskId,
+    attemptId: task.attemptId,
+    branchGeneration: task.branchGeneration,
+  };
+}
+
+function lineageMatchesContract(
+  lineage: PrismTaskAcceptanceLineage,
+  contract: PrismTaskContract,
+): boolean {
+  return (
+    lineage.rootRunId === contract.rootRunId &&
+    lineage.taskId === contract.taskId &&
+    lineage.parentTaskId === contract.parentTaskId &&
+    lineage.attemptId === contract.attemptId &&
+    lineage.branchGeneration === contract.branchGeneration
+  );
+}
+
+function lineageMatchesReceipt(
+  lineage: PrismTaskAcceptanceLineage,
+  receipt: PrismHostEvidenceReceipt,
+): boolean {
+  return (
+    lineage.rootRunId === receipt.rootRunId &&
+    lineage.taskId === receipt.taskId &&
+    lineage.parentTaskId === receipt.parentTaskId &&
+    lineage.attemptId === receipt.attemptId &&
+    lineage.branchGeneration === receipt.branchGeneration
+  );
+}
+
+function prismTaskContractEntryId(
+  rootSessionId: SessionId,
+  contract: Pick<PrismTaskContract, "rootRunId" | "taskId" | "attemptId">,
+): string {
+  return `prism-task-contract:${rootSessionId}:${contract.rootRunId}:${contract.taskId}:${contract.attemptId}`;
+}
+
+function prismEvidenceReceiptEntryId(
+  rootSessionId: SessionId,
+  receipt: Pick<PrismHostEvidenceReceipt, "receiptId">,
+): string {
+  return `prism-evidence-receipt:${rootSessionId}:${receipt.receiptId}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function targetCompletionVerificationTimelineMessageId(

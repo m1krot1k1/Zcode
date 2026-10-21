@@ -1,15 +1,15 @@
 # 当前配置与维护状态
 
-新增候选、公开目录缺项和规则解析差异见[扩展计划](./expansion-plan.md)。下文仍记录 revision 33 的实际配置；研究建议尚未实施。
+新增候选、公开目录缺项和规则解析差异见[扩展计划](./expansion-plan.md)。本节按 2026-10-21 的 `dev` 工作树与 Built-in revision 35 更新；上游研究建议不自动视为已实施。
 
 ## 基线与口径
 
-- 检查日期：2026-10-14（北京时间）。代码基线：staging `68fac8de4fcc69972dc8c0a44b939702d3c571ea`，产品源码版本 3.15.3；不表示该版本已发布。
-- 正式/测试均为 schemaVersion 1、revision 33。本次文档 MR 未修改配置或 revision。
-- 21 个普通 API 模板，10 个固定账号 Provider；模板成员共 246 条，包含跨模板重复型号。
-- Model 规则 83、Model+API 规则 73、正式 Site 规则 54、测试 Site 规则 63、模板精确规则 248、固定 Provider 精确规则 30。
-- 正式文件 SHA-256：`361b778f89496a37540d23a9d309efe6cb8fc97d557119cefbffc67df2f93998`。
-- 测试文件 SHA-256：`ae897a66877b52ff4b227e2a972e9a1aa15ac33de7493ab78d72a15dd68c6374`。hash 针对基线 Git 内容（LF）；本地 CRLF checkout 需要按仓库换行归一后比较。
+- 检查日期：2026-10-21。产品源码版本 3.17.0；版本号不表示该版本已发布。
+- 正式/测试均为 schemaVersion 1、revision 35。
+- 23 个原始 API template records（16 个可新建模板、7 个隐藏兼容模板），10 个固定账号 Provider；模板成员共 331 条，包含跨模板重复型号。
+- Model 规则 83、Model+API 规则 73、正式 Site 规则 55、测试 Site 规则 64、模板精确规则 333、固定 Provider 精确规则 30。
+- 正式文件 SHA-256：`f320dad107e121f8fc30756d2a29078f8d56067e5d8993ef5066b4d7177ad58d`。
+- 测试文件 SHA-256：`84a4c79cb749ee45ffede5bf590bed70f1e3f629c3d7c1e8fa43142ad4a0e3db`。Хэши рассчитаны по LF-байтам файлов.
 
 清单直接从[正式 JSON](../../config/provider/zcode-builtin.json)提取。下面的启停是模板精确规则，不包含用户覆盖或实际 Key/权益；存在于列表不等于该入口在本轮已真实验证。
 
@@ -32,12 +32,20 @@
 | `anthropic`                      | `anthropic-messages`      | 5      | 5          |
 | `xai`                            | `openai-responses`        | 3      | 2          |
 | `openrouter`                     | `anthropic-messages`      | 59     | 11         |
-| `opencode-go-chat`               | `openai-chat-completions` | 15     | 8          |
+| `opencode-api`                   | per-model (3 protocols)   | 58     | 28         |
+| `opencode-go`                    | per-model (3 protocols)   | 26     | 14         |
+| `opencode-go-chat`               | `openai-chat-completions` | 16     | 9          |
 | `opencode-go-messages`           | `anthropic-messages`      | 8      | 3          |
 | `opencode-go-responses`          | `openai-responses`        | 2      | 2          |
 | `opencode-zen-responses`         | `openai-responses`        | 14     | 2          |
 | `opencode-zen-messages`          | `anthropic-messages`      | 15     | 5          |
 | `opencode-zen-chat`              | `openai-chat-completions` | 14     | 10         |
+
+### OpenCode catalog and compatibility
+
+Settings exposes only `opencode-api` for new API-key connections. Its 58 unique models preserve the selected upstream protocol and endpoint per model; 28 are enabled by default. Duplicate IDs resolve to an enabled upstream route when one exists, with Go preferred on ties. The default template URL is the Go route, but a model rule explicitly overrides both protocol and URL where needed. The previous `opencode-go` template from the committed baseline and six Go/Zen variants remain deprecated and hidden from new-provider selection; the original Go template retains its exact 26 model rules, including disabled states and per-model protocol/URL.
+
+The merged catalog routes 15 Go and 8 Zen models through OpenAI Chat Completions, 6 Go and 14 Zen through Anthropic Messages, and 2 Go and 13 Zen through OpenAI Responses. This static inventory does not prove a live OpenCode API request or authenticate the local OpenCode CLI.
 
 ## 完整成员与默认启停
 
@@ -175,22 +183,20 @@
 
 ## 已知差异和后续项
 
-| 项目               | 已确认事实                                                                                                                                          | 处理边界                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 默认基线简化       | revision 32 已实现百万窗口/128000 最大输出基线、简化匹配及两条规则删除                                                                              | 取舍及兼容边界见[匹配与简化](./configuration.md#匹配与简化)，不再作为待实施事项     |
-| 清单漂移           | 旧维护清单部分型号、默认启停与本节不同；如普通 GLM 模板的 GLM-5V-Turbo 当前默认关闭                                                                 | 不按历史星号自动改配置；改启停另提行为 MR                                           |
-| 脱离静态成员的规则 | zai-api/bigmodel-api 各有 GLM-5-Turbo 默认关闭规则，但不是当前模板成员；四个个人/团队 Provider 各有 GLM-5.2 与 GLM-5-Turbo 精确规则，超出其静态成员 | 先核对个人同 ID 模型、动态成员与历史用途，不能直接判为孤儿删除                      |
-| 历史移除意图       | 旧库存的删除段与当前 MiniMax M2.1/M2 等保留成员存在差异                                                                                             | 重新核实上游入口与产品决定，不在文档 MR 中删除                                      |
-| MiMo 双产品入口    | revision 33 已包含 `xiaomi-mimo` 普通 API 与 `xiaomi-mimo-token-plan` 套餐模板；前者启用 V2.6 Pro/Flash 与 V2.5 Pro/V2.5，后者启用 V2.6 Pro/Flash   | 已合入 staging；本轮按代码与测试核验，不等于两个产品的真实 Key 调用或线上采用已验证 |
-| 新供应商/云入口    | Gemini、Mistral 无内置模板；Azure/Ark/Bedrock 仍为候选                                                                                              | 现有执行链可直接支持的新增均可推进；需要额外适配的路径暂缓，候选不等于已验证        |
-| 官方目录新变化     | OpenAI、Anthropic、Z.AI、xAI、MiMo、OpenCode 有需复核项                                                                                             | 见[研究记录](./research.md)，不是已验证配置变更                                     |
-| 线上状态           | 本轮未查询生产/测试控制面或实际安装包                                                                                                               | 不能以源码 revision 33 推断线上也是 33                                              |
+| 项目               | 已确认事实                                                                                                                                          | 处理边界                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 默认基线简化       | revision 32 已实现百万窗口/128000 最大输出基线、简化匹配及两条规则删除                                                                              | 取舍及兼容边界见[匹配与简化](./configuration.md#匹配与简化)，不再作为待实施事项 |
+| 清单漂移           | 旧维护清单部分型号、默认启停与本节不同；如普通 GLM 模板的 GLM-5V-Turbo 当前默认关闭                                                                 | 不按历史星号自动改配置；改启停另提行为 MR                                       |
+| 脱离静态成员的规则 | zai-api/bigmodel-api 各有 GLM-5-Turbo 默认关闭规则，但不是当前模板成员；四个个人/团队 Provider 各有 GLM-5.2 与 GLM-5-Turbo 精确规则，超出其静态成员 | 先核对个人同 ID 模型、动态成员与历史用途，不能直接判为孤儿删除                  |
+| 历史移除意图       | 旧库存的删除段与当前 MiniMax M2.1/M2 等保留成员存在差异                                                                                             | 重新核实上游入口与产品决定，不在文档 MR 中删除                                  |
+| MiMo 双产品入口    | revision 34 包含 `xiaomi-mimo` 普通 API 与 `xiaomi-mimo-token-plan` 套餐模板；前者启用 V2.6 Pro/Flash 与 V2.5 Pro/V2.5，后者启用 V2.6 Pro/Flash     | 源码配置已核对，不等于两个产品的真实 Key 调用或线上采用已验证                   |
+| 新供应商/云入口    | Gemini、Mistral 无内置模板；Azure/Ark/Bedrock 仍为候选                                                                                              | 现有执行链可直接支持的新增均可推进；需要额外适配的路径暂缓，候选不等于已验证    |
+| 官方目录新变化     | OpenAI、Anthropic、Z.AI、xAI、MiMo、OpenCode 有需复核项                                                                                             | 见[研究记录](./research.md)，不是已验证配置                                     |
+| 线上状态           | 本轮未查询生产/测试控制面；本地候选包不等于已发布资产                                                                                               | 不从源码 revision 或本地构建推断线上状态                                        |
 
 ## 验证状态
 
-本基线的配置结构、模板成员和规则统计已静态核对；本轮 `pnpm provider:config:check-test` 通过，21 个模板的全部成员、默认启停及两份配置 hash 已与正文逐项对账。历史容量简化的定向单测和 Linux 桌面验证不计入本轮通过结果，也不等于所有供应商当前实测。
-
-同步 revision 33 后，正式配置完整性与 MiMo 双模板测试共 2 文件、17 项通过；指定测试配置重跑完整性测试 1 文件、15 项通过。MiMo 测试包含两环境成员、参数 Map 和旧实例覆盖保留。两份配置及 MiMo 单测/浏览器用例与本基线 staging 完全一致，本次文档 MR 未删除或回退这些内容。
+revision 35 的成员、规则计数与两份配置哈ши已按当前 JSON 静态重算；OpenCode API provider 的真实授权请求、local CLI 登录和发布资产仍需分别做运行时验收。
 
 本次未取得 API Key，未执行计费 API 请求，未重跑各供应商完整 Agent、桌面/手机和跨系统验收。新增维护项必须在自己的记录中补齐[验证证据](./validation.md)。
 
