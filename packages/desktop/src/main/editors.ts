@@ -17,7 +17,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join, win32 as pathWin32 } from "node:path";
+import { basename, join, win32 as pathWin32 } from "node:path";
 import { app, nativeImage } from "electron";
 import type { EditorInfo } from "@zcode/shared";
 import { getZCodeDataRootDir } from "@zcode/services/node";
@@ -343,6 +343,10 @@ export function getEditorDefsForCurrentPlatform(): EditorDef[] {
 
 /** 缓存检测结果，避免重复 IO */
 export function resolveEditorDefAppPath(def: EditorDef): string | null {
+  const macOSUserApplicationsPath =
+    process.platform === "darwin" && def.appPath.startsWith("/Applications/")
+      ? join(homedir(), "Applications", basename(def.appPath))
+      : undefined;
   const commandAppPaths =
     def.command && def.windowsCommandAppNames?.length
       ? deriveWindowsAppPathsFromCommand(def.command, def.windowsCommandAppNames)
@@ -356,6 +360,7 @@ export function resolveEditorDefAppPath(def: EditorDef): string | null {
   const candidatePaths = uniquePaths([
     def.appPath,
     ...(def.appPathCandidates ?? []),
+    macOSUserApplicationsPath,
     ...commandAppPaths,
     ...commandPaths,
   ]);

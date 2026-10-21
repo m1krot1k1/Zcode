@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Подготавливает Draft PR для явно staged кандидата. Локальные receipts не подтверждают
- * исполнение команды или независимую оценку; merge, release и promotion требуют отдельного решения.
+ * Формирует только локальный план для staged кандидата. --apply запрещён, пока внешний
+ * protected secret gate не настроен; локальные receipts не доказывают исполнение или независимую оценку.
  */
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";

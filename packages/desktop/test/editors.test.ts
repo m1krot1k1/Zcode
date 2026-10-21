@@ -70,6 +70,29 @@ async function importEditorsWithWindowsCommandMocks(
 }
 
 describe("editors", () => {
+  it("macOS resolves editor bundles from the current user's Applications directory", async () => {
+    setProcessPlatform("darwin");
+    const userAppPath = "/Users/Alice/Applications/Cursor.app";
+    vi.doMock("node:fs", async () => ({
+      ...(await vi.importActual<typeof import("node:fs")>("node:fs")),
+      existsSync: vi.fn((path: string) => path === userAppPath),
+    }));
+    vi.doMock("node:os", async () => ({
+      ...(await vi.importActual<typeof import("node:os")>("node:os")),
+      homedir: () => "/Users/Alice",
+    }));
+
+    const { resolveEditorDefAppPath } = await import("../src/main/editors.js");
+    expect(
+      resolveEditorDefAppPath({
+        id: "cursor",
+        name: "Cursor",
+        appPath: "/Applications/Cursor.app",
+        command: null,
+      }),
+    ).toBe(userAppPath);
+  });
+
   it("macOS 应把 VS Code Insiders 识别为可用编辑器", async () => {
     setProcessPlatform("darwin");
 

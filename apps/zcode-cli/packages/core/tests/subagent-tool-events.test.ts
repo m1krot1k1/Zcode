@@ -356,6 +356,162 @@ describe("subagent tool event projection", () => {
     }
   });
 
+  it("accounts durable child usage against only its root and blocks the next provider call", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-budget-root");
+    const independentSessionId = createSessionId("runtime-subagent-budget-independent");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = createRecordingSubagentSessionStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const childStarted = createDeferred<void>();
+    const releaseChild = createDeferred<void>();
+    const requestCount = new Map<SessionId, number>();
+    let childSessionId: SessionId | undefined;
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("root-budget-model"),
+        },
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "budget-child",
+              description: "Reports a root budget exhausting usage event",
+              source: "user",
+              systemPrompt: "Complete the budget test task.",
+              tools: ["Agent"],
+            },
+          ],
+        },
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+            const count = (requestCount.get(sessionId) ?? 0) + 1;
+            requestCount.set(sessionId, count);
+            if (sessionId === rootSessionId && count === 1) {
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: "call_budget_child",
+                    name: "Agent",
+                    input: {
+                      description: "Spend the root run token budget",
+                      prompt: "Run the budget test.",
+                      subagent_type: "budget-child",
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            if (sessionId === rootSessionId) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "This request must not be reached after child usage exhausts the root.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            childSessionId = sessionId;
+            childStarted.resolve();
+            await releaseChild.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Child completed with a durable usage event that exhausts its root budget.",
+              usage: { inputTokens: 0, outputTokens: 0, totalTokens: 500_001 },
+            };
+          },
+        }),
+      },
+    );
+    const independentRuntime = createTestAgentRuntime(
+      independentSessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("independent-budget-model"),
+        },
+        workingDirectory: "/workspace/project",
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            requestCount.set(independentSessionId, (requestCount.get(independentSessionId) ?? 0) + 1);
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Independent root completed.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+
+    const rootTurn = runtime.executeTurn("Exercise a root-scoped budget.");
+    try {
+      await childStarted.promise;
+      await independentRuntime.executeTurn("Independent root run.");
+      expect(requestCount.get(independentSessionId)).toBe(1);
+
+      releaseChild.resolve();
+      await rootTurn.catch(() => undefined);
+
+      expect(childSessionId).toBeDefined();
+      const childEvents = await eventStore.getEvents(childSessionId!);
+      expect(childEvents.some((event) =>
+        event.type === SessionEventType.ModelComplete &&
+        (event.payload as { usage?: { totalTokens?: number } }).usage?.totalTokens === 500_001,
+      )).toBe(true);
+      expect(requestCount.get(rootSessionId)).toBe(1);
+      expect(requestCount.get(childSessionId!)).toBe(1);
+      expect(requestCount.get(independentSessionId)).toBe(1);
+      const rootEvents = await eventStore.getEvents(rootSessionId);
+      const terminal = rootEvents.find(
+        (event) => event.type === SessionEventType.SubagentExecutionTerminal,
+      );
+      const terminalPayload = terminal?.payload as SubagentExecutionTerminalPayload | undefined;
+      expect(terminalPayload?.rootRunId).toContain(String(rootSessionId));
+      const spawned = rootEvents.find((event) => event.type === SessionEventType.SubagentSpawned);
+      const taskId = (spawned?.payload as { agentId?: string } | undefined)?.agentId;
+      expect(taskId).toBeTruthy();
+      expect(runtimeTaskRegistry.get(taskId!)?.rootRunId).toBe(terminalPayload?.rootRunId);
+      expect(terminal?.payload).toMatchObject({
+        childSessionId,
+      });
+      expect(terminalPayload?.terminalStatus).not.toBe("completed");
+      expect((await eventStore.getEvents(independentSessionId)).some(
+        (event) => event.type === SessionEventType.TurnComplete,
+      )).toBe(true);
+    } finally {
+      releaseChild.resolve();
+      await Promise.all([
+        runtime.closeBrowserSession(),
+        independentRuntime.closeBrowserSession(),
+        rootTurn.catch(() => undefined),
+      ]);
+    }
+  });
+
   it("cascades root shutdown through a real grandchild and waits for persisted settlement", async () => {
     const rootSessionId = createSessionId("runtime-subagent-tree-root");
     const eventStore = createTestSessionEventStore();
