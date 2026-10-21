@@ -193,7 +193,7 @@ export function assertPreviewResumeTagTarget(tag, existingTagSha, commitSha) {
 
 export function isMissingGitHubRelease(error) {
   const message = error instanceof Error ? error.message : String(error);
-  return /HTTP 404: Not Found/u.test(message);
+  return /HTTP 404: Not Found/u.test(message) || /(?:^|:\s)release not found$/iu.test(message);
 }
 
 export function replaceRootPackageLockVersion(source, nextVersion) {

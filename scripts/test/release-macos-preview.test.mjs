@@ -216,7 +216,15 @@ test("Preview resume requires the exact pushed version commit and permits only i
 
 test("Preview resume treats only GitHub 404 as an absent release", () => {
   assert.equal(isMissingGitHubRelease(new Error("gh: HTTP 404: Not Found")), true);
+  assert.equal(
+    isMissingGitHubRelease(new Error("gh завершился с кодом 1: release not found")),
+    true,
+  );
   assert.equal(isMissingGitHubRelease(new Error("gh: HTTP 403: Forbidden")), false);
+  assert.equal(
+    isMissingGitHubRelease(new Error("gh завершился с кодом 1: authentication failed")),
+    false,
+  );
   assert.equal(isMissingGitHubRelease(new Error("network timeout")), false);
 });
 
