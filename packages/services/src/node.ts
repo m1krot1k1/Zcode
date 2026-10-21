@@ -22,6 +22,8 @@ import { getZCodeDataRootDir as projectDataRoot } from "#src/paths.js";
 import { createTaskGroupService, ITaskGroupService, groupTaskKey } from "#src/task-groups/index.js";
 import { IGenUiService } from "./gen-ui/contract.js";
 import { createGenUiService } from "./gen-ui/node.js";
+import { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/contract.js";
+import { createOpenCodeAcpRuntime } from "./opencode-acp-runtime/adapters/openCodeAcpRuntime.js";
 import { channelReplyHostRequestSchema, channelReplyResultSchema } from "@zcode/shared";
 /* eslint-disable max-lines -- host process 服务注册和启动装配需要集中维护，拆散后会更难追踪依赖注入顺序 */
 // Node.js service implementations — NOT safe to import in browser code
@@ -1184,6 +1186,8 @@ export function createLocalServices(options: {
     workspacePath: string;
     workspaceIdentity: string;
   }) => Promise<{ workspacePath: string; workspaceIdentity: string } | null>;
+  /** 仅本机窗口级 Desktop Host 显式开启；Server/SSH/WSL/Docker/phone Host 不提供。 */
+  enableOpenCodeAcpRuntime?: boolean;
   /** Host 装配层注入的设置权威；与网络 transport 必须来自同一 Window Host 生命周期。 */
   settingService?: ISettingService;
   setWorkspaceProjection?: ReturnType<
@@ -2947,6 +2951,10 @@ export function createLocalServices(options: {
     )
     .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());
 
+  if (options?.enableOpenCodeAcpRuntime && !isDesktopAttachedRemote) {
+    services.register(IOpenCodeAcpRuntime, createOpenCodeAcpRuntime());
+  }
+
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire
   // 恢复，不能把"当前还没有 Helper"误当成"不需要生命周期所有者"。dispose 时串行 stop host。
   registerManagedCuaHelperHostForDispose(services, {
@@ -3099,6 +3107,10 @@ function readTelemetryOAuthUserId(rawUserInfo: string | null): string {
 export function disposeServiceResources(services: ServiceCollection): void {
   const content = services.getOptional(ICloudContentService);
   if (content && hasDisposeAllAndWait(content)) void content.disposeAllAndWait().catch(() => {});
+  void services
+    .getOptional(IOpenCodeAcpRuntime)
+    ?.disposeAllAndWait()
+    .catch(() => {});
   (
     services.getOptional(IGenUiService) as (IGenUiService & { dispose?(): void }) | undefined
   )?.dispose?.();
@@ -3155,6 +3167,7 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     services.getOptional(IFileWatcherService),
     services.getOptional(ISubagentsService),
     services.getOptional(IOffPeakTaskService),
+    services.getOptional(IOpenCodeAcpRuntime),
   ].filter((service) => service !== undefined);
 
   for (const service of disposableServices) {

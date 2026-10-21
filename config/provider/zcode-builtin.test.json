@@ -507,10 +507,10 @@
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "templateNameMap": {
-            "zh-CN": "OpenCode Go (Chat)",
-            "en-US": "OpenCode Go (Chat)"
+            "zh-CN": "OpenCode Go（API 密钥）",
+            "en-US": "OpenCode Go (API key)"
           },
           "config": {
             "access": {
@@ -531,178 +531,23 @@
               "deepseek-v4-pro",
               "mimo-v2.5",
               "mimo-v2.5-pro",
+              "minimax-m3",
+              "qwen3.8-max",
+              "qwen3.8-flash",
+              "gpt-5.6-luna",
+              "grok-4.6",
               "glm-5.2",
               "glm-5.1",
               "kimi-k2.6",
               "deepseek-v4-flash",
               "deepseek-v4-flash-vision-exp",
               "hy4-preview",
-              "hy3"
-            ],
-            "logo": {
-              "type": "builtin",
-              "key": "opencode"
-            }
-          }
-        },
-        {
-          "templateId": "opencode-go-messages",
-          "templateNameMap": {
-            "zh-CN": "OpenCode Go (Anthropic)",
-            "en-US": "OpenCode Go (Anthropic)"
-          },
-          "config": {
-            "access": {
-              "type": "api-key",
-              "apiKeyManagementUrl": "https://opencode.ai/auth"
-            },
-            "api": {
-              "type": "anthropic-messages",
-              "baseUrl": "https://opencode.ai/zen/go/v1"
-            },
-            "builtinModelIds": [
-              "minimax-m3",
-              "qwen3.8-max",
-              "qwen3.8-flash",
+              "hy3",
               "minimax-m2.7",
               "minimax-m2.5",
               "qwen3.7-max",
               "qwen3.7-plus",
               "qwen3.6-plus"
-            ],
-            "logo": {
-              "type": "builtin",
-              "key": "opencode"
-            }
-          }
-        },
-        {
-          "templateId": "opencode-go-responses",
-          "templateNameMap": {
-            "zh-CN": "OpenCode Go (Responses)",
-            "en-US": "OpenCode Go (Responses)"
-          },
-          "config": {
-            "access": {
-              "type": "api-key",
-              "apiKeyManagementUrl": "https://opencode.ai/auth"
-            },
-            "api": {
-              "type": "openai-responses",
-              "baseUrl": "https://opencode.ai/zen/go/v1"
-            },
-            "builtinModelIds": ["gpt-5.6-luna", "grok-4.6"],
-            "logo": {
-              "type": "builtin",
-              "key": "opencode"
-            }
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "templateNameMap": {
-            "zh-CN": "OpenCode Zen (Responses)",
-            "en-US": "OpenCode Zen (Responses)"
-          },
-          "config": {
-            "access": {
-              "type": "api-key",
-              "apiKeyManagementUrl": "https://opencode.ai/auth"
-            },
-            "api": {
-              "type": "openai-responses",
-              "baseUrl": "https://opencode.ai/zen/v1"
-            },
-            "builtinModelIds": [
-              "gpt-6-astra",
-              "gpt-5.6-sol",
-              "gpt-5.6-terra",
-              "gpt-5.6-luna",
-              "gpt-5.5",
-              "gpt-5.5-pro",
-              "gpt-5.4",
-              "gpt-5.4-pro",
-              "gpt-5.4-mini",
-              "gpt-5.4-nano",
-              "gpt-5.3-codex",
-              "gpt-5.3-codex-spark",
-              "gpt-5.2",
-              "gpt-5.1"
-            ],
-            "logo": {
-              "type": "builtin",
-              "key": "opencode"
-            }
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "templateNameMap": {
-            "zh-CN": "OpenCode Zen (Anthropic)",
-            "en-US": "OpenCode Zen (Anthropic)"
-          },
-          "config": {
-            "access": {
-              "type": "api-key",
-              "apiKeyManagementUrl": "https://opencode.ai/auth"
-            },
-            "api": {
-              "type": "anthropic-messages",
-              "baseUrl": "https://opencode.ai/zen/v1"
-            },
-            "builtinModelIds": [
-              "claude-fable-5-1",
-              "claude-fable-5",
-              "qwen3.7-max",
-              "qwen3.6-plus",
-              "qwen3.5-plus",
-              "claude-opus-5",
-              "claude-sonnet-5",
-              "claude-haiku-4-5",
-              "claude-opus-4-8",
-              "claude-opus-4-7",
-              "claude-opus-4-6",
-              "claude-opus-4-5",
-              "claude-sonnet-4-6",
-              "claude-sonnet-4-5",
-              "qwen3.7-plus"
-            ],
-            "logo": {
-              "type": "builtin",
-              "key": "opencode"
-            }
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "templateNameMap": {
-            "zh-CN": "OpenCode Zen (Chat)",
-            "en-US": "OpenCode Zen (Chat)"
-          },
-          "config": {
-            "access": {
-              "type": "api-key",
-              "apiKeyManagementUrl": "https://opencode.ai/auth"
-            },
-            "api": {
-              "type": "openai-chat-completions",
-              "baseUrl": "https://opencode.ai/zen/v1"
-            },
-            "builtinModelIds": [
-              "kimi-k3",
-              "minimax-m3",
-              "deepseek-v4-pro",
-              "glm-5.2",
-              "big-pickle",
-              "mimo-v2.5-free",
-              "hy3-free",
-              "ling-3.0-flash-fin-free",
-              "nemotron-3-ultra-free",
-              "muse-spark-1.2-contributor-free",
-              "minimax-m2.7",
-              "deepseek-v4-flash",
-              "glm-5.1",
-              "nemotron-3.5-lightning-free"
             ],
             "logo": {
               "type": "builtin",
@@ -4490,185 +4335,289 @@
       ],
       "templateModelRules": [
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "glm-5.3-flash",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "glm-5.3",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "glm-5.2",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "glm-5.1",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "kimi-k3",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "kimi-k2.7-code",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "kimi-k2.6",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "deepseek-v4.1-flash",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "deepseek-v4.1-flash-free",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "deepseek-v4-pro",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "deepseek-v4-flash",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "deepseek-v4-flash-vision-exp",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "mimo-v2.5",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "mimo-v2.5-pro",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "hy4-preview",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-chat",
+          "templateId": "opencode-go",
           "modelId": "hy3",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "minimax-m3",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "minimax-m2.7",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "minimax-m2.5",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "qwen3.8-max",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "qwen3.8-flash",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "qwen3.7-max",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "qwen3.7-plus",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-messages",
+          "templateId": "opencode-go",
           "modelId": "qwen3.6-plus",
           "config": {
-            "enabled": false
+            "enabled": false,
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-responses",
+          "templateId": "opencode-go",
           "modelId": "gpt-5.6-luna",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-responses",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
-          "templateId": "opencode-go-responses",
+          "templateId": "opencode-go",
           "modelId": "grok-4.6",
           "config": {
-            "enabled": true
+            "enabled": true,
+            "api": {
+              "type": "openai-responses",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
           }
         },
         {
@@ -5185,293 +5134,6 @@
         {
           "templateId": "openrouter",
           "modelId": "x-ai/grok-4.6",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.6-sol",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.6-terra",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.6-luna",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.5",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.5-pro",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.4",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.4-pro",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.4-mini",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.4-nano",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.3-codex",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.3-codex-spark",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.2",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-5.1",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-fable-5",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-opus-5",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-sonnet-5",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-haiku-4-5",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-opus-4-8",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-opus-4-7",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-opus-4-6",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-opus-4-5",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-sonnet-4-6",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "claude-sonnet-4-5",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "qwen3.7-max",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "qwen3.7-plus",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "qwen3.6-plus",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
-          "modelId": "qwen3.5-plus",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "kimi-k3",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "minimax-m3",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "minimax-m2.7",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "deepseek-v4-pro",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "deepseek-v4-flash",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "glm-5.2",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "glm-5.1",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "big-pickle",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "mimo-v2.5-free",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "hy3-free",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "ling-3.0-flash-fin-free",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "nemotron-3-ultra-free",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "nemotron-3.5-lightning-free",
-          "config": {
-            "enabled": false
-          }
-        },
-        {
-          "templateId": "opencode-zen-chat",
-          "modelId": "muse-spark-1.2-contributor-free",
           "config": {
             "enabled": true
           }
@@ -6037,21 +5699,7 @@
           }
         },
         {
-          "templateId": "opencode-zen-responses",
-          "modelId": "gpt-6-astra",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
           "templateId": "anthropic",
-          "modelId": "claude-fable-5-1",
-          "config": {
-            "enabled": true
-          }
-        },
-        {
-          "templateId": "opencode-zen-messages",
           "modelId": "claude-fable-5-1",
           "config": {
             "enabled": true

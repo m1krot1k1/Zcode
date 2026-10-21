@@ -91,6 +91,13 @@ export const completeModelOptionSpecsDataSchema = z
     maxOutputTokens: completeLimitOptionSpecDataSchema,
   })
   .strict();
+/** OpenCode Go exposes several wire protocols behind one API-key provider. */
+export const modelApiOverrideDataSchema = z
+  .object({
+    type: z.enum(["anthropic-messages", "openai-chat-completions", "openai-responses"]),
+    baseUrl: z.string().min(1).url(),
+  })
+  .strict();
 export const modelOptionSpecsDataSchema = z
   .object({
     ...sparseShape(completeModelOptionSpecsDataSchema.shape),
@@ -104,6 +111,7 @@ export const completeModelConfigDataSchema = z
     enabled: z.boolean(),
     properties: completeModelPropertiesDataSchema,
     optionSpecs: completeModelOptionSpecsDataSchema,
+    api: modelApiOverrideDataSchema.nullable().optional(),
   })
   .strict();
 export const modelConfigDataSchema = z
@@ -111,12 +119,14 @@ export const modelConfigDataSchema = z
     ...sparseShape(completeModelConfigDataSchema.shape),
     properties: modelPropertiesDataSchema.nullable().optional(),
     optionSpecs: modelOptionSpecsDataSchema.nullable().optional(),
+    api: modelApiOverrideDataSchema.nullable().optional(),
   })
   .strict();
 
 // 跨层只共享数据合同；Provider 行为类与 IO 不进入公共 Schema。
 export type ModelInputFormatData = z.infer<typeof completeModelInputFormatDataSchema>;
 export type ModelOutputFormatData = z.infer<typeof completeModelOutputFormatDataSchema>;
+export type ModelApiOverrideData = z.infer<typeof modelApiOverrideDataSchema>;
 export type ModelPropertiesData = z.infer<typeof completeModelPropertiesDataSchema>;
 export type EnumOptionSpecData = z.infer<typeof completeEnumOptionSpecDataSchema>;
 export type LimitOptionSpecData = z.infer<typeof completeLimitOptionSpecDataSchema>;

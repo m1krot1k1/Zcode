@@ -45,6 +45,7 @@ import {
   IPluginsService,
   IPluginManagementService,
   ISubagentsService,
+  IOpenCodeAcpRuntime,
   ICommandsService,
   IHooksService,
   IMemoryService,
@@ -117,6 +118,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly pluginsService: IPluginsService;
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
+  readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
@@ -127,7 +129,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
 
   constructor(
     channelClient: IChannelClient,
-    options: { sourceServerManagementService?: boolean; windowProjectDirectory?: boolean } = {},
+    options: {
+      sourceServerManagementService?: boolean;
+      windowProjectDirectory?: boolean;
+      openCodeAcpRuntime?: boolean;
+    } = {},
   ) {
     // 远端工作区的 project 必须保留 Source 语义；只有显式能力才创建完整窗口目录组。
     if (options.windowProjectDirectory) {
@@ -290,6 +296,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
     );
+    if (options.openCodeAcpRuntime) {
+      this.openCodeAcpRuntime = ProxyChannel.toService<IOpenCodeAcpRuntime>(
+        channelClient.getChannel(IOpenCodeAcpRuntime.channelName),
+      );
+    }
     this.commandsService = ProxyChannel.toService<ICommandsService>(
       channelClient.getChannel(ICommandsService.channelName),
     );

@@ -78,6 +78,7 @@ export function serializeRegistryModelConfig(
 ): RegistryModelConfigObject {
   return {
     enabled: config.enabled,
+    ...(config.api === undefined ? {} : { api: config.api }),
     properties: {
       requiresMfjsToolSchema: config.properties.requiresMfjsToolSchema,
       contextWindow: config.properties.contextWindow,
@@ -254,20 +255,15 @@ export class ProviderConfigResolver {
       const providerExecutable =
         enabled && accessEntitled && accountCurrent && providerIssues.length === 0;
       const models = orderedModelIds.map((modelId): ResolvedProviderModel => {
-        const modelConfig = effectiveModelRules.resolve({
+        const ruleInput = {
           providerId,
           templateId,
           modelId,
           apiType: config.api?.type,
           baseUrl: config.api?.baseUrl,
-        });
-        const effectiveBuiltinConfig = input.zcodeBuiltinModelRules.resolve({
-          providerId,
-          templateId,
-          modelId,
-          apiType: config.api?.type,
-          baseUrl: config.api?.baseUrl,
-        });
+        };
+        const modelConfig = effectiveModelRules.resolveForModelApi(ruleInput);
+        const effectiveBuiltinConfig = input.zcodeBuiltinModelRules.resolveForModelApi(ruleInput);
         const registryModelResult = createRegistryModelConfig(modelConfig, [
           ...providerPath,
           "models",

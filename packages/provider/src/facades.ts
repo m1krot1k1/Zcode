@@ -244,7 +244,7 @@ export class ProviderSettingsFacade {
         snapshot.config.zcodeBuiltinModelRules,
         snapshot.config.personalModels,
       );
-      const config = modelRules.resolve({
+      const config = modelRules.resolveForModelApi({
         providerId: input.providerId,
         templateId: provider.templateId,
         modelId: input.modelId,
@@ -261,7 +261,7 @@ export class ProviderSettingsFacade {
     }
 
     const personalConfig = parseModelConfig(input.personalConfig);
-    const inheritedConfig = snapshot.config.zcodeBuiltinModelRules.resolve({
+    const inheritedConfig = snapshot.config.zcodeBuiltinModelRules.resolveForModelApi({
       providerId: input.providerId,
       templateId: provider.templateId,
       modelId: input.modelId,
@@ -281,7 +281,7 @@ export class ProviderSettingsFacade {
     const config = ModelConfigRules.composeEffective(
       snapshot.config.zcodeBuiltinModelRules,
       personalRules,
-    ).resolve({
+    ).resolveForModelApi({
       providerId: input.providerId,
       templateId: provider.templateId,
       modelId: input.modelId,

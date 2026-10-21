@@ -32,12 +32,7 @@ import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog.js";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,7 +52,10 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 
 type ImportStep = "selection" | "importing" | "complete";
-export type ImportResourceCategory = Extract<SettingsSyncCategory, "skills" | "commands" | "plugins" | "mcpServers">;
+export type ImportResourceCategory = Extract<
+  SettingsSyncCategory,
+  "skills" | "commands" | "plugins" | "mcpServers"
+>;
 type ImportItemSummary =
   | SettingsSyncSourceSkillSummary
   | SettingsSyncSourceCommandSummary
@@ -136,11 +134,7 @@ export function buildExternalAgentImportSelections(
     if (!payload) {
       continue;
     }
-    const groupKey = JSON.stringify([
-      payload.agent,
-      payload.category,
-      payload.sourceScope ?? null,
-    ]);
+    const groupKey = JSON.stringify([payload.agent, payload.category, payload.sourceScope ?? null]);
     const selection = grouped.get(groupKey) ?? {
       agent: payload.agent as SettingsSyncSelection["agent"],
       category: payload.category as SettingsSyncSelection["category"],
@@ -177,22 +171,23 @@ function getImportResults(
   result: SettingsSyncImportResult | null,
   category: ImportResourceCategory,
 ): ImportItemResult[] {
-  return result?.taskResults.flatMap((taskResult) =>
-    category === "skills"
-      ? taskResult.skillResults ?? []
-      : category === "commands"
-        ? taskResult.commandResults ?? []
-        : category === "plugins"
-          ? taskResult.pluginResults ?? []
-          : taskResult.mcpServerResults ?? [],
-  ) ?? [];
+  return (
+    result?.taskResults.flatMap((taskResult) =>
+      category === "skills"
+        ? (taskResult.skillResults ?? [])
+        : category === "commands"
+          ? (taskResult.commandResults ?? [])
+          : category === "plugins"
+            ? (taskResult.pluginResults ?? [])
+            : (taskResult.mcpServerResults ?? []),
+    ) ?? []
+  );
 }
 
-function formatAgentName(
-  agent: string,
-  intl: ReturnType<typeof useZCodeIntl>["intl"],
-): string {
+function formatAgentName(agent: string, intl: ReturnType<typeof useZCodeIntl>["intl"]): string {
   switch (agent) {
+    case "cline":
+      return intl.formatMessage({ id: "settingsSync.agent.cline" });
     case "claudeCode":
       return intl.formatMessage({ id: "settingsSync.agent.claudeCode" });
     case "codexCli":
@@ -257,12 +252,12 @@ function getSourceRootItems(
   resourceCategory: ImportResourceCategory,
 ): ImportItemSummary[] {
   return resourceCategory === "skills"
-    ? sourceRoot.skills ?? []
+    ? (sourceRoot.skills ?? [])
     : resourceCategory === "commands"
-      ? sourceRoot.commands ?? []
+      ? (sourceRoot.commands ?? [])
       : resourceCategory === "plugins"
-        ? sourceRoot.plugins ?? []
-        : sourceRoot.mcpServers ?? [];
+        ? (sourceRoot.plugins ?? [])
+        : (sourceRoot.mcpServers ?? []);
 }
 
 function normalizePathForScope(path: string): string {
@@ -384,8 +379,7 @@ export function useExternalAgentImportCategoryState({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [expandedSourceKeys, setExpandedSourceKeys] = useState<string[]>([]);
   const [activeScope, setActiveScope] = useState<SettingsSyncSourceScope>("global");
-  const [importTargetScope, setImportTargetScope] =
-    useState<SettingsSyncSourceScope>("global");
+  const [importTargetScope, setImportTargetScope] = useState<SettingsSyncSourceScope>("global");
   const [importMode, setImportMode] = useState<SettingsSyncImportMode>("symlink");
   const [error, setError] = useState<string | null>(null);
 
@@ -464,9 +458,7 @@ export function useExternalAgentImportCategoryState({
 
   const toggleExpanded = useCallback((key: string) => {
     setExpandedSourceKeys((current) =>
-      current.includes(key)
-        ? current.filter((item) => item !== key)
-        : [...current, key],
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
     );
   }, []);
 
@@ -549,49 +541,53 @@ function ExternalAgentImportDialog({
     setStep("selection");
   }, [open]);
 
-  const startImport = useCallback(async (targetScope: SettingsSyncSourceScope) => {
-    if (selectedKeys.length === 0) {
-      return;
-    }
-    setImporting(true);
-    setStep("importing");
-    setImportError(null);
-    try {
-      logger.debug("[ExternalAgentImportDialog] import start", {
-        category,
-        targetScope,
-        importMode,
-        selectedCount: selectedKeys.length,
-      });
-      const importResult = await settingsSyncService.importSelected({
-        workspacePath: workspacePath ?? undefined,
-        workspaceIdentity,
-        selections: buildExternalAgentImportSelections(selectedKeys, targetScope, importMode),
-      });
-      setResult(importResult);
-      setStep("complete");
-      await onImported();
-    } catch (importError) {
-      const message = normalizeError(importError);
-      logger.error("[ExternalAgentImportDialog] import failed", { category, error: message });
-      setImportError(message);
-      setStep("selection");
-    } finally {
-      setImporting(false);
-    }
-  }, [
-    onImported,
-    category,
-    importMode,
-    selectedKeys,
-    settingsSyncService,
-    workspaceIdentity,
-    workspacePath,
-  ]);
+  const startImport = useCallback(
+    async (targetScope: SettingsSyncSourceScope) => {
+      if (selectedKeys.length === 0) {
+        return;
+      }
+      setImporting(true);
+      setStep("importing");
+      setImportError(null);
+      try {
+        logger.debug("[ExternalAgentImportDialog] import start", {
+          category,
+          targetScope,
+          importMode,
+          selectedCount: selectedKeys.length,
+        });
+        const importResult = await settingsSyncService.importSelected({
+          workspacePath: workspacePath ?? undefined,
+          workspaceIdentity,
+          selections: buildExternalAgentImportSelections(selectedKeys, targetScope, importMode),
+        });
+        setResult(importResult);
+        setStep("complete");
+        await onImported();
+      } catch (importError) {
+        const message = normalizeError(importError);
+        logger.error("[ExternalAgentImportDialog] import failed", { category, error: message });
+        setImportError(message);
+        setStep("selection");
+      } finally {
+        setImporting(false);
+      }
+    },
+    [
+      onImported,
+      category,
+      importMode,
+      selectedKeys,
+      settingsSyncService,
+      workspaceIdentity,
+      workspacePath,
+    ],
+  );
 
-  const closeLabel = step === "complete"
-    ? intl.formatMessage({ id: `settings.${category}.import.finish` })
-    : intl.formatMessage({ id: "settingsSync.action.skip" });
+  const closeLabel =
+    step === "complete"
+      ? intl.formatMessage({ id: `settings.${category}.import.finish` })
+      : intl.formatMessage({ id: "settingsSync.action.skip" });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -647,7 +643,9 @@ function ExternalAgentImportDialog({
                 ) : step === "importing" ? (
                   <div className="space-y-4 rounded-lg bg-surface px-4 py-5">
                     <div className="flex items-center justify-between gap-3 text-ui-base text-foreground-subtle">
-                      <span>{intl.formatMessage({ id: `settings.${category}.import.importing` })}</span>
+                      <span>
+                        {intl.formatMessage({ id: `settings.${category}.import.importing` })}
+                      </span>
                       <span>{importProgress}%</span>
                     </div>
                     <Progress value={importProgress} className="h-2 rounded-full bg-background" />
@@ -702,11 +700,7 @@ function ExternalAgentImportDialog({
               )}
               <div className="flex flex-wrap items-center gap-2">
                 {step === "complete" ? (
-                  <Button
-                    type="button"
-                    size="lg"
-                    onClick={() => onOpenChange(false)}
-                  >
+                  <Button type="button" size="lg" onClick={() => onOpenChange(false)}>
                     {closeLabel}
                   </Button>
                 ) : null}
@@ -754,9 +748,7 @@ export function ExternalAgentImportSelectionPanel({
             activeScope={state.activeScope}
             onActiveScopeChange={state.setActiveSourceScope}
           />
-          <ControlHintTooltip
-            title={intl.formatMessage({ id: "settingsSync.action.rescan" })}
-          >
+          <ControlHintTooltip title={intl.formatMessage({ id: "settingsSync.action.rescan" })}>
             <Button
               type="button"
               variant="ghost"
@@ -878,9 +870,10 @@ function ImportModeSelect({
       <ControlHintTooltip
         title={intl.formatMessage({ id: `settings.${category}.import.modeLabel` })}
         description={intl.formatMessage({
-          id: importMode === "symlink"
-            ? `settings.${category}.import.mode.symlink.description`
-            : `settings.${category}.import.mode.copy.description`,
+          id:
+            importMode === "symlink"
+              ? `settings.${category}.import.mode.symlink.description`
+              : `settings.${category}.import.mode.copy.description`,
         })}
         side="top"
         align="start"
@@ -915,9 +908,10 @@ function ImportTargetDropdownButton({
   const { intl } = useZCodeIntl();
   const hasWorkspaceTarget = Boolean(workspacePath);
   const canImportToTarget = targetScope === "global" || hasWorkspaceTarget;
-  const activeTargetLabelId = targetScope === "project"
-    ? `settings.${category}.import.target.project`
-    : `settings.${category}.import.target.global`;
+  const activeTargetLabelId =
+    targetScope === "project"
+      ? `settings.${category}.import.target.project`
+      : `settings.${category}.import.target.global`;
   return (
     <div className="flex items-center">
       <Button
@@ -1074,18 +1068,33 @@ function ImportResultRow({
   category: ImportResourceCategory;
   result: ImportItemResult;
 }) {
+  const { intl } = useZCodeIntl();
+  const warningLabel =
+    "warnings" in result && result.warnings?.includes("secretsOmittedForProjectScope")
+      ? intl.formatMessage({
+          id: "settings.mcpServers.import.warning.secretsOmittedForProjectScope",
+        })
+      : null;
+
   return (
     <div className="flex min-w-0 items-center gap-2.5 px-3 py-2">
       <ImportStatusBadge category={category} result={result} />
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-ui-base font-medium text-foreground">{result.name}</span>
-        {"version" in result && result.version ? (
-          <Badge
-            variant="outline"
-            className="h-5 border-border bg-surface px-1.5 font-mono text-ui-xs font-normal text-foreground-subtle"
-          >
-            {result.version.startsWith("v") ? result.version : `v${result.version}`}
-          </Badge>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-ui-base font-medium text-foreground">{result.name}</span>
+          {"version" in result && result.version ? (
+            <Badge
+              variant="outline"
+              className="h-5 border-border bg-surface px-1.5 font-mono text-ui-xs font-normal text-foreground-subtle"
+            >
+              {result.version.startsWith("v") ? result.version : `v${result.version}`}
+            </Badge>
+          ) : null}
+        </div>
+        {warningLabel ? (
+          <span role="note" className="text-ui-xs text-warning-surface-foreground">
+            {warningLabel}
+          </span>
         ) : null}
       </div>
     </div>
@@ -1101,21 +1110,29 @@ function ImportStatusBadge({
 }) {
   const { intl } = useZCodeIntl();
   const label = intl.formatMessage({
-    id: result.status === "imported"
-      ? `settings.${category}.import.imported`
-      : result.status === "skipped"
-        ? `settings.${category}.import.skipped`
-        : `settings.${category}.import.failed`,
+    id:
+      result.status === "imported"
+        ? `settings.${category}.import.imported`
+        : result.status === "skipped"
+          ? `settings.${category}.import.skipped`
+          : `settings.${category}.import.failed`,
   });
   const reasonLabel = result.skipReason
     ? intl.formatMessage({ id: `settings.${category}.import.skipReason.${result.skipReason}` })
     : null;
-  const accessibleLabel = reasonLabel ? `${label}: ${reasonLabel}` : label;
-  const Icon = result.status === "imported"
-    ? CheckIcon
-    : result.status === "skipped"
-      ? AlertCircleIcon
-      : XIcon;
+  const warningLabel =
+    "warnings" in result && result.warnings?.includes("secretsOmittedForProjectScope")
+      ? intl.formatMessage({
+          id: "settings.mcpServers.import.warning.secretsOmittedForProjectScope",
+        })
+      : null;
+  const accessibleLabel = [label, reasonLabel, warningLabel].filter(Boolean).join(": ");
+  const Icon =
+    result.status === "imported"
+      ? CheckIcon
+      : result.status === "skipped"
+        ? AlertCircleIcon
+        : XIcon;
 
   return (
     <span
@@ -1232,9 +1249,21 @@ function ImportSelectionList({
       ? `settings.${category}.import.clearAll`
       : `settings.${category}.import.selectAll`,
   });
+  const hasClineMcpSource =
+    category === "mcpServers" && discovery.agents.some((agent) => agent.agent === "cline");
 
   return (
     <div className="flex w-full flex-col gap-1">
+      {hasClineMcpSource ? (
+        <div
+          role="note"
+          className="mb-2 rounded-lg bg-warning-surface px-3 py-2 text-ui-base text-warning-surface-foreground"
+        >
+          {intl.formatMessage({
+            id: "settings.mcpServers.import.clineSecurityNotice",
+          })}
+        </div>
+      ) : null}
       {activeImportableResourceKeys.length > 0 ? (
         <div className="mb-1 flex min-w-0 items-center justify-between gap-2 px-2">
           <button
@@ -1284,15 +1313,14 @@ function ImportSelectionList({
           const key = getSourceSelectionKey(agent.agent, category, sourceRoot.scope);
           const sourceKey = `${key}:${sourceRoot.path}`;
           const items = getSourceRootItems(sourceRoot, category).filter((item) => item.importable);
-          const importableResourceKeys = items
-            .map((item) =>
-              getResourceSelectionKey({
-                agent: agent.agent,
-                category,
-                sourceScope: sourceRoot.scope,
-                resourcePath: item.path,
-              }),
-            );
+          const importableResourceKeys = items.map((item) =>
+            getResourceSelectionKey({
+              agent: agent.agent,
+              category,
+              sourceScope: sourceRoot.scope,
+              resourcePath: item.path,
+            }),
+          );
           const selectedImportableCount = importableResourceKeys.filter((itemKey) =>
             selected.has(itemKey),
           ).length;
@@ -1309,9 +1337,7 @@ function ImportSelectionList({
               <div
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors",
-                  disabled
-                    ? "opacity-70"
-                    : "hover:bg-surface-hover/50",
+                  disabled ? "opacity-70" : "hover:bg-surface-hover/50",
                 )}
               >
                 <button
@@ -1331,7 +1357,8 @@ function ImportSelectionList({
                   <span
                     className={cn(
                       "flex size-4 items-center justify-center rounded-sm border border-border",
-                      (checked || partiallyChecked) && !disabled &&
+                      (checked || partiallyChecked) &&
+                        !disabled &&
                         "border-primary bg-primary text-primary-foreground",
                     )}
                   >
@@ -1439,9 +1466,7 @@ function ResourceSelectionRow({
         >
           {checked ? <CheckIcon className="size-3.5" /> : null}
         </span>
-        <span className="min-w-0 truncate text-ui-base text-foreground">
-          {item.name}
-        </span>
+        <span className="min-w-0 truncate text-ui-base text-foreground">{item.name}</span>
         {"version" in item && item.version ? (
           <Badge
             variant="outline"

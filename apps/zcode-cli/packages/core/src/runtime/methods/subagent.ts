@@ -44,12 +44,8 @@ import { mirrorSubagentToolEvent } from "../../subagent/tool-event-mirror.js";
 import { isBuiltInExploreAgentProfile } from "../../subagent/profile.js";
 import {
   buildSubagentChildDisallowRules,
-  decideChildNesting,
   filterSubagentChildToolNames,
-  resolveMaxSubagentDepth,
-  runtimeMaySpawnSubagents,
 } from "../../subagent/tool-policy.js";
-import { isSubagentDispatchToolName } from "../../tool/compat.js";
 import { resolveEmbeddedSearchBranchCapability } from "../../embedded-search/capability.js";
 import { getSessionShellEnvironment } from "./session-shell-environment.js";
 import { deriveChildClientPorts } from "../helpers/child-client-ports.js";
@@ -63,8 +59,14 @@ import {
   type OfficialCuaPolicy,
 } from "../../subagent/computer-use-policy.js";
 import { computeOfficialCuaServerNames } from "./mcp.js";
-import { persistRuntimeModelSelection, sameModelSelection } from "./turn-model.js";
-import { getOffPeakExecution, markTemporaryRuntimeSelection } from "../off-peak/runtime.js";
+import {
+  persistRuntimeModelSelection,
+  sameModelSelection,
+} from "./turn-model.js";
+import {
+  getOffPeakExecution,
+  markTemporaryRuntimeSelection,
+} from "../off-peak/runtime.js";
 import { getOffPeakModelBinding } from "../off-peak/model-binding.js";
 
 export function createDefaultSubagentPort(
@@ -74,23 +76,14 @@ export function createDefaultSubagentPort(
   if (this.config.subagents?.enabled === false) {
     return undefined;
   }
-  // 0 и глубина на потолке не получают порт: иначе child снова регистрирует Agent/Task.
-  if (
-    !runtimeMaySpawnSubagents(
-      this.config.subagentDepth,
-      resolveMaxSubagentDepth(process.env.ZCODE_MAX_SUBAGENT_DEPTH),
-    )
-  ) {
-    return undefined;
-  }
-
   return createExploreSubagentPort({
     logger: this.logger,
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
     outputRootDir: this.config.subagents?.outputRootDir,
     getAgentDefinitions: this.getAgentDefinitions,
-    builtInModelSelectionOverrides: this.config.subagents?.builtInModelSelectionOverrides,
+    builtInModelSelectionOverrides:
+      this.config.subagents?.builtInModelSelectionOverrides,
     runtimeTaskRegistry: this.runtimeTaskRegistry,
     emitParentEvent: async (event, traceContext) => {
       if (isStaleBranchRuntimeTaskEvent(this, event)) return;
@@ -134,14 +127,16 @@ export function createDefaultSubagentPort(
           request.profile.injectAgentsMd !== false
             ? this.contextSourceSnapshot?.userInstructions
             : undefined;
-        const { selection: profileChildSelection, hasConcreteModel } = resolveSubagentSelection({
-          profileSelection: request.profile.modelSelection,
-          parentSelection: this.getSessionModelSelection(),
-          overrideSelection: options?.modelOverride?.selection,
-          resolveSelection: deps.resolveEffectiveModelSelection,
-        });
+        const { selection: profileChildSelection, hasConcreteModel } =
+          resolveSubagentSelection({
+            profileSelection: request.profile.modelSelection,
+            parentSelection: this.getSessionModelSelection(),
+            overrideSelection: options?.modelOverride?.selection,
+            resolveSelection: deps.resolveEffectiveModelSelection,
+          });
         const modelOverride = options?.modelOverride;
-        const inheritedModel = !modelOverride && !hasConcreteModel ? options?.model : undefined;
+        const inheritedModel =
+          !modelOverride && !hasConcreteModel ? options?.model : undefined;
         // Core Server override 优先于持久化 profile 与父模型继承，但仍只是标准 Selection。
         const childSelection = inheritedModel
           ? modelSelectionFromActiveModel(inheritedModel)
@@ -176,7 +171,10 @@ export function createDefaultSubagentPort(
         // 空 agent prompt 不是一个语义段；先硬拼 `\n\n` 会把缺失段的边界
         // 泄漏到 persistent Memory 开头。这里只组合非空正文，block 左边界由 builder 统一添加。
         const agentPrompt = [baseAgentPrompt, persistentMemory?.prompt]
-          .filter((part): part is string => typeof part === "string" && part.length > 0)
+          .filter(
+            (part): part is string =>
+              typeof part === "string" && part.length > 0,
+          )
           .join("\n\n");
         const childRuntimeEnvInfo = {
           ...childEnvInfo,
@@ -192,7 +190,11 @@ export function createDefaultSubagentPort(
           [],
           this.config.pluginReferenceCatalog,
         );
-        await validateSubagentComputerUseConfiguration(request, preflightCuaPolicy, this.skillPort);
+        await validateSubagentComputerUseConfiguration(
+          request,
+          preflightCuaPolicy,
+          this.skillPort,
+        );
         const childMcpAccess = await resolveSubagentMcpAccess.call(
           this,
           request,
@@ -201,9 +203,15 @@ export function createDefaultSubagentPort(
         const childToolAllowlist = resolveSubagentToolAllowlist.call(
           this,
           request,
-          childMcpAccess.snapshot?.tools.map((descriptor) => toMcpToolName(descriptor)) ?? [],
+          childMcpAccess.snapshot?.tools.map((descriptor) =>
+            toMcpToolName(descriptor),
+          ) ?? [],
         );
-        validateSubagentMcpRequirements(request, childToolAllowlist, childMcpAccess);
+        validateSubagentMcpRequirements(
+          request,
+          childToolAllowlist,
+          childMcpAccess,
+        );
         const childMode = resolveSubagentPermissionMode(
           this.getPlanEnabled() ? "plan" : this.config.mode,
           request.permissionMode,
@@ -211,10 +219,16 @@ export function createDefaultSubagentPort(
         );
         const childCuaPolicy = createOfficialCuaPolicy(
           officialCuaServerNames,
-          childMcpAccess.parentSnapshot?.tools ?? childMcpAccess.snapshot?.tools ?? [],
+          childMcpAccess.parentSnapshot?.tools ??
+            childMcpAccess.snapshot?.tools ??
+            [],
           this.config.pluginReferenceCatalog,
         );
-        await validateSubagentComputerUseConfiguration(request, childCuaPolicy, this.skillPort);
+        await validateSubagentComputerUseConfiguration(
+          request,
+          childCuaPolicy,
+          this.skillPort,
+        );
         const childSkillPort = resolveSubagentSkillPort(
           this.skillPort,
           request.profile.skills,
@@ -223,7 +237,11 @@ export function createDefaultSubagentPort(
         const baseChildModelFactory = modelOverride
           ? createSubagentOverrideModelFactory(modelOverride, this.modelFactory)
           : inheritedModel
-            ? createInheritedSubagentModelFactory(childSelection, inheritedModel, this.modelFactory)
+            ? createInheritedSubagentModelFactory(
+                childSelection,
+                inheritedModel,
+                this.modelFactory,
+              )
             : this.modelFactory;
         if (!baseChildModelFactory) {
           throw createCoreError(
@@ -233,13 +251,19 @@ export function createDefaultSubagentPort(
           );
         }
         const childModel = baseChildModelFactory({ selection: childSelection });
-        const childModelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]> = (target) =>
+        const childModelFactory: NonNullable<
+          AgentRuntimeDeps["modelFactory"]
+        > = (target) =>
           target.selection.providerId === childSelection.providerId &&
           target.selection.modelId === childSelection.modelId &&
-          target.selection.options?.reasoningLevel === childSelection.options?.reasoningLevel
+          target.selection.options?.reasoningLevel ===
+            childSelection.options?.reasoningLevel
             ? childModel
             : baseChildModelFactory(target);
-        const parentToolCallId = traceStringAttribute(request.traceContext, "parentToolCallId");
+        const parentToolCallId = traceStringAttribute(
+          request.traceContext,
+          "parentToolCallId",
+        );
         // 对外交互端口（permission broker + provider runtime headers）：与 dwf actor、legacy
         // workflow child 共用同一条派生，路由身份统一落到本 runtime 的会话。
         const childClientPorts = deriveChildClientPorts(
@@ -247,7 +271,9 @@ export function createDefaultSubagentPort(
             permissionBroker: this.permissionBroker,
             ...(this.providerRuntimeHeadersPort === undefined
               ? {}
-              : { providerRuntimeHeadersPort: this.providerRuntimeHeadersPort }),
+              : {
+                  providerRuntimeHeadersPort: this.providerRuntimeHeadersPort,
+                }),
           },
           {
             agentId: request.agentId,
@@ -282,12 +308,13 @@ export function createDefaultSubagentPort(
           childSessionId: request.sessionId,
           agentType: request.agentType,
         });
-        // Раньше child всегда получал enabled:false и не видел Agent/Task, поэтому рой
-        // обрывался на первом уровне. Глубина копируется, порт остаётся, пока не упрёмся в потолок.
-        const childNesting = decideChildNesting(
-          this.config.subagentDepth,
-          resolveMaxSubagentDepth(process.env.ZCODE_MAX_SUBAGENT_DEPTH),
-        );
+        if (options?.signal?.aborted) {
+          throw (
+            options.signal.reason ?? new Error("Subagent runtime start aborted")
+          );
+        }
+        if (request.resumeFromStore)
+          this.runtimeTaskRegistry.openSessionOwner(request.sessionId);
         const childRuntime = new AgentRuntime(
           request.sessionId,
           {
@@ -313,15 +340,18 @@ export function createDefaultSubagentPort(
             toolSearch: this.config.toolSearch,
             bashShellSelection,
             // child 只复用父 runtime 已解析的 instructions snapshot；Project Context 仍不继承。
-            currentDate: this.contextSourceSnapshot?.currentDate ?? this.config.currentDate,
+            currentDate:
+              this.contextSourceSnapshot?.currentDate ??
+              this.config.currentDate,
             subagentContext: {
               agentPrompt: agentPrompt ?? "",
-              ...(agentsMdInstructions ? { userInstructions: agentsMdInstructions } : {}),
+              ...(agentsMdInstructions
+                ? { userInstructions: agentsMdInstructions }
+                : {}),
             },
             agentName: `zcode-${request.agentType}`,
             maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
             parentSessionId: this.sessionId,
-            subagentDepth: childNesting.depth,
             taskType: "subagent_child",
             // 动态工作流灰度门必须结构性继承：
             // 父会话关着而子代理开着，等于 Agent 工具变成绕过灰度的后门。默认路径（child 继承
@@ -340,21 +370,18 @@ export function createDefaultSubagentPort(
             toolAllowlist: childToolAllowlist,
             toolDisallowlist: this.config.toolDisallowlist,
             embeddedSearchBackend: this.config.embeddedSearchBackend,
-            nativeSearchEnhancementsEnabled: this.config.nativeSearchEnhancementsEnabled,
+            nativeSearchEnhancementsEnabled:
+              this.config.nativeSearchEnhancementsEnabled,
             subagents: {
               backgroundBashMaxMs: this.config.subagents?.backgroundBashMaxMs,
-              enabled: childNesting.maySpawn ? this.config.subagents?.enabled : false,
-              ...(childNesting.maySpawn
-                ? {
-                    inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
-                    autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
-                    maxTurns: this.config.subagents?.maxTurns,
-                    outputRootDir: this.config.subagents?.outputRootDir,
-                    profiles: this.config.subagents?.profiles,
-                    builtInModelSelectionOverrides:
-                      this.config.subagents?.builtInModelSelectionOverrides,
-                  }
-                : {}),
+              enabled: this.config.subagents?.enabled,
+              inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
+              autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
+              maxTurns: this.config.subagents?.maxTurns,
+              outputRootDir: this.config.subagents?.outputRootDir,
+              profiles: this.config.subagents?.profiles,
+              builtInModelSelectionOverrides:
+                this.config.subagents?.builtInModelSelectionOverrides,
             },
             mcp: childMcpAccess.config,
           },
@@ -363,9 +390,14 @@ export function createDefaultSubagentPort(
             agentTelemetryCausation: this.agentTelemetry.captureCausation(),
             // 前台 child 的生命周期被父 Agent Tool await，使用真实父子 Span；后台 child
             // 可能晚于父 Tool/Turn 结束，只能作为独立 Trace 用 Link 保留因果关系。
-            agentTelemetryCausationMode: request.background ? "linked_root" : "child",
+            agentTelemetryCausationMode: request.background
+              ? "linked_root"
+              : "child",
             eventStore: this.eventStore,
             sessionStore: deps.sessionStore,
+            // Все поколения Agent используют единый registry: он владеет lineage, квотами,
+            // cancellation handles и branch generation всего root run.
+            runtimeTaskRegistry: this.runtimeTaskRegistry,
             // 子 runtime 继承父的模型请求准入端口：subagent 的请求 provider 同样看得见，
             // 它们该与父一样喂治理器信号（父是 observer 则子也是 observer）。
             modelRequestAdmission: this.modelRequestAdmission,
@@ -477,14 +509,18 @@ export function createDefaultSubagentPort(
         } else {
           // 父会话过去先发布 SubagentSpawned，child 的首轮 executeTurn 才落库。
           // 并发派生时目录查询会在两者之间读到少一个 child。这里把持久化提升为发布前闸门。
-          await childRuntime.ensureSessionPersistedForExternalActivity(request.prompt, {
-            traceContext: request.traceContext,
-          });
+          await childRuntime.ensureSessionPersistedForExternalActivity(
+            request.prompt,
+            {
+              traceContext: request.traceContext,
+            },
+          );
         }
         await notifySessionReady();
         if (
           !resumesExistingChild ||
-          (previousSelection && !sameModelSelection(previousSelection, childSelection))
+          (previousSelection &&
+            !sameModelSelection(previousSelection, childSelection))
         ) {
           // 同模型恢复不重复插入分隔线；配置变化复用现有事件和 transcript 记录。
           childRuntime.recordPendingModelChange({
@@ -504,8 +540,16 @@ export function createDefaultSubagentPort(
             traceContext: request.traceContext,
           });
         }
-        request.registerMessageSink?.(createSubagentMessageSink(childRuntime, request));
+        request.registerMessageSink?.(
+          createSubagentMessageSink(childRuntime, request),
+        );
         try {
+          if (options?.signal?.aborted) {
+            throw (
+              options.signal.reason ??
+              new Error("Subagent runtime start aborted")
+            );
+          }
           return await childRuntime.executeTurn(request.prompt, undefined, {
             ...(childBinding
               ? {
@@ -535,14 +579,7 @@ export function createDefaultSubagentPort(
               traceContext: request.traceContext,
             });
           }
-          await childBrowserControlPort
-            ?.closeSession?.({ sessionId: request.sessionId, traceContext: request.traceContext })
-            .catch((error: unknown) => {
-              this.logger?.warn("Subagent browser session cleanup failed", {
-                error: error instanceof Error ? error.message : String(error),
-                event: "browser.session_cleanup.failed",
-              });
-            });
+          await childRuntime.closeBrowserSession();
         }
       } finally {
         childBinding?.release();
@@ -568,7 +605,8 @@ export function createInheritedSubagentModelFactory(
     if (
       target.selection.providerId === inheritedSelection.providerId &&
       target.selection.modelId === inheritedSelection.modelId &&
-      target.selection.options?.reasoningLevel === inheritedSelection.options?.reasoningLevel
+      target.selection.options?.reasoningLevel ===
+        inheritedSelection.options?.reasoningLevel
     ) {
       // Selection 保持显式意图的稀疏形态；不能拿它和 Active Model 的完整 effective
       // options 比较，否则默认值必然导致复用失败并让 child 重新解释可变 Registry。
@@ -597,7 +635,9 @@ function createSubagentOverrideModelFactory(
       selection: override.selection,
       requestDependencies: override.requestDependencies,
     });
-    return getOffPeakModelBinding(override.requestDependencies)?.wrap(model) ?? model;
+    return (
+      getOffPeakModelBinding(override.requestDependencies)?.wrap(model) ?? model
+    );
   };
 }
 
@@ -618,7 +658,10 @@ function resolveSubagentPermissionMode(
       return "plan";
     case "default":
     case undefined:
-      return inheritPermissionMode(parentMode, builtInExplore ? "yolo" : parentMode);
+      return inheritPermissionMode(
+        parentMode,
+        builtInExplore ? "yolo" : parentMode,
+      );
     default:
       return parentMode;
   }
@@ -633,14 +676,6 @@ function resolveSubagentToolAllowlist(
     ...(this.config.toolDisallowlist ?? []),
     ...(request.disallowedTools ?? []),
   ]);
-  const childMayDispatch = decideChildNesting(
-    this.config.subagentDepth,
-    resolveMaxSubagentDepth(process.env.ZCODE_MAX_SUBAGENT_DEPTH),
-  ).maySpawn;
-  const withoutCappedDispatch = (toolNames: readonly string[]): readonly string[] =>
-    childMayDispatch
-      ? toolNames
-      : toolNames.filter((toolName) => !isSubagentDispatchToolName(toolName));
   const inheritsAvailableTools =
     request.allowedTools.length === 0 || request.allowedTools.includes("*");
   if (inheritsAvailableTools) {
@@ -657,14 +692,15 @@ function resolveSubagentToolAllowlist(
       ...parentAllowedMcpToolNames,
     ];
     return appendCoordinatorResponseTool(
-      withoutCappedDispatch([...new Set(availableToolNames)]).filter(
-        (toolName) => filterSubagentChildToolNames([toolName], disallowedRules).length > 0,
+      [...new Set(availableToolNames)].filter(
+        (toolName) =>
+          filterSubagentChildToolNames([toolName], disallowedRules).length > 0,
       ),
     );
   }
   if (request.allowedTools.length > 0) {
     return appendCoordinatorResponseTool(
-      withoutCappedDispatch(filterSubagentChildToolNames(request.allowedTools, disallowedRules)),
+      filterSubagentChildToolNames(request.allowedTools, disallowedRules),
     );
   }
   return appendCoordinatorResponseTool([]);
@@ -683,7 +719,9 @@ function isModelVisibleMcpToolName(toolName: string): boolean {
   return toolName.startsWith("mcp__");
 }
 
-function appendCoordinatorResponseTool(toolNames: readonly string[]): readonly string[] {
+function appendCoordinatorResponseTool(
+  toolNames: readonly string[],
+): readonly string[] {
   if (toolNames.includes(RESPOND_TO_COORDINATOR_TOOL_NAME)) {
     return toolNames;
   }
@@ -705,7 +743,12 @@ async function resolveSubagentMcpAccess(
   officialCuaServerNames: ReadonlySet<string>,
 ): Promise<ResolvedSubagentMcpAccess> {
   if (!shouldBorrowParentMcp(request)) {
-    return { config: undefined, parentSnapshot: undefined, port: undefined, snapshot: undefined };
+    return {
+      config: undefined,
+      parentSnapshot: undefined,
+      port: undefined,
+      snapshot: undefined,
+    };
   }
 
   const scopedServerNames = request.profile.mcpServers?.length
@@ -716,7 +759,8 @@ async function resolveSubagentMcpAccess(
       throw createSubagentMcpUnavailableError(request);
     }
     return {
-      config: this.config.mcp?.enabled === false ? { enabled: false } : undefined,
+      config:
+        this.config.mcp?.enabled === false ? { enabled: false } : undefined,
       parentSnapshot: undefined,
       port: undefined,
       snapshot: undefined,
@@ -729,11 +773,17 @@ async function resolveSubagentMcpAccess(
     if (scopedServerNames) {
       throw createSubagentMcpUnavailableError(request);
     }
-    return { config: undefined, parentSnapshot: undefined, port: undefined, snapshot: undefined };
+    return {
+      config: undefined,
+      parentSnapshot: undefined,
+      port: undefined,
+      snapshot: undefined,
+    };
   }
 
   const unavailableScopedServerNames = (scopedServerNames ?? []).filter(
-    (serverName) => parentStartupSnapshot.statuses[serverName]?.status !== "connected",
+    (serverName) =>
+      parentStartupSnapshot.statuses[serverName]?.status !== "connected",
   );
   if (unavailableScopedServerNames.length > 0) {
     throw createCoreError(
@@ -763,9 +813,12 @@ async function resolveSubagentMcpAccess(
   };
 }
 
-function shouldBorrowParentMcp(request: ExploreSubagentRuntimeRequest): boolean {
+function shouldBorrowParentMcp(
+  request: ExploreSubagentRuntimeRequest,
+): boolean {
   if ((request.profile.mcpServers?.length ?? 0) > 0) return true;
-  if (request.allowedTools.length === 0 || request.allowedTools.includes("*")) return true;
+  if (request.allowedTools.length === 0 || request.allowedTools.includes("*"))
+    return true;
   return request.allowedTools.some((toolName) => {
     const normalized = toolName.trim();
     return isConcreteMcpToolName(normalized) || isMcpServerSelector(normalized);
@@ -781,12 +834,17 @@ function validateSubagentMcpRequirements(
     request.allowedTools.length === 0 || request.allowedTools.includes("*");
   if (inheritsAvailableTools) return;
 
-  const normalizedAllowedTools = effectiveAllowedTools.map((toolName) => toolName.trim());
-  const requiredToolNames = normalizedAllowedTools.filter(isConcreteMcpToolName);
+  const normalizedAllowedTools = effectiveAllowedTools.map((toolName) =>
+    toolName.trim(),
+  );
+  const requiredToolNames = normalizedAllowedTools.filter(
+    isConcreteMcpToolName,
+  );
   const requiredServerNames = extractRequiredMcpServerNames(
     normalizedAllowedTools.filter(isMcpServerSelector),
   );
-  if (requiredToolNames.length === 0 && requiredServerNames.length === 0) return;
+  if (requiredToolNames.length === 0 && requiredServerNames.length === 0)
+    return;
   if (!access.port || !access.snapshot) {
     throw createSubagentMcpUnavailableError(request, requiredToolNames);
   }
@@ -809,8 +867,12 @@ function validateSubagentMcpRequirements(
     );
   }
 
-  const visibleToolNames = new Set(snapshot.tools.map((descriptor) => toMcpToolName(descriptor)));
-  const missingToolNames = requiredToolNames.filter((toolName) => !visibleToolNames.has(toolName));
+  const visibleToolNames = new Set(
+    snapshot.tools.map((descriptor) => toMcpToolName(descriptor)),
+  );
+  const missingToolNames = requiredToolNames.filter(
+    (toolName) => !visibleToolNames.has(toolName),
+  );
   if (missingToolNames.length === 0) return;
 
   throw createCoreError(
@@ -831,7 +893,10 @@ function isConcreteMcpToolName(toolName: string): boolean {
 }
 
 function isMcpServerSelector(toolName: string): boolean {
-  return toolName === "mcp" || (toolName.startsWith("mcp__") && toolName.endsWith("__*"));
+  return (
+    toolName === "mcp" ||
+    (toolName.startsWith("mcp__") && toolName.endsWith("__*"))
+  );
 }
 
 function createSubagentMcpUnavailableError(
@@ -896,7 +961,10 @@ class FilteredSkillPort implements SkillPort {
     ) {
       throw createSubagentComputerUseUnavailableError(request.name);
     }
-    const resolvedName = await this.resolveAllowedSkillRequestName(request, options);
+    const resolvedName = await this.resolveAllowedSkillRequestName(
+      request,
+      options,
+    );
     if (!resolvedName) {
       throw createCoreError(
         CoreErrorType.ToolExecutionFailed,
@@ -927,7 +995,11 @@ class FilteredSkillPort implements SkillPort {
       },
       options,
     );
-    return isUniqueOfficialSkillRequest(outcome.skills, request.name, this.cuaPolicy);
+    return isUniqueOfficialSkillRequest(
+      outcome.skills,
+      request.name,
+      this.cuaPolicy,
+    );
   }
 
   private isAllowedSkill(skill: SkillContent["metadata"]): boolean {
@@ -935,7 +1007,8 @@ class FilteredSkillPort implements SkillPort {
     return (
       this.allowedSkills === undefined ||
       this.allowedSkills.has(skill.name) ||
-      (skill.qualifiedName !== undefined && this.allowedSkills.has(skill.qualifiedName))
+      (skill.qualifiedName !== undefined &&
+        this.allowedSkills.has(skill.qualifiedName))
     );
   }
 
@@ -951,7 +1024,9 @@ class FilteredSkillPort implements SkillPort {
       },
       options,
     );
-    const matches = outcome.skills.filter((skill) => matchesSkillRequestName(skill, request.name));
+    const matches = outcome.skills.filter((skill) =>
+      matchesSkillRequestName(skill, request.name),
+    );
     if (matches.length === 0) {
       return undefined;
     }
@@ -962,7 +1037,9 @@ class FilteredSkillPort implements SkillPort {
         {
           context: {
             allowedSkills: this.allowedSkills ? [...this.allowedSkills] : [],
-            matchingSkills: matches.map((skill) => skill.qualifiedName ?? skill.name),
+            matchingSkills: matches.map(
+              (skill) => skill.qualifiedName ?? skill.name,
+            ),
             skill: request.name,
             toolName: "Skill",
           },
@@ -986,7 +1063,8 @@ async function validateSubagentComputerUseConfiguration(
   );
   const explicitTool = request.allowedTools.find(
     (toolName) =>
-      cuaPolicy.isOfficialToolRequest(toolName) || cuaPolicy.isOfficialServerSelector(toolName),
+      cuaPolicy.isOfficialToolRequest(toolName) ||
+      cuaPolicy.isOfficialServerSelector(toolName),
   );
   let explicitSkill = request.profile.skills?.find((skillName) =>
     cuaPolicy.isOfficialSkillRequest(skillName),
@@ -1028,8 +1106,14 @@ export function isUniqueOfficialSkillRequest(
   cuaPolicy: Pick<OfficialCuaPolicy, "isOfficialSkill">,
 ): boolean {
   if (requestName.includes(":")) return false;
-  const matches = skills.filter((skill) => matchesSkillRequestName(skill, requestName));
-  return matches.length === 1 && matches[0] !== undefined && cuaPolicy.isOfficialSkill(matches[0]);
+  const matches = skills.filter((skill) =>
+    matchesSkillRequestName(skill, requestName),
+  );
+  return (
+    matches.length === 1 &&
+    matches[0] !== undefined &&
+    cuaPolicy.isOfficialSkill(matches[0])
+  );
 }
 
 function createSubagentComputerUseUnavailableError(skillName: string) {
@@ -1047,7 +1131,10 @@ function createSubagentComputerUseUnavailableError(skillName: string) {
   );
 }
 
-function matchesSkillRequestName(skill: SkillContent["metadata"], requestName: string): boolean {
+function matchesSkillRequestName(
+  skill: SkillContent["metadata"],
+  requestName: string,
+): boolean {
   return skill.name === requestName || skill.qualifiedName === requestName;
 }
 

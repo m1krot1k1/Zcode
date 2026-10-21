@@ -3453,6 +3453,10 @@ const zhCN: Record<string, string> = {
   "settings.mcp.form.add": "添加",
   "settings.mcpServers.import.open": "从外部 Agent 导入 MCP 服务器",
   "settings.mcpServers.import.title": "导入外部 Agent MCP 服务器",
+  "settings.mcpServers.import.clineSecurityNotice":
+    "导入到项目范围时，Cline 环境变量、请求头和 OAuth 客户端密钥不会写入；结果会标记受影响的服务器。导入到全局范围会将它们保存在 ZCode 私有配置中。Cline OAuth 登录令牌不会迁移，需在 ZCode 中重新授权。",
+  "settings.mcpServers.import.warning.secretsOmittedForProjectScope":
+    "项目范围未导入环境变量、请求头和 OAuth 客户端密钥。若要保留这些内容，请导入到全局范围的私有用户配置。",
   "settings.mcpServers.import.scanning": "正在扫描可导入 MCP 服务器...",
   "settings.mcpServers.import.empty":
     "暂无可导入 MCP 服务器。可检查外部 Agent 的 MCP 配置文件后重新扫描。",
@@ -3500,6 +3504,96 @@ const zhCN: Record<string, string> = {
   "settings.plugins.toggle.workspaceDisabled": "已在当前工作区停用 {plugin}（覆盖 User 默认）",
   "settings.plugins.toggle.failed": "无法更新 {plugin}，请重试。",
   "settings.modelProviderDescription": "管理自定义模型供应商，配置后可在聊天时选择使用。",
+  "settings.openCode.title": "本地 OpenCode 智能体",
+  "settings.openCode.ownership":
+    "OpenCode 作为独立的本地智能体运行，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
+  "settings.openCode.checking": "正在检查 OpenCode CLI…",
+  "settings.openCode.available": "已检测到 OpenCode CLI（{version}）",
+  "settings.openCode.missing": "未安装 OpenCode CLI",
+  "settings.openCode.unavailable": "无法检查 OpenCode CLI",
+  "settings.openCode.windowsShimUnsupported":
+    "检测到的是 Windows .cmd/.bat 启动脚本，ZCode 无法安全启动。请安装原生可执行文件，或从终端启动。",
+  "settings.openCode.explicitCliUnavailable":
+    "所选 OpenCode 文件不可执行。请选择原生 CLI 二进制文件，不要选择 shell 脚本。",
+  "settings.openCode.timed-out": "检查 OpenCode CLI 超时",
+  "settings.openCode.diagnosticFailed": "无法检查 OpenCode CLI。",
+  "settings.openCode.installConfirmTitle": "安装 OpenCode CLI？",
+  "settings.openCode.installConfirmDescription":
+    "ZCode 将安装 OpenCode 并验证版本。Windows 使用 OpenCode 官方 V2 WinGet 软件包 Anomaly.OpenCode，只有确认后才会接受 WinGet 源和软件包协议。已检测到的 CLI 不会被升级或替换。",
+  "settings.openCode.install": "安装 OpenCode",
+  "settings.openCode.installInstructions": "安装说明",
+  "settings.openCode.chooseCli": "定位 CLI 文件",
+  "settings.openCode.searchPath": "重新搜索 PATH",
+  "settings.openCode.installing": "正在安装…",
+  "settings.openCode.install-failed": "OpenCode 安装失败。请按官方说明手动安装。",
+  "settings.openCode.install-verification-failed":
+    "安装命令已结束，但 ZCode 无法验证 OpenCode CLI。",
+  "settings.openCode.install-requires-missing-cli":
+    "检测到已有 CLI 或无法安全识别。ZCode 没有执行安装或升级。",
+  "settings.openCode.install-platform-unsupported":
+    "此平台不支持自动安装。请按官方说明手动安装 OpenCode。",
+  "settings.openCode.desktopLocalHostRequired":
+    "OpenCode ACP 仅可通过 ZCode Desktop 本地 Host 使用。",
+  "settings.openCode.localWorkspaceNotice":
+    "OpenCode 在此电脑上运行。请选择本地文件夹；远程工作区路径不会发送给它。",
+  "settings.openCode.workspace": "本地工作区文件夹",
+  "settings.openCode.chooseWorkspace": "选择文件夹",
+  "settings.openCode.startSession": "启动 OpenCode 会话",
+  "settings.openCode.starting": "正在启动会话…",
+  "settings.openCode.cliAuthNotice":
+    "如需登录，请使用 OpenCode 自己的 CLI。ZCode 不会收集或复制 OpenCode 凭据。",
+  "settings.openCode.sessionStarted": "独立 OpenCode 会话已启动",
+  "settings.openCode.sessionId": "OpenCode 会话：{id}",
+  "settings.openCode.closeSession": "关闭会话",
+  "settings.openCode.model": "OpenCode 提供的模型",
+  "settings.openCode.modelId": "ACP provider/model ID",
+  "settings.openCode.applyModel": "应用模型选择",
+  "settings.openCode.agent": "OpenCode 智能体模式",
+  "settings.openCode.defaultModel": "OpenCode 默认模型",
+  "settings.openCode.defaultModelDetail":
+    "此 ACP 会话没有提供可选模型。OpenCode 将使用自己的默认模型；ZCode 不会替换为其他模型。",
+  "settings.openCode.confirmDefault": "使用 OpenCode 默认模型",
+  "settings.openCode.transcriptEmpty": "OpenCode 的输出会显示在这里，与 ZCode 聊天分开。",
+  "settings.openCode.role.user": "你",
+  "settings.openCode.role.assistant": "OpenCode",
+  "settings.openCode.role.tool": "OpenCode 活动",
+  "settings.openCode.prompt": "发送给 OpenCode 的提示",
+  "settings.openCode.promptPlaceholder": "描述要交给 OpenCode 智能体的工作…",
+  "settings.openCode.send": "发送给 OpenCode",
+  "settings.openCode.cancel": "取消 OpenCode 运行",
+  "settings.openCode.confirmModelBeforePrompt":
+    "发送提示前，请应用模型选择，或明确确认使用 OpenCode 默认模型。",
+  "settings.openCode.permission.title": "OpenCode 正在请求权限",
+  "settings.openCode.permission.scope":
+    "请选择 OpenCode 提供的选项；持久选项的作用范围由 OpenCode 决定。",
+  "settings.openCode.permission.optionKind": "OpenCode 选项类型：{kind}",
+  "settings.openCode.permission.kind": "工具类型",
+  "settings.openCode.operationFailed": "OpenCode 操作失败。",
+  "settings.openCode.sessionStartFailed":
+    "无法启动 OpenCode 会话。请检查 CLI、OpenCode 自己的登录状态和配置后重试。",
+  "settings.openCode.modelSelectionFailed": "OpenCode 无法应用该模型。请刷新会话并选择可用项。",
+  "settings.openCode.agentSelectionFailed":
+    "OpenCode 无法应用该智能体模式。请刷新会话并选择可用项。",
+  "settings.openCode.promptFailed": "OpenCode 无法完成该提示。",
+  "settings.openCode.cancelFailed": "无法取消 OpenCode 运行。",
+  "settings.openCode.closeFailed": "无法关闭 OpenCode 会话。",
+  "settings.openCode.cli-not-ready": "OpenCode CLI 尚未就绪。请检查安装和版本。",
+  "settings.openCode.workspace-path-must-be-absolute": "启动 OpenCode 前，请选择本地工作区文件夹。",
+  "settings.openCode.workspace-directory-unavailable": "所选本地工作区文件夹已不可用。",
+  "settings.openCode.session-not-found": "OpenCode 会话已不可用。请启动新会话。",
+  "settings.openCode.session-busy": "请等待当前 OpenCode 运行结束或先取消。",
+  "settings.openCode.prompt-invalid": "请输入不超过 64,000 个字符的提示。",
+  "settings.openCode.acp-session-create-failed":
+    "OpenCode 无法创建会话。请检查 OpenCode 自己的登录状态和配置。",
+  "settings.openCode.config-option-invalid": "该模型或智能体选项已不可用。请刷新会话。",
+  "settings.openCode.config-option-update-failed": "OpenCode 无法更新该选项。请改选其他可用值。",
+  "settings.openCode.acp-connection-closed": "OpenCode 进程已关闭 ACP 连接。请启动新会话。",
+  "settings.openCode.acp-timeout": "OpenCode 未及时响应。请检查 CLI 后重试。",
+  "settings.openCode.acp-initialize-failed": "当前 OpenCode CLI 不支持预期的 ACP 握手。",
+  "settings.openCode.acp-stdio-unsupported":
+    "此 OpenCode CLI 未声明 ACP 所需的 `serve --stdio` 模式。ZCode 尚未创建会话。请按官方 V2 安装说明手动更新 OpenCode；当前不支持自动跨主版本升级。",
+  "settings.openCode.acp-stdio-unavailable": "OpenCode 没有提供 ACP stdio 连接。",
+  "settings.openCode.manualUpdateInstructions": "打开 OpenCode V2 官方安装说明",
   "settings.modelProvider.add": "添加供应商",
   "settings.modelProvider.createCustomProvider": "创建自定义供应商",
   "settings.modelProvider.templateCreateFailed": "创建供应商失败：个人供应商配置格式无效",
@@ -5092,6 +5186,7 @@ const zhCN: Record<string, string> = {
   "settingsSync.action.importing": "导入进行中",
   "settingsSync.action.finish": "开始使用",
   "settingsSync.agent.zcode": "ZCode Agent",
+  "settingsSync.agent.cline": "Cline",
   "settingsSync.agent.claudeCode": "Claude Code",
   "settingsSync.agent.codexCli": "Codex CLI",
   "settingsSync.agent.openCode": "OpenCode",

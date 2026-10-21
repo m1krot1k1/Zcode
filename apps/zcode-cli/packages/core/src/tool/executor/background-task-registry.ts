@@ -77,7 +77,7 @@ export function registerRuntimeBackgroundTask(
   // 外部化预留的透传；外部化落地时应随其语义重新裁决（勿顺手清空、也勿顺手扩大语义）。
   const rearm = isDynamicWorkflowRunDispatchToolName(toolCall.name);
   // 新生命 = 在**终态**条目上重臂。它必须走 register() 而非 update()：register 会用当前
-  // activeBranchGeneration 重盖 branchGeneration，而 update 的 {...existing} 会把上一段生命
+  // 按 owner session generation 重盖 branchGeneration，而 update 的 {...existing} 会把上一段生命
   // 周期的分支代带进新生命——cancel → rewind（分支代 +1）→ resume 时，新生命的任务事件会被
   // runtime-command-generation 的 stale-branch fencing 当旧分支残留整体丢弃（终态通知再次失踪）。
   // 仍在 running 的既有条目不是新生命，维持 update 的合并语义与它自己的分支代。
@@ -89,6 +89,7 @@ export function registerRuntimeBackgroundTask(
     description: existing?.description ?? description,
     isBackgrounded: true,
     outputFile: outputFile ?? existing?.outputFile,
+    ownerSessionId: deps.sessionId,
     parentToolCallId: existing?.parentToolCallId ?? toolCall.id,
     startedAt: existing?.startedAt ?? new Date(),
     status: "running",

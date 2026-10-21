@@ -7,6 +7,9 @@ export function buildRemoteWorkspaceSessionServices(
 ): IServiceAccessor {
   return {
     ...baseServices,
+    // OpenCode ACP is a local process owner; a remote workspace must not receive the local CLI
+    // service or pass its remote cwd into that process.
+    openCodeAcpRuntime: undefined,
     fileService: remoteServices.fileService,
     // 根因：遗漏此覆盖会用本机输出根目录校验远端 HTML，合法文件也被判越界。
     // 文件读取走执行端；useGenUi 的状态与沙箱仍取 desktop base services。

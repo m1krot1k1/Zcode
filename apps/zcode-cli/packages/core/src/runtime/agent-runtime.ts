@@ -1,10 +1,16 @@
-import { configureOffPeakRuntime, controlOffPeakRuntime } from "./off-peak/runtime.js";
+import {
+  configureOffPeakRuntime,
+  controlOffPeakRuntime,
+} from "./off-peak/runtime.js";
 import {
   createTurnAgentDefinitions,
   createAgentDefinitionsReader,
   type GetAgentDefinitions,
 } from "../subagent/definitions.js";
-import { DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY, resolveExecutionState } from "@zcode/shared";
+import {
+  DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
+  resolveExecutionState,
+} from "@zcode/shared";
 import type { BackgroundBashOutputResult } from "@zcode/shared";
 import {
   createDenyPermissionBroker,
@@ -129,12 +135,18 @@ import type {
   WorkspaceForkResult,
 } from "./types.js";
 import type { AgentRuntimeInternal } from "./internal.js";
-import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtime-task/registry.js";
+import {
+  InMemoryRuntimeTaskRegistry,
+  type RuntimeTaskRegistry,
+} from "../runtime-task/registry.js";
 import type { WorkflowBlockedReminderClock } from "../runtime-task/workflow-blocked-reminder.js";
 import { createWorkflowBlockedReminder } from "./methods/dynamic-workflow-blocked-reminder.js";
 import { createMemoryRecallState } from "../memory/recall/index.js";
 import type { MemoryRecallState } from "../memory/recall/index.js";
-import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child-client-ports.js";
+import type {
+  ChildClientPortsContext,
+  ClientFacingPorts,
+} from "./helpers/child-client-ports.js";
 import type { ProjectMemoryRecallPrefetch } from "./helpers/project-memory-recall.js";
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { ProjectMemoryUpdate } from "./helpers/project-memory-dream.js";
@@ -258,14 +270,21 @@ export class AgentRuntime {
   // activeTurn.pendingInputs 做行内 drain，否则新入队消息会越过仍留在投影中的旧暂停项。
   private queueExternalDrainActive = false;
   private shuttingDown = false;
+  private subagentShutdownPromise?: Promise<void>;
   private backgroundTaskNotificationsSealed = false;
-  private backgroundTaskNotificationSealReason?: "subagent_terminal" | "subagent_cancelled";
+  private backgroundTaskNotificationSealReason?:
+    | "subagent_terminal"
+    | "subagent_cancelled";
   private pendingModelChangeTimeline?: PendingModelChangeTimeline;
   private sessionStartHookRan = false;
   private sessionTitleGenerationAttempted = false;
   private agentTelemetry: RuntimeTelemetryFacade;
 
-  constructor(sessionId: SessionId, config: AgentRuntimeConfig, deps: AgentRuntimeDeps) {
+  constructor(
+    sessionId: SessionId,
+    config: AgentRuntimeConfig,
+    deps: AgentRuntimeDeps,
+  ) {
     const runtime = this as unknown as AgentRuntimeInternal;
     this.sessionId = sessionId;
     this.turnNumber = 0;
@@ -278,7 +297,8 @@ export class AgentRuntime {
     const definitions = createTurnAgentDefinitions(
       deps.getAgentDefinitions ??
         createAgentDefinitionsReader(this.config.subagents?.profiles ?? [], {
-          builtInModelSelectionOverrides: this.config.subagents?.builtInModelSelectionOverrides,
+          builtInModelSelectionOverrides:
+            this.config.subagents?.builtInModelSelectionOverrides,
         }),
       deps.loadAgentDefinitions,
     );
@@ -298,7 +318,8 @@ export class AgentRuntime {
     });
     this.permissionService =
       deps.permissionService ?? new PermissionService(defaultPermissionConfig);
-    this.permissionBroker = deps.permissionBroker ?? createDenyPermissionBroker();
+    this.permissionBroker =
+      deps.permissionBroker ?? createDenyPermissionBroker();
     this.toolScheduler =
       deps.toolScheduler ??
       new ToolScheduler({
@@ -307,7 +328,8 @@ export class AgentRuntime {
     this.eventReducer = new EventReducer();
     this.eventStore = deps.eventStore;
     this.sessionStore = deps.sessionStore;
-    this.rootTraceContext = deps.traceContext ?? createRootTraceContext({ sessionId });
+    this.rootTraceContext =
+      deps.traceContext ?? createRootTraceContext({ sessionId });
     this.appVersion = deps.appVersion ?? "0.0.0";
     this.logger = deps.logger?.child({
       ...traceContextToLogContext(this.rootTraceContext),
@@ -338,22 +360,35 @@ export class AgentRuntime {
     this.contextSourcePort = deps.contextSourcePort;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
-    this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
-    this.runtimeTaskRegistry.setActiveBranchGeneration?.(this.branchGeneration);
+    this.runtimeTaskRegistry =
+      deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
+    const branchOwnerSessionId = this.config.parentSessionId ?? sessionId;
+    this.branchGeneration =
+      this.runtimeTaskRegistry.getBranchGenerationForSession(
+        branchOwnerSessionId,
+      );
+    this.runtimeTaskRegistry.setBranchGenerationForSession(
+      sessionId,
+      this.branchGeneration,
+    );
+    if (!this.config.parentSessionId)
+      this.runtimeTaskRegistry.openSessionOwner(sessionId);
     this.workflowBlockedReminder = createWorkflowBlockedReminder(runtime);
     this.artifactStore = deps.artifactStore;
     this.executionPort = deps.executionPort;
     this.fileSystemPort = deps.fileSystemPort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;
-    this.subagentPort = deps.subagentPort ?? runtime.createDefaultSubagentPort(deps);
+    this.subagentPort =
+      deps.subagentPort ?? runtime.createDefaultSubagentPort(deps);
     this.dynamicWorkflowRunPort = deps.dynamicWorkflowRunPort;
     // GUI「配置」解析子代理模型用的目录（与工具上下文拿的是同一个端口）。
     this.modelCatalogPort = deps.modelCatalogPort;
     this.registry = deps.toolRegistry ?? createToolRegistry();
     this.workspaceRoot = this.workingDirectory;
     // 必须先于工具装配：registerRuntimeBuiltInTools 的灰度门读的就是这个状态。
-    this.dynamicWorkflowToolsActivated = resolveInitialDynamicWorkflowToolsActivated(this.config);
+    this.dynamicWorkflowToolsActivated =
+      resolveInitialDynamicWorkflowToolsActivated(this.config);
     const tooling = initializeRuntimeTooling(runtime, deps, sessionId);
     this.hookRunner = tooling.hookRunner;
     this.workspaceHookAdmission = deps.workspaceHookAdmission;
@@ -361,7 +396,10 @@ export class AgentRuntime {
 
     this.contextBuilder = deps.contextBuilder ?? null;
     if (this.contextBuilder) {
-      runtime.initializeMessageHistoryFromContext(this.contextBuilder, this.rootTraceContext);
+      runtime.initializeMessageHistoryFromContext(
+        this.contextBuilder,
+        this.rootTraceContext,
+      );
       this.contextInitialized = true;
     }
     runtime.startMcpStartup(this.rootTraceContext);
@@ -370,6 +408,7 @@ export class AgentRuntime {
   async closeBrowserSession(): Promise<void> {
     this.beginShutdown();
     disposeNodeReplSession(this.sessionId);
+    await this.subagentShutdownPromise;
     try {
       await this.browserControlPort?.closeSession?.({
         sessionId: this.sessionId,
@@ -388,6 +427,19 @@ export class AgentRuntime {
     // ExecutionPort.close() 会把后台 Bash 收口为 cancelled；若允许
     // teardown terminal event 再唤醒模型，并与随后关闭的 session store 竞态。
     this.shuttingDown = true;
+    // 修复依据：任务快照跨越整个 Agent 树共享，子 runtime teardown 必须由同一 registry
+    // 同步封住 admission、取消本会话直接拥有的后台 children，并等待它们真实退出。
+    this.subagentShutdownPromise ??= this.runtimeTaskRegistry
+      .cancelSubagentChildren(
+        this.sessionId,
+        new Error(`Agent runtime is shutting down: ${this.sessionId}`),
+      )
+      .catch((error: unknown) => {
+        this.logger?.warn("Subagent shutdown settlement failed", {
+          error: error instanceof Error ? error.message : String(error),
+          event: "subagent.shutdown.settlement_failed",
+        });
+      });
     // 同一条理由：会话在关，提醒钟不能再到点唤起一轮。
     this.workflowBlockedReminder.stop();
     // 关闭单个 session 后进程仍存活，
@@ -401,7 +453,10 @@ export interface AgentRuntime {
   beginShutdown(): void;
   closeBrowserSession(): Promise<void>;
   updateConfig(
-    patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
+    patch: Pick<
+      AgentRuntimeConfig,
+      "mode" | "planEnabled" | "language" | "outputStyle"
+    >,
   ): void;
   initializeSessionShellEnvironmentIfNeeded(
     selection: ExecutionShellSelection | (() => ExecutionShellSelection),
@@ -409,7 +464,10 @@ export interface AgentRuntime {
   getSessionShellSelection(): ExecutionShellSelection | undefined;
   getMode(): CollaborationMode;
   getPlanEnabled(): boolean;
-  grantPermissionFullAccess(interactionId: string, signal?: AbortSignal): Promise<string>;
+  grantPermissionFullAccess(
+    interactionId: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
   setExecutionState(
     input: { mode?: string; planEnabled?: boolean },
     traceContext?: TraceContext,
@@ -426,7 +484,10 @@ export interface AgentRuntime {
     options?: { goalSummaryTargetID?: string; traceContext?: TraceContext },
   ): void;
   /** renameSession：用户显式重命名（titleSource=custom，发 SessionTitleUpdated）。 */
-  setCustomSessionTitle(input: { title: string; traceContext: TraceContext }): Promise<void>;
+  setCustomSessionTitle(input: {
+    title: string;
+    traceContext: TraceContext;
+  }): Promise<void>;
   maybeStartGoalSummaryTitleGeneration(
     input: string,
     targetID: string,
@@ -482,7 +543,9 @@ export interface AgentRuntime {
     promotedInputId: string;
   }): AcquireForegroundPromotionLeaseResult;
   releaseForegroundPromotionLease(leaseId: string): boolean;
-  enqueueDeferredInput(input: string | TurnSteerInput): Promise<TurnSteerResult>;
+  enqueueDeferredInput(
+    input: string | TurnSteerInput,
+  ): Promise<TurnSteerResult>;
   steerTurn(input: string | TurnSteerInput): Promise<TurnSteerResult>;
   /** v4 queue 单项删除：按 pendingInputId 移除当前 active turn 的一条排队输入。 */
   removePendingInputById(options: {
@@ -524,11 +587,17 @@ export interface AgentRuntime {
    */
   clearAllPendingInputs(traceContext: TraceContext): Promise<number>;
   /** v4 setAutoDrain：翻转 queue autoDrain 授权位（会话级）。 */
-  setQueueAutoDrain(options: { autoDrain: boolean; traceContext?: TraceContext }): Promise<void>;
+  setQueueAutoDrain(options: {
+    autoDrain: boolean;
+    traceContext?: TraceContext;
+  }): Promise<void>;
   /** 暂停队列外层 FIFO 已消费到空，恢复后续 running queue 的行内 drain。 */
   completeExternalQueueDrain(): void;
   /** v4 setFollowupMode：翻转 followup 路由模式（queue/guide，会话级）。 */
-  setFollowupMode(options: { mode: "queue" | "guide"; traceContext?: TraceContext }): Promise<void>;
+  setFollowupMode(options: {
+    mode: "queue" | "guide";
+    traceContext?: TraceContext;
+  }): Promise<void>;
   /** v4 switchModelConfig：模型选型变化后补发 ModelSelected（config/marker 投影）。 */
   emitModelSelected(options: {
     modelSelection: ModelSelection;
@@ -587,9 +656,13 @@ export interface AgentRuntime {
   /** Composer 使用的 Session Skill 快照；同一 runtime 冻结，runtime 重建后重新发现。 */
   getSkillCatalog(traceContext: TraceContext): Promise<SkillLoadOutcome>;
   resumeFromStore(options?: ResumeSessionOptions): Promise<ResumeSessionResult>;
-  recordTargetChanged(input: TargetChangedPayload & { traceContext: TraceContext }): Promise<void>;
+  recordTargetChanged(
+    input: TargetChangedPayload & { traceContext: TraceContext },
+  ): Promise<void>;
   recordUserInputAutoResolutionUpdate(
-    input: UserInputAutoResolutionUpdatedPayload & { traceContext?: TraceContext },
+    input: UserInputAutoResolutionUpdatedPayload & {
+      traceContext?: TraceContext;
+    },
   ): Promise<void>;
   /** workflow run 进度的出回合追加（事件源在 bootstrap 的 run service）。 */
   recordDynamicWorkflowRunProgress(
@@ -639,11 +712,15 @@ export interface AgentRuntime {
     traceContext?: TraceContext;
     verifyBeforeContinue?: boolean;
   }): Promise<TurnResult | null>;
-  continueActiveTargetLoop(options: ContinueActiveTargetLoopOptions): Promise<TurnResult | null>;
+  continueActiveTargetLoop(
+    options: ContinueActiveTargetLoopOptions,
+  ): Promise<TurnResult | null>;
   stopActiveForegroundExecution(
     options?: StopActiveForegroundExecutionOptions,
   ): StopActiveForegroundExecutionResult;
-  activatePausedTargetAfterResume(traceContext: TraceContext): Promise<SessionGoal | null>;
+  activatePausedTargetAfterResume(
+    traceContext: TraceContext,
+  ): Promise<SessionGoal | null>;
   executeTurn(
     input: string,
     attachments?: TurnState["attachments"],
@@ -655,11 +732,21 @@ export interface AgentRuntime {
     schedule: ToolSchedule,
     options?: ExecuteToolsOptions,
   ): Promise<ExecuteToolsResult>;
-  emitPermissionRequest(toolCallId: ToolCallId, toolName: string, riskLevel: string): Promise<void>;
-  resolvePermission(toolCallId: ToolCallId, decision: PermissionDecisionResult): Promise<void>;
+  emitPermissionRequest(
+    toolCallId: ToolCallId,
+    toolName: string,
+    riskLevel: string,
+  ): Promise<void>;
+  resolvePermission(
+    toolCallId: ToolCallId,
+    decision: PermissionDecisionResult,
+  ): Promise<void>;
   getPendingPermissionRequests(): PermissionBrokerRequest[];
   getProjection(): Promise<SessionProjection>;
-  readBackgroundBashOutput(workId: string, sessionId?: string): Promise<BackgroundBashOutputResult>;
+  readBackgroundBashOutput(
+    workId: string,
+    sessionId?: string,
+  ): Promise<BackgroundBashOutputResult>;
   cancelBackgroundTask(
     taskId: string,
     options?: { traceContext?: TraceContext },
@@ -677,7 +764,9 @@ export interface AgentRuntime {
     traceContext?: TraceContext;
   }): void;
   getSessionId(): SessionId;
-  listWorkspaceCheckpoints(options?: { limit?: number }): Promise<WorkspaceCheckpointSummary[]>;
+  listWorkspaceCheckpoints(options?: {
+    limit?: number;
+  }): Promise<WorkspaceCheckpointSummary[]>;
   forkWorkspaceFromCheckpoint(options?: {
     abortSignal?: AbortSignal;
     forkedSessionId?: SessionId;

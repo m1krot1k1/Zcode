@@ -7,6 +7,8 @@ import {
   ModelSelectionFacade,
   ProviderConfigMap,
   ProviderRegistryService,
+  ProviderTemplate,
+  ProviderTemplateMap,
   ProviderSettingsFacade,
   type AccountProviderConfigSnapshot,
   type ProviderConfigSnapshot,
@@ -58,7 +60,9 @@ function completeModelConfig(): ModelConfig {
   });
 }
 
-async function createService(): Promise<ProviderRegistryService> {
+async function createService(
+  overrides: Partial<ProviderConfigSnapshot> = {},
+): Promise<ProviderRegistryService> {
   const config: ProviderConfigSnapshot = {
     revision: "config-1",
     zcodeBuiltinRevision: "builtin-1",
@@ -119,6 +123,7 @@ async function createService(): Promise<ProviderRegistryService> {
         }),
       },
     ]),
+    ...overrides,
   };
   const account: AccountProviderConfigSnapshot = {
     revision: "account-1",
@@ -235,6 +240,93 @@ describe("Provider Facades", () => {
       issues: [],
     });
     expect(facade.getView()).toEqual(current);
+  });
+
+  it("OpenCode Go 模型预览按 model-specific API route 解析 option map", async () => {
+    const baseUrl = "https://opencode.ai/zen/go/v1";
+    const anthropicMap = "{'anthropic_max_tokens': maxOutputTokens}";
+    const chatMap = "{'chat_max_tokens': maxOutputTokens}";
+    const service = await createService({
+      zcodeBuiltinProviders: ProviderConfigMap.empty(),
+      zcodeBuiltinProviderTemplates: new ProviderTemplateMap([
+        [
+          "opencode-go",
+          new ProviderTemplate({
+            templateId: "opencode-go",
+            templateNameMap: { "zh-CN": "OpenCode Go", "en-US": "OpenCode Go" },
+            config: createApiKeyProviderConfig({
+              apiFormat: "openai-chat-completions",
+              baseURL: baseUrl,
+              models: ["routed-model"],
+            }),
+          }),
+        ],
+      ]),
+      personalProviders: new ProviderConfigMap([
+        {
+          providerId: "go",
+          providerName: "OpenCode Go",
+          templateId: "opencode-go",
+          config: createApiKeyProviderConfig({ apiKey: "test-key" }),
+        },
+      ]),
+      zcodeBuiltinModelRules: new ModelConfigRules([
+        { type: "model", modelMatch: ".*", config: completeModelConfig() },
+        {
+          type: "template-model",
+          templateId: "opencode-go",
+          modelId: "routed-model",
+          config: new ModelConfig({
+            api: { type: "anthropic-messages", baseUrl },
+          }),
+        },
+        {
+          type: "model-api",
+          modelMatch: ".*",
+          apiTypeMatch: "anthropic-messages",
+          config: new ModelConfig({
+            optionSpecs: new ModelOptionSpecsConfig({
+              maxOutputTokens: { map: anthropicMap },
+            }),
+          }),
+        },
+        {
+          type: "model-api",
+          modelMatch: ".*",
+          apiTypeMatch: "openai-chat-completions",
+          config: new ModelConfig({
+            optionSpecs: new ModelOptionSpecsConfig({
+              maxOutputTokens: { map: chatMap },
+            }),
+          }),
+        },
+      ]),
+      personalModels: ModelConfigRules.empty(),
+    });
+    const facade = new ProviderSettingsFacade(service);
+
+    const inherited = facade.resolveModelConfig({ providerId: "go", modelId: "routed-model" });
+    const draft = facade.resolveModelConfig({
+      providerId: "go",
+      originalModelId: "routed-model",
+      modelId: "routed-model",
+      personalConfig: { properties: { inputFormat: { supportsImage: true } } },
+    });
+
+    expect(inherited.effectiveConfig).toMatchObject({
+      api: { type: "anthropic-messages", baseUrl },
+      optionSpecs: { maxOutputTokens: { map: anthropicMap } },
+    });
+    expect(draft.inheritedConfig).toMatchObject({
+      api: { type: "anthropic-messages", baseUrl },
+      optionSpecs: { maxOutputTokens: { map: anthropicMap } },
+    });
+    expect(draft.effectiveConfig).toMatchObject({
+      api: { type: "anthropic-messages", baseUrl },
+      optionSpecs: { maxOutputTokens: { map: anthropicMap } },
+      properties: { inputFormat: { supportsImage: true } },
+    });
+    expect(inherited.effectiveConfig.optionSpecs?.maxOutputTokens?.map).not.toBe(chatMap);
   });
 
   it("Personal Model Draft 保存校验 View revision 后只调用一次原子 Mutation", async () => {

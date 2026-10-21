@@ -43,9 +43,21 @@ if [[ "${toolName}" == "codesign" && "\${ZCODE_FAKE_CODESIGN_FAIL_HELPER:-0}" ==
   echo "fake helper codesign rejection" >&2
   exit 7
 fi
+if [[ "${toolName}" == "codesign" && "\${ZCODE_FAKE_CODESIGN_FAIL_MAIN:-0}" == "1" && "$*" == *"ZCode.app" ]]; then
+  echo "fake main app codesign rejection" >&2
+  exit 9
+fi
+if [[ "${toolName}" == "spctl" && "\${ZCODE_FAKE_SPCTL_FAIL_MAIN:-0}" == "1" && "$*" == *"ZCode.app" ]]; then
+  echo "fake main app Gatekeeper rejection" >&2
+  exit 10
+fi
 if [[ "${toolName}" == "xcrun" && "\${ZCODE_FAKE_STAPLER_FAIL_HELPER:-0}" == "1" && "$*" == *"${HELPER_APP_NAME}"* ]]; then
   echo "fake helper stapler rejection" >&2
   exit 8
+fi
+if [[ "${toolName}" == "xcrun" && "\${ZCODE_FAKE_STAPLER_FAIL_MAIN:-0}" == "1" && "$*" == *"ZCode.app" ]]; then
+  echo "fake main app notarization rejection" >&2
+  exit 11
 fi
 `,
   );
@@ -137,6 +149,55 @@ describe.skipIf(isWindows)("doctor-macos-release-app.sh", () => {
     expect(log).toContain(`spctl\t-a\t-vv\t-t\texec\t${appPath}`);
     expect(log).not.toContain(HELPER_APP_NAME);
     expect(output).toContain("standalone Computer Use Helper.app not required");
+  });
+
+  it("release gate требует stapled notarization для главного ZCode.app", () => {
+    const workspaceDir = makeTempDir("zcode-macos-release-doctor-main-staple-");
+    const binDir = join(workspaceDir, "bin");
+    const toolLog = join(workspaceDir, "tool.log");
+    const { appPath } = createReleaseApp(workspaceDir);
+
+    mkdirSync(binDir, { recursive: true });
+    writeFakeTool(binDir, "codesign", toolLog);
+    writeFakeTool(binDir, "spctl", toolLog);
+    writeFakeTool(binDir, "xcrun", toolLog);
+
+    const output = runDoctor(appPath, binDir, { ZCODE_MACOS_REQUIRE_APP_STAPLE: "1" });
+
+    expect(output).toContain("[macos-release-doctor] done");
+    expect(readFileSync(toolLog, "utf-8")).toContain(`xcrun\tstapler\tvalidate\t${appPath}`);
+  });
+
+  it.each([
+    {
+      label: "codesign",
+      failEnv: { ZCODE_FAKE_CODESIGN_FAIL_MAIN: "1" },
+      error: /fake main app codesign rejection/u,
+    },
+    {
+      label: "Gatekeeper",
+      failEnv: { ZCODE_FAKE_SPCTL_FAIL_MAIN: "1" },
+      error: /fake main app Gatekeeper rejection/u,
+    },
+    {
+      label: "notarization",
+      failEnv: { ZCODE_FAKE_STAPLER_FAIL_MAIN: "1" },
+      error: /fake main app notarization rejection/u,
+    },
+  ])("release gate останавливается при отказе главного app: $label", ({ failEnv, error }) => {
+    const workspaceDir = makeTempDir("zcode-macos-release-doctor-main-fail-");
+    const binDir = join(workspaceDir, "bin");
+    const toolLog = join(workspaceDir, "tool.log");
+    const { appPath } = createReleaseApp(workspaceDir);
+
+    mkdirSync(binDir, { recursive: true });
+    writeFakeTool(binDir, "codesign", toolLog);
+    writeFakeTool(binDir, "spctl", toolLog);
+    writeFakeTool(binDir, "xcrun", toolLog);
+
+    expect(() =>
+      runDoctor(appPath, binDir, { ZCODE_MACOS_REQUIRE_APP_STAPLE: "1", ...failEnv }),
+    ).toThrow(error);
   });
 
   it("CUA release gate 验收外置 ZCode Computer Use.app", () => {

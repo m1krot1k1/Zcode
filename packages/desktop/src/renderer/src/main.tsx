@@ -320,6 +320,7 @@ function initializeBusinessRoot(port: MessagePort): void {
   appInitialized = true;
   const services = connectViaMessagePort(port, {
     sourceServerManagementService: true,
+    openCodeAcpRuntime: true,
   });
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);

@@ -9,6 +9,7 @@ import {
   completeModelPropertiesDataSchema,
   completeModelOptionSpecsDataSchema,
   completeModelConfigDataSchema,
+  type ModelApiOverrideData,
   type enumOptionSpecDataSchema,
   type limitOptionSpecDataSchema,
   type modelInputFormatDataSchema,
@@ -286,12 +287,14 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
   readonly enabled?: ModelConfigObject["enabled"];
   readonly properties?: ModelPropertiesConfig | null;
   readonly optionSpecs?: ModelOptionSpecsConfig | null;
+  readonly api?: ModelApiOverrideData | null;
 
   constructor(input: ModelConfigInput = {}) {
     super();
     this.enabled = input.enabled;
     this.properties = input.properties;
     this.optionSpecs = input.optionSpecs;
+    this.api = input.api == null ? input.api : Object.freeze({ ...input.api });
     Object.freeze(this);
   }
 
@@ -310,6 +313,7 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
         config.optionSpecs == null
           ? config.optionSpecs
           : new ModelOptionSpecsConfig(config.optionSpecs),
+      api: config.api,
     });
   }
 
@@ -318,6 +322,7 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
       enabled: this.overlayValue(this.enabled, next.enabled),
       properties: this.overlayConfig(this.properties, next.properties),
       optionSpecs: this.overlayConfig(this.optionSpecs, next.optionSpecs),
+      api: this.overlayValue(this.api, next.api),
     });
   }
 
@@ -330,6 +335,7 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
       enabled: this.enabled,
       properties: this.properties?.toJSON() ?? this.properties,
       optionSpecs: this.optionSpecs?.toJSON() ?? this.optionSpecs,
+      api: this.api,
     });
   }
 }
@@ -420,6 +426,19 @@ export class ModelConfigRules {
       result = result.overlay(rule.config);
     }
     return result;
+  }
+
+  /** Resolve API-specific recommendations after the model's route has been selected. */
+  resolveForModelApi(input: ModelConfigRuleResolutionInput): ModelConfig {
+    const initial = this.resolve(input);
+    if (!initial.api) return initial;
+    const resolved = this.resolve({
+      ...input,
+      apiType: initial.api.type,
+      baseUrl: initial.api.baseUrl,
+    });
+    // Preserve the selected route when API-specific recommendation rules overlay other fields.
+    return resolved.overlay(new ModelConfig({ api: initial.api }));
   }
 
   setExact(

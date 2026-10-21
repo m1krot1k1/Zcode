@@ -1,5 +1,6 @@
 export type SettingsSyncAgent =
   | "zcode"
+  | "cline"
   | "claudeCode"
   | "codexCli"
   | "openCode"
@@ -136,6 +137,7 @@ export interface SettingsSyncPluginImportResult {
 }
 
 export type SettingsSyncMcpServerImportStatus = "imported" | "skipped" | "failed";
+export type SettingsSyncMcpServerImportWarning = "secretsOmittedForProjectScope";
 
 export interface SettingsSyncMcpServerImportResult {
   name: string;
@@ -143,6 +145,7 @@ export interface SettingsSyncMcpServerImportResult {
   sourceScope: SettingsSyncSourceScope;
   status: SettingsSyncMcpServerImportStatus;
   skipReason?: SettingsSyncMcpServerSkipReason;
+  warnings?: SettingsSyncMcpServerImportWarning[];
 }
 
 export interface SettingsSyncAgentSummary {

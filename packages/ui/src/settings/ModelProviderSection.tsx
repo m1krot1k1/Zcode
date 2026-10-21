@@ -67,6 +67,7 @@ import {
   type SettingsModelProviderTarget,
 } from "@/lib/settingsNavigation.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
+import { OpenCodeAgentSettingsPanel } from "@/opencode-agent-settings/index.js";
 
 export {
   fuzzyMatch,
@@ -1126,6 +1127,10 @@ export function ModelProviderSection({
       onReorderProviderIds={handleReorderProviderIds}
       reorderableProviderIds={reorderableProviderIds}
     >
+      <OpenCodeAgentSettingsPanel
+        initialWorkspacePath={connectivityWorkspacePath ?? ""}
+        remoteWorkspaceActive={connectivityWorkspaceRequired}
+      />
       {(invalidProviderTarget || navigationUnavailable) && !templatePickerOpen ? (
         <p role="alert" className="mb-3 text-ui-base text-destructive">
           {intl.formatMessage({

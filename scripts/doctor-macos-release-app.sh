@@ -31,6 +31,16 @@ REQUIRE_CUA_HELPER_STAPLE=0
 if [[ "$REQUIRE_CUA_HELPER" =~ ^(1|true|on)$ ]]; then
   REQUIRE_CUA_HELPER_STAPLE=1
 fi
+REQUIRE_MAIN_APP_STAPLE="${ZCODE_MACOS_REQUIRE_APP_STAPLE:-0}"
+REQUIRE_MAIN_APP_STAPLE_ENABLED=0
+case "$REQUIRE_MAIN_APP_STAPLE" in
+  1|true|on) REQUIRE_MAIN_APP_STAPLE_ENABLED=1 ;;
+  0|false|off|"") ;;
+  *)
+    echo "[macos-release-doctor] invalid ZCODE_MACOS_REQUIRE_APP_STAPLE: $REQUIRE_MAIN_APP_STAPLE" >&2
+    exit 1
+    ;;
+esac
 
 if [ "${APP_PATH:-}" = "--help" ] || [ "${APP_PATH:-}" = "-h" ]; then
   cat <<'USAGE'
@@ -43,6 +53,10 @@ Usage:
 Always validates the installed macOS release app with:
   codesign --verify --deep --strict <app>
   spctl -a -vv -t exec <app>
+
+Set ZCODE_MACOS_REQUIRE_APP_STAPLE=1 to also require a local notarization ticket
+on the main app bundle using xcrun stapler validate. This is intended for the
+release gate; it does not submit the app for notarization.
 
 Set ZCODE_CUA_REQUIRE_HELPER=1 for CUA/Helper release gates. In that mode this
 also validates the independently signed Helper bundle selected below with the
@@ -147,6 +161,12 @@ require_command spctl
 assert_bundle_dir "$APP_BUNDLE_NAME" "$APP_PATH"
 assert_executable "$APP_BUNDLE_NAME" "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE_NAME"
 validate_release_bundle "$APP_BUNDLE_NAME" "$APP_PATH"
+if [ "$REQUIRE_MAIN_APP_STAPLE_ENABLED" = "1" ]; then
+  require_command xcrun
+  # spctl может принять app по билету из сети/кэша; release gate отдельно требует
+  # stapled ticket именно внутри собранного bundle.
+  run_quiet_validation "${APP_BUNDLE_NAME} notarization staple" xcrun stapler validate "$APP_PATH"
+fi
 
 if [ "$REQUIRE_CUA_HELPER" != "1" ] && [ "$REQUIRE_CUA_HELPER" != "true" ] && [ "$REQUIRE_CUA_HELPER" != "on" ]; then
   if [ -d "$HELPER_APP_PATH" ]; then

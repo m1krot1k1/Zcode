@@ -3697,6 +3697,10 @@ const enUS: Record<string, string> = {
   "settings.mcp.form.add": "Add",
   "settings.mcpServers.import.open": "Import MCP servers from external agents",
   "settings.mcpServers.import.title": "Import external agent MCP servers",
+  "settings.mcpServers.import.clineSecurityNotice":
+    "Project imports omit Cline environment values, headers, and OAuth client secrets; the result marks each affected server. Global imports keep them in ZCode's private config. Cline OAuth login tokens are never migrated, so authorize those servers in ZCode.",
+  "settings.mcpServers.import.warning.secretsOmittedForProjectScope":
+    "Environment values, headers, and OAuth client secret were omitted for project scope. Import to Global to keep them in the private user config.",
   "settings.mcpServers.import.scanning": "Scanning importable MCP servers...",
   "settings.mcpServers.import.empty":
     "No importable MCP servers found. Check the external agent MCP config files and scan again.",
@@ -3748,6 +3752,109 @@ const enUS: Record<string, string> = {
   "settings.plugins.toggle.failed": "Couldn't update {plugin}. Try again.",
   "settings.modelProviderDescription":
     "Manage custom model providers. Once configured, they can be selected during chat.",
+  "settings.openCode.title": "Local OpenCode agent",
+  "settings.openCode.ownership":
+    "OpenCode runs as a separate local agent and owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
+  "settings.openCode.checking": "Checking the OpenCode CLI…",
+  "settings.openCode.available": "OpenCode CLI detected ({version})",
+  "settings.openCode.missing": "OpenCode CLI is not installed",
+  "settings.openCode.unavailable": "OpenCode CLI could not be checked",
+  "settings.openCode.windowsShimUnsupported":
+    "The detected Windows CLI is a .cmd/.bat shim and cannot be launched safely by ZCode. Install a native executable or launch it from a terminal.",
+  "settings.openCode.explicitCliUnavailable":
+    "The selected OpenCode file is not a usable executable. Choose the native CLI binary, not a shell script.",
+  "settings.openCode.timed-out": "OpenCode CLI check timed out",
+  "settings.openCode.diagnosticFailed": "Could not check the OpenCode CLI.",
+  "settings.openCode.installConfirmTitle": "Install the OpenCode CLI?",
+  "settings.openCode.installConfirmDescription":
+    "ZCode will install OpenCode and verify its version. On Windows, it uses OpenCode's official V2 WinGet package Anomaly.OpenCode and accepts WinGet agreements only after this confirmation. An existing CLI will not be upgraded or replaced.",
+  "settings.openCode.install": "Install OpenCode",
+  "settings.openCode.installInstructions": "Install instructions",
+  "settings.openCode.chooseCli": "Locate CLI file",
+  "settings.openCode.searchPath": "Search PATH again",
+  "settings.openCode.installing": "Installing…",
+  "settings.openCode.install-failed":
+    "OpenCode installation failed. Use the official instructions to install it manually.",
+  "settings.openCode.install-verification-failed":
+    "The install command finished, but ZCode could not verify the OpenCode CLI.",
+  "settings.openCode.install-requires-missing-cli":
+    "A CLI is already present or could not be safely identified. ZCode did not run an install or upgrade.",
+  "settings.openCode.install-platform-unsupported":
+    "Automatic installation is not supported on this platform. Follow the official instructions and install OpenCode manually.",
+  "settings.openCode.desktopLocalHostRequired":
+    "OpenCode ACP is available only in the local ZCode Desktop Host.",
+  "settings.openCode.localWorkspaceNotice":
+    "OpenCode runs on this computer. Select a local folder; the remote workspace path will not be sent to it.",
+  "settings.openCode.workspace": "Local workspace folder",
+  "settings.openCode.chooseWorkspace": "Choose folder",
+  "settings.openCode.startSession": "Start OpenCode session",
+  "settings.openCode.starting": "Starting session…",
+  "settings.openCode.cliAuthNotice":
+    "Sign in using OpenCode's own CLI if needed. ZCode does not collect or copy OpenCode credentials.",
+  "settings.openCode.sessionStarted": "Separate OpenCode session is active",
+  "settings.openCode.sessionId": "OpenCode session: {id}",
+  "settings.openCode.closeSession": "Close session",
+  "settings.openCode.model": "Model from OpenCode",
+  "settings.openCode.modelId": "ACP provider/model ID",
+  "settings.openCode.applyModel": "Apply model selection",
+  "settings.openCode.agent": "Agent mode from OpenCode",
+  "settings.openCode.defaultModel": "OpenCode default model",
+  "settings.openCode.defaultModelDetail":
+    "This ACP session did not provide a selectable model. OpenCode will use its own default; no ZCode model is substituted.",
+  "settings.openCode.confirmDefault": "Use OpenCode default",
+  "settings.openCode.transcriptEmpty":
+    "OpenCode's output will appear here, separate from ZCode chat.",
+  "settings.openCode.role.user": "You",
+  "settings.openCode.role.assistant": "OpenCode",
+  "settings.openCode.role.tool": "OpenCode activity",
+  "settings.openCode.prompt": "Prompt OpenCode",
+  "settings.openCode.promptPlaceholder": "Describe the work for the OpenCode agent…",
+  "settings.openCode.send": "Send to OpenCode",
+  "settings.openCode.cancel": "Cancel OpenCode run",
+  "settings.openCode.confirmModelBeforePrompt":
+    "Apply a model selection or explicitly confirm the OpenCode default before sending a prompt.",
+  "settings.openCode.permission.title": "OpenCode is requesting permission",
+  "settings.openCode.permission.scope":
+    "Choose an option supplied by OpenCode. OpenCode defines the scope of any persistent choice.",
+  "settings.openCode.permission.optionKind": "OpenCode option type: {kind}",
+  "settings.openCode.permission.kind": "Tool kind",
+  "settings.openCode.operationFailed": "The OpenCode operation failed.",
+  "settings.openCode.sessionStartFailed":
+    "Could not start an OpenCode session. Check the CLI and its own sign-in/configuration, then retry.",
+  "settings.openCode.modelSelectionFailed":
+    "OpenCode could not apply that model. Refresh the session and choose an available option.",
+  "settings.openCode.agentSelectionFailed":
+    "OpenCode could not apply that agent mode. Refresh the session and choose an available option.",
+  "settings.openCode.promptFailed": "OpenCode could not complete the prompt.",
+  "settings.openCode.cancelFailed": "Could not cancel the OpenCode run.",
+  "settings.openCode.closeFailed": "Could not close the OpenCode session.",
+  "settings.openCode.cli-not-ready":
+    "OpenCode CLI is not ready. Check its installation and version.",
+  "settings.openCode.workspace-path-must-be-absolute":
+    "Choose a local workspace folder before starting OpenCode.",
+  "settings.openCode.workspace-directory-unavailable":
+    "The selected local workspace folder is no longer available.",
+  "settings.openCode.session-not-found":
+    "The OpenCode session is no longer available. Start a new session.",
+  "settings.openCode.session-busy":
+    "Wait for the current OpenCode run to finish or cancel it first.",
+  "settings.openCode.prompt-invalid": "Enter a prompt of up to 64,000 characters.",
+  "settings.openCode.acp-session-create-failed":
+    "OpenCode could not create a session. Check OpenCode's own sign-in and configuration.",
+  "settings.openCode.config-option-invalid":
+    "That model or agent option is no longer available. Refresh the session.",
+  "settings.openCode.config-option-update-failed":
+    "OpenCode could not update that option. Choose another available value.",
+  "settings.openCode.acp-connection-closed":
+    "The OpenCode process closed its ACP connection. Start a new session.",
+  "settings.openCode.acp-timeout": "OpenCode did not respond in time. Check its CLI and try again.",
+  "settings.openCode.acp-initialize-failed":
+    "The installed OpenCode CLI does not support the expected ACP handshake.",
+  "settings.openCode.acp-stdio-unsupported":
+    "This OpenCode CLI does not advertise the `serve --stdio` mode required by ACP. ZCode did not create a session. Update OpenCode manually using the official V2 instructions; automatic major-version upgrades are not supported.",
+  "settings.openCode.acp-stdio-unavailable": "OpenCode did not expose an ACP stdio connection.",
+  "settings.openCode.manualUpdateInstructions":
+    "Open official OpenCode V2 installation instructions",
   "settings.modelProvider.add": "Add provider",
   "settings.modelProvider.createCustomProvider": "Create custom provider",
   "settings.modelProvider.templateCreateFailed":
@@ -5447,6 +5554,7 @@ const enUS: Record<string, string> = {
   "settingsSync.action.importing": "Importing...",
   "settingsSync.action.finish": "Start using ZCode",
   "settingsSync.agent.zcode": "ZCode Agent",
+  "settingsSync.agent.cline": "Cline",
   "settingsSync.agent.claudeCode": "Claude Code",
   "settingsSync.agent.codexCli": "Codex CLI",
   "settingsSync.agent.openCode": "OpenCode",

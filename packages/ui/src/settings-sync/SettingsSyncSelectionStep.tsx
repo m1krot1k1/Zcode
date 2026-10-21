@@ -32,6 +32,8 @@ function formatAgentName(agent: string, intl: ReturnType<typeof useZCodeIntl>["i
   switch (agent) {
     case "zcode":
       return intl.formatMessage({ id: "settingsSync.agent.zcode" });
+    case "cline":
+      return intl.formatMessage({ id: "settingsSync.agent.cline" });
     case "claudeCode":
       return intl.formatMessage({ id: "settingsSync.agent.claudeCode" });
     case "codexCli":

@@ -389,13 +389,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       expect(openrouter?.builtinModelIds).toEqual(
         expect.arrayContaining(["openai/gpt-5.6-sol", "anthropic/claude-opus-5", "z-ai/glm-5.3"]),
       );
-      for (const templateId of [
-        "opencode-zen-responses",
-        "opencode-zen-messages",
-        "opencode-zen-chat",
-      ]) {
-        expect(snapshot.providerTemplates?.has(templateId)).toBe(true);
-      }
+      expect(snapshot.providerTemplates?.has("opencode-go")).toBe(true);
     } finally {
       source.dispose();
     }
@@ -434,36 +428,25 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         expect(aggregate.properties?.toJSON(), aggregateId).toEqual(direct.properties?.toJSON());
         expect(aggregate.optionSpecs?.toJSON(), aggregateId).toEqual(direct.optionSpecs?.toJSON());
       }
-      for (const templateId of ["openrouter", "opencode-zen-messages", "opencode-zen-chat"]) {
-        const template = snapshot.providerTemplates!.get(templateId)!.config;
-        const enabledByVendor = new Map<string, boolean>();
-        for (const modelId of template.builtinModelIds!) {
-          const vendor =
-            templateId === "openrouter" ? modelId.split("/")[0]! : modelId.split("-")[0]!;
-          const model = snapshot.models.resolve({
-            providerId: "aggregate-instance",
-            templateId,
-            modelId,
-            apiType: template.api!.type,
-            baseUrl: template.api!.baseUrl,
-          });
-          enabledByVendor.set(
-            vendor,
-            (enabledByVendor.get(vendor) ?? false) || model.enabled === true,
-          );
-        }
-        for (const [vendor, enabled] of enabledByVendor)
-          expect(enabled, `${templateId}/${vendor}`).toBe(true);
+      const templateId = "openrouter";
+      const template = snapshot.providerTemplates!.get(templateId)!.config;
+      const enabledByVendor = new Map<string, boolean>();
+      for (const modelId of template.builtinModelIds!) {
+        const vendor = modelId.split("/")[0]!;
+        const model = snapshot.models.resolve({
+          providerId: "aggregate-instance",
+          templateId,
+          modelId,
+          apiType: template.api!.type,
+          baseUrl: template.api!.baseUrl,
+        });
+        enabledByVendor.set(
+          vendor,
+          (enabledByVendor.get(vendor) ?? false) || model.enabled === true,
+        );
       }
-      const haiku = snapshot.models.resolve({
-        providerId: "zen",
-        templateId: "opencode-zen-messages",
-        modelId: "claude-haiku-4-5",
-        apiType: "anthropic-messages",
-        baseUrl: "https://opencode.ai/zen/v1",
-      });
-      expect(haiku.properties?.inputFormat.supportsImage).toBe(true);
-      expect(haiku.properties?.contextWindow).toBe(200_000);
+      for (const [vendor, enabled] of enabledByVendor)
+        expect(enabled, `${templateId}/${vendor}`).toBe(true);
     } finally {
       source.dispose();
     }
@@ -561,12 +544,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         "anthropic",
         "xai",
         "openrouter",
-        "opencode-go-chat",
-        "opencode-go-messages",
-        "opencode-go-responses",
-        "opencode-zen-responses",
-        "opencode-zen-messages",
-        "opencode-zen-chat",
+        "opencode-go",
       ]);
       for (const [templateId, template] of snapshot.providerTemplates?.entries() ?? []) {
         expect(
@@ -1004,12 +982,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         "template:anthropic",
         "template:xai",
         "template:openrouter",
-        "template:opencode-go-chat",
-        "template:opencode-go-messages",
-        "template:opencode-go-responses",
-        "template:opencode-zen-responses",
-        "template:opencode-zen-messages",
-        "template:opencode-zen-chat",
+        "template:opencode-go",
       ]);
 
       for (const provider of resolution.registryProviders) {

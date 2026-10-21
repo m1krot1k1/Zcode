@@ -53,6 +53,7 @@ import type { ToolSideEffectScope } from "../tools/contract.js";
 import type { SavedWorkflowScope } from "../tools/saved-workflow.js";
 import type { GoalCompletionVerificationOutput, SessionGoal } from "../tools/target.js";
 import type { ToolResultDisplayPayload } from "../tools/tool-result-metadata.js";
+import type { SubagentTaskStatus } from "../interfaces/subagent.port.js";
 import type {
   StreamRecoveryAnchorPayload,
   StreamRecoveryAnchorSelectedPayload,
@@ -178,6 +179,8 @@ export const SessionEventType = {
   SubagentSpawned: "subagent_spawned",
   SubagentMessage: "subagent_message",
   SubagentStopped: "subagent_stopped",
+  // PRISM runtime projection records only the host-observed terminal lifecycle; it is not AC evidence.
+  SubagentExecutionTerminal: "subagent_execution_terminal",
   Interrupt: "interrupt",
   Cancel: "cancel",
   Resume: "resume",
@@ -998,6 +1001,24 @@ export interface BackgroundTaskPayloadBase {
   terminalId?: string;
 }
 
+/**
+ * Stable terminal lifecycle projection for one registered subagent task.
+ * This records runtime state and lineage only; it never verifies task acceptance or claims.
+ */
+export interface SubagentExecutionTerminalPayload {
+  schema: "zcode.prism.subagent-terminal.v1";
+  terminalId: string;
+  rootRunId: string;
+  taskId: string;
+  parentTaskId?: string;
+  branchGeneration: number;
+  childSessionId: SessionId;
+  terminalStatus: Exclude<SubagentTaskStatus, "running">;
+  provenance: "runtime_lifecycle";
+  acceptanceStatus: "unknown";
+  observedAt: Date;
+}
+
 export type BackgroundTaskStartedPayload = BackgroundTaskPayloadBase & {
   status: "running";
 };
@@ -1343,6 +1364,7 @@ export type SessionEventPayload =
   | BackgroundTaskStartedPayload
   | BackgroundTaskUpdatedPayload
   | BackgroundTaskCompletedPayload
+  | SubagentExecutionTerminalPayload
   | DynamicWorkflowRunProgressPayload
   | PermissionRequestedPayload
   | PermissionResolvedPayload

@@ -1,7 +1,16 @@
-import type { ToolSearchExecutionContext, ToolSearchMode } from "@zcode/contracts";
+import type {
+  ToolSearchExecutionContext,
+  ToolSearchMode,
+} from "@zcode/contracts";
 import type { RequestVerificationReason } from "@zcode/shared";
-import type { GetAgentDefinitions, LoadAgentDefinitions } from "../subagent/definitions.js";
-import type { RuntimeInputPresentation, TurnExecutionModelFallbackReason } from "@zcode/contracts";
+import type {
+  GetAgentDefinitions,
+  LoadAgentDefinitions,
+} from "../subagent/definitions.js";
+import type {
+  RuntimeInputPresentation,
+  TurnExecutionModelFallbackReason,
+} from "@zcode/contracts";
 /* eslint-disable max-lines -- Runtime 类型集中承载 core/runtime 对外结构，拆分需要单独迁移。 */
 import { PermissionService, ToolScheduler } from "./deps.js";
 import type {
@@ -151,7 +160,9 @@ export interface AgentRuntimeConfig {
     maxTurns?: number;
     outputRootDir?: string;
     profiles?: readonly AgentProfile[];
-    builtInModelSelectionOverrides?: Partial<Record<"general-purpose" | "Explore", ModelSelection>>;
+    builtInModelSelectionOverrides?: Partial<
+      Record<"general-purpose" | "Explore", ModelSelection>
+    >;
   };
   toolAllowlist?: readonly string[];
   toolDisallowlist?: readonly string[];
@@ -210,11 +221,6 @@ export interface AgentRuntimeConfig {
     timeoutMs?: number;
   };
   parentSessionId?: SessionId;
-  /**
-   * Глубина этого runtime в дереве Agent/Task. Корень — 0.
-   * Потолок задаёт resolveMaxSubagentDepth, а не это поле.
-   */
-  subagentDepth?: number;
   taskType?: SessionTaskType;
   /**
    * 动态工作流灰度门（docs/dynamic-workflow/launch.md「Gray release」）：Host 判定后经
@@ -290,7 +296,9 @@ export interface MainTurnCacheHitAggregate {
   totalCacheWriteTokens: number;
 }
 
-export type BackgroundTaskNotificationSealReason = "subagent_terminal" | "subagent_cancelled";
+export type BackgroundTaskNotificationSealReason =
+  | "subagent_terminal"
+  | "subagent_cancelled";
 
 export interface SealBackgroundTaskNotificationsInput {
   reason: BackgroundTaskNotificationSealReason;
@@ -342,7 +350,9 @@ export interface AgentRuntimeDeps {
   sessionMailboxPort?: SessionMailboxPort;
   modelFactory: RuntimeModelFactory;
   /** 可选宿主能力：解析未来执行的显式意图；不用于修改已冻结 Model。 */
-  resolveEffectiveModelSelection?: (selection: ModelSelection) => EffectiveModelSelectionResult;
+  resolveEffectiveModelSelection?: (
+    selection: ModelSelection,
+  ) => EffectiveModelSelectionResult;
   modelIoDir?: string;
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
   permissionService?: PermissionService;
@@ -423,7 +433,10 @@ export type RuntimeModelFactory = (input: RuntimeModelFactoryInput) => Model;
  * 子 runtime 通过 deriveChildClientPorts 派生端口，将请求路由到父端口绑定的客户端会话。
  */
 export interface ProviderRuntimeHeadersPort {
-  shouldRefreshBeforeModelRequest?(input: { providerId: string; modelId: string }): boolean;
+  shouldRefreshBeforeModelRequest?(input: {
+    providerId: string;
+    modelId: string;
+  }): boolean;
   refreshBeforeModelRequest(input: {
     accountAccess?: ZCodeProviderAccountAccess;
     expectedAccountScope?: string;
@@ -455,7 +468,11 @@ export interface TurnResult {
  * 也不会成为 Session Selection 的第二份来源。
  */
 export interface ModelExecutionContext {
-  offPeak?: { executionId: string; ticketId: string; providerErrorCode: string };
+  offPeak?: {
+    executionId: string;
+    ticketId: string;
+    providerErrorCode: string;
+  };
   /** 仅当前 Turn 跳过自动 Project Memory Extraction；不修改 Session Memory 配置。 */
   memoryExtraction?: "skip";
   selectionScope: "execution";
@@ -552,7 +569,10 @@ export type PromptAdmissionReceipt =
     }
   | TurnSteerResult;
 
-export type ActiveTargetLoopTrigger = "manual" | "user-prompt" | "task-notification";
+export type ActiveTargetLoopTrigger =
+  | "manual"
+  | "user-prompt"
+  | "task-notification";
 
 export interface ContinueActiveTargetLoopOptions {
   abortSignal?: AbortSignal;
@@ -936,7 +956,10 @@ export type ParsedRewindCommand =
       action: "status";
     };
 
-export type ContextUsageTokenMethod = "estimated" | "provider_count" | "proportional_estimate";
+export type ContextUsageTokenMethod =
+  | "estimated"
+  | "provider_count"
+  | "proportional_estimate";
 
 export type ContextUsageConfidence = "high" | "medium" | "low";
 

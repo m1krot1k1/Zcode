@@ -75,22 +75,34 @@ export async function resumeFromStore(
   // 删除 = CLI 软删除（time_deleted）。归档已归 Host 组织态，CLI 不再有归档列；
   // 旧的 time.archived 判断永远为 false，这里改为拒绝恢复已软删除的会话。
   if (!persistedSession || persistedSession.time.deleted !== undefined) {
-    throw createCoreError(CoreErrorType.SessionNotFound, `Session not found: ${this.sessionId}`, {
-      context: { sessionId: this.sessionId },
-      recoverable: true,
-    });
+    throw createCoreError(
+      CoreErrorType.SessionNotFound,
+      `Session not found: ${this.sessionId}`,
+      {
+        context: { sessionId: this.sessionId },
+        recoverable: true,
+      },
+    );
   }
-  const session = await repairPersistedRemoteSessionPaths(this.sessionStore, persistedSession, {
-    onPersistenceFailure: (error) => {
-      this.logger?.warn("Session path repair persistence failed; using in-memory repair", {
-        ...traceContextToLogContext(traceContext),
-        errorMessage: error instanceof Error ? error.message : String(error),
-        event: "session.path_repair.persist_failed",
-        module: "core.runtime",
-        sessionId: this.sessionId,
-      });
+  const session = await repairPersistedRemoteSessionPaths(
+    this.sessionStore,
+    persistedSession,
+    {
+      onPersistenceFailure: (error) => {
+        this.logger?.warn(
+          "Session path repair persistence failed; using in-memory repair",
+          {
+            ...traceContextToLogContext(traceContext),
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            event: "session.path_repair.persist_failed",
+            module: "core.runtime",
+            sessionId: this.sessionId,
+          },
+        );
+      },
     },
-  });
+  );
 
   const messages =
     options?.persistedMessages ??
@@ -102,7 +114,10 @@ export async function resumeFromStore(
   const rewindKeptMessageIds = session.revert?.keptMessageIDs;
   const branchCutAfterMessageId = session.revert?.branchCutAfterMessageID;
   this.branchGeneration = session.revert?.branchGeneration ?? 0;
-  this.runtimeTaskRegistry.setActiveBranchGeneration?.(this.branchGeneration);
+  this.runtimeTaskRegistry.setBranchGenerationForSession(
+    this.sessionId,
+    this.branchGeneration,
+  );
   if (messages.length === 0) {
     this.logger?.warn("Session resume loaded zero persisted messages", {
       ...traceContextToLogContext(traceContext),
@@ -119,10 +134,13 @@ export async function resumeFromStore(
   if (persistedEnvInfo) {
     this.config.envInfo = persistedEnvInfo;
   }
-  const shellRestore = await restoreSessionShellEnvironmentSelectionForResume(this, {
-    currentSelection: getSessionShellSelection(this),
-    traceContext,
-  });
+  const shellRestore = await restoreSessionShellEnvironmentSelectionForResume(
+    this,
+    {
+      currentSelection: getSessionShellSelection(this),
+      traceContext,
+    },
+  );
 
   this.workingDirectory = session.directory;
   this.config.taskType = session.taskType;
@@ -150,10 +168,8 @@ export async function resumeFromStore(
     workspaceRoot: this.workspaceRoot,
   });
   await this.ensureContextInitialized(traceContext);
-  const recoveredCompactTimelineCount = await this.recoverInterruptedCompactTimelines(
-    messages,
-    traceContext,
-  );
+  const recoveredCompactTimelineCount =
+    await this.recoverInterruptedCompactTimelines(messages, traceContext);
   const hydration = await hydrateMessageHistoryFromSession({
     logger: this.logger,
     artifactStore: this.artifactStore,
@@ -186,9 +202,13 @@ export async function resumeFromStore(
   const latestAssistant = [...timelineActiveMessages]
     .reverse()
     .find((message) => message.info.role === "assistant");
-  this.latestConversationMessageId = getLatestActiveSessionMessageId(timelineActiveMessages);
+  this.latestConversationMessageId = getLatestActiveSessionMessageId(
+    timelineActiveMessages,
+  );
   this.latestAssistantMessageId = latestAssistant?.info.id;
-  this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as TurnId | undefined;
+  this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as
+    | TurnId
+    | undefined;
   this.lastAssistantCompletedAtMs =
     latestAssistant && "completed" in latestAssistant.info.time
       ? latestAssistant.info.time.completed
@@ -203,8 +223,11 @@ export async function resumeFromStore(
       event.type === SessionEventType.SessionModeChanged,
   );
   const restoredMode =
-    restoredModeEvents.length > 0 ? this.eventReducer.reduce(restoredModeEvents).mode : undefined;
-  const resolvedMode = options?.modeOverride ?? restoredMode ?? session.permission?.mode;
+    restoredModeEvents.length > 0
+      ? this.eventReducer.reduce(restoredModeEvents).mode
+      : undefined;
+  const resolvedMode =
+    options?.modeOverride ?? restoredMode ?? session.permission?.mode;
   if (resolvedMode !== undefined) {
     // cold resume 会先把 checkpoint/rewind 等局部事件恢复到新的内存 eventStore。
     // 这些事件不携带 mode，若仅按“存在任意事件”reduce，会用默认 build 覆盖 headless yolo。
@@ -216,7 +239,9 @@ export async function resumeFromStore(
     sessionID: this.sessionId,
     type: SESSION_ENTRY_EXECUTION_STATE,
   });
-  const savedExecution = executionStateSchema.safeParse(executionEntries?.at(-1)?.data);
+  const savedExecution = executionStateSchema.safeParse(
+    executionEntries?.at(-1)?.data,
+  );
   if (savedExecution.success && options?.modeOverride === undefined) {
     Object.assign(this.config, savedExecution.data);
   }
@@ -314,8 +339,10 @@ export async function resumeFromStore(
     module: "core.runtime",
     partCount: hydration.partCount,
     readFileStateRestoredCount: readFileStateHydration.restoredCount,
-    readFileStateSkippedRangeReadCount: readFileStateHydration.skippedRangeReadCount,
-    readFileStateSkippedUnreadableEditCount: readFileStateHydration.skippedUnreadableEditCount,
+    readFileStateSkippedRangeReadCount:
+      readFileStateHydration.skippedRangeReadCount,
+    readFileStateSkippedUnreadableEditCount:
+      readFileStateHydration.skippedUnreadableEditCount,
     recoveredCompactTimelineCount,
     resumedTodoCount: resumedTodos.length,
     resumedTargetStatus: resumedTarget?.status,
@@ -330,8 +357,10 @@ export async function resumeFromStore(
     // messages 交给 V4，否则首帧会短暂复活 started/retrying 状态。
     persistedMessagesReloadRequired: recoveredCompactTimelineCount > 0,
     readFileStateRestoredCount: readFileStateHydration.restoredCount,
-    readFileStateSkippedRangeReadCount: readFileStateHydration.skippedRangeReadCount,
-    readFileStateSkippedUnreadableEditCount: readFileStateHydration.skippedUnreadableEditCount,
+    readFileStateSkippedRangeReadCount:
+      readFileStateHydration.skippedRangeReadCount,
+    readFileStateSkippedUnreadableEditCount:
+      readFileStateHydration.skippedUnreadableEditCount,
     traceId: traceContext.traceId,
   };
 }
@@ -377,7 +406,9 @@ function hasRestoredTitleEvent(
   });
 }
 
-function extractPersistedEnvInfo(messages: MessageWithParts[]): EnvInfo | undefined {
+function extractPersistedEnvInfo(
+  messages: MessageWithParts[],
+): EnvInfo | undefined {
   for (const message of messages) {
     if (message.info.role !== "user") {
       continue;

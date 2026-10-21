@@ -224,7 +224,7 @@ describe("trackBackgroundTask 终态残留复位（单元级）", () => {
   it("重臂终态条目按新生命重盖 branchGeneration（cancel → rewind → resume 不被 stale-branch fencing 拦下）", async () => {
     const { deps, registry } = makeUnitFixture();
     // 上一段生命周期在分支代 3 登记并被 cancel；随后用户 rewind，active 分支代推进到 7。
-    registry.setActiveBranchGeneration(3);
+    registry.setBranchGenerationForSession(deps.sessionId, 3);
     registry.register({
       taskId: "dwfrun-relive",
       agentId: "dwfrun-relive",
@@ -235,9 +235,10 @@ describe("trackBackgroundTask 终态残留复位（单元级）", () => {
       type: "local_dynamic_workflow",
       isBackgrounded: true,
       notified: true,
+      ownerSessionId: deps.sessionId,
     });
     expect(registry.get("dwfrun-relive")?.branchGeneration).toBe(3);
-    registry.setActiveBranchGeneration(7);
+    registry.setBranchGenerationForSession(deps.sessionId, 7);
 
     const tracker = new BackgroundTaskTracker(deps);
     await tracker.trackBackgroundTask(
@@ -249,12 +250,13 @@ describe("trackBackgroundTask 终态残留复位（单元级）", () => {
     // 修复前：update 的 {...existing} 把 3 带进新生命，runtime-command-generation 会把新生命的
     // 任务事件当旧分支残留丢弃。新生命必须盖当前 active 分支代。
     expect(registry.get("dwfrun-relive")?.branchGeneration).toBe(7);
+    expect(registry.get("dwfrun-relive")?.ownerSessionId).toBe(deps.sessionId);
     expect(registry.get("dwfrun-relive")?.status).toBe("running");
   });
 
   it("仍在 running 的既有条目重臂保持自己的 branchGeneration（不是新生命）", async () => {
     const { deps, registry } = makeUnitFixture();
-    registry.setActiveBranchGeneration(3);
+    registry.setBranchGenerationForSession(deps.sessionId, 3);
     registry.register({
       taskId: "dwfrun-relive",
       agentId: "dwfrun-relive",
@@ -264,8 +266,9 @@ describe("trackBackgroundTask 终态残留复位（单元级）", () => {
       status: "running",
       type: "local_dynamic_workflow",
       isBackgrounded: true,
+      ownerSessionId: deps.sessionId,
     });
-    registry.setActiveBranchGeneration(7);
+    registry.setBranchGenerationForSession(deps.sessionId, 7);
     const tracker = new BackgroundTaskTracker(deps);
     await tracker.trackBackgroundTask(
       { id: "call-resume-new", name: CREATE_WORKFLOW_TOOL_NAME, input: {} },

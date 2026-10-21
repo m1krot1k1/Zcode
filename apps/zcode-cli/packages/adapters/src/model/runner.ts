@@ -152,6 +152,7 @@ export class AiSdkModelAdapter {
       providerId: options.providerId,
       modelId: options.modelId,
       providerConfig: options.providerConfig,
+      modelApi: options.modelConfig.api,
       supportsJsonSchemaOutput: options.modelConfig.properties.supportsJsonSchemaOutput,
       optionSpecs: options.modelConfig.optionSpecs,
     });

@@ -5498,7 +5498,68 @@ nodes:
       - symbol: "ConversationShareReadonlyTimeline"
         file: "packages/ui/src/v4/ConversationShareReadonlyTimeline.tsx"
 
+  - id: "capability.opencode-delegated-runtime"
+    kind: "capability"
+    label: "OpenCode as a separately owned delegated ACP runtime"
+    aliases: ["OpenCode ACP", "opencode acp", "delegated OpenCode agent"]
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    codeSeeds:
+      - file: "packages/services/src/opencode-acp-runtime/index.ts"
+      - file: "packages/services/src/node.ts"
+        symbol: "getOpenCodeAcpRuntime"
+    invariants:
+      - "The window-scoped Host owns the opencode acp child and ACP transport; OpenCode owns auth, provider/model choice, session history, tools, and its agent loop."
+      - "Version diagnostics do not authenticate, create sessions, or prove model availability; model options are read only from an explicitly created ACP session."
+      - "OpenCode delegated work is not a ZCode CLI turn or Provider Registry model, and does not inherit ZCode permission policy without an explicit bridge."
+  - id: "service.opencode-acp-runtime"
+    kind: "service"
+    label: "Host-local OpenCode ACP lifecycle and session adapter"
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    codeSeeds:
+      - file: "packages/services/src/opencode-acp-runtime/contract.ts"
+      - file: "packages/services/src/opencode-acp-runtime/adapters/openCodeAcpRuntime.ts"
+      - file: "packages/services/src/node.ts"
+        symbol: "disposeServiceResourcesAndWait"
+  - id: "surface.opencode-agent-settings-ui"
+    kind: "surface"
+    label: "Explicit local OpenCode agent settings panel"
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    codeSeeds:
+      - file: "packages/ui/src/opencode-agent-settings/OpenCodeAgentSettingsPanel.tsx"
+      - file: "packages/ui/src/settings/ModelProviderSection.tsx"
+    invariants:
+      - "No ACP child or durable OpenCode session starts until the user selects Start OpenCode session in this separate panel."
+      - "Model and agent pickers contain only live session/new and session/set_config_option values returned by ACP; absent model options display OpenCode default."
+      - "OpenCode output and session state remain separate from ZCode conversation state, and only a local workspace path can be sent to this Host-local runtime."
+  - id: "evidence.opencode-acp-runtime-tests"
+    kind: "evidence"
+    label: "Fake-child OpenCode ACP lifecycle contract tests"
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    codeSeeds:
+      - file: "packages/services/src/opencode-acp-runtime/contract.test.ts"
+      - file: "packages/services/src/opencode-acp-runtime/adapters/openCodeAcpRuntime.test.ts"
+
 edges:
+  - from: "capability.opencode-delegated-runtime"
+    to: "surface.opencode-agent-settings-ui"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "Only the explicit local settings panel starts a delegated OpenCode session and displays its independent transcript and ownership boundary."
+  - from: "surface.opencode-agent-settings-ui"
+    to: "service.opencode-acp-runtime"
+    type: "commits-to"
+    rank: "must-inspect"
+    condition: "UI consumes the local Host ACP service; remote workspace routes must not inherit or expose it."
+  - from: "capability.opencode-delegated-runtime"
+    to: "service.opencode-acp-runtime"
+    type: "owned-by"
+    rank: "must-inspect"
+    condition: "Host owns only process and ACP transport lifecycle; OpenCode owns agent execution, auth, tools, and durable session history."
+  - from: "service.opencode-acp-runtime"
+    to: "evidence.opencode-acp-runtime-tests"
+    type: "verified-by"
+    rank: "evidence-only"
+
   - from: "capability.tool-search"
     to: "surface.tool-search-settings"
     type: "renders-in"

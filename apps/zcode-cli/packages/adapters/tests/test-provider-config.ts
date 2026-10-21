@@ -89,6 +89,7 @@ export class TestProviderConfigFixture {
   resolve(
     selection: ModelSelection | string,
     options: ModelOptions = { maxOutputTokens: 32_000, reasoningLevel: "disabled" },
+    modelApi?: RegistryModelConfig["api"],
   ): AiSdkResolvedModel {
     const resolvedSelection = parseTestSelection(selection, this.config.defaultProvider);
     const resolved = this.resolveConfig(resolvedSelection);
@@ -96,6 +97,7 @@ export class TestProviderConfigFixture {
     if (!source) throw new Error(`Unknown test provider: ${resolvedSelection.providerId}`);
     const bound = this.execution.bindModel({
       ...resolved,
+      modelApi,
       supportsJsonSchemaOutput: false,
       optionSpecs: defaultOptionSpecs(resolved.providerConfig.api.type),
     });

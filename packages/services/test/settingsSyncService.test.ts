@@ -1,10 +1,12 @@
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,11 +15,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ISettingService } from "../src/setting/setting.js";
 
 const originalHome = process.env.HOME;
+const originalClineMcpSettingsPath = process.env.CLINE_MCP_SETTINGS_PATH;
+const originalClineDataDir = process.env.CLINE_DATA_DIR;
+const originalClineDir = process.env.CLINE_DIR;
 const tempHomes: string[] = [];
 
 function makeTempHome(): string {
   const home = mkdtempSync(join(tmpdir(), "zcode-settings-sync-home-"));
   tempHomes.push(home);
+  process.env.CLINE_MCP_SETTINGS_PATH = join(
+    home,
+    ".cline",
+    "data",
+    "settings",
+    "cline_mcp_settings.json",
+  );
+  delete process.env.CLINE_DATA_DIR;
+  delete process.env.CLINE_DIR;
   return home;
 }
 
@@ -67,6 +81,21 @@ function createSettingService(): ISettingService {
 
 afterEach(() => {
   process.env.HOME = originalHome;
+  if (originalClineMcpSettingsPath === undefined) {
+    delete process.env.CLINE_MCP_SETTINGS_PATH;
+  } else {
+    process.env.CLINE_MCP_SETTINGS_PATH = originalClineMcpSettingsPath;
+  }
+  if (originalClineDataDir === undefined) {
+    delete process.env.CLINE_DATA_DIR;
+  } else {
+    process.env.CLINE_DATA_DIR = originalClineDataDir;
+  }
+  if (originalClineDir === undefined) {
+    delete process.env.CLINE_DIR;
+  } else {
+    process.env.CLINE_DIR = originalClineDir;
+  }
   vi.resetModules();
   while (tempHomes.length > 0) {
     const home = tempHomes.pop();
@@ -709,6 +738,280 @@ describe("settingsSyncService plugins import", () => {
 });
 
 describe("settingsSyncService MCP server import", () => {
+  it("detects Cline MCP settings from the documented path overrides", async () => {
+    const home = makeTempHome();
+    process.env.HOME = home;
+    const cases = [
+      {
+        name: "default",
+        path: join(home, ".cline", "data", "settings", "cline_mcp_settings.json"),
+        env: {},
+      },
+      {
+        name: "cline-dir",
+        path: join(home, "cline-root", "data", "settings", "cline_mcp_settings.json"),
+        env: { CLINE_DIR: join(home, "cline-root") },
+      },
+      {
+        name: "data-dir",
+        path: join(home, "custom-data", "settings", "cline_mcp_settings.json"),
+        env: { CLINE_DATA_DIR: join(home, "custom-data") },
+      },
+      {
+        name: "explicit-path",
+        path: join(home, "explicit", "cline_mcp_settings.json"),
+        env: {
+          CLINE_MCP_SETTINGS_PATH: join(home, "explicit", "cline_mcp_settings.json"),
+          CLINE_DATA_DIR: join(home, "ignored-data"),
+          CLINE_DIR: join(home, "ignored-cline-root"),
+        },
+      },
+    ];
+    const { createSettingsSyncService } =
+      await import("../src/settings-sync/settingsSyncService.js");
+    const service = createSettingsSyncService({ settingService: createSettingService() });
+
+    for (const testCase of cases) {
+      delete process.env.CLINE_MCP_SETTINGS_PATH;
+      delete process.env.CLINE_DATA_DIR;
+      delete process.env.CLINE_DIR;
+      Object.assign(process.env, testCase.env);
+      writeJsonConfig(testCase.path, {
+        mcpServers: {
+          [testCase.name]: {
+            transport: { type: "stdio", command: "node", args: ["server.js"] },
+          },
+        },
+      });
+
+      const discovery = await service.detect({
+        categories: ["mcpServers"],
+        intent: "manualImport",
+      });
+      const cline = discovery.agents.find((agent) => agent.agent === "cline");
+      expect(cline?.categories[0]?.sourcePaths).toEqual([testCase.path]);
+    }
+  });
+
+  it("imports Cline stdio, SSE, and HTTP config without OAuth session or secret leakage", async () => {
+    const home = makeTempHome();
+    const workspacePath = join(home, "workspace");
+    process.env.HOME = home;
+    const clineSettingsPath = join(home, "cline-settings", "cline_mcp_settings.json");
+    process.env.CLINE_MCP_SETTINGS_PATH = clineSettingsPath;
+    const envSecret = "cline-env-secret-marker";
+    const headerSecret = "cline-header-secret-marker";
+    const oauthClientSecret = "cline-oauth-client-secret-marker";
+    const oauthTokenSecret = "cline-oauth-token-state-marker";
+    writeJsonConfig(clineSettingsPath, {
+      mcpServers: {
+        "stdio-disabled": {
+          transport: {
+            type: "stdio",
+            command: "node",
+            args: ["server.js"],
+            cwd: join(home, "mcp"),
+            env: { MCP_TOKEN: envSecret },
+          },
+          disabled: true,
+        },
+        "sse-oauth": {
+          transport: {
+            type: "sse",
+            url: "https://mcp.example.test/sse",
+            headers: { Authorization: `Bearer ${headerSecret}` },
+          },
+          disabled: false,
+          oauthClient: { clientId: "cline-client-id", clientSecret: oauthClientSecret },
+          oauth: {
+            tokens: { access_token: oauthTokenSecret, refresh_token: oauthTokenSecret },
+            codeVerifier: oauthTokenSecret,
+          },
+        },
+        "http-server": {
+          transport: {
+            type: "streamableHttp",
+            url: "https://mcp.example.test/mcp",
+            headers: { Authorization: `Bearer ${headerSecret}` },
+          },
+        },
+        "legacy-http-server": {
+          transportType: "http",
+          url: "https://mcp.example.test/legacy",
+        },
+        protected: {
+          transport: { type: "stdio", command: "node", args: ["cline.js"] },
+        },
+      },
+    });
+    const targetConfigPath = join(home, ".zcode", "cli", "config.json");
+    writeJsonConfig(targetConfigPath, {
+      unrelated: { preserved: true },
+      mcp: { servers: { protected: { type: "stdio", command: "already-configured" } } },
+    });
+    chmodSync(targetConfigPath, 0o644);
+
+    const outputSpies = [
+      vi.spyOn(console, "log").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+      vi.spyOn(console, "debug").mockImplementation(() => undefined),
+    ];
+    try {
+      const { createSettingsSyncService } =
+        await import("../src/settings-sync/settingsSyncService.js");
+      const service = createSettingsSyncService({ settingService: createSettingService() });
+      const discovery = await service.detect({
+        workspacePath,
+        categories: ["mcpServers"],
+        intent: "manualImport",
+      });
+      const cline = discovery.agents.find((agent) => agent.agent === "cline");
+      expect(cline?.categories[0]?.discoveredCount).toBe(5);
+      expect(cline?.categories[0]?.sourcePaths).toEqual([clineSettingsPath]);
+
+      const result = await service.importSelected({
+        workspacePath,
+        selections: [{ agent: "cline", category: "mcpServers" }],
+      });
+      expect(result.successCount).toBe(4);
+      expect(result.skippedCount).toBe(1);
+      expect(result.failedCount).toBe(0);
+      expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
+        name: "protected",
+        path: `${clineSettingsPath}#protected`,
+        sourceScope: "global",
+        status: "skipped",
+        skipReason: "sameNameExists",
+      });
+
+      const config = JSON.parse(readFileSync(targetConfigPath, "utf-8")) as {
+        unrelated?: unknown;
+        mcp?: { servers?: Record<string, unknown> };
+      };
+      expect(config.unrelated).toEqual({ preserved: true });
+      expect(config.mcp?.servers?.["stdio-disabled"]).toEqual({
+        type: "stdio",
+        command: "node",
+        args: ["server.js"],
+        cwd: join(home, "mcp"),
+        env: { MCP_TOKEN: envSecret },
+        enabled: false,
+      });
+      expect(config.mcp?.servers?.["sse-oauth"]).toEqual({
+        type: "sse",
+        url: "https://mcp.example.test/sse",
+        headers: { Authorization: `Bearer ${headerSecret}` },
+        oauth: {
+          type: "authorization_code",
+          clientId: "cline-client-id",
+          clientSecret: oauthClientSecret,
+        },
+      });
+      expect(config.mcp?.servers?.["http-server"]).toEqual({
+        type: "http",
+        url: "https://mcp.example.test/mcp",
+        headers: { Authorization: `Bearer ${headerSecret}` },
+      });
+      expect(config.mcp?.servers?.["legacy-http-server"]).toEqual({
+        type: "http",
+        url: "https://mcp.example.test/legacy",
+      });
+      expect(config.mcp?.servers?.protected).toEqual({
+        type: "stdio",
+        command: "already-configured",
+      });
+      expect(JSON.stringify(config)).not.toContain(oauthTokenSecret);
+      expect(statSync(targetConfigPath).mode & 0o777).toBe(0o600);
+
+      const logs = JSON.stringify(outputSpies.flatMap((spy) => spy.mock.calls));
+      const observableOutput = JSON.stringify({ discovery, result, logs });
+      for (const marker of [envSecret, headerSecret, oauthClientSecret, oauthTokenSecret]) {
+        expect(observableOutput).not.toContain(marker);
+      }
+    } finally {
+      for (const spy of outputSpies) {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("omits Cline secrets from project scope and reports a warning without values", async () => {
+    const home = makeTempHome();
+    const workspacePath = join(home, "workspace");
+    process.env.HOME = home;
+    const clineSettingsPath = join(home, "cline-settings", "cline_mcp_settings.json");
+    process.env.CLINE_MCP_SETTINGS_PATH = clineSettingsPath;
+    const envSecret = "project-env-secret-marker";
+    const headerSecret = "project-header-secret-marker";
+    const oauthSecret = "project-oauth-client-secret-marker";
+    writeJsonConfig(clineSettingsPath, {
+      mcpServers: {
+        "stdio-server": {
+          transport: {
+            type: "stdio",
+            command: "node",
+            args: ["server.js"],
+            env: { TOKEN: envSecret },
+          },
+        },
+        "sse-server": {
+          transport: {
+            type: "sse",
+            url: "https://mcp.example.test/sse",
+            headers: { Authorization: `Bearer ${headerSecret}` },
+          },
+          oauthClient: { clientId: "cline-client-id", clientSecret: oauthSecret },
+        },
+      },
+    });
+
+    const { createSettingsSyncService } =
+      await import("../src/settings-sync/settingsSyncService.js");
+    const service = createSettingsSyncService({ settingService: createSettingService() });
+    const result = await service.importSelected({
+      workspacePath,
+      selections: [{ agent: "cline", category: "mcpServers", targetScope: "project" }],
+    });
+
+    expect(result.successCount).toBe(2);
+    expect(result.failedCount).toBe(0);
+    expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
+      name: "stdio-server",
+      path: `${clineSettingsPath}#stdio-server`,
+      sourceScope: "global",
+      status: "imported",
+      warnings: ["secretsOmittedForProjectScope"],
+    });
+    expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
+      name: "sse-server",
+      path: `${clineSettingsPath}#sse-server`,
+      sourceScope: "global",
+      status: "imported",
+      warnings: ["secretsOmittedForProjectScope"],
+    });
+
+    const targetConfigPath = join(workspacePath, ".zcode", "config.json");
+    const config = JSON.parse(readFileSync(targetConfigPath, "utf-8")) as {
+      mcp?: { servers?: Record<string, Record<string, unknown>> };
+    };
+    expect(config.mcp?.servers?.["stdio-server"]).toEqual({
+      type: "stdio",
+      command: "node",
+      args: ["server.js"],
+    });
+    expect(config.mcp?.servers?.["sse-server"]).toEqual({
+      type: "sse",
+      url: "https://mcp.example.test/sse",
+      oauth: { type: "authorization_code", clientId: "cline-client-id" },
+    });
+
+    const observableOutput = JSON.stringify({ result, config });
+    for (const marker of [envSecret, headerSecret, oauthSecret]) {
+      expect(observableOutput).not.toContain(marker);
+    }
+  });
+
   it("does not scan external MCP servers during first-run detection", async () => {
     const home = makeTempHome();
     const workspacePath = join(home, "workspace");

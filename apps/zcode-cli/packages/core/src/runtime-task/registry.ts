@@ -46,6 +46,12 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   offPeakCancelled?: boolean;
   /** task 注册时所属 active conversation branch；用于迟到 completion fencing。 */
   branchGeneration?: number;
+  /** 根 runtime session；子任务由唯一 registry 传播此归属。 */
+  rootSessionId?: SessionId;
+  /** 同一根会话内一轮 coordinator turn 的稳定配额范围。 */
+  rootRunId?: string;
+  /** 创建通用后台任务的 runtime session，用于按 owner 盖 branch generation。 */
+  ownerSessionId?: SessionId;
   exitCode?: number;
   type: RuntimeTaskType;
   isBackgrounded?: boolean;
@@ -70,14 +76,63 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   usage?: RuntimeTaskUsageSnapshot;
 }
 
+export interface RuntimeTaskCancellationHandle {
+  abort(reason?: unknown): void;
+  /** 只在底层 AgentRuntime 已经真正结束后 resolve；可带回该生命期终态快照。 */
+  settled: Promise<void | RuntimeTaskSnapshot>;
+}
+
+export type RuntimeTaskAdmissionResult =
+  | { accepted: true; task: RuntimeTaskSnapshot }
+  | {
+      accepted: false;
+      reason:
+        | "active_limit"
+        | "lineage_conflict"
+        | "owner_closed"
+        | "parent_stopped"
+        | "task_already_running"
+        | "task_finalizing"
+        | "total_limit";
+    };
+
+export const SUBAGENT_ROOT_MAX_TASKS = 128;
+/** Across all root runs in one session; background children can outlive their launch turn. */
+export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 24;
+
 export interface RuntimeTaskRegistry {
   subscribe?(listener: () => void): () => void;
   setOffPeakExecutionId?(executionId: string | undefined): void;
   all(): Record<string, RuntimeTaskSnapshot>;
   get(id: string): RuntimeTaskSnapshot | undefined;
   drainMessages(id: string): RuntimeTaskPendingMessage[];
-  queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
+  queueMessage(
+    id: string,
+    message: RuntimeTaskPendingMessage,
+  ): RuntimeTaskSnapshot | undefined;
   register(task: RuntimeTaskSnapshot): void;
+  registerSubagentTask(
+    task: RuntimeTaskSnapshot,
+    cancellation: RuntimeTaskCancellationHandle,
+  ): RuntimeTaskAdmissionResult;
+  releaseSubagentCancellationHandle(
+    taskId: string,
+    cancellation: RuntimeTaskCancellationHandle,
+  ): void;
+  cancelSubagentSubtree(
+    taskId: string,
+    reason?: unknown,
+  ): Promise<RuntimeTaskSnapshot | undefined>;
+  beginSubagentTaskFinalization(taskId: string): boolean;
+  isSubagentTaskFinalizing(taskId: string): boolean;
+  cancelSubagentChildren(
+    parentSessionId: SessionId,
+    reason?: unknown,
+  ): Promise<void>;
+  openSessionOwner(sessionId: SessionId): void;
+  getRootSessionIdForSession(sessionId: SessionId): SessionId;
+  getBranchGenerationForSession(sessionId: SessionId): number;
+  setBranchGenerationForSession(sessionId: SessionId, generation: number): void;
   remove(id: string): void;
   requestBackground(id: string): boolean;
   setActiveBranchGeneration?(generation: number): void;
@@ -127,17 +182,37 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     for (const listener of this.listeners) listener();
   }
   private activeBranchGeneration = 0;
-  private readonly backgroundWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
+  private readonly branchGenerations = new Map<SessionId, number>();
+  private readonly backgroundWaiters = new Map<
+    string,
+    Set<RuntimeTaskWaiter>
+  >();
+  private readonly cancellationHandles = new Map<
+    string,
+    RuntimeTaskCancellationHandle
+  >();
+  private readonly finalizingSubagentTasks = new Map<
+    string,
+    RuntimeTaskCancellationHandle | undefined
+  >();
+  private readonly closedSessionOwners = new Set<SessionId>();
   private readonly tasks = new Map<string, RuntimeTaskSnapshot>();
   private readonly terminalWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
 
   register(task: RuntimeTaskSnapshot): void {
+    const ownerSessionId = task.ownerSessionId ?? task.parentSessionId;
     const stamped = {
       ...task,
       ...((task.offPeakExecutionId ?? this.offPeakExecutionId)
-        ? { offPeakExecutionId: task.offPeakExecutionId ?? this.offPeakExecutionId }
+        ? {
+            offPeakExecutionId:
+              task.offPeakExecutionId ?? this.offPeakExecutionId,
+          }
         : {}),
-      branchGeneration: task.branchGeneration ?? this.activeBranchGeneration,
+      branchGeneration:
+        task.branchGeneration ??
+        (ownerSessionId ? this.branchGenerations.get(ownerSessionId) : undefined) ??
+        this.activeBranchGeneration,
     };
     this.tasks.set(stamped.taskId, stamped);
     this.resolveIfTerminal(stamped.taskId, stamped);
@@ -145,8 +220,264 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     this.changed();
   }
 
+  registerSubagentTask(
+    task: RuntimeTaskSnapshot,
+    cancellation: RuntimeTaskCancellationHandle,
+  ): RuntimeTaskAdmissionResult {
+    if (this.finalizingSubagentTasks.has(task.taskId)) {
+      return { accepted: false, reason: "task_finalizing" };
+    }
+    const parentSessionId = task.parentSessionId;
+    if (!task.childSessionId) {
+      return { accepted: false, reason: "lineage_conflict" };
+    }
+    if (!parentSessionId || this.closedSessionOwners.has(parentSessionId)) {
+      return { accepted: false, reason: "owner_closed" };
+    }
+
+    const parentTask = this.findTaskByChildSession(parentSessionId);
+    if (parentTask && isTerminalRuntimeTask(parentTask)) {
+      return { accepted: false, reason: "parent_stopped" };
+    }
+    if (this.wouldCreateSubagentCycle(parentSessionId, task.childSessionId)) {
+      return { accepted: false, reason: "lineage_conflict" };
+    }
+
+    const rootSessionId = parentTask?.rootSessionId ?? parentSessionId;
+    if (this.closedSessionOwners.has(rootSessionId)) {
+      return { accepted: false, reason: "owner_closed" };
+    }
+    const existing = this.tasks.get(task.taskId);
+    if (existing && !isTerminalRuntimeTask(existing)) {
+      return { accepted: false, reason: "task_already_running" };
+    }
+    if (
+      (existing?.rootSessionId && existing.rootSessionId !== rootSessionId) ||
+      [...this.tasks.values()].some(
+        (candidate) =>
+          candidate.type === "local_agent" &&
+          candidate.childSessionId === task.childSessionId &&
+          candidate.taskId !== task.taskId,
+      )
+    ) {
+      return { accepted: false, reason: "lineage_conflict" };
+    }
+    // SendMessage resume keeps the existing node in its original root run, even though the
+    // coordinator request that resumed it may have a newer turn id.
+    const rootRunId =
+      existing?.rootSessionId === rootSessionId && existing.rootRunId
+        ? existing.rootRunId
+        : (parentTask?.rootRunId ?? makeRootRunId(rootSessionId, task.turnId));
+
+    const currentRunTasks = [...this.tasks.values()].filter(
+      (candidate) => candidate.rootRunId === rootRunId,
+    );
+    const priorSameRunTask =
+      existing?.rootRunId === rootRunId ? existing : undefined;
+    const totalBeforeAdmission =
+      currentRunTasks.length - (priorSameRunTask ? 1 : 0);
+    if (totalBeforeAdmission >= SUBAGENT_ROOT_MAX_TASKS) {
+      return { accepted: false, reason: "total_limit" };
+    }
+    const activeBeforeAdmission = [...this.tasks.values()].filter(
+      (candidate) =>
+        candidate.type === "local_agent" &&
+        candidate.rootSessionId === rootSessionId &&
+        candidate.taskId !== task.taskId &&
+        candidate.status === "running",
+    ).length;
+    if (activeBeforeAdmission >= SUBAGENT_ROOT_MAX_ACTIVE_TASKS) {
+      return { accepted: false, reason: "active_limit" };
+    }
+
+    const stamped: RuntimeTaskSnapshot = {
+      ...task,
+      // A node inherits its immediate owner session generation; descendants may rewind locally
+      // without mutating the root generation or sibling branches.
+      branchGeneration: this.branchGenerations.get(parentSessionId) ?? 0,
+      rootRunId,
+      rootSessionId,
+    };
+    this.tasks.set(stamped.taskId, stamped);
+    this.cancellationHandles.set(stamped.taskId, cancellation);
+    // 终态清理结束后才允许同一 task id 开启新生命期、唤醒 terminal waiter。
+    void cancellation.settled.then(() => {
+      this.finishSubagentTaskFinalization(stamped.taskId, cancellation);
+    });
+    this.resolveIfTerminal(stamped.taskId, stamped);
+    this.resolveIfBackgrounded(stamped.taskId, stamped);
+    this.changed();
+    return { accepted: true, task: stamped };
+  }
+
+  releaseSubagentCancellationHandle(
+    taskId: string,
+    cancellation: RuntimeTaskCancellationHandle,
+  ): void {
+    if (this.cancellationHandles.get(taskId) === cancellation) {
+      this.cancellationHandles.delete(taskId);
+    }
+  }
+
+  async cancelSubagentSubtree(
+    taskId: string,
+    reason: unknown = new Error(`Subagent task cancelled: ${taskId}`),
+  ): Promise<RuntimeTaskSnapshot | undefined> {
+    const taskIds = this.collectSubagentSubtree(taskId);
+    const handles = taskIds.flatMap((id) => {
+      const task = this.tasks.get(id);
+      if (task?.childSessionId)
+        this.closedSessionOwners.add(task.childSessionId);
+      const handle = this.cancellationHandles.get(id);
+      return handle ? [{ handle, id }] : [];
+    });
+
+    // 先对整棵目标子树同步发出 abort，再等待各 runtime 实际退出，避免父先收口时子还在执行。
+    for (const { handle } of handles) handle.abort(reason);
+    const settlements = await Promise.all(
+      handles.map(async ({ handle, id }) => ({
+        id,
+        snapshot: await handle.settled,
+      })),
+    );
+    const targetSettlement = settlements.find(
+      (settlement) => settlement.id === taskId,
+    );
+    return isRuntimeTaskSnapshot(targetSettlement?.snapshot)
+      ? targetSettlement.snapshot
+      : this.tasks.get(taskId);
+  }
+
+  beginSubagentTaskFinalization(taskId: string): boolean {
+    if (this.finalizingSubagentTasks.has(taskId)) return false;
+    this.finalizingSubagentTasks.set(
+      taskId,
+      this.cancellationHandles.get(taskId),
+    );
+    return true;
+  }
+
+  isSubagentTaskFinalizing(taskId: string): boolean {
+    return this.finalizingSubagentTasks.has(taskId);
+  }
+
+  private finishSubagentTaskFinalization(
+    taskId: string,
+    cancellation: RuntimeTaskCancellationHandle,
+  ): void {
+    if (
+      !this.finalizingSubagentTasks.has(taskId) ||
+      this.finalizingSubagentTasks.get(taskId) !== cancellation
+    ) {
+      return;
+    }
+    this.finalizingSubagentTasks.delete(taskId);
+    let current = this.tasks.get(taskId);
+    if (current && !isTerminalRuntimeTask(current)) {
+      // Finisher must never leave a terminal waiter blocked forever if an earlier finalizer step
+      // threw before its terminal update. Preserve the failure as an explicit retryable task state.
+      current = {
+        ...current,
+        status: "failed",
+        completedAt: new Date(),
+        error: "Subagent finalization ended without recording a terminal state.",
+      };
+      this.tasks.set(taskId, current);
+      this.resolveIfTerminal(taskId, current);
+    } else if (current) {
+      this.resolveTerminalWaiters(taskId, current);
+    }
+    this.changed();
+  }
+
+  async cancelSubagentChildren(
+    parentSessionId: SessionId,
+    reason: unknown = new Error(`Subagent owner closed: ${parentSessionId}`),
+  ): Promise<void> {
+    this.closedSessionOwners.add(parentSessionId);
+    const childIds = [...this.tasks.values()]
+      .filter(
+        (task) =>
+          task.type === "local_agent" &&
+          task.parentSessionId === parentSessionId,
+      )
+      .map((task) => task.taskId);
+    await Promise.all(
+      childIds.map((taskId) => this.cancelSubagentSubtree(taskId, reason)),
+    );
+  }
+
+  openSessionOwner(sessionId: SessionId): void {
+    this.closedSessionOwners.delete(sessionId);
+  }
+
+  getRootSessionIdForSession(sessionId: SessionId): SessionId {
+    return this.findTaskByChildSession(sessionId)?.rootSessionId ?? sessionId;
+  }
+
+  getBranchGenerationForSession(sessionId: SessionId): number {
+    return this.branchGenerations.get(sessionId) ?? 0;
+  }
+
+  setBranchGenerationForSession(
+    sessionId: SessionId,
+    generation: number,
+  ): void {
+    this.branchGenerations.set(sessionId, generation);
+  }
+
   setActiveBranchGeneration(generation: number): void {
     this.activeBranchGeneration = generation;
+  }
+
+  private findTaskByChildSession(
+    sessionId: SessionId,
+  ): RuntimeTaskSnapshot | undefined {
+    return [...this.tasks.values()].find(
+      (task) =>
+        task.type === "local_agent" && task.childSessionId === sessionId,
+    );
+  }
+
+  private wouldCreateSubagentCycle(
+    parentSessionId: SessionId,
+    childSessionId: SessionId,
+  ): boolean {
+    let currentSessionId: SessionId | undefined = parentSessionId;
+    const seen = new Set<SessionId>();
+    while (currentSessionId && !seen.has(currentSessionId)) {
+      if (currentSessionId === childSessionId) return true;
+      seen.add(currentSessionId);
+      currentSessionId =
+        this.findTaskByChildSession(currentSessionId)?.parentSessionId;
+    }
+    return false;
+  }
+
+  private collectSubagentSubtree(taskId: string): string[] {
+    const result: string[] = [];
+    const pending = [taskId];
+    const seen = new Set<string>();
+    while (pending.length > 0) {
+      const currentId = pending.pop();
+      if (!currentId || seen.has(currentId)) continue;
+      seen.add(currentId);
+      const current = this.tasks.get(currentId);
+      if (!current || current.type !== "local_agent") continue;
+      result.push(currentId);
+      const childSessionId = current.childSessionId;
+      if (childSessionId) {
+        for (const child of this.tasks.values()) {
+          if (
+            child.type === "local_agent" &&
+            child.parentSessionId === childSessionId
+          ) {
+            pending.push(child.taskId);
+          }
+        }
+      }
+    }
+    return result;
   }
 
   update(
@@ -175,6 +506,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   remove(id: string): void {
     this.tasks.delete(id);
+    this.cancellationHandles.delete(id);
+    this.finalizingSubagentTasks.delete(id);
     this.resolveTerminalWaiters(id, undefined);
     this.resolveBackgroundWaiters(id, undefined);
     this.changed();
@@ -188,7 +521,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return Object.fromEntries(this.tasks);
   }
 
-  queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined {
+  queueMessage(
+    id: string,
+    message: RuntimeTaskPendingMessage,
+  ): RuntimeTaskSnapshot | undefined {
     return this.update(id, (task) => ({
       ...task,
       pendingMessages: [...(task.pendingMessages ?? []), message],
@@ -197,7 +533,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   drainMessages(id: string): RuntimeTaskPendingMessage[] {
     const task = this.tasks.get(id);
-    if (!task || !task.pendingMessages || task.pendingMessages.length === 0) return [];
+    if (!task || !task.pendingMessages || task.pendingMessages.length === 0)
+      return [];
     const messages = task.pendingMessages;
     this.tasks.set(id, { ...task, pendingMessages: [] });
     this.changed();
@@ -220,7 +557,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     options?: { signal?: AbortSignal },
   ): Promise<RuntimeTaskSnapshot | undefined> {
     const current = this.tasks.get(id);
-    if (!current || isTerminalRuntimeTask(current)) return Promise.resolve(current);
+    if (
+      !this.finalizingSubagentTasks.has(id) &&
+      (!current || isTerminalRuntimeTask(current))
+    )
+      return Promise.resolve(current);
     return this.waitFor(this.terminalWaiters, id, options);
   }
 
@@ -258,16 +599,24 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   private resolveIfTerminal(id: string, task: RuntimeTaskSnapshot): void {
     if (isTerminalRuntimeTask(task)) {
-      this.resolveTerminalWaiters(id, task);
+      if (!this.finalizingSubagentTasks.has(id)) {
+        this.resolveTerminalWaiters(id, task);
+      }
       this.resolveBackgroundWaiters(id, undefined);
     }
   }
 
-  private resolveBackgroundWaiters(id: string, task: RuntimeTaskSnapshot | undefined): void {
+  private resolveBackgroundWaiters(
+    id: string,
+    task: RuntimeTaskSnapshot | undefined,
+  ): void {
     this.resolveWaiters(this.backgroundWaiters, id, task);
   }
 
-  private resolveTerminalWaiters(id: string, task: RuntimeTaskSnapshot | undefined): void {
+  private resolveTerminalWaiters(
+    id: string,
+    task: RuntimeTaskSnapshot | undefined,
+  ): void {
     this.resolveWaiters(this.terminalWaiters, id, task);
   }
 
@@ -299,11 +648,28 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }
 }
 
-export function isTerminalRuntimeTask(task: Pick<RuntimeTaskSnapshot, "status">): boolean {
+function makeRootRunId(
+  rootSessionId: SessionId,
+  turnId: TurnId | undefined,
+): string {
+  return `${rootSessionId}:${turnId ?? "session"}`;
+}
+
+export function isTerminalRuntimeTask(
+  task: Pick<RuntimeTaskSnapshot, "status">,
+): boolean {
   return TERMINAL_STATUSES.has(task.status);
 }
 
-export function hasRunningBackgroundRuntimeTask(registry: RuntimeTaskRegistry): boolean {
+function isRuntimeTaskSnapshot(
+  value: void | RuntimeTaskSnapshot | undefined,
+): value is RuntimeTaskSnapshot {
+  return typeof value === "object" && value !== null && "taskId" in value;
+}
+
+export function hasRunningBackgroundRuntimeTask(
+  registry: RuntimeTaskRegistry,
+): boolean {
   return Object.values(registry.all()).some(
     (task) => task.isBackgrounded === true && task.status === "running",
   );

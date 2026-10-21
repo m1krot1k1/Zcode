@@ -86,7 +86,10 @@ export async function rewindCascadeToMessage(
   }
 
   if (options.scope === RewindScope.Both) {
-    const conversationPlan = await buildConversationRewindPlan.call(this, options);
+    const conversationPlan = await buildConversationRewindPlan.call(
+      this,
+      options,
+    );
     if (conversationPlan.kind === "unavailable") {
       return finishUnavailableConversationRewind.call(this, {
         evaluation: conversationPlan.evaluation,
@@ -129,7 +132,10 @@ export async function rewindWorkspaceToMessage(
   },
 ): Promise<WorkspaceRewindResult> {
   const sessionEvents = await this.eventStore.getEvents(this.sessionId);
-  const checkpoint = selectCheckpointForMessage(sessionEvents, options.targetMessageId);
+  const checkpoint = selectCheckpointForMessage(
+    sessionEvents,
+    options.targetMessageId,
+  );
   if (!checkpoint) {
     return this.finishUnavailableRewind({
       events: options.events,
@@ -161,7 +167,10 @@ async function rewindWorkspaceCascadeToMessage(
 ): Promise<WorkspaceRewindResult> {
   const sessionEvents = await this.eventStore.getEvents(this.sessionId);
   const activeMessages = await readActiveMessagesForWorkspaceRewind.call(this);
-  const suffixMessageIds = activeSuffixMessageIdsForRewind(activeMessages, options.targetMessageId);
+  const suffixMessageIds = activeSuffixMessageIdsForRewind(
+    activeMessages,
+    options.targetMessageId,
+  );
   const checkpoints = selectCheckpointsForMessages(
     sessionEvents,
     suffixMessageIds.length > 0 ? suffixMessageIds : [options.targetMessageId],
@@ -242,7 +251,9 @@ async function rewindWorkspaceToCheckpoints(
 
   const evaluation = evaluateRewindTarget({
     checkpointAvailable: true,
-    items: buildMessageRewindEvaluationItems(await readActiveMessagesForWorkspaceRewind.call(this)),
+    items: buildMessageRewindEvaluationItems(
+      await readActiveMessagesForWorkspaceRewind.call(this),
+    ),
     scope: RewindScope.Workspace,
     targetMessageId: options.targetMessageId,
   });
@@ -326,7 +337,11 @@ async function rewindWorkspaceToCheckpoints(
     restoredFiles,
     rewindId,
   })}\nrestoredCheckpoints: ${options.checkpoints.length}`;
-  await this.persistSyntheticUserNotice(createdMessageId, noticeBody, options.traceContext);
+  await this.persistSyntheticUserNotice(
+    createdMessageId,
+    noticeBody,
+    options.traceContext,
+  );
   this.messageHistory.addAttachment("rewind_notice", noticeBody);
 
   const event = this.createEvent(
@@ -415,7 +430,8 @@ export async function rewindConversationToMessage(
     targetMessageId: options.targetMessageId,
     // 仅纯 conversation scope 开启 assistant 锚点回溯（v4 edit/retry 路径）；
     // both/cascade 的显式流保持严格目标校验。
-    remapAssistantAnchor: options.scope === undefined || options.scope === RewindScope.Conversation,
+    remapAssistantAnchor:
+      options.scope === undefined || options.scope === RewindScope.Conversation,
   });
   if (plan.kind === "unavailable") {
     return finishUnavailableConversationRewind.call(this, {
@@ -491,7 +507,9 @@ async function buildConversationRewindPlan(
     }
   }
   const effectiveTargetMessageId =
-    targetIndex >= 0 ? activeMessages[targetIndex]!.info.id : options.targetMessageId;
+    targetIndex >= 0
+      ? activeMessages[targetIndex]!.info.id
+      : options.targetMessageId;
   const evaluation = evaluateRewindTarget({
     items: buildMessageRewindEvaluationItems(activeMessages),
     scope: RewindScope.Conversation,
@@ -568,7 +586,9 @@ async function applyConversationRewindPlan(
     revert: {
       // 只保存 target/created 无法在连续编辑或重启后还原旧 rewind 前缀。
       // keptMessageIDs 保存的是本次 rewind 前 active branch 的保留前缀，避免旧分支重新浮出。
-      keptMessageIDs: keptMessages.map((message) => message.info.id as MessageId),
+      keptMessageIDs: keptMessages.map(
+        (message) => message.info.id as MessageId,
+      ),
       branchCutAfterMessageID: branchCutAfterMessageId,
       branchGeneration,
       messageID: keptMessages.at(-1)?.info.id ?? options.targetMessageId,
@@ -578,7 +598,10 @@ async function applyConversationRewindPlan(
     },
   });
   this.branchGeneration = branchGeneration;
-  this.runtimeTaskRegistry.setActiveBranchGeneration?.(branchGeneration);
+  this.runtimeTaskRegistry.setBranchGenerationForSession(
+    this.sessionId,
+    branchGeneration,
+  );
 
   await rebuildConversationDerivedState.call(this, {
     branchCutAfterMessageId,
@@ -644,7 +667,9 @@ async function cancelRemovedBranchBackgroundTasks(
     });
     if (!result.ok) {
       // fail closed：无法确认旧分支后台工作已停时，不提交 branch cut，也不碰 workspace。
-      throw new Error(`rewind background task cancellation failed: ${task.taskId}`);
+      throw new Error(
+        `rewind background task cancellation failed: ${task.taskId}`,
+      );
     }
   }
 }
@@ -665,7 +690,11 @@ async function finishUnavailableConversationRewind(
   return {
     evaluation: options.evaluation,
     keptMessageCount: 0,
-    response: formatUnavailableRewindResponse(options.reason, undefined, options.targetMessageId),
+    response: formatUnavailableRewindResponse(
+      options.reason,
+      undefined,
+      options.targetMessageId,
+    ),
     rewindId: options.rewindId,
     strategy: options.evaluation?.strategy ?? RewindStrategy.Unavailable,
     targetMessageId: options.targetMessageId,
@@ -708,17 +737,27 @@ async function rebuildConversationDerivedState(
     await this.readSessionTargetForContext(options.traceContext),
   );
 
-  const activeMessages = activeSessionMessages(options.persistedMessages, branchOptions);
-  const timelineActiveMessages = activeSessionMessages(options.persistedMessages, {
-    ...branchOptions,
-    includeCompactPreservedSegment: false,
-  });
+  const activeMessages = activeSessionMessages(
+    options.persistedMessages,
+    branchOptions,
+  );
+  const timelineActiveMessages = activeSessionMessages(
+    options.persistedMessages,
+    {
+      ...branchOptions,
+      includeCompactPreservedSegment: false,
+    },
+  );
   const latestAssistant = [...timelineActiveMessages]
     .reverse()
     .find((message) => message.info.role === "assistant");
-  this.latestConversationMessageId = getLatestActiveSessionMessageId(timelineActiveMessages);
+  this.latestConversationMessageId = getLatestActiveSessionMessageId(
+    timelineActiveMessages,
+  );
   this.latestAssistantMessageId = latestAssistant?.info.id;
-  this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as TurnId | undefined;
+  this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as
+    | TurnId
+    | undefined;
   this.lastAssistantCompletedAtMs =
     latestAssistant && "completed" in latestAssistant.info.time
       ? latestAssistant.info.time.completed

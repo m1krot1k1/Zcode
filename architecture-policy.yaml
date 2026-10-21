@@ -732,6 +732,36 @@ modules:
     layers:
       ui: .
     owner: conversation
+  # opencode-acp-runtime：由 architecture:adopt 登记
+  - id: opencode-acp-runtime
+    roots:
+      - packages/services/src/opencode-acp-runtime
+    managed: true
+    requires:
+      - services
+      - shared
+      - rpc
+    publicEntrypoints:
+      - packages/services/src/opencode-acp-runtime/index.ts
+      - packages/services/src/opencode-acp-runtime/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # opencode-agent-settings：由 architecture:adopt 登记
+  - id: opencode-agent-settings
+    roots:
+      - packages/ui/src/opencode-agent-settings
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/opencode-agent-settings/index.ts
+      - packages/ui/src/opencode-agent-settings/contract.ts
+    layers:
+      ui: .
+    owner: agent
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
