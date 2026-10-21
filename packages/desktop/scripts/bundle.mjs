@@ -609,13 +609,17 @@ async function runElectronBuilderWithRetry(args, envPatch) {
   }
 }
 
-function resolveAppAsarPath(os, arch) {
+export function resolveAppAsarPath(
+  os,
+  arch,
+  { root = desktopRoot, distDir = desktopDistDir, productIdentity = desktopProductIdentity } = {},
+) {
   if (os === "mac") {
     return resolve(
-      desktopRoot,
-      desktopDistDir,
+      root,
+      distDir,
       arch === "arm64" ? "mac-arm64" : "mac",
-      `${desktopProductIdentity.productName}.app`,
+      `${productIdentity.macExecutableName}.app`,
       "Contents",
       "Resources",
       "app.asar",
@@ -624,8 +628,8 @@ function resolveAppAsarPath(os, arch) {
 
   if (os === "win") {
     return resolve(
-      desktopRoot,
-      desktopDistDir,
+      root,
+      distDir,
       arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked",
       "resources",
       "app.asar",
@@ -634,8 +638,8 @@ function resolveAppAsarPath(os, arch) {
 
   if (os === "linux") {
     return resolve(
-      desktopRoot,
-      desktopDistDir,
+      root,
+      distDir,
       arch === "arm64" ? "linux-arm64-unpacked" : "linux-unpacked",
       "resources",
       "app.asar",
