@@ -3,11 +3,16 @@ import {
   PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA,
   PRISM_BASH_EXIT_CODE_EVALUATOR_ID,
   PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION,
+  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+  SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SessionEventType,
   createSessionEvent,
   createSessionId,
   createTraceId,
   createTurnId,
+  type SessionEntryInfo,
+  type SessionInfo,
 } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 import { createBashExecutionEvidence } from "../src/tool/executor/events.js";
@@ -15,6 +20,7 @@ import {
   createPrismTaskContract,
   evaluatePrismTaskAcceptance,
   isValidPrismHostEvidenceReceipt,
+  projectPrismHistoricalAcceptanceForTask,
   reducePrismTaskAcceptance,
 } from "../src/runtime-task/registry.js";
 
@@ -244,5 +250,449 @@ describe("PRISM Host Bash evaluator", () => {
     expect(
       createBashExecutionEvidence("OtherTool", { command }, { status: "completed" }),
     ).toBeUndefined();
+  });
+});
+
+describe("PRISM historical acceptance projection", () => {
+  function sessionInfo(
+    id: string,
+    taskType: SessionInfo["taskType"],
+    branchGeneration: number,
+    parentID?: string,
+  ): SessionInfo {
+    return {
+      id: id as SessionInfo["id"],
+      projectID: "prism-project" as SessionInfo["projectID"],
+      ...(parentID ? { parentID: parentID as SessionInfo["id"] } : {}),
+      taskType,
+      slug: id,
+      directory: "/workspace",
+      title: id,
+      version: "test",
+      revert: { messageID: "rewind" as never, branchGeneration },
+      time: { created: 1, updated: 2 },
+    };
+  }
+
+  function entry(
+    id: string,
+    type: SessionEntryInfo["type"],
+    sessionID: SessionInfo["id"],
+    data: unknown,
+  ): SessionEntryInfo {
+    return { id, type, sessionID, data, time: { created: 1, updated: 1 } };
+  }
+
+  function historicalFixture() {
+    const rootSessionId = "prism-historical-root" as SessionInfo["id"];
+    const childId = childSessionId as SessionInfo["id"];
+    const root = sessionInfo(rootSessionId, "interactive", current.branchGeneration);
+    const child = sessionInfo(childId, "subagent_child", 0, rootSessionId);
+    const evaluation = evaluatePrismTaskAcceptance({
+      contract,
+      current,
+      childSessionId,
+      events: [
+        { ...scheduledEvent(), sequenceNumber: 1 },
+        { ...resultEvent(), sequenceNumber: 2 },
+      ],
+      observedAt: 123,
+    });
+    const terminal = {
+      schema: "zcode.prism.subagent-terminal.v3",
+      terminalId: `${current.rootRunId}/${current.taskId}/${current.branchGeneration}/${current.attemptId}`,
+      rootRunId: current.rootRunId,
+      taskId: current.taskId,
+      attemptId: current.attemptId,
+      branchGeneration: current.branchGeneration,
+      childSessionId: childId,
+      childStarted: true,
+      terminalStatus: "completed",
+      provenance: "runtime_lifecycle",
+      acceptanceStatus: "verified",
+      observedAt: new Date(123),
+    } as const;
+    const terminalEntryId = `prism-task-terminal:${rootSessionId}:${terminal.terminalId}`;
+    return {
+      input: {
+        rootSessionId,
+        rootRunId: current.rootRunId,
+        taskId: current.taskId,
+        childSessionId: childId,
+        ownerSessionId: rootSessionId,
+        ownerBranchGeneration: current.branchGeneration,
+        ownerSessionsById: new Map([
+          [rootSessionId, root],
+          [childId, child],
+        ]),
+        contracts: [
+          entry(
+            `prism-task-contract:${rootSessionId}:${current.rootRunId}:${current.taskId}:${current.attemptId}`,
+            SESSION_ENTRY_PRISM_TASK_CONTRACT,
+            rootSessionId,
+            { contract },
+          ),
+        ],
+        receipts: evaluation.receipts.map((receipt) =>
+          entry(
+            `prism-evidence-receipt:${rootSessionId}:${receipt.receiptId}`,
+            SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+            rootSessionId,
+            { receipt },
+          ),
+        ),
+        terminals: [
+          entry(
+            terminalEntryId,
+            SESSION_ENTRY_PRISM_TASK_TERMINAL,
+            rootSessionId,
+            JSON.parse(JSON.stringify({ terminal })) as unknown,
+          ),
+        ],
+      },
+      rootSessionId,
+      childId,
+      terminalEntryId,
+    };
+  }
+
+  it("recomputes a cold persisted receipt and accepts ISO timestamps", () => {
+    const fixture = historicalFixture();
+    const decision = projectPrismHistoricalAcceptanceForTask(fixture.input);
+    expect(decision).toMatchObject({
+      status: "verified",
+      passedCriterionIds: ["typecheck"],
+      failedCriterionIds: [],
+      missingCriterionIds: [],
+    });
+  });
+
+  it("fails closed when the current owner branch was rewound after the task", () => {
+    const fixture = historicalFixture();
+    const root = fixture.input.ownerSessionsById.get(fixture.rootSessionId)!;
+    const rewoundRoot = {
+      ...root,
+      revert: { messageID: "rewind" as never, branchGeneration: current.branchGeneration + 1 },
+    };
+    const decision = projectPrismHistoricalAcceptanceForTask({
+      ...fixture.input,
+      ownerSessionsById: new Map([
+        ...fixture.input.ownerSessionsById,
+        [fixture.rootSessionId, rewoundRoot],
+      ]),
+    });
+    expect(decision?.status).toBe("unknown");
+  });
+
+  it("recomputes a nested child only when every parent task edge is durable", () => {
+    const fixture = historicalFixture();
+    const middleId = "prism-historical-middle" as SessionInfo["id"];
+    const ownerGeneration = 5;
+    const middle = sessionInfo(middleId, "subagent_child", ownerGeneration, fixture.rootSessionId);
+    const leaf = sessionInfo(fixture.childId, "subagent_child", 0, middleId);
+    const nestedCurrent = {
+      ...current,
+      parentTaskId: "parent-agent",
+      branchGeneration: ownerGeneration,
+    };
+    const nestedContract = createPrismTaskContract({
+      ...nestedCurrent,
+      description: "Run the required typecheck",
+      criteria: contract.criteria,
+    });
+    const nestedEvaluation = evaluatePrismTaskAcceptance({
+      contract: nestedContract,
+      current: nestedCurrent,
+      childSessionId: fixture.childId,
+      events: [
+        { ...scheduledEvent(), sequenceNumber: 1 },
+        { ...resultEvent(), sequenceNumber: 2 },
+      ],
+      observedAt: 456,
+    });
+    const parentTerminal = {
+      schema: "zcode.prism.subagent-terminal.v3",
+      terminalId: `${current.rootRunId}/parent-agent/${current.branchGeneration}/parent-attempt`,
+      rootRunId: current.rootRunId,
+      taskId: "parent-agent",
+      attemptId: "parent-attempt",
+      branchGeneration: current.branchGeneration,
+      childSessionId: middleId,
+      childStarted: true,
+      terminalStatus: "completed",
+      provenance: "runtime_lifecycle",
+      acceptanceStatus: "unknown",
+      observedAt: new Date(321),
+    } as const;
+    const leafTerminal = {
+      schema: "zcode.prism.subagent-terminal.v3",
+      terminalId: `${nestedCurrent.rootRunId}/${nestedCurrent.taskId}/${nestedCurrent.branchGeneration}/${nestedCurrent.attemptId}`,
+      rootRunId: nestedCurrent.rootRunId,
+      taskId: nestedCurrent.taskId,
+      attemptId: nestedCurrent.attemptId,
+      parentTaskId: nestedCurrent.parentTaskId,
+      branchGeneration: nestedCurrent.branchGeneration,
+      childSessionId: fixture.childId,
+      childStarted: true,
+      terminalStatus: "completed",
+      provenance: "runtime_lifecycle",
+      acceptanceStatus: "verified",
+      observedAt: new Date(456),
+    } as const;
+    const nestedProjection = {
+      rootSessionId: fixture.rootSessionId,
+      rootRunId: current.rootRunId,
+      taskId: current.taskId,
+      parentTaskId: "parent-agent",
+      childSessionId: fixture.childId,
+      ownerSessionId: middleId,
+      ownerBranchGeneration: ownerGeneration,
+      ownerSessionsById: new Map([
+        [fixture.rootSessionId, fixture.input.ownerSessionsById.get(fixture.rootSessionId)!],
+        [middleId, middle],
+        [fixture.childId, leaf],
+      ]),
+      contracts: [
+        entry(
+          `prism-task-contract:${fixture.rootSessionId}:${nestedContract.rootRunId}:${nestedContract.taskId}:${nestedContract.attemptId}`,
+          SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          fixture.rootSessionId,
+          { contract: nestedContract },
+        ),
+      ],
+      receipts: nestedEvaluation.receipts.map((receipt) =>
+        entry(
+          `prism-evidence-receipt:${fixture.rootSessionId}:${receipt.receiptId}`,
+          SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+          fixture.rootSessionId,
+          { receipt },
+        ),
+      ),
+      terminals: [
+        entry(
+          `prism-task-terminal:${fixture.rootSessionId}:${parentTerminal.terminalId}`,
+          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          fixture.rootSessionId,
+          { terminal: parentTerminal },
+        ),
+        entry(
+          `prism-task-terminal:${fixture.rootSessionId}:${leafTerminal.terminalId}`,
+          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          fixture.rootSessionId,
+          { terminal: leafTerminal },
+        ),
+      ],
+    };
+    const decision = projectPrismHistoricalAcceptanceForTask(nestedProjection);
+
+    expect(decision).toMatchObject({ status: "verified", passedCriterionIds: ["typecheck"] });
+
+    const parentTerminalEntry = nestedProjection.terminals[0]!;
+    const malformedAncestorDuplicate = {
+      ...parentTerminalEntry,
+      id: `${parentTerminalEntry.id}:malformed-duplicate`,
+      data: {
+        terminal: {
+          schema: "zcode.prism.subagent-terminal.v3",
+          rootRunId: current.rootRunId,
+          taskId: "parent-agent",
+          childSessionId: middleId,
+          terminalStatus: "completed",
+        },
+      },
+    };
+    const ambiguousAncestorDecision = projectPrismHistoricalAcceptanceForTask({
+      ...nestedProjection,
+      terminals: [...nestedProjection.terminals, malformedAncestorDuplicate],
+    });
+    expect(ambiguousAncestorDecision?.status).toBe("unknown");
+    const malformedWrongRootDuplicate = {
+      ...malformedAncestorDuplicate,
+      id: `${parentTerminalEntry.id}:wrong-root-duplicate`,
+      data: {
+        terminal: {
+          ...malformedAncestorDuplicate.data.terminal,
+          rootRunId: "different-root-run",
+        },
+      },
+    };
+    const wrongRootAncestorDecision = projectPrismHistoricalAcceptanceForTask({
+      ...nestedProjection,
+      terminals: [...nestedProjection.terminals, malformedWrongRootDuplicate],
+    });
+    expect(wrongRootAncestorDecision?.status).toBe("unknown");
+
+    const rewoundMiddle = {
+      ...middle,
+      revert: { messageID: "rewind" as never, branchGeneration: ownerGeneration + 1 },
+    };
+    const staleNestedDecision = projectPrismHistoricalAcceptanceForTask({
+      rootSessionId: fixture.rootSessionId,
+      rootRunId: current.rootRunId,
+      taskId: current.taskId,
+      parentTaskId: "parent-agent",
+      childSessionId: fixture.childId,
+      ownerSessionId: middleId,
+      ownerBranchGeneration: ownerGeneration,
+      ownerSessionsById: new Map([
+        [fixture.rootSessionId, fixture.input.ownerSessionsById.get(fixture.rootSessionId)!],
+        [middleId, rewoundMiddle],
+        [fixture.childId, leaf],
+      ]),
+      contracts: [
+        entry(
+          `prism-task-contract:${fixture.rootSessionId}:${nestedContract.rootRunId}:${nestedContract.taskId}:${nestedContract.attemptId}`,
+          SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          fixture.rootSessionId,
+          { contract: nestedContract },
+        ),
+      ],
+      receipts: nestedEvaluation.receipts.map((receipt) =>
+        entry(
+          `prism-evidence-receipt:${fixture.rootSessionId}:${receipt.receiptId}`,
+          SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+          fixture.rootSessionId,
+          { receipt },
+        ),
+      ),
+      terminals: [
+        entry(
+          `prism-task-terminal:${fixture.rootSessionId}:${parentTerminal.terminalId}`,
+          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          fixture.rootSessionId,
+          { terminal: parentTerminal },
+        ),
+        entry(
+          `prism-task-terminal:${fixture.rootSessionId}:${leafTerminal.terminalId}`,
+          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          fixture.rootSessionId,
+          { terminal: leafTerminal },
+        ),
+      ],
+    });
+    expect(staleNestedDecision?.status).toBe("unknown");
+  });
+
+  it("rejects a completed terminal that did not start its child", () => {
+    const fixture = historicalFixture();
+    const terminalEntry = fixture.input.terminals[0]!;
+    const terminal = (terminalEntry.data as { terminal: Record<string, unknown> }).terminal;
+    const decision = projectPrismHistoricalAcceptanceForTask({
+      ...fixture.input,
+      terminals: [
+        {
+          ...terminalEntry,
+          data: { terminal: { ...terminal, childStarted: false } },
+        },
+      ],
+    });
+    expect(decision?.status).toBe("unknown");
+  });
+
+  it("fails closed when a malformed duplicate terminal belongs to the same child", () => {
+    const fixture = historicalFixture();
+    const terminalEntry = fixture.input.terminals[0]!;
+    const malformedDuplicate = {
+      ...terminalEntry,
+      id: `${terminalEntry.id}-malformed`,
+      data: {
+        terminal: {
+          schema: "zcode.prism.subagent-terminal.v3",
+          taskId: current.taskId,
+          childSessionId: fixture.childId,
+          terminalStatus: "completed",
+        },
+      },
+    };
+    const decision = projectPrismHistoricalAcceptanceForTask({
+      ...fixture.input,
+      terminals: [...fixture.input.terminals, malformedDuplicate],
+    });
+    expect(decision?.status).toBe("unknown");
+  });
+
+  it("fails closed on a valid terminal duplicate with a conflicting parent task", () => {
+    const fixture = historicalFixture();
+    const terminalEntry = fixture.input.terminals[0]!;
+    const terminal = (terminalEntry.data as { terminal: Record<string, unknown> }).terminal;
+    const conflictingTerminal = {
+      ...terminal,
+      terminalId: `${current.rootRunId}/${current.taskId}/${current.branchGeneration}/other-attempt`,
+      attemptId: "other-attempt",
+      parentTaskId: "conflicting-parent",
+    };
+    const decision = projectPrismHistoricalAcceptanceForTask({
+      ...fixture.input,
+      terminals: [
+        ...fixture.input.terminals,
+        {
+          ...terminalEntry,
+          id: `prism-task-terminal:${fixture.rootSessionId}:${conflictingTerminal.terminalId}`,
+          data: { terminal: conflictingTerminal },
+        },
+      ],
+    });
+    expect(decision?.status).toBe("unknown");
+  });
+
+  it("fails closed when a nested owner's terminal edge is missing", () => {
+    const fixture = historicalFixture();
+    const middleId = "prism-historical-middle" as SessionInfo["id"];
+    const middle = sessionInfo(
+      middleId,
+      "subagent_child",
+      current.branchGeneration,
+      fixture.rootSessionId,
+    );
+    const leaf = sessionInfo(fixture.childId, "subagent_child", 0, middleId);
+    const contractWithParent = createPrismTaskContract({
+      ...current,
+      parentTaskId: "parent-agent",
+      description: "Run the required typecheck",
+      criteria: contract.criteria,
+    });
+    const childTerminal = {
+      schema: "zcode.prism.subagent-terminal.v3",
+      terminalId: `${current.rootRunId}/${current.taskId}/${current.branchGeneration}/${current.attemptId}`,
+      rootRunId: current.rootRunId,
+      taskId: current.taskId,
+      attemptId: current.attemptId,
+      parentTaskId: "parent-agent",
+      branchGeneration: current.branchGeneration,
+      childSessionId: fixture.childId,
+      childStarted: true,
+      terminalStatus: "completed",
+      provenance: "runtime_lifecycle",
+      acceptanceStatus: "verified",
+      observedAt: new Date(123),
+    } as const;
+    const decision = projectPrismHistoricalAcceptanceForTask({
+      ...fixture.input,
+      parentTaskId: "parent-agent",
+      ownerSessionId: middleId,
+      ownerBranchGeneration: current.branchGeneration,
+      ownerSessionsById: new Map([
+        [fixture.rootSessionId, fixture.input.ownerSessionsById.get(fixture.rootSessionId)!],
+        [middleId, middle],
+        [fixture.childId, leaf],
+      ]),
+      contracts: [
+        entry(
+          `prism-task-contract:${fixture.rootSessionId}:${current.rootRunId}:${current.taskId}:${current.attemptId}`,
+          SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          fixture.rootSessionId,
+          { contract: contractWithParent },
+        ),
+      ],
+      terminals: [
+        entry(
+          `prism-task-terminal:${fixture.rootSessionId}:${childTerminal.terminalId}`,
+          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          fixture.rootSessionId,
+          { terminal: childTerminal },
+        ),
+      ],
+    });
+    expect(decision?.status).toBe("unknown");
   });
 });

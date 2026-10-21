@@ -1899,6 +1899,14 @@ export type ZCodeSessionRunningSubagent = z.infer<typeof zcodeSessionRunningSuba
 
 export const zcodeSessionEndedSubagentSchema = zcodeSessionSubagentBaseSchema.extend({
   status: z.enum(["success", "failed", "cancelled", "lost"]),
+  prismAcceptance: z
+    .object({
+      status: z.enum(["unknown", "verified", "rejected"]),
+      passedCriteria: z.number().int().nonnegative(),
+      totalCriteria: z.number().int().nonnegative(),
+    })
+    .strict()
+    .optional(),
 });
 export type ZCodeSessionEndedSubagent = z.infer<typeof zcodeSessionEndedSubagentSchema>;
 

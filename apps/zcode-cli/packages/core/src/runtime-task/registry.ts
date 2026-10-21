@@ -7,8 +7,12 @@ import type {
   PrismTaskAcceptanceDecision,
   PrismTaskAcceptanceLineage,
   PrismTaskContract,
+  SessionEntryInfo,
   SessionEvent,
   SessionId,
+  SessionInfo,
+  SubagentExecutionTerminalPayload,
+  SubagentTaskStatus,
   SubagentTaskSnapshot,
   TraceContext,
   TurnId,
@@ -23,6 +27,9 @@ import {
   PRISM_TASK_CONTRACT_MAX_CRITERIA,
   PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES,
   PRISM_TASK_CONTRACT_SCHEMA,
+  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+  SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SessionEventType,
   type AgentOutput,
 } from "@zcode/contracts";
@@ -126,10 +133,7 @@ export const SUBAGENT_ROOT_MAX_TASKS = 128;
 /** Across all root runs in one session; background children can outlive their launch turn. */
 export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 24;
 
-export type PrismTaskContractInput = Omit<
-  PrismTaskContract,
-  "schema" | "contractSha256"
->;
+export type PrismTaskContractInput = Omit<PrismTaskContract, "schema" | "contractSha256">;
 
 export type PrismHostEvidenceReceiptInput = Omit<
   PrismHostEvidenceReceipt,
@@ -216,9 +220,7 @@ export function isValidPrismTaskContract(value: unknown): value is PrismTaskCont
   return isSha256(value.contractSha256) && value.contractSha256 === hashPrismContract(value);
 }
 
-export function isValidPrismHostEvidenceReceipt(
-  value: unknown,
-): value is PrismHostEvidenceReceipt {
+export function isValidPrismHostEvidenceReceipt(value: unknown): value is PrismHostEvidenceReceipt {
   if (!isRecord(value) || value.schema !== PRISM_HOST_EVIDENCE_RECEIPT_SCHEMA) return false;
   if (
     !hasOnlyKeys(value, [
@@ -330,6 +332,384 @@ export function reducePrismTaskAcceptance(input: {
     failedCriterionIds,
     missingCriterionIds,
   };
+}
+
+/** Input for deriving an ended subagent's PRISM status from root-owned durable entries. */
+export interface PrismHistoricalAcceptanceInput {
+  rootSessionId: SessionId;
+  rootRunId: string;
+  taskId: string;
+  parentTaskId?: string;
+  childSessionId: SessionId;
+  ownerSessionId: SessionId;
+  ownerBranchGeneration: number;
+  ownerSessionsById: ReadonlyMap<SessionId, SessionInfo>;
+  contracts: readonly SessionEntryInfo[];
+  receipts: readonly SessionEntryInfo[];
+  terminals: readonly SessionEntryInfo[];
+  index?: PrismHistoricalAcceptanceIndex;
+}
+
+export interface PrismHistoricalAcceptanceIndex {
+  contractsByTaskId: ReadonlyMap<string, readonly SessionEntryInfo[]>;
+  receiptsByLineage: ReadonlyMap<string, readonly SessionEntryInfo[]>;
+  terminalTaskChildKeys: ReadonlySet<string>;
+  terminalsByRootRunTaskAndChild: ReadonlyMap<
+    string,
+    ReadonlyArray<{
+      entry: SessionEntryInfo;
+      terminal: SubagentExecutionTerminalPayload;
+    }>
+  >;
+  rawTerminalCountByTaskAndChild: ReadonlyMap<string, number>;
+}
+
+/** Builds one query-local index so a page of ended rows does not rescan all persisted history. */
+export function createPrismHistoricalAcceptanceIndex(input: {
+  rootSessionId: SessionId;
+  contracts: readonly SessionEntryInfo[];
+  receipts: readonly SessionEntryInfo[];
+  terminals: readonly SessionEntryInfo[];
+}): PrismHistoricalAcceptanceIndex {
+  const contractsByTaskId = new Map<string, SessionEntryInfo[]>();
+  for (const entry of input.contracts) {
+    if (entry.type !== SESSION_ENTRY_PRISM_TASK_CONTRACT || entry.sessionID !== input.rootSessionId)
+      continue;
+    const taskId = nestedRecord(entry.data, "contract")?.taskId;
+    if (typeof taskId !== "string") continue;
+    const entries = contractsByTaskId.get(taskId) ?? [];
+    entries.push(entry);
+    contractsByTaskId.set(taskId, entries);
+  }
+
+  const receiptsByLineage = new Map<string, SessionEntryInfo[]>();
+  for (const entry of input.receipts) {
+    if (
+      entry.type !== SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT ||
+      entry.sessionID !== input.rootSessionId
+    )
+      continue;
+    const receipt = nestedRecord(entry.data, "receipt");
+    if (
+      typeof receipt?.rootRunId !== "string" ||
+      typeof receipt.taskId !== "string" ||
+      typeof receipt.attemptId !== "string"
+    )
+      continue;
+    const key = JSON.stringify([receipt.rootRunId, receipt.taskId, receipt.attemptId]);
+    const entries = receiptsByLineage.get(key) ?? [];
+    entries.push(entry);
+    receiptsByLineage.set(key, entries);
+  }
+
+  const terminalsByRootRunTaskAndChild = new Map<
+    string,
+    Array<{
+      entry: SessionEntryInfo;
+      terminal: SubagentExecutionTerminalPayload;
+    }>
+  >();
+  const rawTerminalCountByTaskAndChild = new Map<string, number>();
+  const terminalTaskChildKeys = new Set<string>();
+  for (const entry of input.terminals) {
+    if (entry.type !== SESSION_ENTRY_PRISM_TASK_TERMINAL || entry.sessionID !== input.rootSessionId)
+      continue;
+    const rawTerminal = nestedRecord(entry.data, "terminal");
+    const parsed = parsePrismHistoricalTerminal(entry.data);
+    if (parsed) {
+      const key = JSON.stringify([parsed.rootRunId, parsed.taskId, parsed.childSessionId]);
+      const entries = terminalsByRootRunTaskAndChild.get(key) ?? [];
+      entries.push({ entry, terminal: parsed });
+      terminalsByRootRunTaskAndChild.set(key, entries);
+    }
+    if (typeof rawTerminal?.taskId === "string" && typeof rawTerminal.childSessionId === "string") {
+      terminalTaskChildKeys.add(JSON.stringify([rawTerminal.taskId, rawTerminal.childSessionId]));
+      const key = JSON.stringify([rawTerminal.taskId, rawTerminal.childSessionId]);
+      rawTerminalCountByTaskAndChild.set(key, (rawTerminalCountByTaskAndChild.get(key) ?? 0) + 1);
+    }
+  }
+  return {
+    contractsByTaskId,
+    receiptsByLineage,
+    terminalTaskChildKeys,
+    terminalsByRootRunTaskAndChild,
+    rawTerminalCountByTaskAndChild,
+  };
+}
+
+/**
+ * Recomputes historical acceptance for one exact transcript-linked child attempt.
+ * This is a read-only projection: it never hydrates RuntimeTaskRegistry or starts work.
+ */
+export function projectPrismHistoricalAcceptanceForTask(
+  input: PrismHistoricalAcceptanceInput,
+): PrismTaskAcceptanceDecision | undefined {
+  const index = input.index ?? createPrismHistoricalAcceptanceIndex(input);
+  const candidateContracts = index.contractsByTaskId.get(input.taskId) ?? [];
+  const candidateTerminals =
+    index.terminalsByRootRunTaskAndChild.get(
+      JSON.stringify([input.rootRunId, input.taskId, input.childSessionId]),
+    ) ?? [];
+  const childTerminals = candidateTerminals;
+  const rawRelatedTerminalCount =
+    index.rawTerminalCountByTaskAndChild.get(
+      JSON.stringify([input.taskId, input.childSessionId]),
+    ) ?? 0;
+  const related =
+    candidateContracts.length > 0 || childTerminals.length > 0 || rawRelatedTerminalCount > 0;
+  if (!related) return undefined;
+
+  const current: PrismTaskAcceptanceLineage = {
+    rootRunId: input.rootRunId,
+    taskId: input.taskId,
+    ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
+    attemptId: "historical-unknown",
+    branchGeneration: input.ownerBranchGeneration,
+  };
+  const unknown = (contract?: PrismTaskContract): PrismTaskAcceptanceDecision => ({
+    status: "unknown",
+    passedCriterionIds: [],
+    failedCriterionIds: [],
+    missingCriterionIds: contract?.criteria.map(({ id }) => id) ?? [],
+  });
+
+  const matchingTerminals = childTerminals.filter(
+    ({ terminal }) =>
+      terminal.rootRunId === input.rootRunId && terminal.parentTaskId === input.parentTaskId,
+  );
+  // A damaged duplicate for the same child attempt must not be hidden by a valid sibling row.
+  // Conflicting valid lineage keys are equally ambiguous and must fail closed.
+  if (
+    matchingTerminals.length !== 1 ||
+    childTerminals.length !== 1 ||
+    rawRelatedTerminalCount !== childTerminals.length
+  ) {
+    const possibleContracts = candidateContracts.flatMap((entry) => {
+      const contract = nestedRecord(entry.data, "contract");
+      return isValidPrismTaskContract(contract) &&
+        contract.rootRunId === input.rootRunId &&
+        contract.parentTaskId === input.parentTaskId &&
+        contract.branchGeneration === input.ownerBranchGeneration
+        ? [contract]
+        : [];
+    });
+    return possibleContracts.length === 1 ? unknown(possibleContracts[0]) : unknown();
+  }
+  const { entry: terminalEntry, terminal } = matchingTerminals[0]!;
+  const expectedTerminalEntryId = `prism-task-terminal:${input.rootSessionId}:${terminal.terminalId}`;
+  const owner = input.ownerSessionsById.get(input.ownerSessionId);
+  const child = input.ownerSessionsById.get(input.childSessionId);
+  // 修复依据：completed terminal 必须同时证明 Host 启动过 child；否则生命周期记录自相矛盾。
+  if (
+    terminalEntry.id !== expectedTerminalEntryId ||
+    terminal.taskId !== input.taskId ||
+    terminal.rootRunId !== input.rootRunId ||
+    terminal.parentTaskId !== input.parentTaskId ||
+    terminal.branchGeneration !== input.ownerBranchGeneration ||
+    terminal.childSessionId !== input.childSessionId ||
+    terminal.terminalStatus !== "completed" ||
+    terminal.childStarted !== true ||
+    !owner ||
+    !child ||
+    child.parentID !== owner.id ||
+    owner.id !== input.ownerSessionId ||
+    (owner.revert?.branchGeneration ?? 0) !== input.ownerBranchGeneration ||
+    !hasCurrentPrismTerminalOwnerChain({
+      rootSessionId: input.rootSessionId,
+      rootRunId: input.rootRunId,
+      terminalEntry,
+      terminal,
+      terminalsByRootRunTaskAndChild: index.terminalsByRootRunTaskAndChild,
+      rawTerminalCountByTaskAndChild: index.rawTerminalCountByTaskAndChild,
+      ownerSessionsById: input.ownerSessionsById,
+    })
+  ) {
+    return unknown();
+  }
+
+  const matchingContracts = candidateContracts.filter((entry) => {
+    const contract = nestedRecord(entry.data, "contract");
+    return (
+      contract?.rootRunId === terminal.rootRunId &&
+      contract.taskId === terminal.taskId &&
+      contract.attemptId === terminal.attemptId
+    );
+  });
+  if (matchingContracts.length !== 1) return unknown();
+  const contractEntry = matchingContracts[0]!;
+  const rawContract = nestedRecord(contractEntry.data, "contract");
+  if (
+    contractEntry.id !==
+      `prism-task-contract:${input.rootSessionId}:${terminal.rootRunId}:${terminal.taskId}:${terminal.attemptId}` ||
+    !isValidPrismTaskContract(rawContract) ||
+    rawContract.rootRunId !== input.rootRunId ||
+    rawContract.taskId !== input.taskId ||
+    rawContract.attemptId !== terminal.attemptId ||
+    rawContract.parentTaskId !== input.parentTaskId ||
+    rawContract.branchGeneration !== input.ownerBranchGeneration
+  ) {
+    return unknown();
+  }
+  const contract = rawContract;
+  current.attemptId = contract.attemptId;
+
+  const relatedReceipts =
+    index.receiptsByLineage.get(
+      JSON.stringify([input.rootRunId, input.taskId, terminal.attemptId]),
+    ) ?? [];
+  const receipts: PrismHostEvidenceReceipt[] = [];
+  for (const entry of relatedReceipts) {
+    const receipt = nestedRecord(entry.data, "receipt");
+    if (
+      !isValidPrismHostEvidenceReceipt(receipt) ||
+      entry.id !== `prism-evidence-receipt:${input.rootSessionId}:${receipt.receiptId}` ||
+      receipt.parentTaskId !== input.parentTaskId ||
+      receipt.branchGeneration !== input.ownerBranchGeneration ||
+      receipt.artifact.evidence.childSessionId !== input.childSessionId
+    ) {
+      return unknown(contract);
+    }
+    receipts.push(receipt);
+  }
+
+  const decision = reducePrismTaskAcceptance({ contract, receipts, current });
+  if (decision.status !== terminal.acceptanceStatus) return unknown(contract);
+  return decision;
+}
+
+function nestedRecord(value: unknown, key: string): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  const candidate = value[key];
+  return isRecord(candidate) ? candidate : undefined;
+}
+
+/** SQLite restores Date payloads as ISO strings, so the projection accepts both forms. */
+function parsePrismHistoricalTerminal(
+  value: unknown,
+): SubagentExecutionTerminalPayload | undefined {
+  const terminal = nestedRecord(value, "terminal");
+  if (
+    !terminal ||
+    !hasOnlyKeys(terminal, [
+      "schema",
+      "terminalId",
+      "rootRunId",
+      "taskId",
+      "attemptId",
+      "parentTaskId",
+      "branchGeneration",
+      "childSessionId",
+      "childStarted",
+      "terminalStatus",
+      "provenance",
+      "acceptanceStatus",
+      "observedAt",
+    ])
+  )
+    return undefined;
+  const observedAt =
+    terminal.observedAt instanceof Date
+      ? terminal.observedAt
+      : typeof terminal.observedAt === "string"
+        ? new Date(terminal.observedAt)
+        : undefined;
+  const terminalStatus = terminal.terminalStatus;
+  if (
+    terminal.schema !== "zcode.prism.subagent-terminal.v3" ||
+    !isBoundedIdentifier(terminal.terminalId, 1024) ||
+    !isBoundedIdentifier(terminal.rootRunId, 256) ||
+    !isBoundedIdentifier(terminal.taskId, 256) ||
+    !isBoundedIdentifier(terminal.attemptId, 256) ||
+    (terminal.parentTaskId !== undefined && !isBoundedIdentifier(terminal.parentTaskId, 256)) ||
+    !isNonNegativeSafeInteger(terminal.branchGeneration) ||
+    !isBoundedIdentifier(terminal.childSessionId, 256) ||
+    typeof terminal.childStarted !== "boolean" ||
+    (terminalStatus !== "completed" &&
+      terminalStatus !== "failed" &&
+      terminalStatus !== "cancelled" &&
+      terminalStatus !== "killed" &&
+      terminalStatus !== "stopped" &&
+      terminalStatus !== "lost") ||
+    terminal.provenance !== "runtime_lifecycle" ||
+    (terminal.acceptanceStatus !== "unknown" &&
+      terminal.acceptanceStatus !== "verified" &&
+      terminal.acceptanceStatus !== "rejected") ||
+    !observedAt ||
+    !Number.isFinite(observedAt.getTime())
+  ) {
+    return undefined;
+  }
+  return {
+    schema: "zcode.prism.subagent-terminal.v3",
+    terminalId: terminal.terminalId,
+    rootRunId: terminal.rootRunId,
+    taskId: terminal.taskId,
+    attemptId: terminal.attemptId,
+    ...(terminal.parentTaskId !== undefined ? { parentTaskId: terminal.parentTaskId } : {}),
+    branchGeneration: terminal.branchGeneration,
+    childSessionId: terminal.childSessionId as SessionId,
+    childStarted: terminal.childStarted,
+    terminalStatus,
+    provenance: "runtime_lifecycle",
+    acceptanceStatus: terminal.acceptanceStatus,
+    observedAt,
+  };
+}
+
+/**
+ * Walks the durable parent-task chain without reviving runtime tasks. Each edge must have one
+ * completed, session-linked terminal; only the leaf requires PRISM acceptance criteria.
+ */
+function hasCurrentPrismTerminalOwnerChain(input: {
+  rootSessionId: SessionId;
+  rootRunId: string;
+  terminalEntry: SessionEntryInfo;
+  terminal: SubagentExecutionTerminalPayload;
+  terminalsByRootRunTaskAndChild: PrismHistoricalAcceptanceIndex["terminalsByRootRunTaskAndChild"];
+  rawTerminalCountByTaskAndChild: PrismHistoricalAcceptanceIndex["rawTerminalCountByTaskAndChild"];
+  ownerSessionsById: ReadonlyMap<SessionId, SessionInfo>;
+}): boolean {
+  let terminal = input.terminal;
+  let terminalEntry = input.terminalEntry;
+  let childSessionId = terminal.childSessionId;
+  const visitedTaskIds = new Set<string>();
+  while (true) {
+    if (
+      terminalEntry.type !== SESSION_ENTRY_PRISM_TASK_TERMINAL ||
+      terminalEntry.sessionID !== input.rootSessionId ||
+      terminalEntry.id !== `prism-task-terminal:${input.rootSessionId}:${terminal.terminalId}` ||
+      terminal.rootRunId !== input.rootRunId ||
+      terminal.terminalId !==
+        `${terminal.rootRunId}/${terminal.taskId}/${terminal.branchGeneration}/${terminal.attemptId}` ||
+      terminal.terminalStatus !== "completed" ||
+      terminal.childStarted !== true ||
+      visitedTaskIds.has(terminal.taskId)
+    )
+      return false;
+    visitedTaskIds.add(terminal.taskId);
+
+    const child = input.ownerSessionsById.get(childSessionId);
+    if (!child || child.taskType !== "subagent_child" || !child.parentID) return false;
+    const owner = input.ownerSessionsById.get(child.parentID);
+    if (!owner || (owner.revert?.branchGeneration ?? 0) !== terminal.branchGeneration) return false;
+    if (terminal.parentTaskId === undefined) {
+      return owner.id === input.rootSessionId && owner.taskType !== "subagent_child";
+    }
+
+    const parentTerminals =
+      input.terminalsByRootRunTaskAndChild.get(
+        JSON.stringify([input.rootRunId, terminal.parentTaskId, owner.id]),
+      ) ?? [];
+    const rawParentTerminalCount =
+      input.rawTerminalCountByTaskAndChild.get(JSON.stringify([terminal.parentTaskId, owner.id])) ??
+      0;
+    // 修复依据：祖先边按 task/child 对照原始日志，不能让格式损坏或 rootRun 不同的重复记录躲过索引。
+    if (parentTerminals.length !== 1 || rawParentTerminalCount !== parentTerminals.length)
+      return false;
+    terminalEntry = parentTerminals[0]!.entry;
+    terminal = parentTerminals[0]!.terminal;
+    childSessionId = owner.id;
+  }
 }
 
 export interface PrismTaskEvaluation {
@@ -647,10 +1027,7 @@ function isValidPrismTaskContractBody(
       !hasOnlyKeys(candidate, ["id", "description", "evaluatorId", "evaluatorVersion", "check"]) ||
       !isBoundedIdentifier(candidate.id, 128) ||
       ids.has(candidate.id) ||
-      !isBoundedText(
-        candidate.description,
-        PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES,
-      ) ||
+      !isBoundedText(candidate.description, PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES) ||
       !isBoundedIdentifier(candidate.evaluatorId, 128) ||
       !isBoundedIdentifier(candidate.evaluatorVersion, 128) ||
       !isRecord(candidate.check) ||
@@ -744,10 +1121,7 @@ export interface RuntimeTaskRegistry {
   all(): Record<string, RuntimeTaskSnapshot>;
   get(id: string): RuntimeTaskSnapshot | undefined;
   drainMessages(id: string): RuntimeTaskPendingMessage[];
-  queueMessage(
-    id: string,
-    message: RuntimeTaskPendingMessage,
-  ): RuntimeTaskSnapshot | undefined;
+  queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
   register(task: RuntimeTaskSnapshot): void;
   registerSubagentTask(
     task: RuntimeTaskSnapshot,
@@ -757,16 +1131,10 @@ export interface RuntimeTaskRegistry {
     taskId: string,
     cancellation: RuntimeTaskCancellationHandle,
   ): void;
-  cancelSubagentSubtree(
-    taskId: string,
-    reason?: unknown,
-  ): Promise<RuntimeTaskSnapshot | undefined>;
+  cancelSubagentSubtree(taskId: string, reason?: unknown): Promise<RuntimeTaskSnapshot | undefined>;
   beginSubagentTaskFinalization(taskId: string): boolean;
   isSubagentTaskFinalizing(taskId: string): boolean;
-  cancelSubagentChildren(
-    parentSessionId: SessionId,
-    reason?: unknown,
-  ): Promise<void>;
+  cancelSubagentChildren(parentSessionId: SessionId, reason?: unknown): Promise<void>;
   openSessionOwner(sessionId: SessionId): void;
   getRootSessionIdForSession(sessionId: SessionId): SessionId;
   getBranchGenerationForSession(sessionId: SessionId): number;
@@ -821,14 +1189,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }
   private activeBranchGeneration = 0;
   private readonly branchGenerations = new Map<SessionId, number>();
-  private readonly backgroundWaiters = new Map<
-    string,
-    Set<RuntimeTaskWaiter>
-  >();
-  private readonly cancellationHandles = new Map<
-    string,
-    RuntimeTaskCancellationHandle
-  >();
+  private readonly backgroundWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
+  private readonly cancellationHandles = new Map<string, RuntimeTaskCancellationHandle>();
   private readonly finalizingSubagentTasks = new Map<
     string,
     RuntimeTaskCancellationHandle | undefined
@@ -843,8 +1205,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       ...task,
       ...((task.offPeakExecutionId ?? this.offPeakExecutionId)
         ? {
-            offPeakExecutionId:
-              task.offPeakExecutionId ?? this.offPeakExecutionId,
+            offPeakExecutionId: task.offPeakExecutionId ?? this.offPeakExecutionId,
           }
         : {}),
       branchGeneration:
@@ -910,10 +1271,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const currentRunTasks = [...this.tasks.values()].filter(
       (candidate) => candidate.rootRunId === rootRunId,
     );
-    const priorSameRunTask =
-      existing?.rootRunId === rootRunId ? existing : undefined;
-    const totalBeforeAdmission =
-      currentRunTasks.length - (priorSameRunTask ? 1 : 0);
+    const priorSameRunTask = existing?.rootRunId === rootRunId ? existing : undefined;
+    const totalBeforeAdmission = currentRunTasks.length - (priorSameRunTask ? 1 : 0);
     if (totalBeforeAdmission >= SUBAGENT_ROOT_MAX_TASKS) {
       return { accepted: false, reason: "total_limit" };
     }
@@ -966,8 +1325,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const taskIds = this.collectSubagentSubtree(taskId);
     const handles = taskIds.flatMap((id) => {
       const task = this.tasks.get(id);
-      if (task?.childSessionId)
-        this.closedSessionOwners.add(task.childSessionId);
+      if (task?.childSessionId) this.closedSessionOwners.add(task.childSessionId);
       const handle = this.cancellationHandles.get(id);
       return handle ? [{ handle, id }] : [];
     });
@@ -980,9 +1338,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         snapshot: await handle.settled,
       })),
     );
-    const targetSettlement = settlements.find(
-      (settlement) => settlement.id === taskId,
-    );
+    const targetSettlement = settlements.find((settlement) => settlement.id === taskId);
     return isRuntimeTaskSnapshot(targetSettlement?.snapshot)
       ? targetSettlement.snapshot
       : this.tasks.get(taskId);
@@ -990,10 +1346,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   beginSubagentTaskFinalization(taskId: string): boolean {
     if (this.finalizingSubagentTasks.has(taskId)) return false;
-    this.finalizingSubagentTasks.set(
-      taskId,
-      this.cancellationHandles.get(taskId),
-    );
+    this.finalizingSubagentTasks.set(taskId, this.cancellationHandles.get(taskId));
     return true;
   }
 
@@ -1036,15 +1389,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   ): Promise<void> {
     this.closedSessionOwners.add(parentSessionId);
     const childIds = [...this.tasks.values()]
-      .filter(
-        (task) =>
-          task.type === "local_agent" &&
-          task.parentSessionId === parentSessionId,
-      )
+      .filter((task) => task.type === "local_agent" && task.parentSessionId === parentSessionId)
       .map((task) => task.taskId);
-    await Promise.all(
-      childIds.map((taskId) => this.cancelSubagentSubtree(taskId, reason)),
-    );
+    await Promise.all(childIds.map((taskId) => this.cancelSubagentSubtree(taskId, reason)));
   }
 
   openSessionOwner(sessionId: SessionId): void {
@@ -1059,10 +1406,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return this.branchGenerations.get(sessionId) ?? 0;
   }
 
-  setBranchGenerationForSession(
-    sessionId: SessionId,
-    generation: number,
-  ): void {
+  setBranchGenerationForSession(sessionId: SessionId, generation: number): void {
     this.branchGenerations.set(sessionId, generation);
   }
 
@@ -1070,26 +1414,19 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     this.activeBranchGeneration = generation;
   }
 
-  private findTaskByChildSession(
-    sessionId: SessionId,
-  ): RuntimeTaskSnapshot | undefined {
+  private findTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined {
     return [...this.tasks.values()].find(
-      (task) =>
-        task.type === "local_agent" && task.childSessionId === sessionId,
+      (task) => task.type === "local_agent" && task.childSessionId === sessionId,
     );
   }
 
-  private wouldCreateSubagentCycle(
-    parentSessionId: SessionId,
-    childSessionId: SessionId,
-  ): boolean {
+  private wouldCreateSubagentCycle(parentSessionId: SessionId, childSessionId: SessionId): boolean {
     let currentSessionId: SessionId | undefined = parentSessionId;
     const seen = new Set<SessionId>();
     while (currentSessionId && !seen.has(currentSessionId)) {
       if (currentSessionId === childSessionId) return true;
       seen.add(currentSessionId);
-      currentSessionId =
-        this.findTaskByChildSession(currentSessionId)?.parentSessionId;
+      currentSessionId = this.findTaskByChildSession(currentSessionId)?.parentSessionId;
     }
     return false;
   }
@@ -1108,10 +1445,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       const childSessionId = current.childSessionId;
       if (childSessionId) {
         for (const child of this.tasks.values()) {
-          if (
-            child.type === "local_agent" &&
-            child.parentSessionId === childSessionId
-          ) {
+          if (child.type === "local_agent" && child.parentSessionId === childSessionId) {
             pending.push(child.taskId);
           }
         }
@@ -1161,10 +1495,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return Object.fromEntries(this.tasks);
   }
 
-  queueMessage(
-    id: string,
-    message: RuntimeTaskPendingMessage,
-  ): RuntimeTaskSnapshot | undefined {
+  queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined {
     return this.update(id, (task) => ({
       ...task,
       pendingMessages: [...(task.pendingMessages ?? []), message],
@@ -1173,8 +1504,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   drainMessages(id: string): RuntimeTaskPendingMessage[] {
     const task = this.tasks.get(id);
-    if (!task || !task.pendingMessages || task.pendingMessages.length === 0)
-      return [];
+    if (!task || !task.pendingMessages || task.pendingMessages.length === 0) return [];
     const messages = task.pendingMessages;
     this.tasks.set(id, { ...task, pendingMessages: [] });
     this.changed();
@@ -1197,10 +1527,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     options?: { signal?: AbortSignal },
   ): Promise<RuntimeTaskSnapshot | undefined> {
     const current = this.tasks.get(id);
-    if (
-      !this.finalizingSubagentTasks.has(id) &&
-      (!current || isTerminalRuntimeTask(current))
-    )
+    if (!this.finalizingSubagentTasks.has(id) && (!current || isTerminalRuntimeTask(current)))
       return Promise.resolve(current);
     return this.waitFor(this.terminalWaiters, id, options);
   }
@@ -1246,17 +1573,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
   }
 
-  private resolveBackgroundWaiters(
-    id: string,
-    task: RuntimeTaskSnapshot | undefined,
-  ): void {
+  private resolveBackgroundWaiters(id: string, task: RuntimeTaskSnapshot | undefined): void {
     this.resolveWaiters(this.backgroundWaiters, id, task);
   }
 
-  private resolveTerminalWaiters(
-    id: string,
-    task: RuntimeTaskSnapshot | undefined,
-  ): void {
+  private resolveTerminalWaiters(id: string, task: RuntimeTaskSnapshot | undefined): void {
     this.resolveWaiters(this.terminalWaiters, id, task);
   }
 
@@ -1288,16 +1609,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }
 }
 
-function makeRootRunId(
-  rootSessionId: SessionId,
-  turnId: TurnId | undefined,
-): string {
+function makeRootRunId(rootSessionId: SessionId, turnId: TurnId | undefined): string {
   return `${rootSessionId}:${turnId ?? "session"}`;
 }
 
-export function isTerminalRuntimeTask(
-  task: Pick<RuntimeTaskSnapshot, "status">,
-): boolean {
+export function isTerminalRuntimeTask(task: Pick<RuntimeTaskSnapshot, "status">): boolean {
   return TERMINAL_STATUSES.has(task.status);
 }
 
@@ -1307,9 +1623,7 @@ function isRuntimeTaskSnapshot(
   return typeof value === "object" && value !== null && "taskId" in value;
 }
 
-export function hasRunningBackgroundRuntimeTask(
-  registry: RuntimeTaskRegistry,
-): boolean {
+export function hasRunningBackgroundRuntimeTask(registry: RuntimeTaskRegistry): boolean {
   return Object.values(registry.all()).some(
     (task) => task.isBackgrounded === true && task.status === "running",
   );

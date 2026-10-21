@@ -361,7 +361,7 @@ export interface ZCodeApp {
   }): Promise<import("@zcode/shared").ZCodeSessionSubagentsResult>;
   readSubagentTranscript(
     childSessionId: string,
-  ): Promise<import("./subagent-observation.js").SubagentTranscriptSnapshot>;
+  ): Promise<import("./subagent-observation/index.js").SubagentTranscriptSnapshot>;
   readTodos(): Promise<TodoItem[]>;
   readTarget(): Promise<SessionGoal | null>;
   setCustomSessionTitle(input: { title: string; traceContext?: TraceContext }): Promise<void>;

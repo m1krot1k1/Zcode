@@ -1,35 +1,34 @@
-import {
-  EventReducer,
-  SessionEventType,
-  type SessionEvent,
-  type SessionId,
-  type SessionStorePort,
-} from "@zcode/contracts";
-import type { AgentRuntime } from "@zcode/core";
+import { EventReducer, SessionEventType, type SessionId } from "@zcode/contracts";
 import type { ZCodeSessionSubagentsResult } from "@zcode/shared";
-import { projectSessionTranscript, type SessionTranscriptMessage } from "../session-transcript.js";
+import type {
+  SubagentObservation,
+  SubagentObservationDeps,
+  SubagentTranscriptSnapshot,
+} from "./contract.js";
+import { projectSessionTranscript } from "../../session-transcript.js";
 import {
   collectSubagentChildSessionIds,
+  isOwnedSubagentChild,
   paginateEndedSubagents,
   projectSessionSubagents,
-} from "../zcode-protocol/subagent-session-query.js";
+  resolvePrismAcceptanceByChildSessionId,
+} from "./query.js";
 
-export interface SubagentTranscriptSnapshot {
-  sessionId: string;
-  sequenceNumber: number;
-  messages: Array<SessionTranscriptMessage & { id?: string }>;
-  events: SessionEvent[];
-  replayMessageIds: string[];
-}
-
-type ObservationDeps = {
-  sessionId: SessionId;
-  sessionStore: SessionStorePort;
-  runtime: AgentRuntime;
-};
+export type {
+  SubagentObservation,
+  SubagentObservationDeps,
+  SubagentTranscriptSnapshot,
+} from "./contract.js";
+export {
+  collectSubagentChildSessionIds,
+  isOwnedSubagentChild,
+  paginateEndedSubagents,
+  projectSessionSubagents,
+  resolvePrismAcceptanceByChildSessionId,
+} from "./query.js";
 
 /** The app owns storage and lifecycle interpretation; the TUI receives a read model. */
-export function createSubagentObservation(deps: ObservationDeps) {
+export function createSubagentObservation(deps: SubagentObservationDeps): SubagentObservation {
   return {
     async readSubagents(
       input: { endedCursor?: string; endedLimit?: number } = {},
@@ -45,12 +44,7 @@ export function createSubagentObservation(deps: ObservationDeps) {
         ids.map(async (id) => {
           const sessionId = id as SessionId;
           const session = await deps.sessionStore.getSession(sessionId);
-          if (
-            !session ||
-            session.parentID !== deps.sessionId ||
-            session.taskType !== "subagent_child"
-          )
-            return null;
+          if (!session || !isOwnedSubagentChild(parentSession.id, session)) return null;
           const [messages, events] = await Promise.all([
             deps.sessionStore.messages({ sessionID: sessionId }),
             eventStore.getEvents(sessionId),
@@ -63,7 +57,7 @@ export function createSubagentObservation(deps: ObservationDeps) {
         }),
       );
       const valid = children.filter((child) => child !== null);
-      const projection = projectSessionSubagents({
+      const projectionInput = {
         revision: await eventStore.getLatestSequenceNumber(deps.sessionId),
         parentSession,
         messages,
@@ -76,6 +70,23 @@ export function createSubagentObservation(deps: ObservationDeps) {
             child.projection ? [[child.session.id, child.projection] as const] : [],
           ),
         ),
+      };
+      const initialProjection = projectSessionSubagents(projectionInput);
+      const requestedEndedPage = paginateEndedSubagents(initialProjection.ended, {
+        cursor: input.endedCursor,
+        limit: Math.min(100, Math.max(1, input.endedLimit ?? 20)),
+      });
+      const prismAcceptanceByChildSessionId = await resolvePrismAcceptanceByChildSessionId({
+        sessionStore: deps.sessionStore,
+        ownerSession: parentSession,
+        ownerMessages: messages,
+        ownerEvents: parentEvents,
+        endedSubagents: requestedEndedPage.items,
+        childSessionsById: projectionInput.childSessionsById,
+      });
+      const projection = projectSessionSubagents({
+        ...projectionInput,
+        ...(prismAcceptanceByChildSessionId.size > 0 ? { prismAcceptanceByChildSessionId } : {}),
       });
       const ended = paginateEndedSubagents(projection.ended, {
         cursor: input.endedCursor,
@@ -92,7 +103,7 @@ export function createSubagentObservation(deps: ObservationDeps) {
       const eventStore = deps.runtime.getSessionEventStore();
       const sessionId = childSessionId as SessionId;
       const child = await deps.sessionStore.getSession(sessionId);
-      if (!child || child.parentID !== deps.sessionId || child.taskType !== "subagent_child") {
+      if (!child || !isOwnedSubagentChild(deps.sessionId, child)) {
         throw new Error("Subagent does not belong to the current session.");
       }
       // Read persisted history first, then the event tail. For messages with a

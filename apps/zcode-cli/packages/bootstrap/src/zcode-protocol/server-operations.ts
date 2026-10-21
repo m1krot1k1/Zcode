@@ -127,9 +127,11 @@ import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
 import { projectIdFromDirectory } from "../app/paths.js";
 import {
   collectSubagentChildSessionIds,
+  isOwnedSubagentChild,
   paginateEndedSubagents,
   projectSessionSubagents,
-} from "./subagent-session-query.js";
+  resolvePrismAcceptanceByChildSessionId,
+} from "../app/subagent-observation/index.js";
 import { runSessionModelConfigMutation } from "../zcode-protocol-v4/model-config-mutation.js";
 import { runWithSessionResidencyFinalization } from "./session-residency.js";
 import { resolveDynamicWorkflowRuntimeGate } from "./dynamic-workflow-policy.js";
@@ -1803,7 +1805,7 @@ export async function listSessionSubagents(
   const childEntries = await Promise.all(
     childSessionIds.map(async (childSessionId) => {
       const childSession = await store.getSession(childSessionId as SessionId);
-      if (!childSession || childSession.taskType !== "subagent_child") return null;
+      if (!childSession || !isOwnedSubagentChild(parentSession.id, childSession)) return null;
       const childMessages = await store.messages({
         sessionID: childSession.id,
       });
@@ -1820,7 +1822,7 @@ export async function listSessionSubagents(
   const parentProjection = liveParent
     ? await liveParent.app.runtime.getProjection().catch(() => undefined)
     : undefined;
-  const projection = projectSessionSubagents({
+  const projectionInput = {
     revision: liveParent?.stateRevision ?? parentSession.time.updated,
     parentSession,
     messages,
@@ -1837,6 +1839,33 @@ export async function listSessionSubagents(
     ),
     ...(parentProjection ? { parentProjection } : {}),
     ...(parentEvents.length > 0 ? { parentEvents } : {}),
+  };
+  const initialProjection = projectSessionSubagents(projectionInput);
+  const requestedEndedPage = paginateEndedSubagents(initialProjection.ended, {
+    cursor: params.endedCursor,
+    limit: params.endedLimit,
+  });
+  const prismAcceptanceByChildSessionId = await resolvePrismAcceptanceByChildSessionId({
+    sessionStore: store,
+    ownerSession: parentSession,
+    ownerMessages: messages,
+    ...(parentEvents.length > 0 ? { ownerEvents: parentEvents } : {}),
+    endedSubagents: requestedEndedPage.items,
+    childSessionsById: projectionInput.childSessionsById,
+    onReadError: (error) =>
+      context.logger?.warn(
+        "PRISM subagent history is unavailable; returning directory without badges",
+        {
+          errorType: error instanceof Error ? error.name : typeof error,
+          event: "zcode_protocol.session_subagents.prism_history_unavailable",
+          module: "bootstrap.zcode_protocol",
+          operation: "session_subagents",
+        },
+      ),
+  });
+  const projection = projectSessionSubagents({
+    ...projectionInput,
+    ...(prismAcceptanceByChildSessionId.size > 0 ? { prismAcceptanceByChildSessionId } : {}),
   });
   const ended = paginateEndedSubagents(projection.ended, {
     cursor: params.endedCursor,

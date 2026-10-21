@@ -1401,6 +1401,9 @@ const zhCN: Record<string, string> = {
   "subagentDirectory.status.failed": "失败",
   "subagentDirectory.status.cancelled": "已取消",
   "subagentDirectory.status.lost": "已丢失",
+  "subagentDirectory.prismAcceptance.verified": "PRISM 已验证 · {passed}/{total} 项标准",
+  "subagentDirectory.prismAcceptance.rejected": "PRISM 未通过 · {passed}/{total} 项标准",
+  "subagentDirectory.prismAcceptance.unknown": "PRISM 未知 · {passed}/{total} 项标准",
   "chat.statusPanel.endedAgents": "已结束",
   // workflow run 目录（任务页脚行 → 这一页 → 详情页）。状态词复用
   // chat.toolCall.workflow.run.status.*，这里只有页面自己的结构文案。

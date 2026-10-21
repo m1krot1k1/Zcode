@@ -19,10 +19,7 @@ import type {
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
-import {
-  V4PaneConversationProvider,
-  useV4Conversation,
-} from "@/v4/V4ConversationContext.js";
+import { V4PaneConversationProvider, useV4Conversation } from "@/v4/V4ConversationContext.js";
 import { useConversationProjection } from "@/v4/useConversationProjection.js";
 
 type DirectoryItem = RunningSubagentSummary | ZCodeSessionEndedSubagent;
@@ -94,6 +91,17 @@ const DirectoryRow = memo(function DirectoryRow({
             {item.summary}
           </span>
         ) : null}
+        {"prismAcceptance" in item && item.prismAcceptance ? (
+          <span className="mt-0.5 block text-ui-sm text-foreground-subtlest" role="status">
+            {intl.formatMessage(
+              { id: `subagentDirectory.prismAcceptance.${item.prismAcceptance.status}` },
+              {
+                passed: String(item.prismAcceptance.passedCriteria),
+                total: String(item.prismAcceptance.totalCriteria),
+              },
+            )}
+          </span>
+        ) : null}
       </span>
       {timestamp ? (
         <span className="shrink-0 text-ui-sm text-foreground-subtlest">
@@ -121,10 +129,7 @@ export const SubagentDirectorySidePane = memo(function SubagentDirectorySidePane
   );
   return (
     <V4PaneConversationProvider scope={scope}>
-      <SubagentDirectoryContents
-        tab={tab}
-        onOpenSubagentSession={onOpenSubagentSession}
-      />
+      <SubagentDirectoryContents tab={tab} onOpenSubagentSession={onOpenSubagentSession} />
     </V4PaneConversationProvider>
   );
 });

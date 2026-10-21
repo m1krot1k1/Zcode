@@ -1,16 +1,27 @@
 import { Buffer } from "node:buffer";
 import {
   createSessionId,
+  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+  SESSION_ENTRY_PRISM_TASK_CONTRACT,
+  SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SessionEventType,
   selectActiveConversationBranch,
   type BackgroundTaskInfo,
   type MessageWithParts,
+  type SessionEntryInfo,
   type SessionEvent,
+  type SessionId,
   type SessionInfo,
+  type SessionStorePort,
   type SessionProjection,
   type ToolPart,
+  type TurnId,
   STREAM_RECOVERY_DISCARDED_ERROR_NAME,
 } from "@zcode/contracts";
+import {
+  createPrismHistoricalAcceptanceIndex,
+  projectPrismHistoricalAcceptanceForTask,
+} from "@zcode/core";
 import type { ZCodeSessionEndedSubagent, ZCodeSessionRunningSubagent } from "@zcode/shared";
 
 const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
@@ -28,6 +39,7 @@ interface SubagentCandidate {
   stoppedAt?: number;
   stoppedStatus?: "success" | "failed" | "cancelled";
   title: string;
+  turnId?: TurnId;
 }
 
 interface SubagentEventRelation {
@@ -56,6 +68,18 @@ export interface ProjectSessionSubagentsInput {
   childProjectionsById: ReadonlyMap<string, SessionProjection>;
   parentProjection?: SessionProjection;
   parentEvents?: readonly SessionEvent[];
+  prismAcceptanceByChildSessionId?: ReadonlyMap<string, PrismSubagentAcceptanceSummary>;
+}
+
+export interface PrismSubagentAcceptanceSummary {
+  status: "unknown" | "verified" | "rejected";
+  passedCriteria: number;
+  totalCriteria: number;
+}
+
+/** One ownership predicate for server and local observation; task type alone is not enough. */
+export function isOwnedSubagentChild(parentSessionId: string, child: SessionInfo): boolean {
+  return child.taskType === "subagent_child" && child.parentID === parentSessionId;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -159,6 +183,7 @@ function activeBranchMessages(
 function candidateFromToolPart(
   part: ToolPart,
   relation?: SubagentEventRelation,
+  turnId?: TurnId,
 ): SubagentCandidate | null {
   if (!SUBAGENT_TOOL_NAMES.has(part.tool)) return null;
   const completedOutput =
@@ -201,6 +226,7 @@ function candidateFromToolPart(
       stringField(input, "subagent_type", "agent", "agentType") ??
       "subagent",
     title,
+    ...(turnId ? { turnId } : {}),
     summary:
       contentBlocksToText(output?.content) ??
       stringField(output ?? {}, "result", "summary") ??
@@ -222,7 +248,11 @@ function collectCandidates(
   for (const message of activeBranchMessages(session, messages)) {
     for (const part of message.parts) {
       if (part.type !== "tool") continue;
-      const candidate = candidateFromToolPart(part, relations.get(part.callID));
+      const candidate = candidateFromToolPart(
+        part,
+        relations.get(part.callID),
+        message.info.anchor?.turnId,
+      );
       if (candidate) candidates.set(candidate.childSessionId, candidate);
     }
   }
@@ -433,6 +463,11 @@ export function projectSessionSubagents(
         stateEndedAt ??
         childOutcome.endedAt ??
         childSession.time.updated,
+      ...(input.prismAcceptanceByChildSessionId?.get(candidate.childSessionId)
+        ? {
+            prismAcceptance: input.prismAcceptanceByChildSessionId.get(candidate.childSessionId),
+          }
+        : {}),
     });
   }
   running.sort(
@@ -446,6 +481,175 @@ export function projectSessionSubagents(
       right.childSessionId.localeCompare(left.childSessionId),
   );
   return { revision: input.revision, running, ended };
+}
+
+/**
+ * Reads only append-only PRISM entries and active transcript launches. It never restores runtime
+ * state; ambiguous lineage is surfaced as unknown only when durable PRISM data identifies a task.
+ */
+export async function resolvePrismAcceptanceByChildSessionId(input: {
+  sessionStore: Pick<SessionStorePort, "getSession" | "messages" | "sessionEntries">;
+  ownerSession: SessionInfo;
+  ownerMessages: readonly MessageWithParts[];
+  ownerEvents?: readonly SessionEvent[];
+  endedSubagents: readonly ZCodeSessionEndedSubagent[];
+  childSessionsById: ReadonlyMap<string, SessionInfo>;
+  onReadError?: (error: unknown) => void;
+}): Promise<ReadonlyMap<string, PrismSubagentAcceptanceSummary>> {
+  const store = input.sessionStore;
+  if (!store.sessionEntries || input.endedSubagents.length === 0) return new Map();
+
+  try {
+    const ownerPathReversed = [input.ownerSession];
+    const visitedOwnerIds = new Set<SessionId>();
+    let cursor = input.ownerSession;
+    while (cursor.taskType === "subagent_child") {
+      if (!cursor.parentID || visitedOwnerIds.has(cursor.id)) return new Map();
+      visitedOwnerIds.add(cursor.id);
+      const parent = await store.getSession(cursor.parentID);
+      if (!parent) return new Map();
+      ownerPathReversed.push(parent);
+      cursor = parent;
+    }
+    const ownerPath = ownerPathReversed.reverse();
+    const rootSession = ownerPath[0];
+    if (!rootSession) return new Map();
+
+    const transcriptByOwnerId = new Map<string, readonly MessageWithParts[]>();
+    await Promise.all(
+      ownerPath.map(async (owner) => {
+        const messages =
+          owner.id === input.ownerSession.id
+            ? input.ownerMessages
+            : await store.messages({ sessionID: owner.id });
+        transcriptByOwnerId.set(owner.id, messages);
+      }),
+    );
+    const ownerSessionsById = new Map<SessionId, SessionInfo>(
+      ownerPath.map((owner) => [owner.id, owner]),
+    );
+    for (const child of input.childSessionsById.values()) ownerSessionsById.set(child.id, child);
+
+    const [contracts, receipts, terminals] = await Promise.all([
+      store.sessionEntries({
+        sessionID: rootSession.id,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      }),
+      store.sessionEntries({
+        sessionID: rootSession.id,
+        type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      }),
+      store.sessionEntries({
+        sessionID: rootSession.id,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      }),
+    ]);
+    const acceptanceIndex = createPrismHistoricalAcceptanceIndex({
+      rootSessionId: rootSession.id,
+      contracts,
+      receipts,
+      terminals,
+    });
+    const results = new Map<string, PrismSubagentAcceptanceSummary>();
+    const relations = subagentEventRelations(input.ownerEvents);
+    const launchesByOwnerId = new Map<
+      SessionId,
+      ReadonlyMap<string, readonly SubagentCandidate[]>
+    >();
+    for (const owner of ownerPath) {
+      const transcript = transcriptByOwnerId.get(owner.id) ?? [];
+      const launchesByChildId = new Map<string, SubagentCandidate[]>();
+      for (const message of activeBranchMessages(owner, transcript)) {
+        for (const part of message.parts) {
+          if (part.type !== "tool") continue;
+          const launch = candidateFromToolPart(
+            part,
+            owner.id === input.ownerSession.id ? relations.get(part.callID) : undefined,
+            message.info.anchor?.turnId,
+          );
+          if (!launch) continue;
+          const matches = launchesByChildId.get(launch.childSessionId) ?? [];
+          matches.push(launch);
+          launchesByChildId.set(launch.childSessionId, matches);
+        }
+      }
+      launchesByOwnerId.set(owner.id, launchesByChildId);
+    }
+
+    for (const ended of input.endedSubagents) {
+      const taskId = ended.agentId;
+      if (!taskId) continue;
+      const edgeChildIds = [
+        ...ownerPath.slice(1).map((owner) => owner.id),
+        ended.childSessionId as SessionId,
+      ];
+      const launches: SubagentCandidate[] = [];
+      let ambiguousLaunch = false;
+      for (let index = 0; index < ownerPath.length; index += 1) {
+        const owner = ownerPath[index]!;
+        const childId = edgeChildIds[index];
+        if (!childId) {
+          ambiguousLaunch = true;
+          break;
+        }
+        const matches = launchesByOwnerId.get(owner.id)?.get(childId) ?? [];
+        if (matches.length !== 1) {
+          ambiguousLaunch = true;
+          break;
+        }
+        launches.push(matches[0]!);
+      }
+
+      const currentLaunch = launches.at(-1);
+      const rootRunId =
+        launches.length === ownerPath.length && currentLaunch
+          ? `${rootSession.id}:${launches[0]?.turnId ?? "session"}`
+          : undefined;
+      const parentTaskId = launches.length > 1 ? launches.at(-2)?.agentId : undefined;
+      const isRelated =
+        acceptanceIndex.contractsByTaskId.has(taskId) ||
+        acceptanceIndex.terminalTaskChildKeys.has(JSON.stringify([taskId, ended.childSessionId]));
+      if (!isRelated) continue;
+
+      let decision: ReturnType<typeof projectPrismHistoricalAcceptanceForTask>;
+      if (
+        !ambiguousLaunch &&
+        currentLaunch?.agentId === taskId &&
+        rootRunId &&
+        (launches.length <= 1 || parentTaskId !== undefined)
+      ) {
+        decision = projectPrismHistoricalAcceptanceForTask({
+          rootSessionId: rootSession.id,
+          rootRunId,
+          taskId,
+          ...(parentTaskId ? { parentTaskId } : {}),
+          childSessionId: ended.childSessionId as SessionId,
+          ownerSessionId: input.ownerSession.id,
+          ownerBranchGeneration: input.ownerSession.revert?.branchGeneration ?? 0,
+          ownerSessionsById,
+          contracts,
+          receipts,
+          terminals,
+          index: acceptanceIndex,
+        });
+      }
+      const totalCriteria = decision
+        ? decision.passedCriterionIds.length +
+          decision.failedCriterionIds.length +
+          decision.missingCriterionIds.length
+        : 0;
+      results.set(ended.childSessionId, {
+        status: decision?.status ?? "unknown",
+        passedCriteria: decision?.passedCriterionIds.length ?? 0,
+        totalCriteria,
+      });
+    }
+    return results;
+  } catch (error) {
+    // PRISM history is optional metadata; a store read failure must not hide the existing directory.
+    input.onReadError?.(error);
+    return new Map();
+  }
 }
 
 function encodeCursor(item: ZCodeSessionEndedSubagent): string {
