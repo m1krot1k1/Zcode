@@ -43,6 +43,7 @@ vi.mock("@zcode/shared", () => ({
     ],
   },
   ZCODE_ENV: "test",
+  ZCODE_OFFLINE_PREVIEW: false,
   get ZCODE_PRODUCT_FLAVOR() {
     return productFlavorMock.value;
   },
