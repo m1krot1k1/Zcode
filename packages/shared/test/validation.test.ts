@@ -725,6 +725,14 @@ describe("hostResponseMessageSchema", () => {
     expect(patch.enabledBuiltinAgentCliProviders).toEqual(["glm"]);
   });
 
+  it("stores OpenCode CLI provider enablement independently from API provider settings", () => {
+    expect(appSettingsSchema.parse({}).openCodeCliEnabled).toBe(false);
+    expect(appSettingsSchema.parse({ openCodeCliEnabled: true }).openCodeCliEnabled).toBe(true);
+    expect(appSettingsPatchSchema.parse({ openCodeCliEnabled: false }).openCodeCliEnabled).toBe(
+      false,
+    );
+  });
+
   it("preserves SSH remote asset install mode and drops historical resource packages", () => {
     const parsed = appSettingsSchema.safeParse({
       recentProjects: [],

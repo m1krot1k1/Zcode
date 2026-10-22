@@ -159,7 +159,7 @@ CREATE TABLE opencode_agent_run (
         opencode_session_id text,
         result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
         stop_reason text,
-        diagnostic_code text, host_event_sequence integer not null default 0,
+        diagnostic_code text, host_event_sequence integer not null default 0, prompt_text text not null default '', activity_json text not null default '{"outputText":"","tools":[]}',
         primary key(session_id, run_id),
         unique(command_id),
         check(run_id = command_id),

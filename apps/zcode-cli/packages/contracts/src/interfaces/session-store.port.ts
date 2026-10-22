@@ -937,6 +937,9 @@ export interface OpenCodeAgentRunRecord {
   hostEventSequence: number;
   time: { created: number; updated: number; terminal?: number };
   openCodeSessionID?: string;
+  promptText: string;
+  outputText: string;
+  toolActivity: Array<{ toolCallId: string; title: string; status: string }>;
   resultText?: string;
   stopReason?: string;
   diagnosticCode?: string;
@@ -972,6 +975,8 @@ export interface OpenCodeAgentRunTransition {
 }
 
 export interface OpenCodeAgentRunHostEventTransition extends OpenCodeAgentRunTransition {
+  /** Validated Host fact; storage aggregates only bounded user-visible text/tool summaries. */
+  hostEvent: import("@zcode/shared").ZCodeOpenCodeAgentRunEvent["event"];
   expectedHostEventSequence: number;
   hostEventSequence: number;
 }

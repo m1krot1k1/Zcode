@@ -102,6 +102,21 @@ export interface V4CommandCoreHost {
   /** guide eligibility：只阻止已有 ordinary queue；已有 guide 仍允许继续按 FIFO admission。 */
   hasQueuedDelivery?(sessionId: string, delivery: "guide" | "queue"): boolean;
   getQueueLength?(sessionId: string): number;
+  /** Cancels only the active OpenCode ACP run matching both accepted command and run IDs. */
+  cancelOpenCodeAgentRun?(
+    sessionId: string,
+    commandId: string,
+    runId: string,
+  ): Promise<boolean>;
+  /** Responds only to an active ACP permission option for the exact OpenCode run/session. */
+  respondToOpenCodeAgentPermission?(params: {
+    sessionId: string;
+    commandId: string;
+    runId: string;
+    opencodeSessionId: string;
+    requestId: string;
+    optionId: string;
+  }): Promise<boolean>;
   /** Highspeed queue 的执行材料含凭据，只允许驻留内存，禁止进入 queue event/snapshot。 */
   retainQueuedTurnExecution?(
     sessionId: string,

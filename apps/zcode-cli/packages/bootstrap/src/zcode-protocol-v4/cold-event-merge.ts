@@ -171,6 +171,9 @@ const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
   // （兜底分支同样保留），而是每次冷恢复刷一条 unclassified 诊断，把"真的漏了词汇表"这个
   // 信号淹掉。
   SessionEventType.DynamicWorkflowRunProgress,
+  // External OpenCode run lifecycle/activity is projected from the bounded run snapshot, not
+  // from ZCode assistant messages or native tool-call parts.
+  SessionEventType.OpenCodeAgentRunUpdated,
   SessionEventType.TargetChanged,
   SessionEventType.RewindTriggered,
   SessionEventType.TurnExecutionModelFallback,

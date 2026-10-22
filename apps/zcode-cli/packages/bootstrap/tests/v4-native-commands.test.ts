@@ -1950,6 +1950,62 @@ describe("v4 原生 sendText：held choice 裁决（catalog B06/B07）", () => {
 });
 
 describe("v4 原生 stop", () => {
+  it("OpenCode delegated Stop направляет точные command/run IDs и не трогает Core runtime", async () => {
+    const stopActiveForegroundExecution = vi.fn();
+    const cancelOpenCodeAgentRun = vi.fn().mockResolvedValue(true);
+    const app = makeApp({ runtime: { stopActiveForegroundExecution } });
+
+    await new V4CommandExecutor(
+      makeHost(makeRecord({ app }), { cancelOpenCodeAgentRun }),
+    ).execute(
+      envelope("stop", {
+        expectedOpenCodeAgentRun: {
+          expectedCommandId: "run-oc-1",
+          expectedRunId: "run-oc-1",
+        },
+      }),
+    );
+
+    expect(cancelOpenCodeAgentRun).toHaveBeenCalledExactlyOnceWith("s1", "run-oc-1", "run-oc-1");
+    expect(stopActiveForegroundExecution).not.toHaveBeenCalled();
+    expect(app.readTarget).not.toHaveBeenCalled();
+  });
+
+  it("迟到的 OpenCode Stop 不会取消另一个 run", async () => {
+    const cancelOpenCodeAgentRun = vi.fn().mockResolvedValue(false);
+    const controller = new AbortController();
+    const record = makeRecord({ activeAbortController: controller });
+
+    await expect(
+      new V4CommandExecutor(makeHost(record, { cancelOpenCodeAgentRun })).execute(
+        envelope("stop", {
+          expectedOpenCodeAgentRun: {
+            expectedCommandId: "old-run",
+            expectedRunId: "old-run",
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ reasonCode: "guard.stopTargetChanged" });
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it("OpenCode Stop отклоняет несовпадающие command/run IDs до обращения к Host", async () => {
+    const cancelOpenCodeAgentRun = vi.fn().mockResolvedValue(true);
+    await expect(
+      new V4CommandExecutor(
+        makeHost(makeRecord(), { cancelOpenCodeAgentRun }),
+      ).execute(
+        envelope("stop", {
+          expectedOpenCodeAgentRun: {
+            expectedCommandId: "run-1",
+            expectedRunId: "run-2",
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ reasonCode: "guard.stopTargetChanged" });
+    expect(cancelOpenCodeAgentRun).not.toHaveBeenCalled();
+  });
+
   it("active turn + active goal：先 pause goal 再 abort（barrier 顺序）", async () => {
     const calls: string[] = [];
     const app = makeApp({
@@ -2050,6 +2106,65 @@ describe("v4 原生 stop", () => {
     ).rejects.toMatchObject({ reasonCode: "guard.stopTargetChanged" });
     expect(controller.signal.aborted).toBe(false);
     expect(app.readTarget).not.toHaveBeenCalled();
+  });
+});
+
+describe("v4 OpenCode ACP permission response", () => {
+  it("routes an explicit option with exact run, ACP session, and request identity", async () => {
+    const respondToOpenCodeAgentPermission = vi.fn().mockResolvedValue(true);
+    await new V4CommandExecutor(
+      makeHost(makeRecord(), { respondToOpenCodeAgentPermission }),
+    ).execute(
+      envelope("respondToOpenCodePermission", {
+        commandId: "run-oc-1",
+        runId: "run-oc-1",
+        opencodeSessionId: "acp-1",
+        requestId: "permission-1",
+        optionId: "allow-once",
+      }),
+    );
+    expect(respondToOpenCodeAgentPermission).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "s1",
+      commandId: "run-oc-1",
+      runId: "run-oc-1",
+      opencodeSessionId: "acp-1",
+      requestId: "permission-1",
+      optionId: "allow-once",
+    });
+  });
+
+  it("rejects mismatched or stale identities without routing a response", async () => {
+    const respondToOpenCodeAgentPermission = vi.fn().mockResolvedValue(true);
+    await expect(
+      new V4CommandExecutor(
+        makeHost(makeRecord(), { respondToOpenCodeAgentPermission }),
+      ).execute(
+        envelope("respondToOpenCodePermission", {
+          commandId: "run-oc-1",
+          runId: "different-run",
+          opencodeSessionId: "acp-1",
+          requestId: "permission-1",
+          optionId: "allow-once",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(respondToOpenCodeAgentPermission).not.toHaveBeenCalled();
+
+    await expect(
+      new V4CommandExecutor(
+        makeHost(makeRecord(), {
+          respondToOpenCodeAgentPermission: vi.fn().mockResolvedValue(false),
+        }),
+      ).execute(
+        envelope("respondToOpenCodePermission", {
+          commandId: "run-oc-1",
+          runId: "run-oc-1",
+          opencodeSessionId: "stale-acp-session",
+          requestId: "permission-1",
+          optionId: "forged-option",
+        }),
+      ),
+    ).rejects.toMatchObject({ reasonCode: "guard.stopTargetChanged" });
   });
 });
 

@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import type { ProviderSettingsView } from "@zcode/services";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
-import { V4ComposerModelControls } from "@/v4/composer/V4ComposerToolbar.js";
+import {
+  shouldShowModelProviderSettingsShortcut,
+  V4ComposerModelControls,
+} from "@/v4/composer/V4ComposerToolbar.js";
 import type { ModelConfigSelect } from "@/ModelConfigSelect.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +41,10 @@ const mocks = vi.hoisted(() => ({
   codingPlanEntitlementsEnabledStartPlanIds: [] as string[],
   configOptions: [] as Array<Record<string, unknown>>,
   configOptionsError: true,
+  openCodeRuntime: {
+    getCliStatus: vi.fn(async () => ({ status: "available", version: "1.0.0" })),
+    listModels: vi.fn(async () => ({ status: "available", models: ["opencode/model-a"] })),
+  },
   enterpriseProducts: { snapshot: { productList: [] }, loading: false, error: null } as Record<
     string,
     unknown
@@ -108,6 +115,9 @@ vi.mock("@/store/StoreProvider.js", () => ({
     selector(mocks.auth),
 }));
 vi.mock("@/hooks/useWorkspaceServices.js", () => ({ useBaseWorkspaceServices: () => ({}) }));
+vi.mock("@/hooks/useServices.js", () => ({
+  useServices: () => ({ openCodeAcpRuntime: mocks.openCodeRuntime }),
+}));
 vi.mock("@/hooks/useComposerConnectionSwitch.js", () => ({
   useComposerConnectionSwitch: () => ({
     pending: false,
@@ -460,6 +470,8 @@ afterEach(() => {
   mocks.codingPlanEntitlementsEnabledStartPlanIds = [];
   mocks.configOptions = [];
   mocks.configOptionsError = true;
+  mocks.openCodeRuntime.getCliStatus.mockClear();
+  mocks.openCodeRuntime.listModels.mockClear();
   mocks.enterpriseProducts = { snapshot: { productList: [] }, loading: false, error: null };
   mocks.modelSelectionView = {
     revision: 1,
@@ -494,6 +506,70 @@ afterEach(() => {
 });
 
 describe("V4ComposerModelControls recovery", () => {
+  it("оставляет выбор модели доступным, когда OpenCode CLI — единственный источник", () => {
+    expect(
+      shouldShowModelProviderSettingsShortcut({
+        modelMenuVisible: true,
+        providerSourcesLoading: false,
+        selectableModelGroupCount: 1,
+        connectionSwitchPending: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowModelProviderSettingsShortcut({
+        modelMenuVisible: true,
+        providerSourcesLoading: false,
+        selectableModelGroupCount: 0,
+        connectionSwitchPending: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("показывает модели OpenCode в обычном picker при пустом API registry", async () => {
+    mocks.modelSelectionView = { revision: 1, providers: [] };
+    mocks.settings = {
+      providerFamilyConnectionSelections: {},
+      providerFamilyDomain: {},
+      openCodeCliEnabled: true,
+    };
+    const root: Root = createRoot(installMinimalDom());
+    const props = {
+      workspacePath: "/workspace",
+      modelSelectionView: mocks.modelSelectionView,
+      sessionId: null,
+      phase: null,
+      draftConfig: { mode: "build" },
+      config: {
+        provider: "",
+        model: "",
+        thought: "disabled",
+        thoughtLevels: [],
+        followupMode: "queue" as const,
+        mode: "build" as const,
+      },
+      usage: null,
+      disabled: false,
+      onSelectModel: mocks.selectModel,
+      onSelectOpenCodeModel: vi.fn(),
+      onSelectThought: vi.fn(),
+      onSwitchMode: vi.fn(),
+    };
+
+    await act(async () => {
+      root.render(createElement(V4ComposerModelControls, props));
+      await flushMicrotasks();
+    });
+
+    expect(mocks.openCodeRuntime.listModels).toHaveBeenCalledOnce();
+    expect(captured.modelSelectProps?.modelGroups).toEqual([
+      expect.objectContaining({
+        key: "opencode-cli",
+        items: [expect.objectContaining({ value: "zcode-opencode-cli:opencode/model-a" })],
+      }),
+    ]);
+    await act(async () => root.unmount());
+  });
+
   it("同 Host 重读保留目录时入口不切成禁用态，首次加载仍禁用", () => {
     renderToolbarMarkup({
       modelSelectionState: { status: "loading", catalog: mocks.modelSelectionView },

@@ -131,6 +131,15 @@ function assertTerminalAndSafe(rows: ConversationRow[]): void {
       });
     }
     if (
+      row.kind === "externalAgentRun" &&
+      (row.status === "starting" || row.status === "running")
+    ) {
+      throwProjectionError("invalid_conversation", "Active external agent runs cannot be shared", {
+        rowKind: row.kind,
+        rowId: row.rowId,
+      });
+    }
+    if (
       row.kind === "timelineMarker" &&
       ((row.marker.type === "compact" && row.marker.status === "running") ||
         (row.marker.type === "goalVerify" && row.marker.outcome === "running"))
@@ -417,6 +426,25 @@ function projectRow(row: ConversationRow, index: number, ids: PublicIdMaps): Con
         ...(row.lane ? { lane: row.lane } : {}),
         marker: projectTimelineMarker(row),
       };
+    case "externalAgentRun":
+      return {
+        ...base,
+        kind: "externalAgentRun",
+        runId: `share-external-run-${index + 1}`,
+        commandId: `share-external-command-${index + 1}`,
+        provider: "opencode-cli",
+        ...(row.modelId ? { modelId: row.modelId } : {}),
+        promptText: row.promptText,
+        output: { text: row.output.text },
+        tools: row.tools.map(({ title, status }, toolIndex) => ({
+          toolCallId: `share-external-tool-${index + 1}-${toolIndex + 1}`,
+          title,
+          status,
+        })),
+        status: row.status,
+        ...(row.startedAt === undefined ? {} : { startedAt: row.startedAt }),
+        ...(row.endedAt === undefined ? {} : { endedAt: row.endedAt }),
+      };
     case "subagent":
       throwProjectionError(
         "invalid_conversation",
@@ -586,6 +614,22 @@ export function assertConversationSharePublicProjection(input: {
         "invalid_conversation",
         "Conversation public projection cannot contain subagent details",
       );
+    } else if (row.kind === "externalAgentRun") {
+      if (
+        !/^share-external-run-[1-9]\d*$/u.test(row.runId) ||
+        !/^share-external-command-[1-9]\d*$/u.test(row.commandId)
+      ) {
+        throwProjectionError(
+          "invalid_conversation",
+          "Conversation public external run identity is invalid",
+        );
+      }
+      if (row.pendingPermissions !== undefined || row.diagnosticCode !== undefined) {
+        throwProjectionError(
+          "invalid_conversation",
+          "Conversation public external run contains private runtime details",
+        );
+      }
     }
   }
 

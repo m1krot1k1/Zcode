@@ -8,10 +8,7 @@ import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { timestampSchema } from "./core.js";
 import { conversationInputSourceSchema } from "./input-intent.js";
-import {
-  backgroundResultOriginMetaSchema,
-  workflowLaunchMetaSchema,
-} from "./workflow-row-meta.js";
+import { backgroundResultOriginMetaSchema, workflowLaunchMetaSchema } from "./workflow-row-meta.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
 
 // RowBase。rowId：session 内单调、永不复用、事件日志的确定性纯函数。
@@ -280,6 +277,59 @@ export const subagentRowSchema = z.object({
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
 
+/** A separately owned CLI agent run; its content is not a ZCode assistant/tool turn. */
+export const externalAgentRunRowSchema = z.object({
+  ...rowBaseFields,
+  kind: z.literal("externalAgentRun"),
+  runId: z.string().min(1),
+  /** Exact accepted command identity for row-scoped lifecycle controls (for example Stop). */
+  commandId: z.string().min(1),
+  provider: z.literal("opencode-cli"),
+  modelId: z.string().optional(),
+  promptText: z.string().max(64 * 1024),
+  output: z.object({ text: z.string().max(32 * 1024) }),
+  tools: z
+    .array(
+      z.object({
+        toolCallId: z.string().min(1),
+        title: z.string().max(256),
+        status: z.string().max(64),
+      }),
+    )
+    .max(64),
+  /** Live-only explicit ACP permissions; absent from cold hydration and never persisted. */
+  pendingPermissions: z
+    .array(
+      z
+        .object({
+          requestId: z.string().min(1),
+          opencodeSessionId: z.string().min(1),
+          title: z.string().max(256),
+          inputSummary: z.string().max(2048).optional(),
+          options: z
+            .array(
+              z.object({
+                optionId: z.string().min(1).max(256),
+                name: z.string().max(256),
+                kind: z.string().max(64),
+              }),
+            )
+            .max(32),
+        })
+        .strict(),
+    )
+    .max(32)
+    .optional(),
+  status: z.enum(["starting", "running", "completed", "cancelled", "failed", "interrupted"]),
+  startedAt: timestampSchema.optional(),
+  endedAt: timestampSchema.optional(),
+  diagnosticCode: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{0,63}$/)
+    .optional(),
+});
+export type ExternalAgentRunRow = z.infer<typeof externalAgentRunRowSchema>;
+
 // Hook runtime descriptor 只用于 CLI event/projection 输入兼容。对话 wire row 使用下方
 // client-safe summary，不携带命令、绝对路径、stdin/stdout/stderr/tool input 或环境变量。
 export const hookExecutionDescriptorSchema = z
@@ -440,6 +490,7 @@ export const conversationRowSchema = z.discriminatedUnion("kind", [
   toolCallRowSchema,
   artifactRowSchema,
   subagentRowSchema,
+  externalAgentRunRowSchema,
   hookInvocationRowSchema,
   timelineMarkerRowSchema,
 ]);

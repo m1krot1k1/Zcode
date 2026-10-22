@@ -18,18 +18,18 @@ Add a strict schema and migration for a table in the existing session database, 
 - route kind and optional requested OpenCode model catalog ID;
 - lifecycle state (`pending`, `dispatching`, `running`, `completed`, `cancelled`, `failed`, `interrupted`), durable record revision, process-owning Host event sequence, and created/updated/terminal timestamps;
 - the Host-returned ACP session ID while active, cleared at terminal settlement;
-- bounded final text/result (maximum 32 KiB UTF-8), stop reason, and stable diagnostic/interruption code.
+- the admitted prompt (maximum 64 KiB UTF-8), bounded accumulated ACP text (maximum 32 KiB UTF-8), up to 64 tool summaries (`toolCallId`, title, status; no tool input/output), bounded final result, stop reason, and stable diagnostic/interruption code. Once the text snapshot reaches its byte cap, later ordered events still advance lifecycle/sequence and tools; displayed text remains capped.
 
-Do not persist partial ACP chunks, ACP tool inputs, permission payloads, process environment/path, stderr, authentication state, or OpenCode credential material. Host attachment/generation and permission state are live connection state and never durable. The OpenCode session ID is a correlation value only; it is not evidence of resumability.
+Do not persist raw partial ACP chunks, ACP tool inputs/outputs, permission payloads, process environment/path, stderr, authentication state, or OpenCode credential material. Host attachment/generation and permission state are live connection state and never durable. The OpenCode session ID is a correlation value only; it is not evidence of resumability.
 
 ## Projection and events
 
 - Extend the V4 conversation protocol with a dedicated `externalAgentRun` row kind linked to the canonical `session_input`/`commandId`. It renders the user's submitted text and clearly labeled OpenCode-owned status/result. It is not an `assistantText`, `reasoning`, or ZCode `toolCall` row.
-- The live event adapter emits a strict versioned external-run event union with per-run increasing Host `sequence`. Persist the durable record revision and Host event sequence separately: outbox claims, admission acknowledgements, and restart recovery may advance the record revision but must not consume a Host event sequence. The CLI validates the current run ID, owning task, active Host connection generation, and exact next Host sequence before updating the journal and publishing the row delta.
+- The live event adapter emits a strict versioned external-run event union with per-run increasing Host `sequence`. Persist the durable record revision and Host event sequence separately: outbox claims, admission acknowledgements, and restart recovery may advance the record revision but must not consume a Host event sequence. The CLI validates the current run ID, owning task, active Host connection generation, and exact next Host sequence before atomically updating the bounded activity snapshot and publishing the row delta.
 - Same-state `running` updates are Host events only; generic lifecycle transitions cannot accept them or bypass the Host sequence compare-and-set.
 - Generic transitions own outbox dispatch and local recovery only. Host-originated `running` and terminal results must use the Host-event compare-and-set; a lost Host may move a nonterminal record to `interrupted` without claiming a Host event.
 - Snapshot hydration reads the journal and reconstructs the external-run row. Existing task history remains readable when no such rows exist. A malformed/unknown version becomes a bounded diagnostic row or a typed recovery failure; it must not be converted into assistant output.
-- Admission is visible as the canonical user request plus a `pending` external run. Updates to `dispatching`/`running` and terminal state update that same row. Content/tool/permission live updates are volatile and may disappear on restart; only the bounded terminal summary is durable.
+- Admission is visible as the canonical prompt plus a `pending` external run. Updates to `dispatching`/`running` and terminal state update that same row. The bounded prompt, accumulated text, and tool summaries survive restart and cold hydration uses the same row reducer as live events; ACP facts never become ZCode assistant/tool events.
 
 ## Recovery, idempotency, and retention
 

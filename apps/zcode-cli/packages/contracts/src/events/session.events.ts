@@ -185,6 +185,10 @@ export const SessionEventType = {
   SubagentStopped: "subagent_stopped",
   // PRISM runtime projection records only the host-observed terminal lifecycle; it is not AC evidence.
   SubagentExecutionTerminal: "subagent_execution_terminal",
+  /** External OpenCode ACP lifecycle fact; never projected as ZCode model/tool output. */
+  OpenCodeAgentRunUpdated: "opencode_agent_run_updated",
+  /** Live-only ACP permission prompt; must be ingested directly and never appended to EventStore. */
+  OpenCodeAgentPermissionUpdated: "opencode_agent_permission_updated",
   PrismTaskContractDeclared: "prism_task_contract_declared",
   PrismEvidenceReceiptObserved: "prism_evidence_receipt_observed",
   Interrupt: "interrupt",
@@ -1292,6 +1296,35 @@ export interface ErrorAttribution {
   highspeedFallbackUnavailable?: boolean;
 }
 
+/** Complete bounded projection source for one externally owned OpenCode CLI run. */
+export interface OpenCodeAgentRunUpdatedPayload {
+  runId: string;
+  commandId: string;
+  modelId?: string;
+  promptText: string;
+  outputText: string;
+  tools: Array<{ toolCallId: string; title: string; status: string }>;
+  status: "starting" | "running" | "completed" | "cancelled" | "failed" | "interrupted";
+  startedAt?: number;
+  endedAt?: number;
+  diagnosticCode?: string;
+}
+
+/** Ephemeral ACP permission state. This payload is only sent through the live V4 gateway. */
+export interface OpenCodeAgentPermissionUpdatedPayload {
+  runId: string;
+  commandId: string;
+  opencodeSessionId: string;
+  requestId: string;
+  state: "requested" | "resolved";
+  cancelled?: boolean;
+  request?: {
+    title: string;
+    inputSummary?: string;
+    options: Array<{ optionId: string; name: string; kind: string }>;
+  };
+}
+
 // CollaborationMode and RiskLevel are re-exported from ports
 
 // -----------------------------------------------
@@ -1392,6 +1425,8 @@ export type SessionEventPayload =
   | BackgroundTaskUpdatedPayload
   | BackgroundTaskCompletedPayload
   | SubagentExecutionTerminalPayload
+  | OpenCodeAgentRunUpdatedPayload
+  | OpenCodeAgentPermissionUpdatedPayload
   | PrismTaskContractDeclaredPayload
   | PrismEvidenceReceiptObservedPayload
   | DynamicWorkflowRunProgressPayload

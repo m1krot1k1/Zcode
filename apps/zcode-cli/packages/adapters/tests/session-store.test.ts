@@ -640,6 +640,7 @@ describe("SQLite session store", () => {
       "0024_session_database_identity",
       "0025_opencode_agent_run_outbox",
       "0026_opencode_host_event_sequence",
+      "0027_opencode_run_activity_snapshot",
     ];
 
     try {
@@ -676,6 +677,7 @@ describe("SQLite session store", () => {
         "0.16.5",
         "0.16.5",
         "0.16.5",
+        "0.16.9",
         "0.16.9",
         "0.16.9",
         "0.16.9",
@@ -717,7 +719,7 @@ describe("SQLite session store", () => {
         ]),
       );
       expect(attempts.flat().filter((result) => !result.ok)).toEqual([]);
-      expect(attempts.flat().every((result) => result.migrationIds?.length === 26)).toBe(true);
+      expect(attempts.flat().every((result) => result.migrationIds?.length === 27)).toBe(true);
     },
     CONCURRENT_STARTUP_TEST_TIMEOUT_MS,
   );
@@ -946,6 +948,7 @@ describe("SQLite session store", () => {
         "0024_session_database_identity",
         "0025_opencode_agent_run_outbox",
         "0026_opencode_host_event_sequence",
+        "0027_opencode_run_activity_snapshot",
       ]);
       store.close();
     } finally {
@@ -3407,6 +3410,7 @@ describe("OpenCode delegated run outbox", () => {
           eventSequence: 2,
           expectedHostEventSequence: 0,
           hostEventSequence: 1,
+          hostEvent: { type: "started" },
           openCodeSessionID: "acp-session-1",
           now: 103,
         }),
@@ -3421,6 +3425,7 @@ describe("OpenCode delegated run outbox", () => {
           eventSequence: 3,
           expectedHostEventSequence: 1,
           hostEventSequence: 2,
+          hostEvent: { type: "completed", stopReason: "end_turn", finalText: "Готово" },
           resultText: "Готово",
           stopReason: "end_turn",
           now: 104,
@@ -3475,6 +3480,7 @@ describe("OpenCode delegated run outbox", () => {
         eventSequence: 2,
         expectedHostEventSequence: 0,
         hostEventSequence: 1,
+        hostEvent: { type: "started" },
         status: "running" as const,
         openCodeSessionID: "acp-session-1",
       };
@@ -3510,6 +3516,7 @@ describe("OpenCode delegated run outbox", () => {
           eventSequence: 3,
           expectedHostEventSequence: 1,
           hostEventSequence: 2,
+          hostEvent: { type: "content", text: "Промежуточный ответ" },
         }),
       ).toBe(true);
       expect(
@@ -3520,6 +3527,7 @@ describe("OpenCode delegated run outbox", () => {
           eventSequence: 4,
           expectedHostEventSequence: 1,
           hostEventSequence: 2,
+          hostEvent: { type: "content", text: "Промежуточный ответ" },
         }),
       ).toBe(false);
       expect(
@@ -3530,6 +3538,7 @@ describe("OpenCode delegated run outbox", () => {
           eventSequence: 4,
           expectedHostEventSequence: 2,
           hostEventSequence: 3,
+          hostEvent: { type: "tool", toolCallId: "tool-1", title: "Чтение файла", status: "completed" },
           status: "completed",
           openCodeSessionID: null,
           resultText: "Готово",
@@ -3543,6 +3552,8 @@ describe("OpenCode delegated run outbox", () => {
         eventSequence: 4,
         hostEventSequence: 3,
         resultText: "Готово",
+        outputText: "Промежуточный ответ",
+        toolActivity: [{ toolCallId: "tool-1", title: "Чтение файла", status: "completed" }],
       });
     } finally {
       store.close();

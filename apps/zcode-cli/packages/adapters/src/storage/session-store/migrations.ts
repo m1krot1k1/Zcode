@@ -1047,4 +1047,38 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
         add column host_event_sequence integer not null default 0;
     `,
   },
+  {
+    appVersion: "0.16.9",
+    id: "0027_opencode_run_activity_snapshot",
+    touchedTables: ["opencode_agent_run"],
+    apply: (db) => {
+      const columns = new Set(
+        db.prepare("pragma table_info(opencode_agent_run)").all().map((row) => row.name),
+      );
+      if (!columns.has("prompt_text")) {
+        db.exec("alter table opencode_agent_run add column prompt_text text not null default ''");
+        db.exec(`
+          update opencode_agent_run
+          set prompt_text = coalesce((
+            select json_extract(session_input.payload, '$.text')
+            from session_input where session_input.id = opencode_agent_run.input_id
+          ), '')
+        `);
+      }
+      if (!columns.has("activity_json")) {
+        db.exec(
+          `alter table opencode_agent_run add column activity_json text not null default '{"outputText":"","tools":[]}'`,
+        );
+      }
+    },
+    sql: `
+      alter table opencode_agent_run add column prompt_text text not null default '';
+      alter table opencode_agent_run add column activity_json text not null default '{"outputText":"","tools":[]}';
+      update opencode_agent_run
+      set prompt_text = coalesce((
+        select json_extract(session_input.payload, '$.text')
+        from session_input where session_input.id = opencode_agent_run.input_id
+      ), '');
+    `,
+  },
 ];

@@ -1590,6 +1590,11 @@ export function createZCodeAgentService(
     } else {
       if (event.sessionId !== run.opencodeSessionId || !run.opencodeSessionId) return;
       run.permissions.delete(event.requestId);
+      void emitOpenCodeRunEvent(run, {
+        type: "permissionResolved",
+        requestId: event.requestId.slice(0, 256),
+        cancelled: event.cancelled,
+      });
     }
   };
   const interactionPreferenceSyncByWorkspaceKey = new Map<string, Promise<void>>();
@@ -3023,11 +3028,6 @@ export function createZCodeAgentService(
               optionId: params.optionId,
             });
             run.permissions.delete(params.requestId);
-            await emitOpenCodeRunEvent(run, {
-              type: "permissionResolved",
-              requestId: params.requestId,
-              optionId: params.optionId,
-            });
             await client.respond(request.id, { status: "responded" });
           })().catch(async (error: unknown) => {
             logger.warn(undefined, "OpenCode ACP Host bridge request failed", {

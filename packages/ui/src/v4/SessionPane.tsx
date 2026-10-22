@@ -491,9 +491,14 @@ function submissionConfigFromCommand(
       : type === "sendText" || type === "sendGoalCommand"
         ? payload
         : undefined;
+  const route = candidate?.executionRoute as ComposerSubmissionConfig["executionRoute"] | undefined;
+  if (route?.kind === "opencode-acp") return { executionRoute: route };
   if (!candidate?.modelSelection || !candidate.mode) return null;
   return {
-    modelSelection: candidate.modelSelection as ComposerSubmissionConfig["modelSelection"],
+    executionRoute: { kind: "zcode" },
+    modelSelection: candidate.modelSelection as NonNullable<
+      ComposerSubmissionConfig["modelSelection"]
+    >,
     mode: candidate.mode as ComposerSubmissionConfig["mode"],
     planEnabled:
       typeof candidate.planEnabled === "boolean"
@@ -679,6 +684,7 @@ export function SessionPane({
     usageStatsService,
     zcodeSessionService,
     zcodeTaskService,
+    openCodeAcpRuntime,
   } = useServices();
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
@@ -1749,7 +1755,11 @@ export function SessionPane({
     modelSelectionService,
   });
 
-  const draftAgentStartupAllowed = providerAgentStartupAllowed && remoteAvailable;
+  const { settings: sharedSettings } = useSettings();
+  // OpenCode CLI не требует ZCode API-провайдера, но новой переписке всё равно нужен
+  // обычный draft-session для идентичности, admission и журнала чата.
+  const draftAgentStartupAllowed =
+    (providerAgentStartupAllowed || sharedSettings?.openCodeCliEnabled === true) && remoteAvailable;
 
   // Composer 保存下一次 Submission 的 renderer intent；prewarm session 仅承载草稿预热。
   const {
@@ -1759,6 +1769,7 @@ export function SessionPane({
     draftConfigRef,
     resolveInitialDraftConfig,
     handleDraftSelectModel,
+    handleDraftSelectOpenCodeModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
     promoteComposerDraft,
@@ -1892,14 +1903,42 @@ export function SessionPane({
     useZCodeSessionStore.getState().invalidateDraftRuntime(workspacePath, workspaceIdentity);
   }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
-  const createSubmissionFromComposer = useCallback(
-    () => createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView),
-    [draftConfigRef, modelSelectionView],
-  );
-  const composerSubmissionReady = useMemo(
-    () => createComposerSubmissionConfig(draftConfig, modelSelectionView) !== null,
-    [draftConfig, modelSelectionView],
-  );
+  const createSubmissionFromComposer = useCallback(() => {
+    if (
+      composerDraft.executionRoute?.kind === "opencode-acp" &&
+      sharedSettings?.openCodeCliEnabled !== true
+    ) {
+      return null;
+    }
+    return createComposerSubmissionConfig(
+      { ...draftConfigRef.current, executionRoute: composerDraft.executionRoute },
+      modelSelectionView,
+    );
+  }, [
+    composerDraft.executionRoute,
+    draftConfigRef,
+    modelSelectionView,
+    sharedSettings?.openCodeCliEnabled,
+  ]);
+  const composerSubmissionReady = useMemo(() => {
+    if (
+      composerDraft.executionRoute?.kind === "opencode-acp" &&
+      sharedSettings?.openCodeCliEnabled !== true
+    ) {
+      return false;
+    }
+    return (
+      createComposerSubmissionConfig(
+        { ...draftConfig, executionRoute: composerDraft.executionRoute },
+        modelSelectionView,
+      ) !== null
+    );
+  }, [
+    composerDraft.executionRoute,
+    draftConfig,
+    modelSelectionView,
+    sharedSettings?.openCodeCliEnabled,
+  ]);
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
   const billingDiscount = useCodingPlanBillingDiscountFromService(
@@ -2019,7 +2058,6 @@ export function SessionPane({
       workspacePath,
     ],
   );
-  const { settings: sharedSettings } = useSettings();
   const readPlanIdentitySnapshot = usePlanIdentitySnapshot(
     sharedSettings?.providerFamilyDomain,
     sharedSettings?.providerFamilyDomain
@@ -2079,16 +2117,25 @@ export function SessionPane({
       // 用户在 Composer 的原始选择（新任务草稿的模型种子），加速轮必须由调用方传入发送前
       // 冻结的 submission（spec §5.1）。接纳写入另有加速身份兜底拦截。
       const recentSubmission = recentSubmissionOverride ?? submission;
+      const zcodeRecentSubmission =
+        recentSubmission?.executionRoute.kind === "zcode" &&
+        recentSubmission.modelSelection &&
+        recentSubmission.mode
+          ? {
+              modelSelection: recentSubmission.modelSelection,
+              mode: recentSubmission.mode,
+            }
+          : null;
       // 发送时固定组织归属；同 cwd 可属于多个项目，切页和迟到 ACK 不得改写目标。
       let recentScope =
         creationProjectId === undefined
           ? newTaskComposerScope
           : { ...newTaskComposerScope, projectId: creationProjectId };
       // 在异步查询归属前冻结选择与发起顺序，避免慢查询把早发命令排成最新。
-      const recentReceipt = recentSubmission
-        ? prepareComposerRecentReceipt(recentScope, recentSubmission)
+      const recentReceipt = zcodeRecentSubmission
+        ? prepareComposerRecentReceipt(recentScope, zcodeRecentSubmission)
         : undefined;
-      if (recentSubmission && sessionId && targetSessionId) {
+      if (zcodeRecentSubmission && sessionId && targetSessionId) {
         const projectService = baseWorkspaceServices.projectService;
         if (!projectService) throw new Error("project.service-unavailable");
         const directories = await projectService.resolveSessionDirectories(
@@ -2112,7 +2159,9 @@ export function SessionPane({
           ? readPendingTaskDraft(recentScope)
           : null;
       const acceptSelection =
-        submission && (sessionId === null || targetSessionId === sessionId)
+        submission?.executionRoute.kind === "zcode" &&
+        submission.modelSelection &&
+        (sessionId === null || targetSessionId === sessionId)
           ? captureAcceptedModelSelection(submission.modelSelection)
           : undefined;
       const envelope = createCommandEnvelope({
@@ -2925,6 +2974,25 @@ export function SessionPane({
     [dispatchCommand, sessionId],
   );
 
+  const handleRespondOpenCodePermission = useCallback(
+    async (params: {
+      commandId: string;
+      runId: string;
+      opencodeSessionId: string;
+      requestId: string;
+      optionId: string;
+    }) => {
+      if (!sessionId || params.commandId !== params.runId) {
+        throw new Error("OpenCode permission run identity is unavailable");
+      }
+      const ack = await dispatchCommand("respondToOpenCodePermission", params, sessionId);
+      if (ack.status !== "accepted") {
+        throw new Error(ack.reasonCode ?? "OpenCode permission response was rejected");
+      }
+    },
+    [dispatchCommand, sessionId],
+  );
+
   // 动态工作流灰度快照：只读 store，
   // 取数在 Root 里做一次。未就绪时 enabled 为 false，按未命中处理。
   const { enabled: dynamicWorkflowEnabled } = useDynamicWorkflowAvailability();
@@ -3012,6 +3080,8 @@ export function SessionPane({
       onOpenWorkflowArtifact:
         runtimeReady && onOpenWorkflowArtifact ? handleOpenWorkflowArtifact : undefined,
       onCancelBackgroundWork: readOnly || !runtimeReady ? undefined : handleCancelBackgroundWork,
+      onRespondOpenCodePermission:
+        readOnly || !runtimeReady || !sessionId ? undefined : handleRespondOpenCodePermission,
       // Resume 进入会话上下文的唯一供给点；灰度与只读两道门都在 resolveWorkflowResumeHandler 里，
       // 断在这里等于工具卡页脚与摘要卡的按钮一起消失。
       onResumeWorkflowRun: resolveWorkflowResumeHandler({
@@ -3094,6 +3164,7 @@ export function SessionPane({
       readOnly,
       runtimeReady,
       handleCancelBackgroundWork,
+      handleRespondOpenCodePermission,
       dynamicWorkflowEnabled,
       handleResumeWorkflowRun,
       handleAmendWorkflowRunSettings,
@@ -3565,6 +3636,7 @@ export function SessionPane({
         args[12] = options?.submittedDraftText ?? text;
         if (
           args[0] === "sendText" &&
+          submission?.executionRoute.kind !== "opencode-acp" &&
           args[2] &&
           baseWorkspaceServices.genUiService &&
           typeof args[1]?.text === "string"
@@ -3600,6 +3672,89 @@ export function SessionPane({
         contextAttachmentCount,
       });
 
+      if (submission?.executionRoute.kind === "opencode-acp") {
+        if (sharedSettings?.openCodeCliEnabled !== true || !openCodeAcpRuntime) {
+          toast(intl.formatMessage({ id: "settings.openCode.composerDisabled" }));
+          return "blocked" as const;
+        }
+        const cliStatus = await openCodeAcpRuntime.getCliStatus().catch(() => null);
+        if (!cliStatus || cliStatus.status !== "available") {
+          toast(
+            intl.formatMessage({
+              id:
+                cliStatus?.status === "missing"
+                  ? "settings.openCode.cli-missing"
+                  : "settings.openCode.unavailable",
+            }),
+          );
+          return "blocked" as const;
+        }
+        const cliCatalog = await openCodeAcpRuntime.listModels().catch(() => null);
+        if (
+          cliCatalog?.status !== "available" ||
+          !cliCatalog.models.includes(submission.executionRoute.model.modelId)
+        ) {
+          toast(intl.formatMessage({ id: "settings.openCode.modelsUnavailable" }));
+          return "blocked" as const;
+        }
+        const unsupportedContext =
+          slashCommand !== null ||
+          readyAttachments.length > 0 ||
+          contextAttachmentCount > 0 ||
+          Boolean(sharedContextRefs?.length) ||
+          Boolean(options?.conversationQuotes?.length) ||
+          Boolean(options?.source) ||
+          Boolean(options?.requestedDelivery && options.requestedDelivery !== "startNow") ||
+          heldQueueDisposition !== undefined ||
+          expectedHeldQueueItemIds !== undefined ||
+          snapshotRef.current?.inputRouting.mode === "choice";
+        if (unsupportedContext) {
+          toast(intl.formatMessage({ id: "settings.openCode.composerUnsupported" }));
+          return "blocked" as const;
+        }
+        if (!text.trim()) return "blocked" as const;
+
+        // OpenCode is a separate execution route: it must not wait for a ZCode provider/model,
+        // run Highspeed/recommendations, or send ZCode model execution fields to admission.
+        const draftBinding = sessionId === null ? await waitForDraftSession() : null;
+        if (draftBinding && !draftBinding.beginPromotion()) {
+          throw new Error("草稿会话已切换，请重新发送");
+        }
+        const targetSessionId = sessionId ?? draftBinding!.sessionId;
+        const ack = await dispatchSubmissionCommand(
+          "sendText",
+          {
+            text,
+            executionRoute: submission.executionRoute,
+            requestedDelivery: "startNow",
+          },
+          targetSessionId,
+          undefined,
+          undefined,
+          options?.telemetrySeed,
+          undefined,
+          options?.onCommandCreated
+            ? (envelope) => {
+                if (envelope.type === "sendText") options.onCommandCreated?.(envelope.commandId);
+              }
+            : undefined,
+          undefined,
+          undefined,
+          submission,
+        );
+        if (ack.status !== "accepted") throw new Error(ack.reasonCode ?? "sendText 被拒绝");
+        if (draftBinding) {
+          draftBinding.promote();
+          await handleDraftSessionCreated(
+            targetSessionId,
+            createSourceAtSend,
+            ack.commandId,
+            taskGroupIdAtSend,
+          );
+        }
+        return "sent" as const;
+      }
+
       if (!(await ensureDraftModelReadyForSend())) {
         return "blocked" as const;
       }
@@ -3632,7 +3787,13 @@ export function SessionPane({
         toast(intl.formatMessage({ id: "chat.goal.planModeBlocked" }));
         return "blocked" as const;
       }
-      if (!submission) {
+      if (
+        !submission ||
+        submission.executionRoute.kind !== "zcode" ||
+        !submission.modelSelection ||
+        !submission.mode ||
+        submission.planEnabled === undefined
+      ) {
         logger.warn("[v4-pane] Submission 缺少完整模型或模式配置");
         return "blocked" as const;
       }
@@ -3820,6 +3981,8 @@ export function SessionPane({
       captureAcceptedModelSelection,
       dispatchSlashCommand,
       ensureDraftModelReadyForSend,
+      openCodeAcpRuntime,
+      sharedSettings?.openCodeCliEnabled,
       availableSelectionSideSlashCommandNames,
       appSlashCommands,
       handleDraftSessionCreated,
@@ -4437,6 +4600,17 @@ export function SessionPane({
     [handleDraftSelectThought],
   );
 
+  const handleSelectOpenCodeModel = useCallback(
+    (modelId: string) => {
+      if (activeHighspeedCard) {
+        toast(intl.formatMessage({ id: "chat.highspeed.modelLocked" }));
+        return;
+      }
+      handleDraftSelectOpenCodeModel(modelId);
+    },
+    [activeHighspeedCard, handleDraftSelectOpenCodeModel, intl],
+  );
+
   const handleRecoverCustomModelSelection = useCallback(
     async (value: string, sourceModel: ModelSelectionSource | null) => {
       const decoded = decodeCustomModelValue(value);
@@ -4558,6 +4732,36 @@ export function SessionPane({
         logger.lifecycle.info("[v4-pane] stop 命令被跳过（无可停执行）", {
           source,
           sessionId: sessionId ?? "",
+        });
+        return;
+      }
+      const externalAgentRun = current.control.activeWorks.find(
+        (work) => work.kind === "externalAgentRun",
+      );
+      if (externalAgentRun) {
+        if (!externalAgentRun.commandId || !externalAgentRun.runId) {
+          logger.lifecycle.warn(
+            "[v4-pane] OpenCode Stop пропущен: отсутствует точная идентичность запуска",
+          );
+          return;
+        }
+        logger.lifecycle.info("[v4-pane] Stop направлен в OpenCode ACP", {
+          source,
+          sessionId,
+          commandId: externalAgentRun.commandId,
+          runId: externalAgentRun.runId,
+        });
+        void dispatchCommand(
+          "stop",
+          {
+            expectedOpenCodeAgentRun: {
+              expectedCommandId: externalAgentRun.commandId,
+              expectedRunId: externalAgentRun.runId,
+            },
+          },
+          sessionId,
+        ).catch((error) => {
+          logger.lifecycle.warn(`[v4-pane] Stop OpenCode ACP завершился ошибкой: ${String(error)}`);
         });
         return;
       }
@@ -4976,7 +5180,7 @@ export function SessionPane({
     mcpUnavailableNotice,
   });
   const composerError =
-    draftModelReadinessError ??
+    (composerDraft.executionRoute?.kind === "opencode-acp" ? null : draftModelReadinessError) ??
     sendSubmissionError ??
     (quotaBanner.takesOverError ? null : projectedComposerError);
   useEffect(() => {
@@ -5466,6 +5670,7 @@ export function SessionPane({
       onComposerRestoreApplied={handleComposerRestoreApplied}
       onStop={handleStopFromButton}
       onSelectModel={handleSelectModel}
+      onSelectOpenCodeModel={handleSelectOpenCodeModel}
       onSelectThought={handleSelectThought}
       onSwitchMode={handleSwitchMode}
       onOpenRunningBackgroundWorks={

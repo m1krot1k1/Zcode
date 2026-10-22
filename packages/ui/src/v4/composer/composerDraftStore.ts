@@ -28,8 +28,15 @@ export interface V4ComposerDraft {
   mode?: SubmissionMode;
   planEnabled?: boolean;
   modelSelection?: ModelSelection;
+  /** OpenCode CLI runs through ACP and stays separate from Provider Registry selection. */
+  executionRoute?: OpenCodeComposerRoute;
   updatedAt: number;
 }
+
+export type OpenCodeComposerRoute = {
+  kind: "opencode-acp";
+  model: { kind: "catalog"; modelId: string };
+};
 
 interface V4DraftFile {
   version: 1;
@@ -295,6 +302,22 @@ function readDraft(value: unknown): V4ComposerDraft | null {
         ? { planEnabled: mode.data === "plan" }
         : {}),
     ...(modelSelection ? { modelSelection } : {}),
+    ...(isRecord(value.executionRoute) &&
+    value.executionRoute.kind === "opencode-acp" &&
+    isRecord(value.executionRoute.model) &&
+    value.executionRoute.model.kind === "catalog" &&
+    typeof value.executionRoute.model.modelId === "string" &&
+    value.executionRoute.model.modelId.trim()
+      ? {
+          executionRoute: {
+            kind: "opencode-acp" as const,
+            model: {
+              kind: "catalog" as const,
+              modelId: value.executionRoute.model.modelId.trim(),
+            },
+          },
+        }
+      : {}),
     updatedAt:
       typeof value.updatedAt === "number" && Number.isFinite(value.updatedAt) ? value.updatedAt : 0,
   };

@@ -14,6 +14,8 @@ import type {
   DynamicWorkflowRunProgressPayload,
   HookRunLifecyclePayload,
   ModelCompletePayload,
+  OpenCodeAgentPermissionUpdatedPayload,
+  OpenCodeAgentRunUpdatedPayload,
   ModelNetworkStatusPayload,
   ModelSelectedPayload,
   TurnExecutionModelFallbackPayload,
@@ -1551,6 +1553,10 @@ export class ProductProjection {
         return this.onSubagentMessage(event);
       case SessionEventType.SubagentStopped:
         return this.onSubagentStopped(event);
+      case SessionEventType.OpenCodeAgentRunUpdated:
+        return this.onOpenCodeAgentRunUpdated(event);
+      case SessionEventType.OpenCodeAgentPermissionUpdated:
+        return this.onOpenCodeAgentPermissionUpdated(event);
       default:
         return [];
     }
@@ -4591,6 +4597,116 @@ export class ProductProjection {
         };
     this.subagentRowIdByAgentId.set(agentId, row.rowId);
     return [{ op: existing ? "row.upserted" : "row.appended", row }];
+  }
+
+  /** OpenCode ACP stays a separately owned card; never synthesize ZCode assistant/tool rows. */
+  private onOpenCodeAgentRunUpdated(event: SessionEvent): ConversationDelta[] {
+    const payload = event.payload as OpenCodeAgentRunUpdatedPayload;
+    const existing = this.snapshot.rows.window.find(
+      (candidate) =>
+        candidate.kind === "externalAgentRun" && candidate.runId === payload.runId,
+    );
+    const row: ConversationRow = {
+      ...(existing ?? this.rowBase(event, `external:${payload.runId}`, payload.runId)),
+      kind: "externalAgentRun",
+      runId: payload.runId,
+      commandId: payload.commandId,
+      provider: "opencode-cli",
+      ...(payload.modelId ? { modelId: payload.modelId } : {}),
+      promptText: payload.promptText,
+      output: { text: payload.outputText },
+      tools: payload.tools,
+      status: payload.status,
+      ...(payload.status === "starting" || payload.status === "running"
+        ? {}
+        : { pendingPermissions: [] }),
+      ...(payload.startedAt !== undefined ? { startedAt: payload.startedAt } : {}),
+      ...(payload.endedAt !== undefined ? { endedAt: payload.endedAt } : {}),
+      ...(payload.diagnosticCode ? { diagnosticCode: payload.diagnosticCode } : {}),
+    };
+    const deltas: ConversationDelta[] = [
+      { op: existing ? "row.upserted" : "row.appended", row },
+    ];
+    const otherWorks = this.snapshot.control.activeWorks.filter(
+      (work) => !(work.kind === "externalAgentRun" && work.runId === payload.runId),
+    );
+    const active = payload.status === "starting" || payload.status === "running";
+    if (active) {
+      deltas.push({
+        op: "state.updated",
+        patch: this.controlPatch({
+          phase: "running",
+          sessionEnded: false,
+          activeWorks: [
+            ...otherWorks,
+            {
+              kind: "externalAgentRun",
+              commandId: payload.commandId,
+              runId: payload.runId,
+              sourceCommandId: payload.commandId,
+              startedAt: payload.startedAt ?? this.ms(event),
+            },
+          ],
+          canStop: true,
+          stopState: "stoppable",
+          stopTargetKind: otherWorks.length > 0 ? "mixed" : "externalAgentRun",
+        }),
+      });
+    } else {
+      const phase =
+        payload.status === "completed"
+          ? "completedSuccess"
+          : payload.status === "failed"
+            ? "error"
+            : "completedInterrupted";
+      deltas.push({
+        op: "state.updated",
+        patch: this.controlPatch({
+          ...(otherWorks.length === 0 ? { phase, sessionEnded: phase !== "error" } : {}),
+          activeWorks: otherWorks,
+          canStop: otherWorks.length > 0,
+          stopState: otherWorks.length > 0 ? "stoppable" : "idle",
+          stopTargetKind:
+            otherWorks.length === 0
+              ? "unknown"
+              : otherWorks.length > 1
+                ? "mixed"
+                : this.snapshot.control.stopTargetKind,
+        }),
+      });
+    }
+    return deltas;
+  }
+
+  /** Apply permission state from the live gateway only; this event is never journaled. */
+  private onOpenCodeAgentPermissionUpdated(event: SessionEvent): ConversationDelta[] {
+    const payload = event.payload as OpenCodeAgentPermissionUpdatedPayload;
+    const existing = this.snapshot.rows.window.find(
+      (candidate) =>
+        candidate.kind === "externalAgentRun" &&
+        candidate.runId === payload.runId &&
+        candidate.commandId === payload.commandId,
+    );
+    if (!existing || existing.kind !== "externalAgentRun") return [];
+    if (existing.status !== "starting" && existing.status !== "running") return [];
+    const pending = existing.pendingPermissions ?? [];
+    const next =
+      payload.state === "requested" && payload.request
+        ? [
+            ...pending.filter((request) => request.requestId !== payload.requestId),
+            {
+              requestId: payload.requestId,
+              opencodeSessionId: payload.opencodeSessionId,
+              ...payload.request,
+            },
+          ].slice(-32)
+        : pending.filter(
+            (request) =>
+              request.requestId !== payload.requestId ||
+              request.opencodeSessionId !== payload.opencodeSessionId,
+          );
+    const row: ConversationRow = { ...existing, pendingPermissions: next };
+    return [{ op: "row.upserted", row }];
   }
 
   // cancelBackgroundWork：后台任务生命周期（BackgroundTaskStarted/Updated/Completed）

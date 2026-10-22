@@ -1,13 +1,15 @@
-# opencode-agent-settings
+# OpenCode CLI provider settings
 
-Separate OpenCode CLI agent surface embedded in Model Providers settings. It consumes the process-owning Host service for the active workspace through `useServices()` and never adds a model to ZCode Provider Registry or conversation state. Source Server workspaces use the authenticated server Host; legacy desktop-attached remote and phone workspaces do not use the Desktop Local Host's CLI.
+The ordinary conversation Composer is the OpenCode CLI provider/model selection surface. The Composer queries `listModels` from its active process-owning Host and submits a selected ID through the explicit `opencode-acp` execution route. CLI model IDs are not API-backed Provider Registry entries and carry no ZCode API credential. OpenCode API providers continue to use the Provider Registry independently.
+
+This settings module is limited to installing the local CLI and showing actionable fixed diagnostics. It does not host model selection, a workspace field, a Start session action, a second transcript, or a separate prompt box. The Composer's active workspace binding supplies the Host and working directory. Source Server workspaces use their authenticated server Host; legacy desktop-attached remote and phone workspaces do not use the Desktop Local Host's CLI.
 
 不变量：
 
-- Opening settings or checking diagnostics never starts ACP or creates a durable OpenCode session.
-- A session starts only from the explicit Start button and uses a workspace path owned by the active process-owning Host. The local directory picker is used only for local workspaces; Source Server passes its server-owned workspace path through its server Host service.
-- Transcript, composer, cancellation and status are separate from the ZCode composer/session.
-- The panel explains that OpenCode owns tools, permissions, workspace changes, authentication and rate limits.
-- Only the Host's typed `opencode.auth-required` diagnostic prompts the user to run OpenCode's own `opencode auth login`; model discovery remains `not-checked` and never infers sign-in state.
-- Model/agent selectors only use live ACP `configOptions`; model changes use `session/set_config_option` and replace the complete option set.
-- If ACP provides no selectable model, show OpenCode default and require explicit confirmation before the first prompt.
+- Settings and Composer model discovery do not start ACP or create a durable OpenCode session.
+- Sending a Composer message uses the active workspace Host and starts an ACP session only as part of that accepted conversation turn.
+- Composer transcript and Stop/cancel behavior remain in the normal ZCode conversation.
+- OpenCode owns tools, workspace changes, authentication and provider rate limits; do not bypass or infer their state.
+- Only the Host's typed `opencode.auth-required` diagnostic prompts the user to run OpenCode's own `opencode auth login`; model discovery remains `not-checked` and never inspects credentials.
+- The Composer provider/model selection uses the bounded CLI model catalog, not ACP session config selectors or a fabricated API provider.
+- A missing CLI or unavailable catalog gives an actionable inline Composer state. No automatic fallback changes the selected provider or model.

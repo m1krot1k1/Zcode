@@ -3542,12 +3542,16 @@ const zhCN: Record<string, string> = {
   "settings.plugins.toggle.workspaceDisabled": "已在当前工作区停用 {plugin}（覆盖 User 默认）",
   "settings.plugins.toggle.failed": "无法更新 {plugin}，请重试。",
   "settings.modelProviderDescription":
-    "Composer 使用 API 供应商和模型，API 密钥保存在 ZCode。OpenCode CLI 则在工作区所在电脑上作为独立智能体运行，并使用 OpenCode 自己的登录；CLI 模型不会出现在 Composer 中。",
+    "可选择 API 供应商，也可启用 OpenCode CLI。OpenCode CLI 模型可直接在对话中选择，并使用 OpenCode 自己的登录和用量限制。",
   "settings.modelProvider.credentialModeApiKey": "API 密钥",
-  "settings.openCode.title": "OpenCode CLI 智能体",
-  "settings.openCode.authModeCli": "独立智能体 · Host CLI · 无需 API 密钥",
+  "settings.openCode.title": "OpenCode CLI",
+  "settings.openCode.enable": "启用 OpenCode CLI",
+  "settings.openCode.composerUnsupported":
+    "OpenCode CLI 当前仅支持不带附件、立即发送的纯文本消息。",
+  "settings.openCode.composerDisabled": "请先在模型供应商设置中启用 OpenCode CLI，再在聊天中使用。",
+  "settings.openCode.authModeCli": "CLI · 无需 API 密钥",
   "settings.openCode.ownership":
-    "OpenCode 作为独立智能体运行在拥有当前工作区的 Host 上，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
+    "使用已安装的 OpenCode CLI 和它自己的登录状态。在聊天中选择 OpenCode 和模型。",
   "settings.openCode.cliModelCatalogTitle": "本地 OpenCode CLI 报告的模型（仅供参考）",
   "settings.openCode.cliAuthNotChecked":
     "此处不会检查登录状态。请在终端运行 `opencode auth login`；此列表中的模型尚不能在 ZCode 输入框中使用。",
@@ -3566,9 +3570,6 @@ const zhCN: Record<string, string> = {
     "所选 OpenCode 文件不可执行。请选择原生 CLI 二进制文件，不要选择 shell 脚本。",
   "settings.openCode.timed-out": "检查 OpenCode CLI 超时",
   "settings.openCode.diagnosticFailed": "无法检查 OpenCode CLI。",
-  "settings.openCode.installConfirmTitle": "安装 OpenCode CLI？",
-  "settings.openCode.installConfirmDescription":
-    "ZCode 将为此电脑下载固定版本的 OpenCode CLI v1.19.3，验证 SHA-256 后安装到当前用户目录。无需 API 密钥，不修改 shell 配置，不替换已安装的 CLI，也不会解除供应商的用量限制。",
   "settings.openCode.install": "安装 OpenCode",
   "settings.openCode.installInstructions": "安装说明",
   "settings.openCode.chooseCli": "定位 CLI 文件",
@@ -3629,6 +3630,7 @@ const zhCN: Record<string, string> = {
     "请选择 OpenCode 提供的选项；持久选项的作用范围由 OpenCode 决定。",
   "settings.openCode.permission.optionKind": "OpenCode 选项类型：{kind}",
   "settings.openCode.permission.kind": "工具类型",
+  "conversation.openCode.permission.title": "OpenCode 正在请求权限",
   "settings.openCode.operationFailed": "OpenCode 操作失败。",
   "settings.openCode.sessionStartFailed":
     "无法启动 OpenCode 会话。请检查 CLI、OpenCode 自己的登录状态和配置后重试。",
@@ -4331,9 +4333,9 @@ const zhCN: Record<string, string> = {
     "内置 Z.ai 与 BigModel 供应商，支持通过 OAuth 辅助完成配置。",
   "settings.modelProvider.presetEmpty": "尚未同步，请先完成 OAuth 登录。",
   "settings.modelProvider.customTitle": "Composer 自定义 API 供应商",
-  "settings.modelProvider.agentIntegrationsTitle": "独立智能体运行时",
+  "settings.modelProvider.agentIntegrationsTitle": "本地 CLI 供应商",
   "settings.modelProvider.legacyOpenCodeTitle": "旧版 OpenCode API 配置",
-  "settings.modelProvider.openCodeCli": "OpenCode CLI · 无需 API Key",
+  "settings.modelProvider.openCodeCli": "OpenCode CLI",
   "settings.modelProvider.refresh": "刷新",
   "settings.modelProvider.reorderProvider": "拖拽调整供应商顺序",
   "settings.modelProvider.reorderModel": "拖拽调整模型顺序",

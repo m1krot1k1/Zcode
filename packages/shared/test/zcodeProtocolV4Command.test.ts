@@ -1088,4 +1088,19 @@ describe("zcode-protocol-v4 command", () => {
       "fault.command.workflowRunSettingsRejected.unchanged",
     );
   });
+
+  it("requires one exact OpenCode run/session/request/advertised option identity for permission replies", () => {
+    const base = {
+      commandId: "run-1",
+      runId: "run-1",
+      opencodeSessionId: "acp-1",
+      requestId: "permission-1",
+      optionId: "allow-once",
+    };
+    expect(commandPayloadSchemas.respondToOpenCodePermission.parse(base)).toEqual(base);
+    expect(
+      commandPayloadSchemas.respondToOpenCodePermission.safeParse({ ...base, runId: "run-2" })
+        .success,
+    ).toBe(false);
+  });
 });

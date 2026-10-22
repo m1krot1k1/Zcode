@@ -560,6 +560,26 @@ function renderReadonlyRow(
           previewLabel={labels.artifactPreview}
         />
       );
+    case "externalAgentRun":
+      return (
+        <section
+          key={row.rowId}
+          className="my-2 rounded-xl border border-border px-4 py-3"
+          data-conversation-share-row-kind="externalAgentRun"
+        >
+          <strong>OpenCode CLI{row.modelId ? ` · ${row.modelId}` : ""}</strong>
+          <span className="ml-2 text-foreground-subtle">{row.status}</span>
+          <p className="mt-2 whitespace-pre-wrap break-words">{row.promptText}</p>
+          {row.tools.map((tool) => (
+            <p key={tool.toolCallId} className="mt-1 text-sm text-foreground-subtle">
+              {tool.title} · {tool.status}
+            </p>
+          ))}
+          {row.output.text ? (
+            <div className="mt-3 whitespace-pre-wrap break-words">{row.output.text}</div>
+          ) : null}
+        </section>
+      );
     case "timelineMarker": {
       // 这里原本直接把 row.marker.type 当文案渲染，于是分享页会出现一条写着
       // 字面量 compact / modelChange / goalVerify 的分割线（发布只剥掉 fork/checkpoint 类）。

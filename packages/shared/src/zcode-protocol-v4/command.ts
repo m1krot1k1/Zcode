@@ -223,10 +223,44 @@ export const commandPayloadSchemas = {
     heldQueueDisposition: z.enum(["clearQueueAndSend", "keepQueueAndSend"]).optional(),
     expectedHeldQueueItemIds: z.array(z.string().min(1)).optional(),
   }),
-  stop: z.object({
-    // 来自 activeWorks；CLI 用它拒绝会误杀后续无关执行的迟到 Stop。
-    expectedForegroundExecutionId: z.string().min(1).optional(),
-  }),
+  stop: z
+    .object({
+      // 来自 activeWorks；CLI 用它拒绝会误杀后续无关执行的迟到 Stop。
+      expectedForegroundExecutionId: z.string().min(1).optional(),
+      // OpenCode ACP 是独立于 Core runtime 的前台执行，必须按命令与 run 双重身份取消。
+      expectedOpenCodeAgentRun: z
+        .object({
+          expectedCommandId: z.string().min(1),
+          expectedRunId: z.string().min(1),
+        })
+        .strict()
+        .optional(),
+    })
+    .superRefine((payload, context) => {
+      if (payload.expectedForegroundExecutionId && payload.expectedOpenCodeAgentRun) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "stop must target one foreground execution owner",
+        });
+      }
+    }),
+  respondToOpenCodePermission: z
+    .object({
+      commandId: z.string().min(1),
+      runId: z.string().min(1),
+      opencodeSessionId: z.string().min(1),
+      requestId: z.string().min(1),
+      optionId: z.string().min(1),
+    })
+    .superRefine((payload, context) => {
+      if (payload.commandId !== payload.runId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "OpenCode permission must target the accepted run identity",
+          path: ["runId"],
+        });
+      }
+    }),
   // compact 是输入型维护命令：idle 时立即执行，busy/held 时进入 FIFO。
   // 因为 admission 与当前 revision 无关，不走 CAS；sourceCommandId 提供幂等边界。
   compact: z.object({}),

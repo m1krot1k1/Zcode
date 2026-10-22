@@ -96,6 +96,7 @@ export interface DraftConfigControl {
     expectedSelection?: ModelSelection,
   ) => () => void;
   handleDraftSelectModel: (modelProvider: string, model: string, reasoningLevel?: string) => void;
+  handleDraftSelectOpenCodeModel: (modelId: string) => void;
   handleDraftSelectThought: (thought: string) => void;
   handleDraftSwitchMode: (mode: string) => void;
 }
@@ -565,15 +566,34 @@ export function useDraftConfigControl(params: {
         workspacePath,
         workspaceIdentity: workspaceIdentity ?? null,
       });
-      updateDraftConfig((current) => applyDraftModelSelection(current, modelSelection));
+      updateComposerDraft((current) => ({
+        ...current,
+        modelSelection,
+        executionRoute: undefined,
+      }));
     },
     [
       modelSelectionView,
       modelSelectionRead.state,
-      updateDraftConfig,
+      updateComposerDraft,
       workspaceIdentity,
       workspacePath,
     ],
+  );
+
+  const handleDraftSelectOpenCodeModel = useCallback(
+    (modelId: string) => {
+      const normalized = modelId.trim();
+      if (!normalized || normalized.length > 512) return;
+      updateComposerDraft((current) => ({
+        ...current,
+        executionRoute: {
+          kind: "opencode-acp",
+          model: { kind: "catalog", modelId: normalized },
+        },
+      }));
+    },
+    [updateComposerDraft],
   );
 
   const handleDraftSelectThought = useCallback(
@@ -636,6 +656,7 @@ export function useDraftConfigControl(params: {
     promoteComposerDraft,
     captureAcceptedModelSelection,
     handleDraftSelectModel,
+    handleDraftSelectOpenCodeModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
   };

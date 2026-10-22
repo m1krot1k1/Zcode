@@ -5,10 +5,12 @@ import { networkCaptureControlSchema, zcodeProtocolNotifications } from "@zcode/
 import {
   zcodePluginsCancelOperationParamsSchema,
   zcodeProtocolMethods,
+  zcodeOpenCodeAgentRunEventSchema,
   zcodeWorkspaceCancelGenerateTextParamsSchema,
   zcodeWorkspaceHookTrustGrantParamsSchema,
 } from "@zcode/shared";
-import type { BrowserControlPort } from "@zcode/contracts";
+import type { BrowserControlPort, SessionId } from "@zcode/contracts";
+import { createSessionEvent, SessionEventType } from "@zcode/contracts";
 import type {
   McpElicitationRequest,
   McpElicitationResult,
@@ -500,6 +502,160 @@ export class ZCodeProtocolAgentServer {
       if (message.method === zcodeProtocolMethods.processNetworkCapture) {
         const control = networkCaptureControlSchema.safeParse(message.params);
         if (control.success) this.networkCapture.setCaptureId(control.data.captureId);
+        return undefined;
+      }
+      if (message.method === zcodeProtocolMethods.interactionOpenCodeAgentRunEvent) {
+        const parsed = zcodeOpenCodeAgentRunEventSchema.safeParse(message.params);
+        if (!parsed.success) {
+          this.logger?.warn("Rejected malformed OpenCode delegated run event", {
+            event: "zcode_protocol.opencode_run_event.invalid",
+          });
+          return undefined;
+        }
+        const event = parsed.data;
+        const store = this.context.deps.sessionStore;
+        const sessionID = event.zcodeSessionId as SessionId;
+        const getOpenCodeAgentRun = store?.getOpenCodeAgentRun;
+        const run = await getOpenCodeAgentRun?.({
+          sessionID,
+          runID: event.runId,
+        });
+        if (
+          !run ||
+          run.commandID !== event.commandId ||
+          run.runID !== event.runId ||
+          run.sessionID !== sessionID ||
+          !getOpenCodeAgentRun ||
+          !store?.applyOpenCodeAgentRunHostEvent
+        ) {
+          this.logger?.warn("Ignored OpenCode delegated run event without matching outbox owner", {
+            commandId: event.commandId,
+            runId: event.runId,
+            sessionId: event.zcodeSessionId,
+            sequence: event.sequence,
+          });
+          return undefined;
+        }
+        if (event.sequence !== run.hostEventSequence + 1) {
+          this.logger?.warn("Rejected out-of-order OpenCode delegated run event", {
+            commandId: event.commandId,
+            expectedSequence: run.hostEventSequence + 1,
+            receivedSequence: event.sequence,
+            runId: event.runId,
+            sessionId: event.zcodeSessionId,
+          });
+          return undefined;
+        }
+        if (event.event.type !== "started" && run.openCodeSessionID !== event.opencodeSessionId) {
+          this.logger?.warn("Rejected OpenCode delegated event with mismatched ACP session", {
+            commandId: event.commandId,
+            runId: event.runId,
+            sessionId: event.zcodeSessionId,
+          });
+          return undefined;
+        }
+        const eventType = event.event.type;
+        const status =
+          eventType === "completed"
+            ? "completed"
+            : eventType === "cancelled"
+              ? "cancelled"
+              : eventType === "failed"
+                ? "failed"
+                : eventType === "interrupted"
+                  ? "interrupted"
+                  : "running";
+        const applied = await store.applyOpenCodeAgentRunHostEvent({
+          sessionID,
+          runID: event.runId,
+          expectedStatus: run.status,
+          expectedEventSequence: run.eventSequence,
+          eventSequence: run.eventSequence + 1,
+          expectedHostEventSequence: run.hostEventSequence,
+          hostEventSequence: event.sequence,
+          hostEvent: event.event,
+          status,
+          ...(status === "running" ? { openCodeSessionID: event.opencodeSessionId } : {}),
+          ...(eventType === "completed"
+            ? {
+                stopReason: event.event.stopReason,
+                resultText: event.event.finalText,
+              }
+            : {}),
+          ...("diagnosticCode" in event.event && event.event.diagnosticCode
+            ? { diagnosticCode: event.event.diagnosticCode }
+            : {}),
+        });
+        if (!applied) {
+          this.logger?.warn("OpenCode delegated run event lost its compare-and-set", {
+            commandId: event.commandId,
+            runId: event.runId,
+            sequence: event.sequence,
+            outboxStatus: run.status,
+          });
+          return undefined;
+        }
+        const updatedRun = await getOpenCodeAgentRun({ sessionID, runID: event.runId });
+        const record = this.context.sessions.get(String(sessionID));
+        if (updatedRun && record) {
+          const projected = createSessionEvent(
+            SessionEventType.OpenCodeAgentRunUpdated,
+            sessionID,
+            {
+              runId: updatedRun.runID,
+              commandId: updatedRun.commandID,
+              ...(updatedRun.requestedModelID ? { modelId: updatedRun.requestedModelID } : {}),
+              promptText: updatedRun.promptText,
+              outputText: updatedRun.outputText,
+              tools: updatedRun.toolActivity,
+              status:
+                updatedRun.status === "pending" || updatedRun.status === "dispatching"
+                  ? "starting"
+                  : updatedRun.status,
+              startedAt: updatedRun.time.created,
+              ...(updatedRun.time.terminal !== undefined
+                ? { endedAt: updatedRun.time.terminal }
+                : {}),
+              ...(updatedRun.diagnosticCode
+                ? { diagnosticCode: updatedRun.diagnosticCode }
+                : {}),
+            },
+            { traceId: record.traceContext.traceId },
+          );
+          const persisted = await record.eventStore.append(projected);
+          this.context.v4Gateway?.ingest(String(sessionID), persisted);
+          if (
+            event.event.type === "permissionRequested" ||
+            event.event.type === "permissionResolved"
+          ) {
+            // Permission details are live-only: project them to current subscribers without
+            // appending them to EventStore or the OpenCode run journal.
+            const permissionEvent = createSessionEvent(
+              SessionEventType.OpenCodeAgentPermissionUpdated,
+              sessionID,
+              {
+                commandId: event.commandId,
+                runId: event.runId,
+                opencodeSessionId: event.opencodeSessionId,
+                requestId: event.event.requestId,
+                state: event.event.type === "permissionRequested" ? "requested" : "resolved",
+                ...(event.event.type === "permissionRequested"
+                  ? {
+                      request: {
+                        title: event.event.title,
+                        ...(event.event.inputSummary
+                          ? { inputSummary: event.event.inputSummary }
+                          : {}),
+                        options: event.event.options,
+                      },
+                    }
+                  : { cancelled: event.event.cancelled }),
+              },
+              { traceId: record.traceContext.traceId },
+            );
+            this.context.v4Gateway?.ingest(String(sessionID), permissionEvent);
+          }
+        }
         return undefined;
       }
       this.logger?.debug("ZCode Protocol notification ignored", {

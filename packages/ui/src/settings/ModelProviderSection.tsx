@@ -1150,8 +1150,14 @@ export function ModelProviderSection({
         />
       ) : selectedNavItem?.type === "agentIntegration" ? (
         <OpenCodeAgentSettingsPanel
-          initialWorkspacePath={connectivityWorkspacePath ?? ""}
-          remoteWorkspaceActive={connectivityWorkspaceRequired}
+          enabled={sharedSettings?.openCodeCliEnabled === true}
+          onEnabledChange={(enabled) => {
+            void updateSharedSettings({ openCodeCliEnabled: enabled }).catch((error) => {
+              logger.warn("[settings] OpenCode CLI setting update failed", {
+                error: error instanceof Error ? error.message : String(error),
+              });
+            });
+          }}
         />
       ) : (
         <ModelProviderSectionDetail

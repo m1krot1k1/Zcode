@@ -156,6 +156,7 @@ export function createOpenCodeAcpRuntime(
       type: "resolved",
       requestId,
       sessionId: pending.sessionId,
+      cancelled: outcome.outcome === "cancelled",
     });
     return true;
   };

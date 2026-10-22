@@ -149,6 +149,8 @@ function isCompletionBlockingWorkRowRunning(row: AssistantWorkRow): boolean {
       );
     case "subagent":
       return row.backgrounded !== true && row.status === "running";
+    case "externalAgentRun":
+      return row.status === "starting" || row.status === "running";
     case "timelineMarker":
       return "status" in row.marker && row.marker.status === "running";
     default:

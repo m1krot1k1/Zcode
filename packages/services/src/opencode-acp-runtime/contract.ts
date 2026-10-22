@@ -23,7 +23,7 @@ export interface OpenCodeAcpPermissionRequest {
 
 export type OpenCodeAcpPermissionEvent =
   | { type: "requested"; request: OpenCodeAcpPermissionRequest }
-  | { type: "resolved"; requestId: string; sessionId: string };
+  | { type: "resolved"; requestId: string; sessionId: string; cancelled: boolean };
 
 export type OpenCodeCliStatus =
   | { status: "available"; version: string; executablePath: string }
@@ -69,9 +69,9 @@ export interface OpenCodeAcpPromptResult {
 }
 
 /**
- * Process-owning Host service for an explicitly delegated OpenCode ACP session.
- * It never authenticates, reads OpenCode's auth store, starts a session for catalog discovery,
- * or forwards this work into the ZCode conversation/provider runtime.
+ * Process-owning Host service for OpenCode CLI discovery and delegated ACP chat turns.
+ * It never authenticates, reads OpenCode's auth store, or starts a session for catalog discovery.
+ * A conversation turn is dispatched only after the normal ZCode command admission accepts it.
  */
 export interface IOpenCodeAcpRuntime {
   /** Runs only `opencode --version`; no process is retained and no ACP session is created. */
@@ -87,7 +87,7 @@ export interface IOpenCodeAcpRuntime {
   /** Lists bounded provider/model IDs via `opencode models`; it never starts an ACP session or prompt. */
   listModels(params?: { cliPath?: string }): Promise<OpenCodeCliModelCatalog>;
 
-  /** Starts ACP and creates a durable OpenCode session. Calling this is the user's explicit start action. */
+  /** Starts ACP and creates the session used by one admitted OpenCode CLI conversation run. */
   startSession(params: { cwd: string; cliPath?: string }): Promise<OpenCodeAcpSession>;
 
   /** Sends one ACP session/set_config_option call and returns the complete fresh option set. */

@@ -45,6 +45,7 @@ export const stopTargetKindSchema = z.enum([
   "goalVerifier",
   "goalContinuation",
   "turnSteer",
+  "externalAgentRun",
   "mixed",
   "unknown",
 ]);
@@ -58,9 +59,13 @@ export const activeWorkSummarySchema = z.object({
     "goalVerifier",
     "goalContinuation",
     "turnSteer",
+    "externalAgentRun",
   ]),
   foregroundExecutionId: z.string().min(1).optional(),
   sourceCommandId: z.string().min(1).optional(),
+  /** Exact external ACP run identity; required for a safe Stop route. */
+  commandId: z.string().min(1).optional(),
+  runId: z.string().min(1).optional(),
   startedAt: timestampSchema,
 });
 export type ActiveWorkSummary = z.infer<typeof activeWorkSummarySchema>;

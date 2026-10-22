@@ -3790,12 +3790,17 @@ const enUS: Record<string, string> = {
     "Disabled {plugin} in this workspace (overriding User default)",
   "settings.plugins.toggle.failed": "Couldn't update {plugin}. Try again.",
   "settings.modelProviderDescription":
-    "For Composer, choose an API provider and model; its API key stays in ZCode. OpenCode CLI runs separately on the workspace computer with OpenCode's own sign-in, and its models do not appear in Composer.",
+    "Choose an API provider or enable OpenCode CLI. OpenCode CLI models are selected directly in the conversation and use OpenCode's own sign-in and usage limits.",
   "settings.modelProvider.credentialModeApiKey": "API key",
-  "settings.openCode.title": "OpenCode CLI agent",
-  "settings.openCode.authModeCli": "Separate agent · Host CLI · no API key",
+  "settings.openCode.title": "OpenCode CLI",
+  "settings.openCode.enable": "Enable OpenCode CLI",
+  "settings.openCode.composerUnsupported":
+    "OpenCode CLI currently accepts plain text messages without attachments or queued delivery.",
+  "settings.openCode.composerDisabled":
+    "Enable OpenCode CLI in Model Providers before using it in chat.",
+  "settings.openCode.authModeCli": "CLI · no API key",
   "settings.openCode.ownership":
-    "OpenCode runs as a separate agent on the Host that owns this workspace. It owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
+    "Use the installed OpenCode CLI and its own sign-in. Choose OpenCode and a model in the conversation.",
   "settings.openCode.cliModelCatalogTitle":
     "Models reported by the local OpenCode CLI (reference only)",
   "settings.openCode.cliAuthNotChecked":
@@ -3815,9 +3820,6 @@ const enUS: Record<string, string> = {
     "The selected OpenCode file is not a usable executable. Choose the native CLI binary, not a shell script.",
   "settings.openCode.timed-out": "OpenCode CLI check timed out",
   "settings.openCode.diagnosticFailed": "Could not check the OpenCode CLI.",
-  "settings.openCode.installConfirmTitle": "Install the OpenCode CLI?",
-  "settings.openCode.installConfirmDescription":
-    "ZCode will download the pinned official OpenCode CLI v1.19.3 for this computer, verify its SHA-256, and install it in your user folder. It does not need an API key, change shell profiles, replace an existing CLI, or remove provider usage limits.",
   "settings.openCode.install": "Install OpenCode",
   "settings.openCode.installInstructions": "Install instructions",
   "settings.openCode.chooseCli": "Locate CLI file",
@@ -3882,6 +3884,7 @@ const enUS: Record<string, string> = {
     "Choose an option supplied by OpenCode. OpenCode defines the scope of any persistent choice.",
   "settings.openCode.permission.optionKind": "OpenCode option type: {kind}",
   "settings.openCode.permission.kind": "Tool kind",
+  "conversation.openCode.permission.title": "OpenCode is requesting permission",
   "settings.openCode.operationFailed": "The OpenCode operation failed.",
   "settings.openCode.sessionStartFailed":
     "Could not start an OpenCode session. Check the CLI and its own sign-in/configuration, then retry.",
@@ -4901,9 +4904,9 @@ const enUS: Record<string, string> = {
     "Built-in Z.ai and BigModel providers with OAuth-assisted configuration.",
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
   "settings.modelProvider.customTitle": "Custom API providers for Composer",
-  "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
+  "settings.modelProvider.agentIntegrationsTitle": "Local CLI providers",
   "settings.modelProvider.legacyOpenCodeTitle": "Older OpenCode API configurations",
-  "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
+  "settings.modelProvider.openCodeCli": "OpenCode CLI",
   "settings.modelProvider.refresh": "Refresh",
   "settings.modelProvider.reorderProvider": "Drag to reorder provider",
   "settings.modelProvider.reorderModel": "Drag to reorder model",

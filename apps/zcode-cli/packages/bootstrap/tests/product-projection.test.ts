@@ -131,6 +131,130 @@ function inputTextAppends(deltas: readonly ConversationDelta[]): string[] {
 // ── A 组：基础 turn 生命周期 ──
 
 describe("ProductProjection 黄金测试（L1）", () => {
+  it("OpenCode ACP 更新保持外部 agent 身份并原位更新摘要", () => {
+    const log = new EventLog();
+    const first = log.push(SessionEventType.OpenCodeAgentRunUpdated, {
+      runId: "run-oc-1",
+      commandId: "run-oc-1",
+      modelId: "opencode/deepseek-v4.1-flash-free",
+      promptText: "检查这个仓库",
+      outputText: "正在分析",
+      tools: [{ toolCallId: "tool-1", title: "Read src/main.ts", status: "running" }],
+      status: "running",
+      startedAt: 100,
+    });
+    const projection = new ProductProjection("session-1", "epoch-1");
+    expect(projection.applyEvent(first).find((delta) => delta.op.startsWith("row."))).toMatchObject({
+      op: "row.appended",
+    });
+    expect(projection.getSnapshot().control).toMatchObject({
+      canStop: true,
+      stopState: "stoppable",
+      stopTargetKind: "externalAgentRun",
+      activeWorks: [
+        {
+          kind: "externalAgentRun",
+          commandId: "run-oc-1",
+          runId: "run-oc-1",
+        },
+      ],
+    });
+    const updated = log.push(SessionEventType.OpenCodeAgentRunUpdated, {
+      runId: "run-oc-1",
+      commandId: "run-oc-1",
+      modelId: "opencode/deepseek-v4.1-flash-free",
+      promptText: "Проверь этот репозиторий",
+      outputText: "Проверка завершена",
+      tools: [{ toolCallId: "tool-1", title: "Read src/main.ts", status: "completed" }],
+      status: "completed",
+      startedAt: 100,
+      endedAt: 200,
+    });
+    expect(
+      projection.applyEvent(updated).find((delta) => delta.op.startsWith("row.")),
+    ).toMatchObject({ op: "row.upserted" });
+    const rows = projection.getSnapshot().rows.window;
+    expect(rows.filter((row) => row.kind === "externalAgentRun")).toMatchObject([
+      {
+        runId: "run-oc-1",
+        provider: "opencode-cli",
+        status: "completed",
+        promptText: "Проверь этот репозиторий",
+        output: { text: "Проверка завершена" },
+      },
+    ]);
+    expect(rows.some((row) => row.kind === "assistantText" || row.kind === "toolCall")).toBe(false);
+    expect(projection.getSnapshot().control).toMatchObject({
+      canStop: false,
+      stopState: "idle",
+      stopTargetKind: "unknown",
+      activeWorks: [],
+    });
+  });
+
+  it("live-only OpenCode permission requests appear inline, accept only exact options, and clear", () => {
+    const log = new EventLog();
+    const projection = new ProductProjection("session-1", "epoch-1");
+    projection.applyEvent(
+      log.push(SessionEventType.OpenCodeAgentRunUpdated, {
+        runId: "run-oc-1",
+        commandId: "run-oc-1",
+        promptText: "inspect",
+        outputText: "",
+        tools: [],
+        status: "running",
+      }),
+    );
+    projection.applyEvent(
+      log.push(SessionEventType.OpenCodeAgentPermissionUpdated, {
+        runId: "run-oc-1",
+        commandId: "run-oc-1",
+        opencodeSessionId: "acp-1",
+        requestId: "permission-1",
+        state: "requested",
+        request: {
+          title: "Run command",
+          inputSummary: "pnpm lint",
+          options: [
+            { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+            { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+          ],
+        },
+      }),
+    );
+    expect(projection.getSnapshot().rows.window).toMatchObject([
+      {
+        kind: "externalAgentRun",
+        runId: "run-oc-1",
+        pendingPermissions: [
+          {
+            requestId: "permission-1",
+            opencodeSessionId: "acp-1",
+            title: "Run command",
+            options: [
+              { optionId: "allow-once", name: "Allow once" },
+              { optionId: "reject-once", name: "Reject" },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    projection.applyEvent(
+      log.push(SessionEventType.OpenCodeAgentPermissionUpdated, {
+        runId: "run-oc-1",
+        commandId: "run-oc-1",
+        opencodeSessionId: "acp-1",
+        requestId: "permission-1",
+        state: "resolved",
+        cancelled: false,
+      }),
+    );
+    expect(
+      projection.getSnapshot().rows.window.find((row) => row.kind === "externalAgentRun"),
+    ).toMatchObject({ pendingPermissions: [] });
+  });
+
   it("Highspeed 单 Turn output tokens 由权威投影累计且不受快照观察时机影响", () => {
     const log = new EventLog();
     log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 });

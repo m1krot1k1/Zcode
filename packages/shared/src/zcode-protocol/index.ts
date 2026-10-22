@@ -4258,7 +4258,7 @@ export const zcodeOpenCodeAgentRunEventSchema = z
           type: z.literal("permissionResolved"),
           requestId: nonEmptyString.max(256),
           optionId: nonEmptyString.max(256).optional(),
-          cancelled: z.boolean().optional(),
+          cancelled: z.boolean(),
         })
         .strict(),
       z

@@ -296,6 +296,25 @@ async function stop(
 ): Promise<CommandResult | undefined> {
   const record = requireRecord(host, envelope.sessionId);
   const payload = envelope.payload as CommandPayloadMap["stop"];
+  if (payload.expectedOpenCodeAgentRun) {
+    const { expectedCommandId, expectedRunId } = payload.expectedOpenCodeAgentRun;
+    if (expectedCommandId !== expectedRunId) {
+      throw new V4CommandNoopError("guard.stopTargetChanged");
+    }
+    const cancelled = await host.cancelOpenCodeAgentRun?.(
+      String(record.app.sessionId),
+      expectedCommandId,
+      expectedRunId,
+    );
+    if (!cancelled) throw new V4CommandNoopError("guard.stopTargetChanged");
+    host.logger?.info?.("v4 stop routed to OpenCode ACP run", {
+      commandId: expectedCommandId,
+      event: "v4.stop.opencode_run_cancelled",
+      runId: expectedRunId,
+      sessionId: record.app.sessionId,
+    });
+    return undefined;
+  }
   const runtimeStop = record.app.runtime?.stopActiveForegroundExecution?.({
     expectedForegroundExecutionId: payload.expectedForegroundExecutionId,
     reason: "v4 session stopped",
@@ -355,6 +374,24 @@ async function stop(
   if (pausedGoal) {
     await host.afterLegacyStateMutation?.(record, "session_stop_goal_paused");
   }
+  return undefined;
+}
+
+/** Route one explicit UI selection to the owning Host; ACP validates the live request/option. */
+async function respondToOpenCodePermission(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  const record = requireRecord(host, envelope.sessionId);
+  const payload = envelope.payload as CommandPayloadMap["respondToOpenCodePermission"];
+  if (payload.commandId !== payload.runId) {
+    throw new V4CommandNoopError("guard.stopTargetChanged");
+  }
+  const responded = await host.respondToOpenCodeAgentPermission?.({
+    sessionId: String(record.app.sessionId),
+    ...payload,
+  });
+  if (!responded) throw new V4CommandNoopError("guard.stopTargetChanged");
   return undefined;
 }
 
@@ -433,4 +470,4 @@ export async function preemptActiveTurnAndWait(
   return runtimeStop?.kind === "stopped";
 }
 
-export const sessionFlowHandlers = { sendText, stop };
+export const sessionFlowHandlers = { sendText, stop, respondToOpenCodePermission };

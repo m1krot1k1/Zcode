@@ -14,6 +14,10 @@ import { readBackgroundBashOutputFromOwner } from "./background-work-owner.js";
 import {
   isConversationRealUserTurnStarter,
   parseRemoteWorkspaceIdentity,
+  zcodeOpenCodeAgentRunRequestSchema,
+  zcodeOpenCodeAgentRunResultSchema,
+  zcodeProtocolMethods,
+  type ZCodeOpenCodeAgentRunResult,
   type ZCodeSessionContextUsage,
   type ZCodeWorkspaceRef,
 } from "@zcode/shared";
@@ -80,12 +84,14 @@ import {
 import type {
   CollaborationMode,
   DynamicWorkflowRunProgressPayload,
+  OpenCodeAgentRunUpdatedPayload,
   EventId,
   ForkCommitBundle,
   GoalStatus,
   MessageId,
   MessageWithParts,
   OpenCodeAgentRunAdmission,
+  OpenCodeAgentRunStatus,
   SessionEvent,
   SessionEventStorePort,
   SessionId,
@@ -223,6 +229,58 @@ async function replayDynamicWorkflowRunEvents(
     sequenceNumber: 0,
     payload,
   }));
+}
+
+async function replayOpenCodeAgentRunEvents(
+  context: ZCodeProtocolAgentServerContext,
+  sessionId: string,
+  memoryEvents: readonly SessionEvent[],
+): Promise<SessionEvent[]> {
+  const store = context.deps.sessionStore;
+  if (!store?.listOpenCodeAgentRuns) return [];
+  const excludeRunIds = new Set<string>();
+  for (const event of memoryEvents) {
+    if (event.type !== SessionEventType.OpenCodeAgentRunUpdated) continue;
+    const runId = (event.payload as OpenCodeAgentRunUpdatedPayload | undefined)?.runId;
+    if (typeof runId === "string") excludeRunIds.add(runId);
+  }
+  try {
+    const runs = await store.listOpenCodeAgentRuns({
+      sessionID: sessionId as SessionId,
+      limit: 500,
+    });
+    return runs
+      .filter((run) => !excludeRunIds.has(run.runID))
+      .map((run, index) => ({
+        id: `opencode-run-replay-${index + 1}` as EventId,
+        sessionId: sessionId as SessionId,
+        type: SessionEventType.OpenCodeAgentRunUpdated,
+        timestamp: new Date(run.time.updated),
+        traceId: HYDRATION_TRACE_ID as TraceId,
+        sequenceNumber: 0,
+        payload: {
+          runId: run.runID,
+          commandId: run.commandID,
+          ...(run.requestedModelID ? { modelId: run.requestedModelID } : {}),
+          promptText: run.promptText,
+          outputText: run.outputText,
+          tools: run.toolActivity,
+          status:
+            run.status === "pending" || run.status === "dispatching" ? "starting" : run.status,
+          startedAt: run.time.created,
+          ...(run.time.terminal !== undefined ? { endedAt: run.time.terminal } : {}),
+          ...(run.diagnosticCode ? { diagnosticCode: run.diagnosticCode } : {}),
+        } satisfies OpenCodeAgentRunUpdatedPayload,
+      }));
+  } catch (error) {
+    context.logger?.warn("v4 hydrate OpenCode delegated run replay failed", {
+      error: error instanceof Error ? error.message : String(error),
+      event: "zcode_protocol.v4.hydrate_opencode_run_replay_failed",
+      module: "bootstrap.zcode_protocol",
+      sessionId,
+    });
+    return [];
+  }
 }
 
 async function resolveConversationBackingRecord(
@@ -473,6 +531,40 @@ export async function persistOpenCodeAgentRunAdmission(
     });
   }
   await admit.call(sessionStore, buildOpenCodeAgentRunAdmission(envelope, sessionId, intent));
+}
+
+async function settleOpenCodeStartFailure(
+  sessionStore: Pick<
+    SessionStorePort,
+    "getOpenCodeAgentRun" | "transitionOpenCodeAgentRun"
+  >,
+  sessionID: SessionId,
+  runID: string,
+  result: ZCodeOpenCodeAgentRunResult,
+): Promise<void> {
+  if (
+    !(
+      result.status === "failed" ||
+      result.status === "cancelled" ||
+      result.status === "interrupted"
+    )
+  ) {
+    return;
+  }
+  const current = await sessionStore.getOpenCodeAgentRun?.({ sessionID, runID });
+  if (!current || ["completed", "cancelled", "failed", "interrupted"].includes(current.status)) return;
+  const status: OpenCodeAgentRunStatus = result.status;
+  await sessionStore.transitionOpenCodeAgentRun?.({
+    sessionID,
+    runID,
+    expectedStatus: current.status,
+    expectedEventSequence: current.eventSequence,
+    eventSequence: current.eventSequence + 1,
+    status,
+    diagnosticCode: result.diagnosticCode,
+    stopReason: result.stopReason,
+    resultText: result.finalText,
+  });
 }
 
 export function isConversationInputAdmissionCommand(type: CommandEnvelope["type"]): boolean {
@@ -871,6 +963,81 @@ export function createConversationV4Gateway(
     hasQueuedDelivery: (sessionId, delivery) =>
       context.v4Gateway?.hasQueuedDelivery(sessionId, delivery) ?? false,
     getQueueLength: (sessionId) => context.v4Gateway?.getQueueLength(sessionId) ?? 0,
+    cancelOpenCodeAgentRun: async (sessionId, commandId, runId) => {
+      const sessionStore = context.deps.sessionStore;
+      if (!sessionStore?.getOpenCodeAgentRun || commandId !== runId) return false;
+      const sessionID = sessionId as SessionId;
+      const run = await sessionStore.getOpenCodeAgentRun({ sessionID, runID: runId });
+      if (
+        !run ||
+        run.commandID !== commandId ||
+        run.runID !== runId ||
+        (run.status !== "dispatching" && run.status !== "running")
+      ) {
+        return false;
+      }
+      const request = zcodeOpenCodeAgentRunRequestSchema.parse({
+        protocolVersion: 1,
+        zcodeSessionId: String(sessionID),
+        commandId,
+        runId,
+        operation: "cancelRun",
+        ...(run.openCodeSessionID ? { opencodeSessionId: run.openCodeSessionID } : {}),
+      });
+      const result = await context.requestClient(
+        zcodeProtocolMethods.interactionRequestOpenCodeAgentRun,
+        request,
+        zcodeOpenCodeAgentRunResultSchema,
+        { timeoutMs: 30_000 },
+      );
+      // Host ACK подтверждает только совпавший активный run; terminal ACK означает, что Stop опоздал.
+      return (
+        result.status === "accepted" ||
+        result.status === "starting" ||
+        result.status === "running" ||
+        result.status === "cancelling" ||
+        result.status === "cancelled"
+      );
+    },
+    respondToOpenCodeAgentPermission: async ({
+      sessionId,
+      commandId,
+      runId,
+      opencodeSessionId,
+      requestId,
+      optionId,
+    }) => {
+      const sessionStore = context.deps.sessionStore;
+      if (!sessionStore?.getOpenCodeAgentRun || commandId !== runId) return false;
+      const sessionID = sessionId as SessionId;
+      const run = await sessionStore.getOpenCodeAgentRun({ sessionID, runID: runId });
+      if (
+        !run ||
+        run.commandID !== commandId ||
+        run.runID !== runId ||
+        run.openCodeSessionID !== opencodeSessionId ||
+        (run.status !== "dispatching" && run.status !== "running")
+      ) {
+        return false;
+      }
+      const request = zcodeOpenCodeAgentRunRequestSchema.parse({
+        protocolVersion: 1,
+        zcodeSessionId: String(sessionID),
+        commandId,
+        runId,
+        operation: "respondToPermission",
+        opencodeSessionId,
+        requestId,
+        optionId,
+      });
+      const result = await context.requestClient(
+        zcodeProtocolMethods.interactionRequestOpenCodeAgentRun,
+        request,
+        zcodeOpenCodeAgentRunResultSchema,
+        { timeoutMs: 30_000 },
+      );
+      return result.status === "responded";
+    },
     retainQueuedTurnExecution: (sessionId, sourceCommandId, execution) => {
       const sessionExecutions = queuedTurnExecutions.get(sessionId) ?? new Map();
       sessionExecutions.set(sourceCommandId, execution);
@@ -904,7 +1071,12 @@ export function createConversationV4Gateway(
       );
       if (!input) return null;
       const isOpenCodeRoute = input.executionRoute?.kind === "opencode-acp";
-      if (isOpenCodeRoute && !sessionStore.admitOpenCodeAgentRun) {
+      if (
+        isOpenCodeRoute &&
+        (!sessionStore.admitOpenCodeAgentRun ||
+          !sessionStore.listOpenCodeAgentRuns ||
+          !sessionStore.applyOpenCodeAgentRunHostEvent)
+      ) {
         throw Object.assign(new Error("Atomic OpenCode delegated admission is unavailable"), {
           reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
         });
@@ -918,11 +1090,20 @@ export function createConversationV4Gateway(
         const runtimeBusy =
           record?.activeAbortController !== undefined ||
           record?.app.runtime.getActiveForegroundExecutionId() !== undefined;
+        const activeOpenCodeRuns = await sessionStore.listOpenCodeAgentRuns?.({
+          sessionID: sessionId as SessionId,
+          statuses: ["pending", "dispatching", "running"],
+          limit: 10,
+        });
+        const anotherOpenCodeRun = activeOpenCodeRuns?.some(
+          (run) => run.runID !== envelope.commandId,
+        );
         if (
           envelope.type !== "sendText" ||
           kind !== "sendText" ||
           !record ||
           runtimeBusy ||
+          anotherOpenCodeRun ||
           (routingMode !== null && routingMode !== "startNow") ||
           (context.v4Gateway?.getQueueLength(sessionId) ?? 0) > 0
         ) {
@@ -931,14 +1112,27 @@ export function createConversationV4Gateway(
             { reasonCode: "fault.command.opencodeAgentRequiresIdleStartNow" },
           );
         }
-        // Durable pending outbox rows may only be created once the process-owning Host
-        // dispatcher can claim and deliver them. Keep this route closed until that owner exists.
-        throw Object.assign(
-          new Error("OpenCode delegated execution is not yet connected to Host"),
-          {
-            reasonCode: "fault.command.opencodeAgentExecutionUnavailable",
-          },
+        const intent = conversationInputIntentSchema.parse({
+          sourceCommandId: envelope.commandId,
+          queueItemId: admission.queueItemId,
+          clientId: envelope.clientId || "cli",
+          kind,
+          executionRoute: input.executionRoute,
+          text: input.text ?? "",
+          attachments: input.attachments,
+          delivery: { requested: "startNow", admitted: "startNow" },
+          order: { admissionSeq: admission.admissionSeq },
+          steer: { state: "notRequested" },
+          dispatch: { state: "admitted" },
+          admittedAt: admission.admittedAt,
+        });
+        await persistOpenCodeAgentRunAdmission(
+          sessionStore as Pick<SessionStorePort, "admitOpenCodeAgentRun">,
+          envelope,
+          sessionId,
+          intent,
         );
+        return intent;
       }
       if (record?.persistence === "deferred") {
         // session_input 有 session 外键；draft 要到 startPromptTurn 后台阶段才持久化，
@@ -1901,17 +2095,92 @@ export function createConversationV4Gateway(
         : null,
     // 回落面已清零（20 命令全部原生）：supports 未命中（未知命令类型）→
     // notImplemented → ACK failed fault.command.notImplemented。
-    executeCommand: (envelope, admission) =>
-      envelope.type === "sendText" &&
-      (envelope.payload as CommandPayloadMap["sendText"]).executionRoute?.kind === "opencode-acp"
-        ? Promise.reject(
-            Object.assign(new Error("OpenCode delegated execution is not yet connected to Host"), {
-              reasonCode: "fault.command.opencodeAgentExecutionUnavailable",
-            }),
-          )
-        : nativeExecutor.supports(envelope.type)
+    executeCommand: async (envelope, admission) => {
+      if (
+        envelope.type === "sendText" &&
+        (envelope.payload as CommandPayloadMap["sendText"]).executionRoute?.kind === "opencode-acp"
+      ) {
+        const sessionStore = context.deps.sessionStore;
+        if (!sessionStore?.getOpenCodeAgentRun || !sessionStore.transitionOpenCodeAgentRun) {
+          throw Object.assign(new Error("OpenCode delegated run storage is unavailable"), {
+            reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
+          });
+        }
+        const sessionID = envelope.sessionId as SessionId;
+        const runID = envelope.commandId;
+        let run = await sessionStore.getOpenCodeAgentRun({ sessionID, runID });
+        if (!run || run.commandID !== runID || run.inputID !== envelope.commandId) {
+          throw Object.assign(new Error("Admitted OpenCode delegated run was not found"), {
+            reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
+          });
+        }
+        if (run.status === "pending") {
+          const transitioned = await sessionStore.transitionOpenCodeAgentRun({
+            sessionID,
+            runID,
+            expectedStatus: "pending",
+            expectedEventSequence: run.eventSequence,
+            eventSequence: run.eventSequence + 1,
+            status: "dispatching",
+          });
+          if (!transitioned) {
+            run = await sessionStore.getOpenCodeAgentRun({ sessionID, runID });
+            if (!run || run.status !== "dispatching") {
+              throw Object.assign(new Error("OpenCode delegated run lost its dispatch claim"), {
+                reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
+              });
+            }
+          } else {
+            run = { ...run, status: "dispatching", eventSequence: run.eventSequence + 1 };
+          }
+        }
+        if (run.status !== "dispatching" && run.status !== "running") {
+          // Duplicate command delivery is idempotent; terminal runs are not restarted.
+          return undefined;
+        }
+        const payload = envelope.payload as CommandPayloadMap["sendText"];
+        const request = zcodeOpenCodeAgentRunRequestSchema.parse({
+          protocolVersion: 1,
+          zcodeSessionId: String(sessionID),
+          commandId: run.commandID,
+          runId: run.runID,
+          operation: "startRun",
+          text: payload.text,
+          model:
+            payload.executionRoute?.kind === "opencode-acp"
+              ? payload.executionRoute.model
+              : { kind: "default" },
+        });
+        try {
+          const result = await context.requestClient(
+            zcodeProtocolMethods.interactionRequestOpenCodeAgentRun,
+            request,
+            zcodeOpenCodeAgentRunResultSchema,
+            { timeoutMs: 30_000 },
+          );
+          if (
+            result.status !== "accepted" &&
+            result.status !== "starting" &&
+            result.status !== "running"
+          ) {
+            await settleOpenCodeStartFailure(sessionStore, sessionID, runID, result);
+          }
+        } catch (error) {
+          // A lost RPC response is ambiguous: retain the durable dispatch state so a retry
+          // uses the same idempotency key with Host instead of falsely claiming no run started.
+          context.logger?.warn("OpenCode delegated run Host dispatch did not settle", {
+            commandId: runID,
+            sessionId: String(sessionID),
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+        return undefined;
+      }
+      return nativeExecutor.supports(envelope.type)
           ? nativeExecutor.execute(envelope, admission)
-          : Promise.reject(new V4CommandNotImplementedError(envelope.type)),
+          : Promise.reject(new V4CommandNotImplementedError(envelope.type));
+    },
     admitCommandInput: async (envelope, admission) => {
       // 仅隐藏 composer 不能阻止旧 child 标签页续聊。类型准入必须早于
       // ledger/输入历史写入；detached child 没有 record 时只查元数据，不激活第二个 runtime。
@@ -2111,10 +2380,11 @@ export function createConversationV4Gateway(
         // 主对话历史只依赖持久化事实；旧路径在这里返回空数组会把冷会话误画成空白。
         const store = context.deps.sessionStore;
         if (!store) throw new Error("fault.subscribe.sessionNotFound");
+        const replayedRuns = await replayOpenCodeAgentRunEvents(context, sessionId, []);
         const source = await loadPersistedConversationMaterialization({
           sessionId,
           persistedMessages,
-          memoryEvents: [],
+          memoryEvents: replayedRuns,
           store,
         });
         const merged = mergeColdConversationEvents({ ...source, sessionId });
@@ -2141,7 +2411,12 @@ export function createConversationV4Gateway(
       // 事件前置到内存事件之前——cold merge 已把该类型归为 memory-only 权威（保序进 supplements），
       // 投影经同一个 reducer 归约，`workflowRuns` 因此在重启前后一致。
       const replayed = await replayDynamicWorkflowRunEvents(context, sessionId, record, liveEvents);
-      const events = replayed.length === 0 ? liveEvents : [...replayed, ...liveEvents];
+      const replayedOpenCodeRuns = await replayOpenCodeAgentRunEvents(
+        context,
+        sessionId,
+        liveEvents,
+      );
+      const events = [...replayed, ...replayedOpenCodeRuns, ...liveEvents];
       const store = context.deps.sessionStore;
       const source = await loadPersistedConversationMaterialization({
         memoryEvents: events,

@@ -54,6 +54,13 @@ interface OpenCodeAgentRunRow {
   result_text: string | null;
   stop_reason: string | null;
   diagnostic_code: string | null;
+  prompt_text: string;
+  activity_json: string;
+}
+
+interface OpenCodeAgentRunActivity {
+  outputText: string;
+  tools: Array<{ toolCallId: string; title: string; status: string }>;
 }
 
 const OPEN_CODE_RUN_TERMINAL_STATUSES = new Set<OpenCodeAgentRunStatus>([
@@ -88,6 +95,35 @@ const OPEN_CODE_HOST_EVENT_TRANSITIONS: Readonly<
 };
 
 const MAX_OPEN_CODE_RUN_RESULT_BYTES = 32 * 1024;
+const MAX_OPEN_CODE_RUN_PROMPT_BYTES = 64 * 1024;
+const MAX_OPEN_CODE_RUN_TOOLS = 64;
+
+function assertOpenCodePromptSize(promptText: string): void {
+  if (Buffer.byteLength(promptText, "utf8") > MAX_OPEN_CODE_RUN_PROMPT_BYTES) {
+    throw new Error("OpenCode delegated prompt exceeds its bounded snapshot size");
+  }
+}
+
+function decodeOpenCodeActivity(value: string): OpenCodeAgentRunActivity {
+  const parsed: unknown = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object") throw new Error("Invalid persisted OpenCode activity");
+  const activity = parsed as OpenCodeAgentRunActivity;
+  if (
+    typeof activity.outputText !== "string" ||
+    !Array.isArray(activity.tools) ||
+    Buffer.byteLength(activity.outputText, "utf8") > MAX_OPEN_CODE_RUN_RESULT_BYTES ||
+    activity.tools.length > MAX_OPEN_CODE_RUN_TOOLS ||
+    activity.tools.some(
+      (tool) =>
+        typeof tool?.toolCallId !== "string" ||
+        typeof tool?.title !== "string" ||
+        typeof tool?.status !== "string",
+    )
+  ) {
+    throw new Error("Persisted OpenCode delegated run activity exceeds its bounds");
+  }
+  return activity;
+}
 
 function decodeOpenCodeAgentRunRow(row: OpenCodeAgentRunRow): OpenCodeAgentRunRecord {
   if (row.schema_version !== 1 || row.route_kind !== "opencode-cli") {
@@ -105,6 +141,7 @@ function decodeOpenCodeAgentRunRow(row: OpenCodeAgentRunRow): OpenCodeAgentRunRe
   if (!statuses.includes(row.status as OpenCodeAgentRunStatus)) {
     throw new Error("Invalid OpenCode delegated run status");
   }
+  assertOpenCodePromptSize(row.prompt_text);
   return {
     schemaVersion: 1,
     sessionID: row.session_id as SessionId,
@@ -125,6 +162,11 @@ function decodeOpenCodeAgentRunRow(row: OpenCodeAgentRunRow): OpenCodeAgentRunRe
     ...(row.result_text !== null ? { resultText: row.result_text } : {}),
     ...(row.stop_reason !== null ? { stopReason: row.stop_reason } : {}),
     ...(row.diagnostic_code !== null ? { diagnosticCode: row.diagnostic_code } : {}),
+    promptText: row.prompt_text,
+    ...(() => {
+      const activity = decodeOpenCodeActivity(row.activity_json);
+      return { outputText: activity.outputText, toolActivity: activity.tools };
+    })(),
   };
 }
 
@@ -135,6 +177,22 @@ function assertOpenCodeRunResultSize(resultText: string | null | undefined): voi
   ) {
     throw new Error("OpenCode delegated run result exceeds 32 KiB");
   }
+}
+
+function appendOpenCodeOutputBounded(current: string, chunk: string): string {
+  const bytes = Buffer.from(`${current}${chunk}`, "utf8");
+  if (bytes.byteLength <= MAX_OPEN_CODE_RUN_RESULT_BYTES) return bytes.toString("utf8");
+  // Accept the ordered Host event even after the display snapshot fills; never make the Host's
+  // next sequence permanently unprocessable because a transcript preview reached its cap.
+  let end = MAX_OPEN_CODE_RUN_RESULT_BYTES;
+  while (end > 0) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, end));
+    } catch {
+      end -= 1;
+    }
+  }
+  return "";
 }
 
 function readOpenCodeAgentRun(
@@ -164,6 +222,7 @@ export async function admitOpenCodeAgentRun(
   ) {
     throw new Error("Invalid OpenCode delegated run admission");
   }
+  assertOpenCodePromptSize(input.payload.text);
   const now = admission.now ?? Date.now();
   db.exec("begin immediate");
   try {
@@ -210,8 +269,9 @@ export async function admitOpenCodeAgentRun(
     db.prepare(`
       insert into opencode_agent_run (
         schema_version, session_id, run_id, command_id, input_id, route_kind,
-        requested_model_id, status, event_sequence, time_created, time_updated
-      ) values (1, ?, ?, ?, ?, 'opencode-cli', ?, 'pending', 0, ?, ?)
+        requested_model_id, status, event_sequence, time_created, time_updated,
+        prompt_text, activity_json
+      ) values (1, ?, ?, ?, ?, 'opencode-cli', ?, 'pending', 0, ?, ?, ?, '{"outputText":"","tools":[]}')
     `).run(
       input.sessionID,
       admission.runID,
@@ -220,6 +280,7 @@ export async function admitOpenCodeAgentRun(
       admission.requestedModelID ?? null,
       now,
       now,
+      input.payload.text,
     );
     const admittedInput = db
       .prepare("select * from session_input where id = ?")
@@ -296,17 +357,60 @@ export async function applyOpenCodeAgentRunHostEvent(
   const terminal = OPEN_CODE_RUN_TERMINAL_STATUSES.has(input.status);
   if (terminal && input.openCodeSessionID) return false;
   const now = input.now ?? Date.now();
-  const result = db
-    .prepare(`
+  db.exec("begin immediate");
+  try {
+    const current = readOpenCodeAgentRun(db, input.sessionID, input.runID);
+    if (
+      !current ||
+      current.status !== input.expectedStatus ||
+      current.eventSequence !== input.expectedEventSequence ||
+      current.hostEventSequence !== input.expectedHostEventSequence
+    ) {
+      db.exec("rollback");
+      return false;
+    }
+    let activity = decodeOpenCodeActivity(
+      (
+        db.prepare("select activity_json from opencode_agent_run where session_id = ? and run_id = ?")
+          .get(input.sessionID, input.runID) as { activity_json: string }
+      ).activity_json,
+    );
+    if (input.hostEvent.type === "content") {
+      activity = {
+        ...activity,
+        outputText: appendOpenCodeOutputBounded(activity.outputText, input.hostEvent.text),
+      };
+    } else if (
+      input.hostEvent.type === "completed" &&
+      activity.outputText.length === 0 &&
+      input.hostEvent.finalText
+    ) {
+      // Некоторые ACP сервера присылают только финальный текст без content-дельт.
+      assertOpenCodeRunResultSize(input.hostEvent.finalText);
+      activity = { ...activity, outputText: input.hostEvent.finalText };
+    } else if (input.hostEvent.type === "tool") {
+      const summary = {
+        toolCallId: input.hostEvent.toolCallId,
+        title: input.hostEvent.title,
+        status: input.hostEvent.status,
+      };
+      const existingIndex = activity.tools.findIndex(
+        (tool) => tool.toolCallId === summary.toolCallId,
+      );
+      const tools = [...activity.tools];
+      if (existingIndex >= 0) tools[existingIndex] = summary;
+      else if (tools.length < MAX_OPEN_CODE_RUN_TOOLS) tools.push(summary);
+      activity = { ...activity, tools };
+    }
+    const result = db.prepare(`
     update opencode_agent_run set
       status = ?, event_sequence = ?, host_event_sequence = ?, time_updated = ?,
       time_terminal = ?,
       opencode_session_id = ?,
-      result_text = ?, stop_reason = ?, diagnostic_code = ?
+      result_text = ?, stop_reason = ?, diagnostic_code = ?, activity_json = ?
     where session_id = ? and run_id = ? and status = ?
       and event_sequence = ? and host_event_sequence = ?
-  `)
-    .run(
+  `).run(
       input.status,
       input.eventSequence,
       input.hostEventSequence,
@@ -316,13 +420,23 @@ export async function applyOpenCodeAgentRunHostEvent(
       input.resultText ?? null,
       input.stopReason ?? null,
       input.diagnosticCode ?? null,
+      JSON.stringify(activity),
       input.sessionID,
       input.runID,
       input.expectedStatus,
       input.expectedEventSequence,
       input.expectedHostEventSequence,
     );
-  return result.changes === 1;
+    if (result.changes !== 1) {
+      db.exec("rollback");
+      return false;
+    }
+    db.exec("commit");
+    return true;
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
 }
 
 export async function getOpenCodeAgentRun(

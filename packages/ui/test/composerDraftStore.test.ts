@@ -49,6 +49,18 @@ describe("Composer Draft 持久选择", () => {
       "g",
     );
   });
+  it("OpenCode CLI 的模型路由随 Composer 草稿保存，且不覆盖 ZCode 模型选择", () => {
+    const executionRoute = {
+      kind: "opencode-acp" as const,
+      model: { kind: "catalog" as const, modelId: "opencode/deepseek-v4.1-flash-free" },
+    };
+    persistV4ComposerDraft(workspace, undefined, "session-a", {
+      text: "继续工作",
+      modelSelection: selection,
+      executionRoute,
+    });
+    expect(read()).toMatchObject({ modelSelection: selection, executionRoute });
+  });
   it("关闭分组草稿行只清理分组意图，保留正文、项目与模型", () => {
     persistV4ComposerDraft(workspace, undefined, V4_DRAFT_SCOPE_ROOT, {
       text: "继续编辑",

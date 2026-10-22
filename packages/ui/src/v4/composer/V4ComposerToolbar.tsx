@@ -76,6 +76,7 @@ import type {
 } from "@/hooks/useModelSelectionView.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { useServices } from "@/hooks/useServices.js";
 import { useComposerConnectionSwitch } from "@/hooks/useComposerConnectionSwitch.js";
 import {
   buildComposerPlanGroups,
@@ -116,6 +117,7 @@ import {
   resolveDraftModelThoughtOption,
   resolveDraftThoughtCurrentValue,
 } from "@/v4/composer/draftWorkspaceDefaults.js";
+import type { OpenCodeComposerRoute } from "@/v4/composer/composerDraftStore.js";
 
 // 拆分件再导出（模式选择移居 V4ComposerModeControls，超行数拆分）：
 // 既有消费方（ConversationComposer）继续从本模块入口 import，接口面不变。
@@ -400,6 +402,7 @@ export interface V4ComposerToolbarProps {
   draftMode?: boolean;
   /** 当前 scope 的 Composer 选择；新任务与已有会话都只显示这份状态。 */
   draftConfig?: Partial<SessionConfigState>;
+  executionRoute?: OpenCodeComposerRoute;
   usage: SessionUsageState | null;
   disabled: boolean;
   /** Highspeed 卡生效时固定本轮模型，禁止通过选择器或快捷键切换。 */
@@ -427,6 +430,7 @@ export interface V4ComposerToolbarProps {
     sourceModel: ModelSelectionSource | null,
     reasoningLevel?: string,
   ) => void;
+  onSelectOpenCodeModel?: (modelId: string) => void;
   /** 选中思考深度；modelContext 固定本次用户操作的目标模型。 */
   onSelectThought: (thought: string, modelContext: { provider: string; model: string }) => void;
   onSwitchMode: (mode: string) => void;
@@ -436,6 +440,20 @@ export interface V4ComposerToolbarProps {
     sourceModel: ModelSelectionSource | null,
   ) => Promise<void> | void;
   onSendCompressionCommand?: (command: string) => void;
+}
+
+export function shouldShowModelProviderSettingsShortcut(params: {
+  modelMenuVisible: boolean;
+  providerSourcesLoading: boolean;
+  selectableModelGroupCount: number;
+  connectionSwitchPending: boolean;
+}): boolean {
+  return (
+    params.modelMenuVisible &&
+    !params.providerSourcesLoading &&
+    params.selectableModelGroupCount === 0 &&
+    !params.connectionSwitchPending
+  );
 }
 
 /** 模型 / 思考深度 / context usage 簇（渲染在发送键左侧，与旧 UI 同位）。 */
@@ -451,6 +469,7 @@ function V4ComposerModelControlsImpl({
   isMobileViewport = false,
   draftMode = false,
   draftConfig,
+  executionRoute,
   usage,
   disabled,
   modelLocked = false,
@@ -462,6 +481,7 @@ function V4ComposerModelControlsImpl({
   activeConfigPicker,
   onConfigPickerOpenChange,
   onSelectModel,
+  onSelectOpenCodeModel,
   onSelectThought,
   onSendCompressionCommand,
   onRecoverCustomModelSelection,
@@ -479,9 +499,34 @@ function V4ComposerModelControlsImpl({
   const providerSettingsView =
     providerSettingsRead.state.status === "ready" ? providerSettingsRead.state.view : null;
   const providerSourcesLoading = providerSettingsRead.state.status !== "ready";
+  const openCodeRuntime = useServices().openCodeAcpRuntime;
+  const [openCodeModels, setOpenCodeModels] = useState<string[]>([]);
+  const [openCodeCatalogReady, setOpenCodeCatalogReady] = useState(false);
   // 配置面存活服务读（过渡归宿 = 配置面 v4 化）：连接方式选中键喂 BigModel Team Plan 门控豁免。
   const baseServices = useBaseWorkspaceServices();
   const { settings: sharedSettings } = useSettings({ services: baseServices });
+  useEffect(() => {
+    let active = true;
+    setOpenCodeModels([]);
+    setOpenCodeCatalogReady(false);
+    if (sharedSettings?.openCodeCliEnabled !== true || !openCodeRuntime) return;
+    void (async () => {
+      try {
+        const status = await openCodeRuntime.getCliStatus();
+        if (!active || status.status !== "available") return;
+        const catalog = await openCodeRuntime.listModels();
+        if (active && catalog.status === "available") {
+          setOpenCodeModels(catalog.models);
+          setOpenCodeCatalogReady(true);
+        }
+      } catch {
+        // Provider discovery is optional; never silently replace the selected route/model.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [openCodeRuntime, sharedSettings?.openCodeCliEnabled]);
   const {
     entitlements,
     enabledStartPlanProviderIds,
@@ -514,16 +559,18 @@ function V4ComposerModelControlsImpl({
     [onConfigPickerOpenChange],
   );
 
-  const modelOption = modelSelectionView?.providers.some((provider) => provider.models.length > 0)
-    ? ({
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "",
-        options: [],
-      } satisfies ZCodeConfigOption)
-    : undefined;
+  const modelOption =
+    modelSelectionView?.providers.some((provider) => provider.models.length > 0) ||
+    (sharedSettings?.openCodeCliEnabled === true && openCodeModels.length > 0)
+      ? ({
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "",
+          options: [],
+        } satisfies ZCodeConfigOption)
+      : undefined;
 
   // 空模型/档位曾被 Session 旧值补回，界面显示与实际不可提交状态矛盾。
   // 初始化已经由 Composer owner 完成；显示层只消费它，不能再次补值。
@@ -876,9 +923,32 @@ function V4ComposerModelControlsImpl({
     [intl],
   );
   const modelSelectGroups = useMemo<ModelSelectGroup[]>(() => {
-    if (!modelSelectionView) return [];
-    return buildRegistryModelSelectGroups(displayProvider, modelSelectionView, modelGroupLabels);
-  }, [displayProvider, modelGroupLabels, modelSelectionView]);
+    const groups = modelSelectionView
+      ? buildRegistryModelSelectGroups(displayProvider, modelSelectionView, modelGroupLabels)
+      : [];
+    if (sharedSettings?.openCodeCliEnabled && openCodeCatalogReady && openCodeModels.length > 0) {
+      groups.push({
+        key: "opencode-cli",
+        label: intl.formatMessage({ id: "settings.openCode.title" }),
+        labelBadge: intl.formatMessage({ id: "settings.openCode.authModeCli" }),
+        directItems: true,
+        items: openCodeModels.map((modelId) => ({
+          key: `opencode-cli:${modelId}`,
+          value: `zcode-opencode-cli:${modelId}`,
+          name: modelId,
+        })),
+      });
+    }
+    return groups;
+  }, [
+    displayProvider,
+    intl,
+    modelGroupLabels,
+    modelSelectionView,
+    openCodeCatalogReady,
+    openCodeModels,
+    sharedSettings?.openCodeCliEnabled,
+  ]);
 
   // 修复：恢复「管理模型」入口（老版 onManageModels = 打开设置页并定位模型供应商区）。
   const handleOpenModelProviderSettings = useCallback(() => {
@@ -892,6 +962,8 @@ function V4ComposerModelControlsImpl({
 
   // 当前投影模型的编码值：provider 命中目录则按自定义模型编码，否则回落裸 model id。
   const rawModelValue = useMemo(() => {
+    if (executionRoute?.kind === "opencode-acp" && executionRoute.model.kind === "catalog")
+      return `zcode-opencode-cli:${executionRoute.model.modelId}`;
     if (!effectiveConfig || !effectiveConfig.model) return "";
     const providerExists = modelSelectionView?.providers.some(
       (candidate) => candidate.providerId === effectiveConfig.provider,
@@ -900,7 +972,7 @@ function V4ComposerModelControlsImpl({
       return encodeCustomModelValue(effectiveConfig.provider, effectiveConfig.model);
     }
     return effectiveConfig.model;
-  }, [effectiveConfig, modelSelectionView]);
+  }, [effectiveConfig, executionRoute, modelSelectionView]);
 
   // 触发器显示兜底——`<synthetic>`（SDK 恢复时合成的占位模型）或当前模型
   // 不在可选组（失效/下线/退登）→ 回落占位/默认「选择模型」，不直显协议内部占位符或失效
@@ -922,18 +994,22 @@ function V4ComposerModelControlsImpl({
     const fallbackLabel =
       triggerDisplay.placeholder ?? intl.formatMessage({ id: "chat.toolbar.model.label" });
     const providerName =
-      modelSelectionView?.providers.find(
-        (candidate) => candidate.providerId === effectiveConfig?.provider,
-      )?.providerName ?? undefined;
+      executionRoute?.kind === "opencode-acp"
+        ? "OpenCode CLI"
+        : (modelSelectionView?.providers.find(
+            (candidate) => candidate.providerId === effectiveConfig?.provider,
+          )?.providerName ?? undefined);
     return resolveV4ModelTriggerDisplay({
       modelGroups: modelSelectGroups,
       normalizedValue: normalizedModelValue,
       fallbackLabel,
-      providerId: effectiveConfig?.provider,
+      providerId:
+        executionRoute?.kind === "opencode-acp" ? "opencode-cli" : effectiveConfig?.provider,
       providerName,
     });
   }, [
     effectiveConfig?.provider,
+    executionRoute,
     intl,
     modelSelectionView,
     modelSelectGroups,
@@ -943,6 +1019,11 @@ function V4ComposerModelControlsImpl({
   const handleModelValueChange = useCallback(
     (value: string, reasoningLevel?: string) => {
       if (modelLocked) return;
+      const openCodeModelPrefix = "zcode-opencode-cli:";
+      if (value.startsWith(openCodeModelPrefix)) {
+        onSelectOpenCodeModel?.(value.slice(openCodeModelPrefix.length));
+        return;
+      }
       const decoded = decodeCustomModelValue(value);
       // 草稿的点击时可见模型可能只存在于 catalog，或已经被最新 draft
       // intent 覆盖，不能让 SessionPane 再从迟到的 prewarm projection 反推。
@@ -1007,6 +1088,7 @@ function V4ComposerModelControlsImpl({
       effectiveConfig?.provider,
       onRecoverCustomModelSelection,
       onSelectModel,
+      onSelectOpenCodeModel,
       modelLocked,
       modelSelectionView,
       workspaceIdentity,
@@ -1282,7 +1364,9 @@ function V4ComposerModelControlsImpl({
           sweepActive={highspeedSweepActive}
           animateEntrance={highspeedEntranceAnimated}
         />
-      ) : modelSelectionState.status === "error" && modelSelectionReload ? (
+      ) : modelSelectionState.status === "error" &&
+        modelSelectGroups.length === 0 &&
+        modelSelectionReload ? (
         <Button
           type="button"
           variant="ghost"
@@ -1292,7 +1376,7 @@ function V4ComposerModelControlsImpl({
         >
           {intl.formatMessage({ id: "chat.toolbar.model.loadFailedRetry" })}
         </Button>
-      ) : modelSelectionState.status === "unavailable" ? (
+      ) : modelSelectionState.status === "unavailable" && modelSelectGroups.length === 0 ? (
         <span className="px-2 text-ui-sm text-foreground-subtle">
           {intl.formatMessage({
             id:
@@ -1301,10 +1385,12 @@ function V4ComposerModelControlsImpl({
                 : "chat.toolbar.model.targetMissing",
           })}
         </span>
-      ) : modelMenuVisible &&
-        !providerSourcesLoading &&
-        planGroups.length === 0 &&
-        !connectionSwitch.pending ? (
+      ) : shouldShowModelProviderSettingsShortcut({
+          modelMenuVisible,
+          providerSourcesLoading,
+          selectableModelGroupCount: modelSelectGroups.length,
+          connectionSwitchPending: connectionSwitch.pending,
+        }) ? (
         // 空配置是正常状态；直接复用 Provider 设置入口，不展开无名称、无模型的菜单。
         <Button
           type="button"
@@ -1339,7 +1425,8 @@ function V4ComposerModelControlsImpl({
             recoveryPending ||
             modelLocked ||
             (modelSelectionState.status !== "ready" &&
-              !(modelSelectionState.status === "loading" && modelSelectionState.catalog))
+              !(modelSelectionState.status === "loading" && modelSelectionState.catalog) &&
+              !openCodeCatalogReady)
           }
           tooltipTitle={modelTriggerDisplay.fullLabel}
           shortcutLabel={modelShortcutLabel}

@@ -310,6 +310,83 @@ describe("conversation share public projection", () => {
     });
   });
 
+  it("shares completed OpenCode output while removing live permissions and local identities", () => {
+    const rows = rowsWithCompletedSubagent();
+    rows.push({
+      rowId: 106,
+      turnId: "local-turn-a",
+      entityId: "local-opencode-entity",
+      productTurnId: "local-product-turn-a",
+      createdAt: 1_050,
+      createdAtSeq: 15,
+      kind: "externalAgentRun",
+      runId: "local-run-id",
+      commandId: "local-command-id",
+      provider: "opencode-cli",
+      modelId: "opencode/big-pickle",
+      promptText: "Суммируй задачу",
+      output: { text: "Готово" },
+      tools: [{ toolCallId: "local-acp-tool", title: "Read", status: "completed" }],
+      pendingPermissions: [
+        {
+          requestId: "live-permission-request",
+          opencodeSessionId: "private-session",
+          title: "Read file",
+          inputSummary: "/private/workspace/secret.txt",
+          options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+        },
+      ],
+      status: "completed",
+      startedAt: 1_051,
+      endedAt: 1_060,
+      diagnosticCode: "provider_error",
+    });
+
+    const result = build(rows);
+    const projected = result.rows.find((row) => row.kind === "externalAgentRun");
+
+    expect(projected).toMatchObject({
+      kind: "externalAgentRun",
+      runId: "share-external-run-5",
+      commandId: "share-external-command-5",
+      provider: "opencode-cli",
+      modelId: "opencode/big-pickle",
+      promptText: "Суммируй задачу",
+      output: { text: "Готово" },
+      tools: [{ toolCallId: "share-external-tool-5-1", title: "Read", status: "completed" }],
+      status: "completed",
+      startedAt: 1_051,
+      endedAt: 1_060,
+    });
+    expect(projected).not.toHaveProperty("pendingPermissions");
+    expect(projected).not.toHaveProperty("diagnosticCode");
+    expect(JSON.stringify(result.rows)).not.toMatch(
+      /local-run-id|local-command-id|local-acp-tool|live-permission-request|private-session|secret\.txt|provider_error/u,
+    );
+  });
+
+  it("rejects sharing an active OpenCode run", () => {
+    const rows = rowsWithCompletedSubagent();
+    rows.push({
+      rowId: 106,
+      turnId: "local-turn-a",
+      entityId: "local-opencode-entity",
+      productTurnId: "local-product-turn-a",
+      createdAt: 1_050,
+      createdAtSeq: 15,
+      kind: "externalAgentRun",
+      runId: "local-run-id",
+      commandId: "local-command-id",
+      provider: "opencode-cli",
+      promptText: "In progress",
+      output: { text: "" },
+      tools: [],
+      status: "running",
+    });
+
+    expectBuildFailure(rows, "invalid_conversation");
+  });
+
   it.each([
     ["data:text/plain;base64,YQ==", "unsafe_structure"],
     ["file:///tmp/report.html", "unsafe_structure"],

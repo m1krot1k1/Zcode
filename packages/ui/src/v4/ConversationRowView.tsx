@@ -50,6 +50,7 @@ import type {
   AssistantTextRow,
   CommandAck,
   ConversationRow,
+  ExternalAgentRunRow,
   ConversationRowTarget,
   HookInvocationRow,
   ReasoningRow,
@@ -2388,11 +2389,113 @@ function ConversationRowViewImpl({
       return <ToolCallRowView row={row} context={context} />;
     case "subagent":
       return <SubagentRowView row={row} />;
+    case "externalAgentRun":
+      return <ExternalAgentRunRowView row={row} context={context} />;
     case "artifact":
       return <ArtifactRowView row={row} />;
     default:
       return null;
   }
+}
+
+function ExternalAgentRunRowView({
+  row,
+  context,
+}: {
+  row: ExternalAgentRunRow;
+  context: ConversationRowRenderContext;
+}) {
+  const { intl } = useZCodeIntl();
+  const [respondingRequestIds, setRespondingRequestIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    const activeIds = new Set((row.pendingPermissions ?? []).map((request) => request.requestId));
+    setRespondingRequestIds((current) => {
+      const next = new Set([...current].filter((requestId) => activeIds.has(requestId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [row.pendingPermissions]);
+
+  return (
+    <section
+      className="my-2 rounded-xl border border-border bg-muted/20 px-4 py-3"
+      data-external-agent-run-id={row.runId}
+    >
+      <header className="flex items-center justify-between gap-3 text-sm">
+        <strong>OpenCode CLI{row.modelId ? ` · ${row.modelId}` : ""}</strong>
+        <span className="text-muted-foreground">{row.status}</span>
+      </header>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm">{row.promptText}</p>
+      {(row.pendingPermissions ?? []).map((request) => (
+        <section
+          key={request.requestId}
+          className="mt-3 space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-3"
+          data-testid={`opencode-permission-${request.requestId}`}
+        >
+          <h3 className="text-sm font-semibold">
+            {intl.formatMessage({ id: "conversation.openCode.permission.title" })}
+          </h3>
+          <p className="text-sm text-muted-foreground">{request.title}</p>
+          {request.inputSummary ? (
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 text-xs">
+              {request.inputSummary}
+            </pre>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {request.options.map((option) => (
+              <Button
+                key={option.optionId}
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={
+                  !context.onRespondOpenCodePermission ||
+                  respondingRequestIds.has(request.requestId)
+                }
+                data-testid={`opencode-permission-option-${request.requestId}-${option.optionId}`}
+                onClick={() => {
+                  const respond = context.onRespondOpenCodePermission;
+                  if (!respond || respondingRequestIds.has(request.requestId)) return;
+                  setRespondingRequestIds((current) => new Set(current).add(request.requestId));
+                  void respond({
+                    commandId: row.commandId,
+                    runId: row.runId,
+                    opencodeSessionId: request.opencodeSessionId,
+                    requestId: request.requestId,
+                    optionId: option.optionId,
+                  }).catch(() => {
+                    setRespondingRequestIds((current) => {
+                      const next = new Set(current);
+                      next.delete(request.requestId);
+                      return next;
+                    });
+                  });
+                }}
+              >
+                {option.name || option.kind}
+              </Button>
+            ))}
+          </div>
+        </section>
+      ))}
+      {row.tools.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+          {row.tools.map((tool) => (
+            <li key={tool.toolCallId}>
+              {tool.title} · {tool.status}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {row.output.text ? (
+        <div className="mt-3 whitespace-pre-wrap break-words text-sm">{row.output.text}</div>
+      ) : null}
+      {row.diagnosticCode ? (
+        <p className="mt-2 text-xs text-destructive">{row.diagnosticCode}</p>
+      ) : null}
+    </section>
+  );
 }
 
 export const ConversationRowView = memo(ConversationRowViewImpl);

@@ -2,17 +2,26 @@ import { resolveExecutionState, type ModelSelection } from "@zcode/shared";
 import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ModelSelectionView } from "@zcode/services";
 import { validateModelSelectionOptions } from "@zcode/provider";
+import type { OpenCodeComposerRoute } from "@/v4/composer/composerDraftStore.js";
 
 export interface ComposerSubmissionConfig {
-  modelSelection: ModelSelection;
-  mode: SubmissionMode;
-  planEnabled: boolean;
+  executionRoute:
+    | { kind: "zcode" }
+    | { kind: "opencode-acp"; model: { kind: "catalog"; modelId: string } };
+  modelSelection?: ModelSelection;
+  mode?: SubmissionMode;
+  planEnabled?: boolean;
 }
 
 /** 在点击提交的瞬间，把 Composer 意图冻结成本次 Submission 的执行配置。 */
 export function createComposerSubmissionConfig(
   composer:
-    | { mode?: string; planEnabled?: boolean; modelSelection?: ModelSelection }
+    | {
+        mode?: string;
+        planEnabled?: boolean;
+        modelSelection?: ModelSelection;
+        executionRoute?: OpenCodeComposerRoute;
+      }
     | null
     | undefined,
   view: ModelSelectionView | null,
@@ -21,6 +30,18 @@ export function createComposerSubmissionConfig(
   // 不能因为渲染提交门禁而读取 undefined 并让整个会话区域崩溃。
   if (!composer) {
     return null;
+  }
+  const route = composer.executionRoute;
+  if (route?.kind === "opencode-acp") {
+    const modelId = route.model?.kind === "catalog" ? route.model.modelId.trim() : "";
+    return modelId && modelId.length <= 512
+      ? Object.freeze({
+          executionRoute: Object.freeze({
+            kind: "opencode-acp" as const,
+            model: Object.freeze({ kind: "catalog" as const, modelId }),
+          }),
+        })
+      : null;
   }
   const selection = composer.modelSelection;
   const mode = submissionModeSchema.safeParse(composer.mode);
@@ -33,6 +54,7 @@ export function createComposerSubmissionConfig(
     return null;
   // 不读取 Session 或显示别名；复制所有选择叶子，防止 await 后用户切模改变本次请求。
   return Object.freeze({
+    executionRoute: Object.freeze({ kind: "zcode" as const }),
     mode: mode.data === "plan" ? "build" : mode.data,
     planEnabled: resolveExecutionState(composer).planEnabled,
     modelSelection: Object.freeze({
