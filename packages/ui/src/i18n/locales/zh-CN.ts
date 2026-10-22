@@ -3575,6 +3575,12 @@ const zhCN: Record<string, string> = {
   "settings.openCode.searchPath": "重新搜索 PATH",
   "settings.openCode.installing": "正在安装…",
   "settings.openCode.install-failed": "OpenCode 安装失败。请按官方说明手动安装。",
+  "settings.openCode.install-download-failed": "ZCode 无法下载 OpenCode 官方安装程序。请检查网络连接后重试。",
+  "settings.openCode.install-script-invalid": "下载的 OpenCode 安装程序未通过验证，ZCode 未运行该程序。",
+  "settings.openCode.install-execution-failed": "OpenCode 安装程序未能完成。ZCode 不会返回安装程序原始输出。",
+  "settings.openCode.install-package-manager-failed": "Windows 包管理器无法安装 OpenCode。请检查包管理器后重试。",
+  "settings.openCode.install-timeout": "OpenCode 安装超时并已停止。请检查网络后重试。",
+  "settings.openCode.install-destination-conflict": "OpenCode 安装位置已被占用。ZCode 保留了现有文件。",
   "settings.openCode.install-verification-failed":
     "安装命令已结束，但 ZCode 无法验证 OpenCode CLI。",
   "settings.openCode.install-requires-missing-cli":

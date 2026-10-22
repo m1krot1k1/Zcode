@@ -721,7 +721,9 @@ describe("OpenCode ACP runtime", () => {
         ZCODE_SECRET_TEST_MARKER: "test-only-secret-marker",
       };
 
-      await expect(installOpenCodeOfficialCli(60_000, processEnv, "linux")).resolves.toBe(true);
+      await expect(installOpenCodeOfficialCli(60_000, processEnv, "linux")).resolves.toEqual({
+        ok: true,
+      });
       const curlEnvironment = JSON.parse(await readFile(curlEnvPath, "utf8")) as string[];
       const bashEnvironment = JSON.parse(await readFile(bashEnvPath, "utf8")) as string[];
       const curlArguments = JSON.parse(await readFile(curlArgsPath, "utf8")) as string[];
@@ -744,6 +746,64 @@ describe("OpenCode ACP runtime", () => {
         "utf8",
       );
       expect(installedBinary).toContain("OpenCode test");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "classifies download failures without exposing installer stderr",
+    async () => {
+      const directory = await makeTempDir();
+      const curlPath = join(directory, "curl");
+      const bashPath = join(directory, "bash");
+      await writeFile(
+        curlPath,
+        "#!/usr/bin/env node\nconsole.error('private stderr marker');\nprocess.exit(23);\n",
+        "utf8",
+      );
+      await writeFile(bashPath, "#!/usr/bin/env node\nprocess.exit(0);\n", "utf8");
+      await chmod(curlPath, 0o755);
+      await chmod(bashPath, 0o755);
+
+      const outcome = await installOpenCodeOfficialCli(
+        1_000,
+        {
+          PATH: `${directory}:${process.env.PATH ?? ""}`,
+          HOME: join(directory, "home"),
+          TMPDIR: directory,
+        },
+        "linux",
+      );
+      expect(outcome).toEqual({ ok: false, diagnostic: "opencode.install-download-failed" });
+      expect(JSON.stringify(outcome)).not.toContain("private stderr marker");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "terminates a hung installer and returns a fixed timeout diagnostic",
+    async () => {
+      const directory = await makeTempDir();
+      const curlPath = join(directory, "curl");
+      const bashPath = join(directory, "bash");
+      await writeFile(
+        curlPath,
+        `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nconst args = process.argv.slice(2);\nawait writeFile(args[args.indexOf("--output") + 1], "#!/usr/bin/env bash\\nexit 0\\n");\n`,
+        "utf8",
+      );
+      await writeFile(bashPath, "#!/usr/bin/env node\nsetTimeout(() => process.exit(0), 2_000);\n", "utf8");
+      await chmod(curlPath, 0o755);
+      await chmod(bashPath, 0o755);
+
+      await expect(
+        installOpenCodeOfficialCli(
+          50,
+          {
+            PATH: `${directory}:${process.env.PATH ?? ""}`,
+            HOME: join(directory, "home"),
+            TMPDIR: directory,
+          },
+          "linux",
+        ),
+      ).resolves.toEqual({ ok: false, diagnostic: "opencode.install-timeout" });
     },
   );
 
@@ -913,7 +973,7 @@ describe("OpenCode ACP runtime", () => {
   });
 
   it("never calls the installer for a CLI that is already present", async () => {
-    const installPosixCli = vi.fn(async () => true);
+    const installPosixCli = vi.fn(async () => ({ ok: true as const }));
     const runtime = createOpenCodeAcpRuntime({
       resolveCli: () => ({
         status: "resolved",
@@ -952,7 +1012,7 @@ describe("OpenCode ACP runtime", () => {
 
     for (const platform of ["darwin", "linux"] as const) {
       const resolveCli = vi.fn().mockResolvedValueOnce(missing).mockResolvedValueOnce(resolved);
-      const installPosixCli = vi.fn(async () => true);
+      const installPosixCli = vi.fn(async () => ({ ok: true as const }));
       const runtime = createOpenCodeAcpRuntime({
         platform,
         resolveCli,
@@ -982,7 +1042,7 @@ describe("OpenCode ACP runtime", () => {
       .fn()
       .mockResolvedValueOnce(missing)
       .mockResolvedValueOnce(resolved);
-    const installWingetPackage = vi.fn(async () => true);
+    const installWingetPackage = vi.fn(async () => ({ ok: true as const }));
     const windowsRuntime = createOpenCodeAcpRuntime({
       platform: "win32",
       resolveCli: resolveWindowsCli,
@@ -1024,7 +1084,7 @@ describe("OpenCode ACP runtime", () => {
           executablePath,
           spec: { command: executablePath, prefixArgs: [] },
         });
-      const installPosixCli = vi.fn(async () => true);
+      const installPosixCli = vi.fn(async () => ({ ok: true as const }));
       const runVersion = vi.fn(async () => ({
         status: "available" as const,
         version: "OpenCode 1.19.3",
@@ -1072,6 +1132,50 @@ describe("OpenCode ACP runtime", () => {
     await expect(runtime.installCli()).resolves.toEqual({
       status: "failed",
       diagnostic: "opencode.install-platform-unsupported",
+    });
+    await runtime.disposeAllAndWait();
+  });
+
+  it("returns only fixed stage diagnostics for installer and package-manager failures", async () => {
+    const posixDiagnostics = [
+      "opencode.install-download-failed",
+      "opencode.install-script-invalid",
+      "opencode.install-execution-failed",
+      "opencode.install-timeout",
+      "opencode.install-destination-conflict",
+      "opencode.install-verification-failed",
+    ] as const;
+    for (const diagnostic of posixDiagnostics) {
+      const runtime = createOpenCodeAcpRuntime({
+        platform: "darwin",
+        resolveCli: async () => ({
+          status: "missing",
+          diagnostic: "opencode.cli-missing",
+          installSupported: true,
+        }),
+        resolvePosixInstallerCommands: async () => ({ bash: "/usr/bin/bash", curl: "/usr/bin/curl" }),
+        installPosixCli: async () => ({ ok: false, diagnostic }),
+      });
+      await expect(runtime.installCli()).resolves.toEqual({ status: "failed", diagnostic });
+      await runtime.disposeAllAndWait();
+    }
+
+    const runtime = createOpenCodeAcpRuntime({
+      platform: "win32",
+      resolveCli: async () => ({
+        status: "missing",
+        diagnostic: "opencode.cli-missing",
+        installSupported: false,
+      }),
+      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
+      installWingetPackage: async () => ({
+        ok: false,
+        diagnostic: "opencode.install-package-manager-failed",
+      }),
+    });
+    await expect(runtime.installCli()).resolves.toEqual({
+      status: "failed",
+      diagnostic: "opencode.install-package-manager-failed",
     });
     await runtime.disposeAllAndWait();
   });
@@ -1126,7 +1230,7 @@ describe("OpenCode ACP runtime", () => {
 
     const executablePath =
       "C:\\Users\\test\\AppData\\Local\\Microsoft\\WinGet\\Links\\opencode.exe";
-    const installWingetPackage = vi.fn(async () => true);
+    const installWingetPackage = vi.fn(async () => ({ ok: true as const }));
     const resolveCli = vi
       .fn<
         () => Promise<

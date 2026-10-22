@@ -24,7 +24,11 @@ import {
   shouldSpawnInDetachedProcessGroup,
   terminateProcessTreeAndWait,
 } from "#src/process/processTreeTerminator.js";
-import type { OpenCodeCliModelCatalog, OpenCodeCliStatus } from "../contract.js";
+import type {
+  OpenCodeCliModelCatalog,
+  OpenCodeCliStatus,
+  OpenCodeInstallCommandOutcome,
+} from "../contract.js";
 
 const VERSION_TIMEOUT_MS = 4_000;
 export const INSTALL_TIMEOUT_MS = 5 * 60_000;
@@ -322,18 +326,23 @@ export async function installOpenCodeOfficialCli(
   timeoutMs: number,
   sourceEnvironment: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
-): Promise<boolean> {
-  if (platform !== "darwin" && platform !== "linux") return false;
+): Promise<OpenCodeInstallCommandOutcome> {
+  if (platform !== "darwin" && platform !== "linux") {
+    return { ok: false, diagnostic: "opencode.install-platform-unsupported" };
+  }
   const installerCommands = await resolveOpenCodeInstallerCommands({
     pathValue: sourceEnvironment.PATH,
     platform,
     isExecutableFile,
   });
-  if (!installerCommands) return false;
+  if (!installerCommands) {
+    return { ok: false, diagnostic: "opencode.install-platform-unsupported" };
+  }
 
   let temporaryDirectory: string | undefined;
   let activeChild: ReturnType<typeof spawn> | undefined;
   let installedDestinationPath: string | undefined;
+  let stage: "download" | "installer" | "verification" | "destination" = "download";
   try {
     temporaryDirectory = await mkdtemp(join(tmpdir(), "zcode-opencode-install-"));
     const temporaryHome = join(temporaryDirectory, "home");
@@ -375,7 +384,9 @@ export async function installOpenCodeOfficialCli(
     );
     const downloadExitCode = await waitForChildExit(activeChild, INSTALLER_DOWNLOAD_TIMEOUT_MS);
     activeChild = undefined;
-    if (downloadExitCode !== 0) return false;
+    if (downloadExitCode !== 0) {
+      return { ok: false, diagnostic: "opencode.install-download-failed" };
+    }
 
     const scriptInfo = await stat(scriptPath).catch(() => null);
     if (
@@ -383,11 +394,14 @@ export async function installOpenCodeOfficialCli(
       scriptInfo.size === 0 ||
       scriptInfo.size > MAX_INSTALLER_SCRIPT_BYTES
     ) {
-      return false;
+      return { ok: false, diagnostic: "opencode.install-script-invalid" };
     }
     const script = await readFile(scriptPath);
-    if (!script.subarray(0, 64).toString("utf8").startsWith("#!/usr/bin/env bash")) return false;
+    if (!script.subarray(0, 64).toString("utf8").startsWith("#!/usr/bin/env bash")) {
+      return { ok: false, diagnostic: "opencode.install-script-invalid" };
+    }
 
+    stage = "installer";
     activeChild = spawn(
       installerCommands.bash,
       [scriptPath, "--no-modify-path"],
@@ -395,11 +409,16 @@ export async function installOpenCodeOfficialCli(
     );
     const installExitCode = await waitForChildExit(activeChild, timeoutMs);
     activeChild = undefined;
-    if (installExitCode !== 0) return false;
+    if (installExitCode !== 0) {
+      return { ok: false, diagnostic: "opencode.install-execution-failed" };
+    }
 
+    stage = "verification";
     const stagedBinaryPath = join(temporaryHome, ".opencode", "bin", "opencode");
     const binaryInfo = await stat(stagedBinaryPath).catch(() => null);
-    if (!binaryInfo?.isFile()) return false;
+    if (!binaryInfo?.isFile()) {
+      return { ok: false, diagnostic: "opencode.install-verification-failed" };
+    }
     await access(stagedBinaryPath, constants.X_OK).catch(() => {
       throw new Error("opencode.install-binary-not-executable");
     });
@@ -408,8 +427,11 @@ export async function installOpenCodeOfficialCli(
       isolatedEnvironment,
       platform,
     );
-    if (stagedVersion.status !== "available") return false;
+    if (stagedVersion.status !== "available") {
+      return { ok: false, diagnostic: "opencode.install-verification-failed" };
+    }
 
+    stage = "destination";
     const destinationDirectory = join(sourceEnvironment.HOME || homedir(), ".opencode", "bin");
     const destinationPath = join(destinationDirectory, "opencode");
     await mkdir(destinationDirectory, { recursive: true, mode: 0o700 });
@@ -418,12 +440,32 @@ export async function installOpenCodeOfficialCli(
     installedDestinationPath = destinationPath;
     await chmod(destinationPath, 0o755);
     installedDestinationPath = undefined;
-    return true;
-  } catch {
+    return { ok: true };
+  } catch (error) {
     if (activeChild) await terminateProcessTreeAndWait(activeChild).catch(() => undefined);
     // Если копирование прошло, а проверка прав нет — удаляем только созданный нами неполный файл.
     if (installedDestinationPath) await unlink(installedDestinationPath).catch(() => undefined);
-    return false;
+    if (error instanceof Error && error.message === "opencode.install-timeout") {
+      return { ok: false, diagnostic: "opencode.install-timeout" };
+    }
+    if (
+      stage === "destination" &&
+      error !== null &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "EEXIST"
+    ) {
+      return { ok: false, diagnostic: "opencode.install-destination-conflict" };
+    }
+    const diagnostic =
+      stage === "download"
+        ? "opencode.install-download-failed"
+        : stage === "installer"
+          ? "opencode.install-execution-failed"
+          : stage === "verification"
+            ? "opencode.install-verification-failed"
+            : "opencode.install-execution-failed";
+    return { ok: false, diagnostic };
   } finally {
     if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
   }
@@ -434,7 +476,7 @@ export async function installOpenCodeWingetPackage(
   timeoutMs: number,
   sourceEnvironment: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
-): Promise<boolean> {
+): Promise<OpenCodeInstallCommandOutcome> {
   const child = spawn(
     wingetPath,
     [...OPEN_CODE_WINGET_INSTALL_ARGS],
@@ -449,9 +491,13 @@ export async function installOpenCodeWingetPackage(
       timeoutMs,
       "opencode.install-timeout",
     );
-    return exitCode === 0;
-  } catch {
+    return exitCode === 0
+      ? { ok: true }
+      : { ok: false, diagnostic: "opencode.install-package-manager-failed" };
+  } catch (error) {
     await terminateProcessTreeAndWait(child).catch(() => undefined);
-    return false;
+    return error instanceof Error && error.message === "opencode.install-timeout"
+      ? { ok: false, diagnostic: "opencode.install-timeout" }
+      : { ok: false, diagnostic: "opencode.install-package-manager-failed" };
   }
 }

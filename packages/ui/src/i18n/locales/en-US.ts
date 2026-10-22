@@ -3825,6 +3825,18 @@ const enUS: Record<string, string> = {
   "settings.openCode.installing": "Installing…",
   "settings.openCode.install-failed":
     "OpenCode installation failed. Use the official instructions to install it manually.",
+  "settings.openCode.install-download-failed":
+    "ZCode could not download the official OpenCode installer. Check the network connection and try again.",
+  "settings.openCode.install-script-invalid":
+    "The downloaded OpenCode installer did not pass validation. ZCode did not run it.",
+  "settings.openCode.install-execution-failed":
+    "The OpenCode installer could not complete. ZCode did not receive raw installer output.",
+  "settings.openCode.install-package-manager-failed":
+    "The Windows package manager could not install OpenCode. Check its availability and try again.",
+  "settings.openCode.install-timeout":
+    "OpenCode installation took too long and was stopped. Check the network and try again.",
+  "settings.openCode.install-destination-conflict":
+    "The OpenCode install location is already occupied. ZCode left the existing file unchanged.",
   "settings.openCode.install-verification-failed":
     "The install command finished, but ZCode could not verify the OpenCode CLI.",
   "settings.openCode.install-requires-missing-cli":

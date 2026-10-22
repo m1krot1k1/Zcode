@@ -15,6 +15,7 @@ import type {
   OpenCodeAcpSessionUpdate,
   OpenCodeCliModelCatalog,
   OpenCodeCliStatus,
+  OpenCodeInstallCommandOutcome,
 } from "../contract.js";
 import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.js";
 import {
@@ -50,9 +51,12 @@ interface OpenCodeAcpRuntimeOptions {
   resolveWinget?: () => Promise<string | undefined>;
   runVersion?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
   runModelCatalog?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliModelCatalog>;
-  installPosixCli?: (timeoutMs: number) => Promise<boolean>;
+  installPosixCli?: (timeoutMs: number) => Promise<OpenCodeInstallCommandOutcome>;
   resolvePosixInstallerCommands?: () => Promise<{ bash: string; curl: string } | undefined>;
-  installWingetPackage?: (wingetPath: string, timeoutMs: number) => Promise<boolean>;
+  installWingetPackage?: (
+    wingetPath: string,
+    timeoutMs: number,
+  ) => Promise<OpenCodeInstallCommandOutcome>;
   platform?: NodeJS.Platform;
   processEnv?: NodeJS.ProcessEnv;
   requestTimeoutMs?: number;

@@ -38,6 +38,21 @@ export type OpenCodeInstallResult =
   | { status: "already-installed"; version: string; executablePath: string }
   | { status: "failed"; diagnostic: string };
 
+/** Safe, fixed install diagnostics. Raw process output never crosses the Host boundary. */
+export type OpenCodeInstallFailureDiagnostic =
+  | "opencode.install-download-failed"
+  | "opencode.install-script-invalid"
+  | "opencode.install-execution-failed"
+  | "opencode.install-package-manager-failed"
+  | "opencode.install-timeout"
+  | "opencode.install-destination-conflict"
+  | "opencode.install-verification-failed"
+  | "opencode.install-platform-unsupported";
+
+export type OpenCodeInstallCommandOutcome =
+  | { ok: true }
+  | { ok: false; diagnostic: OpenCodeInstallFailureDiagnostic };
+
 /** Read-only OpenCode CLI catalog. Authentication is intentionally not queried by this call. */
 export type OpenCodeCliModelCatalog =
   | { status: "available"; models: string[]; authentication: "not-checked" }

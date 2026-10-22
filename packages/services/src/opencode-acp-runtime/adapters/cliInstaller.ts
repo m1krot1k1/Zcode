@@ -1,4 +1,9 @@
-import type { IOpenCodeAcpRuntime, OpenCodeCliStatus, OpenCodeInstallResult } from "../contract.js";
+import type {
+  IOpenCodeAcpRuntime,
+  OpenCodeCliStatus,
+  OpenCodeInstallCommandOutcome,
+  OpenCodeInstallResult,
+} from "../contract.js";
 import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.js";
 import { INSTALL_TIMEOUT_MS } from "./childProcessSupport.js";
 
@@ -6,9 +11,12 @@ export interface OpenCodeCliInstallerDependencies {
   resolveCli: (cliPath?: string) => OpenCodeCliResolution | Promise<OpenCodeCliResolution>;
   resolveWinget: () => Promise<string | undefined>;
   runVersion: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
-  installPosixCli: (timeoutMs: number) => Promise<boolean>;
+  installPosixCli: (timeoutMs: number) => Promise<OpenCodeInstallCommandOutcome>;
   resolvePosixInstallerCommands: () => Promise<{ bash: string; curl: string } | undefined>;
-  installWingetPackage: (wingetPath: string, timeoutMs: number) => Promise<boolean>;
+  installWingetPackage: (
+    wingetPath: string,
+    timeoutMs: number,
+  ) => Promise<OpenCodeInstallCommandOutcome>;
   platform: NodeJS.Platform;
   installTimeoutMs?: number;
 }
@@ -71,11 +79,13 @@ export function createOpenCodeCliInstaller(
       }
       const cliBeforeInstall = await checkCliBeforeInstall();
       if (cliBeforeInstall) return cliBeforeInstall;
-      const installed = await dependencies.installWingetPackage(
+      const installOutcome = await dependencies.installWingetPackage(
         wingetPath,
         dependencies.installTimeoutMs ?? INSTALL_TIMEOUT_MS,
       );
-      if (!installed) return { status: "failed", diagnostic: "opencode.install-failed" };
+      if (!installOutcome.ok) {
+        return { status: "failed", diagnostic: installOutcome.diagnostic };
+      }
       const afterResolution = await dependencies.resolveCli();
       if (afterResolution.status !== "resolved") {
         return { status: "failed", diagnostic: "opencode.install-verification-failed" };
@@ -111,10 +121,12 @@ export function createOpenCodeCliInstaller(
     }
     const cliBeforeInstall = await checkCliBeforeInstall();
     if (cliBeforeInstall) return cliBeforeInstall;
-    const installed = await dependencies.installPosixCli(
+    const installOutcome = await dependencies.installPosixCli(
       dependencies.installTimeoutMs ?? INSTALL_TIMEOUT_MS,
     );
-    if (!installed) return { status: "failed", diagnostic: "opencode.install-failed" };
+    if (!installOutcome.ok) {
+      return { status: "failed", diagnostic: installOutcome.diagnostic };
+    }
     const afterResolution = await dependencies.resolveCli();
     if (afterResolution.status !== "resolved") {
       return { status: "failed", diagnostic: "opencode.install-verification-failed" };
