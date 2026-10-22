@@ -4321,7 +4321,7 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.presetEmpty": "尚未同步，请先完成 OAuth 登录。",
   "settings.modelProvider.customTitle": "Composer 自定义 API 供应商",
   "settings.modelProvider.agentIntegrationsTitle": "独立智能体运行时",
-  "settings.modelProvider.openCodeCli": "OpenCode CLI",
+  "settings.modelProvider.openCodeCli": "OpenCode CLI · 无需 API Key",
   "settings.modelProvider.refresh": "刷新",
   "settings.modelProvider.reorderProvider": "拖拽调整供应商顺序",
   "settings.modelProvider.reorderModel": "拖拽调整模型顺序",

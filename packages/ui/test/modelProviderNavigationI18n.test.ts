@@ -72,10 +72,34 @@ describe("model provider navigation i18n", () => {
     const { useModelProviderNavigation } =
       await import("@/settings/model-provider-section/useModelProviderNavigation.js");
     const provider = createCustomProvider();
+    const emptyLegacyOpenCodeProvider: ProviderSettingsFormProvider = {
+      ...provider,
+      providerId: "opencode-go-chat",
+      templateId: "opencode-go-chat",
+      providerName: "OpenCode Go (Chat)",
+      models: [],
+    };
+    const configuredLegacyOpenCodeProvider: ProviderSettingsFormProvider = {
+      ...provider,
+      providerId: "opencode-go-responses",
+      templateId: "opencode-go-responses",
+      providerName: "OpenCode Go (Responses)",
+      models: [
+        {
+          modelId: "legacy-model",
+          config: {},
+          hasPersonalConfig: true,
+        },
+      ],
+    };
     const codingPlanEntitlements = {};
     const commonOptions = {
       presetProviders: [],
-      modelProviders: [provider],
+      modelProviders: [
+        provider,
+        emptyLegacyOpenCodeProvider,
+        configuredLegacyOpenCodeProvider,
+      ],
       codingPlanEntitlements,
       selectedNodeKey: null,
       setSelectedNodeKey: vi.fn(),
@@ -87,7 +111,7 @@ describe("model provider navigation i18n", () => {
       intl: createIntl({
         "settings.modelProvider.customTitle": "Composer 自定义 API 供应商",
         "settings.modelProvider.agentIntegrationsTitle": "独立智能体运行时",
-        "settings.modelProvider.openCodeCli": "OpenCode CLI",
+        "settings.modelProvider.openCodeCli": "OpenCode CLI · 无需 API Key",
         "settings.modelProvider.createCustomProvider": "创建自定义供应商",
       }),
     });
@@ -98,7 +122,7 @@ describe("model provider navigation i18n", () => {
       intl: createIntl({
         "settings.modelProvider.customTitle": "Custom API providers for Composer",
         "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
-        "settings.modelProvider.openCodeCli": "OpenCode CLI",
+        "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
         "settings.modelProvider.createCustomProvider": "Create Custom Provider",
       }),
     });
@@ -108,8 +132,13 @@ describe("model provider navigation i18n", () => {
     );
     const enCustomGroup = enResult.navigationGroups.find((group) => group.id === "custom");
     expect(enCustomGroup?.title).toBe("Custom API providers for Composer");
-    expect(enCustomGroup?.items).toHaveLength(1);
-    expect(enCustomGroup?.items[0]?.type).toBe("custom");
+    expect(enCustomGroup?.items.map((item) => item.key)).toEqual(
+      expect.arrayContaining(["custom:custom-provider", "custom:opencode-go-responses"]),
+    );
+    expect(enCustomGroup?.items).toHaveLength(2);
+    expect(enCustomGroup?.items.some((item) => item.key === "custom:opencode-go-chat")).toBe(
+      false,
+    );
     expect(
       enResult.navigationGroups.find((group) => group.id === "agent-integrations"),
     ).toMatchObject({
@@ -118,6 +147,6 @@ describe("model provider navigation i18n", () => {
     });
     expect(
       enResult.navigationGroups.find((group) => group.id === "agent-integrations")?.items[0]?.label,
-    ).toBe("OpenCode CLI");
+    ).toBe("OpenCode CLI · no API key");
   });
 });

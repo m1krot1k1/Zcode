@@ -41,6 +41,21 @@ interface PresetProviderWithConfig extends PresetProviderSpec {
   provider: ProviderSettingsFormProvider | null;
 }
 
+const EMPTY_LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS = new Set([
+  "opencode-go-chat",
+  "opencode-go-responses",
+]);
+
+function shouldHideEmptyLegacyOpenCodeProvider(provider: ProviderSettingsFormProvider): boolean {
+  // Bugfix: старые пустые Chat/Responses записи захламляют выбор API-провайдера рядом с единым OpenCode API.
+  // Не удаляем конфигурацию и не скрываем legacy-профиль, если у него уже есть модели.
+  return (
+    provider.templateId != null &&
+    EMPTY_LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS.has(provider.templateId) &&
+    provider.models.length === 0
+  );
+}
+
 interface UseModelProviderNavigationOptions {
   presetProviders: PresetProviderWithConfig[];
   modelProviders: ProviderSettingsFormProvider[];
@@ -83,7 +98,9 @@ export function useModelProviderNavigation({
 }: UseModelProviderNavigationOptions) {
   const customProviders = useMemo(() => {
     const allCustomProviders = modelProviders.filter(
-      (provider) => provider.config.group === "standard-personal",
+      (provider) =>
+        provider.config.group === "standard-personal" &&
+        !shouldHideEmptyLegacyOpenCodeProvider(provider),
     );
     // 这里复用模型菜单的展示排序，确保设置页和聊天框供应商顺序一致。
     return sortModelProvidersForDisplay(allCustomProviders, displayOrder);
