@@ -6,6 +6,9 @@ const offlinePreviewBuild =
 
 declare const __ZCODE_DEFAULT_ENDPOINT_ORIGIN__: string;
 
+/** Offline Preview sink: port zero has no service to accept app requests. */
+export const OFFLINE_PREVIEW_ZCODE_ENDPOINT = "http://127.0.0.1:0";
+
 const compiledZCodeEndpointOrigin =
   typeof __ZCODE_DEFAULT_ENDPOINT_ORIGIN__ === "string"
     ? __ZCODE_DEFAULT_ENDPOINT_ORIGIN__.trim()

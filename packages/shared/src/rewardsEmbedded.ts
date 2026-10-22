@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { ZCODE_OFFLINE_PREVIEW } from "./env.js";
+import { OFFLINE_PREVIEW_ZCODE_ENDPOINT } from "./zcodeEndpoint.js";
 
 export const REWARDS_PARTITION = "persist:zcode-rewards";
 export const REWARDS_CONTEXT_EVENT = "zcode-rewards-context";
@@ -15,13 +17,15 @@ export type RewardsContext = z.infer<typeof rewardsContextSchema>;
 
 export function isTrustedRewardsUrl(
   value: string,
-  options: { dev?: boolean; e2e?: boolean } = {},
+  options: { dev?: boolean; e2e?: boolean; offlinePreview?: boolean } = {},
 ): boolean {
   try {
     const url = new URL(value);
     if (url.username || url.password) return false;
     const trusted =
-      ["https://zcode.z.ai", "https://zcode.z.ai"].includes(url.origin) ||
+      (options.offlinePreview === true
+        ? url.origin === OFFLINE_PREVIEW_ZCODE_ENDPOINT
+        : url.origin === "https://zcode.z.ai") ||
       (options.dev === true && url.origin === "http://localhost:3000") ||
       (options.e2e === true &&
         url.protocol === "http:" &&
@@ -41,7 +45,9 @@ export function resolveRewardsOrigin(options: {
   dev?: boolean;
   override?: string;
   e2e?: boolean;
+  offlinePreview?: boolean;
 }): string {
+  if (options.offlinePreview ?? ZCODE_OFFLINE_PREVIEW) return OFFLINE_PREVIEW_ZCODE_ENDPOINT;
   try {
     if (
       options.override &&

@@ -6,6 +6,7 @@ import {
   REWARDS_PARTITION,
   resolveRewardsOrigin,
   ZCODE_ENV,
+  ZCODE_OFFLINE_PREVIEW,
   type RewardsContext,
 } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
@@ -38,7 +39,11 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
     ? "zai-dark"
     : "zai-light";
   const env = import.meta.env;
-  const policy = { dev: env.DEV, e2e: env.VITE_ZCODE_E2E_STORE_BRIDGE === "1" };
+  const policy = {
+    dev: env.DEV,
+    e2e: env.VITE_ZCODE_E2E_STORE_BRIDGE === "1",
+    offlinePreview: ZCODE_OFFLINE_PREVIEW,
+  };
   const [url] = useState(() =>
     buildRewardsUrl(
       resolveRewardsOrigin({
