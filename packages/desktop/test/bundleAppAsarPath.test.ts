@@ -48,7 +48,7 @@ describe("bundled app.asar path", () => {
       [
         "/out/host/open-code-runtime.js",
         Buffer.from(
-          'const missing="opencode.cli-missing"; const installer="https://opencode.ai/v2/install"; const winget="Anomaly.OpenCode";',
+          'const missing="opencode.cli-missing"; const installer="https://github.com/anomalyco/opencode/releases/download"; const unsupported="opencode.install-platform-unsupported"; const invalidArchive="opencode.install-archive-invalid";',
         ),
       ],
       [

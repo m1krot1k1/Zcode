@@ -20,10 +20,8 @@ import type {
 import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.js";
 import {
   installOpenCodeOfficialCli,
-  installOpenCodeWingetPackage,
-  resolveOpenCodeInstallerCommands,
+  detectHostLinuxLibc,
   resolveCliCommand,
-  resolveWingetCommand,
   runVersion,
   runModelCatalog,
   spawnOptions,
@@ -48,16 +46,12 @@ const MAX_PERMISSION_OPTION_NAME_CHARS = 256;
 
 interface OpenCodeAcpRuntimeOptions {
   resolveCli?: (cliPath?: string) => OpenCodeCliResolution | Promise<OpenCodeCliResolution>;
-  resolveWinget?: () => Promise<string | undefined>;
   runVersion?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
   runModelCatalog?: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliModelCatalog>;
-  installPosixCli?: (timeoutMs: number) => Promise<OpenCodeInstallCommandOutcome>;
-  resolvePosixInstallerCommands?: () => Promise<{ bash: string; curl: string } | undefined>;
-  installWingetPackage?: (
-    wingetPath: string,
-    timeoutMs: number,
-  ) => Promise<OpenCodeInstallCommandOutcome>;
+  installOfficialCli?: (timeoutMs: number) => Promise<OpenCodeInstallCommandOutcome>;
   platform?: NodeJS.Platform;
+  architecture?: NodeJS.Architecture;
+  linuxLibc?: "glibc" | "musl";
   processEnv?: NodeJS.ProcessEnv;
   requestTimeoutMs?: number;
   promptTimeoutMs?: number;
@@ -108,6 +102,8 @@ export function createOpenCodeAcpRuntime(
   let disposePromise: Promise<void> | undefined;
   const childEnvironment = options.processEnv ?? process.env;
   const platform = options.platform ?? process.platform;
+  const architecture = options.architecture ?? process.arch;
+  const linuxLibc = options.linuxLibc ?? detectHostLinuxLibc(platform);
   const runVersionCommand =
     options.runVersion ??
     ((spec: OpenCodeCommandSpec) => runVersion(spec, childEnvironment, platform));
@@ -116,19 +112,14 @@ export function createOpenCodeAcpRuntime(
     ((spec: OpenCodeCommandSpec) => runModelCatalog(spec, childEnvironment, platform));
   const cliInstaller = createOpenCodeCliInstaller({
     resolveCli: options.resolveCli ?? resolveCliCommand,
-    resolveWinget: options.resolveWinget ?? resolveWingetCommand,
     runVersion: runVersionCommand,
-    installPosixCli:
-      options.installPosixCli ??
-      ((timeoutMs) => installOpenCodeOfficialCli(timeoutMs, childEnvironment, platform)),
-    resolvePosixInstallerCommands:
-      options.resolvePosixInstallerCommands ??
-      (() => resolveOpenCodeInstallerCommands({ pathValue: childEnvironment.PATH, platform })),
-    installWingetPackage:
-      options.installWingetPackage ??
-      ((wingetPath, timeoutMs) =>
-        installOpenCodeWingetPackage(wingetPath, timeoutMs, childEnvironment, platform)),
+    installOfficialCli:
+      options.installOfficialCli ??
+      ((timeoutMs) =>
+        installOpenCodeOfficialCli(timeoutMs, childEnvironment, platform, architecture, linuxLibc)),
     platform,
+    architecture,
+    linuxLibc,
     installTimeoutMs: options.installTimeoutMs,
   });
   const emitters = new Map<string, Emitter<OpenCodeAcpSessionUpdate>>();

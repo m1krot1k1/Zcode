@@ -434,10 +434,12 @@ function runAndReadStdout(command, args) {
   });
 }
 
+// 根因：旧检查仍要求已移除的 OpenCode installer URL/WinGet ID，导致当前 pinned CLI 安装器的正确包被误判。
 const requiredOpenCodeHostMarkers = [
   "opencode.cli-missing",
-  "https://opencode.ai/v2/install",
-  "Anomaly.OpenCode",
+  "github.com/anomalyco/opencode/releases/download",
+  "opencode.install-platform-unsupported",
+  "opencode.install-archive-invalid",
 ];
 const requiredOpenCodeRendererMarkers = ["opencode-agent-settings", "settings.openCode.install"];
 
@@ -733,7 +735,7 @@ export function resolveAppAsarPath(
   throw new Error(`不支持的目标操作系统: ${os}`);
 }
 
-function verifyPackagedRuntimeDependencies(os, arch) {
+export function verifyPackagedRuntimeDependencies(os, arch) {
   const appAsarPath = resolveAppAsarPath(os, arch);
   if (!existsSync(appAsarPath)) {
     throw new Error(`打包产物缺少 app.asar: ${appAsarPath}`);
@@ -801,14 +803,7 @@ function verifyPackagedRuntimeDependencies(os, arch) {
 
 async function main() {
   const { os, arch, skipPrepare, skipBuild, dryRun } = parseArgs(process.argv.slice(2));
-  const buildArgs = [
-    "exec",
-    "electron-builder",
-    "--config",
-    "electron-builder.config.js",
-    osBuilderFlagMap[os],
-    archBuilderFlagMap[arch],
-  ];
+  const buildArgs = createElectronBuilderArgs(os, arch);
 
   console.log(`[bundle] target=${os}/${arch}`);
   console.log(`[bundle] skipPrepare=${skipPrepare} skipBuild=${skipBuild}`);
@@ -849,6 +844,20 @@ async function main() {
       artifactPath,
     ]),
   );
+}
+
+export function createElectronBuilderArgs(os, arch) {
+  return [
+    "exec",
+    "electron-builder",
+    "--config",
+    "electron-builder.config.js",
+    osBuilderFlagMap[os],
+    archBuilderFlagMap[arch],
+    // electron-builder сам включает публикацию при CI=true; локальные билды должны всегда отключать upload.
+    "--publish",
+    "never",
+  ];
 }
 
 const entryHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;

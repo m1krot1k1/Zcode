@@ -3568,25 +3568,30 @@ const zhCN: Record<string, string> = {
   "settings.openCode.diagnosticFailed": "无法检查 OpenCode CLI。",
   "settings.openCode.installConfirmTitle": "安装 OpenCode CLI？",
   "settings.openCode.installConfirmDescription":
-    "ZCode 将下载 OpenCode 官方 V2 安装程序，并在 macOS/Linux 上将 CLI 安装到当前用户目录。Windows 使用官方 WinGet 软件包 Anomaly.OpenCode，只有确认后才会接受 WinGet 源和软件包协议。安装不会修改 shell 配置，也不会替换已检测到的 CLI。",
+    "ZCode 将为此电脑下载固定版本的 OpenCode CLI v1.19.3，验证 SHA-256 后安装到当前用户目录。无需 API 密钥，不修改 shell 配置，不替换已安装的 CLI，也不会解除供应商的用量限制。",
   "settings.openCode.install": "安装 OpenCode",
   "settings.openCode.installInstructions": "安装说明",
   "settings.openCode.chooseCli": "定位 CLI 文件",
   "settings.openCode.searchPath": "重新搜索 PATH",
   "settings.openCode.installing": "正在安装…",
   "settings.openCode.install-failed": "OpenCode 安装失败。请按官方说明手动安装。",
-  "settings.openCode.install-download-failed": "ZCode 无法下载 OpenCode 官方安装程序。请检查网络连接后重试。",
-  "settings.openCode.install-script-invalid": "下载的 OpenCode 安装程序未通过验证，ZCode 未运行该程序。",
-  "settings.openCode.install-execution-failed": "OpenCode 安装程序未能完成。ZCode 不会返回安装程序原始输出。",
-  "settings.openCode.install-package-manager-failed": "Windows 包管理器无法安装 OpenCode。请检查包管理器后重试。",
+  "settings.openCode.install-download-failed":
+    "ZCode 无法下载 OpenCode 官方 CLI 压缩包。请检查网络连接后重试。",
+  "settings.openCode.install-archive-invalid":
+    "OpenCode 官方 CLI 压缩包无法安全解压或不包含预期二进制文件。",
+  "settings.openCode.install-integrity-failed":
+    "OpenCode CLI 压缩包的 SHA-256 与官方发布值不符；ZCode 已丢弃该文件。",
+  "settings.openCode.install-write-failed":
+    "ZCode 无法将 OpenCode CLI 写入用户安装目录。请检查目录权限后重试。",
   "settings.openCode.install-timeout": "OpenCode 安装超时并已停止。请检查网络后重试。",
-  "settings.openCode.install-destination-conflict": "OpenCode 安装位置已被占用。ZCode 保留了现有文件。",
+  "settings.openCode.install-destination-conflict":
+    "OpenCode 安装位置已被占用。ZCode 保留了现有文件。",
   "settings.openCode.install-verification-failed":
     "安装命令已结束，但 ZCode 无法验证 OpenCode CLI。",
   "settings.openCode.install-requires-missing-cli":
     "检测到已有 CLI 或无法安全识别。ZCode 没有执行安装或升级。",
   "settings.openCode.install-platform-unsupported":
-    "此平台不支持自动安装。请按官方说明手动安装 OpenCode。",
+    "此操作系统、CPU 或 Linux ABI 不在自动安装支持范围内。请按官方说明手动安装 OpenCode。",
   "settings.openCode.desktopLocalHostRequired": "拥有当前工作区的 Host 未提供 OpenCode ACP。",
   "settings.openCode.localWorkspaceNotice":
     "OpenCode 在此电脑上运行。请选择本地文件夹；远程工作区路径不会发送给它。",

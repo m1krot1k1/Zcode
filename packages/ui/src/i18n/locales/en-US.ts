@@ -3817,7 +3817,7 @@ const enUS: Record<string, string> = {
   "settings.openCode.diagnosticFailed": "Could not check the OpenCode CLI.",
   "settings.openCode.installConfirmTitle": "Install the OpenCode CLI?",
   "settings.openCode.installConfirmDescription":
-    "ZCode will download OpenCode's official V2 installer and place the CLI in your user folder on macOS/Linux. On Windows, it uses the official WinGet package Anomaly.OpenCode and accepts WinGet agreements only after this confirmation. The install does not edit shell profiles or replace a detected CLI.",
+    "ZCode will download the pinned official OpenCode CLI v1.19.3 for this computer, verify its SHA-256, and install it in your user folder. It does not need an API key, change shell profiles, replace an existing CLI, or remove provider usage limits.",
   "settings.openCode.install": "Install OpenCode",
   "settings.openCode.installInstructions": "Install instructions",
   "settings.openCode.chooseCli": "Locate CLI file",
@@ -3826,13 +3826,13 @@ const enUS: Record<string, string> = {
   "settings.openCode.install-failed":
     "OpenCode installation failed. Use the official instructions to install it manually.",
   "settings.openCode.install-download-failed":
-    "ZCode could not download the official OpenCode installer. Check the network connection and try again.",
-  "settings.openCode.install-script-invalid":
-    "The downloaded OpenCode installer did not pass validation. ZCode did not run it.",
-  "settings.openCode.install-execution-failed":
-    "The OpenCode installer could not complete. ZCode did not receive raw installer output.",
-  "settings.openCode.install-package-manager-failed":
-    "The Windows package manager could not install OpenCode. Check its availability and try again.",
+    "ZCode could not download the official OpenCode CLI archive. Check the network connection and try again.",
+  "settings.openCode.install-archive-invalid":
+    "The official OpenCode CLI archive could not be safely extracted or did not contain the expected binary.",
+  "settings.openCode.install-integrity-failed":
+    "The OpenCode CLI archive did not match its published SHA-256. ZCode discarded it.",
+  "settings.openCode.install-write-failed":
+    "ZCode could not write the OpenCode CLI to your user install folder. Check folder permissions and try again.",
   "settings.openCode.install-timeout":
     "OpenCode installation took too long and was stopped. Check the network and try again.",
   "settings.openCode.install-destination-conflict":
@@ -3842,7 +3842,7 @@ const enUS: Record<string, string> = {
   "settings.openCode.install-requires-missing-cli":
     "A CLI is already present or could not be safely identified. ZCode did not run an install or upgrade.",
   "settings.openCode.install-platform-unsupported":
-    "Automatic installation is not supported on this platform. Follow the official instructions and install OpenCode manually.",
+    "Automatic installation is not available for this operating system, CPU, or Linux ABI. Follow the official instructions and install OpenCode manually.",
   "settings.openCode.desktopLocalHostRequired":
     "OpenCode ACP is unavailable on the Host that owns this workspace.",
   "settings.openCode.localWorkspaceNotice":

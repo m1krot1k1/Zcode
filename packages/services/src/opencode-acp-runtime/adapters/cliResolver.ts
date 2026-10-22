@@ -1,4 +1,5 @@
 import { join, win32 } from "node:path";
+import { resolveOpenCodeCliReleaseAsset } from "./cliReleaseManifest.js";
 
 export interface OpenCodeCommandSpec {
   command: string;
@@ -18,24 +19,12 @@ export interface OpenCodeCliResolverInput {
   pathValue: string | undefined;
   pathExtValue?: string;
   homeDirectory: string;
+  architecture?: NodeJS.Architecture;
+  linuxLibc?: "glibc" | "musl";
   env?: NodeJS.ProcessEnv;
   explicitPath?: string;
   isExecutableFile: (candidate: string) => Promise<boolean>;
 }
-
-export const OPEN_CODE_WINGET_INSTALL_ARGS = [
-  "install",
-  "--id",
-  "Anomaly.OpenCode",
-  "--exact",
-  "--source",
-  "winget",
-  "--accept-source-agreements",
-  "--accept-package-agreements",
-  "--no-upgrade",
-  "--silent",
-  "--disable-interactivity",
-] as const;
 
 function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths.filter(Boolean))];
@@ -112,7 +101,17 @@ async function resolvePosix(input: OpenCodeCliResolverInput): Promise<OpenCodeCl
       };
     }
   }
-  return { status: "missing", diagnostic: "opencode.cli-missing", installSupported: true };
+  return {
+    status: "missing",
+    diagnostic: "opencode.cli-missing",
+    installSupported: Boolean(
+      resolveOpenCodeCliReleaseAsset({
+        platform: input.platform,
+        architecture: input.architecture ?? process.arch,
+        linuxLibc: input.linuxLibc,
+      }),
+    ),
+  };
 }
 
 async function resolveWindows(input: OpenCodeCliResolverInput): Promise<OpenCodeCliResolution> {
@@ -176,6 +175,7 @@ async function resolveWindows(input: OpenCodeCliResolverInput): Promise<OpenCode
       ? win32.join(input.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links")
       : "",
     input.env?.ProgramFiles ? win32.join(input.env.ProgramFiles, "WinGet", "Links") : "",
+    win32.join(input.homeDirectory, ".opencode", "bin"),
   ].filter(Boolean);
   const directories = uniquePaths([...pathDirectories, ...knownDirectories]);
   for (const directory of directories) {
@@ -198,33 +198,17 @@ async function resolveWindows(input: OpenCodeCliResolverInput): Promise<OpenCode
       }
     }
   }
-  return { status: "missing", diagnostic: "opencode.cli-missing", installSupported: false };
-}
-
-export async function resolveOpenCodeWingetExecutable(input: {
-  pathValue: string | undefined;
-  pathExtValue?: string;
-  localAppData?: string;
-  isExecutableFile: (candidate: string) => Promise<boolean>;
-}): Promise<string | undefined> {
-  const extensions = (input.pathExtValue || ".COM;.EXE;.BAT;.CMD")
-    .split(";")
-    .map((extension) => extension.trim().toLowerCase());
-  const pathDirectories = (input.pathValue ?? "")
-    .split(";")
-    .map((entry) => entry.trim().replace(/^"|"$/g, ""))
-    .filter(Boolean);
-  const knownDirectories = input.localAppData
-    ? [win32.join(input.localAppData, "Microsoft", "WindowsApps")]
-    : [];
-  for (const directory of uniquePaths([...pathDirectories, ...knownDirectories])) {
-    for (const extension of extensions) {
-      if (extension !== ".exe") continue;
-      const candidate = win32.join(directory, `winget${extension}`);
-      if (await input.isExecutableFile(candidate)) return candidate;
-    }
-  }
-  return undefined;
+  return {
+    status: "missing",
+    diagnostic: "opencode.cli-missing",
+    installSupported: Boolean(
+      resolveOpenCodeCliReleaseAsset({
+        platform: input.platform,
+        architecture: input.architecture ?? process.arch,
+        linuxLibc: input.linuxLibc,
+      }),
+    ),
+  };
 }
 
 export async function resolveOpenCodeCli(

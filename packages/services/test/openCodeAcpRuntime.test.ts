@@ -1,17 +1,19 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { createOpenCodeAcpRuntime } from "../src/opencode-acp-runtime/adapters/openCodeAcpRuntime.js";
+import { resolveOpenCodeCli } from "../src/opencode-acp-runtime/adapters/cliResolver.js";
 import {
-  OPEN_CODE_WINGET_INSTALL_ARGS,
-  resolveOpenCodeCli,
-  resolveOpenCodeWingetExecutable,
-} from "../src/opencode-acp-runtime/adapters/cliResolver.js";
+  downloadPinnedOpenCodeArchive,
+  installOpenCodePinnedCli,
+} from "../src/opencode-acp-runtime/adapters/cliBinaryInstaller.js";
 import {
-  installOpenCodeOfficialCli,
-  resolveOpenCodeInstallerCommands,
-} from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
+  getOpenCodeCliReleaseAssets,
+  OPEN_CODE_CLI_RELEASE_VERSION,
+  resolveOpenCodeCliReleaseAsset,
+} from "../src/opencode-acp-runtime/adapters/cliReleaseManifest.js";
 
 const temporaryPaths: string[] = [];
 
@@ -72,13 +74,14 @@ describe("Windows OpenCode command resolution", () => {
     await expect(
       resolveOpenCodeCli({
         platform: "win32",
+        architecture: "x64",
         pathValue: undefined,
         homeDirectory: "C:\\Users\\test",
         isExecutableFile: async () => false,
       }),
     ).resolves.toMatchObject({
       status: "missing",
-      installSupported: false,
+      installSupported: true,
     });
   });
 
@@ -123,70 +126,22 @@ describe("Windows OpenCode command resolution", () => {
       executablePath: executable,
     });
   });
-
-  it("resolves only the native winget.exe command, never a command shim", async () => {
-    const native = win32.join("C:\\WindowsApps", "winget.exe");
-    const inspected: string[] = [];
-    await expect(
-      resolveOpenCodeWingetExecutable({
-        pathValue: "C:\\WindowsApps",
-        pathExtValue: ".CMD;.EXE",
-        isExecutableFile: async (candidate) => {
-          inspected.push(candidate);
-          return candidate === native;
-        },
-      }),
-    ).resolves.toBe(native);
-    expect(inspected).toEqual([native]);
-
-    await expect(
-      resolveOpenCodeWingetExecutable({
-        pathValue: "C:\\WindowsApps",
-        pathExtValue: ".CMD;.BAT",
-        isExecutableFile: async () => true,
-      }),
-    ).resolves.toBeUndefined();
-
-    const appExecutionAlias = win32.join(
-      "C:\\Users\\test\\AppData\\Local",
-      "Microsoft",
-      "WindowsApps",
-      "winget.exe",
-    );
-    await expect(
-      resolveOpenCodeWingetExecutable({
-        pathValue: undefined,
-        localAppData: "C:\\Users\\test\\AppData\\Local",
-        isExecutableFile: async (candidate) => candidate === appExecutionAlias,
-      }),
-    ).resolves.toBe(appExecutionAlias);
-  });
 });
 
 describe("POSIX OpenCode command resolution", () => {
-  it("offers official installation only when native bash and curl are available", async () => {
-    const available = new Set(["/usr/bin/bash", "/usr/bin/curl"]);
-    await expect(
-      resolveOpenCodeInstallerCommands({
-        pathValue: "/usr/bin:/bin",
-        platform: "linux",
-        isExecutableFile: async (candidate) => available.has(candidate),
-      }),
-    ).resolves.toEqual({ bash: "/usr/bin/bash", curl: "/usr/bin/curl" });
-    await expect(
-      resolveOpenCodeInstallerCommands({
-        pathValue: "/usr/bin:/bin",
-        platform: "darwin",
-        isExecutableFile: async (candidate) => candidate === "/usr/bin/bash",
-      }),
-    ).resolves.toBeUndefined();
-    await expect(
-      resolveOpenCodeInstallerCommands({
-        pathValue: "C:\\Windows\\System32",
-        platform: "win32",
-        isExecutableFile: async () => true,
-      }),
-    ).resolves.toBeUndefined();
+  it("resolves only pinned official assets with a published digest", () => {
+    expect(OPEN_CODE_CLI_RELEASE_VERSION).toBe("1.19.3");
+    expect(getOpenCodeCliReleaseAssets()).toHaveLength(8);
+    for (const { platform, architecture, linuxLibc, asset } of getOpenCodeCliReleaseAssets()) {
+      expect(asset.sha256).toMatch(/^[a-f0-9]{64}$/u);
+      expect(resolveOpenCodeCliReleaseAsset({ platform, architecture, linuxLibc })).toEqual(asset);
+    }
+    expect(
+      resolveOpenCodeCliReleaseAsset({ platform: "freebsd", architecture: "x64" }),
+    ).toBeUndefined();
+    expect(
+      resolveOpenCodeCliReleaseAsset({ platform: "win32", architecture: "ia32" }),
+    ).toBeUndefined();
   });
 
   it("finds the official per-user install when a GUI Host has a narrow PATH", async () => {
@@ -688,124 +643,65 @@ describe("OpenCode ACP runtime", () => {
     },
   );
 
-  it.skipIf(process.platform === "win32")(
-    "runs the official POSIX installer in a temporary HOME without leaking credentials",
-    async () => {
-      const directory = await makeTempDir();
-      const userHome = join(directory, "user-home");
-      const curlEnvPath = join(directory, "curl-environment.json");
-      const curlArgsPath = join(directory, "curl-arguments.json");
-      const bashEnvPath = join(directory, "bash-environment.json");
-      const bashHomePath = join(directory, "installer-home.txt");
-      const curlPath = join(directory, "curl");
-      const bashPath = join(directory, "bash");
-      await writeFile(
-        curlPath,
-        `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nconst args = process.argv.slice(2);\nconst output = args[args.indexOf("--output") + 1];\nawait writeFile(${JSON.stringify(curlEnvPath)}, JSON.stringify(Object.keys(process.env)));\nawait writeFile(${JSON.stringify(curlArgsPath)}, JSON.stringify(args));\nawait writeFile(output, "#!/usr/bin/env bash\\nexit 0\\n");\n`,
-        "utf8",
-      );
-      await writeFile(
-        bashPath,
-        `#!/usr/bin/env node\nimport { chmod, mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\nawait writeFile(${JSON.stringify(bashEnvPath)}, JSON.stringify(Object.keys(process.env)));\nawait writeFile(${JSON.stringify(bashHomePath)}, process.env.HOME ?? "");\nconst binDir = join(process.env.HOME ?? "", ".opencode", "bin");\nawait mkdir(binDir, { recursive: true });\nconst binary = join(binDir, "opencode");\nawait writeFile(binary, "#!/usr/bin/env node\\nconsole.log('OpenCode test');\\n");\nawait chmod(binary, 0o755);\n`,
-        "utf8",
-      );
-      await chmod(curlPath, 0o755);
-      await chmod(bashPath, 0o755);
-      const processEnv: NodeJS.ProcessEnv = {
-        PATH: `${directory}:${process.env.PATH ?? ""}`,
-        HOME: userHome,
-        USER: "test-user",
-        TMPDIR: directory,
-        OPENAI_API_KEY: "test-only-secret-marker",
-        GITHUB_TOKEN: "test-only-secret-marker",
-        ZCODE_SECRET_TEST_MARKER: "test-only-secret-marker",
-      };
+  it("downloads only HTTPS release assets and rejects digest or redirect mismatches", async () => {
+    const bytes = Buffer.from("verified OpenCode archive fixture");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const url = "https://github.com/anomalyco/opencode/releases/download/v1.19.3/test.zip";
+    const fetchImpl = vi.fn(async () => new Response(bytes, { status: 200 }));
+    await expect(
+      downloadPinnedOpenCodeArchive({ url, expectedSha256: sha256, timeoutMs: 1_000, fetchImpl }),
+    ).resolves.toEqual(bytes);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      new URL(url),
+      expect.objectContaining({
+        redirect: "manual",
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+      }),
+    );
 
-      await expect(installOpenCodeOfficialCli(60_000, processEnv, "linux")).resolves.toEqual({
-        ok: true,
-      });
-      const curlEnvironment = JSON.parse(await readFile(curlEnvPath, "utf8")) as string[];
-      const bashEnvironment = JSON.parse(await readFile(bashEnvPath, "utf8")) as string[];
-      const curlArguments = JSON.parse(await readFile(curlArgsPath, "utf8")) as string[];
-      const installerHome = await readFile(bashHomePath, "utf8");
-      expect(curlEnvironment).toContain("PATH");
-      expect(bashEnvironment).toContain("PATH");
-      expect(bashEnvironment).toContain("HOME");
-      expect(installerHome).not.toBe(userHome);
-      for (const environmentKeys of [curlEnvironment, bashEnvironment]) {
-        expect(environmentKeys).not.toContain("OPENAI_API_KEY");
-        expect(environmentKeys).not.toContain("GITHUB_TOKEN");
-        expect(environmentKeys).not.toContain("ZCODE_SECRET_TEST_MARKER");
-      }
-      expect(curlArguments).toContain("-q");
-      expect(curlArguments).toContain("--proto");
-      expect(curlArguments).toContain("=https");
-      expect(curlArguments).toContain("https://opencode.ai/v2/install");
-      const installedBinary = await readFile(
-        join(userHome, ".opencode", "bin", "opencode"),
-        "utf8",
-      );
-      expect(installedBinary).toContain("OpenCode test");
-    },
-  );
+    await expect(
+      downloadPinnedOpenCodeArchive({
+        url,
+        expectedSha256: "0".repeat(64),
+        timeoutMs: 1_000,
+        fetchImpl,
+      }),
+    ).rejects.toThrow("integrity");
 
-  it.skipIf(process.platform === "win32")(
-    "classifies download failures without exposing installer stderr",
-    async () => {
-      const directory = await makeTempDir();
-      const curlPath = join(directory, "curl");
-      const bashPath = join(directory, "bash");
-      await writeFile(
-        curlPath,
-        "#!/usr/bin/env node\nconsole.error('private stderr marker');\nprocess.exit(23);\n",
-        "utf8",
-      );
-      await writeFile(bashPath, "#!/usr/bin/env node\nprocess.exit(0);\n", "utf8");
-      await chmod(curlPath, 0o755);
-      await chmod(bashPath, 0o755);
+    const redirectFetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://attacker.invalid/payload" },
+        }),
+    );
+    await expect(
+      downloadPinnedOpenCodeArchive({
+        url,
+        expectedSha256: sha256,
+        timeoutMs: 1_000,
+        fetchImpl: redirectFetch,
+      }),
+    ).rejects.toThrow("download");
+    expect(redirectFetch).toHaveBeenCalledOnce();
+  });
 
-      const outcome = await installOpenCodeOfficialCli(
-        1_000,
-        {
-          PATH: `${directory}:${process.env.PATH ?? ""}`,
-          HOME: join(directory, "home"),
-          TMPDIR: directory,
-        },
-        "linux",
-      );
-      expect(outcome).toEqual({ ok: false, diagnostic: "opencode.install-download-failed" });
-      expect(JSON.stringify(outcome)).not.toContain("private stderr marker");
-    },
-  );
+  it("does not guess a Windows system directory when the host does not provide one", async () => {
+    const outcome = await installOpenCodePinnedCli({
+      timeoutMs: 1_000,
+      sourceEnvironment: {},
+      platform: "win32",
+      architecture: "x64",
+      runVersion: async () => ({ status: "missing", diagnostic: "opencode.cli-missing" }),
+      makeSpawnOptions: () => ({}),
+    });
 
-  it.skipIf(process.platform === "win32")(
-    "terminates a hung installer and returns a fixed timeout diagnostic",
-    async () => {
-      const directory = await makeTempDir();
-      const curlPath = join(directory, "curl");
-      const bashPath = join(directory, "bash");
-      await writeFile(
-        curlPath,
-        `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nconst args = process.argv.slice(2);\nawait writeFile(args[args.indexOf("--output") + 1], "#!/usr/bin/env bash\\nexit 0\\n");\n`,
-        "utf8",
-      );
-      await writeFile(bashPath, "#!/usr/bin/env node\nsetTimeout(() => process.exit(0), 2_000);\n", "utf8");
-      await chmod(curlPath, 0o755);
-      await chmod(bashPath, 0o755);
-
-      await expect(
-        installOpenCodeOfficialCli(
-          50,
-          {
-            PATH: `${directory}:${process.env.PATH ?? ""}`,
-            HOME: join(directory, "home"),
-            TMPDIR: directory,
-          },
-          "linux",
-        ),
-      ).resolves.toEqual({ ok: false, diagnostic: "opencode.install-timeout" });
-    },
-  );
+    expect(outcome).toEqual({
+      ok: false,
+      diagnostic: "opencode.install-platform-unsupported",
+    });
+  });
 
   it.skipIf(process.platform === "win32")(
     "bounds hanging cancel and close requests during disposal and terminates the child",
@@ -973,7 +869,7 @@ describe("OpenCode ACP runtime", () => {
   });
 
   it("never calls the installer for a CLI that is already present", async () => {
-    const installPosixCli = vi.fn(async () => ({ ok: true as const }));
+    const installOfficialCli = vi.fn(async () => ({ ok: true as const }));
     const runtime = createOpenCodeAcpRuntime({
       resolveCli: () => ({
         status: "resolved",
@@ -985,7 +881,7 @@ describe("OpenCode ACP runtime", () => {
         version: "OpenCode 1.19.3",
         executablePath: "opencode",
       }),
-      installPosixCli,
+      installOfficialCli,
     });
 
     await expect(runtime.installCli()).resolves.toEqual({
@@ -993,12 +889,12 @@ describe("OpenCode ACP runtime", () => {
       version: "OpenCode 1.19.3",
       executablePath: "opencode",
     });
-    expect(installPosixCli).not.toHaveBeenCalled();
+    expect(installOfficialCli).not.toHaveBeenCalled();
     await runtime.disposeAllAndWait();
   });
 
-  it("rechecks for a CLI that appears before the installer runs", async () => {
-    const executablePath = "/usr/local/bin/opencode";
+  it("rechecks for a CLI that appears before download on macOS, Windows, and Linux", async () => {
+    const executablePath = "/user/.opencode/bin/opencode";
     const missing = {
       status: "missing" as const,
       diagnostic: "opencode.cli-missing",
@@ -1010,22 +906,20 @@ describe("OpenCode ACP runtime", () => {
       spec: { command: executablePath, prefixArgs: [] },
     };
 
-    for (const platform of ["darwin", "linux"] as const) {
+    for (const platform of ["darwin", "win32", "linux"] as const) {
       const resolveCli = vi.fn().mockResolvedValueOnce(missing).mockResolvedValueOnce(resolved);
-      const installPosixCli = vi.fn(async () => ({ ok: true as const }));
+      const installOfficialCli = vi.fn(async () => ({ ok: true as const }));
       const runtime = createOpenCodeAcpRuntime({
         platform,
+        architecture: "arm64",
+        linuxLibc: "glibc",
         resolveCli,
         runVersion: async () => ({
           status: "available",
           version: "OpenCode 1.19.3",
           executablePath,
         }),
-        installPosixCli,
-        resolvePosixInstallerCommands: async () => ({
-          bash: "/usr/bin/bash",
-          curl: "/usr/bin/curl",
-        }),
+        installOfficialCli,
       });
 
       await expect(runtime.installCli()).resolves.toEqual({
@@ -1034,57 +928,35 @@ describe("OpenCode ACP runtime", () => {
         executablePath,
       });
       expect(resolveCli).toHaveBeenCalledTimes(2);
-      expect(installPosixCli).not.toHaveBeenCalled();
+      expect(installOfficialCli).not.toHaveBeenCalled();
       await runtime.disposeAllAndWait();
     }
-
-    const resolveWindowsCli = vi
-      .fn()
-      .mockResolvedValueOnce(missing)
-      .mockResolvedValueOnce(resolved);
-    const installWingetPackage = vi.fn(async () => ({ ok: true as const }));
-    const windowsRuntime = createOpenCodeAcpRuntime({
-      platform: "win32",
-      resolveCli: resolveWindowsCli,
-      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
-      runVersion: async () => ({
-        status: "available",
-        version: "OpenCode 1.19.3",
-        executablePath,
-      }),
-      installWingetPackage,
-    });
-    await expect(windowsRuntime.installCli()).resolves.toEqual({
-      status: "already-installed",
-      version: "OpenCode 1.19.3",
-      executablePath,
-    });
-    expect(installWingetPackage).not.toHaveBeenCalled();
-    await windowsRuntime.disposeAllAndWait();
   });
 
-  it("installs a missing POSIX CLI from the explicit Install action on macOS and Linux", async () => {
-    for (const platform of ["darwin", "linux"] as const) {
+  it("installs the pinned CLI on each supported OS without package managers", async () => {
+    for (const platform of ["darwin", "win32", "linux"] as const) {
       const executablePath =
-        platform === "darwin" ? "/opt/homebrew/bin/opencode" : "/usr/bin/opencode";
+        platform === "win32"
+          ? "C:\\Users\\test\\.opencode\\bin\\opencode.exe"
+          : "/Users/test/.opencode/bin/opencode";
       const resolveCli = vi
         .fn()
         .mockResolvedValueOnce({
-          status: "missing",
+          status: "missing" as const,
           diagnostic: "opencode.cli-missing",
           installSupported: true,
         })
         .mockResolvedValueOnce({
-          status: "missing",
+          status: "missing" as const,
           diagnostic: "opencode.cli-missing",
           installSupported: true,
         })
         .mockResolvedValueOnce({
-          status: "resolved",
+          status: "resolved" as const,
           executablePath,
           spec: { command: executablePath, prefixArgs: [] },
         });
-      const installPosixCli = vi.fn(async () => ({ ok: true as const }));
+      const installOfficialCli = vi.fn(async () => ({ ok: true as const }));
       const runVersion = vi.fn(async () => ({
         status: "available" as const,
         version: "OpenCode 1.19.3",
@@ -1092,12 +964,10 @@ describe("OpenCode ACP runtime", () => {
       }));
       const runtime = createOpenCodeAcpRuntime({
         platform,
+        architecture: "arm64",
+        linuxLibc: "glibc",
         resolveCli,
-        installPosixCli,
-        resolvePosixInstallerCommands: async () => ({
-          bash: "/usr/bin/bash",
-          curl: "/usr/bin/curl",
-        }),
+        installOfficialCli,
         runVersion,
       });
 
@@ -1106,23 +976,25 @@ describe("OpenCode ACP runtime", () => {
         version: "OpenCode 1.19.3",
         executablePath,
       });
-      expect(installPosixCli).toHaveBeenCalledOnce();
+      expect(installOfficialCli).toHaveBeenCalledOnce();
       expect(resolveCli).toHaveBeenCalledTimes(3);
       expect(runVersion).toHaveBeenCalledOnce();
       await runtime.disposeAllAndWait();
     }
   });
 
-  it("does not offer POSIX installation when bash or curl is unavailable", async () => {
+  it("does not offer install for an OS or architecture absent from the manifest", async () => {
     const resolveCli = async () => ({
       status: "missing" as const,
       diagnostic: "opencode.cli-missing",
-      installSupported: true,
+      installSupported: false,
     });
+    const installOfficialCli = vi.fn(async () => ({ ok: true as const }));
     const runtime = createOpenCodeAcpRuntime({
-      platform: "linux",
+      platform: "freebsd",
+      architecture: "x64",
       resolveCli,
-      resolvePosixInstallerCommands: async () => undefined,
+      installOfficialCli,
     });
 
     await expect(runtime.getCliStatus()).resolves.toMatchObject({
@@ -1133,49 +1005,69 @@ describe("OpenCode ACP runtime", () => {
       status: "failed",
       diagnostic: "opencode.install-platform-unsupported",
     });
+    expect(installOfficialCli).not.toHaveBeenCalled();
     await runtime.disposeAllAndWait();
   });
 
-  it("returns only fixed stage diagnostics for installer and package-manager failures", async () => {
-    const posixDiagnostics = [
+  it("returns fixed diagnostics for archive download, integrity, extraction, timeout, and verification failures", async () => {
+    const diagnostics = [
       "opencode.install-download-failed",
-      "opencode.install-script-invalid",
-      "opencode.install-execution-failed",
+      "opencode.install-integrity-failed",
+      "opencode.install-archive-invalid",
       "opencode.install-timeout",
       "opencode.install-destination-conflict",
       "opencode.install-verification-failed",
+      "opencode.install-write-failed",
     ] as const;
-    for (const diagnostic of posixDiagnostics) {
+    for (const diagnostic of diagnostics) {
       const runtime = createOpenCodeAcpRuntime({
         platform: "darwin",
+        architecture: "arm64",
         resolveCli: async () => ({
           status: "missing",
           diagnostic: "opencode.cli-missing",
           installSupported: true,
         }),
-        resolvePosixInstallerCommands: async () => ({ bash: "/usr/bin/bash", curl: "/usr/bin/curl" }),
-        installPosixCli: async () => ({ ok: false, diagnostic }),
+        installOfficialCli: async () => ({ ok: false, diagnostic }),
       });
       await expect(runtime.installCli()).resolves.toEqual({ status: "failed", diagnostic });
       await runtime.disposeAllAndWait();
     }
+  });
 
-    const runtime = createOpenCodeAcpRuntime({
-      platform: "win32",
-      resolveCli: async () => ({
-        status: "missing",
+  it("reports a post-install version probe timeout as an installation timeout", async () => {
+    const executablePath = "/Users/test/.opencode/bin/opencode";
+    const resolveCli = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "missing" as const,
         diagnostic: "opencode.cli-missing",
-        installSupported: false,
-      }),
-      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
-      installWingetPackage: async () => ({
-        ok: false,
-        diagnostic: "opencode.install-package-manager-failed",
+        installSupported: true,
+      })
+      .mockResolvedValueOnce({
+        status: "missing" as const,
+        diagnostic: "opencode.cli-missing",
+        installSupported: true,
+      })
+      .mockResolvedValueOnce({
+        status: "resolved" as const,
+        executablePath,
+        spec: { command: executablePath, prefixArgs: [] },
+      });
+    const runtime = createOpenCodeAcpRuntime({
+      platform: "darwin",
+      architecture: "arm64",
+      resolveCli,
+      installOfficialCli: async () => ({ ok: true }),
+      runVersion: async () => ({
+        status: "timed-out",
+        diagnostic: "opencode.version-timeout",
       }),
     });
+
     await expect(runtime.installCli()).resolves.toEqual({
       status: "failed",
-      diagnostic: "opencode.install-package-manager-failed",
+      diagnostic: "opencode.install-timeout",
     });
     await runtime.disposeAllAndWait();
   });
@@ -1213,126 +1105,17 @@ describe("OpenCode ACP runtime", () => {
     }
   });
 
-  it("uses the fixed WinGet V2 package without upgrading an already detected CLI", async () => {
-    expect([...OPEN_CODE_WINGET_INSTALL_ARGS]).toEqual([
-      "install",
-      "--id",
-      "Anomaly.OpenCode",
-      "--exact",
-      "--source",
-      "winget",
-      "--accept-source-agreements",
-      "--accept-package-agreements",
-      "--no-upgrade",
-      "--silent",
-      "--disable-interactivity",
-    ]);
-
-    const executablePath =
-      "C:\\Users\\test\\AppData\\Local\\Microsoft\\WinGet\\Links\\opencode.exe";
-    const installWingetPackage = vi.fn(async () => ({ ok: true as const }));
-    const resolveCli = vi
-      .fn<
-        () => Promise<
-          | { status: "missing"; diagnostic: string; installSupported: boolean }
-          | {
-              status: "resolved";
-              executablePath: string;
-              spec: { command: string; prefixArgs: string[] };
-            }
-        >
-      >()
-      .mockResolvedValueOnce({
-        status: "missing",
-        diagnostic: "opencode.cli-missing",
-        installSupported: true,
-      })
-      .mockResolvedValueOnce({
-        status: "missing",
-        diagnostic: "opencode.cli-missing",
-        installSupported: true,
-      })
-      .mockResolvedValueOnce({
-        status: "resolved",
-        executablePath,
-        spec: { command: executablePath, prefixArgs: [] },
-      });
-    const runVersion = vi.fn(async () => ({
-      status: "available" as const,
-      version: "OpenCode 2.1.1",
-      executablePath,
-    }));
-    const runtime = createOpenCodeAcpRuntime({
-      platform: "win32",
-      resolveCli,
-      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
-      installWingetPackage,
-      runVersion,
-    });
-
-    await expect(runtime.installCli()).resolves.toEqual({
-      status: "installed",
-      version: "OpenCode 2.1.1",
-      executablePath,
-    });
-    expect(installWingetPackage).toHaveBeenCalledWith(
-      "C:\\WindowsApps\\winget.exe",
-      expect.any(Number),
-    );
-    expect(resolveCli).toHaveBeenCalledTimes(3);
-
-    const existingCliInstall = createOpenCodeAcpRuntime({
-      platform: "win32",
-      resolveCli: async () => ({
-        status: "resolved",
-        executablePath,
-        spec: { command: executablePath, prefixArgs: [] },
+  it("resolves the Windows user-owned install path without WinGet", async () => {
+    const executable = win32.join("C:\\Users\\test", ".opencode", "bin", "opencode.exe");
+    await expect(
+      resolveOpenCodeCli({
+        platform: "win32",
+        architecture: "arm64",
+        pathValue: "C:\\Windows\\System32",
+        homeDirectory: "C:\\Users\\test",
+        isExecutableFile: async (candidate) => candidate === executable,
       }),
-      runVersion: async () => ({
-        status: "available",
-        version: "OpenCode 1.19.3",
-        executablePath,
-      }),
-      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
-      installWingetPackage,
-    });
-    await expect(existingCliInstall.installCli()).resolves.toEqual({
-      status: "already-installed",
-      version: "OpenCode 1.19.3",
-      executablePath,
-    });
-    expect(installWingetPackage).toHaveBeenCalledTimes(1);
-    await runtime.disposeAllAndWait();
-    await existingCliInstall.disposeAllAndWait();
-  });
-
-  it("offers Windows install only when a native winget.exe is discoverable", async () => {
-    const resolveCli = async () => ({
-      status: "missing" as const,
-      diagnostic: "opencode.cli-missing",
-      installSupported: false,
-    });
-    const withWinget = createOpenCodeAcpRuntime({
-      platform: "win32",
-      resolveCli,
-      resolveWinget: async () => "C:\\WindowsApps\\winget.exe",
-    });
-    const withoutWinget = createOpenCodeAcpRuntime({
-      platform: "win32",
-      resolveCli,
-      resolveWinget: async () => undefined,
-    });
-
-    await expect(withWinget.getCliStatus()).resolves.toMatchObject({
-      status: "missing",
-      installSupported: true,
-    });
-    await expect(withoutWinget.getCliStatus()).resolves.toMatchObject({
-      status: "missing",
-      installSupported: false,
-    });
-    await withWinget.disposeAllAndWait();
-    await withoutWinget.disposeAllAndWait();
+    ).resolves.toMatchObject({ status: "resolved", executablePath: executable });
   });
 
   it("shows permission requests, accepts only advertised options, and answers an explicit selection", async () => {

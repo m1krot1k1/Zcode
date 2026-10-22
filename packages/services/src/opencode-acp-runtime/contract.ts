@@ -41,9 +41,9 @@ export type OpenCodeInstallResult =
 /** Safe, fixed install diagnostics. Raw process output never crosses the Host boundary. */
 export type OpenCodeInstallFailureDiagnostic =
   | "opencode.install-download-failed"
-  | "opencode.install-script-invalid"
-  | "opencode.install-execution-failed"
-  | "opencode.install-package-manager-failed"
+  | "opencode.install-archive-invalid"
+  | "opencode.install-integrity-failed"
+  | "opencode.install-write-failed"
   | "opencode.install-timeout"
   | "opencode.install-destination-conflict"
   | "opencode.install-verification-failed"
@@ -78,9 +78,9 @@ export interface IOpenCodeAcpRuntime {
   getCliStatus(params?: { cliPath?: string }): Promise<OpenCodeCliStatus>;
 
   /**
-   * Installs the official platform CLI only after explicit UI confirmation. POSIX installation
-   * runs in a temporary HOME and copies the verified binary with exclusive creation; WinGet uses
-   * --no-upgrade. Re-probes before install and never replaces an already discoverable CLI.
+   * Installs the pinned official platform CLI only after explicit UI confirmation. It verifies the
+   * release asset SHA-256, probes the binary in an isolated temporary home, then uses exclusive
+   * creation in the user's OpenCode bin directory. It never replaces a discoverable CLI.
    */
   installCli(params?: { cliPath?: string }): Promise<OpenCodeInstallResult>;
 
