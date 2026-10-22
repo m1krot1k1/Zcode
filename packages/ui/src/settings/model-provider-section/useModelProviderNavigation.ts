@@ -41,18 +41,14 @@ interface PresetProviderWithConfig extends PresetProviderSpec {
   provider: ProviderSettingsFormProvider | null;
 }
 
-const EMPTY_LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS = new Set([
+const LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS = new Set([
   "opencode-go-chat",
   "opencode-go-responses",
 ]);
 
-function shouldHideEmptyLegacyOpenCodeProvider(provider: ProviderSettingsFormProvider): boolean {
-  // Bugfix: старые пустые Chat/Responses записи захламляют выбор API-провайдера рядом с единым OpenCode API.
-  // Не удаляем конфигурацию и не скрываем legacy-профиль, если у него уже есть модели.
+function isLegacyOpenCodeProvider(provider: ProviderSettingsFormProvider): boolean {
   return (
-    provider.templateId != null &&
-    EMPTY_LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS.has(provider.templateId) &&
-    provider.models.length === 0
+    provider.templateId != null && LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS.has(provider.templateId)
   );
 }
 
@@ -98,13 +94,21 @@ export function useModelProviderNavigation({
 }: UseModelProviderNavigationOptions) {
   const customProviders = useMemo(() => {
     const allCustomProviders = modelProviders.filter(
-      (provider) =>
-        provider.config.group === "standard-personal" &&
-        !shouldHideEmptyLegacyOpenCodeProvider(provider),
+      (provider) => provider.config.group === "standard-personal",
     );
     // 这里复用模型菜单的展示排序，确保设置页和聊天框供应商顺序一致。
     return sortModelProvidersForDisplay(allCustomProviders, displayOrder);
   }, [displayOrder, modelProviders]);
+  // Bug 原因：旧 OpenCode Go Chat/Responses 同时显示在默认 API 列表，用户会把它们误认为不同的 CLI 连接方式。
+  // 修复依据：保留 Registry 身份和 Composer 运行数据，只把旧入口收进单独折叠组。
+  const legacyOpenCodeProviders = useMemo(
+    () => customProviders.filter(isLegacyOpenCodeProvider),
+    [customProviders],
+  );
+  const regularCustomProviders = useMemo(
+    () => customProviders.filter((provider) => !isLegacyOpenCodeProvider(provider)),
+    [customProviders],
+  );
 
   const codingPlanItems = useMemo(
     () =>
@@ -230,7 +234,7 @@ export function useModelProviderNavigation({
       {
         id: "custom",
         title: intl.formatMessage({ id: "settings.modelProvider.customTitle" }),
-        items: customProviders.map((provider) => ({
+        items: regularCustomProviders.map((provider) => ({
           key: createCustomProviderNodeKey(provider.providerId),
           type: "custom" as const,
           label: getProviderFormLabel(provider),
@@ -238,6 +242,21 @@ export function useModelProviderNavigation({
           statusActive: provider.executable === true,
         })),
       },
+      ...(legacyOpenCodeProviders.length > 0
+        ? [
+            {
+              id: "legacy-opencode" as const,
+              title: intl.formatMessage({ id: "settings.modelProvider.legacyOpenCodeTitle" }),
+              items: legacyOpenCodeProviders.map((provider) => ({
+                key: createCustomProviderNodeKey(provider.providerId),
+                type: "custom" as const,
+                label: getProviderFormLabel(provider),
+                provider,
+                statusActive: provider.executable === true,
+              })),
+            },
+          ]
+        : []),
       {
         id: "agent-integrations",
         title: intl.formatMessage({ id: "settings.modelProvider.agentIntegrationsTitle" }),
@@ -255,6 +274,8 @@ export function useModelProviderNavigation({
     return groups;
   }, [
     customProviders,
+    legacyOpenCodeProviders,
+    regularCustomProviders,
     codingPlanItems,
     connectionModeCodingPlanItems,
     // 左侧导航分组标题在这个 memo 内格式化。

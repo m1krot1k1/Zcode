@@ -4902,6 +4902,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
   "settings.modelProvider.customTitle": "Custom API providers for Composer",
   "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
+  "settings.modelProvider.legacyOpenCodeTitle": "Older OpenCode API configurations",
   "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
   "settings.modelProvider.refresh": "Refresh",
   "settings.modelProvider.reorderProvider": "Drag to reorder provider",

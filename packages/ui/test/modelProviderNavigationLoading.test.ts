@@ -39,6 +39,54 @@ describe("model provider navigation loading indicator", () => {
     expect(html).not.toContain("Custom Providers");
   });
 
+  it("旧版 OpenCode API 配置默认折叠，当前选中时自动展开", () => {
+    const legacyGroup = {
+      id: "legacy-opencode" as const,
+      title: "Older OpenCode API configurations",
+      items: [
+        {
+          key: "custom:opencode-go-chat",
+          type: "custom" as const,
+          label: "OpenCode Go (Chat)",
+          statusActive: true,
+          provider: {
+            providerId: "opencode-go-chat",
+            executable: true,
+            enabled: true,
+            hasPersonalConfig: true,
+            personalConfig: { group: "standard-personal", personalModelIds: [] },
+            config: {
+              label: "OpenCode Go (Chat)",
+              group: "standard-personal",
+              access: { type: "api-key", apiKey: "key" },
+              api: { type: "openai-chat-completions", baseUrl: "https://example.com/v1" },
+              templateId: "opencode-go-chat",
+            },
+            models: [],
+          },
+        },
+      ],
+    };
+    const render = (selectedNodeKey: string | null) =>
+      renderWithTooltipProvider(
+        createElement(ModelProviderSectionNavigation, {
+          navigationGroups: [legacyGroup],
+          selectedNodeKey,
+          presetLoading: false,
+          customLoading: false,
+          onSelectNavItem: vi.fn(),
+        }),
+      );
+
+    const collapsed = render(null);
+    expect(collapsed).toContain("Older OpenCode API configurations");
+    expect(collapsed).toContain("(1)");
+    expect(collapsed).not.toContain("OpenCode Go (Chat)");
+
+    const selected = render("custom:opencode-go-chat");
+    expect(selected).toContain("OpenCode Go (Chat)");
+  });
+
   it("只对 Settings View 允许项启用拖拽", () => {
     const item = {
       key: "custom:official-api",

@@ -95,11 +95,7 @@ describe("model provider navigation i18n", () => {
     const codingPlanEntitlements = {};
     const commonOptions = {
       presetProviders: [],
-      modelProviders: [
-        provider,
-        emptyLegacyOpenCodeProvider,
-        configuredLegacyOpenCodeProvider,
-      ],
+      modelProviders: [provider, emptyLegacyOpenCodeProvider, configuredLegacyOpenCodeProvider],
       codingPlanEntitlements,
       selectedNodeKey: null,
       setSelectedNodeKey: vi.fn(),
@@ -112,6 +108,7 @@ describe("model provider navigation i18n", () => {
         "settings.modelProvider.customTitle": "Composer 自定义 API 供应商",
         "settings.modelProvider.agentIntegrationsTitle": "独立智能体运行时",
         "settings.modelProvider.openCodeCli": "OpenCode CLI · 无需 API Key",
+        "settings.modelProvider.legacyOpenCodeTitle": "旧版 OpenCode API 配置",
         "settings.modelProvider.createCustomProvider": "创建自定义供应商",
       }),
     });
@@ -123,6 +120,7 @@ describe("model provider navigation i18n", () => {
         "settings.modelProvider.customTitle": "Custom API providers for Composer",
         "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
         "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
+        "settings.modelProvider.legacyOpenCodeTitle": "Older OpenCode API configurations",
         "settings.modelProvider.createCustomProvider": "Create Custom Provider",
       }),
     });
@@ -132,13 +130,15 @@ describe("model provider navigation i18n", () => {
     );
     const enCustomGroup = enResult.navigationGroups.find((group) => group.id === "custom");
     expect(enCustomGroup?.title).toBe("Custom API providers for Composer");
-    expect(enCustomGroup?.items.map((item) => item.key)).toEqual(
-      expect.arrayContaining(["custom:custom-provider", "custom:opencode-go-responses"]),
+    expect(enCustomGroup?.items.map((item) => item.key)).toEqual(["custom:custom-provider"]);
+    const legacyOpenCodeGroup = enResult.navigationGroups.find(
+      (group) => group.id === "legacy-opencode",
     );
-    expect(enCustomGroup?.items).toHaveLength(2);
-    expect(enCustomGroup?.items.some((item) => item.key === "custom:opencode-go-chat")).toBe(
-      false,
-    );
+    expect(legacyOpenCodeGroup?.title).toBe("Older OpenCode API configurations");
+    expect(legacyOpenCodeGroup?.items.map((item) => item.key)).toEqual([
+      "custom:opencode-go-chat",
+      "custom:opencode-go-responses",
+    ]);
     expect(
       enResult.navigationGroups.find((group) => group.id === "agent-integrations"),
     ).toMatchObject({

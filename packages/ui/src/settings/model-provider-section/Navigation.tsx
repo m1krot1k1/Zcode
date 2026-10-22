@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Loader2Icon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, Loader2Icon } from "lucide-react";
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator.js";
 
 import {
@@ -25,7 +25,7 @@ import {
   isStartPlanModelProviderId,
 } from "@zcode/shared";
 import { TID_MODEL_PROVIDER_NAV_ITEM, testId } from "@zcode/shared/test-ids";
-import { useCallback, useMemo, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import type { ModelProviderNavGroup, ModelProviderNavItem } from "./constants.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
@@ -381,16 +381,55 @@ export function ModelProviderSectionNavigation({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(["legacy-opencode"]),
+  );
 
   return (
     <aside className="px-1.5 py-3 md:py-2 md:px-2">
       <div className="flex min-h-0 flex-col gap-3 max-md:gap-1">
         {navigationGroups
-          .filter((group) => group.id !== "custom" || group.items.length > 0)
+          .filter(
+            (group) =>
+              (group.id !== "custom" && group.id !== "legacy-opencode") || group.items.length > 0,
+          )
           .map((group) => (
             <div key={group.id} className="flex flex-col gap-2 max-md:gap-1">
-              <div className="flex h-7 items-center justify-between px-2 py-1 max-md:hidden">
-                <h3 className="text-ui-sm font-semibold text-foreground-subtlest">{group.title}</h3>
+              <div
+                className={`flex h-7 items-center justify-between px-2 py-1 ${group.id === "legacy-opencode" ? "" : "max-md:hidden"}`}
+              >
+                {group.id === "legacy-opencode" ? (
+                  <button
+                    type="button"
+                    aria-expanded={
+                      !collapsedGroups.has(group.id) ||
+                      group.items.some((item) => item.key === selectedNodeKey)
+                    }
+                    aria-label={group.title}
+                    onClick={() => {
+                      setCollapsedGroups((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.id)) next.delete(group.id);
+                        else next.add(group.id);
+                        return next;
+                      });
+                    }}
+                    className="flex min-w-0 items-center gap-1 text-left text-ui-sm font-semibold text-foreground-subtlest hover:text-foreground max-md:size-8 max-md:justify-center max-md:px-0"
+                  >
+                    {!collapsedGroups.has(group.id) ||
+                    group.items.some((item) => item.key === selectedNodeKey) ? (
+                      <ChevronDownIcon className="size-3 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ChevronRightIcon className="size-3 shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="truncate max-md:sr-only">{group.title}</span>
+                    <span className="max-md:sr-only">({group.items.length})</span>
+                  </button>
+                ) : (
+                  <h3 className="text-ui-sm font-semibold text-foreground-subtlest">
+                    {group.title}
+                  </h3>
+                )}
                 {shouldShowModelProviderGroupLoadingIndicator({
                   groupId: group.id,
                   presetLoading,
@@ -400,7 +439,10 @@ export function ModelProviderSectionNavigation({
                 ) : null}
               </div>
 
-              {group.id === "preset" || group.id === "agent-integrations" ? (
+              {group.id === "legacy-opencode" &&
+              collapsedGroups.has(group.id) &&
+              !group.items.some((item) => item.key === selectedNodeKey) ? null : group.id ===
+                  "preset" || group.id === "agent-integrations" ? (
                 <PresetProviderCardNavigation
                   group={group}
                   selectedNodeKey={selectedNodeKey}

@@ -226,7 +226,11 @@ export type ModelProviderNavItem =
       label: string;
     };
 
-export type ModelProviderNavGroupId = "preset" | "custom" | "agent-integrations";
+export type ModelProviderNavGroupId =
+  | "preset"
+  | "custom"
+  | "legacy-opencode"
+  | "agent-integrations";
 
 export interface ModelProviderNavGroup {
   id: ModelProviderNavGroupId;
