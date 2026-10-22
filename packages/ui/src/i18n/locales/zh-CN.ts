@@ -3635,6 +3635,8 @@ const zhCN: Record<string, string> = {
   "settings.openCode.prompt-invalid": "请输入不超过 64,000 个字符的提示。",
   "settings.openCode.acp-session-create-failed":
     "OpenCode 无法创建会话。请检查 OpenCode 自己的登录状态和配置。",
+  "settings.openCode.auth-required":
+    "OpenCode 需要登录。请在终端运行 `opencode auth login`，然后在此重试。",
   "settings.openCode.config-option-invalid": "该模型或智能体选项已不可用。请刷新会话。",
   "settings.openCode.config-option-update-failed": "OpenCode 无法更新该选项。请改选其他可用值。",
   "settings.openCode.acp-connection-closed": "OpenCode 进程已关闭 ACP 连接。请启动新会话。",

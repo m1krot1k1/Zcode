@@ -30,6 +30,7 @@ import {
 import { createOpenCodeCliInstaller } from "./cliInstaller.js";
 import {
   classifyAcpStartupFailure,
+  isOpenCodeAuthRequiredError,
   OpenCodeDiagnosticError,
   readOpenCodeErrorDiagnostic,
 } from "./startupDiagnostics.js";
@@ -206,6 +207,9 @@ export function createOpenCodeAcpRuntime(
     try {
       return await Promise.race([promise, closed, timeout]);
     } catch (error) {
+      if (isOpenCodeAuthRequiredError(error)) {
+        throw new OpenCodeDiagnosticError("opencode.auth-required");
+      }
       if (error instanceof acp.RequestError) {
         // JSON-RPC peer errors stay on the fixed operation fallback, even if the stream closes concurrently.
         throw new OpenCodeDiagnosticError(fallback);

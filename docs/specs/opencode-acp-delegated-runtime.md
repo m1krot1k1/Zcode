@@ -19,6 +19,20 @@ This decision supersedes the historical `Follow-up requirement: local CLI discov
 - The two modes have separate credentials, model catalogs, execution loops, transcripts, and rate limits. No automatic fallback, migration, or profile cleanup joins them. Existing custom provider identities and credentials are preserved.
 - The selected navigation item is local settings-page UI state only. Provider Registry remains the sole owner of API provider configuration and Composer model identity; the owning Host and OpenCode retain the ACP process/session ownership defined below.
 
+### CLI sign-in diagnostics
+
+- `opencode models` only discovers provider/model identifiers. Its result remains `authentication: "not-checked"`; neither a successful command nor ACP's advertised `authMethods` proves that any provider is signed in. OpenCode advertises its login method even when login may already exist.
+- The ACP Host may classify only the protocol's typed `RequestError.authRequired` response as the fixed local diagnostic `opencode.auth-required`. Peer text, error data, and credential state are never forwarded or persisted. Every other ACP peer error keeps the fixed operation fallback.
+- When that exact signal is returned, the settings panel tells the user to sign in with OpenCode's own `opencode auth login` command and retry. ZCode does not invoke a login flow, read OpenCode's credential store, or copy credentials.
+- Session creation failure still tears down the ACP child and retains no session. Prompt-time authorization failure keeps the active session and reports the same safe sign-in diagnostic so the user can authenticate in OpenCode and retry deliberately.
+
+| Case        | Action                                                               | Expected result                                                                                                                             |
+| ----------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| OCAD-AUTH-1 | Refresh `opencode models` while sign-in state is unknown.            | Models may be shown as reference-only; authentication remains `not-checked`.                                                                |
+| OCAD-AUTH-2 | ACP returns the typed `authRequired` error for `session/new`.        | Runtime returns only `opencode.auth-required`, closes the failed child, and stores no session; UI shows the OpenCode CLI login instruction. |
+| OCAD-AUTH-3 | ACP returns the typed `authRequired` error during a prompt.          | Runtime returns only `opencode.auth-required`; it does not expose peer text or tear down the established session.                           |
+| OCAD-AUTH-4 | ACP returns any other peer error containing diagnostic-looking text. | Runtime returns the operation's fixed fallback and exposes no peer text.                                                                    |
+
 | Case      | Setup and action                                                                                      | Expected result                                                                                                                             |
 | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | OCAD-UX-1 | Open Model Providers settings with an API provider and OpenCode installed.                            | Sidebar shows API provider entries under their provider group and a separate OpenCode CLI entry under Agent integrations.                   |

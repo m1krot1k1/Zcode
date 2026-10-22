@@ -168,6 +168,45 @@ describe("OpenCode agent settings panel", () => {
     expect(screen.queryByText(/test-only-opencode-stderr-secret/u)).toBeNull();
   });
 
+  it("explains that authentication must be completed in the OpenCode CLI", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "available" as const,
+        version: "OpenCode 1.19.3",
+        executablePath: "/usr/local/bin/opencode",
+      })),
+      startSession: vi.fn(async () => {
+        throw new Error("opencode.auth-required");
+      }),
+      disposeAllAndWait: vi.fn(async () => undefined),
+    };
+    const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
+    const platform = {
+      selectDirectory: vi.fn(async () => "/workspace"),
+      openExternal: vi.fn(),
+    } as unknown as IPlatformService;
+    const view = render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <ServiceProvider services={services}>
+          <PlatformProvider platform={platform}>
+            <OpenCodeAgentSettingsPanel
+              initialWorkspacePath="/workspace"
+              remoteWorkspaceActive={false}
+            />
+          </PlatformProvider>
+        </ServiceProvider>
+      </ZCodeIntlProvider>,
+    );
+    testResources.push(view.unmount);
+
+    await screen.findByText("OpenCode CLI detected (OpenCode 1.19.3)");
+    fireEvent.click(await screen.findByTestId("opencode-start-session"));
+    await screen.findByText(
+      "OpenCode needs you to sign in. Run `opencode auth login` in a terminal, then retry here.",
+    );
+    expect(runtime.startSession).toHaveBeenCalledTimes(1);
+  });
+
   it("localizes a CLI that disappears after the availability check", async () => {
     const runtime = {
       getCliStatus: vi.fn(async () => ({

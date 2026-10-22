@@ -9,6 +9,7 @@ const SAFE_OPENCODE_DIAGNOSTIC_CODES = new Set([
   "opencode.acp-session-create-failed",
   "opencode.acp-stdio-unavailable",
   "opencode.acp-timeout",
+  "opencode.auth-required",
   "opencode.cli-missing",
   "opencode.cli-not-ready",
   "opencode.config-option-invalid",
@@ -36,6 +37,11 @@ export function readOpenCodeErrorDiagnostic(error: unknown, fallback: string): s
   return error instanceof OpenCodeDiagnosticError && SAFE_OPENCODE_DIAGNOSTIC_CODES.has(error.code)
     ? error.code
     : fallback;
+}
+
+/** ACP reserves -32000 for an explicit authentication-required response. */
+export function isOpenCodeAuthRequiredError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === -32000;
 }
 
 export class OpenCodeDiagnosticError extends Error {

@@ -279,6 +279,86 @@ describe("OpenCode ACP runtime", () => {
     await runtime.disposeAllAndWait();
   });
 
+  it("normalizes ACP auth-required on session creation and can start a fresh session after cleanup", async () => {
+    const directory = await makeTempDir();
+    const fakeAgentPath = join(directory, "fake-acp-auth-required-session.mjs");
+    const authAttemptPath = join(directory, "auth-attempt.txt");
+    const sdkUrl = import.meta.resolve("@agentclientprotocol/sdk");
+    await writeFile(
+      fakeAgentPath,
+      fakeAcpAgentSource(sdkUrl, { newSessionAuthRequiredOncePath: authAttemptPath }),
+      "utf8",
+    );
+    const runtime = createOpenCodeAcpRuntime({
+      resolveCli: () => ({
+        status: "resolved",
+        executablePath: process.execPath,
+        spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
+      }),
+      runVersion: async () => ({
+        status: "available",
+        version: "Fake OpenCode CLI",
+        executablePath: process.execPath,
+      }),
+      requestTimeoutMs: 2_000,
+    });
+
+    try {
+      const error = await runtime.startSession({ cwd: directory }).then(
+        () => new Error("Expected authentication to be required"),
+        (reason: unknown) => reason,
+      );
+      expect(error).toMatchObject({ message: "opencode.auth-required" });
+      expect(String(error)).not.toContain("provider secret");
+      expect(String(error)).not.toContain("fake");
+
+      // The failed child is discarded; retry starts a clean ACP process/session.
+      const session = await runtime.startSession({ cwd: directory });
+      expect(session.sessionId).toBe("fake-session-1");
+    } finally {
+      await runtime.disposeAllAndWait();
+    }
+  });
+
+  it("keeps an established session when a prompt reports ACP auth-required", async () => {
+    const directory = await makeTempDir();
+    const fakeAgentPath = join(directory, "fake-acp-auth-required-prompt.mjs");
+    const sdkUrl = import.meta.resolve("@agentclientprotocol/sdk");
+    await writeFile(
+      fakeAgentPath,
+      fakeAcpAgentSource(sdkUrl, { promptAuthRequired: true }),
+      "utf8",
+    );
+    const runtime = createOpenCodeAcpRuntime({
+      resolveCli: () => ({
+        status: "resolved",
+        executablePath: process.execPath,
+        spec: { command: process.execPath, prefixArgs: [fakeAgentPath] },
+      }),
+      runVersion: async () => ({
+        status: "available",
+        version: "Fake OpenCode CLI",
+        executablePath: process.execPath,
+      }),
+      requestTimeoutMs: 2_000,
+    });
+
+    try {
+      const session = await runtime.startSession({ cwd: directory });
+      const error = await runtime
+        .prompt({ sessionId: session.sessionId, text: "auth required" })
+        .then(
+          () => new Error("Expected authentication to be required"),
+          (reason: unknown) => reason,
+        );
+      expect(error).toMatchObject({ message: "opencode.auth-required" });
+      expect(String(error)).not.toContain("provider secret");
+      await expect(runtime.closeSession({ sessionId: session.sessionId })).resolves.toBeUndefined();
+    } finally {
+      await runtime.disposeAllAndWait();
+    }
+  });
+
   it("rejects arbitrary CLI output instead of returning it to the UI", async () => {
     const directory = await makeTempDir();
     const fakeCliPath = join(directory, "fake-model-list-invalid.mjs");
@@ -1275,6 +1355,8 @@ interface FakeAcpAgentOptions {
   envCapturePath?: string;
   pidCapturePath?: string;
   initializeError?: string;
+  newSessionAuthRequiredOncePath?: string;
+  promptAuthRequired?: boolean;
   closeTransportDuringInitialize?: boolean;
   failFirstInitialize?: boolean;
   hangCancel?: boolean;
@@ -1294,6 +1376,8 @@ const tracePath = ${JSON.stringify(options.tracePath ?? null)};
 const envCapturePath = ${JSON.stringify(options.envCapturePath ?? null)};
 const pidCapturePath = ${JSON.stringify(options.pidCapturePath ?? null)};
 const initializeError = ${JSON.stringify(options.initializeError ?? null)};
+const newSessionAuthRequiredOncePath = ${JSON.stringify(options.newSessionAuthRequiredOncePath ?? null)};
+const promptAuthRequired = ${JSON.stringify(options.promptAuthRequired ?? false)};
 const closeTransportDuringInitialize = ${JSON.stringify(options.closeTransportDuringInitialize ?? false)};
 const failFirstInitialize = ${JSON.stringify(options.failFirstInitialize ?? false)};
 const hangCancel = ${JSON.stringify(options.hangCancel ?? false)};
@@ -1362,6 +1446,11 @@ if (process.argv[2] === "--version") {
     async newSession() {
       sessionNumber += 1;
       await log("session:new:" + sessionNumber);
+      if (newSessionAuthRequiredOncePath) {
+        const attempts = Number(await readFile(newSessionAuthRequiredOncePath, "utf8").catch(() => "0")) + 1;
+        await writeFile(newSessionAuthRequiredOncePath, String(attempts));
+        if (attempts === 1) throw acp.RequestError.authRequired({ marker: "fake" }, "provider secret");
+      }
       return { sessionId: "fake-session-" + sessionNumber, configOptions: configOptions() };
     },
     async setSessionConfigOption(params) {
@@ -1371,6 +1460,9 @@ if (process.argv[2] === "--version") {
     },
     async prompt(params) {
       await log("prompt:start");
+      if (promptAuthRequired && params.prompt[0]?.text === "auth required") {
+        throw acp.RequestError.authRequired({ marker: "fake" }, "provider secret");
+      }
       if (params.prompt[0]?.text === "request permission") {
         const response = await connection.requestPermission({
           sessionId: params.sessionId,

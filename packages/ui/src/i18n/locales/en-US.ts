@@ -3893,6 +3893,8 @@ const enUS: Record<string, string> = {
   "settings.openCode.prompt-invalid": "Enter a prompt of up to 64,000 characters.",
   "settings.openCode.acp-session-create-failed":
     "OpenCode could not create a session. Check OpenCode's own sign-in and configuration.",
+  "settings.openCode.auth-required":
+    "OpenCode needs you to sign in. Run `opencode auth login` in a terminal, then retry here.",
   "settings.openCode.config-option-invalid":
     "That model or agent option is no longer available. Refresh the session.",
   "settings.openCode.config-option-update-failed":
