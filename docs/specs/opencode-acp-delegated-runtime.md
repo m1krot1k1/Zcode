@@ -136,6 +136,20 @@ The Host must not infer a workspace from an earlier session. Exact execution `cw
 
 ACP `loadSession`/resume is not part of the current runtime contract. Therefore delegated Composer runs are **not resumable** across owning Host/process loss or application restart. The ZCode task may retain its request and received output as a read-only record, but must mark an interrupted in-flight run as interrupted, disable “continue this OpenCode session,” and require a new delegated run (new ACP session) for further work. Do not replay prompts, fabricate an OpenCode transcript, or imply that a saved session ID is sufficient to resume. OpenCode's own durable session record remains OpenCode-owned and does not grant ZCode resume capability.
 
+### CLI outbox and event-consumer completion gate
+
+The stored outbox is not executable until the following full path is connected. Keep the Composer route fail-closed until every step is implemented and tested:
+
+1. `CommandInbox` performs capability/busy validation before durable admission. The CLI then commits the canonical `session_input` and `openCodeAgentRun` row in the same transaction; only that commit permits an accepted ACK.
+2. The same CLI command owner claims `pending -> dispatching` by compare-and-set, then sends `startRun` over the authenticated active CLI↔Host JSON-RPC client. A lost response is reconciled with `getRunStatus` on that connection and existing `runId`; it never repeats `session/new` or replays the prompt.
+3. The Host emits the already specified versioned run notification through the exact active client. The CLI notification consumer validates schema, workspace/client generation, task/command/run/ACP-session identity, and next sequence before persistence or projection. A stale/duplicate notification is a no-op; a gap or identity mismatch cannot advance durable state.
+4. The CLI persists the lifecycle CAS and the bounded terminal summary before publishing the same external-run row to V4. Partial text, tool progress and permission requests are live-only. They never become ordinary ZCode assistant/tool events. Terminal state is immutable and clears the active external-work owner once.
+5. `stop` resolves the exact active delegated run and forwards cancellation to that Host/session. Host loss, process restart or connection replacement marks unresolved state `interrupted`; no run is resumed or recreated. Pending permissions are cancelled during cleanup.
+
+The task snapshot must hydrate the dedicated `externalAgentRun` row from the journal, including terminal state after restart. The row is linked to the canonical admitted `userInput`; it clearly marks output and tools as OpenCode-owned. The normal task busy/stop projection must include a delegated run without setting a ZCode `AgentRuntime` turn active. This keeps the Composer `CommandInbox` as the sole admission owner while the Host owns ACP process/session state and the journal remains the sole durable run projection.
+
+Required evidence before opening the guard: a protocol/server test that sends a Composer command through `CommandInbox`, observes atomic admission, Host `startRun`, ordered events, terminal persistence and snapshot hydration; duplicate command/start replay creates one ACP session; cancellation reaches the same run and cascades during setup; stale generation/sequence is rejected; restart yields interrupted without prompt replay; a UI/E2E case verifies the external row and stop behavior without synthesizing assistant/tool rows.
+
 ### Acceptance cases and evidence
 
 | Case | Scenario | Required result / evidence |
