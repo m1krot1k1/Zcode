@@ -3544,8 +3544,8 @@ const zhCN: Record<string, string> = {
   "settings.modelProviderDescription":
     "Composer 使用 API 供应商和模型，API 密钥保存在 ZCode。OpenCode CLI 则在工作区所在电脑上作为独立智能体运行，并使用 OpenCode 自己的登录；CLI 模型不会出现在 Composer 中。",
   "settings.modelProvider.credentialModeApiKey": "API 密钥",
-  "settings.openCode.title": "OpenCode 智能体",
-  "settings.openCode.authModeCli": "Host CLI · 无需 API 密钥",
+  "settings.openCode.title": "OpenCode CLI 智能体",
+  "settings.openCode.authModeCli": "独立智能体 · Host CLI · 无需 API 密钥",
   "settings.openCode.ownership":
     "OpenCode 作为独立智能体运行在拥有当前工作区的 Host 上，并自行负责工具、权限提示、工作区修改、登录和用量限制。它的对话记录与 ZCode 聊天分开。",
   "settings.openCode.cliModelCatalogTitle": "本地 OpenCode CLI 报告的模型（仅供参考）",
@@ -5663,7 +5663,7 @@ const zhCN: Record<string, string> = {
   "chat.toolbar.combined.provider": "供应商",
   "chat.toolbar.combined.models": "模型",
   "chat.toolbar.combined.effort": "思考强度",
-  "chat.toolbar.combined.selectModel": "选择模型",
+  "chat.toolbar.combined.selectModel": "选择供应商和模型",
   "chat.toolbar.model.label": "选择模型",
   "chat.toolbar.draftConfigWriteFailed": "配置修改失败，请重试",
   "chat.toolbar.model.description": "选择当前任务使用的模型。快捷键只打开模型菜单。",

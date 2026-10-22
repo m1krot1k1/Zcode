@@ -3792,8 +3792,8 @@ const enUS: Record<string, string> = {
   "settings.modelProviderDescription":
     "For Composer, choose an API provider and model; its API key stays in ZCode. OpenCode CLI runs separately on the workspace computer with OpenCode's own sign-in, and its models do not appear in Composer.",
   "settings.modelProvider.credentialModeApiKey": "API key",
-  "settings.openCode.title": "OpenCode agent",
-  "settings.openCode.authModeCli": "Host CLI · no API key",
+  "settings.openCode.title": "OpenCode CLI agent",
+  "settings.openCode.authModeCli": "Separate agent · Host CLI · no API key",
   "settings.openCode.ownership":
     "OpenCode runs as a separate agent on the Host that owns this workspace. It owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
   "settings.openCode.cliModelCatalogTitle":
@@ -6050,7 +6050,7 @@ const enUS: Record<string, string> = {
   "chat.toolbar.combined.provider": "Provider",
   "chat.toolbar.combined.models": "Models",
   "chat.toolbar.combined.effort": "Effort",
-  "chat.toolbar.combined.selectModel": "Select model",
+  "chat.toolbar.combined.selectModel": "Select provider and model",
   "chat.toolbar.model.label": "Choose model",
   "chat.toolbar.draftConfigWriteFailed": "Failed to update configuration. Please try again.",
   "chat.toolbar.model.description":

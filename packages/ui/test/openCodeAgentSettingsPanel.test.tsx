@@ -159,7 +159,7 @@ describe("OpenCode agent settings panel", () => {
     testResources.push(view.unmount);
 
     await screen.findByText("OpenCode CLI detected (OpenCode 1.19.3)");
-    expect(screen.getByText("Host CLI · no API key")).toBeTruthy();
+    expect(screen.getByText("Separate agent · Host CLI · no API key")).toBeTruthy();
     fireEvent.click(await screen.findByTestId("opencode-start-session"));
     await screen.findByText(
       "OpenCode could not start its local service. Check that local network access is available, then retry.",
