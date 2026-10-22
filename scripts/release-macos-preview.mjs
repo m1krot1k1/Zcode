@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopProductIdentities } from "../packages/desktop/scripts/desktop-product-identity.mjs";
+import { OFFLINE_PREVIEW_ZCODE_ENDPOINT } from "./preview-release-contract.mjs";
 import {
   assertAssetHashes,
   assertMacReleaseAssetPair,
@@ -30,50 +31,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const previewProductName = "ZCode Preview";
 const previewAppBundleName = `${desktopProductIdentities.preview.macExecutableName}.app`;
 const previewBundleId = "dev.zcode.app.preview";
-const productionZCodeEndpoint = "https://zcode.z.ai/api/v1";
-
-export function validatePreviewTestEndpoint(value) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error("Для Preview задайте отдельный ZCODE_PREVIEW_TEST_BASE_URL");
-  }
-  let endpoint;
-  try {
-    endpoint = new URL(value.trim());
-  } catch {
-    throw new Error("ZCODE_PREVIEW_TEST_BASE_URL должен быть корректным HTTPS URL");
-  }
-  const production = new URL(productionZCodeEndpoint);
-  // Причина: другой путь на production origin всё равно может направить Preview в production API.
-  // Причина: DNS считает имя с конечной точкой тем же хостом; URL.origin сравнивает строки и пропускает этот вариант.
-  const normalizeHostname = (hostname) => hostname.toLowerCase().replace(/\.$/u, "");
-  const isProductionOrigin =
-    endpoint.protocol === production.protocol &&
-    normalizeHostname(endpoint.hostname) === normalizeHostname(production.hostname) &&
-    endpoint.port === production.port;
-  if (
-    endpoint.protocol !== "https:" ||
-    endpoint.username ||
-    endpoint.password ||
-    endpoint.hash ||
-    endpoint.search ||
-    isProductionOrigin
-  ) {
-    throw new Error(
-      "ZCODE_PREVIEW_TEST_BASE_URL должен отличаться от production endpoint и использовать HTTPS без credentials или fragment",
-    );
-  }
-  return endpoint.toString().replace(/\/$/u, "");
-}
+export { OFFLINE_PREVIEW_ZCODE_ENDPOINT } from "./preview-release-contract.mjs";
 
 export function createPreviewBuildEnvironment(sourceEnv = process.env) {
-  const testEndpoint = validatePreviewTestEndpoint(sourceEnv.ZCODE_PREVIEW_TEST_BASE_URL);
   const env = { ...sourceEnv };
   // Preview никогда не получает Apple signing credentials и принудительно отключает авто-подпись.
   for (const name of Object.keys(env)) {
     if (
       /^(?:APPLE_|CSC_)/u.test(name) ||
       /^(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN)$/u.test(name) ||
-      /^(?:ZCODE_BASE_URL|ZCODE_ENDPOINT_ORIGIN|ZCODE_TEST_BASE_URL|ZCODE_PRODUCTION_BASE_URL)$/u.test(
+      name.startsWith("ZCODE_PACKAGED_AGENT_OTEL_") ||
+      /^(?:ZCODE_BASE_URL|ZCODE_ENDPOINT_ORIGIN|ZCODE_TEST_BASE_URL|ZCODE_PRODUCTION_BASE_URL|VITE_ZCODE_BASE_URL|VITE_ZCODE_ENDPOINT_ORIGIN)$/u.test(
         name,
       )
     ) {
@@ -82,10 +50,16 @@ export function createPreviewBuildEnvironment(sourceEnv = process.env) {
   }
   Object.assign(env, {
     ZCODE_ENV: "test",
-    ZCODE_BASE_URL: testEndpoint,
-    ZCODE_ENDPOINT_ORIGIN: testEndpoint,
-    ZCODE_TEST_BASE_URL: testEndpoint,
-    ZCODE_PRODUCTION_BASE_URL: testEndpoint,
+    ZCODE_OFFLINE_PREVIEW: "1",
+    ZCODE_BASE_URL: OFFLINE_PREVIEW_ZCODE_ENDPOINT,
+    ZCODE_ENDPOINT_ORIGIN: OFFLINE_PREVIEW_ZCODE_ENDPOINT,
+    ZCODE_TEST_BASE_URL: OFFLINE_PREVIEW_ZCODE_ENDPOINT,
+    ZCODE_PRODUCTION_BASE_URL: OFFLINE_PREVIEW_ZCODE_ENDPOINT,
+    VITE_ZCODE_BASE_URL: OFFLINE_PREVIEW_ZCODE_ENDPOINT,
+    VITE_ZCODE_ENDPOINT_ORIGIN: OFFLINE_PREVIEW_ZCODE_ENDPOINT,
+    ZCODE_ARMS_RUM_ENDPOINT: "",
+    ZCODE_TELEMETRY_REPORT_ENDPOINT: "",
+    ZCODE_AUTO_UPDATE: "0",
     ZCODE_PREVIEW_IDENTITY: "1",
     ZCODE_ENABLE_MAC_SIGN: "0",
     ZCODE_ENABLE_MAC_NOTARIZE: "0",
@@ -126,7 +100,7 @@ export function buildPreviewReleaseCreateArgs({ tag, commitSha, targetArch, asse
     "--title",
     `ZCode Preview ${tag.slice(1)} для macOS`,
     "--notes",
-    `Preview-сборка macOS (${targetArch}) подключается к тестовому backend ZCode (артефакты с суффиксом _TEST), не к production endpoints. Приложение без Apple-подписи и notarization. При первом запуске macOS может блокировать приложение: откройте его через Finder и подтвердите запуск в системном предупреждении. Это Preview, не production-релиз.`,
+    `Автономная Preview-сборка macOS (${targetArch}): аккаунт и backend ZCode недоступны, запросы ZCode направляются только в loopback; локальный OpenCode ACP и настроенные внешние model providers остаются доступны. Артефакты имеют суффикс _TEST. Сборка без Apple-подписи и notarization. При первом запуске macOS может блокировать приложение: откройте его через Finder и подтвердите запуск в системном предупреждении. Это Preview, не production-релиз.`,
     "--prerelease",
     ...assetPaths,
   ];
@@ -329,7 +303,6 @@ async function main() {
     );
     return;
   }
-  const testEndpoint = validatePreviewTestEndpoint(process.env.ZCODE_PREVIEW_TEST_BASE_URL);
   const baseSha = await capture(["git", "rev-parse", "HEAD"]);
   assertPreviewReleasePreconditions({
     platform: process.platform,
@@ -401,10 +374,7 @@ async function main() {
       await writeFile(packageLockPath, replaceRootPackageLockVersion(originalLock, version));
       await run(["git", "add", "--", "package.json", "package-lock.json"]);
       const buildTreeSha = await capture(["git", "write-tree"]);
-      const buildEnv = createPreviewBuildEnvironment({
-        ...process.env,
-        ZCODE_PREVIEW_TEST_BASE_URL: testEndpoint,
-      });
+      const buildEnv = createPreviewBuildEnvironment(process.env);
       await run(["pnpm", "bundle:desktop", "--", "--os", "mac", "--arch", targetArch], {
         env: buildEnv,
       });

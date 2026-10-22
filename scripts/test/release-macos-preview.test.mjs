@@ -11,7 +11,7 @@ import {
   createPreviewReleasePlan,
   isMissingGitHubRelease,
   replaceRootPackageLockVersion,
-  validatePreviewTestEndpoint,
+  OFFLINE_PREVIEW_ZCODE_ENDPOINT,
 } from "../release-macos-preview.mjs";
 
 const commitSha = "a".repeat(40);
@@ -20,52 +20,39 @@ const assetPaths = [
   "/tmp/ZCode Preview-3.17.1-mac-arm64_TEST.zip",
 ];
 
-test("Preview build requires a separate HTTPS endpoint and pins every ZCode URL alias", () => {
-  assert.throws(() => validatePreviewTestEndpoint(undefined), /ZCODE_PREVIEW_TEST_BASE_URL/u);
-  assert.throws(() => validatePreviewTestEndpoint("http://test.example.invalid/api/v1"), /HTTPS/u);
-  assert.throws(
-    () => validatePreviewTestEndpoint("https://zcode.z.ai/api/v1"),
-    /отличаться от production endpoint/u,
-  );
-  assert.throws(
-    () => validatePreviewTestEndpoint("https://zcode.z.ai/api/v1/?tenant=test"),
-    /отличаться от production endpoint/u,
-  );
-  assert.throws(
-    () => validatePreviewTestEndpoint("https://zcode.z.ai/api/v1/"),
-    /отличаться от production endpoint/u,
-  );
-  assert.equal(
-    validatePreviewTestEndpoint("https://preview.example.invalid/api/v1/"),
-    "https://preview.example.invalid/api/v1",
-  );
-  assert.throws(
-    () => validatePreviewTestEndpoint("https://zcode.z.ai/test/api/v1"),
-    /отличаться от production endpoint/u,
-  );
-  assert.throws(
-    () => validatePreviewTestEndpoint("https://zcode.z.ai./test/api/v1"),
-    /отличаться от production endpoint/u,
-  );
-
+test("offline Preview needs no ZCode backend and pins every endpoint alias to loopback", () => {
   const env = createPreviewBuildEnvironment({
-    ZCODE_PREVIEW_TEST_BASE_URL: "https://preview.example.invalid/api/v1",
     ZCODE_BASE_URL: "https://zcode.z.ai/api/v1",
     ZCODE_ENDPOINT_ORIGIN: "https://production.example.invalid",
     ZCODE_TEST_BASE_URL: "https://other-test.example.invalid",
     ZCODE_PRODUCTION_BASE_URL: "https://zcode.z.ai",
+    VITE_ZCODE_BASE_URL: "https://production.example.invalid",
+    VITE_ZCODE_ENDPOINT_ORIGIN: "https://production.example.invalid",
+    ZCODE_ARMS_RUM_ENDPOINT: "https://rum.example.invalid/collect",
+    ZCODE_TELEMETRY_REPORT_ENDPOINT: "https://telemetry.example.invalid/report",
+    ZCODE_AUTO_UPDATE: "1",
+    ZCODE_PACKAGED_AGENT_OTEL_ENDPOINT: "https://otel.example.invalid/v1/logs",
+    ZCODE_PACKAGED_AGENT_OTEL_HEADERS: "Authorization=secret",
     APPLE_ID: "must-not-be-forwarded",
     CSC_LINK: "must-not-be-forwarded",
     GH_TOKEN: "must-not-be-forwarded",
   });
   assert.equal(env.ZCODE_ENV, "test");
+  assert.equal(env.ZCODE_OFFLINE_PREVIEW, "1");
+  assert.equal(env.ZCODE_ARMS_RUM_ENDPOINT, "");
+  assert.equal(env.ZCODE_TELEMETRY_REPORT_ENDPOINT, "");
+  assert.equal(env.ZCODE_AUTO_UPDATE, "0");
+  assert.equal("ZCODE_PACKAGED_AGENT_OTEL_ENDPOINT" in env, false);
+  assert.equal("ZCODE_PACKAGED_AGENT_OTEL_HEADERS" in env, false);
   for (const name of [
     "ZCODE_BASE_URL",
     "ZCODE_ENDPOINT_ORIGIN",
     "ZCODE_TEST_BASE_URL",
     "ZCODE_PRODUCTION_BASE_URL",
+    "VITE_ZCODE_BASE_URL",
+    "VITE_ZCODE_ENDPOINT_ORIGIN",
   ]) {
-    assert.equal(env[name], "https://preview.example.invalid/api/v1");
+    assert.equal(env[name], OFFLINE_PREVIEW_ZCODE_ENDPOINT);
   }
   for (const name of ["APPLE_ID", "CSC_LINK", "GH_TOKEN"]) assert.equal(name in env, false);
 });
@@ -91,7 +78,7 @@ test("Preview release is an unsigned-labeled prerelease pinned to the exact push
   assert.ok(
     plan.args.some(
       (arg) =>
-        (arg.includes("тестовому backend") && arg.includes("не к production endpoints")) ||
+        (arg.includes("аккаунт и backend ZCode недоступны") && arg.includes("loopback")) ||
         (arg.includes("без Apple-подписи") && arg.includes("_TEST")),
     ),
   );

@@ -1,7 +1,18 @@
 import type { ZCodeEnv } from "./env.js";
 
-export const DEFAULT_ZCODE_ENDPOINT_ORIGIN = "https://zcode.z.ai";
-export const TEST_ZCODE_ENDPOINT_ORIGIN = "https://zcode.z.ai";
+declare const __ZCODE_OFFLINE_PREVIEW__: boolean;
+const offlinePreviewBuild =
+  typeof __ZCODE_OFFLINE_PREVIEW__ !== "undefined" && __ZCODE_OFFLINE_PREVIEW__;
+
+declare const __ZCODE_DEFAULT_ENDPOINT_ORIGIN__: string;
+
+const compiledZCodeEndpointOrigin =
+  typeof __ZCODE_DEFAULT_ENDPOINT_ORIGIN__ === "string"
+    ? __ZCODE_DEFAULT_ENDPOINT_ORIGIN__.trim()
+    : "";
+
+export const DEFAULT_ZCODE_ENDPOINT_ORIGIN = compiledZCodeEndpointOrigin || "https://zcode.z.ai";
+export const TEST_ZCODE_ENDPOINT_ORIGIN = DEFAULT_ZCODE_ENDPOINT_ORIGIN;
 export const CODING_PLAN_LOCAL_WEBVIEW_ORIGIN = "http://localhost:3000";
 export const DEFAULT_BIGMODEL_API_ORIGIN = "https://bigmodel.cn";
 export const TEST_BIGMODEL_API_ORIGIN = "https://bigmodel.cn";
@@ -11,7 +22,9 @@ export const DEFAULT_ZAI_BUSINESS_BASE_URL = "https://api.z.ai";
 export const TEST_ZAI_BUSINESS_BASE_URL = "https://api.z.ai";
 export const DEFAULT_ZAI_OAUTH_CLIENT_ID = "client_P8X5CMWmlaRO9gyO-KSqtg";
 export const TEST_ZAI_OAUTH_CLIENT_ID = "client_P8X5CMWmlaRO9gyO-KSqtg";
-export const DEFAULT_WEB_REMOTE_CONTROL_RELAY_WS_URL = "wss://zcode.z.ai/api/v1/remote/ws2";
+export const DEFAULT_WEB_REMOTE_CONTROL_RELAY_WS_URL = buildZCodeEndpointUrls(
+  DEFAULT_ZCODE_ENDPOINT_ORIGIN,
+).relayWsUrl;
 export const WEB_REMOTE_CONTROL_V4_MIN_APP_VERSION = "3.4.0";
 
 export interface BuildZCodeEndpointUrlsOptions {
@@ -205,6 +218,10 @@ export function resolveRuntimeZCodeEndpointOrigin(
   env: RuntimeZCodeEndpointEnv = {},
   options?: { overrideOrigin?: string | null },
 ): string {
+  // Offline Preview не доверяет ambient env: без явного пользовательского override только loopback.
+  if (offlinePreviewBuild && !options?.overrideOrigin?.trim()) {
+    return DEFAULT_ZCODE_ENDPOINT_ORIGIN;
+  }
   const zcodeEnv = resolveRuntimeZCodeEnv(env);
   const scopedBaseOrigin =
     zcodeEnv === "production"
