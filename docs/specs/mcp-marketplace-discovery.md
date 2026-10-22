@@ -6,6 +6,12 @@ This spec defines a bounded MCP marketplace discovery slice for the ZCode MCP se
 
 This is not a verified package marketplace. The remote feed is not signed, and ZCode does not verify npm package integrity or transitive dependency integrity. The UI must not claim that a Cline listing or a configured package is verified by ZCode.
 
+## Cline IDE profile discovery
+
+The MCP import source resolves one Cline settings file using this precedence: explicit `CLINE_MCP_SETTINGS_PATH`, `CLINE_DATA_DIR`, `CLINE_DIR`, then an existing Cline extension profile in a supported editor, then the standard `~/.cline/data/settings/cline_mcp_settings.json` fallback. The editor profile is `globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`, under the platform's normal user-data root for VS Code Stable, VS Code Insiders, Cursor, or VSCodium. The order is deterministic and only exact known filenames are checked; ZCode does not recursively scan editor profiles or import unrelated settings. If no candidate exists, the standard Cline CLI path remains the diagnostic source path. Existing parsing, secret filtering, and explicit import/save behavior are unchanged.
+
+Acceptance evidence: path resolver unit tests cover explicit override precedence, each platform's user-data root, editor ordering, first-existing selection, and fallback when no profile exists. Import tests prove the selected IDE profile is the source path and keep credential values out of diagnostics.
+
 ## Curated npm package pins and provenance
 
 Every curated npm stdio preset must name an exact direct-package version in both its `version` field and generated `npx` arguments (`package@version`). The following versions and license identifiers were checked against the npm registry package metadata on 2026-10-21. The repository links identify the upstream source recorded by npm; npm package pages are the package/version metadata source of record.

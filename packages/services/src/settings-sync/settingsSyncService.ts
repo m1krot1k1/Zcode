@@ -35,6 +35,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -438,17 +439,76 @@ function resolveUserHomeDir(): string {
   return envHome && envHome.length > 0 ? envHome : homedir();
 }
 
+const CLINE_SETTINGS_RELATIVE_PATH = ["settings", "cline_mcp_settings.json"] as const;
+const CLINE_EXTENSION_ID = "saoudrizwan.claude-dev";
+const CLINE_EDITOR_PROFILE_DIRS = ["Code", "Code - Insiders", "Cursor", "VSCodium"] as const;
+
+interface ClineMcpConfigPathOptions {
+  env: NodeJS.ProcessEnv;
+  homeDir: string;
+  platform: NodeJS.Platform;
+  exists: (path: string) => boolean;
+}
+
+/** Resolve Cline's explicit profile first, then known editor storage, then CLI defaults. */
+export function resolveClineMcpConfigPath({
+  env,
+  homeDir,
+  platform,
+  exists,
+}: ClineMcpConfigPathOptions): string {
+  const explicitPath = env.CLINE_MCP_SETTINGS_PATH?.trim();
+  if (explicitPath) return explicitPath;
+
+  const dataDir = env.CLINE_DATA_DIR?.trim();
+  if (dataDir) return join(dataDir, ...CLINE_SETTINGS_RELATIVE_PATH);
+
+  const clineDir = env.CLINE_DIR?.trim();
+  if (clineDir) return join(clineDir, "data", ...CLINE_SETTINGS_RELATIVE_PATH);
+
+  const editorRoot = getClineEditorUserDataRoot({ env, homeDir, platform });
+  if (editorRoot) {
+    for (const editor of CLINE_EDITOR_PROFILE_DIRS) {
+      const candidate = join(
+        editorRoot,
+        editor,
+        "User",
+        "globalStorage",
+        CLINE_EXTENSION_ID,
+        ...CLINE_SETTINGS_RELATIVE_PATH,
+      );
+      if (exists(candidate)) return candidate;
+    }
+  }
+
+  return join(homeDir, ".cline", "data", ...CLINE_SETTINGS_RELATIVE_PATH);
+}
+
+function getClineEditorUserDataRoot({
+  env,
+  homeDir,
+  platform,
+}: Pick<ClineMcpConfigPathOptions, "env" | "homeDir" | "platform">): string | undefined {
+  if (platform === "darwin") return join(homeDir, "Library", "Application Support");
+  if (platform === "win32") {
+    const appData = env.APPDATA?.trim();
+    return appData || join(homeDir, "AppData", "Roaming");
+  }
+  if (platform === "linux") {
+    const xdgConfigHome = env.XDG_CONFIG_HOME?.trim();
+    return xdgConfigHome || join(homeDir, ".config");
+  }
+  return undefined;
+}
+
 function getClineMcpSettingsPath(): string {
-  const explicitPath = process.env.CLINE_MCP_SETTINGS_PATH?.trim();
-  if (explicitPath) {
-    return explicitPath;
-  }
-  const dataDir = process.env.CLINE_DATA_DIR?.trim();
-  if (dataDir) {
-    return join(dataDir, "settings", "cline_mcp_settings.json");
-  }
-  const clineDir = process.env.CLINE_DIR?.trim() || join(resolveUserHomeDir(), ".cline");
-  return join(clineDir, "data", "settings", "cline_mcp_settings.json");
+  // 修复原因：Cline IDE 将 MCP 配置写入 VS Code 扩展 globalStorage；仅查找 CLI 的 ~/.cline 会漏掉用户现有配置。
+  return resolveClineMcpConfigPath({
+    env: process.env,
+    homeDir: resolveUserHomeDir(),
+    platform: process.platform,
+    exists: existsSync,
+  });
 }
 
 function getWorkspaceZcodeSkillRoot(workspacePath: string): string {
