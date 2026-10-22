@@ -127,6 +127,15 @@ Renderer: черновик и команды через сервисный ко�
 - Local CLI UX: обнаружить в PATH и поддерживаемых платформенных путях; ручной путь; проверить version/handshake; показать ясные состояния `not installed`, `login required`, `ready`, `unsupported version`, `failed`. Явная кнопка install использует проверяемый официальный дистрибутив/OS package manager, показывает версию, не выполняет произвольный shell из каталога MCP и не меняет OAuth/key store.
 - При обновлении модели пользователь выбирает её через текущую ZCode model selection service; выбранный ID сохраняется вместе с provider identity. Секреты CLI не экспортируются в ZCode provider config.
 
+### UX clarification (2026-10-22)
+
+- Settings copy must make the two OpenCode paths explicit at the point of choice: **API provider for Composer** stores the API credential in ZCode and exposes models in Composer; **OpenCode CLI agent** runs as a separate ACP session, uses OpenCode's own sign-in on the workspace Host, and does not add those CLI models to Composer.
+- The API-provider navigation group is labelled for Composer/API use; the CLI group is labelled as a separate agent runtime. A user-created `New provider` is a generic API connection, not an OpenCode login. Do not infer provider identity from a user-entered URL or rename/edit saved provider records automatically.
+- The CLI model list before ACP session startup is informational only. The panel must say that it neither checks sign-in nor enables models in Composer; the selectable ACP model options belong to the running OpenCode session.
+- Never clear `~/.zcode` or provider configuration as a repair for confusing navigation. Preserve sessions, credentials, and custom endpoints; removal remains an explicit, item-level user action through the existing confirmation flow.
+
+Acceptance: the provider settings page explains the credential and execution owner for both paths; group headings distinguish API providers for Composer from separate CLI agents; the pre-session CLI model list is visibly informational; existing provider values and account data are unchanged. UI tests assert the headings/help copy and the CLI informational state.
+
 ## MCP и цикл улучшений
 
 - Cline import добавляет source discovery и parser для подтверждённых settings formats; сохраняет transport-specific config и enabled state. Переносит только совместимую OAuth client registration; не копирует access/refresh tokens, verifier или Cline auth state — ZCode начинает собственную OAuth авторизацию. В Global/user scope env, headers и OAuth client secret сохраняются только в существующем private config contract (файл с правами `0600`). В Project/workspace scope эти значения не записываются: сохраняются несекретные параметры, а результат каждого такого импорта явно предупреждает, что секретные значения пропущены, без раскрытия значений. Одна лишь предварительная заметка не разрешает проектное сохранение секретов. Ошибки/конфликты остаются явными, существующие данные не перезаписываются.

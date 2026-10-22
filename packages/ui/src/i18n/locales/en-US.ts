@@ -3790,13 +3790,14 @@ const enUS: Record<string, string> = {
     "Disabled {plugin} in this workspace (overriding User default)",
   "settings.plugins.toggle.failed": "Couldn't update {plugin}. Try again.",
   "settings.modelProviderDescription":
-    "Configure API providers for Composer or open a separate agent integration such as OpenCode CLI.",
+    "For Composer, choose an API provider and model; its API key stays in ZCode. OpenCode CLI runs separately on the workspace computer with OpenCode's own sign-in, and its models do not appear in Composer.",
   "settings.modelProvider.credentialModeApiKey": "API key",
   "settings.openCode.title": "OpenCode agent",
   "settings.openCode.authModeCli": "Host CLI · no API key",
   "settings.openCode.ownership":
     "OpenCode runs as a separate agent on the Host that owns this workspace. It owns its tools, permission prompts, workspace changes, sign-in, and usage limits. Its transcript is separate from ZCode chat.",
-  "settings.openCode.cliModelCatalogTitle": "Models reported by the local OpenCode CLI",
+  "settings.openCode.cliModelCatalogTitle":
+    "Models reported by the local OpenCode CLI (reference only)",
   "settings.openCode.cliAuthNotChecked":
     "Sign-in status is not checked here. Run `opencode auth login` in a terminal; this list does not enable these models in the ZCode composer.",
   "settings.openCode.refreshModels": "Refresh model list",
@@ -4885,8 +4886,8 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.presetDescription":
     "Built-in Z.ai and BigModel providers with OAuth-assisted configuration.",
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
-  "settings.modelProvider.customTitle": "API providers",
-  "settings.modelProvider.agentIntegrationsTitle": "Agent integrations",
+  "settings.modelProvider.customTitle": "Custom API providers for Composer",
+  "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
   "settings.modelProvider.openCodeCli": "OpenCode CLI",
   "settings.modelProvider.refresh": "Refresh",
   "settings.modelProvider.reorderProvider": "Drag to reorder provider",

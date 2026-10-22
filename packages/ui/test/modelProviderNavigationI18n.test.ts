@@ -85,7 +85,9 @@ describe("model provider navigation i18n", () => {
     const zhResult = useModelProviderNavigation({
       ...commonOptions,
       intl: createIntl({
-        "settings.modelProvider.customTitle": "自定义供应商",
+        "settings.modelProvider.customTitle": "Composer 自定义 API 供应商",
+        "settings.modelProvider.agentIntegrationsTitle": "独立智能体运行时",
+        "settings.modelProvider.openCodeCli": "OpenCode CLI",
         "settings.modelProvider.createCustomProvider": "创建自定义供应商",
       }),
     });
@@ -94,17 +96,28 @@ describe("model provider navigation i18n", () => {
     const enResult = useModelProviderNavigation({
       ...commonOptions,
       intl: createIntl({
-        "settings.modelProvider.customTitle": "Custom Providers",
+        "settings.modelProvider.customTitle": "Custom API providers for Composer",
+        "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
+        "settings.modelProvider.openCodeCli": "OpenCode CLI",
         "settings.modelProvider.createCustomProvider": "Create Custom Provider",
       }),
     });
 
     expect(zhResult.navigationGroups.find((group) => group.id === "custom")?.title).toBe(
-      "自定义供应商",
+      "Composer 自定义 API 供应商",
     );
     const enCustomGroup = enResult.navigationGroups.find((group) => group.id === "custom");
-    expect(enCustomGroup?.title).toBe("Custom Providers");
+    expect(enCustomGroup?.title).toBe("Custom API providers for Composer");
     expect(enCustomGroup?.items).toHaveLength(1);
     expect(enCustomGroup?.items[0]?.type).toBe("custom");
+    expect(
+      enResult.navigationGroups.find((group) => group.id === "agent-integrations"),
+    ).toMatchObject({
+      title: "Separate agent runtimes",
+      items: [{ type: "agentIntegration", integrationId: "opencode-cli" }],
+    });
+    expect(
+      enResult.navigationGroups.find((group) => group.id === "agent-integrations")?.items[0]?.label,
+    ).toBe("OpenCode CLI");
   });
 });

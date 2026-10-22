@@ -78,6 +78,7 @@ describe("OpenCode agent settings panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Refresh model list" }));
     await screen.findByText("provider/model-a");
     expect(runtime.listModels).toHaveBeenCalledOnce();
+    expect(screen.getByText(/reference only/u)).toBeTruthy();
     expect(screen.getByText(/Sign-in status is not checked/u)).toBeTruthy();
     expect(screen.getByText(/does not enable these models in the ZCode composer/u)).toBeTruthy();
   });
