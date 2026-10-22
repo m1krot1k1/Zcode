@@ -660,8 +660,8 @@ export function createOpenCodeAcpRuntime(
       if (activeRuntime.sessions.size === 0) await stopRuntime(activeRuntime);
     },
 
-    onSessionUpdate: ({ sessionId }) => getEmitter(sessionId).event,
-    onPermissionEvent: ({ sessionId }) => getPermissionEmitter(sessionId).event,
+    onDynamicSessionUpdate: ({ sessionId }) => getEmitter(sessionId).event,
+    onDynamicPermissionEvent: ({ sessionId }) => getPermissionEmitter(sessionId).event,
 
     disposeAllAndWait: async () => {
       if (disposePromise) return disposePromise;

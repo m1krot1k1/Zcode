@@ -50,11 +50,11 @@ describe("OpenCode ACP Host reverse RPC", () => {
       cancel: vi.fn(async () => {}),
       respondToPermission: vi.fn(async () => {}),
       closeSession: vi.fn(async () => {}),
-      onSessionUpdate: vi.fn(() => (listener: (value: unknown) => void) => {
+      onDynamicSessionUpdate: vi.fn(() => (listener: (value: unknown) => void) => {
         emitSessionUpdate = listener;
         return { dispose() {} };
       }),
-      onPermissionEvent: vi.fn(() => (_listener: (value: unknown) => void) => ({
+      onDynamicPermissionEvent: vi.fn(() => (_listener: (value: unknown) => void) => ({
         dispose() {},
       })),
     };
@@ -179,7 +179,10 @@ describe("OpenCode ACP Host reverse RPC", () => {
       });
       await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(3));
       expect(notify.mock.calls.map(([, notification]) => notification)).toEqual([
-        expect.objectContaining({ sequence: 1, event: expect.objectContaining({ type: "started" }) }),
+        expect.objectContaining({
+          sequence: 1,
+          event: expect.objectContaining({ type: "started" }),
+        }),
         expect.objectContaining({ sequence: 2, event: { type: "content", text: "first" } }),
         expect.objectContaining({ sequence: 3, event: { type: "content", text: "second" } }),
       ]);
@@ -301,10 +304,10 @@ describe("OpenCode ACP Host reverse RPC", () => {
         cancel: vi.fn(async () => {}),
         respondToPermission: vi.fn(async () => {}),
         closeSession: vi.fn(async () => {}),
-        onSessionUpdate: vi.fn(() => (_listener: (value: unknown) => void) => ({
+        onDynamicSessionUpdate: vi.fn(() => (_listener: (value: unknown) => void) => ({
           dispose() {},
         })),
-        onPermissionEvent: vi.fn(() => (_listener: (value: unknown) => void) => ({
+        onDynamicPermissionEvent: vi.fn(() => (_listener: (value: unknown) => void) => ({
           dispose() {},
         })),
       };

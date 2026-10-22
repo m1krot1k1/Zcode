@@ -1045,8 +1045,8 @@ interface CreateZCodeAgentServiceOptions extends Omit<
     | "cancel"
     | "respondToPermission"
     | "closeSession"
-    | "onSessionUpdate"
-    | "onPermissionEvent"
+    | "onDynamicSessionUpdate"
+    | "onDynamicPermissionEvent"
   >;
   accountProviderConfigSource?: ProviderSource<AccountProviderConfigSnapshot>;
   accountRequestAuthService?: IAccountRequestAuthService;
@@ -1444,7 +1444,10 @@ export function createZCodeAgentService(
       .then(async () => {
         const activeClient = activeClientsByWorkspaceKey.get(run.workspaceKey)?.client;
         if (serviceDisposing || activeClient !== run.client || run.client.isDisposed) return;
-        await run.client.notify(zcodeProtocolMethods.interactionOpenCodeAgentRunEvent, notification);
+        await run.client.notify(
+          zcodeProtocolMethods.interactionOpenCodeAgentRunEvent,
+          notification,
+        );
       })
       .catch((error: unknown) => {
         // A failed send consumes its sequence; the receiver must reconcile the gap by exact run identity.
@@ -2845,10 +2848,10 @@ export function createZCodeAgentService(
                   created.modelValue = requestedModelId;
                 }
                 created.disposables.push(
-                  runtime.onSessionUpdate({ sessionId: session.sessionId })((update) =>
+                  runtime.onDynamicSessionUpdate({ sessionId: session.sessionId })((update) =>
                     normalizeOpenCodeUpdate(created, update),
                   ),
-                  runtime.onPermissionEvent({ sessionId: session.sessionId })((event) =>
+                  runtime.onDynamicPermissionEvent({ sessionId: session.sessionId })((event) =>
                     normalizeOpenCodePermission(created, event),
                   ),
                 );

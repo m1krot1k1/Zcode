@@ -53,6 +53,34 @@ describe("RemoteServiceAccess optional channels", () => {
     expect(requested).toContain(IOpenCodeAcpRuntime.channelName);
   });
 
+  it("keeps parameterized ACP subscriptions as callable dynamic RPC events", () => {
+    const payload = { sessionUpdate: "agent_message_chunk" };
+    const dispose = { dispose: vi.fn() };
+    const listen = vi.fn((event: string, arg?: unknown) => {
+      expect(event).toBe("onDynamicSessionUpdate");
+      expect(arg).toEqual({ sessionId: "session-1" });
+      return (listener: (value: unknown) => void) => {
+        listener(payload);
+        return dispose;
+      };
+    });
+    const services = new RemoteServiceAccess(
+      {
+        getChannel: () => ({ call: vi.fn(), listen }) as unknown as IChannel,
+      } as IChannelClient,
+      { openCodeAcpRuntime: true },
+    );
+    const listener = vi.fn();
+
+    const subscription = services.openCodeAcpRuntime!.onDynamicSessionUpdate({
+      sessionId: "session-1",
+    })(listener);
+
+    expect(subscription).toBe(dispose);
+    expect(listener).toHaveBeenCalledWith(payload);
+    expect(listen).toHaveBeenCalledTimes(1);
+  });
+
   it("does not construct a Source management proxy for scopes that do not publish it", () => {
     const getChannel = vi.fn(() => channel);
     const services = new RemoteServiceAccess({ getChannel } as IChannelClient, {

@@ -4,6 +4,7 @@ import { join, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { createOpenCodeAcpRuntime } from "../src/opencode-acp-runtime/adapters/openCodeAcpRuntime.js";
+import * as openCodeAcpBrowserEntry from "../src/opencode-acp-runtime/index.js";
 import { resolveOpenCodeCli } from "../src/opencode-acp-runtime/adapters/cliResolver.js";
 import {
   downloadPinnedOpenCodeArchive,
@@ -16,6 +17,12 @@ import {
 } from "../src/opencode-acp-runtime/adapters/cliReleaseManifest.js";
 
 const temporaryPaths: string[] = [];
+
+describe("OpenCode ACP browser-safe entry", () => {
+  it("does not export the Node-only runtime factory", () => {
+    expect("createOpenCodeAcpRuntime" in openCodeAcpBrowserEntry).toBe(false);
+  });
+});
 
 async function makeTempDir(): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), "zcode-opencode-acp-"));
@@ -230,7 +237,7 @@ describe("OpenCode ACP runtime", () => {
       models: ["openai/gpt-test", "local/test-model"],
       authentication: "not-checked",
     });
-    expect(runtime.onSessionUpdate).toBeDefined();
+    expect(runtime.onDynamicSessionUpdate).toBeDefined();
     await runtime.disposeAllAndWait();
   });
 
@@ -559,7 +566,7 @@ describe("OpenCode ACP runtime", () => {
       });
 
       const updates: unknown[] = [];
-      const subscription = runtime.onSessionUpdate({
+      const subscription = runtime.onDynamicSessionUpdate({
         sessionId: session.sessionId,
       })((update) => updates.push(update));
       const prompt = runtime.prompt({
@@ -1144,7 +1151,7 @@ describe("OpenCode ACP runtime", () => {
         requestId: string;
         options: Array<{ optionId: string; kind: string; name: string }>;
       }>((resolve) => (resolvePermissionRequest = resolve));
-      const subscription = runtime.onPermissionEvent({
+      const subscription = runtime.onDynamicPermissionEvent({
         sessionId: session.sessionId,
       })((event) => {
         events.push(event);
@@ -1211,7 +1218,7 @@ describe("OpenCode ACP runtime", () => {
     try {
       const session = await runtime.startSession({ cwd: directory });
       const events: unknown[] = [];
-      const subscription = runtime.onPermissionEvent({
+      const subscription = runtime.onDynamicPermissionEvent({
         sessionId: session.sessionId,
       })((event) => events.push(event));
       const prompt = runtime.prompt({

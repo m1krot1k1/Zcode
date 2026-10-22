@@ -96,8 +96,8 @@ describe("OpenCode agent settings panel", () => {
         configOptions: [],
       })),
       closeSession: vi.fn(async () => undefined),
-      onSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
-      onPermissionEvent: vi.fn(() => () => ({ dispose: () => undefined })),
+      onDynamicSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
+      onDynamicPermissionEvent: vi.fn(() => () => ({ dispose: () => undefined })),
     };
     const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
     const platform = {
@@ -329,7 +329,7 @@ describe("OpenCode agent settings panel", () => {
         },
       ),
       closeSession: vi.fn(async () => undefined),
-      onSessionUpdate: vi.fn(() => (listener: (update: unknown) => void) => {
+      onDynamicSessionUpdate: vi.fn(() => (listener: (update: unknown) => void) => {
         publishUpdate = listener;
         return {
           dispose: () => {
@@ -337,7 +337,7 @@ describe("OpenCode agent settings panel", () => {
           },
         };
       }),
-      onPermissionEvent: vi.fn(() => permissionEmitter.event),
+      onDynamicPermissionEvent: vi.fn(() => permissionEmitter.event),
       disposeAllAndWait: vi.fn(async () => undefined),
     };
     const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
@@ -469,8 +469,8 @@ describe("OpenCode agent settings panel", () => {
       cancel: vi.fn(async () => undefined),
       respondToPermission: vi.fn(async () => undefined),
       closeSession: vi.fn(async () => undefined),
-      onSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
-      onPermissionEvent: vi.fn(() => permissionEmitter.event),
+      onDynamicSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
+      onDynamicPermissionEvent: vi.fn(() => permissionEmitter.event),
     };
     const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
     const platform = {
@@ -518,8 +518,8 @@ describe("OpenCode agent settings panel", () => {
         throw new Error("opencode.acp-initialize-failed");
       }),
       closeSession: vi.fn(async () => undefined),
-      onSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
-      onPermissionEvent: vi.fn(() => () => ({ dispose: () => undefined })),
+      onDynamicSessionUpdate: vi.fn(() => () => ({ dispose: () => undefined })),
+      onDynamicPermissionEvent: vi.fn(() => () => ({ dispose: () => undefined })),
     };
     const services = { openCodeAcpRuntime: runtime } as unknown as IServiceAccessor;
     const platform = {

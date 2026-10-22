@@ -114,10 +114,10 @@ export interface IOpenCodeAcpRuntime {
   closeSession(params: { sessionId: string }): Promise<void>;
 
   /** A dynamic event scoped to one OpenCode session; each update retains the ACP session ID. */
-  onSessionUpdate(params: { sessionId: string }): Event<OpenCodeAcpSessionUpdate>;
+  onDynamicSessionUpdate(params: { sessionId: string }): Event<OpenCodeAcpSessionUpdate>;
 
   /** Explicit user permission requests from the delegated OpenCode session. */
-  onPermissionEvent(params: { sessionId: string }): Event<OpenCodeAcpPermissionEvent>;
+  onDynamicPermissionEvent(params: { sessionId: string }): Event<OpenCodeAcpPermissionEvent>;
 
   /** Host shutdown only: closes sessions and waits for the owned CLI process tree to exit. */
   disposeAllAndWait(): Promise<void>;

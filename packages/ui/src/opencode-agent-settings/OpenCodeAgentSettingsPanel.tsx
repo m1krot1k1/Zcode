@@ -189,7 +189,9 @@ export function OpenCodeAgentSettingsPanel({
 
   useEffect(() => {
     if (!runtime || !session) return;
-    const subscription = runtime.onSessionUpdate({ sessionId: session.sessionId })((update) => {
+    const subscription = runtime.onDynamicSessionUpdate({ sessionId: session.sessionId })((
+      update,
+    ) => {
       const item = eventText(update);
       if (!item) return;
       setTranscript((current) => {
@@ -209,7 +211,9 @@ export function OpenCodeAgentSettingsPanel({
 
   useEffect(() => {
     if (!runtime || !session) return;
-    const subscription = runtime.onPermissionEvent({ sessionId: session.sessionId })((event) => {
+    const subscription = runtime.onDynamicPermissionEvent({ sessionId: session.sessionId })((
+      event,
+    ) => {
       if (event.type === "requested") {
         setPermissionRequests((current) => [
           ...current.filter((request) => request.requestId !== event.request.requestId),
