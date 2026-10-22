@@ -1746,6 +1746,7 @@ describe("zcodeAgentService v4 conversation channel", () => {
       const commandRequest = readRequests(logPath).find((entry) => entry.method === "v4/command");
       expect(commandRequest?.params.payload).toEqual({
         inputOrigin: "desktop",
+        executionRoute: { kind: "zcode" },
         text: "执行定时任务",
         automationId: "automation-cron",
         toolDisallowlist: ["ExistingDeniedTool", "CronCreate", "CronUpdate", "CronDelete"],
