@@ -133,11 +133,13 @@ interface McpImportCandidate {
   sourceRootScope: SettingsSyncSourceScope;
   sourceRootPath: string;
   sourcePath: string;
+  requiresOAuthReauthentication?: boolean;
 }
 
 interface McpSourceFileReadResult {
   servers: Record<string, McpServerConfig>;
   diagnostics: SettingsSyncSourceDiagnostic[];
+  oauthReauthenticationRequiredNames?: string[];
 }
 
 interface McpSourceRoot {
@@ -1254,6 +1256,7 @@ function readClineMcpServers(
   }
 
   const servers: Record<string, McpServerConfig> = {};
+  const oauthReauthenticationRequiredNames: string[] = [];
   let invalidEntryCount = 0;
   for (const [name, config] of Object.entries(parsed.mcpServers)) {
     if (!name.trim() || !isRecord(config)) {
@@ -1266,10 +1269,17 @@ function readClineMcpServers(
       continue;
     }
     servers[name] = normalized;
+    // 修复依据：Cline 的 oauth 是本地会话状态；只记录服务器名用于提示重新授权，不读取或搬运其中的值。
+    if (isRecord(config.oauth) && Object.keys(config.oauth).length > 0) {
+      oauthReauthenticationRequiredNames.push(name);
+    }
   }
 
   return {
     servers,
+    ...(oauthReauthenticationRequiredNames.length > 0
+      ? { oauthReauthenticationRequiredNames }
+      : {}),
     diagnostics:
       invalidEntryCount > 0
         ? [{ path: sourcePath, code: "invalidEntries", count: invalidEntryCount }]
@@ -1281,11 +1291,16 @@ function prepareMcpConfigForTargetScope(
   candidate: McpImportCandidate,
   targetScope: SettingsSyncSourceScope,
 ): { config: McpServerConfig; warnings?: SettingsSyncMcpServerImportWarning[] } {
+  const config: McpServerConfig = { ...candidate.config };
   if (candidate.agent !== "cline" || targetScope !== "project") {
-    return { config: candidate.config };
+    return {
+      config,
+      ...(candidate.requiresOAuthReauthentication
+        ? { warnings: ["clineOAuthReauthenticationRequired"] }
+        : {}),
+    };
   }
 
-  const config: McpServerConfig = { ...candidate.config };
   let secretsOmitted = false;
   if (config.env && Object.keys(config.env).length > 0) {
     delete config.env;
@@ -1306,10 +1321,12 @@ function prepareMcpConfigForTargetScope(
     secretsOmitted = true;
   }
 
-  return {
-    config,
-    ...(secretsOmitted ? { warnings: ["secretsOmittedForProjectScope"] } : {}),
-  };
+  const warnings: SettingsSyncMcpServerImportWarning[] = [];
+  if (secretsOmitted) warnings.push("secretsOmittedForProjectScope");
+  if (candidate.requiresOAuthReauthentication) {
+    warnings.push("clineOAuthReauthenticationRequired");
+  }
+  return { config, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 function readOpenCodeMcpServers(parsed: Record<string, unknown>): Record<string, McpServerConfig> {
@@ -1975,6 +1992,9 @@ async function scanMcpImportSources(workspacePath?: string): Promise<{
         sourceRootScope: root.scope === "workspace" ? "project" : "global",
         sourceRootPath: root.rootPath,
         sourcePath,
+        ...(readResult.oauthReauthenticationRequiredNames?.includes(name)
+          ? { requiresOAuthReauthentication: true }
+          : {}),
       });
     }
   }

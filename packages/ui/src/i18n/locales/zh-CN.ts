@@ -3484,9 +3484,11 @@ const zhCN: Record<string, string> = {
   "settings.mcpServers.import.open": "从外部 Agent 导入 MCP 服务器",
   "settings.mcpServers.import.title": "导入外部 Agent MCP 服务器",
   "settings.mcpServers.import.clineSecurityNotice":
-    "导入到项目范围时，Cline 环境变量、请求头和 OAuth 客户端密钥不会写入；结果会标记受影响的服务器。导入到全局范围会将它们保存在 ZCode 私有配置中。Cline OAuth 登录令牌不会迁移，需在 ZCode 中重新授权。",
+    "导入到项目范围时，Cline 环境变量、请求头和 OAuth 客户端密钥不会写入；结果会标记受影响的服务器。导入到全局范围会将它们保存在 ZCode 私有配置中。",
   "settings.mcpServers.import.warning.secretsOmittedForProjectScope":
     "项目范围未导入环境变量、请求头和 OAuth 客户端密钥。若要保留这些内容，请导入到全局范围的私有用户配置。",
+  "settings.mcpServers.import.warning.clineOAuthReauthenticationRequired":
+    "未导入 Cline OAuth 会话数据。请在 ZCode 中重新授权此服务器。",
   "settings.mcpServers.import.scanning": "正在扫描可导入 MCP 服务器...",
   "settings.mcpServers.import.empty":
     "暂无可导入 MCP 服务器。可检查外部 Agent 的 MCP 配置文件后重新扫描。",

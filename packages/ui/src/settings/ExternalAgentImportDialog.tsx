@@ -1048,7 +1048,7 @@ function ImportResultList({
         ) : (
           <div className="divide-y divide-border">
             {results.map((itemResult) => (
-              <ImportResultRow
+              <ExternalAgentImportResultRow
                 key={`${itemResult.status}:${itemResult.sourceScope}:${itemResult.path}`}
                 category={category}
                 result={itemResult}
@@ -1061,7 +1061,7 @@ function ImportResultList({
   );
 }
 
-function ImportResultRow({
+export function ExternalAgentImportResultRow({
   category,
   result,
 }: {
@@ -1070,10 +1070,12 @@ function ImportResultRow({
 }) {
   const { intl } = useZCodeIntl();
   const warningLabel =
-    "warnings" in result && result.warnings?.includes("secretsOmittedForProjectScope")
-      ? intl.formatMessage({
-          id: "settings.mcpServers.import.warning.secretsOmittedForProjectScope",
-        })
+    "warnings" in result
+      ? result.warnings
+          ?.map((warning) =>
+            intl.formatMessage({ id: `settings.mcpServers.import.warning.${warning}` }),
+          )
+          .join(" ") || null
       : null;
 
   return (
@@ -1121,10 +1123,12 @@ function ImportStatusBadge({
     ? intl.formatMessage({ id: `settings.${category}.import.skipReason.${result.skipReason}` })
     : null;
   const warningLabel =
-    "warnings" in result && result.warnings?.includes("secretsOmittedForProjectScope")
-      ? intl.formatMessage({
-          id: "settings.mcpServers.import.warning.secretsOmittedForProjectScope",
-        })
+    "warnings" in result
+      ? result.warnings
+          ?.map((warning) =>
+            intl.formatMessage({ id: `settings.mcpServers.import.warning.${warning}` }),
+          )
+          .join(" ") || null
       : null;
   const accessibleLabel = [label, reasonLabel, warningLabel].filter(Boolean).join(": ");
   const Icon =

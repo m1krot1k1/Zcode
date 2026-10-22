@@ -897,6 +897,13 @@ describe("settingsSyncService MCP server import", () => {
             headers: { Authorization: `Bearer ${headerSecret}` },
           },
         },
+        "static-oauth-client": {
+          transport: {
+            type: "sse",
+            url: "https://mcp.example.test/static-oauth",
+          },
+          oauthClient: { clientId: "static-client-id", clientSecret: oauthClientSecret },
+        },
         "legacy-http-server": {
           transportType: "http",
           url: "https://mcp.example.test/legacy",
@@ -930,14 +937,15 @@ describe("settingsSyncService MCP server import", () => {
         intent: "manualImport",
       });
       const cline = discovery.agents.find((agent) => agent.agent === "cline");
-      expect(cline?.categories[0]?.discoveredCount).toBe(6);
+      expect(cline?.categories[0]?.discoveredCount).toBe(7);
       expect(cline?.categories[0]?.sourcePaths).toEqual([clineSettingsPath]);
+      expect(JSON.stringify(discovery)).not.toContain(oauthTokenSecret);
 
       const result = await service.importSelected({
         workspacePath,
         selections: [{ agent: "cline", category: "mcpServers" }],
       });
-      expect(result.successCount).toBe(5);
+      expect(result.successCount).toBe(6);
       expect(result.skippedCount).toBe(1);
       expect(result.failedCount).toBe(0);
       expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
@@ -946,6 +954,19 @@ describe("settingsSyncService MCP server import", () => {
         sourceScope: "global",
         status: "skipped",
         skipReason: "sameNameExists",
+      });
+      expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
+        name: "sse-oauth",
+        path: `${clineSettingsPath}#sse-oauth`,
+        sourceScope: "global",
+        status: "imported",
+        warnings: ["clineOAuthReauthenticationRequired"],
+      });
+      expect(result.taskResults[0]?.mcpServerResults).toContainEqual({
+        name: "static-oauth-client",
+        path: `${clineSettingsPath}#static-oauth-client`,
+        sourceScope: "global",
+        status: "imported",
       });
 
       const config = JSON.parse(readFileSync(targetConfigPath, "utf-8")) as {
@@ -983,6 +1004,15 @@ describe("settingsSyncService MCP server import", () => {
         url: "https://mcp.example.test/mcp",
         headers: { Authorization: `Bearer ${headerSecret}` },
       });
+      expect(config.mcp?.servers?.["static-oauth-client"]).toEqual({
+        type: "sse",
+        url: "https://mcp.example.test/static-oauth",
+        oauth: {
+          type: "authorization_code",
+          clientId: "static-client-id",
+          clientSecret: oauthClientSecret,
+        },
+      });
       expect(config.mcp?.servers?.["legacy-http-server"]).toEqual({
         type: "http",
         url: "https://mcp.example.test/legacy",
@@ -1016,6 +1046,7 @@ describe("settingsSyncService MCP server import", () => {
     const envSecret = "project-env-secret-marker";
     const headerSecret = "project-header-secret-marker";
     const oauthSecret = "project-oauth-client-secret-marker";
+    const oauthSessionSecret = "project-oauth-session-secret-marker";
     writeJsonConfig(clineSettingsPath, {
       mcpServers: {
         "stdio-server": {
@@ -1034,6 +1065,10 @@ describe("settingsSyncService MCP server import", () => {
             headers: { Authorization: `Bearer ${headerSecret}` },
           },
           oauthClient: { clientId: "cline-client-id", clientSecret: oauthSecret },
+          oauth: {
+            tokens: { access_token: oauthSessionSecret, refresh_token: oauthSessionSecret },
+            codeVerifier: oauthSessionSecret,
+          },
         },
       },
     });
@@ -1060,8 +1095,12 @@ describe("settingsSyncService MCP server import", () => {
       path: `${clineSettingsPath}#sse-server`,
       sourceScope: "global",
       status: "imported",
-      warnings: ["secretsOmittedForProjectScope"],
+      warnings: ["secretsOmittedForProjectScope", "clineOAuthReauthenticationRequired"],
     });
+    expect(
+      result.taskResults[0]?.mcpServerResults.find((server) => server.name === "sse-server")
+        ?.warnings,
+    ).toContain("clineOAuthReauthenticationRequired");
 
     const targetConfigPath = join(workspacePath, ".zcode", "config.json");
     const config = JSON.parse(readFileSync(targetConfigPath, "utf-8")) as {
@@ -1080,7 +1119,7 @@ describe("settingsSyncService MCP server import", () => {
     });
 
     const observableOutput = JSON.stringify({ result, config });
-    for (const marker of [envSecret, headerSecret, oauthSecret]) {
+    for (const marker of [envSecret, headerSecret, oauthSecret, oauthSessionSecret]) {
       expect(observableOutput).not.toContain(marker);
     }
   });

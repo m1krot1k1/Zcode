@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../src/components/ui/tooltip.js";
 import { ZCodeIntlProvider } from "../src/i18n/IntlProvider.js";
 import {
+  ExternalAgentImportResultRow,
   ExternalAgentImportSelectionPanel,
   type ExternalAgentImportCategoryState,
 } from "../src/settings/ExternalAgentImportDialog.js";
@@ -70,5 +71,34 @@ describe("external agent MCP import diagnostics", () => {
 
     expect(screen.getByRole("alert").textContent).toContain("malformed");
     expect(screen.getByRole("alert").textContent).toContain(sourcePath);
+  });
+
+  it("shows the localized reauthorization warning on an imported server result", () => {
+    render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(
+          TooltipProvider,
+          {},
+          createElement(ExternalAgentImportResultRow, {
+            category: "mcpServers",
+            result: {
+              name: "oauth-server",
+              path: "/Users/example/.cline/data/settings/cline_mcp_settings.json#oauth-server",
+              sourceScope: "global",
+              status: "imported",
+              warnings: ["clineOAuthReauthenticationRequired"],
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(
+      screen.getByText(
+        "Cline OAuth session data was not imported. Authorize this server again in ZCode.",
+      ),
+    ).toBeTruthy();
   });
 });

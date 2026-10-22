@@ -12,6 +12,12 @@ The MCP import source resolves one Cline settings file using this precedence: ex
 
 Acceptance evidence: path resolver unit tests cover explicit override precedence, each platform's user-data root, editor ordering, first-existing selection, and fallback when no profile exists. Import tests prove the selected IDE profile is the source path and keep credential values out of diagnostics.
 
+## Cline runtime OAuth state during MCP import
+
+Cline MCP entries may contain runtime OAuth session state under `oauth` (for example tokens or a code verifier) in addition to the static `oauthClient` registration. Import reads `oauthClient` as the existing static client configuration, but never copies or returns values from the runtime `oauth` object. Runtime state is detected only as a non-empty object; discovery remains limited to the existing safe server summary and does not expose a new credential-bearing field. A successfully imported entry with runtime OAuth state receives the typed warning `clineOAuthReauthenticationRequired`, which tells the user to authorize that server again in ZCode. Entries without runtime OAuth state, including entries with only `oauthClient`, do not receive that warning. The warning contains no source values and is independent of target scope.
+
+Acceptance evidence: service tests use unique sentinel values in runtime tokens/verifier and assert they are absent from discovery, import results, captured logs, and persisted config; successful import results contain the reauthorization warning only for non-empty runtime OAuth state. A static `oauthClient`-only entry preserves the existing normalized OAuth client configuration and receives no reauthorization warning. UI tests verify the localized warning is rendered for the affected imported result.
+
 ## Curated npm package pins and provenance
 
 Every curated npm stdio preset must name an exact direct-package version in both its `version` field and generated `npx` arguments (`package@version`). The following versions and license identifiers were checked against the npm registry package metadata on 2026-10-21. The repository links identify the upstream source recorded by npm; npm package pages are the package/version metadata source of record.

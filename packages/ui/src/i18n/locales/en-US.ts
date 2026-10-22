@@ -3729,9 +3729,11 @@ const enUS: Record<string, string> = {
   "settings.mcpServers.import.open": "Import MCP servers from external agents",
   "settings.mcpServers.import.title": "Import external agent MCP servers",
   "settings.mcpServers.import.clineSecurityNotice":
-    "Project imports omit Cline environment values, headers, and OAuth client secrets; the result marks each affected server. Global imports keep them in ZCode's private config. Cline OAuth login tokens are never migrated, so authorize those servers in ZCode.",
+    "Project imports omit Cline environment values, headers, and OAuth client secrets; the result marks each affected server. Global imports keep them in ZCode's private config.",
   "settings.mcpServers.import.warning.secretsOmittedForProjectScope":
     "Environment values, headers, and OAuth client secret were omitted for project scope. Import to Global to keep them in the private user config.",
+  "settings.mcpServers.import.warning.clineOAuthReauthenticationRequired":
+    "Cline OAuth session data was not imported. Authorize this server again in ZCode.",
   "settings.mcpServers.import.scanning": "Scanning importable MCP servers...",
   "settings.mcpServers.import.empty":
     "No importable MCP servers found. Check the external agent MCP config files and scan again.",
