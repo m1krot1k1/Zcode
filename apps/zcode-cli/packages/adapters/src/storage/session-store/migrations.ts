@@ -1025,4 +1025,26 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
         where status = 'pending';
     `,
   },
+  {
+    appVersion: "0.16.9",
+    id: "0026_opencode_host_event_sequence",
+    touchedTables: ["opencode_agent_run"],
+    apply: (db) => {
+      const columns = new Set(
+        db
+          .prepare("pragma table_info(opencode_agent_run)")
+          .all()
+          .map((row) => row.name),
+      );
+      if (!columns.has("host_event_sequence")) {
+        db.exec(
+          "alter table opencode_agent_run add column host_event_sequence integer not null default 0",
+        );
+      }
+    },
+    sql: `
+      alter table opencode_agent_run
+        add column host_event_sequence integer not null default 0;
+    `,
+  },
 ];

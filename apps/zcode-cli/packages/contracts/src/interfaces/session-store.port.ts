@@ -820,8 +820,7 @@ export const SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION =
   "runtime/dynamic_workflow_activation" as const;
 /** 根会话唯一保存 PRISM task contract 与 Host evidence receipt；不引入平行队列或表。 */
 export const SESSION_ENTRY_PRISM_TASK_CONTRACT = "runtime/prism_task_contract" as const;
-export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT =
-  "runtime/prism_evidence_receipt" as const;
+export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT = "runtime/prism_evidence_receipt" as const;
 /** Root-session append-only projection of one admitted subagent attempt's terminal lifecycle. */
 export const SESSION_ENTRY_PRISM_TASK_TERMINAL = "runtime/prism_task_terminal" as const;
 /** Read-only metadata and output locator for terminal TaskOutput lookup after registry eviction. */
@@ -932,7 +931,10 @@ export interface OpenCodeAgentRunRecord {
   routeKind: "opencode-cli";
   requestedModelID?: string;
   status: OpenCodeAgentRunStatus;
+  /** CAS revision for durable lifecycle mutations. */
   eventSequence: number;
+  /** Last strictly ordered event accepted from the process-owning Host. */
+  hostEventSequence: number;
   time: { created: number; updated: number; terminal?: number };
   openCodeSessionID?: string;
   resultText?: string;
@@ -967,6 +969,11 @@ export interface OpenCodeAgentRunTransition {
   resultText?: string | null;
   stopReason?: string | null;
   diagnosticCode?: string | null;
+}
+
+export interface OpenCodeAgentRunHostEventTransition extends OpenCodeAgentRunTransition {
+  expectedHostEventSequence: number;
+  hostEventSequence: number;
 }
 
 export type UsageQuerySource =
@@ -1306,8 +1313,10 @@ export interface SessionStorePort {
     run: OpenCodeAgentRunRecord;
     created: boolean;
   }>;
-  /** Compare-and-set one ordered run event; terminal rows are immutable. */
+  /** Compare-and-set outbox-owned dispatch/recovery changes; Host-originated updates use the Host sequence clock. */
   transitionOpenCodeAgentRun?(input: OpenCodeAgentRunTransition): Promise<boolean>;
+  /** Atomically advances durable revision and the separate process-owning Host event clock. */
+  applyOpenCodeAgentRunHostEvent?(input: OpenCodeAgentRunHostEventTransition): Promise<boolean>;
   getOpenCodeAgentRun?(input: {
     sessionID: SessionId;
     runID: string;

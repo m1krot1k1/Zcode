@@ -30,6 +30,7 @@ import type {
   MessageWithParts,
   ModelUsageRecord,
   OpenCodeAgentRunAdmission,
+  OpenCodeAgentRunHostEventTransition,
   OpenCodeAgentRunRecord,
   OpenCodeAgentRunStatus,
   OpenCodeAgentRunTransition,
@@ -226,7 +227,6 @@ function assertForkBundleChildLocal(bundle: ForkCommitBundle): void {
   }
 }
 
-
 export class SqliteSessionStore
   implements
     SessionStorePort,
@@ -251,7 +251,10 @@ export class SqliteSessionStore
     this.forkCommitFaultAt = options.forkCommitFaultAt;
   }
 
-  static async open(options: SqliteSessionStoreOptions = {}, migrationOptions?: AsyncSqliteMigrationOptions): Promise<SqliteSessionStore> {
+  static async open(
+    options: SqliteSessionStoreOptions = {},
+    migrationOptions?: AsyncSqliteMigrationOptions,
+  ): Promise<SqliteSessionStore> {
     const dbPath = options.dbPath ?? getDefaultSessionDbPath();
     const startupLockTimeoutMs =
       options.startupLockTimeoutMs ?? DEFAULT_SQLITE_STARTUP_LOCK_TIMEOUT_MS;
@@ -271,15 +274,26 @@ export class SqliteSessionStore
       });
     }
     try {
-      const migration = await runSqliteSessionMigrationsAsync(db, dbPath, migrationOptions ?? { lockWaitTimeoutMs: startupLockTimeoutMs });
+      const migration = await runSqliteSessionMigrationsAsync(
+        db,
+        dbPath,
+        migrationOptions ?? { lockWaitTimeoutMs: startupLockTimeoutMs },
+      );
       return new SqliteSessionStore(db, dbPath, options, migration);
     } catch (error) {
-      try { db.close(); } catch { /* 关闭失败不能覆盖迁移错误。 */ }
+      try {
+        db.close();
+      } catch {
+        /* 关闭失败不能覆盖迁移错误。 */
+      }
       throw error;
     }
   }
 
-  static async openStartup(options: SqliteSessionStoreOptions = {}, migrationOptions: AsyncSqliteMigrationOptions = {}) {
+  static async openStartup(
+    options: SqliteSessionStoreOptions = {},
+    migrationOptions: AsyncSqliteMigrationOptions = {},
+  ) {
     return SqliteSessionStore.open(options, migrationOptions);
   }
 
@@ -738,6 +752,13 @@ export class SqliteSessionStore
     return sessionInputRepository.transitionOpenCodeAgentRun(this.db, input);
   }
 
+  async applyOpenCodeAgentRunHostEvent(
+    input: OpenCodeAgentRunHostEventTransition,
+  ): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.applyOpenCodeAgentRunHostEvent(this.db, input);
+  }
+
   async getOpenCodeAgentRun(input: {
     sessionID: SessionId;
     runID: string;
@@ -753,7 +774,9 @@ export class SqliteSessionStore
     return sessionInputRepository.listOpenCodeAgentRuns(this.db, input);
   }
 
-  async listPendingOpenCodeAgentRuns(input?: { limit?: number }): Promise<OpenCodeAgentRunRecord[]> {
+  async listPendingOpenCodeAgentRuns(input?: {
+    limit?: number;
+  }): Promise<OpenCodeAgentRunRecord[]> {
     return sessionInputRepository.listPendingOpenCodeAgentRuns(this.db, input);
   }
 

@@ -7,6 +7,7 @@ import type {
   MessageInfo,
   MessagePart,
   OpenCodeAgentRunAdmission,
+  OpenCodeAgentRunHostEventTransition,
   OpenCodeAgentRunRecord,
   OpenCodeAgentRunStatus,
   OpenCodeAgentRunTransition,
@@ -45,6 +46,7 @@ interface OpenCodeAgentRunRow {
   requested_model_id: string | null;
   status: string;
   event_sequence: number;
+  host_event_sequence: number;
   time_created: number;
   time_updated: number;
   time_terminal: number | null;
@@ -61,10 +63,24 @@ const OPEN_CODE_RUN_TERMINAL_STATUSES = new Set<OpenCodeAgentRunStatus>([
   "interrupted",
 ]);
 
-const OPEN_CODE_RUN_TRANSITIONS: Readonly<Record<OpenCodeAgentRunStatus, readonly OpenCodeAgentRunStatus[]>> = {
+const OPEN_CODE_RUN_TRANSITIONS: Readonly<
+  Record<OpenCodeAgentRunStatus, readonly OpenCodeAgentRunStatus[]>
+> = {
   pending: ["dispatching", "failed", "interrupted"],
+  dispatching: ["cancelled", "failed", "interrupted"],
+  running: ["interrupted"],
+  completed: [],
+  cancelled: [],
+  failed: [],
+  interrupted: [],
+};
+
+const OPEN_CODE_HOST_EVENT_TRANSITIONS: Readonly<
+  Record<OpenCodeAgentRunStatus, readonly OpenCodeAgentRunStatus[]>
+> = {
+  pending: [],
   dispatching: ["running", "completed", "cancelled", "failed", "interrupted"],
-  running: ["completed", "cancelled", "failed", "interrupted"],
+  running: ["running", "completed", "cancelled", "failed", "interrupted"],
   completed: [],
   cancelled: [],
   failed: [],
@@ -78,7 +94,13 @@ function decodeOpenCodeAgentRunRow(row: OpenCodeAgentRunRow): OpenCodeAgentRunRe
     throw new Error("Unsupported OpenCode delegated run record");
   }
   const statuses: readonly OpenCodeAgentRunStatus[] = [
-    "pending", "dispatching", "running", "completed", "cancelled", "failed", "interrupted",
+    "pending",
+    "dispatching",
+    "running",
+    "completed",
+    "cancelled",
+    "failed",
+    "interrupted",
   ];
   if (!statuses.includes(row.status as OpenCodeAgentRunStatus)) {
     throw new Error("Invalid OpenCode delegated run status");
@@ -93,6 +115,7 @@ function decodeOpenCodeAgentRunRow(row: OpenCodeAgentRunRow): OpenCodeAgentRunRe
     ...(row.requested_model_id !== null ? { requestedModelID: row.requested_model_id } : {}),
     status: row.status as OpenCodeAgentRunStatus,
     eventSequence: row.event_sequence,
+    hostEventSequence: row.host_event_sequence,
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -144,9 +167,9 @@ export async function admitOpenCodeAgentRun(
   const now = admission.now ?? Date.now();
   db.exec("begin immediate");
   try {
-    const existingInput = db.prepare("select * from session_input where id = ?").get(input.id) as unknown as
-      | SessionInputRow
-      | undefined;
+    const existingInput = db
+      .prepare("select * from session_input where id = ?")
+      .get(input.id) as unknown as SessionInputRow | undefined;
     const existingRun = db
       .prepare("select * from opencode_agent_run where command_id = ?")
       .get(admission.commandID) as OpenCodeAgentRunRow | undefined;
@@ -166,7 +189,9 @@ export async function admitOpenCodeAgentRun(
       throw new Error("Command ID already has a session input without an OpenCode outbox row");
     }
     const admittedSequence = db
-      .prepare("select coalesce(max(admitted_sequence), -1) + 1 as next from session_input where session_id = ?")
+      .prepare(
+        "select coalesce(max(admitted_sequence), -1) + 1 as next from session_input where session_id = ?",
+      )
       .get(input.sessionID) as { next: number };
     db.prepare(`
       insert into session_input (
@@ -196,7 +221,9 @@ export async function admitOpenCodeAgentRun(
       now,
       now,
     );
-    const admittedInput = db.prepare("select * from session_input where id = ?").get(input.id) as unknown as SessionInputRow;
+    const admittedInput = db
+      .prepare("select * from session_input where id = ?")
+      .get(input.id) as unknown as SessionInputRow;
     const run = readOpenCodeAgentRun(db, input.sessionID, admission.runID);
     if (!run) throw new Error("OpenCode delegated run admission did not persist");
     db.exec("commit");
@@ -223,27 +250,78 @@ export async function transitionOpenCodeAgentRun(
   const terminal = OPEN_CODE_RUN_TERMINAL_STATUSES.has(input.status);
   if (terminal && input.openCodeSessionID) return false;
   const now = input.now ?? Date.now();
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     update opencode_agent_run set
       status = ?, event_sequence = ?, time_updated = ?,
       time_terminal = ?,
       opencode_session_id = ?,
       result_text = ?, stop_reason = ?, diagnostic_code = ?
     where session_id = ? and run_id = ? and status = ? and event_sequence = ?
-  `).run(
-    input.status,
-    input.eventSequence,
-    now,
-    terminal ? now : null,
-    terminal ? null : (input.openCodeSessionID ?? null),
-    input.resultText ?? null,
-    input.stopReason ?? null,
-    input.diagnosticCode ?? null,
-    input.sessionID,
-    input.runID,
-    input.expectedStatus,
-    input.expectedEventSequence,
-  );
+  `)
+    .run(
+      input.status,
+      input.eventSequence,
+      now,
+      terminal ? now : null,
+      terminal ? null : (input.openCodeSessionID ?? null),
+      input.resultText ?? null,
+      input.stopReason ?? null,
+      input.diagnosticCode ?? null,
+      input.sessionID,
+      input.runID,
+      input.expectedStatus,
+      input.expectedEventSequence,
+    );
+  return result.changes === 1;
+}
+
+/**
+ * 修复依据：Host sequence 属于 Host 事件流，不能与 outbox 状态迁移共享计数，否则重启或 ACK 会让合法事件变成过期事件。
+ * Accept one exact-next Host event without confusing the durable CAS revision with its sequence.
+ */
+export async function applyOpenCodeAgentRunHostEvent(
+  db: DatabaseSync,
+  input: OpenCodeAgentRunHostEventTransition,
+): Promise<boolean> {
+  if (
+    input.eventSequence !== input.expectedEventSequence + 1 ||
+    input.hostEventSequence !== input.expectedHostEventSequence + 1 ||
+    !OPEN_CODE_HOST_EVENT_TRANSITIONS[input.expectedStatus].includes(input.status) ||
+    (input.status === "running" && !input.openCodeSessionID?.trim())
+  ) {
+    return false;
+  }
+  assertOpenCodeRunResultSize(input.resultText);
+  const terminal = OPEN_CODE_RUN_TERMINAL_STATUSES.has(input.status);
+  if (terminal && input.openCodeSessionID) return false;
+  const now = input.now ?? Date.now();
+  const result = db
+    .prepare(`
+    update opencode_agent_run set
+      status = ?, event_sequence = ?, host_event_sequence = ?, time_updated = ?,
+      time_terminal = ?,
+      opencode_session_id = ?,
+      result_text = ?, stop_reason = ?, diagnostic_code = ?
+    where session_id = ? and run_id = ? and status = ?
+      and event_sequence = ? and host_event_sequence = ?
+  `)
+    .run(
+      input.status,
+      input.eventSequence,
+      input.hostEventSequence,
+      now,
+      terminal ? now : null,
+      terminal ? null : (input.openCodeSessionID ?? null),
+      input.resultText ?? null,
+      input.stopReason ?? null,
+      input.diagnosticCode ?? null,
+      input.sessionID,
+      input.runID,
+      input.expectedStatus,
+      input.expectedEventSequence,
+      input.expectedHostEventSequence,
+    );
   return result.changes === 1;
 }
 
@@ -261,8 +339,16 @@ export async function listOpenCodeAgentRuns(
   const limit = Math.max(1, Math.min(500, Math.floor(input.limit ?? 100)));
   const statuses = input.statuses?.length ? input.statuses : undefined;
   const rows = statuses
-    ? db.prepare(`select * from opencode_agent_run where session_id = ? and status in (${statuses.map(() => "?").join(",")}) order by time_created, run_id limit ?`).all(input.sessionID, ...statuses, limit)
-    : db.prepare("select * from opencode_agent_run where session_id = ? order by time_created, run_id limit ?").all(input.sessionID, limit);
+    ? db
+        .prepare(
+          `select * from opencode_agent_run where session_id = ? and status in (${statuses.map(() => "?").join(",")}) order by time_created, run_id limit ?`,
+        )
+        .all(input.sessionID, ...statuses, limit)
+    : db
+        .prepare(
+          "select * from opencode_agent_run where session_id = ? order by time_created, run_id limit ?",
+        )
+        .all(input.sessionID, limit);
   return (rows as unknown as OpenCodeAgentRunRow[]).map(decodeOpenCodeAgentRunRow);
 }
 
@@ -271,7 +357,11 @@ export async function listPendingOpenCodeAgentRuns(
   input: { limit?: number } = {},
 ): Promise<OpenCodeAgentRunRecord[]> {
   const limit = Math.max(1, Math.min(500, Math.floor(input.limit ?? 100)));
-  const rows = db.prepare("select * from opencode_agent_run where status = 'pending' order by time_created, run_id limit ?").all(limit);
+  const rows = db
+    .prepare(
+      "select * from opencode_agent_run where status = 'pending' order by time_created, run_id limit ?",
+    )
+    .all(limit);
   return (rows as unknown as OpenCodeAgentRunRow[]).map(decodeOpenCodeAgentRunRow);
 }
 
@@ -284,11 +374,13 @@ export async function recoverOpenCodeAgentRuns(
   const diagnosticCode = input.diagnosticCode ?? "opencode.run-interrupted-after-restart";
   db.exec("begin immediate");
   try {
-    const unresolved = db.prepare(`
+    const unresolved = db
+      .prepare(`
       select session_id, run_id from opencode_agent_run
       where status in ('pending', 'dispatching', 'running')
       order by session_id, run_id
-    `).all() as Array<{ session_id: string; run_id: string }>;
+    `)
+      .all() as Array<{ session_id: string; run_id: string }>;
     db.prepare(`
       update opencode_agent_run set
         status = 'interrupted', event_sequence = event_sequence + 1,
@@ -298,7 +390,10 @@ export async function recoverOpenCodeAgentRuns(
     `).run(now, now, diagnosticCode);
     const read = db.prepare("select * from opencode_agent_run where session_id = ? and run_id = ?");
     const rows = unresolved
-      .map(({ session_id, run_id }) => read.get(session_id, run_id) as unknown as OpenCodeAgentRunRow | undefined)
+      .map(
+        ({ session_id, run_id }) =>
+          read.get(session_id, run_id) as unknown as OpenCodeAgentRunRow | undefined,
+      )
       .filter((row): row is OpenCodeAgentRunRow => row !== undefined);
     db.exec("commit");
     return rows.map(decodeOpenCodeAgentRunRow);

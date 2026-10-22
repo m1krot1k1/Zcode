@@ -639,6 +639,7 @@ describe("SQLite session store", () => {
       "0023_session_soft_delete_outcome",
       "0024_session_database_identity",
       "0025_opencode_agent_run_outbox",
+      "0026_opencode_host_event_sequence",
     ];
 
     try {
@@ -675,6 +676,7 @@ describe("SQLite session store", () => {
         "0.16.5",
         "0.16.5",
         "0.16.5",
+        "0.16.9",
         "0.16.9",
         "0.16.9",
         "0.16.9",
@@ -715,7 +717,7 @@ describe("SQLite session store", () => {
         ]),
       );
       expect(attempts.flat().filter((result) => !result.ok)).toEqual([]);
-      expect(attempts.flat().every((result) => result.migrationIds?.length === 25)).toBe(true);
+      expect(attempts.flat().every((result) => result.migrationIds?.length === 26)).toBe(true);
     },
     CONCURRENT_STARTUP_TEST_TIMEOUT_MS,
   );
@@ -943,6 +945,7 @@ describe("SQLite session store", () => {
         "0023_session_soft_delete_outcome",
         "0024_session_database_identity",
         "0025_opencode_agent_run_outbox",
+        "0026_opencode_host_event_sequence",
       ]);
       store.close();
     } finally {
@@ -3331,7 +3334,9 @@ describe("OpenCode delegated run outbox", () => {
   it("commits input and pending outbox atomically and returns existing records on retry", async () => {
     const { tempRoot, dbPath, store, sessionID } = await seedStore("atomic");
     const raw = new DatabaseSync(dbPath);
-    raw.exec(`create trigger fail_opencode_outbox before insert on opencode_agent_run begin select raise(abort, 'injected outbox fault'); end`);
+    raw.exec(
+      `create trigger fail_opencode_outbox before insert on opencode_agent_run begin select raise(abort, 'injected outbox fault'); end`,
+    );
     try {
       await expect(store.admitOpenCodeAgentRun!(admission(sessionID))).rejects.toThrow(
         "injected outbox fault",
@@ -3344,13 +3349,17 @@ describe("OpenCode delegated run outbox", () => {
       const retry = await store.admitOpenCodeAgentRun!(admission(sessionID));
       expect(first.created).toBe(true);
       expect(retry.created).toBe(false);
-      expect(first.input.payload).toMatchObject({ text: "Проверь проект", executionRoute: "opencode-cli" });
+      expect(first.input.payload).toMatchObject({
+        text: "Проверь проект",
+        executionRoute: "opencode-cli",
+      });
       expect(first.run).toMatchObject({
         runID: "command-oc-1",
         commandID: "command-oc-1",
         inputID: "command-oc-1",
         status: "pending",
         eventSequence: 0,
+        hostEventSequence: 0,
         requestedModelID: "provider/model",
       });
       expect(retry.run).toEqual(first.run);
@@ -3366,28 +3375,174 @@ describe("OpenCode delegated run outbox", () => {
     const { tempRoot, store, sessionID } = await seedStore("terminal");
     try {
       await store.admitOpenCodeAgentRun!(admission(sessionID));
-      expect(await store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "pending", expectedEventSequence: 0,
-        status: "dispatching", eventSequence: 1, now: 101,
-      })).toBe(true);
-      expect(await store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "pending", expectedEventSequence: 0,
-        status: "dispatching", eventSequence: 1, now: 102,
-      })).toBe(false);
-      expect(await store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "dispatching", expectedEventSequence: 1,
-        status: "running", eventSequence: 2, openCodeSessionID: "acp-session-1", now: 103,
-      })).toBe(true);
-      expect(await store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "running", expectedEventSequence: 2,
-        status: "completed", eventSequence: 3, resultText: "Готово", stopReason: "end_turn", now: 104,
-      })).toBe(true);
-      expect(await store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "completed", expectedEventSequence: 3,
-        status: "running", eventSequence: 4, openCodeSessionID: "stale", now: 105,
-      })).toBe(false);
-      await expect(store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" })).resolves.toMatchObject({
-        status: "completed", eventSequence: 3, time: { terminal: 104 }, resultText: "Готово",
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "pending",
+          expectedEventSequence: 0,
+          status: "dispatching",
+          eventSequence: 1,
+          now: 101,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "pending",
+          expectedEventSequence: 0,
+          status: "dispatching",
+          eventSequence: 1,
+          now: 102,
+        }),
+      ).toBe(false);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "dispatching",
+          expectedEventSequence: 1,
+          status: "running",
+          eventSequence: 2,
+          expectedHostEventSequence: 0,
+          hostEventSequence: 1,
+          openCodeSessionID: "acp-session-1",
+          now: 103,
+        }),
+      ).toBe(true);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "running",
+          expectedEventSequence: 2,
+          status: "completed",
+          eventSequence: 3,
+          expectedHostEventSequence: 1,
+          hostEventSequence: 2,
+          resultText: "Готово",
+          stopReason: "end_turn",
+          now: 104,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "completed",
+          expectedEventSequence: 3,
+          status: "running",
+          eventSequence: 4,
+          openCodeSessionID: "stale",
+          now: 105,
+        }),
+      ).toBe(false);
+      await expect(
+        store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" }),
+      ).resolves.toMatchObject({
+        status: "completed",
+        eventSequence: 3,
+        time: { terminal: 104 },
+        resultText: "Готово",
+      });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps Host event ordering independent from outbox and lifecycle revisions", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("host-event-sequence");
+    try {
+      await store.admitOpenCodeAgentRun!(admission(sessionID));
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "pending",
+          expectedEventSequence: 0,
+          status: "dispatching",
+          eventSequence: 1,
+        }),
+      ).toBe(true);
+
+      const started = {
+        sessionID,
+        runID: "command-oc-1",
+        expectedStatus: "dispatching" as const,
+        expectedEventSequence: 1,
+        eventSequence: 2,
+        expectedHostEventSequence: 0,
+        hostEventSequence: 1,
+        status: "running" as const,
+        openCodeSessionID: "acp-session-1",
+      };
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "dispatching",
+          expectedEventSequence: 1,
+          eventSequence: 2,
+          status: "running",
+          openCodeSessionID: "unsequenced-host-event",
+        }),
+      ).toBe(false);
+      expect(await store.applyOpenCodeAgentRunHostEvent!(started)).toBe(true);
+      expect(await store.applyOpenCodeAgentRunHostEvent!(started)).toBe(false);
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "running",
+          expectedEventSequence: 2,
+          status: "running",
+          eventSequence: 3,
+        }),
+      ).toBe(false);
+
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          ...started,
+          expectedStatus: "running",
+          expectedEventSequence: 2,
+          eventSequence: 3,
+          expectedHostEventSequence: 1,
+          hostEventSequence: 2,
+        }),
+      ).toBe(true);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          ...started,
+          expectedStatus: "running",
+          expectedEventSequence: 3,
+          eventSequence: 4,
+          expectedHostEventSequence: 1,
+          hostEventSequence: 2,
+        }),
+      ).toBe(false);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          ...started,
+          expectedStatus: "running",
+          expectedEventSequence: 3,
+          eventSequence: 4,
+          expectedHostEventSequence: 2,
+          hostEventSequence: 3,
+          status: "completed",
+          openCodeSessionID: null,
+          resultText: "Готово",
+          stopReason: "end_turn",
+        }),
+      ).toBe(true);
+      await expect(
+        store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" }),
+      ).resolves.toMatchObject({
+        status: "completed",
+        eventSequence: 4,
+        hostEventSequence: 3,
+        resultText: "Готово",
       });
     } finally {
       store.close();
@@ -3400,16 +3555,24 @@ describe("OpenCode delegated run outbox", () => {
     const db = new DatabaseSync(dbPath);
     try {
       await store.admitOpenCodeAgentRun!(admission(sessionID));
-      expect(() => db.prepare(`
+      expect(() =>
+        db
+          .prepare(`
         update opencode_agent_run
         set status = 'running', event_sequence = 1, time_updated = 101
         where session_id = ? and run_id = 'command-oc-1'
-      `).run(sessionID)).toThrow(/CHECK constraint failed/);
-      expect(() => db.prepare(`
+      `)
+          .run(sessionID),
+      ).toThrow(/CHECK constraint failed/);
+      expect(() =>
+        db
+          .prepare(`
         update opencode_agent_run
         set status = 'dispatching', opencode_session_id = 'stale-session', time_updated = 102
         where session_id = ? and run_id = 'command-oc-1'
-      `).run(sessionID)).toThrow(/CHECK constraint failed/);
+      `)
+          .run(sessionID),
+      ).toThrow(/CHECK constraint failed/);
     } finally {
       db.close();
       store.close();
@@ -3422,14 +3585,27 @@ describe("OpenCode delegated run outbox", () => {
     try {
       await store.admitOpenCodeAgentRun!(admission(sessionID));
       await store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "pending", expectedEventSequence: 0,
-        status: "dispatching", eventSequence: 1,
+        sessionID,
+        runID: "command-oc-1",
+        expectedStatus: "pending",
+        expectedEventSequence: 0,
+        status: "dispatching",
+        eventSequence: 1,
       });
-      await expect(store.transitionOpenCodeAgentRun!({
-        sessionID, runID: "command-oc-1", expectedStatus: "dispatching", expectedEventSequence: 1,
-        status: "failed", eventSequence: 2, resultText: "я".repeat(16_385),
-      })).rejects.toThrow("exceeds 32 KiB");
-      await expect(store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" })).resolves.toMatchObject({ status: "dispatching", eventSequence: 1 });
+      await expect(
+        store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "dispatching",
+          expectedEventSequence: 1,
+          status: "failed",
+          eventSequence: 2,
+          resultText: "я".repeat(16_385),
+        }),
+      ).rejects.toThrow("exceeds 32 KiB");
+      await expect(
+        store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" }),
+      ).resolves.toMatchObject({ status: "dispatching", eventSequence: 1 });
     } finally {
       store.close();
       await rm(tempRoot, { force: true, recursive: true });
@@ -3440,13 +3616,21 @@ describe("OpenCode delegated run outbox", () => {
     const { tempRoot, dbPath, store, sessionID } = await seedStore("recovery-delete");
     await store.admitOpenCodeAgentRun!(admission(sessionID));
     await store.transitionOpenCodeAgentRun!({
-      sessionID, runID: "command-oc-1", expectedStatus: "pending", expectedEventSequence: 0,
-      status: "dispatching", eventSequence: 1,
+      sessionID,
+      runID: "command-oc-1",
+      expectedStatus: "pending",
+      expectedEventSequence: 0,
+      status: "dispatching",
+      eventSequence: 1,
     });
     try {
       const recovered = await store.recoverOpenCodeAgentRuns!({ now: 200 });
       expect(recovered).toHaveLength(1);
-      expect(recovered[0]).toMatchObject({ status: "interrupted", eventSequence: 2, diagnosticCode: "opencode.run-interrupted-after-restart" });
+      expect(recovered[0]).toMatchObject({
+        status: "interrupted",
+        eventSequence: 2,
+        diagnosticCode: "opencode.run-interrupted-after-restart",
+      });
       await expect(store.recoverOpenCodeAgentRuns!({ now: 201 })).resolves.toEqual([]);
       store.close();
 
@@ -3454,7 +3638,9 @@ describe("OpenCode delegated run outbox", () => {
       try {
         db.exec("pragma foreign_keys = on");
         db.prepare("delete from session where id = ?").run(sessionID);
-        expect(db.prepare("select count(*) as count from opencode_agent_run").get()).toEqual({ count: 0 });
+        expect(db.prepare("select count(*) as count from opencode_agent_run").get()).toEqual({
+          count: 0,
+        });
       } finally {
         db.close();
       }
