@@ -14,6 +14,7 @@ describe("OpenCode ACP Host reverse RPC", () => {
     const respondError = vi.fn(async () => {});
     const notify = vi.fn(async () => {});
     const prompt = Promise.withResolvers<{ stopReason: string }>();
+    let emitSessionUpdate: ((value: unknown) => void) | undefined;
     let disposed = false;
     const runtime = {
       startSession: vi.fn(async ({ cwd }: { cwd: string }) => ({
@@ -49,9 +50,10 @@ describe("OpenCode ACP Host reverse RPC", () => {
       cancel: vi.fn(async () => {}),
       respondToPermission: vi.fn(async () => {}),
       closeSession: vi.fn(async () => {}),
-      onSessionUpdate: vi.fn(() => (_listener: (value: unknown) => void) => ({
-        dispose() {},
-      })),
+      onSessionUpdate: vi.fn(() => (listener: (value: unknown) => void) => {
+        emitSessionUpdate = listener;
+        return { dispose() {} };
+      }),
       onPermissionEvent: vi.fn(() => (_listener: (value: unknown) => void) => ({
         dispose() {},
       })),
@@ -151,7 +153,36 @@ describe("OpenCode ACP Host reverse RPC", () => {
         sessionId: "acp-session-1",
         text: "hello",
       });
-      expect(notify).not.toHaveBeenCalled();
+      expect(notify).toHaveBeenCalledWith(
+        zcodeProtocolMethods.interactionOpenCodeAgentRunEvent,
+        expect.objectContaining({
+          protocolVersion: 1,
+          zcodeSessionId: "session-a",
+          commandId: "command-a",
+          runId: "command-a",
+          opencodeSessionId: "acp-session-1",
+          sequence: 1,
+          event: expect.objectContaining({
+            type: "started",
+            modelOptionId: "model",
+            modelValue: "provider/new",
+          }),
+        }),
+      );
+      emitSessionUpdate?.({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "first" },
+      });
+      emitSessionUpdate?.({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "second" },
+      });
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(3));
+      expect(notify.mock.calls.map(([, notification]) => notification)).toEqual([
+        expect.objectContaining({ sequence: 1, event: expect.objectContaining({ type: "started" }) }),
+        expect.objectContaining({ sequence: 2, event: { type: "content", text: "first" } }),
+        expect.objectContaining({ sequence: 3, event: { type: "content", text: "second" } }),
+      ]);
       expect(prompt).toBeDefined();
       invoke("wrong-stop", {
         ...base,

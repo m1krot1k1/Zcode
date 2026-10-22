@@ -127,6 +127,7 @@ import {
   summarizeOfficialMcpIdentityHeaders,
   zcodeProtocolEmptyResultSchema,
   zcodeProtocolMethods,
+  zcodeOpenCodeAgentRunEventSchema,
   zcodeOpenCodeAgentRunRequestSchema,
   zcodeOpenCodeAgentRunResultSchema,
   zcodeProtocolNotifications,
@@ -990,6 +991,9 @@ interface HostOpenCodeRun {
   startupSettled?: boolean;
   readonly permissions: Map<string, Set<string>>;
   readonly disposables: IDisposable[];
+  /** Host owns event order and serializes notification writes for this delegated run. */
+  eventSequence: number;
+  eventDelivery: Promise<void>;
   terminalPromise?: Promise<void>;
 }
 
@@ -1410,14 +1414,50 @@ export function createZCodeAgentService(
   let serviceDisposing = false;
   const openCodeRunKey = (workspaceKey: string, sessionId: string, commandId: string) =>
     `${workspaceKey}\u0000${sessionId}\u0000${commandId}`;
-  // CLI inbound request/event consumption is a separate slice; keep the event contract in shared,
-  // but do not send a notification that the current CLI silently drops.
   const emitOpenCodeRunEvent = async (
-    _run: HostOpenCodeRun,
-    _event: Record<string, unknown>,
+    run: HostOpenCodeRun,
+    event: Record<string, unknown>,
   ): Promise<void> => {
-    void _run;
-    void _event;
+    if (!run.opencodeSessionId) return;
+    const parsedNotification = zcodeOpenCodeAgentRunEventSchema.safeParse({
+      protocolVersion: 1,
+      zcodeSessionId: run.zcodeSessionId,
+      commandId: run.commandId,
+      runId: run.runId,
+      opencodeSessionId: run.opencodeSessionId,
+      sequence: ++run.eventSequence,
+      event,
+    });
+    if (!parsedNotification.success) {
+      logger.warn(undefined, "OpenCode delegated run event was rejected by its protocol schema", {
+        event: "zcode_agent.opencode_run.notification_invalid",
+        workspaceKey: run.workspaceKey,
+        commandId: run.commandId,
+        runId: run.runId,
+        sequence: run.eventSequence,
+      });
+      return;
+    }
+    const notification = parsedNotification.data;
+    const previousDelivery = run.eventDelivery;
+    run.eventDelivery = previousDelivery
+      .then(async () => {
+        const activeClient = activeClientsByWorkspaceKey.get(run.workspaceKey)?.client;
+        if (serviceDisposing || activeClient !== run.client || run.client.isDisposed) return;
+        await run.client.notify(zcodeProtocolMethods.interactionOpenCodeAgentRunEvent, notification);
+      })
+      .catch((error: unknown) => {
+        // A failed send consumes its sequence; the receiver must reconcile the gap by exact run identity.
+        logger.warn(undefined, "OpenCode delegated run event delivery failed", {
+          event: "zcode_agent.opencode_run.notification_failed",
+          workspaceKey: run.workspaceKey,
+          commandId: run.commandId,
+          runId: run.runId,
+          sequence: notification.sequence,
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
+    await run.eventDelivery;
   };
   const closeOpenCodeRun = async (
     run: HostOpenCodeRun,
@@ -2693,6 +2733,8 @@ export function createZCodeAgentService(
                 status: "starting",
                 permissions: new Map(),
                 disposables: [],
+                eventSequence: 0,
+                eventDelivery: Promise.resolve(),
               };
               openCodeRuns.set(key, created);
               const startupCompletion = Promise.withResolvers<void>();
