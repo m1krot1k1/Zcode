@@ -1628,6 +1628,8 @@ const enUS: Record<string, string> = {
   "modelTrajectory.usage.input": "in {count}",
   "modelTrajectory.usage.output": "out {count}",
   "chat.toolbar.model.loadFailedRetry": "Models failed to load. Retry",
+  "chat.toolbar.openCode.loadingModels": "Loading OpenCode models…",
+  "chat.toolbar.openCode.retryModels": "OpenCode models unavailable. Retry",
   "chat.toolbar.model.remoteWaiting": "Waiting for remote models",
   "chat.toolbar.model.targetMissing": "No model target",
   "settings.subagents.modelLoadFailed": "The model list failed to load.",
@@ -3794,6 +3796,8 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.credentialModeApiKey": "API key",
   "settings.openCode.title": "OpenCode CLI",
   "settings.openCode.enable": "Enable OpenCode CLI",
+  "settings.openCode.setting-save-failed":
+    "Could not save OpenCode CLI. The provider was left disabled; try again.",
   "settings.openCode.composerUnsupported":
     "OpenCode CLI currently accepts plain text messages without attachments or queued delivery.",
   "settings.openCode.composerDisabled":

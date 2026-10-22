@@ -253,6 +253,17 @@ describe("settingService", () => {
     });
   });
 
+  it("会跨设置服务重建保留 OpenCode CLI 的启用状态", async () => {
+    const home = makeTempHome();
+    const service = await createSettingServiceInHome(home);
+
+    await service.update({ openCodeCliEnabled: true });
+    await expect(service.get()).resolves.toMatchObject({ openCodeCliEnabled: true });
+
+    const recreatedService = await createSettingServiceInHome(home);
+    await expect(recreatedService.get()).resolves.toMatchObject({ openCodeCliEnabled: true });
+  });
+
   it("显式桌面 home 覆盖只写隔离实例设置，不污染普通 home", async () => {
     const ordinaryHome = makeTempHome();
     const desktopHome = makeTempHome();

@@ -20,8 +20,11 @@ This decision supersedes the earlier separate-panel-only decision and its statem
 - OpenCode still owns its agent loop, tools, permissions, and upstream usage/rate limits. Its selected model and activity are presented in the ordinary ZCode conversation; the active workspace path is taken from the current Composer/Host binding, without another folder field. Do not create an independent OpenCode session UI for each turn.
 - The provider row is simply named **OpenCode** and identifies **CLI** access in its badge/help text. Model selection is visible in the chat picker itself. Do not add a second ACP-only provider entry, an API key form for CLI, or model-management options that belong to the CLI.
 - In Model Providers, OpenCode CLI has one enable/disable control. Enabling it automatically checks the installed CLI; if missing, the same row presents **Install** and one click installs/configures the supported executable for the current OS, then verifies it before enabling the provider. Remove manual CLI path selection, workspace folder selection, explicit session start/close, and the separate prompt/transcript UI from this provider flow. The existing provider API-key entries remain separate.
+- Enabling is reflected immediately while the setting is being saved. If persistence fails, the switch returns to its prior value and the panel shows a localized error so the user can retry; the failure must not be silently reduced to a log entry.
+- The enable flag is persisted in the local Host application settings and survives leaving/re-entering Model Providers or recreating the settings service. Composer reads that same local Host setting. When enabled, Composer reports model-catalog loading and exposes an in-place retry if the Host cannot read a non-empty CLI catalog; a transient `opencode models` failure must not silently strand the user in Model Providers. Selecting a listed model still sets the typed `opencode-acp` route for the draft.
 - The model list comes from the active Host's bounded, read-only `opencode models` catalog. Its authentication state remains unknown until a real prompt gives typed auth-required evidence. A model-list refresh must not send a prompt, create a durable OpenCode session, or query credentials. Missing CLI and required sign-in are actionable inline states, not hidden failures or fake model options.
 - Sending a CLI-routed message must use the existing conversation command/admission and Host-owned ACP bridge, preserve the selected model route through persistence/recovery, display content/tool/permission events in the ZCode conversation, and cancel the same OpenCode run when the user stops it. Unsupported submissions must be rejected before acceptance with a visible reason; they must never fall back to a different provider/model.
+- A deferred Composer draft is only a conversation/admission container, not model execution. Only a draft explicitly tagged for the `opencode-acp` route may be created through the Host's read-only ZCode control client without ZCode provider readiness or account-provider synchronization. The marker is valid only for an empty deferred draft (no first input and no ZCode model selection), never authorizes model execution, and is not persisted as session policy. Ordinary drafts and all immediate/API-backed session creation retain the provider-readiness gate. OpenCode ACP admission remains the only execution path for that tagged draft.
 - When ACP requests a permission, show its bounded title/input summary and exact advertised options inline on that run in the ordinary conversation. The pending request is ephemeral Host/Renderer state and is never written to the run journal or SQLite. A response must carry the exact ZCode session, command/run, ACP session, request, and selected ACP option IDs; only an advertised option explicitly clicked by the user is sent. Run cancellation, Host loss, or interruption clears the pending interaction; never auto-approve or infer ZCode permission policy for OpenCode.
 - The feature is not complete while the CLI route returns `fault.command.opencodeAgentExecutionUnavailable`, while selected catalog models are reference-only, or while the normal Composer cannot produce an executable `opencode-acp` command.
 - Keep `@zcode/services` and `opencode-acp-runtime/index.ts` browser-safe: export only descriptors and wire types. Node process factories remain in `services/node.ts`; renderer code uses typed service contracts.
@@ -44,7 +47,27 @@ Composer draft (provider=OpenCode, model ID)
 
 The Composer draft/selection is UI-owned until submission. CLI admission and the conversation timeline remain authoritative after acceptance; the Host owns the ACP process and OpenCode session; OpenCode owns its provider credentials and agent/tool loop. The selected CLI model is never persisted as a fabricated Provider Registry credential. A process restart marks an in-flight ACP run interrupted and must not silently replay a prompt.
 
-Current implementation evidence (2026-10-22): the strict `opencode-acp` Composer route, CLI admission/outbox, Host dispatch, and Host-to-CLI event receiver are present. The receiver validates run/session identity and monotonically ordered events, and durable storage records lifecycle transitions. The remaining ordinary-chat gap is to persist bounded prompt/content/tool summaries and project them as an explicitly external-agent conversation row with cold replay; this row must not impersonate a ZCode assistant response or native tool call. Cancellation and ACP permission requests still need end-to-end routing through the existing chat controls and permission flow. Until those paths are implemented and verified, the separate OpenCode ACP panel remains the only complete interaction surface.
+Changing the Composer route while its deferred draft is being created is a generation change owned by the existing draft prewarm coordinator. The coordinator retires the old generation, waits for its non-cancellable create command to settle, cleans up an accepted old draft, and then creates a draft tagged for the latest route. It must never submit an OpenCode selection using a draft that was created through the ordinary ZCode provider path. Leaving OpenCode before submission follows the same transition in reverse; only the latest route may be promoted.
+
+```mermaid
+sequenceDiagram
+  participant Composer
+  participant DraftOwner as Draft prewarm coordinator
+  participant Host
+  Composer->>DraftOwner: select OpenCode route
+  DraftOwner->>DraftOwner: retire old draft generation
+  opt old create is still in flight
+    DraftOwner->>Host: await old create ACK
+    Host-->>DraftOwner: old draft result
+    DraftOwner->>Host: delete old draft if accepted
+  end
+  DraftOwner->>Host: create empty OpenCode-tagged draft
+  Host-->>DraftOwner: draft ready
+  Composer->>DraftOwner: submit selected model and prompt
+  DraftOwner->>Host: promote only current generation
+```
+
+Current implementation evidence (2026-10-23): the strict `opencode-acp` Composer route, CLI admission/outbox, Host dispatch, Host-to-CLI event receiver, bounded external-agent row, cancellation identity, and inline permission flow are present. A live isolated-profile send exposed a remaining startup gate: model-agnostic deferred draft creation still called the ZCode model-ready client and failed when no ZCode provider was configured, before ACP admission. Deferred drafts must use the read-only control client and must not synchronize account providers; real ZCode model execution keeps its existing provider-readiness gate. The exact Composer-to-ACP path still requires a desktop end-to-end smoke with a real installed/authenticated OpenCode CLI.
 
 ### CLI sign-in diagnostics
 

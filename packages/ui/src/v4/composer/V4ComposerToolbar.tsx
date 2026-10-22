@@ -502,31 +502,62 @@ function V4ComposerModelControlsImpl({
   const openCodeRuntime = useServices().openCodeAcpRuntime;
   const [openCodeModels, setOpenCodeModels] = useState<string[]>([]);
   const [openCodeCatalogReady, setOpenCodeCatalogReady] = useState(false);
+  const [openCodeCatalogLoading, setOpenCodeCatalogLoading] = useState(false);
+  const [openCodeCatalogFailed, setOpenCodeCatalogFailed] = useState(false);
+  const openCodeCatalogRequestRef = useRef(0);
   // 配置面存活服务读（过渡归宿 = 配置面 v4 化）：连接方式选中键喂 BigModel Team Plan 门控豁免。
   const baseServices = useBaseWorkspaceServices();
   const { settings: sharedSettings } = useSettings({ services: baseServices });
-  useEffect(() => {
-    let active = true;
-    setOpenCodeModels([]);
-    setOpenCodeCatalogReady(false);
-    if (sharedSettings?.openCodeCliEnabled !== true || !openCodeRuntime) return;
-    void (async () => {
-      try {
-        const status = await openCodeRuntime.getCliStatus();
-        if (!active || status.status !== "available") return;
-        const catalog = await openCodeRuntime.listModels();
-        if (active && catalog.status === "available") {
-          setOpenCodeModels(catalog.models);
-          setOpenCodeCatalogReady(true);
-        }
-      } catch {
-        // Provider discovery is optional; never silently replace the selected route/model.
+  const refreshOpenCodeCatalog = useCallback(async () => {
+    if (sharedSettings?.openCodeCliEnabled !== true) return;
+    const requestId = ++openCodeCatalogRequestRef.current;
+    setOpenCodeCatalogLoading(true);
+    setOpenCodeCatalogFailed(false);
+    try {
+      if (!openCodeRuntime) {
+        setOpenCodeCatalogFailed(true);
+        return;
       }
-    })();
-    return () => {
-      active = false;
-    };
+      const status = await openCodeRuntime.getCliStatus();
+      if (requestId !== openCodeCatalogRequestRef.current) return;
+      if (status.status !== "available") {
+        setOpenCodeCatalogFailed(true);
+        return;
+      }
+      const catalog = await openCodeRuntime.listModels();
+      if (requestId !== openCodeCatalogRequestRef.current) return;
+      if (catalog.status !== "available" || catalog.models.length === 0) {
+        setOpenCodeCatalogFailed(true);
+        return;
+      }
+      setOpenCodeModels(catalog.models);
+      setOpenCodeCatalogReady(true);
+    } catch (error) {
+      if (requestId !== openCodeCatalogRequestRef.current) return;
+      logger.warn("[v4-toolbar] OpenCode CLI model catalog unavailable", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setOpenCodeCatalogFailed(true);
+    } finally {
+      if (requestId === openCodeCatalogRequestRef.current) setOpenCodeCatalogLoading(false);
+    }
   }, [openCodeRuntime, sharedSettings?.openCodeCliEnabled]);
+
+  useEffect(() => {
+    if (sharedSettings?.openCodeCliEnabled !== true) {
+      openCodeCatalogRequestRef.current += 1;
+      setOpenCodeModels([]);
+      setOpenCodeCatalogReady(false);
+      setOpenCodeCatalogLoading(false);
+      setOpenCodeCatalogFailed(false);
+      return;
+    }
+    void refreshOpenCodeCatalog();
+    return () => {
+      // 丢弃已经失效的 Host 目录请求，避免关闭/切换后迟到的空响应覆盖新结果。
+      openCodeCatalogRequestRef.current += 1;
+    };
+  }, [refreshOpenCodeCatalog, sharedSettings?.openCodeCliEnabled]);
   const {
     entitlements,
     enabledStartPlanProviderIds,
@@ -1366,6 +1397,7 @@ function V4ComposerModelControlsImpl({
         />
       ) : modelSelectionState.status === "error" &&
         modelSelectGroups.length === 0 &&
+        sharedSettings?.openCodeCliEnabled !== true &&
         modelSelectionReload ? (
         <Button
           type="button"
@@ -1376,7 +1408,9 @@ function V4ComposerModelControlsImpl({
         >
           {intl.formatMessage({ id: "chat.toolbar.model.loadFailedRetry" })}
         </Button>
-      ) : modelSelectionState.status === "unavailable" && modelSelectGroups.length === 0 ? (
+      ) : modelSelectionState.status === "unavailable" &&
+        modelSelectGroups.length === 0 &&
+        sharedSettings?.openCodeCliEnabled !== true ? (
         <span className="px-2 text-ui-sm text-foreground-subtle">
           {intl.formatMessage({
             id:
@@ -1385,6 +1419,25 @@ function V4ComposerModelControlsImpl({
                 : "chat.toolbar.model.targetMissing",
           })}
         </span>
+      ) : sharedSettings?.openCodeCliEnabled === true &&
+        !openCodeCatalogReady &&
+        openCodeCatalogLoading ? (
+        <span className="px-2 text-ui-sm text-foreground-subtle" role="status">
+          {intl.formatMessage({ id: "chat.toolbar.openCode.loadingModels" })}
+        </span>
+      ) : sharedSettings?.openCodeCliEnabled === true &&
+        !openCodeCatalogReady &&
+        openCodeCatalogFailed ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-ui-sm"
+          onClick={() => void refreshOpenCodeCatalog()}
+          data-testid="chat-opencode-models-retry"
+        >
+          {intl.formatMessage({ id: "chat.toolbar.openCode.retryModels" })}
+        </Button>
       ) : shouldShowModelProviderSettingsShortcut({
           modelMenuVisible,
           providerSourcesLoading,

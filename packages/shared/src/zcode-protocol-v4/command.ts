@@ -113,33 +113,53 @@ function validateOpenCodeAgentRoute(
 // ── §6.4 命令 payload 全集 ──
 export const commandPayloadSchemas = {
   // firstInput 缺省 → phase=draft 空会话；携带 → 直接 turnHeader+userInput rows。
-  createSession: z.object({
-    // Host 预留归属使用稳定 ID；CLI 仍负责拒绝覆盖既有会话。
-    sessionId: z.string().min(1).optional(),
-    additionalDirectories: z.array(z.string().min(1)).max(256).optional(),
-    workspaceId: z.string(),
-    permissionScope: z.literal("session").optional(),
-    firstInput: z
-      .object({
-        text: z.string(),
-        attachments: z.array(attachmentRefSchema).optional(),
-        modelSelection: modelSelectionSchema.optional(),
-        mode: submissionModeSchema.optional(),
-        planEnabled: z.boolean().optional(),
-      })
-      .optional(),
-    config: createSessionRequestedConfigSchema.optional(),
-    // MCP 是 runtime 启动期配置，必须随 create 一次性进入 record，不能在首发后补写。
-    mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
-    // Off-Peak 工具面 flag，与 legacy session/create 等价——V4 createSession 是桌面
-    // 新会话的实际创建路径，不透传则 OffPeakCreate/OffPeakList 永不注册。additive，
-    // 旧 CLI 的 z.object 会静默丢弃该键（fail-closed）。
-    offPeakToolEnabled: z.boolean().optional(),
-    // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
-    dynamicWorkflowEnabled: z.boolean().optional(),
-    // 灰度 mode 与布尔同行（launch.md「On demand: activation」）；旧 CLI 的 z.object 静默丢弃。
-    dynamicWorkflowMode: z.enum(DYNAMIC_WORKFLOW_MODES).optional(),
-  }),
+  createSession: z
+    .object({
+      // Host 预留归属使用稳定 ID；CLI 仍负责拒绝覆盖既有会话。
+      sessionId: z.string().min(1).optional(),
+      additionalDirectories: z.array(z.string().min(1)).max(256).optional(),
+      workspaceId: z.string(),
+      // Host-only routing hint: this is an empty OpenCode ACP draft, not a ZCode model session.
+      openCodeAcpDraft: z.literal(true).optional(),
+      permissionScope: z.literal("session").optional(),
+      firstInput: z
+        .object({
+          text: z.string(),
+          attachments: z.array(attachmentRefSchema).optional(),
+          modelSelection: modelSelectionSchema.optional(),
+          mode: submissionModeSchema.optional(),
+          planEnabled: z.boolean().optional(),
+        })
+        .optional(),
+      config: createSessionRequestedConfigSchema.optional(),
+      // MCP 是 runtime 启动期配置，必须随 create 一次性进入 record，不能在首发后补写。
+      mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
+      // Off-Peak 工具面 flag，与 legacy session/create 等价——V4 createSession 是桌面
+      // 新会话的实际创建路径，不透传则 OffPeakCreate/OffPeakList 永不注册。additive，
+      // 旧 CLI 的 z.object 会静默丢弃该键（fail-closed）。
+      offPeakToolEnabled: z.boolean().optional(),
+      // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
+      dynamicWorkflowEnabled: z.boolean().optional(),
+      // 灰度 mode 与布尔同行（launch.md「On demand: activation」）；旧 CLI 的 z.object 静默丢弃。
+      dynamicWorkflowMode: z.enum(DYNAMIC_WORKFLOW_MODES).optional(),
+    })
+    .superRefine((payload, context) => {
+      if (!payload.openCodeAcpDraft) return;
+      if (payload.firstInput) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["firstInput"],
+          message: "OpenCode ACP draft must be empty",
+        });
+      }
+      if (payload.config?.modelSelection) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["config", "modelSelection"],
+          message: "OpenCode ACP draft cannot select a ZCode model",
+        });
+      }
+    }),
   // 父会话由 envelope.sessionId 指定；服务端从父 record 派生完整运行配置。
   // firstInput 存在时，child 创建完成后立即启动首条普通输入；缺省则保持空副屏。
   createSelectionSideSession: z.object({

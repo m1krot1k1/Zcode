@@ -20,6 +20,7 @@ const customValue = "custom:custom-openai:gpt-4o";
 
 const captured = vi.hoisted(() => ({
   modelSelectProps: null as ModelConfigSelectProps | null,
+  openCodeCatalogRetry: null as (() => void) | null,
   thoughtControlProps: null as {
     indicatorClassName?: string;
     triggerClassName?: string;
@@ -140,6 +141,23 @@ vi.mock("@/ModelConfigSelect.js", async () => {
         "data-testid": "mock-model-select",
         disabled: props.disabled,
       });
+    },
+  };
+});
+
+vi.mock("@/components/ui/button.js", async () => {
+  const React = await import("react");
+  return {
+    Button: (props: {
+      children?: React.ReactNode;
+      onClick?: () => void;
+      "data-testid"?: string;
+      [key: string]: unknown;
+    }) => {
+      if (props["data-testid"] === "chat-opencode-models-retry") {
+        captured.openCodeCatalogRetry = props.onClick ?? null;
+      }
+      return React.createElement("button", props, props.children);
     },
   };
 });
@@ -462,6 +480,7 @@ afterEach(() => {
   mocks.connectionSwitchError = null;
   mocks.selectConnection.mockClear();
   captured.modelSelectProps = null;
+  captured.openCodeCatalogRetry = null;
   captured.thoughtControlProps = null;
   captured.usageProps = [];
   mocks.codingPlanEntitlementsRefresh.mockClear();
@@ -536,6 +555,7 @@ describe("V4ComposerModelControls recovery", () => {
     const props = {
       workspacePath: "/workspace",
       modelSelectionView: mocks.modelSelectionView,
+      modelSelectionState: { status: "unavailable", reason: "missing-target" as const },
       sessionId: null,
       phase: null,
       draftConfig: { mode: "build" },
@@ -567,6 +587,58 @@ describe("V4ComposerModelControls recovery", () => {
         items: [expect.objectContaining({ value: "zcode-opencode-cli:opencode/model-a" })],
       }),
     ]);
+    await act(async () => root.unmount());
+  });
+
+  it("даёт повторить чтение каталога и выбрать CLI-модель после временной ошибки", async () => {
+    mocks.modelSelectionView = { revision: 1, providers: [] };
+    mocks.settings = {
+      providerFamilyConnectionSelections: {},
+      providerFamilyDomain: {},
+      openCodeCliEnabled: true,
+    };
+    mocks.openCodeRuntime.listModels
+      .mockRejectedValueOnce(new Error("temporary catalog error"))
+      .mockResolvedValueOnce({ status: "available", models: ["opencode/model-a"] });
+    const selectOpenCodeModel = vi.fn();
+    const root: Root = createRoot(installMinimalDom());
+    const props = {
+      workspacePath: "/workspace",
+      modelSelectionView: mocks.modelSelectionView,
+      sessionId: null,
+      phase: null,
+      draftConfig: { mode: "build" },
+      config: {
+        provider: "",
+        model: "",
+        thought: "disabled",
+        thoughtLevels: [],
+        followupMode: "queue" as const,
+        mode: "build" as const,
+      },
+      usage: null,
+      disabled: false,
+      onSelectModel: mocks.selectModel,
+      onSelectOpenCodeModel: selectOpenCodeModel,
+      onSelectThought: vi.fn(),
+      onSwitchMode: vi.fn(),
+    };
+
+    await act(async () => {
+      root.render(createElement(V4ComposerModelControls, props));
+      await flushMicrotasks();
+    });
+    expect(captured.openCodeCatalogRetry).toEqual(expect.any(Function));
+
+    await act(async () => {
+      captured.openCodeCatalogRetry?.();
+      await flushMicrotasks();
+    });
+    expect(captured.modelSelectProps?.modelGroups).toEqual([
+      expect.objectContaining({ key: "opencode-cli" }),
+    ]);
+    captured.modelSelectProps?.onValueChange("zcode-opencode-cli:opencode/model-a");
+    expect(selectOpenCodeModel).toHaveBeenCalledWith("opencode/model-a");
     await act(async () => root.unmount());
   });
 

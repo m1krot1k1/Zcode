@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IServiceAccessor } from "@zcode/services";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
@@ -41,13 +41,38 @@ describe("OpenCode CLI provider settings", () => {
     expect(
       screen.getByRole("switch", { name: "Enable OpenCode CLI" }).hasAttribute("disabled"),
     ).toBe(false);
-    fireEvent.click(screen.getByRole("switch", { name: "Enable OpenCode CLI" }));
+    const toggle = screen.getByRole("switch", { name: "Enable OpenCode CLI" });
+    fireEvent.click(toggle);
     expect(onEnabledChange).toHaveBeenCalledWith(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
     expect(screen.queryByRole("button", { name: "Install OpenCode" })).toBeNull();
     expect(screen.queryByText("Workspace folder")).toBeNull();
     expect(screen.queryByRole("button", { name: "Start OpenCode session" })).toBeNull();
     expect(screen.queryByLabelText("Prompt OpenCode")).toBeNull();
     expect(runtime.installCli).not.toHaveBeenCalled();
+  });
+
+  it("shows enablement immediately and restores the off state with a visible error if saving fails", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "available" as const,
+        version: "1.19.3",
+      })),
+      installCli: vi.fn(),
+    };
+    const onEnabledChange = vi.fn(async () => {
+      throw new Error("settings write failed");
+    });
+    renderPanel(runtime, onEnabledChange);
+
+    const toggle = await screen.findByRole("switch", { name: "Enable OpenCode CLI" });
+    fireEvent.click(toggle);
+
+    await screen.findByText(
+      "Could not save OpenCode CLI. The provider was left disabled; try again.",
+    );
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+    expect(onEnabledChange).toHaveBeenCalledWith(true);
   });
 
   it("offers direct installation for a missing CLI and verifies before enabling it", async () => {

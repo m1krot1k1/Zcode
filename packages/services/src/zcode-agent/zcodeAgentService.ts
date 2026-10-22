@@ -6774,7 +6774,13 @@ export function createZCodeAgentService(
     },
 
     async sendConversationCommandV4(params: ZCodeAgentConversationCommandParams) {
-      const client = await getClient(params);
+      const openCodeAcpDraft =
+        params.envelope.type === "createSession" &&
+        commandPayloadSchemas.createSession.parse(params.envelope.payload).openCodeAcpDraft ===
+          true;
+      // Marker is accepted only for an empty ACP draft by the shared command schema. It
+      // authorizes control-plane session creation, never ZCode model execution.
+      const client = openCodeAcpDraft ? await getReadOnlyClient(params) : await getClient(params);
       const planPayload = params.envelope.payload as {
         planEnabled?: boolean;
         config?: { planEnabled?: boolean };
@@ -6794,7 +6800,7 @@ export function createZCodeAgentService(
         params.clientMode ??
         "desktop-continuous";
       let envelope = await buildConversationCommandEnvelope(params);
-      if (requiresProviderRegistryRefresh(envelope.type)) {
+      if (requiresProviderRegistryRefresh(envelope.type) && !openCodeAcpDraft) {
         await ensureAccountProviderConfigSynced({
           client,
           reason: "v4_command",

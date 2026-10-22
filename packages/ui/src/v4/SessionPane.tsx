@@ -3198,6 +3198,7 @@ export function SessionPane({
     // 共享 identity；provider wrapper 重建产生的新 sendCommand 函数不能误判为 transport 换代。
     transportIdentity: layer,
     dispatchCommand,
+    openCodeAcpDraft: composerDraft.executionRoute?.kind === "opencode-acp",
     // 预热会话只消费当前 Root Composer Draft 的一次性初始化结果。
     resolveInitialConfig: resolveInitialDraftConfig,
   });

@@ -1151,12 +1151,15 @@ export function ModelProviderSection({
       ) : selectedNavItem?.type === "agentIntegration" ? (
         <OpenCodeAgentSettingsPanel
           enabled={sharedSettings?.openCodeCliEnabled === true}
-          onEnabledChange={(enabled) => {
-            void updateSharedSettings({ openCodeCliEnabled: enabled }).catch((error) => {
+          onEnabledChange={async (enabled) => {
+            try {
+              await updateSharedSettings({ openCodeCliEnabled: enabled });
+            } catch (error) {
               logger.warn("[settings] OpenCode CLI setting update failed", {
                 error: error instanceof Error ? error.message : String(error),
               });
-            });
+              throw error;
+            }
           }}
         />
       ) : (

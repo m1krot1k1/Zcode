@@ -24,22 +24,26 @@ const NOOP_ACK: CommandAck = {
   revisionAtDecision: 0,
 };
 
-function createDispatchRecorder(handlers?: { onCreate?: () => Promise<CommandAck> | CommandAck }) {
+function createDispatchRecorder(handlers?: {
+  onCreate?: (payload: Record<string, unknown>) => Promise<CommandAck> | CommandAck;
+}) {
   const calls: Array<{ type: string; sessionId: string | null }> = [];
+  const createPayloads: Array<Record<string, unknown>> = [];
   const dispatch = vi.fn(
     async (
       type: string,
-      _payload: Record<string, unknown>,
+      payload: Record<string, unknown>,
       sessionId: string | null,
     ): Promise<CommandAck> => {
       calls.push({ type, sessionId });
       if (type === "createSession") {
-        return handlers?.onCreate ? await handlers.onCreate() : acceptedCreateAck("draft-1");
+        createPayloads.push(payload);
+        return handlers?.onCreate ? await handlers.onCreate(payload) : acceptedCreateAck("draft-1");
       }
       return NOOP_ACK;
     },
   );
-  return { calls, dispatch };
+  return { calls, createPayloads, dispatch };
 }
 
 async function flushMicrotasks() {
@@ -130,6 +134,7 @@ function PrewarmHarness(props: {
   workspaceKey: string;
   paneId?: string;
   invalidationVersion?: number;
+  openCodeAcpDraft?: boolean;
   transportIdentity: unknown;
   dispatchCommand: ReturnType<typeof createDispatchRecorder>["dispatch"];
   resolveInitialConfig?: () => Partial<SessionConfigState>;
@@ -141,6 +146,7 @@ function PrewarmHarness(props: {
     workspaceKey: props.workspaceKey,
     paneId: props.paneId ?? "workspace-main",
     invalidationVersion: props.invalidationVersion,
+    openCodeAcpDraft: props.openCodeAcpDraft,
     transportIdentity: props.transportIdentity,
     dispatchCommand: props.dispatchCommand as never,
     resolveInitialConfig: props.resolveInitialConfig,
@@ -171,6 +177,26 @@ describe("startDraftSessionPrewarm", () => {
     });
     await flushMicrotasks();
     expect(onReady).toHaveBeenCalledWith("draft-1");
+  });
+
+  it("OpenCode ACP draft uses the marked providerless path without ZCode model config", async () => {
+    const dispatch = vi.fn(async (type: string) =>
+      type === "createSession" ? acceptedCreateAck("draft-1") : NOOP_ACK,
+    );
+    startDraftSessionPrewarm({
+      workspaceKey: "/w",
+      dispatchCommand: dispatch as never,
+      onReady: vi.fn(),
+      openCodeAcpDraft: true,
+      resolveInitialConfig: () => ({ provider: "old-api-provider", model: "old-api-model" }),
+    });
+    await flushMicrotasks();
+    expect(dispatch.mock.calls[0]?.[0]).toBe("createSession");
+    expect(dispatch.mock.calls[0]?.[1]).toMatchObject({
+      workspaceId: "/w",
+      openCodeAcpDraft: true,
+    });
+    expect(dispatch.mock.calls[0]?.[1]).not.toHaveProperty("config");
   });
 
   it("active session 切到 draft 的首次 acquire 使用同一 commit 更新后的配置", async () => {
@@ -371,6 +397,70 @@ describe("startDraftSessionPrewarm", () => {
 });
 
 describe("useDraftSessionPrewarm workspace owner", () => {
+  it("Composer switches to OpenCode during create: retires old generation and recreates a tagged draft", async () => {
+    const createResolvers: Array<(ack: CommandAck) => void> = [];
+    const { calls, createPayloads, dispatch } = createDispatchRecorder({
+      onCreate: () => new Promise((resolve) => createResolvers.push(resolve)),
+    });
+    const root = createRoot(installMinimalDom());
+    mountedRoots.push(root);
+    const transportIdentity = {};
+    let owner!: ReturnType<typeof useDraftSessionPrewarm>;
+    const render = (openCodeAcpDraft: boolean) =>
+      createElement(PrewarmHarness, {
+        workspaceKey: "/workspace",
+        transportIdentity,
+        dispatchCommand: dispatch,
+        openCodeAcpDraft,
+        resolveInitialConfig: () => ({
+          modelSelection: { providerId: "api", modelId: "test" },
+        }),
+        onRender: () => {},
+        onOwner: (value) => {
+          owner = value;
+        },
+      });
+
+    await act(async () => {
+      root.render(render(false));
+      await flushMicrotasks();
+    });
+    expect(createPayloads).toEqual([
+      {
+        workspaceId: "/workspace",
+        config: { modelSelection: { providerId: "api", modelId: "test" } },
+      },
+    ]);
+
+    await act(async () => {
+      root.render(render(true));
+      await flushMicrotasks();
+    });
+    expect(calls.filter((call) => call.type === "createSession")).toHaveLength(1);
+
+    await act(async () => {
+      createResolvers[0]!({
+        ...NOOP_ACK,
+        status: "failed",
+        reasonCode: "test.providerNotReady",
+      });
+      await flushMicrotasks();
+    });
+    expect(calls.filter((call) => call.type === "createSession")).toHaveLength(2);
+    expect(calls.at(-1)).toEqual({ type: "createSession", sessionId: null });
+    expect(createPayloads[1]).toEqual({
+      workspaceId: "/workspace",
+      openCodeAcpDraft: true,
+    });
+
+    const submitted = owner.waitForSession();
+    await act(async () => {
+      createResolvers[1]!(acceptedCreateAck("opencode-draft"));
+      await flushMicrotasks();
+    });
+    expect((await submitted).sessionId).toBe("opencode-draft");
+  });
+
   it.each(["ready", "leave-and-return", "workspace", "transport", "version"] as const)(
     "新草稿首发等待旧创建退休；%s 时保持发送归属",
     async (outcome) => {

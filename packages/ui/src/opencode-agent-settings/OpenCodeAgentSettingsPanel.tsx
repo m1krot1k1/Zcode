@@ -68,14 +68,21 @@ export function OpenCodeAgentSettingsPanel({
   onEnabledChange,
 }: {
   enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
+  onEnabledChange: (enabled: boolean) => void | Promise<void>;
 }) {
   const { intl } = useZCodeIntl();
   const runtime = useServices().openCodeAcpRuntime;
   const [cliStatus, setCliStatus] = useState<OpenCodeAgentCliStatus>();
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [savingEnabled, setSavingEnabled] = useState(false);
+  const [optimisticEnabled, setOptimisticEnabled] = useState<boolean>();
   const [diagnostic, setDiagnostic] = useState("");
+  const displayedEnabled = optimisticEnabled ?? enabled;
+
+  useEffect(() => {
+    if (optimisticEnabled === enabled) setOptimisticEnabled(undefined);
+  }, [enabled, optimisticEnabled]);
 
   const checkCli = useCallback(async () => {
     if (!runtime) {
@@ -141,7 +148,24 @@ export function OpenCodeAgentSettingsPanel({
     }
   }, [cliStatus, intl, onEnabledChange, runtime]);
 
-  const busy = checking || installing;
+  const handleEnabledChange = useCallback(
+    async (nextEnabled: boolean) => {
+      setOptimisticEnabled(nextEnabled);
+      setSavingEnabled(true);
+      setDiagnostic("");
+      try {
+        await onEnabledChange(nextEnabled);
+      } catch {
+        setOptimisticEnabled(undefined);
+        setDiagnostic(intl.formatMessage({ id: "settings.openCode.setting-save-failed" }));
+      } finally {
+        setSavingEnabled(false);
+      }
+    },
+    [intl, onEnabledChange],
+  );
+
+  const busy = checking || installing || savingEnabled;
   const canInstall =
     cliStatus?.status === "missing" && cliStatus.installSupported !== false && Boolean(runtime);
 
@@ -162,9 +186,9 @@ export function OpenCodeAgentSettingsPanel({
         </div>
         <Switch
           aria-label={intl.formatMessage({ id: "settings.openCode.enable" })}
-          checked={enabled}
+          checked={displayedEnabled}
           disabled={busy || !runtime || (!enabled && cliStatus?.status !== "available")}
-          onCheckedChange={onEnabledChange}
+          onCheckedChange={(nextEnabled) => void handleEnabledChange(nextEnabled)}
           data-testid="opencode-cli-enabled-switch"
         />
       </div>

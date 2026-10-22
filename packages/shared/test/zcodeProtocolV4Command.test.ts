@@ -88,6 +88,29 @@ describe("zcode-protocol-v4 command", () => {
     ).toBe(false);
   });
 
+  it("limits the providerless session marker to an empty draft without a ZCode model", () => {
+    expect(
+      commandPayloadSchemas.createSession.parse({
+        workspaceId: "/workspace",
+        openCodeAcpDraft: true,
+      }).openCodeAcpDraft,
+    ).toBe(true);
+    expect(
+      commandPayloadSchemas.createSession.safeParse({
+        workspaceId: "/workspace",
+        openCodeAcpDraft: true,
+        firstInput: { text: "run now" },
+      }).success,
+    ).toBe(false);
+    expect(
+      commandPayloadSchemas.createSession.safeParse({
+        workspaceId: "/workspace",
+        openCodeAcpDraft: true,
+        config: { modelSelection: { providerId: "api", modelId: "model" } },
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects ZCode execution/config and unsupported composer fields on OpenCode route", () => {
     const route = { kind: "opencode-acp", model: { kind: "default" } } as const;
     const forbiddenPayloads = [

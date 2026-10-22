@@ -44,8 +44,17 @@ export function startDraftSessionPrewarm(params: {
   onSettled?: () => void;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
   resolveInitialConfig?: () => Partial<SessionConfigState> | undefined;
+  /** 仅当前 Composer 明确选中 OpenCode ACP 时，允许走 Host 只读创建路径。 */
+  openCodeAcpDraft?: boolean;
 }): DraftPrewarmController {
-  const { workspaceKey, dispatchCommand, onReady, onSettled, resolveInitialConfig } = params;
+  const {
+    workspaceKey,
+    dispatchCommand,
+    onReady,
+    onSettled,
+    resolveInitialConfig,
+    openCodeAcpDraft = false,
+  } = params;
   let disposed = false;
   let promotionState: "draft" | "pending" | "promoted" | "discarded" = "draft";
   let createdSessionId: string | null = null;
@@ -67,8 +76,11 @@ export function startDraftSessionPrewarm(params: {
   };
 
   const createPayload = () => {
-    const createPayload: Record<string, unknown> = { workspaceId: workspaceKey };
-    const initialConfig = resolveInitialConfig?.();
+    const createPayload: Record<string, unknown> = {
+      workspaceId: workspaceKey,
+      ...(openCodeAcpDraft ? { openCodeAcpDraft: true } : {}),
+    };
+    const initialConfig = openCodeAcpDraft ? undefined : resolveInitialConfig?.();
     if (initialConfig && Object.keys(initialConfig).length > 0) {
       // 预热会话首帧即用全局模型（CLI 归并 createSession.config），不闪 workspace 缺省。
       createPayload.config = initialConfig;
@@ -205,23 +217,36 @@ class DraftSessionPrewarmCoordinator {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private dispatchCommand: DispatchCommand;
   private resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined;
+  private openCodeAcpDraft: boolean;
 
   constructor(
     private readonly workspaceKey: string,
     dispatchCommand: DispatchCommand,
     resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined,
+    openCodeAcpDraft: boolean,
     private readonly onEmpty: () => void,
   ) {
     this.dispatchCommand = dispatchCommand;
     this.resolveInitialConfig = resolveInitialConfig;
+    this.openCodeAcpDraft = openCodeAcpDraft;
   }
 
   update(
     dispatchCommand: DispatchCommand,
     resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined,
+    openCodeAcpDraft: boolean,
   ): void {
+    const routeChanged = this.openCodeAcpDraft !== openCodeAcpDraft;
     this.dispatchCommand = dispatchCommand;
     this.resolveInitialConfig = resolveInitialConfig;
+    this.openCodeAcpDraft = openCodeAcpDraft;
+    if (!routeChanged) return;
+
+    // 根因：Composer 恢复/切换到 OpenCode 可能晚于首次 draft prewarm；只更新字段会让
+    // 已在途的普通 createSession 继续成为首发目标。让唯一 owner 退休旧代，收口后再建最新路由。
+    this.blockedInvalidationVersion = null;
+    this.retireCurrent();
+    this.reconcile();
   }
 
   async waitForSession(
@@ -377,6 +402,7 @@ class DraftSessionPrewarmCoordinator {
       dispatchCommand: (type, payload, targetSessionId) =>
         this.dispatchCommand(type, payload, targetSessionId),
       resolveInitialConfig: () => this.resolveInitialConfig?.(),
+      openCodeAcpDraft: this.openCodeAcpDraft,
       onReady: (sessionId) => {
         if (this.current !== current || current.retiring) {
           return;
@@ -487,6 +513,7 @@ function getDraftSessionPrewarmCoordinator(params: {
   transportIdentity: unknown;
   dispatchCommand: DispatchCommand;
   resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined;
+  openCodeAcpDraft: boolean;
 }): DraftSessionPrewarmCoordinator {
   let transportCoordinators = draftPrewarmCoordinatorsByTransport.get(params.transportIdentity);
   if (!transportCoordinators) {
@@ -500,6 +527,7 @@ function getDraftSessionPrewarmCoordinator(params: {
       params.workspaceKey,
       params.dispatchCommand,
       params.resolveInitialConfig,
+      params.openCodeAcpDraft,
       () => {
         if (transportCoordinators?.get(ownerKey) !== coordinator) {
           return;
@@ -528,6 +556,8 @@ export function useDraftSessionPrewarm(params: {
   dispatchCommand: DispatchCommand;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
   resolveInitialConfig?: () => Partial<SessionConfigState> | undefined;
+  /** Composer 明确选择 OpenCode ACP 时才可跳过 ZCode provider startup gate。 */
+  openCodeAcpDraft?: boolean;
 }): DraftSessionPrewarm {
   const {
     enabled,
@@ -537,6 +567,7 @@ export function useDraftSessionPrewarm(params: {
     invalidationVersion = 0,
     dispatchCommand,
     resolveInitialConfig,
+    openCodeAcpDraft = false,
   } = params;
   // workspace/pane/transport 共同定义逻辑 owner：同 owner 重挂复用 single-flight，transport
   // 换代仍生成新 coordinator，确保旧 session 的清理不会误走新 transport。
@@ -552,12 +583,13 @@ export function useDraftSessionPrewarm(params: {
         transportIdentity,
         dispatchCommand,
         resolveInitialConfig,
+        openCodeAcpDraft,
       }),
     [owner],
   );
   useLayoutEffect(() => {
-    coordinator.update(dispatchCommand, resolveInitialConfig);
-  }, [coordinator, dispatchCommand, resolveInitialConfig]);
+    coordinator.update(dispatchCommand, resolveInitialConfig, openCodeAcpDraft);
+  }, [coordinator, dispatchCommand, openCodeAcpDraft, resolveInitialConfig]);
   const generation = useMemo(() => ({ owner }), [enabled, invalidationVersion, owner]);
   const [ready, setReady] = useState<{
     generation: typeof generation;

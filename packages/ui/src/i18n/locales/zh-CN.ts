@@ -1503,6 +1503,8 @@ const zhCN: Record<string, string> = {
   "modelTrajectory.usage.input": "输入 {count}",
   "modelTrajectory.usage.output": "输出 {count}",
   "chat.toolbar.model.loadFailedRetry": "模型加载失败，重试",
+  "chat.toolbar.openCode.loadingModels": "正在加载 OpenCode 模型…",
+  "chat.toolbar.openCode.retryModels": "OpenCode 模型不可用，重试",
   "chat.toolbar.model.remoteWaiting": "等待远程模型",
   "chat.toolbar.model.targetMissing": "暂无模型目标",
   "settings.subagents.modelLoadFailed": "模型列表加载失败。",
@@ -3546,6 +3548,7 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.credentialModeApiKey": "API 密钥",
   "settings.openCode.title": "OpenCode CLI",
   "settings.openCode.enable": "启用 OpenCode CLI",
+  "settings.openCode.setting-save-failed": "无法保存 OpenCode CLI，提供方仍保持停用状态，请重试。",
   "settings.openCode.composerUnsupported":
     "OpenCode CLI 当前仅支持不带附件、立即发送的纯文本消息。",
   "settings.openCode.composerDisabled": "请先在模型供应商设置中启用 OpenCode CLI，再在聊天中使用。",
