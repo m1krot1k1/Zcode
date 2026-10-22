@@ -6,6 +6,10 @@ import type { DatabaseSync } from "node:sqlite";
 import type {
   MessageInfo,
   MessagePart,
+  OpenCodeAgentRunAdmission,
+  OpenCodeAgentRunRecord,
+  OpenCodeAgentRunStatus,
+  OpenCodeAgentRunTransition,
   SessionId,
   SessionInputDelivery,
   SessionInputRecord,
@@ -29,6 +33,279 @@ interface SessionInputRow {
   status_reason: string | null;
   time_created: number;
   time_updated: number;
+}
+
+interface OpenCodeAgentRunRow {
+  schema_version: number;
+  session_id: string;
+  run_id: string;
+  command_id: string;
+  input_id: string;
+  route_kind: string;
+  requested_model_id: string | null;
+  status: string;
+  event_sequence: number;
+  time_created: number;
+  time_updated: number;
+  time_terminal: number | null;
+  opencode_session_id: string | null;
+  result_text: string | null;
+  stop_reason: string | null;
+  diagnostic_code: string | null;
+}
+
+const OPEN_CODE_RUN_TERMINAL_STATUSES = new Set<OpenCodeAgentRunStatus>([
+  "completed",
+  "cancelled",
+  "failed",
+  "interrupted",
+]);
+
+const OPEN_CODE_RUN_TRANSITIONS: Readonly<Record<OpenCodeAgentRunStatus, readonly OpenCodeAgentRunStatus[]>> = {
+  pending: ["dispatching", "failed", "interrupted"],
+  dispatching: ["running", "completed", "cancelled", "failed", "interrupted"],
+  running: ["completed", "cancelled", "failed", "interrupted"],
+  completed: [],
+  cancelled: [],
+  failed: [],
+  interrupted: [],
+};
+
+const MAX_OPEN_CODE_RUN_RESULT_BYTES = 32 * 1024;
+
+function decodeOpenCodeAgentRunRow(row: OpenCodeAgentRunRow): OpenCodeAgentRunRecord {
+  if (row.schema_version !== 1 || row.route_kind !== "opencode-cli") {
+    throw new Error("Unsupported OpenCode delegated run record");
+  }
+  const statuses: readonly OpenCodeAgentRunStatus[] = [
+    "pending", "dispatching", "running", "completed", "cancelled", "failed", "interrupted",
+  ];
+  if (!statuses.includes(row.status as OpenCodeAgentRunStatus)) {
+    throw new Error("Invalid OpenCode delegated run status");
+  }
+  return {
+    schemaVersion: 1,
+    sessionID: row.session_id as SessionId,
+    runID: row.run_id,
+    commandID: row.command_id,
+    inputID: row.input_id,
+    routeKind: "opencode-cli",
+    ...(row.requested_model_id !== null ? { requestedModelID: row.requested_model_id } : {}),
+    status: row.status as OpenCodeAgentRunStatus,
+    eventSequence: row.event_sequence,
+    time: {
+      created: row.time_created,
+      updated: row.time_updated,
+      ...(row.time_terminal !== null ? { terminal: row.time_terminal } : {}),
+    },
+    ...(row.opencode_session_id !== null ? { openCodeSessionID: row.opencode_session_id } : {}),
+    ...(row.result_text !== null ? { resultText: row.result_text } : {}),
+    ...(row.stop_reason !== null ? { stopReason: row.stop_reason } : {}),
+    ...(row.diagnostic_code !== null ? { diagnosticCode: row.diagnostic_code } : {}),
+  };
+}
+
+function assertOpenCodeRunResultSize(resultText: string | null | undefined): void {
+  if (
+    resultText != null &&
+    Buffer.byteLength(resultText, "utf8") > MAX_OPEN_CODE_RUN_RESULT_BYTES
+  ) {
+    throw new Error("OpenCode delegated run result exceeds 32 KiB");
+  }
+}
+
+function readOpenCodeAgentRun(
+  db: DatabaseSync,
+  sessionID: SessionId,
+  runID: string,
+): OpenCodeAgentRunRecord | null {
+  const row = db
+    .prepare("select * from opencode_agent_run where session_id = ? and run_id = ?")
+    .get(sessionID, runID) as OpenCodeAgentRunRow | undefined;
+  return row ? decodeOpenCodeAgentRunRow(row) : null;
+}
+
+/** Commit the accepted canonical input and dispatchable outbox envelope as one transaction. */
+export async function admitOpenCodeAgentRun(
+  db: DatabaseSync,
+  admission: OpenCodeAgentRunAdmission,
+): Promise<{ input: SessionInputRecord; run: OpenCodeAgentRunRecord; created: boolean }> {
+  const { input } = admission;
+  if (
+    !admission.commandID.trim() ||
+    admission.runID !== admission.commandID ||
+    input.id !== admission.commandID ||
+    input.kind !== "sendText" ||
+    input.delivery !== "startNow" ||
+    input.payload.executionRoute !== "opencode-cli"
+  ) {
+    throw new Error("Invalid OpenCode delegated run admission");
+  }
+  const now = admission.now ?? Date.now();
+  db.exec("begin immediate");
+  try {
+    const existingInput = db.prepare("select * from session_input where id = ?").get(input.id) as unknown as
+      | SessionInputRow
+      | undefined;
+    const existingRun = db
+      .prepare("select * from opencode_agent_run where command_id = ?")
+      .get(admission.commandID) as OpenCodeAgentRunRow | undefined;
+    if (existingRun) {
+      if (existingRun.session_id !== input.sessionID || existingRun.input_id !== input.id) {
+        throw new Error("OpenCode delegated command ID belongs to another session");
+      }
+      if (!existingInput || existingInput.session_id !== input.sessionID) {
+        throw new Error("OpenCode delegated run is missing its canonical input");
+      }
+      const record = decodeOpenCodeAgentRunRow(existingRun);
+      const inputRecord = decodeSessionInputRow(existingInput);
+      db.exec("commit");
+      return { input: inputRecord, run: record, created: false };
+    }
+    if (existingInput) {
+      throw new Error("Command ID already has a session input without an OpenCode outbox row");
+    }
+    const admittedSequence = db
+      .prepare("select coalesce(max(admitted_sequence), -1) + 1 as next from session_input where session_id = ?")
+      .get(input.sessionID) as { next: number };
+    db.prepare(`
+      insert into session_input (
+        id, session_id, kind, delivery, payload, admitted_sequence, status, time_created, time_updated
+      ) values (?, ?, ?, ?, ?, ?, 'admitted', ?, ?)
+    `).run(
+      input.id,
+      input.sessionID,
+      input.kind,
+      input.delivery,
+      encodeJson(input.payload) ?? "{}",
+      admittedSequence.next,
+      now,
+      now,
+    );
+    db.prepare(`
+      insert into opencode_agent_run (
+        schema_version, session_id, run_id, command_id, input_id, route_kind,
+        requested_model_id, status, event_sequence, time_created, time_updated
+      ) values (1, ?, ?, ?, ?, 'opencode-cli', ?, 'pending', 0, ?, ?)
+    `).run(
+      input.sessionID,
+      admission.runID,
+      admission.commandID,
+      input.id,
+      admission.requestedModelID ?? null,
+      now,
+      now,
+    );
+    const admittedInput = db.prepare("select * from session_input where id = ?").get(input.id) as unknown as SessionInputRow;
+    const run = readOpenCodeAgentRun(db, input.sessionID, admission.runID);
+    if (!run) throw new Error("OpenCode delegated run admission did not persist");
+    db.exec("commit");
+    return { input: decodeSessionInputRow(admittedInput), run, created: true };
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
+}
+
+/** Compare-and-set ordered event/status transition; terminal state can never be reopened. */
+export async function transitionOpenCodeAgentRun(
+  db: DatabaseSync,
+  input: OpenCodeAgentRunTransition,
+): Promise<boolean> {
+  if (
+    input.eventSequence !== input.expectedEventSequence + 1 ||
+    !OPEN_CODE_RUN_TRANSITIONS[input.expectedStatus].includes(input.status) ||
+    (input.status === "running" && !input.openCodeSessionID?.trim())
+  ) {
+    return false;
+  }
+  assertOpenCodeRunResultSize(input.resultText);
+  const terminal = OPEN_CODE_RUN_TERMINAL_STATUSES.has(input.status);
+  if (terminal && input.openCodeSessionID) return false;
+  const now = input.now ?? Date.now();
+  const result = db.prepare(`
+    update opencode_agent_run set
+      status = ?, event_sequence = ?, time_updated = ?,
+      time_terminal = ?,
+      opencode_session_id = ?,
+      result_text = ?, stop_reason = ?, diagnostic_code = ?
+    where session_id = ? and run_id = ? and status = ? and event_sequence = ?
+  `).run(
+    input.status,
+    input.eventSequence,
+    now,
+    terminal ? now : null,
+    terminal ? null : (input.openCodeSessionID ?? null),
+    input.resultText ?? null,
+    input.stopReason ?? null,
+    input.diagnosticCode ?? null,
+    input.sessionID,
+    input.runID,
+    input.expectedStatus,
+    input.expectedEventSequence,
+  );
+  return result.changes === 1;
+}
+
+export async function getOpenCodeAgentRun(
+  db: DatabaseSync,
+  input: { sessionID: SessionId; runID: string },
+): Promise<OpenCodeAgentRunRecord | null> {
+  return readOpenCodeAgentRun(db, input.sessionID, input.runID);
+}
+
+export async function listOpenCodeAgentRuns(
+  db: DatabaseSync,
+  input: { sessionID: SessionId; statuses?: OpenCodeAgentRunStatus[]; limit?: number },
+): Promise<OpenCodeAgentRunRecord[]> {
+  const limit = Math.max(1, Math.min(500, Math.floor(input.limit ?? 100)));
+  const statuses = input.statuses?.length ? input.statuses : undefined;
+  const rows = statuses
+    ? db.prepare(`select * from opencode_agent_run where session_id = ? and status in (${statuses.map(() => "?").join(",")}) order by time_created, run_id limit ?`).all(input.sessionID, ...statuses, limit)
+    : db.prepare("select * from opencode_agent_run where session_id = ? order by time_created, run_id limit ?").all(input.sessionID, limit);
+  return (rows as unknown as OpenCodeAgentRunRow[]).map(decodeOpenCodeAgentRunRow);
+}
+
+export async function listPendingOpenCodeAgentRuns(
+  db: DatabaseSync,
+  input: { limit?: number } = {},
+): Promise<OpenCodeAgentRunRecord[]> {
+  const limit = Math.max(1, Math.min(500, Math.floor(input.limit ?? 100)));
+  const rows = db.prepare("select * from opencode_agent_run where status = 'pending' order by time_created, run_id limit ?").all(limit);
+  return (rows as unknown as OpenCodeAgentRunRow[]).map(decodeOpenCodeAgentRunRow);
+}
+
+/** Settle every unresolved run on startup; no ACP session is resumed or recreated. */
+export async function recoverOpenCodeAgentRuns(
+  db: DatabaseSync,
+  input: { now?: number; diagnosticCode?: string } = {},
+): Promise<OpenCodeAgentRunRecord[]> {
+  const now = input.now ?? Date.now();
+  const diagnosticCode = input.diagnosticCode ?? "opencode.run-interrupted-after-restart";
+  db.exec("begin immediate");
+  try {
+    const unresolved = db.prepare(`
+      select session_id, run_id from opencode_agent_run
+      where status in ('pending', 'dispatching', 'running')
+      order by session_id, run_id
+    `).all() as Array<{ session_id: string; run_id: string }>;
+    db.prepare(`
+      update opencode_agent_run set
+        status = 'interrupted', event_sequence = event_sequence + 1,
+        time_updated = ?, time_terminal = ?, opencode_session_id = null,
+        diagnostic_code = coalesce(diagnostic_code, ?)
+      where status in ('pending', 'dispatching', 'running')
+    `).run(now, now, diagnosticCode);
+    const read = db.prepare("select * from opencode_agent_run where session_id = ? and run_id = ?");
+    const rows = unresolved
+      .map(({ session_id, run_id }) => read.get(session_id, run_id) as unknown as OpenCodeAgentRunRow | undefined)
+      .filter((row): row is OpenCodeAgentRunRow => row !== undefined);
+    db.exec("commit");
+    return rows.map(decodeOpenCodeAgentRunRow);
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
 }
 
 export async function saveSessionInput(

@@ -38,6 +38,7 @@ import {
   isConversationRealUserTurnStarter,
 } from "@zcode/shared";
 import {
+  conversationExecutionRouteSchema,
   conversationInputIntentSchema,
   errorAttributionSchema,
   workflowBlockedMetaSchema,
@@ -406,6 +407,7 @@ function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadat
   if (fullIntent.success) {
     const value = fullIntent.data;
     return {
+      executionRoute: value.executionRoute ?? { kind: "zcode" },
       sourceCommandId: value.sourceCommandId,
       queueItemId: value.queueItemId,
       clientId: value.clientId,
@@ -463,6 +465,11 @@ function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadat
   }
   return {
     ...(value as unknown as TurnInputIntentMetadata),
+    executionRoute: conversationExecutionRouteSchema.parse(
+      (value as Record<string, unknown>).executionRoute ?? {
+        kind: "zcode",
+      },
+    ),
     ...(persistedHighspeed.success ? { highspeed: persistedHighspeed.data } : {}),
   };
 }

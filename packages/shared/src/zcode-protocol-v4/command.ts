@@ -29,7 +29,7 @@ import {
 } from "../zcode-protocol/index.js";
 import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
-import { conversationInputSourceSchema } from "./input-intent.js";
+import { conversationInputSourceSchema, sendTextExecutionRouteSchema } from "./input-intent.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
 export * from "./workflow-command-rejections.js";
 
@@ -46,6 +46,68 @@ function requireModelSelectionForExecution(
       path: ["modelExecution"],
     });
   }
+}
+
+/** ACP owns a separate agent loop: its input must not carry ZCode execution/config payloads. */
+function validateOpenCodeAgentRoute(
+  payload: {
+    text: string;
+    executionRoute: z.infer<typeof sendTextExecutionRouteSchema>;
+    attachments?: unknown[];
+    requestedDelivery?: string;
+    browserAmbientContext?: unknown;
+    context_refs?: unknown[];
+    source?: unknown;
+    heldQueueDisposition?: unknown;
+    expectedHeldQueueItemIds?: unknown[];
+    modelSelection?: unknown;
+    mode?: unknown;
+    planEnabled?: unknown;
+    modelExecution?: unknown;
+    highspeedMeta?: unknown;
+    automationId?: unknown;
+    offPeakTaskId?: unknown;
+    offPeakRunType?: unknown;
+    botDeliveryTarget?: unknown;
+    botGroupSource?: unknown;
+    conversationQuotes?: unknown[];
+    toolDisallowlist?: unknown[];
+  },
+  context: z.RefinementCtx,
+): void {
+  if (payload.executionRoute.kind !== "opencode-acp") return;
+  const reject = (field: string, message: string) =>
+    context.addIssue({ code: z.ZodIssueCode.custom, message, path: [field] });
+  const unsupported: Array<[keyof typeof payload, string]> = [
+    ["modelSelection", "OpenCode ACP route forbids modelSelection"],
+    ["mode", "OpenCode ACP route forbids ZCode mode"],
+    ["planEnabled", "OpenCode ACP route forbids ZCode plan mode"],
+    ["modelExecution", "OpenCode ACP route forbids model execution metadata"],
+    ["highspeedMeta", "OpenCode ACP route forbids Highspeed metadata"],
+    ["browserAmbientContext", "OpenCode ACP route forbids browser context"],
+    ["source", "OpenCode ACP route forbids Composer/plugin context"],
+    ["automationId", "OpenCode ACP route forbids automation dispatch"],
+    ["offPeakTaskId", "OpenCode ACP route forbids Off-Peak dispatch"],
+    ["offPeakRunType", "OpenCode ACP route forbids Off-Peak dispatch"],
+    ["botDeliveryTarget", "OpenCode ACP route forbids bot dispatch"],
+    ["botGroupSource", "OpenCode ACP route forbids bot dispatch"],
+    ["toolDisallowlist", "OpenCode ACP route does not support ZCode tool policy"],
+  ];
+  for (const [field, message] of unsupported) {
+    if (payload[field] !== undefined) reject(field, message);
+  }
+  if (payload.attachments?.length) reject("attachments", "OpenCode ACP route is text-only");
+  if (payload.context_refs?.length)
+    reject("context_refs", "OpenCode ACP route forbids shared context");
+  if (payload.conversationQuotes?.length)
+    reject("conversationQuotes", "OpenCode ACP route forbids conversation context");
+  if (payload.heldQueueDisposition !== undefined)
+    reject("heldQueueDisposition", "OpenCode ACP route is idle-only");
+  if (payload.expectedHeldQueueItemIds?.length)
+    reject("expectedHeldQueueItemIds", "OpenCode ACP route is idle-only");
+  if (payload.requestedDelivery !== undefined && payload.requestedDelivery !== "startNow")
+    reject("requestedDelivery", "OpenCode ACP route requires immediate delivery");
+  if (!payload.text.trim()) reject("text", "OpenCode ACP route requires text");
 }
 
 // ── §6.4 命令 payload 全集 ──
@@ -95,6 +157,8 @@ export const commandPayloadSchemas = {
   sendText: z
     .object({
       text: z.string(),
+      // Missing route is the legacy ZCode route. ACP is an explicit separate execution choice.
+      executionRoute: sendTextExecutionRouteSchema,
       attachments: z.array(attachmentRefSchema).optional(),
       // Desktop Cmd/Ctrl+Enter 只覆盖本次 busy input，不改 session followupMode。
       // startNow 由 CLI 原子抢占当前 turn，不经过 queue admission。
@@ -147,6 +211,7 @@ export const commandPayloadSchemas = {
           path: ["offPeakRunType"],
         });
       }
+      validateOpenCodeAgentRoute(payload, context);
       requireModelSelectionForExecution(payload, context);
     }),
   sendGoalCommand: z.object({
@@ -170,17 +235,17 @@ export const commandPayloadSchemas = {
   applyFileRewind: z.object({ target: conversationRowTargetSchema }),
   editUserQuery: z
     .object({
-    target: conversationRowTargetSchema,
-    newText: z.string(),
+      target: conversationRowTargetSchema,
+      newText: z.string(),
       conversationQuotes: conversationQuotesSchema.optional(),
-    attachments: z.array(attachmentRefSchema).optional(),
+      attachments: z.array(attachmentRefSchema).optional(),
       // 编辑重发按新的主动发送处理：只接受本次重新 prepare 得到的卡与执行材料，
       // 不从被 rewind 的历史消息复用旧凭据。
       modelSelection: modelSelectionSchema.optional(),
       modelExecution: modelExecutionSchema.optional(),
       highspeedMeta: highspeedMessageMetaSchema.optional(),
-    // 缺省 preserve：仅切 conversation branch；rewind 会先安全恢复该轮文件。
-    workspaceMode: z.enum(["preserve", "rewind"]).optional(),
+      // 缺省 preserve：仅切 conversation branch；rewind 会先安全恢复该轮文件。
+      workspaceMode: z.enum(["preserve", "rewind"]).optional(),
     })
     .superRefine(requireModelSelectionForExecution),
   retryTurn: z.object({ target: conversationRowTargetSchema }),
@@ -295,8 +360,10 @@ export const commandPayloadSchemas = {
 export type CommandType = keyof typeof commandPayloadSchemas;
 export type CommandPayloadMap = {
   [T in CommandType]: T extends "sendText"
-    ? z.infer<(typeof commandPayloadSchemas)[T]> &
-        import("../zcode-task-types-core.js").ZCodeBackgroundTurnAttribution
+    ? Omit<z.infer<(typeof commandPayloadSchemas)[T]>, "executionRoute"> & {
+        // Producers may omit this for compatibility; command parsing normalizes it to zcode.
+        executionRoute?: z.input<typeof sendTextExecutionRouteSchema>;
+      } & import("../zcode-task-types-core.js").ZCodeBackgroundTurnAttribution
     : z.infer<(typeof commandPayloadSchemas)[T]>;
 };
 

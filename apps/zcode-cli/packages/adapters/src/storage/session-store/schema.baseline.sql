@@ -141,6 +141,35 @@ CREATE TABLE model_usage (
         provider_metadata_json text
       );
 
+CREATE TABLE opencode_agent_run (
+        schema_version integer not null check(schema_version = 1),
+        session_id text not null references session(id) on delete cascade,
+        run_id text not null,
+        command_id text not null,
+        input_id text not null unique references session_input(id) on delete cascade,
+        route_kind text not null check(route_kind = 'opencode-cli'),
+        requested_model_id text,
+        status text not null check(status in (
+          'pending', 'dispatching', 'running', 'completed', 'cancelled', 'failed', 'interrupted'
+        )),
+        event_sequence integer not null check(event_sequence >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        opencode_session_id text,
+        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
+        stop_reason text,
+        diagnostic_code text,
+        primary key(session_id, run_id),
+        unique(command_id),
+        check(run_id = command_id),
+        check(
+          (status in ('completed', 'cancelled', 'failed', 'interrupted') and time_terminal is not null and opencode_session_id is null)
+          or (status = 'running' and time_terminal is null and opencode_session_id is not null)
+          or (status in ('pending', 'dispatching') and time_terminal is null and opencode_session_id is null)
+        )
+      );
+
 CREATE TABLE part (
         id text primary key,
         message_id text not null references message(id) on delete cascade,
@@ -444,6 +473,13 @@ CREATE INDEX model_usage_started_model_idx
 
 CREATE INDEX model_usage_trace_idx
         on model_usage(trace_id);
+
+CREATE INDEX opencode_agent_run_outbox_idx
+        on opencode_agent_run(status, time_created, run_id)
+        where status = 'pending';
+
+CREATE INDEX opencode_agent_run_session_created_idx
+        on opencode_agent_run(session_id, time_created, run_id);
 
 CREATE INDEX part_message_id_id_idx on part(message_id, id);
 

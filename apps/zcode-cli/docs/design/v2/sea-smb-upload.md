@@ -18,12 +18,14 @@
 ## 目标
 
 - 提供一个可单独运行的 Node.js 脚本上传 6 个 SEA binary。
-- 默认上传到已挂载的 SMB 目录 `/Volumes/shared/zcode/deps/zcode-cli-<version>`。
+- 默认上传到已配置的 SMB 挂载目录；仅 macOS 默认使用 `/Volumes/shared/zcode/deps/zcode-cli-<version>`。
 - 上传前检查目标版本目录是否已存在。
 - 目标版本已存在且未传 `--force` 时，交互提示用户放弃或强制更新。
 - 上传过程中显示文件级和总量级进度。
-- 支持通过参数覆盖 dist 目录、目标根目录、SMB URL 标签和版本号，便于测试与临时发布。
-- 不新增 `ZCODE_*` 环境变量，不把 SMB 密码写入仓库、日志、命令行示例或测试 fixture。
+- 支持通过参数覆盖 dist 目录、目标根目录、SMB URL 标签和版本号，便于测试与临时发布。`--dest-root` 优先于 `ZCODE_SEA_DEST_ROOT`；环境变量优先于 macOS 默认值。
+- 非 macOS 必须通过 `--dest-root` 或 `ZCODE_SEA_DEST_ROOT` 配置挂载目录，不能把 POSIX 默认路径当作跨平台路径。
+- 仅 macOS 默认目标会先验证 `/Volumes/shared` 挂载点；其他系统即使显式指定相同字符串，也按用户配置的目标目录处理。
+- 不把 SMB 密码写入仓库、日志、命令行示例或测试 fixture。
 
 ## 非目标
 
@@ -37,6 +39,7 @@
 - `node packages/cli/scripts/upload-sea-smb.mjs`
 - `node packages/cli/scripts/upload-sea-smb.mjs --force`
 - `node packages/cli/scripts/upload-sea-smb.mjs --dest-root /Volumes/shared/zcode/deps`
+- `ZCODE_SEA_DEST_ROOT=/mnt/shared/zcode/deps node packages/cli/scripts/upload-sea-smb.mjs`
 - `node packages/cli/scripts/upload-sea-smb.mjs --dist packages/cli/dist`
 - `node packages/cli/scripts/upload-sea-smb.mjs --version 0.12.3`
 - `pnpm --filter @zcode/cli upload:sea`
@@ -44,8 +47,8 @@
 默认值：
 
 - SMB URL 标签：`smb://10.0.0.100/shared`（可通过 `INTRANET_MACHINE_HOST` 覆盖 host）
-- 挂载根：`/Volumes/shared`
-- 目标根目录：`/Volumes/shared/zcode/deps`
+- macOS 且无覆盖值时，挂载根：`/Volumes/shared`；目标根目录：`/Volumes/shared/zcode/deps`
+- 其他系统通过 `ZCODE_SEA_DEST_ROOT` 或 `--dest-root` 指定该系统上的挂载路径。
 - 版本目录：`zcode-cli-<root package version>`
 
 `--smb-url` 只用于错误提示和日志里的目标说明，不参与认证，也不包含密码。
@@ -60,7 +63,7 @@
 1. 读取根 `package.json` 的 `version`，或使用 `--version`。
 2. 校验版本字符串不能为空，不能包含路径分隔符或 `.` / `..` 目录名。
 3. 校验 `packages/cli/dist` 下 6 个 SEA binary 均存在且是普通文件。
-4. 校验默认挂载根 `/Volumes/shared` 已存在；自定义 `--dest-root` 可以按需创建。
+4. 校验默认挂载根已存在后才能创建目标子目录。默认值只适用于 macOS；其他系统必须显式指定目标目录。缺少挂载根时不能创建它。
 5. 创建目标根目录。
 6. 如果 `zcode-cli-<version>` 已存在：
    - `--force`：继续强制更新。
@@ -88,7 +91,7 @@ TTY 下可以复用单行刷新；非 TTY 下输出离散进度行，避免长�
 
 - 根 `package.json` 不存在、无法解析或 `version` 无效：中止。
 - 缺少任一 SEA binary：中止，并提示先运行 `pnpm --filter @zcode/cli build:sea`。
-- 默认 SMB 挂载根不存在：中止，并提示先挂载 `smb://10.0.0.100/shared`。
+- 默认 SMB 挂载根不存在或当前系统未配置目标目录：中止，并提示挂载共享目录后设置 `ZCODE_SEA_DEST_ROOT` 或 `--dest-root`。
 - 目标版本已存在且用户选择放弃：不修改目标目录，退出成功。
 - 目标版本已存在且非交互又未传 `--force`：中止。
 - staging 复制失败：清理 staging 目录，保留已有版本目录。
@@ -103,3 +106,4 @@ TTY 下可以复用单行刷新；非 TTY 下输出离散进度行，避免长�
 - 已有版本目录选择 `force` 或传 `--force` 时替换目标目录。
 - 复制过程发出进度事件，并保留文件内容。
 - 默认挂载根缺失时不创建 `/Volumes/shared` 假目录。
+- 目标目录优先级为 CLI、环境变量、macOS 默认值；Linux 和 Windows 不使用 macOS 默认路径。

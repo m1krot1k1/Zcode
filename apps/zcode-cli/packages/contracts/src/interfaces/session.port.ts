@@ -318,7 +318,17 @@ export type TurnInputSourceMetadata =
   | { kind: "pluginUi"; pluginId: string; toolCallId: string }
   | { kind: "genUi"; path: string; title?: string };
 
+/** Выбор исполнителя ввода; OpenCode model ID не является ModelSelection ZCode. */
+export type TurnInputExecutionRouteMetadata =
+  | { kind: "zcode" }
+  | {
+      kind: "opencode-acp";
+      model: { kind: "default" } | { kind: "catalog"; modelId: string };
+    };
+
 export interface TurnInputIntentMetadata {
+  /** Для legacy-записей отсутствие поля означает обычный маршрут ZCode. */
+  executionRoute?: TurnInputExecutionRouteMetadata;
   planEnabled?: boolean;
   conversationQuotes?: Array<{
     text: string;

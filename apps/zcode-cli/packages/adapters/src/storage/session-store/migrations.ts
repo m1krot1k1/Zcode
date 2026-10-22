@@ -984,4 +984,45 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
     `,
   },
   { ...SESSION_DATABASE_IDENTITY_MIGRATION, touchedTables: ["zcode_database_identity"] },
+  {
+    appVersion: "0.16.9",
+    id: "0025_opencode_agent_run_outbox",
+    touchedTables: ["opencode_agent_run"],
+    sql: `
+      create table opencode_agent_run (
+        schema_version integer not null check(schema_version = 1),
+        session_id text not null references session(id) on delete cascade,
+        run_id text not null,
+        command_id text not null,
+        input_id text not null unique references session_input(id) on delete cascade,
+        route_kind text not null check(route_kind = 'opencode-cli'),
+        requested_model_id text,
+        status text not null check(status in (
+          'pending', 'dispatching', 'running', 'completed', 'cancelled', 'failed', 'interrupted'
+        )),
+        event_sequence integer not null check(event_sequence >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        opencode_session_id text,
+        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
+        stop_reason text,
+        diagnostic_code text,
+        primary key(session_id, run_id),
+        unique(command_id),
+        check(run_id = command_id),
+        check(
+          (status in ('completed', 'cancelled', 'failed', 'interrupted') and time_terminal is not null and opencode_session_id is null)
+          or (status = 'running' and time_terminal is null and opencode_session_id is not null)
+          or (status in ('pending', 'dispatching') and time_terminal is null and opencode_session_id is null)
+        )
+      );
+
+      create index opencode_agent_run_session_created_idx
+        on opencode_agent_run(session_id, time_created, run_id);
+      create index opencode_agent_run_outbox_idx
+        on opencode_agent_run(status, time_created, run_id)
+        where status = 'pending';
+    `,
+  },
 ];

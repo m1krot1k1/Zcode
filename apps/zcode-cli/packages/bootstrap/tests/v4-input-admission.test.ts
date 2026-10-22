@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
+import { conversationInputIntentSchema } from "@zcode/shared/zcode-protocol-v4";
 import {
+  buildOpenCodeAgentRunAdmission,
   isConversationInputAdmissionCommand,
+  persistOpenCodeAgentRunAdmission,
   resolveInputCommandForAdmission,
 } from "../src/zcode-protocol/v4-bridge.js";
-import { inputIntentMetadata } from "../src/zcode-protocol-v4/commands/input-intent.js";
+import {
+  inputIntentMetadata,
+  inputIntentMetadataFromCanonical,
+} from "../src/zcode-protocol-v4/commands/input-intent.js";
 
 function envelope(type: CommandEnvelope["type"], payload: unknown): CommandEnvelope {
   return {
@@ -56,6 +62,7 @@ describe("v4 input admission canonical intent", () => {
       ),
     ).toEqual({
       kind: "sendText",
+      executionRoute: { kind: "zcode" },
       text: "accelerate",
       attachments: [],
       highspeed,
@@ -70,6 +77,88 @@ describe("v4 input admission canonical intent", () => {
         { requestedDelivery: "startNow", text: "accelerate" },
       ).highspeed,
     ).toEqual(highspeed);
+  });
+
+  it("sendText route 保留在 canonical intent；ACP model 不转成 ZCode modelSelection", () => {
+    const executionRoute = {
+      kind: "opencode-acp",
+      model: { kind: "catalog", modelId: "free/provider-model" },
+    } as const;
+    const command = envelope("sendText", { text: "check this", executionRoute });
+    const resolved = resolveInputCommandForAdmission(command, "s-parent", vi.fn());
+    expect(resolved).toMatchObject({ kind: "sendText", executionRoute });
+
+    const metadata = inputIntentMetadata(
+      {
+        ...command,
+        __v4Admission: { admissionSeq: 8, admittedAt: 10, queueItemId: "queue-cmd-new" },
+      } as unknown as CommandEnvelope,
+      { requestedDelivery: "startNow", text: "check this" },
+    );
+    expect(metadata.executionRoute).toEqual(executionRoute);
+    expect(metadata.modelSelection).toBeUndefined();
+    expect(
+      inputIntentMetadataFromCanonical(command, {
+        kind: "sendText",
+        text: "check this",
+        executionRoute,
+      }).executionRoute,
+    ).toEqual(executionRoute);
+  });
+
+  it("ACP admission uses the atomic command-keyed outbox transaction only", async () => {
+    const command = envelope("sendText", {
+      text: "check this",
+      executionRoute: {
+        kind: "opencode-acp",
+        model: { kind: "catalog", modelId: "free/provider-model" },
+      },
+    });
+    const intent = conversationInputIntentSchema.parse({
+      sourceCommandId: command.commandId,
+      queueItemId: "queue-cmd-new",
+      clientId: command.clientId,
+      kind: "sendText",
+      executionRoute: command.payload.executionRoute,
+      text: "check this",
+      attachments: [],
+      delivery: { requested: "startNow", admitted: "startNow" },
+      order: { admissionSeq: 8 },
+      steer: { state: "notRequested" },
+      dispatch: { state: "admitted" },
+      admittedAt: 10,
+    });
+    const atomicAdmission = vi.fn().mockResolvedValue(undefined);
+    const legacyAdmission = vi.fn();
+    const store = {
+      admitOpenCodeAgentRun: atomicAdmission,
+      saveSessionInput: legacyAdmission,
+    };
+
+    const first = buildOpenCodeAgentRunAdmission(command, "s-parent", intent);
+    await persistOpenCodeAgentRunAdmission(store, command, "s-parent", intent);
+    await persistOpenCodeAgentRunAdmission(store, command, "s-parent", intent);
+
+    expect(first).toMatchObject({
+      commandID: command.commandId,
+      runID: command.commandId,
+      requestedModelID: "free/provider-model",
+      input: {
+        id: command.commandId,
+        sessionID: "s-parent",
+        kind: "sendText",
+        delivery: "startNow",
+        payload: {
+          text: "check this",
+          executionRoute: "opencode-cli",
+          conversationInputIntent: { executionRoute: intent.executionRoute },
+        },
+      },
+    });
+    expect(atomicAdmission).toHaveBeenCalledTimes(2);
+    expect(atomicAdmission.mock.calls[0]?.[0]).toEqual(first);
+    expect(atomicAdmission.mock.calls[1]?.[0]).toEqual(first);
+    expect(legacyAdmission).not.toHaveBeenCalled();
   });
 
   it("retry 以新 commandId admission，但保留 canonical kind/delivery/attachments/provenance", () => {

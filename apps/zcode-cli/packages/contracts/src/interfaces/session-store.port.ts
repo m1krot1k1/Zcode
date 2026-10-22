@@ -907,6 +907,68 @@ export interface SessionInputRecord {
   time: { created: number; updated: number };
 }
 
+export const OPEN_CODE_AGENT_RUN_STATUSES = [
+  "pending",
+  "dispatching",
+  "running",
+  "completed",
+  "cancelled",
+  "failed",
+  "interrupted",
+] as const;
+export type OpenCodeAgentRunStatus = (typeof OPEN_CODE_AGENT_RUN_STATUSES)[number];
+export type OpenCodeAgentRunTerminalStatus = Extract<
+  OpenCodeAgentRunStatus,
+  "completed" | "cancelled" | "failed" | "interrupted"
+>;
+
+/** Durable, bounded execution projection; accepted user text remains solely in session_input. */
+export interface OpenCodeAgentRunRecord {
+  schemaVersion: 1;
+  sessionID: SessionId;
+  runID: string;
+  commandID: string;
+  inputID: string;
+  routeKind: "opencode-cli";
+  requestedModelID?: string;
+  status: OpenCodeAgentRunStatus;
+  eventSequence: number;
+  time: { created: number; updated: number; terminal?: number };
+  openCodeSessionID?: string;
+  resultText?: string;
+  stopReason?: string;
+  diagnosticCode?: string;
+}
+
+export interface OpenCodeAgentRunAdmission {
+  commandID: string;
+  runID: string;
+  input: {
+    id: string;
+    sessionID: SessionId;
+    kind: "sendText";
+    delivery: "startNow";
+    payload: { text: string; executionRoute: "opencode-cli"; [key: string]: unknown };
+  };
+  requestedModelID?: string;
+  now?: number;
+}
+
+export interface OpenCodeAgentRunTransition {
+  sessionID: SessionId;
+  runID: string;
+  expectedStatus: OpenCodeAgentRunStatus;
+  expectedEventSequence: number;
+  status: OpenCodeAgentRunStatus;
+  /** Every accepted event advances exactly one sequence; stale or skipped events are rejected. */
+  eventSequence: number;
+  now?: number;
+  openCodeSessionID?: string | null;
+  resultText?: string | null;
+  stopReason?: string | null;
+  diagnosticCode?: string | null;
+}
+
 export type UsageQuerySource =
   | "main_turn"
   | "compact"
@@ -1235,6 +1297,32 @@ export interface SessionStorePort {
   }): Promise<SessionInputRecord[]>;
   /** global createSession.firstInput 查重：由 queue_<sourceCommandId> 找回真实 session。 */
   getSessionInputById?(id: string): Promise<SessionInputRecord | null>;
+  /**
+   * Atomically records the canonical delegated input and its initial pending outbox row.
+   * runID must equal commandID and input.id; retries return the existing durable pair.
+   */
+  admitOpenCodeAgentRun?(input: OpenCodeAgentRunAdmission): Promise<{
+    input: SessionInputRecord;
+    run: OpenCodeAgentRunRecord;
+    created: boolean;
+  }>;
+  /** Compare-and-set one ordered run event; terminal rows are immutable. */
+  transitionOpenCodeAgentRun?(input: OpenCodeAgentRunTransition): Promise<boolean>;
+  getOpenCodeAgentRun?(input: {
+    sessionID: SessionId;
+    runID: string;
+  }): Promise<OpenCodeAgentRunRecord | null>;
+  listOpenCodeAgentRuns?(input: {
+    sessionID: SessionId;
+    statuses?: OpenCodeAgentRunStatus[];
+    limit?: number;
+  }): Promise<OpenCodeAgentRunRecord[]>;
+  listPendingOpenCodeAgentRuns?(input?: { limit?: number }): Promise<OpenCodeAgentRunRecord[]>;
+  /** Startup recovery settles all nonterminal rows as interrupted exactly once. */
+  recoverOpenCodeAgentRuns?(input?: {
+    now?: number;
+    diagnosticCode?: string;
+  }): Promise<OpenCodeAgentRunRecord[]>;
   readTodos(input: { sessionID: SessionId }): Promise<TodoItem[]>;
   updateTodos(input: { sessionID: SessionId; todos: TodoItem[] }): Promise<void>;
   readTarget(input: { sessionID: SessionId }): Promise<SessionGoal | null>;

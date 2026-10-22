@@ -211,7 +211,7 @@ export const sessionUsageStateSchema = z.object({
 export type SessionUsageState = z.infer<typeof sessionUsageStateSchema>;
 
 // ── queue（不持久化，裁决：CLI 进程死亡即丢，客户端对账后由用户决定重发）──
-export const queueItemSchema = conversationInputIntentSchema.extend({
+export const queueItemSchema = conversationInputIntentSchema.safeExtend({
   dispatch: conversationInputDispatchSchema.extend({
     state: z.enum(["queued", "reserved", "promoting"]),
   }),

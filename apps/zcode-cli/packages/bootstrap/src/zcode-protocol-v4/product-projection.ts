@@ -317,6 +317,7 @@ export interface ConversationEditTarget {
   transcriptMessageId: string;
   coveredByStableCompact: boolean;
   intent: {
+    executionRoute?: TurnInputIntentMetadata["executionRoute"];
     inputOrigin?: "desktop" | "mobile";
     conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
     botGroupSource?: CanonicalUserIntentFact["botGroupSource"];
@@ -2178,6 +2179,7 @@ export class ProductProjection {
               intent: {
                 kind: fact.intentKind,
                 text: fact.intentText,
+                executionRoute: fact.executionRoute ?? { kind: "zcode" },
                 ...(fact.sourceCommandId ? { sourceCommandId: fact.sourceCommandId } : {}),
                 ...(fact.inputOrigin ? { inputOrigin: fact.inputOrigin } : {}),
                 ...(fact.conversationQuotes ? { conversationQuotes: fact.conversationQuotes } : {}),
@@ -3685,6 +3687,8 @@ export class ProductProjection {
     // Bug 根因：队列投影曾漏掉 intent.highspeed，自动和手动提升都因此把有效卡误判为不存在。
     const highspeed = payload.intent?.highspeed ?? existing?.highspeed;
     const nextItem: QueueItem = {
+      // QueueItem 只代表 ZCode 的 queued/guide 输入；ACP route 在 admission 时拒绝。
+      executionRoute: existing?.executionRoute ?? { kind: "zcode" },
       queueItemId,
       kind:
         payload.intent?.kind === "compact" || payload.commandKind === "compact"
@@ -3928,6 +3932,7 @@ export class ProductProjection {
               intent: {
                 kind: item.intent?.kind === "sendGoalCommand" ? "sendGoalCommand" : "sendText",
                 text: item.intent?.text ?? item.text,
+                executionRoute: item.intent?.executionRoute ?? { kind: "zcode" },
                 ...(item.intent?.sourceCommandId
                   ? { sourceCommandId: item.intent.sourceCommandId }
                   : {}),

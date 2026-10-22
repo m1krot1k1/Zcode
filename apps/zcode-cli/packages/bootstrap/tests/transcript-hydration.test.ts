@@ -857,6 +857,40 @@ describe("transcript→event 合成", () => {
     });
   });
 
+  it("cold hydration preserves the OpenCode route and requested catalog model", () => {
+    const user = userMessage("u-opencode-route", "inspect this", 1000);
+    user.info.anchor = { sourceCommandId: "cmd-opencode-route" };
+    user.info.metadata = {
+      conversationInputIntent: {
+        sourceCommandId: "cmd-opencode-route",
+        queueItemId: "queue_cmd-opencode-route",
+        clientId: "desktop",
+        kind: "sendText",
+        executionRoute: {
+          kind: "opencode-acp",
+          model: { kind: "catalog", modelId: "free/provider-model" },
+        },
+        text: "inspect this",
+        attachments: [],
+        delivery: { requested: "startNow", admitted: "startNow" },
+        order: { admissionSeq: 1 },
+        steer: { state: "notRequested" },
+        dispatch: { state: "drained" },
+        admittedAt: 999,
+      },
+    };
+
+    const { projection } = reduce([user, assistantMessage("a-opencode-route", "done", 1001)]);
+    expect(projection.resolveEditTargetByEntityId("u-opencode-route")).toMatchObject({
+      intent: {
+        executionRoute: {
+          kind: "opencode-acp",
+          model: { kind: "catalog", modelId: "free/provider-model" },
+        },
+      },
+    });
+  });
+
   it("cold hydration projects persisted highspeed metadata onto the user input row", () => {
     const input = userMessage("u-highspeed", "accelerated prompt", 1000);
     input.info.metadata = {
@@ -1161,7 +1195,11 @@ describe("transcript→event 合成", () => {
           target: {
             coveredByStableCompact: false,
             entityId: "u-live-cold",
-            intent: { kind: "sendText", text: "问题" },
+            intent: {
+              kind: "sendText",
+              text: "问题",
+              executionRoute: { kind: "zcode" },
+            },
             productTurnId: "u-live-cold",
             transcriptMessageId: "u-live-cold",
           },

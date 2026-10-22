@@ -1298,6 +1298,10 @@ export function createLocalServices(options: {
   cuaOperationStateReporter?: CuaOperationStateReporter;
 }): ServiceCollection {
   const isDesktopAttachedRemote = options?.serviceAuthorityMode === "desktop-attached-remote";
+  const ownsOpenCodeAcpRuntime =
+    (options?.enableOpenCodeAcpRuntime || options?.serviceAuthorityMode === "standalone-server") &&
+    !isDesktopAttachedRemote;
+  const openCodeAcpRuntime = ownsOpenCodeAcpRuntime ? createOpenCodeAcpRuntime() : undefined;
   // host / remote server 以前直接沿用当前进程环境启动后续服务。
   // GUI 启动的 desktop、SSH/WSL/Docker 拉起的 remote server 往往拿不到用户 login shell 里的 PATH，
   // 导致 bun 这类只在 shell profile 里追加的命令在 ZCode Agent/终端里不可见。
@@ -2219,6 +2223,7 @@ export function createLocalServices(options: {
     workspaceIdentity: undefined,
   });
   const zcodeAgentService = createZCodeAgentService({
+    ...(openCodeAcpRuntime ? { openCodeAcpRuntime } : {}),
     prepareProjectExecution,
     prepareSessionCreation: async (target) =>
       (await taskIndexRepo.getProjectRepository()).reserveCreatedTask({
@@ -2951,11 +2956,8 @@ export function createLocalServices(options: {
     )
     .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());
 
-  if (
-    (options?.enableOpenCodeAcpRuntime || options?.serviceAuthorityMode === "standalone-server") &&
-    !isDesktopAttachedRemote
-  ) {
-    services.register(IOpenCodeAcpRuntime, createOpenCodeAcpRuntime());
+  if (openCodeAcpRuntime) {
+    services.register(IOpenCodeAcpRuntime, openCodeAcpRuntime);
   }
 
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire

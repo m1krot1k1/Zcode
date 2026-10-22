@@ -48,6 +48,7 @@ interface CanonicalConversationFactBase {
 }
 
 export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
+  executionRoute?: TurnInputIntentMetadata["executionRoute"];
   inputOrigin?: "desktop" | "mobile";
   conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
   botGroupSource?: import("@zcode/shared").BotGroupInputSource;
@@ -253,6 +254,9 @@ function normalizeTurnStarted(
     input: payload.input,
     intentText: payload.intent?.text ?? payload.input,
     intentKind: payload.intent?.kind === "sendGoalCommand" ? "sendGoalCommand" : "sendText",
+    ...(payload.intent?.executionRoute
+      ? { executionRoute: payload.intent.executionRoute }
+      : { executionRoute: { kind: "zcode" as const } }),
     turnNumber: payload.turnNumber,
     executionKind: payload.executionKind ?? "agent",
     turnHeaderOrigin: turnHeaderOrigin(payload.inputSource),

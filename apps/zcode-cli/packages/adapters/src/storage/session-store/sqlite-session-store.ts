@@ -29,6 +29,10 @@ import type {
   MessagePart,
   MessageWithParts,
   ModelUsageRecord,
+  OpenCodeAgentRunAdmission,
+  OpenCodeAgentRunRecord,
+  OpenCodeAgentRunStatus,
+  OpenCodeAgentRunTransition,
   PartId,
   PermissionRuleset,
   ProjectId,
@@ -720,6 +724,45 @@ export class SqliteSessionStore
 
   async getSessionInputById(id: string): Promise<SessionInputRecord | null> {
     return sessionInputRepository.getSessionInputById(this.db, id);
+  }
+
+  async admitOpenCodeAgentRun(
+    input: OpenCodeAgentRunAdmission,
+  ): Promise<{ input: SessionInputRecord; run: OpenCodeAgentRunRecord; created: boolean }> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.admitOpenCodeAgentRun(this.db, input);
+  }
+
+  async transitionOpenCodeAgentRun(input: OpenCodeAgentRunTransition): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.transitionOpenCodeAgentRun(this.db, input);
+  }
+
+  async getOpenCodeAgentRun(input: {
+    sessionID: SessionId;
+    runID: string;
+  }): Promise<OpenCodeAgentRunRecord | null> {
+    return sessionInputRepository.getOpenCodeAgentRun(this.db, input);
+  }
+
+  async listOpenCodeAgentRuns(input: {
+    sessionID: SessionId;
+    statuses?: OpenCodeAgentRunStatus[];
+    limit?: number;
+  }): Promise<OpenCodeAgentRunRecord[]> {
+    return sessionInputRepository.listOpenCodeAgentRuns(this.db, input);
+  }
+
+  async listPendingOpenCodeAgentRuns(input?: { limit?: number }): Promise<OpenCodeAgentRunRecord[]> {
+    return sessionInputRepository.listPendingOpenCodeAgentRuns(this.db, input);
+  }
+
+  async recoverOpenCodeAgentRuns(input?: {
+    now?: number;
+    diagnosticCode?: string;
+  }): Promise<OpenCodeAgentRunRecord[]> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.recoverOpenCodeAgentRuns(this.db, input);
   }
 
   async readTodos(input: { sessionID: SessionId }): Promise<TodoItem[]> {

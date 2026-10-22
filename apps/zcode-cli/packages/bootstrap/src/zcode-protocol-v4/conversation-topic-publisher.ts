@@ -424,6 +424,8 @@ export class ConversationTopicPublisher {
     }
     const snapshot = this.projection.getSnapshot();
     const queueItem: QueueItem = {
+      // 这里只测普通 queue projection；OpenCode ACP 不支持排队，也不生成 QueueItem。
+      executionRoute: { kind: "zcode" },
       sourceCommandId: envelope.commandId,
       queueItemId: admission.queueItemId,
       clientId: envelope.clientId || "cli",

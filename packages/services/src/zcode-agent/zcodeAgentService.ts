@@ -50,6 +50,11 @@ import type {
   ProviderSource,
 } from "@zcode/provider";
 import { completeNewModelSelection } from "@zcode/provider";
+import type {
+  IOpenCodeAcpRuntime,
+  OpenCodeAcpPermissionEvent,
+  OpenCodeAcpSessionUpdate,
+} from "#src/opencode-acp-runtime/contract.js";
 import type { OffPeakClientConfig } from "#src/coding-plan-subscription/codingPlanSubscription.js";
 import {
   subagentRuntimeConfigSchema,
@@ -122,6 +127,8 @@ import {
   summarizeOfficialMcpIdentityHeaders,
   zcodeProtocolEmptyResultSchema,
   zcodeProtocolMethods,
+  zcodeOpenCodeAgentRunRequestSchema,
+  zcodeOpenCodeAgentRunResultSchema,
   zcodeProtocolNotifications,
   zcodeMcpTelemetryEventSchema,
   zcodeMcpResourceSamplesSchema,
@@ -955,6 +962,37 @@ interface ActiveWorkspaceClient {
   dynamicWorkflowPolicyMode: DynamicWorkflowMode;
 }
 
+type HostOpenCodeRunStatus =
+  | "starting"
+  | "running"
+  | "cancelling"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "interrupted";
+
+interface HostOpenCodeRun {
+  client: ZCodeProtocolClient;
+  workspaceKey: string;
+  zcodeSessionId: string;
+  commandId: string;
+  runId: string;
+  status: HostOpenCodeRunStatus;
+  opencodeSessionId?: string;
+  stopReason?: string;
+  finalText?: string;
+  diagnosticCode?: string;
+  modelOptionId?: string;
+  modelValue?: string;
+  cancelRequested?: boolean;
+  disconnectRequested?: boolean;
+  startupPromise?: Promise<void>;
+  startupSettled?: boolean;
+  readonly permissions: Map<string, Set<string>>;
+  readonly disposables: IDisposable[];
+  terminalPromise?: Promise<void>;
+}
+
 function requiresProviderRegistryRefresh(commandType: string): boolean {
   // Bug 原因：模型切换遗漏刷新屏障，会用存量 Worker 的旧 Registry 校验新下发的 Provider。
   // 复用同一刷新队列，成功后才下发切换命令，失败则直接拒绝本次切换。
@@ -994,6 +1032,18 @@ interface CreateZCodeAgentServiceOptions extends Omit<
 > {
   /** 仅供 MCP 状态探测进程使用，不能把空闲回收传给 chat。 */
   mcpStatusIdleTimeoutMs?: number;
+  /** ACP remains Host-owned; desktop-attached remotes intentionally do not receive this port. */
+  openCodeAcpRuntime?: Pick<
+    IOpenCodeAcpRuntime,
+    | "startSession"
+    | "setConfigOption"
+    | "prompt"
+    | "cancel"
+    | "respondToPermission"
+    | "closeSession"
+    | "onSessionUpdate"
+    | "onPermissionEvent"
+  >;
   accountProviderConfigSource?: ProviderSource<AccountProviderConfigSnapshot>;
   accountRequestAuthService?: IAccountRequestAuthService;
   /** Desktop Host 请求 Main 登记 Agent 已授权的精确本地视频路径。 */
@@ -1306,7 +1356,10 @@ export function createZCodeAgentService(
   >();
   // v4 conversation 帧 fan-out：workspace 级 emitter，renderer 侧按 topic 自行路由。
   const conversationFrameEmitters = new Map<string, Emitter<ConversationTopicWireCandidate>>();
-  const localTtftFactsEmitter = new Emitter<{ workspaceKey: string; facts: LocalTtftFacts }>();
+  const localTtftFactsEmitter = new Emitter<{
+    workspaceKey: string;
+    facts: LocalTtftFacts;
+  }>();
   const conversationTelemetryFactEmitters = new Map<string, Emitter<ConversationTelemetryFact>>();
   const offPeakLifecycleEmitters = new Map<string, Emitter<OffPeakLifecycleNotification>>();
   const pluginUiToolResultEmitter = new Emitter<
@@ -1353,6 +1406,149 @@ export function createZCodeAgentService(
     PendingSessionRuntimePreferencesRequest
   >();
   const activeClientsByWorkspaceKey = new Map<string, ActiveWorkspaceClient>();
+  const openCodeRuns = new Map<string, HostOpenCodeRun>();
+  let serviceDisposing = false;
+  const openCodeRunKey = (workspaceKey: string, sessionId: string, commandId: string) =>
+    `${workspaceKey}\u0000${sessionId}\u0000${commandId}`;
+  // CLI inbound request/event consumption is a separate slice; keep the event contract in shared,
+  // but do not send a notification that the current CLI silently drops.
+  const emitOpenCodeRunEvent = async (
+    _run: HostOpenCodeRun,
+    _event: Record<string, unknown>,
+  ): Promise<void> => {
+    void _run;
+    void _event;
+  };
+  const closeOpenCodeRun = async (
+    run: HostOpenCodeRun,
+    terminal: HostOpenCodeRunStatus,
+    details: {
+      diagnosticCode?: string;
+      stopReason?: string;
+      finalText?: string;
+    } = {},
+  ): Promise<void> => {
+    if (["completed", "cancelled", "failed", "interrupted"].includes(run.status)) return;
+    run.status = terminal;
+    run.diagnosticCode = details.diagnosticCode;
+    run.stopReason = details.stopReason;
+    if (details.finalText !== undefined) run.finalText = details.finalText.slice(0, 16 * 1024);
+    const terminalEvent =
+      terminal === "completed"
+        ? {
+            type: "completed",
+            stopReason: run.stopReason ?? "end_turn",
+            ...(run.finalText ? { finalText: run.finalText } : {}),
+          }
+        : terminal === "cancelled"
+          ? {
+              type: "cancelled",
+              ...(run.diagnosticCode ? { diagnosticCode: run.diagnosticCode } : {}),
+            }
+          : terminal === "interrupted"
+            ? {
+                type: "interrupted",
+                diagnosticCode: run.diagnosticCode ?? "host_disconnected",
+              }
+            : {
+                type: "failed",
+                diagnosticCode: run.diagnosticCode ?? "acp_request_failed",
+              };
+    if (run.opencodeSessionId) await emitOpenCodeRunEvent(run, terminalEvent);
+    for (const disposable of run.disposables.splice(0)) disposable.dispose();
+    if (run.opencodeSessionId) {
+      try {
+        await options?.openCodeAcpRuntime?.closeSession({
+          sessionId: run.opencodeSessionId,
+        });
+      } catch (error) {
+        logger.warn(undefined, "OpenCode ACP session cleanup failed", {
+          workspaceKey: run.workspaceKey,
+          runId: run.runId,
+          error: String(error),
+        });
+      }
+    }
+  };
+  const disposeOpenCodeRuns = async (workspaceKey?: string): Promise<void> => {
+    const runs = [...openCodeRuns.values()].filter(
+      (run) =>
+        (workspaceKey === undefined || run.workspaceKey === workspaceKey) &&
+        (!(["completed", "cancelled", "failed", "interrupted"] as const).includes(
+          run.status as "completed" | "cancelled" | "failed" | "interrupted",
+        ) ||
+          (run.startupPromise !== undefined && !run.startupSettled)),
+    );
+    await Promise.all(
+      runs.map(async (run) => {
+        run.disconnectRequested = true;
+        run.cancelRequested = true;
+        // teardown 要等启动 continuation 收口：startSession/config 仍在途时由它关闭迟到会话，
+        // 这样 disposeAllAndWait 完成才代表 ACP 的启动清理已经结束。
+        if (run.startupPromise && !run.startupSettled) {
+          run.status = "cancelling";
+          await run.startupPromise;
+          if (["completed", "cancelled", "failed", "interrupted"].includes(run.status)) return;
+        }
+        if (!run.opencodeSessionId) {
+          run.status = "cancelling";
+          return;
+        }
+        if (run.opencodeSessionId) {
+          await options?.openCodeAcpRuntime
+            ?.cancel({ sessionId: run.opencodeSessionId })
+            .catch(() => undefined);
+        }
+        await closeOpenCodeRun(run, "interrupted", {
+          diagnosticCode: "host_shutdown",
+        });
+      }),
+    );
+  };
+  const normalizeOpenCodeUpdate = (run: HostOpenCodeRun, update: OpenCodeAcpSessionUpdate) => {
+    const value = update as unknown as Record<string, unknown>;
+    const type = value.sessionUpdate;
+    if (type === "agent_message_chunk") {
+      const content = value.content as { type?: unknown; text?: unknown } | undefined;
+      if (content?.type === "text" && typeof content.text === "string") {
+        const text = content.text.slice(0, 16 * 1024);
+        run.finalText = `${run.finalText ?? ""}${text}`.slice(0, 16 * 1024);
+        void emitOpenCodeRunEvent(run, { type: "content", text });
+      }
+    } else if (type === "tool_call" || type === "tool_call_update") {
+      const toolCallId = value.toolCallId;
+      if (typeof toolCallId === "string") {
+        void emitOpenCodeRunEvent(run, {
+          type: "tool",
+          toolCallId: toolCallId.slice(0, 256),
+          title: (typeof value.title === "string" ? value.title : "Tool call").slice(0, 256),
+          status: (typeof value.status === "string" ? value.status : "in_progress").slice(0, 64),
+        });
+      }
+    }
+  };
+  const normalizeOpenCodePermission = (run: HostOpenCodeRun, event: OpenCodeAcpPermissionEvent) => {
+    if (event.type === "requested") {
+      const request = event.request;
+      if (request.sessionId !== run.opencodeSessionId || !run.opencodeSessionId) return;
+      const optionIds = new Set(request.options.map((option) => option.optionId));
+      run.permissions.set(request.requestId, optionIds);
+      void emitOpenCodeRunEvent(run, {
+        type: "permissionRequested",
+        requestId: request.requestId.slice(0, 256),
+        title: request.toolTitle.slice(0, 256),
+        ...(request.inputSummary ? { inputSummary: request.inputSummary.slice(0, 2048) } : {}),
+        options: request.options.slice(0, 32).map((option) => ({
+          optionId: option.optionId.slice(0, 256),
+          name: option.name.slice(0, 256),
+          kind: option.kind,
+        })),
+      });
+    } else {
+      if (event.sessionId !== run.opencodeSessionId || !run.opencodeSessionId) return;
+      run.permissions.delete(event.requestId);
+    }
+  };
   const interactionPreferenceSyncByWorkspaceKey = new Map<string, Promise<void>>();
   let latestAppRuntimePreferences: ZCodeAgentAppRuntimePreferences | undefined;
   /** 服务端「提供」的进程内单次读取；见 resolveDynamicWorkflowGate 的注释。 */
@@ -2394,6 +2590,414 @@ export function createZCodeAgentService(
         }
       }),
       client.onRequest((request) => {
+        if (request.method === zcodeProtocolMethods.interactionRequestOpenCodeAgentRun) {
+          void (async () => {
+            const parsed = zcodeOpenCodeAgentRunRequestSchema.safeParse(request.params);
+            if (!parsed.success) {
+              await client.respondError(request.id, {
+                code: -32602,
+                message: "Invalid OpenCode ACP run request",
+              });
+              return;
+            }
+            const params = parsed.data;
+            const active = activeClientsByWorkspaceKey.get(resolveWorkspaceKey(workspace));
+            if (serviceDisposing || active?.client !== client || client.isDisposed) {
+              await client.respondError(request.id, {
+                code: -32001,
+                message: "OpenCode ACP request is not from the active workspace client",
+              });
+              return;
+            }
+            const currentWorkspace = active.workspace;
+            const workspaceKey = resolveWorkspaceKey(currentWorkspace);
+            const key = openCodeRunKey(workspaceKey, params.zcodeSessionId, params.commandId);
+            const run = openCodeRuns.get(key);
+            const runtime = options?.openCodeAcpRuntime;
+            const toStatus = (current: HostOpenCodeRun) =>
+              zcodeOpenCodeAgentRunResultSchema.parse({
+                status: current.status,
+                ...(current.opencodeSessionId
+                  ? { opencodeSessionId: current.opencodeSessionId }
+                  : {}),
+                ...(current.diagnosticCode ? { diagnosticCode: current.diagnosticCode } : {}),
+                ...(current.stopReason ? { stopReason: current.stopReason } : {}),
+                ...(current.finalText ? { finalText: current.finalText } : {}),
+              });
+
+            if (params.operation === "getRunStatus") {
+              await client.respond(
+                request.id,
+                run && run.client === client
+                  ? toStatus(run)
+                  : {
+                      status: "interrupted",
+                      diagnosticCode: run ? "host_connection_changed" : "host_run_not_found",
+                    },
+              );
+              return;
+            }
+
+            if (params.operation === "startRun") {
+              if (run) {
+                await client.respond(
+                  request.id,
+                  run.client === client
+                    ? toStatus(run)
+                    : {
+                        status: "interrupted",
+                        diagnosticCode: "host_connection_changed",
+                      },
+                );
+                return;
+              }
+              const existingActiveRun = [...openCodeRuns.values()].find(
+                (item) =>
+                  item.workspaceKey === workspaceKey &&
+                  item.zcodeSessionId === params.zcodeSessionId &&
+                  !["completed", "cancelled", "failed", "interrupted"].includes(item.status),
+              );
+              if (existingActiveRun) {
+                await client.respond(request.id, {
+                  status: "failed",
+                  diagnosticCode: "session_already_running",
+                });
+                return;
+              }
+              if (!runtime || !currentWorkspace.workspacePath.trim()) {
+                await client.respond(request.id, {
+                  status: "failed",
+                  diagnosticCode: runtime ? "workspace_unavailable" : "acp_unavailable",
+                });
+                return;
+              }
+              if (openCodeRuns.size >= 128) {
+                const terminalKey = [...openCodeRuns.entries()].find(([, item]) =>
+                  ["completed", "cancelled", "failed", "interrupted"].includes(item.status),
+                )?.[0];
+                if (terminalKey) openCodeRuns.delete(terminalKey);
+                else {
+                  await client.respond(request.id, {
+                    status: "failed",
+                    diagnosticCode: "host_run_capacity",
+                  });
+                  return;
+                }
+              }
+              const created: HostOpenCodeRun = {
+                client,
+                workspaceKey,
+                zcodeSessionId: params.zcodeSessionId,
+                commandId: params.commandId,
+                runId: params.runId,
+                status: "starting",
+                permissions: new Map(),
+                disposables: [],
+              };
+              openCodeRuns.set(key, created);
+              const startupCompletion = Promise.withResolvers<void>();
+              created.startupPromise = startupCompletion.promise;
+              created.disposables.push(
+                client.onClose(() => {
+                  if (["completed", "cancelled", "failed", "interrupted"].includes(created.status))
+                    return;
+                  created.disconnectRequested = true;
+                  created.cancelRequested = true;
+                  created.status = "cancelling";
+                  void (async () => {
+                    if (created.opencodeSessionId) {
+                      await runtime
+                        .cancel({ sessionId: created.opencodeSessionId })
+                        .catch(() => undefined);
+                      await closeOpenCodeRun(created, "interrupted", {
+                        diagnosticCode: "host_disconnected",
+                      });
+                    }
+                  })();
+                }),
+              );
+              try {
+                const session = await runtime.startSession({
+                  cwd: currentWorkspace.workspacePath,
+                });
+                created.opencodeSessionId = session.sessionId;
+                if (created.disconnectRequested) {
+                  await closeOpenCodeRun(created, "interrupted", {
+                    diagnosticCode: "host_disconnected",
+                  });
+                  await client.respond(request.id, toStatus(created)).catch(() => undefined);
+                  return;
+                }
+                if (created.cancelRequested) {
+                  await closeOpenCodeRun(created, "cancelled", {
+                    diagnosticCode: "cancelled_before_prompt",
+                  });
+                  await client.respond(request.id, toStatus(created));
+                  return;
+                }
+                if (
+                  activeClientsByWorkspaceKey.get(workspaceKey)?.client !== client ||
+                  client.isDisposed
+                ) {
+                  await closeOpenCodeRun(created, "interrupted", {
+                    diagnosticCode: "host_disconnected",
+                  });
+                  await client.respond(request.id, toStatus(created));
+                  return;
+                }
+                if (params.model.kind === "catalog") {
+                  const requestedModelId = params.model.modelId;
+                  const candidates = session.configOptions.filter((option) => {
+                    const select = option as {
+                      id: string;
+                      type?: string;
+                      options?: Array<{ value: string }>;
+                    };
+                    return (
+                      select.type === "select" &&
+                      select.options?.some((item) => item.value === requestedModelId)
+                    );
+                  });
+                  if (candidates.length !== 1) {
+                    await closeOpenCodeRun(created, "failed", {
+                      diagnosticCode: "model_option_unavailable",
+                    });
+                    await client.respond(request.id, toStatus(created));
+                    return;
+                  }
+                  const candidate = candidates[0] as { id: string };
+                  const updated = await runtime.setConfigOption({
+                    sessionId: session.sessionId,
+                    configId: candidate.id,
+                    value: requestedModelId,
+                  });
+                  if (created.disconnectRequested) {
+                    await closeOpenCodeRun(created, "interrupted", {
+                      diagnosticCode: "host_disconnected",
+                    });
+                    await client.respond(request.id, toStatus(created)).catch(() => undefined);
+                    return;
+                  }
+                  if (created.cancelRequested) {
+                    await closeOpenCodeRun(created, "cancelled", {
+                      diagnosticCode: "cancelled_before_prompt",
+                    });
+                    await client.respond(request.id, toStatus(created));
+                    return;
+                  }
+                  const applied = updated.configOptions.some((option) => {
+                    const select = option as {
+                      id: string;
+                      currentValue?: unknown;
+                    };
+                    return select.id === candidate.id && select.currentValue === requestedModelId;
+                  });
+                  if (!applied) {
+                    await closeOpenCodeRun(created, "failed", {
+                      diagnosticCode: "model_option_rejected",
+                    });
+                    await client.respond(request.id, toStatus(created));
+                    return;
+                  }
+                  created.modelOptionId = candidate.id;
+                  created.modelValue = requestedModelId;
+                }
+                created.disposables.push(
+                  runtime.onSessionUpdate({ sessionId: session.sessionId })((update) =>
+                    normalizeOpenCodeUpdate(created, update),
+                  ),
+                  runtime.onPermissionEvent({ sessionId: session.sessionId })((event) =>
+                    normalizeOpenCodePermission(created, event),
+                  ),
+                );
+                await emitOpenCodeRunEvent(created, {
+                  type: "started",
+                  ...(created.modelOptionId
+                    ? {
+                        modelOptionId: created.modelOptionId,
+                        modelValue: created.modelValue,
+                      }
+                    : {}),
+                });
+                if (created.disconnectRequested) {
+                  await closeOpenCodeRun(created, "interrupted", {
+                    diagnosticCode: "host_disconnected",
+                  });
+                  await client.respond(request.id, toStatus(created)).catch(() => undefined);
+                  return;
+                }
+                // Bug 原因：取消可能发生在 session/new 或模型选项 RPC 等待期间；仅调用 session/cancel
+                // 会因尚无 prompt 而成为空操作。发送第一个 prompt 前再次读取同一 run 的取消所有权。
+                if (created.cancelRequested) {
+                  await closeOpenCodeRun(created, "cancelled", {
+                    diagnosticCode: "cancelled_before_prompt",
+                  });
+                  await client.respond(request.id, toStatus(created));
+                  return;
+                }
+                if (
+                  activeClientsByWorkspaceKey.get(workspaceKey)?.client !== client ||
+                  client.isDisposed
+                ) {
+                  await closeOpenCodeRun(created, "interrupted", {
+                    diagnosticCode: "host_disconnected",
+                  });
+                  await client.respond(request.id, toStatus(created));
+                  return;
+                }
+                // prompt() sends ACP session/prompt before its first await; retain its terminal promise,
+                // but release CommandInbox as soon as dispatch has been initiated.
+                const prompt = runtime.prompt({
+                  sessionId: session.sessionId,
+                  text: params.text,
+                });
+                created.status = "running";
+                created.terminalPromise = prompt
+                  .then((result) =>
+                    closeOpenCodeRun(created, created.cancelRequested ? "cancelled" : "completed", {
+                      stopReason: result.stopReason,
+                      finalText: created.finalText,
+                    }),
+                  )
+                  .catch((error: unknown) =>
+                    closeOpenCodeRun(
+                      created,
+                      created.cancelRequested || /cancel/i.test(String(error))
+                        ? "cancelled"
+                        : "failed",
+                      { diagnosticCode: "acp_request_failed" },
+                    ),
+                  );
+                await client.respond(request.id, {
+                  status: "accepted",
+                  opencodeSessionId: session.sessionId,
+                });
+              } catch (error) {
+                logger.warn(undefined, "OpenCode ACP delegated run failed to start", {
+                  workspaceKey,
+                  runId: created.runId,
+                  error: String(error),
+                });
+                await closeOpenCodeRun(
+                  created,
+                  created.disconnectRequested
+                    ? "interrupted"
+                    : created.cancelRequested
+                      ? "cancelled"
+                      : "failed",
+                  {
+                    diagnosticCode: created.disconnectRequested
+                      ? "host_disconnected"
+                      : created.cancelRequested
+                        ? "cancelled_before_prompt"
+                        : "acp_request_failed",
+                  },
+                );
+                await client.respond(request.id, toStatus(created)).catch(() => undefined);
+              } finally {
+                created.startupSettled = true;
+                startupCompletion.resolve();
+              }
+              return;
+            }
+
+            if (!run || run.client !== client || !runtime) {
+              await client.respond(request.id, {
+                status: "interrupted",
+                diagnosticCode: "host_run_not_found",
+              });
+              return;
+            }
+            if (params.operation === "cancelRun") {
+              if (
+                params.opencodeSessionId !== undefined &&
+                params.opencodeSessionId !== run.opencodeSessionId
+              ) {
+                await client.respondError(request.id, {
+                  code: -32602,
+                  message: "OpenCode session identity mismatch",
+                });
+                return;
+              }
+              if (["completed", "cancelled", "failed", "interrupted"].includes(run.status)) {
+                await client.respond(request.id, toStatus(run));
+                return;
+              }
+              run.cancelRequested = true;
+              run.status = "cancelling";
+              if (!run.opencodeSessionId) {
+                await client.respond(request.id, { status: "cancelling" });
+                return;
+              }
+              try {
+                await runtime.cancel({ sessionId: run.opencodeSessionId });
+                await client.respond(request.id, {
+                  status: "cancelling",
+                  opencodeSessionId: run.opencodeSessionId,
+                });
+              } catch {
+                await closeOpenCodeRun(run, "interrupted", {
+                  diagnosticCode: "acp_cancel_failed",
+                });
+                await client.respond(request.id, toStatus(run));
+              }
+              return;
+            }
+            if (!run.opencodeSessionId) {
+              await client.respond(request.id, {
+                status: "interrupted",
+                diagnosticCode: "host_run_not_found",
+              });
+              return;
+            }
+            if (params.opencodeSessionId !== run.opencodeSessionId) {
+              await client.respondError(request.id, {
+                code: -32602,
+                message: "OpenCode session identity mismatch",
+              });
+              return;
+            }
+            if (run.status !== "running" && run.status !== "cancelling") {
+              await client.respondError(request.id, {
+                code: -32602,
+                message: "OpenCode run is not accepting permission responses",
+              });
+              return;
+            }
+            const optionsForRequest = run.permissions.get(params.requestId);
+            if (!optionsForRequest?.has(params.optionId)) {
+              await client.respondError(request.id, {
+                code: -32602,
+                message: "OpenCode permission option is not active",
+              });
+              return;
+            }
+            await runtime.respondToPermission({
+              sessionId: run.opencodeSessionId,
+              requestId: params.requestId,
+              optionId: params.optionId,
+            });
+            run.permissions.delete(params.requestId);
+            await emitOpenCodeRunEvent(run, {
+              type: "permissionResolved",
+              requestId: params.requestId,
+              optionId: params.optionId,
+            });
+            await client.respond(request.id, { status: "responded" });
+          })().catch(async (error: unknown) => {
+            logger.warn(undefined, "OpenCode ACP Host bridge request failed", {
+              workspaceKey: resolveWorkspaceKey(workspace),
+              error: String(error),
+            });
+            await client
+              .respondError(request.id, {
+                code: -32603,
+                message: "OpenCode ACP Host bridge operation failed",
+              })
+              .catch(() => undefined);
+          });
+          return;
+        }
         if (request.method === zcodeProtocolMethods.subagentsReadRuntimeConfig) {
           void (async () => {
             const parsed = zcodeSubagentsReadRuntimeConfigParamsSchema.safeParse(request.params);
@@ -6740,11 +7344,14 @@ export function createZCodeAgentService(
       clearV4SubscriptionRoutes(workspaceKey);
       cuaOperationTurnTracker?.clearWorkspaceKey(workspaceKey);
       const active = activeClientsByWorkspaceKey.get(workspaceKey);
+      // Bug 原因：若先等待已有 ACP 启动收口，旧 client 仍可准入新 run，而 teardown 只清理旧快照。
+      // 先撤销活动 client 资格，后续请求即被 fence 拒绝，再等待当前 run 全部完成清理。
       if (active) {
         invalidateWorkspaceClient(workspaceKey, active.client);
       } else {
         interactionPreferenceSyncByWorkspaceKey.delete(workspaceKey);
       }
+      await disposeOpenCodeRuns(workspaceKey);
       // 该入口被 restartWorkspaceProcess 用作 runtime invalidation，并非
       // workspace/service 真 teardown。销毁 workspace emitter 会让既有 UI/task-index
       // listener 永久绑在死对象上；emitters 只由 disposeLocalState/disposeAll 释放。
@@ -6752,6 +7359,10 @@ export function createZCodeAgentService(
     },
 
     disposeAll(): void {
+      serviceDisposing = true;
+      void disposeOpenCodeRuns().catch((error) =>
+        logger.warn(undefined, "OpenCode ACP Host cleanup failed", { error: String(error) }),
+      );
       processManager.disposeAll();
       pluginProcessManager.disposeAll();
       mcpStatusProcessManager.disposeAll();
@@ -6763,6 +7374,8 @@ export function createZCodeAgentService(
     },
 
     async disposeAllAndWait(): Promise<void> {
+      serviceDisposing = true;
+      await disposeOpenCodeRuns();
       await Promise.all([
         processManager.disposeAllAndWait(),
         pluginProcessManager.disposeAllAndWait(),

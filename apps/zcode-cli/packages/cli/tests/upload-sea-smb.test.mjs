@@ -7,8 +7,10 @@ import {
   DEFAULT_DESTINATION_ROOT,
   DEFAULT_SMB_URL,
   collectSeaUploadFiles,
+  ensureDestinationRoot,
   parseUploadSeaSmbArgs,
   readRootPackageVersion,
+  resolveDefaultDestinationRoot,
   releaseDirectoryName,
   seaUploadBinaryNames,
   uploadSeaBinaries,
@@ -87,6 +89,51 @@ test("uses INTRANET_MACHINE_HOST for the default SMB URL", () => {
     }).smbUrl,
     "smb://192.0.2.10/shared",
   );
+});
+
+test("resolves a portable SMB destination without applying the macOS mount on other systems", () => {
+  assert.equal(resolveDefaultDestinationRoot({ platform: "darwin", env: {} }), DEFAULT_DESTINATION_ROOT);
+  assert.equal(resolveDefaultDestinationRoot({ platform: "linux", env: {} }), undefined);
+  assert.equal(resolveDefaultDestinationRoot({ platform: "win32", env: {} }), undefined);
+  assert.equal(
+    resolveDefaultDestinationRoot({ platform: "win32", env: { ZCODE_SEA_DEST_ROOT: "Z:\\shared\\zcode\\deps" } }),
+    "Z:\\shared\\zcode\\deps",
+  );
+
+  assert.equal(
+    parseUploadSeaSmbArgs([], { cwd: "/repo", platform: "linux", env: { ZCODE_SEA_DEST_ROOT: "mnt/shared/zcode/deps" } })
+      .destinationRoot,
+    "/repo/mnt/shared/zcode/deps",
+  );
+  assert.equal(
+    parseUploadSeaSmbArgs(["--dest-root", "/explicit/share"], {
+      cwd: "/repo",
+      platform: "linux",
+      env: { ZCODE_SEA_DEST_ROOT: "/environment/share" },
+    }).destinationRoot,
+    "/explicit/share",
+  );
+});
+
+test("fails closed when another OS has no configured SMB destination", async () => {
+  await assert.rejects(
+    ensureDestinationRoot({ destinationRoot: undefined, smbUrl: "smb://example/shared" }),
+    /No SMB destination configured.*ZCODE_SEA_DEST_ROOT.*--dest-root/,
+  );
+});
+
+test("does not interpret an explicit POSIX target as a macOS SMB mount on Linux", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "zcode-upload-explicit-linux-"));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const destinationRoot = join(directory, "Volumes", "shared", "zcode", "deps");
+
+  await ensureDestinationRoot({
+    destinationRoot,
+    smbUrl: "smb://example/shared",
+    platform: "linux",
+  });
+
+  assert.equal((await stat(destinationRoot)).isDirectory(), true);
 });
 
 test("reads root package version and rejects path-like release versions", async (t) => {

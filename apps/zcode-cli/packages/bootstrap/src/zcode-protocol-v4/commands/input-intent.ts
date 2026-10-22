@@ -10,6 +10,7 @@ import type {
 import { commandAdmissionOf } from "./executor.js";
 
 export interface CanonicalCommandIntent {
+  executionRoute?: TurnInputIntentMetadata["executionRoute"];
   inputOrigin?: "desktop" | "mobile";
   conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
   botGroupSource?: TurnInputIntentMetadata["botGroupSource"];
@@ -54,6 +55,10 @@ export function inputIntentMetadata(
       ? (envelope.payload as CommandPayloadMap["sendText"]).highspeedMeta
       : undefined;
   return {
+    executionRoute:
+      envelope.type === "sendText"
+        ? ((envelope.payload as CommandPayloadMap["sendText"]).executionRoute ?? { kind: "zcode" })
+        : { kind: "zcode" },
     ...(options.inputOrigin ? { inputOrigin: options.inputOrigin } : {}),
     ...(options.conversationQuotes ? { conversationQuotes: options.conversationQuotes } : {}),
     ...(options.botGroupSource ? { botGroupSource: options.botGroupSource } : {}),
@@ -100,6 +105,7 @@ export function inputIntentMetadataFromCanonical(
   const originalSourceCommandId =
     canonical.provenance?.sourceCommandId ?? canonical.sourceCommandId;
   return {
+    executionRoute: canonical.executionRoute ?? { kind: "zcode" },
     ...(canonical.inputOrigin ? { inputOrigin: canonical.inputOrigin } : {}),
     ...(canonical.conversationQuotes ? { conversationQuotes: canonical.conversationQuotes } : {}),
     ...(canonical.botGroupSource ? { botGroupSource: canonical.botGroupSource } : {}),
@@ -137,6 +143,7 @@ export function inputIntentMetadataFromQueueItem(
   canonicalText: string,
 ): TurnInputIntentMetadata {
   return {
+    executionRoute: { kind: "zcode" },
     ...(item.inputOrigin ? { inputOrigin: item.inputOrigin } : {}),
     ...(item.conversationQuotes ? { conversationQuotes: item.conversationQuotes } : {}),
     ...(item.botGroupSource ? { botGroupSource: item.botGroupSource } : {}),

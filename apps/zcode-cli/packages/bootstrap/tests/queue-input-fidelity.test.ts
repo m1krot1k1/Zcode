@@ -13,6 +13,7 @@ const intent: TurnInputIntentMetadata = {
   queueItemId: "queued-input",
   clientId: "desktop-client",
   kind: "sendText",
+  executionRoute: { kind: "zcode" },
   text: "继续执行",
   modelSelection: { providerId: "provider", modelId: "model", options: { reasoningLevel: "high" } },
   mode: "yolo",

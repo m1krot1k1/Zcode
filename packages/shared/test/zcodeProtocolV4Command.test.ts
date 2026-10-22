@@ -27,7 +27,10 @@ describe("zcode-protocol-v4 command", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.envelope.type).toBe("sendText");
-      expect(result.envelope.payload).toEqual({ text: "帮我重构" });
+      expect(result.envelope.payload).toEqual({
+        text: "帮我重构",
+        executionRoute: { kind: "zcode" },
+      });
     }
   });
 
@@ -49,6 +52,84 @@ describe("zcode-protocol-v4 command", () => {
     });
   });
 
+  it("defaults legacy submissions to ZCode and accepts explicit OpenCode model routes", () => {
+    expect(commandPayloadSchemas.sendText.parse({ text: "ordinary turn" }).executionRoute).toEqual({
+      kind: "zcode",
+    });
+    expect(
+      commandPayloadSchemas.sendText.parse({
+        text: "delegated turn",
+        executionRoute: { kind: "opencode-acp", model: { kind: "default" } },
+      }).executionRoute,
+    ).toEqual({ kind: "opencode-acp", model: { kind: "default" } });
+    expect(
+      commandPayloadSchemas.sendText.parse({
+        text: "delegated turn",
+        executionRoute: {
+          kind: "opencode-acp",
+          model: { kind: "catalog", modelId: "opencode/deepseek-v4.1-flash-free" },
+        },
+      }).executionRoute,
+    ).toEqual({
+      kind: "opencode-acp",
+      model: { kind: "catalog", modelId: "opencode/deepseek-v4.1-flash-free" },
+    });
+    expect(
+      commandPayloadSchemas.sendText.safeParse({
+        text: "invalid",
+        executionRoute: { kind: "opencode-acp", model: { kind: "catalog" } },
+      }).success,
+    ).toBe(false);
+    expect(
+      commandPayloadSchemas.sendText.safeParse({
+        text: "invalid",
+        executionRoute: { kind: "unknown" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects ZCode execution/config and unsupported composer fields on OpenCode route", () => {
+    const route = { kind: "opencode-acp", model: { kind: "default" } } as const;
+    const forbiddenPayloads = [
+      { modelSelection: { providerId: "p", modelId: "m" } },
+      { modelExecution: { selectionFallback: {} } },
+      { mode: "build" },
+      { planEnabled: true },
+      { attachments: [{ ref: "artifact:1", fileName: "a.txt", mime: "text/plain", bytes: 1 }] },
+      { requestedDelivery: "queue" },
+      { requestedDelivery: "guide" },
+      { heldQueueDisposition: "clearQueueAndSend" },
+      { browserAmbientContext: { url: "https://example.com" } },
+      { context_refs: [{ kind: "shared_context_import", context_id: "ctx-1" }] },
+      { conversationQuotes: [{ text: "quote" }] },
+      { source: { kind: "pluginUi", pluginId: "plugin-1", toolCallId: "call-1" } },
+      { highspeedMeta: { schemaVersion: 1 } },
+      { automationId: "automation-1" },
+      { offPeakTaskId: "off-peak-1" },
+      { botGroupSource: { groupId: "group-1" } },
+      { toolDisallowlist: ["bash"] },
+    ];
+    for (const fields of forbiddenPayloads) {
+      expect(
+        commandPayloadSchemas.sendText.safeParse({
+          text: "delegated turn",
+          executionRoute: route,
+          ...fields,
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      commandPayloadSchemas.sendText.safeParse({ text: "  ", executionRoute: route }).success,
+    ).toBe(false);
+    expect(
+      commandPayloadSchemas.sendText.safeParse({
+        text: "delegated turn",
+        executionRoute: route,
+        requestedDelivery: "startNow",
+      }).success,
+    ).toBe(true);
+  });
+
   it("parses strict Highspeed message metadata on sendText", () => {
     const highspeedMeta = {
       schemaVersion: 1 as const,
@@ -62,6 +143,7 @@ describe("zcode-protocol-v4 command", () => {
 
     expect(commandPayloadSchemas.sendText.parse({ text: "accelerate", highspeedMeta })).toEqual({
       text: "accelerate",
+      executionRoute: { kind: "zcode" },
       highspeedMeta,
     });
     expect(() =>
@@ -109,19 +191,31 @@ describe("zcode-protocol-v4 command", () => {
         text: "preempt current turn",
         requestedDelivery: "startNow",
       }),
-    ).toEqual({ text: "preempt current turn", requestedDelivery: "startNow" });
+    ).toEqual({
+      text: "preempt current turn",
+      executionRoute: { kind: "zcode" },
+      requestedDelivery: "startNow",
+    });
     expect(
       commandPayloadSchemas.sendText.parse({
         text: "opposite follow-up",
         requestedDelivery: "guide",
       }),
-    ).toEqual({ text: "opposite follow-up", requestedDelivery: "guide" });
+    ).toEqual({
+      text: "opposite follow-up",
+      executionRoute: { kind: "zcode" },
+      requestedDelivery: "guide",
+    });
     expect(
       commandPayloadSchemas.sendText.parse({
         text: "opposite follow-up",
         requestedDelivery: "queue",
       }),
-    ).toEqual({ text: "opposite follow-up", requestedDelivery: "queue" });
+    ).toEqual({
+      text: "opposite follow-up",
+      executionRoute: { kind: "zcode" },
+      requestedDelivery: "queue",
+    });
   });
 
   it("validates bot delivery target on sendText", () => {
@@ -176,6 +270,7 @@ describe("zcode-protocol-v4 command", () => {
       }),
     ).toEqual({
       text: "resume",
+      executionRoute: { kind: "zcode" },
       offPeakTaskId: "offpeak-1",
       offPeakRunType: "resume",
       toolDisallowlist: ["CronCreate"],
@@ -221,6 +316,7 @@ describe("zcode-protocol-v4 command", () => {
 
     expect(payload).toEqual({
       text: "run with an execution-scoped model",
+      executionRoute: { kind: "zcode" },
       modelSelection: {
         providerId: "account:zai-offpeak-idle-plan",
         modelId: "GLM-5.2",

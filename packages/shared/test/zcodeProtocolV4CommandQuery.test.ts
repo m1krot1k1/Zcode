@@ -24,6 +24,7 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
   it("完整字段通过，缺省 attachments 规范化为 []", () => {
     expect(conversationInputIntentSchema.parse(baseIntent)).toEqual({
       ...baseIntent,
+      executionRoute: { kind: "zcode" },
       attachments: [],
     });
 
@@ -83,6 +84,44 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
         sourceCommandId: "cmd-legacy",
         submittedByClientId: "legacy",
         enqueuedAt: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("canonical OpenCode route is explicit, text-only and immediate", () => {
+    const openCodeIntent = {
+      ...baseIntent,
+      text: "run delegated task",
+      executionRoute: { kind: "opencode-acp", model: { kind: "default" } },
+      delivery: { requested: "startNow" as const, admitted: "startNow" as const },
+      steer: { state: "notRequested" as const },
+      dispatch: { state: "admitted" as const },
+    };
+    expect(conversationInputIntentSchema.parse(openCodeIntent).executionRoute).toEqual(
+      openCodeIntent.executionRoute,
+    );
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        modelSelection: { providerId: "api", modelId: "model" },
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        attachments: [{ ref: "artifact:1", fileName: "note.txt", mime: "text/plain", bytes: 4 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        delivery: { requested: "guide", admitted: "queue" },
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        kind: "sendGoalCommand",
       }).success,
     ).toBe(false);
   });

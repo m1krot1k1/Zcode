@@ -23,6 +23,7 @@ import {
   conversationInputIntentSchema,
   type AttachmentRef,
   type CommandEnvelope,
+  type CommandPayloadMap,
   type ConversationInputIntent,
   type ConversationSnapshot,
   type V4ConversationFileChangesResult,
@@ -84,6 +85,7 @@ import type {
   GoalStatus,
   MessageId,
   MessageWithParts,
+  OpenCodeAgentRunAdmission,
   SessionEvent,
   SessionEventStorePort,
   SessionId,
@@ -251,6 +253,7 @@ async function previewConversationFileRewind(
 }
 
 interface InputCommandForAdmission {
+  executionRoute?: ConversationInputIntent["executionRoute"];
   inputOrigin?: "desktop" | "mobile";
   conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
   botGroupSource?: ConversationInputIntent["botGroupSource"];
@@ -331,6 +334,7 @@ export function resolveInputCommandForAdmission(
   if (envelope.type === "sendText" || envelope.type === "sendGoalCommand") {
     const payload = envelope.payload as {
       text: string;
+      executionRoute?: ConversationInputIntent["executionRoute"];
       attachments?: AttachmentRef[];
       context_refs?: ConversationInputIntent["sharedContextRefs"];
       highspeedMeta?: ConversationInputIntent["highspeed"];
@@ -342,6 +346,7 @@ export function resolveInputCommandForAdmission(
       kind: envelope.type,
       text: payload.text,
       attachments: payload.attachments ?? [],
+      executionRoute: payload.executionRoute ?? { kind: "zcode" },
       ...(payload.context_refs ? { sharedContextRefs: payload.context_refs } : {}),
       ...(payload.highspeedMeta ? { highspeed: payload.highspeedMeta } : {}),
       ...(payload.inputOrigin ? { inputOrigin: payload.inputOrigin } : {}),
@@ -401,6 +406,73 @@ export function resolveInputCommandForAdmission(
         }
       : {}),
   };
+}
+
+/** Build the sole durable input/outbox transaction for an admitted OpenCode run. */
+export function buildOpenCodeAgentRunAdmission(
+  envelope: CommandEnvelope,
+  sessionId: string,
+  intent: ConversationInputIntent,
+): OpenCodeAgentRunAdmission {
+  if (
+    envelope.type !== "sendText" ||
+    envelope.sessionId !== sessionId ||
+    intent.kind !== "sendText" ||
+    intent.executionRoute.kind !== "opencode-acp" ||
+    intent.delivery.requested !== "startNow" ||
+    intent.delivery.admitted !== "startNow" ||
+    intent.attachments.length !== 0 ||
+    intent.sharedContextRefs?.length ||
+    intent.modelSelection !== undefined ||
+    intent.mode !== undefined ||
+    intent.planEnabled !== undefined
+  ) {
+    throw Object.assign(
+      new Error("OpenCode delegated input must be idle, startNow, and text-only"),
+      {
+        reasonCode: "fault.command.opencodeAgentRequiresIdleStartNow",
+      },
+    );
+  }
+  const requestedModelID =
+    intent.executionRoute.model.kind === "catalog"
+      ? intent.executionRoute.model.modelId
+      : undefined;
+  return {
+    commandID: envelope.commandId,
+    runID: envelope.commandId,
+    ...(requestedModelID ? { requestedModelID } : {}),
+    input: {
+      id: envelope.commandId,
+      sessionID: sessionId as SessionId,
+      kind: "sendText",
+      delivery: "startNow",
+      payload: {
+        text: intent.text,
+        // Storage uses its own discriminator; the canonical intent keeps ACP model identity
+        // without mapping it into the ZCode ModelSelection contract.
+        executionRoute: "opencode-cli",
+        conversationInputIntent: intent,
+        attachments: intent.attachments,
+        sourceCommandType: envelope.type,
+      },
+    },
+  };
+}
+
+export async function persistOpenCodeAgentRunAdmission(
+  sessionStore: Pick<SessionStorePort, "admitOpenCodeAgentRun">,
+  envelope: CommandEnvelope,
+  sessionId: string,
+  intent: ConversationInputIntent,
+): Promise<void> {
+  const admit = sessionStore.admitOpenCodeAgentRun;
+  if (!admit) {
+    throw Object.assign(new Error("Atomic OpenCode delegated admission is unavailable"), {
+      reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
+    });
+  }
+  await admit.call(sessionStore, buildOpenCodeAgentRunAdmission(envelope, sessionId, intent));
 }
 
 export function isConversationInputAdmissionCommand(type: CommandEnvelope["type"]): boolean {
@@ -822,7 +894,8 @@ export function createConversationV4Gateway(
       return gateway.waitForProjectionEventCommit(sessionId, eventId, options);
     },
     admitInputCommand: async (envelope, sessionId, admission) => {
-      if (!context.deps.sessionStore?.saveSessionInput) return null;
+      const sessionStore = context.deps.sessionStore;
+      if (!sessionStore) return null;
       const input = resolveInputCommandForAdmission(
         envelope,
         sessionId,
@@ -830,8 +903,43 @@ export function createConversationV4Gateway(
           context.v4Gateway?.resolveRowActionTarget(sourceSessionId, target, action) ?? null,
       );
       if (!input) return null;
+      const isOpenCodeRoute = input.executionRoute?.kind === "opencode-acp";
+      if (isOpenCodeRoute && !sessionStore.admitOpenCodeAgentRun) {
+        throw Object.assign(new Error("Atomic OpenCode delegated admission is unavailable"), {
+          reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
+        });
+      }
+      const saveSessionInput = sessionStore.saveSessionInput;
+      if (!isOpenCodeRoute && !saveSessionInput) return null;
       const kind = input.kind;
       const record = context.sessions.get(sessionId);
+      const routingMode = context.v4Gateway?.getInputRoutingMode(sessionId) ?? null;
+      if (isOpenCodeRoute) {
+        const runtimeBusy =
+          record?.activeAbortController !== undefined ||
+          record?.app.runtime.getActiveForegroundExecutionId() !== undefined;
+        if (
+          envelope.type !== "sendText" ||
+          kind !== "sendText" ||
+          !record ||
+          runtimeBusy ||
+          (routingMode !== null && routingMode !== "startNow") ||
+          (context.v4Gateway?.getQueueLength(sessionId) ?? 0) > 0
+        ) {
+          throw Object.assign(
+            new Error("OpenCode delegated input requires an idle session with startNow delivery"),
+            { reasonCode: "fault.command.opencodeAgentRequiresIdleStartNow" },
+          );
+        }
+        // Durable pending outbox rows may only be created once the process-owning Host
+        // dispatcher can claim and deliver them. Keep this route closed until that owner exists.
+        throw Object.assign(
+          new Error("OpenCode delegated execution is not yet connected to Host"),
+          {
+            reasonCode: "fault.command.opencodeAgentExecutionUnavailable",
+          },
+        );
+      }
       if (record?.persistence === "deferred") {
         // session_input 有 session 外键；draft 要到 startPromptTurn 后台阶段才持久化，
         // 如果先写 ledger 会直接 FK 失败，accepted 前仍没有权威记录。因此 admission
@@ -841,7 +949,6 @@ export function createConversationV4Gateway(
         });
         record.persistence = "immediate";
       }
-      const routingMode = context.v4Gateway?.getInputRoutingMode(sessionId) ?? null;
       // 这是执行前账本的“预计投递边界”；TurnSteerQueued 会用实际 delivery/回退原因
       // 幂等更新同一记录。startNow 不能伪装成 queue，否则重启 discarded 的诊断事实失真。
       const requestedDelivery =
@@ -874,6 +981,7 @@ export function createConversationV4Gateway(
         queueItemId: admission.queueItemId,
         clientId: envelope.clientId || "cli",
         kind,
+        executionRoute: input.executionRoute ?? { kind: "zcode" },
         text: input.text ?? "",
         attachments: attachmentRefs,
         ...(input.sharedContextRefs ? { sharedContextRefs: input.sharedContextRefs } : {}),
@@ -893,7 +1001,8 @@ export function createConversationV4Gateway(
         ...(input.highspeed ? { highspeed: input.highspeed } : {}),
         ...(input.provenance ? { provenance: input.provenance } : {}),
       });
-      await context.deps.sessionStore.saveSessionInput({
+      if (!saveSessionInput) return null;
+      await saveSessionInput.call(sessionStore, {
         id: admission.queueItemId,
         sessionID: sessionId as SessionId,
         kind,
@@ -928,7 +1037,7 @@ export function createConversationV4Gateway(
         conversationInputIntent.delivery.admitted !== "startNow"
       ) {
         const reference = conversationInputIntent.sharedContextRefs[0]!;
-        const reserved = await context.deps.sessionStore.transitionSharedContextImport?.({
+        const reserved = await sessionStore.transitionSharedContextImport?.({
           sessionID: sessionId as SessionId,
           contextId: reference.context_id,
           expectedStatus: "pending",
@@ -936,7 +1045,7 @@ export function createConversationV4Gateway(
           sourceId: admission.queueItemId,
         });
         if (!reserved) {
-          await context.deps.sessionStore.settleSessionInput?.({
+          await sessionStore.settleSessionInput?.({
             id: admission.queueItemId,
             sessionID: sessionId as SessionId,
             status: "failed",
@@ -945,7 +1054,7 @@ export function createConversationV4Gateway(
           throw new Error("fault.command.sharedContextNotAttachable");
         }
         const entry = (
-          await context.deps.sessionStore.sessionEntries?.({
+          await sessionStore.sessionEntries?.({
             sessionID: sessionId as SessionId,
             type: "v4/shared_context_import",
           })
@@ -959,7 +1068,7 @@ export function createConversationV4Gateway(
           );
         });
         const data = entry?.data;
-        const session = await context.deps.sessionStore.getSession(sessionId as SessionId);
+        const session = await sessionStore.getSession(sessionId as SessionId);
         if (
           data &&
           typeof data === "object" &&
@@ -1793,9 +1902,16 @@ export function createConversationV4Gateway(
     // 回落面已清零（20 命令全部原生）：supports 未命中（未知命令类型）→
     // notImplemented → ACK failed fault.command.notImplemented。
     executeCommand: (envelope, admission) =>
-      nativeExecutor.supports(envelope.type)
-        ? nativeExecutor.execute(envelope, admission)
-        : Promise.reject(new V4CommandNotImplementedError(envelope.type)),
+      envelope.type === "sendText" &&
+      (envelope.payload as CommandPayloadMap["sendText"]).executionRoute?.kind === "opencode-acp"
+        ? Promise.reject(
+            Object.assign(new Error("OpenCode delegated execution is not yet connected to Host"), {
+              reasonCode: "fault.command.opencodeAgentExecutionUnavailable",
+            }),
+          )
+        : nativeExecutor.supports(envelope.type)
+          ? nativeExecutor.execute(envelope, admission)
+          : Promise.reject(new V4CommandNotImplementedError(envelope.type)),
     admitCommandInput: async (envelope, admission) => {
       // 仅隐藏 composer 不能阻止旧 child 标签页续聊。类型准入必须早于
       // ledger/输入历史写入；detached child 没有 record 时只查元数据，不激活第二个 runtime。
