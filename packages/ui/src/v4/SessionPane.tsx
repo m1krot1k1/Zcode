@@ -1785,6 +1785,9 @@ export function SessionPane({
     agentStartupAllowed: draftAgentStartupAllowed,
     modelSelectionService,
   });
+  // Bug 根因：部分 SessionPane 测试和重建中的旧草稿可能暂时没有 Composer intent，
+  // 直接读取会在渲染阶段崩溃；缺少 intent 按普通 Provider 路由处理，不能阻断聊天界面。
+  const composerExecutionRoute = composerDraft?.executionRoute;
   useEffect(() => {
     if (
       !sessionId ||
@@ -1905,40 +1908,35 @@ export function SessionPane({
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
   const createSubmissionFromComposer = useCallback(() => {
     if (
-      composerDraft.executionRoute?.kind === "opencode-acp" &&
+      composerExecutionRoute?.kind === "opencode-acp" &&
       sharedSettings?.openCodeCliEnabled !== true
     ) {
       return null;
     }
     return createComposerSubmissionConfig(
-      { ...draftConfigRef.current, executionRoute: composerDraft.executionRoute },
+      { ...draftConfigRef.current, executionRoute: composerExecutionRoute },
       modelSelectionView,
     );
   }, [
-    composerDraft.executionRoute,
+    composerExecutionRoute,
     draftConfigRef,
     modelSelectionView,
     sharedSettings?.openCodeCliEnabled,
   ]);
   const composerSubmissionReady = useMemo(() => {
     if (
-      composerDraft.executionRoute?.kind === "opencode-acp" &&
+      composerExecutionRoute?.kind === "opencode-acp" &&
       sharedSettings?.openCodeCliEnabled !== true
     ) {
       return false;
     }
     return (
       createComposerSubmissionConfig(
-        { ...draftConfig, executionRoute: composerDraft.executionRoute },
+        { ...draftConfig, executionRoute: composerExecutionRoute },
         modelSelectionView,
       ) !== null
     );
-  }, [
-    composerDraft.executionRoute,
-    draftConfig,
-    modelSelectionView,
-    sharedSettings?.openCodeCliEnabled,
-  ]);
+  }, [composerExecutionRoute, draftConfig, modelSelectionView, sharedSettings?.openCodeCliEnabled]);
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
   const billingDiscount = useCodingPlanBillingDiscountFromService(
@@ -2118,7 +2116,7 @@ export function SessionPane({
       // 冻结的 submission（spec §5.1）。接纳写入另有加速身份兜底拦截。
       const recentSubmission = recentSubmissionOverride ?? submission;
       const zcodeRecentSubmission =
-        recentSubmission?.executionRoute.kind === "zcode" &&
+        recentSubmission?.executionRoute?.kind === "zcode" &&
         recentSubmission.modelSelection &&
         recentSubmission.mode
           ? {
@@ -2159,7 +2157,8 @@ export function SessionPane({
           ? readPendingTaskDraft(recentScope)
           : null;
       const acceptSelection =
-        submission?.executionRoute.kind === "zcode" &&
+        submission &&
+        (submission.executionRoute?.kind === "zcode" || submission.executionRoute === undefined) &&
         submission.modelSelection &&
         (sessionId === null || targetSessionId === sessionId)
           ? captureAcceptedModelSelection(submission.modelSelection)
@@ -3198,7 +3197,7 @@ export function SessionPane({
     // 共享 identity；provider wrapper 重建产生的新 sendCommand 函数不能误判为 transport 换代。
     transportIdentity: layer,
     dispatchCommand,
-    openCodeAcpDraft: composerDraft.executionRoute?.kind === "opencode-acp",
+    openCodeAcpDraft: composerExecutionRoute?.kind === "opencode-acp",
     // 预热会话只消费当前 Root Composer Draft 的一次性初始化结果。
     resolveInitialConfig: resolveInitialDraftConfig,
   });
@@ -3637,7 +3636,7 @@ export function SessionPane({
         args[12] = options?.submittedDraftText ?? text;
         if (
           args[0] === "sendText" &&
-          submission?.executionRoute.kind !== "opencode-acp" &&
+          submission?.executionRoute?.kind !== "opencode-acp" &&
           args[2] &&
           baseWorkspaceServices.genUiService &&
           typeof args[1]?.text === "string"
@@ -3664,6 +3663,15 @@ export function SessionPane({
       };
       // 进入 barrier 前已经冻结；等待配置/附件期间不再回读 Composer 或 Session。
       let submission = options?.submission ?? null;
+      if (submission) {
+        // Bug 根因：旧版冻结的 Composer intent 不含新加的 executionRoute/planEnabled，
+        // 直接读取会拒绝原本有效的 ZCode 消息；按协议兼容默认值归一化一次再走既有发送路径。
+        submission = {
+          ...submission,
+          executionRoute: submission.executionRoute ?? { kind: "zcode" },
+          planEnabled: submission.planEnabled ?? false,
+        };
+      }
       const heldQueueDisposition = options?.heldQueueDisposition;
       const expectedHeldQueueItemIds = options?.expectedHeldQueueItemIds;
       const readyAttachments = options?.attachments ?? [];
@@ -3673,7 +3681,7 @@ export function SessionPane({
         contextAttachmentCount,
       });
 
-      if (submission?.executionRoute.kind === "opencode-acp") {
+      if (submission?.executionRoute?.kind === "opencode-acp") {
         if (sharedSettings?.openCodeCliEnabled !== true || !openCodeAcpRuntime) {
           toast(intl.formatMessage({ id: "settings.openCode.composerDisabled" }));
           return "blocked" as const;
@@ -3726,7 +3734,7 @@ export function SessionPane({
           "sendText",
           {
             text,
-            executionRoute: submission.executionRoute,
+            executionRoute: submission.executionRoute ?? { kind: "zcode" },
             requestedDelivery: "startNow",
           },
           targetSessionId,
@@ -3790,7 +3798,7 @@ export function SessionPane({
       }
       if (
         !submission ||
-        submission.executionRoute.kind !== "zcode" ||
+        (submission.executionRoute !== undefined && submission.executionRoute.kind !== "zcode") ||
         !submission.modelSelection ||
         !submission.mode ||
         submission.planEnabled === undefined
@@ -5181,7 +5189,7 @@ export function SessionPane({
     mcpUnavailableNotice,
   });
   const composerError =
-    (composerDraft.executionRoute?.kind === "opencode-acp" ? null : draftModelReadinessError) ??
+    (composerExecutionRoute?.kind === "opencode-acp" ? null : draftModelReadinessError) ??
     sendSubmissionError ??
     (quotaBanner.takesOverError ? null : projectedComposerError);
   useEffect(() => {
