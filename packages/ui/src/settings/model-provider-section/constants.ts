@@ -218,9 +218,15 @@ export type ModelProviderNavItem =
       label: string;
       provider: ProviderSettingsFormProvider;
       statusActive: boolean;
+    }
+  | {
+      key: string;
+      type: "agentIntegration";
+      integrationId: "opencode-cli";
+      label: string;
     };
 
-export type ModelProviderNavGroupId = "preset" | "custom";
+export type ModelProviderNavGroupId = "preset" | "custom" | "agent-integrations";
 
 export interface ModelProviderNavGroup {
   id: ModelProviderNavGroupId;

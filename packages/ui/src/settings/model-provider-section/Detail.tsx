@@ -834,7 +834,12 @@ export function ModelProviderSectionDetail({
     return null;
   }
 
-  if (!selectedNavItem.provider) {
+  if (selectedNavItem.type === "agentIntegration") {
+    // 原因：CLI 集成只由外层单独的 ACP 面板负责，不能落入 API Provider 表单分支。
+    return null;
+  }
+
+  if (!("provider" in selectedNavItem) || !selectedNavItem.provider) {
     return <ModelProviderLoadingCard loadingLabel={loadingLabel} />;
   }
 

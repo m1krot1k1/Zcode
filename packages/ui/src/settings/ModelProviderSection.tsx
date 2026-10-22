@@ -1127,10 +1127,6 @@ export function ModelProviderSection({
       onReorderProviderIds={handleReorderProviderIds}
       reorderableProviderIds={reorderableProviderIds}
     >
-      <OpenCodeAgentSettingsPanel
-        initialWorkspacePath={connectivityWorkspacePath ?? ""}
-        remoteWorkspaceActive={connectivityWorkspaceRequired}
-      />
       {(invalidProviderTarget || navigationUnavailable) && !templatePickerOpen ? (
         <p role="alert" className="mb-3 text-ui-base text-destructive">
           {intl.formatMessage({
@@ -1151,6 +1147,11 @@ export function ModelProviderSection({
           onCreateCustom={(label) => {
             return handleCreateProvider({ providerName: label });
           }}
+        />
+      ) : selectedNavItem?.type === "agentIntegration" ? (
+        <OpenCodeAgentSettingsPanel
+          initialWorkspacePath={connectivityWorkspacePath ?? ""}
+          remoteWorkspaceActive={connectivityWorkspaceRequired}
         />
       ) : (
         <ModelProviderSectionDetail

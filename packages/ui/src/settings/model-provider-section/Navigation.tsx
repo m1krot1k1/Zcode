@@ -67,7 +67,7 @@ export function shouldShowModelProviderGroupLoadingIndicator(params: {
   if (params.groupId === "preset") {
     return params.presetLoading;
   }
-  return params.customLoading;
+  return params.groupId === "custom" && params.customLoading;
 }
 
 export function resolveModelProviderSideNavLabel(item: ModelProviderNavItem): string {
@@ -400,7 +400,7 @@ export function ModelProviderSectionNavigation({
                 ) : null}
               </div>
 
-              {group.id === "preset" ? (
+              {group.id === "preset" || group.id === "agent-integrations" ? (
                 <PresetProviderCardNavigation
                   group={group}
                   selectedNodeKey={selectedNodeKey}

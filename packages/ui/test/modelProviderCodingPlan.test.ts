@@ -3602,6 +3602,22 @@ describe("model provider coding plan", () => {
     expect(fallbackNodeKey).toBe("preset:account:bigmodel-start-plan");
   });
 
+  it("OpenCode CLI 集成不会在没有 API provider 时被自动选中", () => {
+    expect(
+      resolveFallbackModelProviderNodeKey({
+        selectedNodeKey: null,
+        selectableNavigationItems: [
+          {
+            key: "agent-integration:opencode-cli",
+            type: "agentIntegration",
+            integrationId: "opencode-cli",
+            label: "OpenCode CLI",
+          },
+        ],
+      }),
+    ).toBeNull();
+  });
+
   it("首次进入 Model Providers 没有套餐权益时默认选中 API Key", () => {
     const fallbackNodeKey = resolveFallbackModelProviderNodeKey({
       selectedNodeKey: null,

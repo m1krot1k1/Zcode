@@ -3541,7 +3541,8 @@ const zhCN: Record<string, string> = {
   "settings.plugins.toggle.workspaceEnabled": "已在当前工作区启用 {plugin}（覆盖 User 默认）",
   "settings.plugins.toggle.workspaceDisabled": "已在当前工作区停用 {plugin}（覆盖 User 默认）",
   "settings.plugins.toggle.failed": "无法更新 {plugin}，请重试。",
-  "settings.modelProviderDescription": "管理自定义模型供应商，配置后可在聊天时选择使用。",
+  "settings.modelProviderDescription":
+    "为 Composer 配置 API 供应商，或打开 OpenCode CLI 等独立智能体集成。",
   "settings.modelProvider.credentialModeApiKey": "API 密钥",
   "settings.openCode.title": "OpenCode 智能体",
   "settings.openCode.authModeCli": "Host CLI · 无需 API 密钥",
@@ -4316,11 +4317,13 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.presetDescription":
     "内置 Z.ai 与 BigModel 供应商，支持通过 OAuth 辅助完成配置。",
   "settings.modelProvider.presetEmpty": "尚未同步，请先完成 OAuth 登录。",
-  "settings.modelProvider.customTitle": "自定义供应商",
+  "settings.modelProvider.customTitle": "API 供应商",
+  "settings.modelProvider.agentIntegrationsTitle": "智能体集成",
+  "settings.modelProvider.openCodeCli": "OpenCode CLI",
   "settings.modelProvider.refresh": "刷新",
   "settings.modelProvider.reorderProvider": "拖拽调整供应商顺序",
   "settings.modelProvider.reorderModel": "拖拽调整模型顺序",
-  "settings.modelProvider.empty": "暂无自定义模型供应商",
+  "settings.modelProvider.empty": "暂无 API 供应商",
   "settings.modelProvider.deleteConfirm": '确定要删除"{name}"吗？',
   "settings.modelProvider.deleteConfirmTitle": "删除供应商“{name}”？",
   "settings.modelProvider.deleteConfirmDescription":

@@ -3790,7 +3790,7 @@ const enUS: Record<string, string> = {
     "Disabled {plugin} in this workspace (overriding User default)",
   "settings.plugins.toggle.failed": "Couldn't update {plugin}. Try again.",
   "settings.modelProviderDescription":
-    "Manage custom model providers. Once configured, they can be selected during chat.",
+    "Configure API providers for Composer or open a separate agent integration such as OpenCode CLI.",
   "settings.modelProvider.credentialModeApiKey": "API key",
   "settings.openCode.title": "OpenCode agent",
   "settings.openCode.authModeCli": "Host CLI · no API key",
@@ -4885,11 +4885,13 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.presetDescription":
     "Built-in Z.ai and BigModel providers with OAuth-assisted configuration.",
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
-  "settings.modelProvider.customTitle": "Custom providers",
+  "settings.modelProvider.customTitle": "API providers",
+  "settings.modelProvider.agentIntegrationsTitle": "Agent integrations",
+  "settings.modelProvider.openCodeCli": "OpenCode CLI",
   "settings.modelProvider.refresh": "Refresh",
   "settings.modelProvider.reorderProvider": "Drag to reorder provider",
   "settings.modelProvider.reorderModel": "Drag to reorder model",
-  "settings.modelProvider.empty": "No custom model providers yet",
+  "settings.modelProvider.empty": "No API providers yet",
   "settings.modelProvider.deleteConfirm": 'Delete "{name}"?',
   "settings.modelProvider.deleteConfirmTitle": 'Delete provider "{name}"?',
   "settings.modelProvider.deleteConfirmDescription":

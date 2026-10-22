@@ -221,6 +221,18 @@ export function useModelProviderNavigation({
           statusActive: provider.executable === true,
         })),
       },
+      {
+        id: "agent-integrations",
+        title: intl.formatMessage({ id: "settings.modelProvider.agentIntegrationsTitle" }),
+        items: [
+          {
+            key: "agent-integration:opencode-cli",
+            type: "agentIntegration" as const,
+            integrationId: "opencode-cli" as const,
+            label: intl.formatMessage({ id: "settings.modelProvider.openCodeCli" }),
+          },
+        ],
+      },
     ];
 
     return groups;
@@ -379,7 +391,10 @@ export function resolveFallbackModelProviderNodeKey({
     Exclude<ModelProviderNavGroup["items"][number], { type: "codingPlanLoading" }>
   >;
 }): string | null {
-  const initialConnectionItem = pickInitialConnectionNavigationItem(selectableNavigationItems);
+  const defaultProviderItems = selectableNavigationItems.filter(
+    (item) => item.type !== "agentIntegration",
+  );
+  const initialConnectionItem = pickInitialConnectionNavigationItem(defaultProviderItems);
   const initialSideNodeKey = initialConnectionItem
     ? resolveSideNavigationNodeKeyForConnectionItem(initialConnectionItem)
     : null;
@@ -392,7 +407,7 @@ export function resolveFallbackModelProviderNodeKey({
   // 初始化只在没有有效选中项时发生；如果当前用户选择仍有效，上层 effect 不会调用 fallback 抢焦点。
   return (
     initialSideNodeKey ??
-    resolveSideNavigationNodeKeyForConnectionItem(selectableNavigationItems[0] ?? null)
+    resolveSideNavigationNodeKeyForConnectionItem(defaultProviderItems[0] ?? null)
   );
 }
 
@@ -558,7 +573,7 @@ export function connectionSelectionMatchesNavigationItem(
   selection: ProviderFamilyConnectionSelection,
   item: Exclude<ModelProviderNavGroup["items"][number], { type: "codingPlanLoading" }>,
 ): boolean {
-  if (item.type === "custom") return false;
+  if (item.type === "custom" || item.type === "agentIntegration") return false;
   const familySpec = resolveModelProviderFamilySpecByProviderId(item.presetId ?? "");
   if (familySpec?.id !== family) return false;
   if (selection.kind === "start-plan") {
