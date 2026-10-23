@@ -205,9 +205,13 @@ export function classifyModelFailure(
   }
 
   if (statusCode === 401 || statusCode === 403) {
+    // OpenCode 没有 ZCode API key：登录只发生在 CLI，这里只给出明确的 sign-in 错误。
+    const openCodeSignIn = findProviderBusinessError(unwrapped)?.providerId === "opencode";
     return {
       code: ModelErrorCode.ProviderNotConfigured,
-      message: "Provider authentication failed.",
+      message: openCodeSignIn
+        ? "OpenCode sign-in is required. Sign in with the OpenCode CLI; ZCode does not read or copy those credentials."
+        : "Provider authentication failed.",
       reason: ModelFailureReasonValue.AuthFailed,
       retryReason: ModelRetryReasonValue.AuthRefresh,
       retryable: false,
@@ -391,7 +395,10 @@ function classifyProviderBusinessFailure(
   if (effectiveStatusCode === 401 || effectiveStatusCode === 403) {
     return {
       code: ModelErrorCode.ProviderNotConfigured,
-      message,
+      message:
+        error.providerId === "opencode"
+          ? "OpenCode sign-in is required. Sign in with the OpenCode CLI; ZCode does not read or copy those credentials."
+          : message,
       reason: ModelFailureReasonValue.AuthFailed,
       retryReason: ModelRetryReasonValue.AuthRefresh,
       retryable: false,

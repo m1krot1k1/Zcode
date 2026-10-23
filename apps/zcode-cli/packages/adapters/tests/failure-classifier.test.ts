@@ -407,6 +407,27 @@ describe("classifyModelFailure provider business codes", () => {
     });
   });
 
+  it("shows an OpenCode sign-in error without treating authentication as a provider switch", () => {
+    const failure = classifyModelFailure(
+      new ProviderBusinessError({
+        providerCode: "AUTH_REQUIRED",
+        providerId: "opencode",
+        providerKind: "opencode-sdk",
+        providerMessage: "OpenCode authentication is required",
+        statusCode: 401,
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "provider_not_configured",
+      message:
+        "OpenCode sign-in is required. Sign in with the OpenCode CLI; ZCode does not read or copy those credentials.",
+      reason: "auth_failed",
+      retryable: false,
+      statusCode: 401,
+    });
+  });
+
   it("preserves OpenCode provider attribution when rebuilding a business finish error", () => {
     const error = detectProviderBusinessFinishError({
       providerId: "opencode",

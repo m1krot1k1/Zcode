@@ -13,7 +13,10 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import type { ModelExecutionContext } from "../types.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 import { createTurnModel } from "./turn-model.js";
-import { isOpenCodeRateLimitFailure } from "./streaming-recovery.js";
+import {
+  isOpenCodeRateLimitFailure,
+  isOpenCodeSignInFailure,
+} from "./streaming-recovery.js";
 
 type SelectionFallbackDeclaration = NonNullable<ModelExecutionContext["selectionFallback"]>;
 
@@ -113,6 +116,10 @@ export function matchExecutionSelectionFallback(input: {
   if (isModelContextExceededError(input.error)) return undefined;
   if (
     isOpenCodeRateLimitFailure({
+      error: input.error,
+      providerId: input.executionProviderId,
+    }) ||
+    isOpenCodeSignInFailure({
       error: input.error,
       providerId: input.executionProviderId,
     })
