@@ -108,6 +108,42 @@ describe("ProviderRuntime", () => {
     }
   });
 
+  it("скрывает выключенный OpenCode и оставляет сбой каталога повторяемым пустым снимком", async () => {
+    const settings = {
+      openCodeCliEnabled: false,
+    };
+    const listModels = vi.fn(async () => {
+      throw new Error("opencode models failed");
+    });
+    const source = new OpenCodeCliProviderCatalogSource(
+      {
+        get: async () => settings,
+        onDidUpdate: () => () => {},
+      } as unknown as ObservableSettingService,
+      {
+        getCliStatus: async () => ({
+          status: "available" as const,
+          version: "1.19.3",
+          executablePath: "/tmp/opencode",
+        }),
+        listModels,
+      },
+    );
+
+    try {
+      const disabled = await source.read();
+      expect(disabled).toEqual({ revision: "opencode:disabled", providers: [] });
+      expect(listModels).not.toHaveBeenCalled();
+
+      settings.openCodeCliEnabled = true;
+      const failed = await source.read();
+      expect(failed).toEqual({ revision: "opencode:models-unavailable", providers: [] });
+      expect(failed).not.toHaveProperty("cliExecutablePath");
+    } finally {
+      source.dispose();
+    }
+  });
+
   it("Host View 原子返回 Configured Default 解析后的 preferredSelection", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-provider-runtime-preferred-"));
     const zcodeBuiltinFilePath = join(root, "zcode-builtin.json");

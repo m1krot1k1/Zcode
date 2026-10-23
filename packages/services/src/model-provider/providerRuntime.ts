@@ -64,6 +64,16 @@ export class OpenCodeCliProviderCatalogSource implements ProviderSource<RuntimeP
     const settings = await this.settings.get();
     if (settings.openCodeCliEnabled !== true) return emptyOpenCodeSnapshot("disabled");
 
+    // 根因：CLI/catalog 抛错会拒绝整次 Registry refresh，已配置的 API Provider 也无法发布。
+    // 修复：刷新失败是可重试的空快照；OpenCode 不进入选择器，其它 Provider 照常合并。
+    try {
+      return await this.#readEnabledCatalog();
+    } catch {
+      return emptyOpenCodeSnapshot("models-unavailable");
+    }
+  }
+
+  async #readEnabledCatalog(): Promise<RuntimeProviderCatalogSnapshot> {
     const status = await this.runtime.getCliStatus();
     if (status.status !== "available") return emptyOpenCodeSnapshot(`cli-${status.status}`);
     const catalog = await this.runtime.listModels();

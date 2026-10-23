@@ -167,6 +167,57 @@ describe("ProviderRegistryService", () => {
     expect(listener.mock.calls.at(-1)?.[0].snapshot).toBe(snapshot);
   });
 
+  it("пустой runtime-каталог снимает OpenCode и оставляет API Provider доступным", async () => {
+    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
+    const accountSource = new MutableSource(accountSnapshot());
+    const runtimeProviderSource = new MutableSource<RuntimeProviderCatalogSnapshot>({
+      revision: "opencode:disabled",
+      providers: [],
+    });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+      runtimeProviderSource,
+    });
+    await service.start();
+    const apiProvider = service.listProviders()[0]!;
+    runtimeProviderSource.current = {
+      revision: "opencode:1",
+      providers: [
+        Object.freeze({
+          ...apiProvider,
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+        }),
+      ],
+    };
+    runtimeProviderSource.emit("models-available");
+    await vi.waitFor(() =>
+      expect(service.getSnapshot()?.sourceRevisions.runtimeProviders).toBe("opencode:1"),
+    );
+
+    runtimeProviderSource.current = {
+      revision: "opencode:models-unavailable",
+      providers: [],
+    };
+    runtimeProviderSource.emit("catalog-refresh-failed");
+    await vi.waitFor(() =>
+      expect(service.getSnapshot()?.sourceRevisions.runtimeProviders).toBe(
+        "opencode:models-unavailable",
+      ),
+    );
+
+    expect(service.getProvider("opencode")).toBeUndefined();
+    expect(
+      service.validateSelection({
+        providerId: "local",
+        modelId: "model-a",
+        options: { reasoningLevel: "disabled" },
+      }),
+    ).toEqual({ ok: true });
+    service.dispose();
+  });
+
   it("runtime Provider ID collision rejects the candidate and leaves the published snapshot intact", async () => {
     const configSource = new MutableSource(
       configSnapshot("config-1", "model-a"),

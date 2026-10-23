@@ -13,7 +13,7 @@
 | OCP-05 | OpenCode CLI не авторизован у своего model provider. | Показывается типизированная ошибка входа; ZCode не читает/копирует credentials и не переключает provider автоматически. | Classifier test: OpenCode 401 → sign-in message, `retryable: false`. Fallback test: selection не переключается. |
 | OCP-06 | Provider возвращает rate limit. | Ошибка показана пользователю; нет обхода лимита, скрытого повтора или автоматического переключения provider/model. | Runtime test `opencode-rate-limit.test.ts`: один запрос, без stream recovery. |
 | OCP-07 | OpenCode stream содержит сведения об активности собственных инструментов. | Активность отображается не более одного раза; ZCode не запускает эти действия повторно своим tool runner. | Runtime test `opencode-provider-tool.test.ts`: handler не вызывается. Projection test: один `completed` update. |
-| OCP-08 | CLI выключен или catalog refresh завершился ошибкой. | Выключенный provider отсутствует в выборе; ошибка обновления даёт retryable state; API providers продолжают работать. | Settings/registry tests; pending implementation. |
+| OCP-08 | CLI выключен или catalog refresh завершился ошибкой. | Выключенный provider отсутствует в выборе; ошибка обновления даёт retryable state; API providers продолжают работать. | Source: disabled и throw → `providers: []`, revision `models-unavailable`. Registry: API `local` остаётся валидным. |
 
 Локальный unit/integration fixture не доказывает работу с настоящей авторизацией OpenCode. Реальный Desktop E2E с настоящим CLI и доступным пользователю model provider должен отдельно подтвердить выбор модели, ответ в исходном ZCode чате и Stop; он не требует входа в аккаунт ZCode и не должен записывать секреты.
 
