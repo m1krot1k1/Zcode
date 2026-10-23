@@ -421,6 +421,11 @@ export async function runModelTextRequest(
             done: false,
             input: toolCall.input,
             kind: "tool_call",
+            // OpenCode 已在服务端执行的工具只作为一次观察进入 transcript。
+            // 缺了这个标记，投影会把它画成尚未结束的本地 tool call。
+            ...(toolCall.providerExecuted !== undefined
+              ? { providerExecuted: toolCall.providerExecuted }
+              : {}),
             toolCallId: toolCall.id as ToolCallId,
             toolName: toolCall.name,
           });

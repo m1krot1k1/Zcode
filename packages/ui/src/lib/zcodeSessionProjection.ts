@@ -1890,6 +1890,11 @@ function mapToolInputStreaming(
   if (!toolId) {
     return null;
   }
+  // OpenCode 的工具已经在 provider 侧执行。中间的 input 帧不再各画一张 pending 卡，
+  // 最终 tool_call 只投影一次 completed。
+  if (payload.providerExecuted === true && kind !== "tool_call") {
+    return null;
+  }
   const toolName = stringValue(payload.toolName) ?? toolNameById?.get(toolId);
   if (toolName) {
     toolNameById?.set(toolId, toolName);
@@ -2079,7 +2084,7 @@ function mapToolInputStreaming(
       ...(inputId ? { inputId } : {}),
       toolId,
       parentToolUseId,
-      status: "pending",
+      status: payload.providerExecuted === true ? "completed" : "pending",
       title: previewTitle,
       toolName: previewToolName,
       kind: previewTitle,
