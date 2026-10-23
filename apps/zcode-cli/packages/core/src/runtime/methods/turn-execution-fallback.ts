@@ -13,6 +13,7 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import type { ModelExecutionContext } from "../types.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 import { createTurnModel } from "./turn-model.js";
+import { isOpenCodeRateLimitFailure } from "./streaming-recovery.js";
 
 type SelectionFallbackDeclaration = NonNullable<ModelExecutionContext["selectionFallback"]>;
 
@@ -110,6 +111,14 @@ export function matchExecutionSelectionFallback(input: {
   if (!fallback || input.turnAborted) return undefined;
   if (input.executionProviderId !== fallback.providerId) return undefined;
   if (isModelContextExceededError(input.error)) return undefined;
+  if (
+    isOpenCodeRateLimitFailure({
+      error: input.error,
+      providerId: input.executionProviderId,
+    })
+  ) {
+    return undefined;
+  }
   const attribution = projectExecutionErrorPayload(input.error).attribution;
   // Bug 根因：无错误码兜底规则过去也接收无归因异常，stream 事件落库失败会被误判成 provider
   // 请求失败并触发第二次模型请求。只有 adapter 明确归因到本轮 provider/network 边界的失败才能退回。

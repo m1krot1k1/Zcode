@@ -11,7 +11,7 @@
 | OCP-03 | В существующем ZCode чате выбрать модель OpenCode CLI и отправить marker. | Обычные ModelSelection/admission/runtime создают запрос через AI SDK adapter; ответ появляется в той же ленте. Интеграционный fixture проверяет payload/stream без внешнего model request. | Adapter integration + Desktop E2E; pending implementation. |
 | OCP-04 | Нажать Stop во время ответа OpenCode. | Отменяется тот же обычный ZCode run; последующие provider chunks не меняют transcript. | Adapter cancellation + conversation protocol; pending implementation. |
 | OCP-05 | OpenCode CLI не авторизован у своего model provider. | Показывается типизированная ошибка входа; ZCode не читает/копирует credentials и не переключает provider автоматически. | Provider integration; pending implementation. |
-| OCP-06 | Provider возвращает rate limit. | Ошибка показана пользователю; нет обхода лимита, скрытого повтора или автоматического переключения provider/model. | Model runtime test; pending implementation. |
+| OCP-06 | Provider возвращает rate limit. | Ошибка показана пользователю; нет обхода лимита, скрытого повтора или автоматического переключения provider/model. | Runtime test `opencode-rate-limit.test.ts`: один запрос, без stream recovery. |
 | OCP-07 | OpenCode stream содержит сведения об активности собственных инструментов. | Активность отображается не более одного раза; ZCode не запускает эти действия повторно своим tool runner. | Adapter/projection test; pending implementation. |
 | OCP-08 | CLI выключен или catalog refresh завершился ошибкой. | Выключенный provider отсутствует в выборе; ошибка обновления даёт retryable state; API providers продолжают работать. | Settings/registry tests; pending implementation. |
 

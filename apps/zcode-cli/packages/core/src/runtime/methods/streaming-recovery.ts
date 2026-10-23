@@ -44,6 +44,23 @@ interface StreamRecoveryAttempt {
   retryNumber: number;
 }
 
+const OPENCODE_PROVIDER_ID = "opencode";
+
+/**
+ * OpenCode 的 429 必须留在这次请求上。
+ * 依据 OCP-06：限流不能通过 stream recovery 重开，也不能退到另一个 provider/model。
+ */
+export function isOpenCodeRateLimitFailure(input: {
+  error: unknown;
+  providerId: string;
+}): boolean {
+  if (input.providerId !== OPENCODE_PROVIDER_ID) return false;
+  for (const record of walkErrorRecords(input.error)) {
+    if (isRateLimitRecord(record)) return true;
+  }
+  return false;
+}
+
 export function hasStreamRecoveryBudget(state: RegularTurnLoopState): boolean {
   return state.streamRecoveryRetryCount < STREAM_RECOVERY_MAX_RETRIES;
 }
@@ -292,6 +309,17 @@ function findStartPlanBusyProviderCode(error: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function isRateLimitRecord(record: Record<string, unknown>): boolean {
+  const context = asRecord(record.context);
+  const status =
+    record.statusCode ?? record.responseStatus ?? context?.statusCode ?? context?.responseStatus;
+  if (status === 429) return true;
+  const code = stringValue(record.code) ?? stringValue(context?.code);
+  if (code === "model_rate_limited" || code === "MODEL_RATE_LIMITED") return true;
+  const reason = stringValue(record.reason) ?? stringValue(context?.reason);
+  return reason === "rate_limited";
 }
 
 function isRetryableStreamRecoveryFailure(error: unknown): boolean {

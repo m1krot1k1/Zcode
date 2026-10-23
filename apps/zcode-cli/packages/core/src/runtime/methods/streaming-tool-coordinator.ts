@@ -23,6 +23,7 @@ import {
   emitStreamRecoveryRetryEvents,
   emitStreamRecoveryStarted,
   hasStreamRecoveryBudget,
+  isOpenCodeRateLimitFailure,
   recoverPartialAssistantOutputFailure,
 } from "./streaming-recovery.js";
 import { executeToolCallsForModelStep } from "./turn-tools.js";
@@ -197,6 +198,15 @@ export function createStreamingToolCoordinator(
       recoveryOptions: { failedRequestId?: string } = {},
     ) {
       if (state.turnAbortSignal.aborted || !hasStreamRecoveryBudget(state)) return false;
+      // OpenCode 429 停在当前请求：重开同一流或换模型都会绕过限流。
+      if (
+        isOpenCodeRateLimitFailure({
+          error,
+          providerId: String(options.model.providerId),
+        })
+      ) {
+        return false;
+      }
       const recoveryEventOptions = {
         ...options,
         ...(recoveryOptions.failedRequestId
