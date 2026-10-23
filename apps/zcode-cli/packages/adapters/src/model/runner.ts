@@ -20,6 +20,7 @@ import type {
   ModelTextResult,
 } from "@zcode/contracts";
 import type { RegistryModelConfig, RegistryProviderConfig } from "@zcode/provider";
+import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
 import {
   AiSdkModelExecution,
   type AiSdkResolvedModel,
@@ -59,6 +60,8 @@ export type {
 export { normalizeUsage, toModelStreamEvent } from "./runner-normalization.js";
 
 export interface AiSdkModelAdapterOptions {
+  /** 注入 process-owned OpenCode provider；adapter 不初始化包级 singleton。 */
+  opencodeProvider?: OpencodeProvider;
   defaultHeaders?: AiSdkModelExecutionConfig["defaultHeaders"];
   requestSecurityState?: ModelRequestSecurityState;
   endpointRoutingPort?: import("@zcode/contracts").ProviderEndpointRoutingPort;
@@ -105,6 +108,7 @@ export class AiSdkModelAdapter {
         ...(options.env ? { env: options.env } : {}),
       },
       {
+        ...(options.opencodeProvider ? { opencodeProvider: options.opencodeProvider } : {}),
         ...(options.requestSecurityState
           ? { requestSecurityState: options.requestSecurityState }
           : {}),
@@ -123,6 +127,11 @@ export class AiSdkModelAdapter {
 
   setModelIoFullRetentionEnabled(enabled: boolean): void {
     this.modelIoFullRetentionEnabled = enabled;
+  }
+
+  /** OpenCode provider resources are released by the owning process at shutdown. */
+  async dispose(): Promise<void> {
+    await this.execution.dispose();
   }
 
   addStatusSink(sink: ModelStatusSink): void {

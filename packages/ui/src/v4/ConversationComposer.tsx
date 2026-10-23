@@ -487,7 +487,6 @@ export interface ConversationComposerProps {
     sourceModel: ModelSelectionSource | null,
     reasoningLevel?: string,
   ) => void;
-  onSelectOpenCodeModel?: (modelId: string) => void;
   /** 选中思考深度；同时带上用户操作时看到的模型，避免异步回流后把 thought 归到另一模型。 */
   onSelectThought: (thought: string, modelContext: { provider: string; model: string }) => void;
   onSwitchMode: (mode: string) => void;
@@ -588,7 +587,6 @@ function ConversationComposerImpl({
   onDraftStateChange,
   onStop,
   onSelectModel,
-  onSelectOpenCodeModel,
   onSelectThought,
   onSwitchMode,
   onOpenRunningBackgroundWorks,
@@ -2367,7 +2365,6 @@ function ConversationComposerImpl({
               isMobileViewport={isMobileTextInputViewport}
               draftMode={draftMode}
               draftConfig={draftConfig}
-              executionRoute={composerDraft.executionRoute}
               usage={composerUsage}
               disabled={disabled || runtimeBlocked}
               modelLocked={highspeedCard !== null}
@@ -2379,7 +2376,6 @@ function ConversationComposerImpl({
               activeConfigPicker={activeConfigPicker}
               onConfigPickerOpenChange={handleConfigPickerOpenChange}
               onSelectModel={handleSelectModelTrace}
-              onSelectOpenCodeModel={onSelectOpenCodeModel}
               onSelectThought={onSelectThought}
               onSwitchMode={onSwitchMode}
               onRecoverCustomModelSelection={onRecoverCustomModelSelection}

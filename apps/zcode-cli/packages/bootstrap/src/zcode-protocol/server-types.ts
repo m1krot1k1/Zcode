@@ -13,6 +13,7 @@ import {
 import type { McpTelemetryTracker } from "@zcode/adapters";
 import type { WorkspaceHookPolicyProvider } from "@zcode/core";
 import type { AccountProviderConfigSnapshot } from "@zcode/provider";
+import type { RuntimeProviderCatalogSnapshot } from "@zcode/provider";
 import {
   zcodeProtocolErrorCodes,
   type AppToolSearchMode,
@@ -64,6 +65,10 @@ export interface ZCodeProtocolAgentDependencies {
   workspaceHookPolicyProvider?: WorkspaceHookPolicyProvider;
   /** 把 Host 账号状态形成的第三层 Config Overlay 同步给进程 Registry。 */
   syncAccountProviderConfig?: (snapshot: AccountProviderConfigSnapshot) => Promise<boolean>;
+  /** Host-authoritative OpenCode CLI catalog; runtime-only and never written to provider config. */
+  syncRuntimeProviderCatalog?: (
+    snapshot: RuntimeProviderCatalogSnapshot,
+  ) => Promise<boolean>;
   /** 连接测试前主动重读当前进程的 Config Source 并等待 Registry 发布。 */
   refreshProviderRegistry?: (reason: string) => Promise<void>;
 }

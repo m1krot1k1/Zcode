@@ -407,6 +407,26 @@ describe("classifyModelFailure provider business codes", () => {
     });
   });
 
+  it("preserves OpenCode provider attribution when rebuilding a business finish error", () => {
+    const error = detectProviderBusinessFinishError({
+      providerId: "opencode",
+      providerKind: "opencode-sdk",
+      source: {
+        type: "finish",
+        rawFinishReason: "provider_success_false",
+        providerCode: "AUTH_REQUIRED",
+        message: "OpenCode authentication is required",
+      },
+    });
+
+    expect(error).toBeInstanceOf(ProviderBusinessError);
+    expect(error).toMatchObject({
+      providerId: "opencode",
+      providerKind: "opencode-sdk",
+      providerCode: "AUTH_REQUIRED",
+    });
+  });
+
   it("uses retry-after headers from ProviderBusinessError wrapped in APICallError cause", () => {
     const failure = classifyModelFailure(
       new APICallError({

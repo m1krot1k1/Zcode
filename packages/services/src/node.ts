@@ -24,6 +24,7 @@ import { IGenUiService } from "./gen-ui/contract.js";
 import { createGenUiService } from "./gen-ui/node.js";
 import { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/contract.js";
 import { createOpenCodeAcpRuntime } from "./opencode-acp-runtime/adapters/openCodeAcpRuntime.js";
+import { OpenCodeCliProviderCatalogSource } from "./model-provider/providerRuntime.js";
 import { channelReplyHostRequestSchema, channelReplyResultSchema } from "@zcode/shared";
 /* eslint-disable max-lines -- host process 服务注册和启动装配需要集中维护，拆散后会更难追踪依赖注入顺序 */
 // Node.js service implementations — NOT safe to import in browser code
@@ -211,6 +212,7 @@ export {
   createProviderRuntime,
   createProviderRuntimeFromConfigRuntime,
   EmptyAccountProviderConfigSource,
+  OpenCodeCliProviderCatalogSource,
   ProviderRuntime,
 } from "./model-provider/providerRuntime.js";
 export type {
@@ -1330,6 +1332,10 @@ export function createLocalServices(options: {
   const settingService = createObservableSettingService(
     options?.settingService ?? localSettings!.service,
   );
+  const openCodeCliProviderCatalogSource = openCodeAcpRuntime
+    ? // `export { ... }` ниже только переэкспортирует символ и не создаёт локального binding.
+      new OpenCodeCliProviderCatalogSource(settingService, openCodeAcpRuntime)
+    : undefined;
   const resolveCurrentZCodeEndpointOrigin = async () =>
     resolveRuntimeZCodeEndpointOrigin(process.env, {
       overrideOrigin: (await settingService.get()).zcodeEndpointOrigin,
@@ -1619,6 +1625,9 @@ export function createLocalServices(options: {
   const providerRuntime = createProviderRuntimeFromConfigRuntime({
     configRuntime: providerConfigRuntime,
     accountSource: accountProviderConfigSource,
+    ...(openCodeCliProviderCatalogSource
+      ? { runtimeProviderSource: openCodeCliProviderCatalogSource }
+      : {}),
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>
       modelSelectionConfiguredDefaultSource.dispose(),
@@ -2224,6 +2233,9 @@ export function createLocalServices(options: {
   });
   const zcodeAgentService = createZCodeAgentService({
     ...(openCodeAcpRuntime ? { openCodeAcpRuntime } : {}),
+    ...(openCodeCliProviderCatalogSource
+      ? { runtimeProviderCatalogSource: openCodeCliProviderCatalogSource }
+      : {}),
     prepareProjectExecution,
     prepareSessionCreation: async (target) =>
       (await taskIndexRepo.getProjectRepository()).reserveCreatedTask({

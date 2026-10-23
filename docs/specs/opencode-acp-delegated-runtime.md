@@ -1,5 +1,7 @@
 # OpenCode ACP delegated runtime
 
+> **Superseded for the user's OpenCode CLI model-provider flow:** the canonical behavior is now specified in [OpenCode CLI model provider](opencode-cli-model-provider.md). This document records the ACP implementation and its evidence; it is not authority for the desired Composer/runtime architecture. Retire the ACP-only model route when the normal provider integration is proven.
+
 ## Feature summary
 
 | Field        | Decision                                                                                                                                                                                                                                      |

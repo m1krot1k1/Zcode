@@ -14,6 +14,7 @@ import {
 import type {
   AccountProviderConfigSnapshot,
   ProviderConfigSnapshot,
+  RuntimeProviderCatalogSnapshot,
   ProviderSource,
 } from "./sources.js";
 
@@ -21,9 +22,11 @@ export interface ProviderRegistryServiceSnapshot {
   readonly sourceRevisions: {
     readonly config: string;
     readonly account: string;
+    readonly runtimeProviders?: string;
   };
   readonly config: ProviderConfigSnapshot;
   readonly account: AccountProviderConfigSnapshot;
+  readonly runtimeProviders?: RuntimeProviderCatalogSnapshot;
   readonly resolution: ProviderConfigResolution;
   readonly registry: ProviderRegistryView;
 }
@@ -41,6 +44,7 @@ export interface ProviderRegistryServiceRefreshErrorEvent {
 export interface ProviderRegistryServiceDependencies {
   readonly configSource: ProviderSource<ProviderConfigSnapshot>;
   readonly accountSource: ProviderSource<AccountProviderConfigSnapshot>;
+  readonly runtimeProviderSource?: ProviderSource<RuntimeProviderCatalogSnapshot>;
   readonly resolver?: ProviderConfigResolver;
 }
 
@@ -53,10 +57,15 @@ interface RefreshWaiter {
 export class ProviderRegistryService {
   readonly #configSource: ProviderSource<ProviderConfigSnapshot>;
   readonly #accountSource: ProviderSource<AccountProviderConfigSnapshot>;
+  readonly #runtimeProviderSource?: ProviderSource<RuntimeProviderCatalogSnapshot>;
   readonly #resolver: ProviderConfigResolver;
   readonly #registry = new ProviderRegistry();
-  readonly #changeListeners = new Set<(event: ProviderRegistryServiceChangedEvent) => void>();
-  readonly #errorListeners = new Set<(event: ProviderRegistryServiceRefreshErrorEvent) => void>();
+  readonly #changeListeners = new Set<
+    (event: ProviderRegistryServiceChangedEvent) => void
+  >();
+  readonly #errorListeners = new Set<
+    (event: ProviderRegistryServiceRefreshErrorEvent) => void
+  >();
   readonly #sourceDisposers: Array<() => void> = [];
   readonly #pendingReasons = new Set<string>();
   readonly #refreshWaiters: RefreshWaiter[] = [];
@@ -70,6 +79,7 @@ export class ProviderRegistryService {
   constructor(dependencies: ProviderRegistryServiceDependencies) {
     this.#configSource = dependencies.configSource;
     this.#accountSource = dependencies.accountSource;
+    this.#runtimeProviderSource = dependencies.runtimeProviderSource;
     this.#resolver = dependencies.resolver ?? new ProviderConfigResolver();
   }
 
@@ -78,9 +88,20 @@ export class ProviderRegistryService {
     if (!this.#started) {
       this.#started = true;
       this.#sourceDisposers.push(
-        this.#configSource.onDidChange((reason) => this.#refreshFromSource("config", reason)),
-        this.#accountSource.onDidChange((reason) => this.#refreshFromSource("account", reason)),
+        this.#configSource.onDidChange((reason) =>
+          this.#refreshFromSource("config", reason),
+        ),
+        this.#accountSource.onDidChange((reason) =>
+          this.#refreshFromSource("account", reason),
+        ),
       );
+      if (this.#runtimeProviderSource) {
+        this.#sourceDisposers.push(
+          this.#runtimeProviderSource.onDidChange((reason) =>
+            this.#refreshFromSource("runtime-providers", reason),
+          ),
+        );
+      }
       await this.#requestRefresh("start");
       return;
     }
@@ -90,7 +111,8 @@ export class ProviderRegistryService {
 
   refresh(reason = "explicit"): Promise<ProviderRegistryServiceSnapshot> {
     this.#assertNotDisposed();
-    if (!this.#started) throw new Error("ProviderRegistryService 必须先 start() 再 refresh()");
+    if (!this.#started)
+      throw new Error("ProviderRegistryService 必须先 start() 再 refresh()");
     return this.#requestRefresh(reason);
   }
 
@@ -110,7 +132,10 @@ export class ProviderRegistryService {
     return this.#registry.getProvider(providerId);
   }
 
-  getModel(providerId: ProviderId, modelId: ModelId): ProviderModel | undefined {
+  getModel(
+    providerId: ProviderId,
+    modelId: ModelId,
+  ): ProviderModel | undefined {
     return this.#registry.getModel(providerId, modelId);
   }
 
@@ -118,7 +143,9 @@ export class ProviderRegistryService {
     return this.#registry.validateSelection(selection);
   }
 
-  onDidChange(listener: (event: ProviderRegistryServiceChangedEvent) => void): () => void {
+  onDidChange(
+    listener: (event: ProviderRegistryServiceChangedEvent) => void,
+  ): () => void {
     this.#changeListeners.add(listener);
     return () => this.#changeListeners.delete(listener);
   }
@@ -140,7 +167,10 @@ export class ProviderRegistryService {
     this.#errorListeners.clear();
   }
 
-  #refreshFromSource(source: "config" | "account", reason: string): void {
+  #refreshFromSource(
+    source: "config" | "account" | "runtime-providers",
+    reason: string,
+  ): void {
     if (this.#disposed) return;
     void this.#requestRefresh(`${source}:${reason || "changed"}`).catch(() => {
       // Source 驱动的后台刷新通过 onDidRefreshError 报告；调用栈没有 Promise 消费者。
@@ -151,9 +181,11 @@ export class ProviderRegistryService {
     const generation = this.#requestedGeneration + 1;
     this.#requestedGeneration = generation;
     this.#pendingReasons.add(reason);
-    const result = new Promise<ProviderRegistryServiceSnapshot>((resolve, reject) => {
-      this.#refreshWaiters.push({ generation, resolve, reject });
-    });
+    const result = new Promise<ProviderRegistryServiceSnapshot>(
+      (resolve, reject) => {
+        this.#refreshWaiters.push({ generation, resolve, reject });
+      },
+    );
     this.#ensureRefreshLoop();
     return result;
   }
@@ -174,7 +206,8 @@ export class ProviderRegistryService {
   #finishRefresh(refresh: Promise<void>): void {
     if (this.#refreshInFlight !== refresh) return;
     this.#refreshInFlight = null;
-    if (this.#completedGeneration < this.#requestedGeneration) this.#ensureRefreshLoop();
+    if (this.#completedGeneration < this.#requestedGeneration)
+      this.#ensureRefreshLoop();
   }
 
   async #runRefreshLoop(): Promise<void> {
@@ -186,10 +219,12 @@ export class ProviderRegistryService {
 
       let config: ProviderConfigSnapshot;
       let account: AccountProviderConfigSnapshot;
+      let runtimeProviders: RuntimeProviderCatalogSnapshot | undefined;
       try {
-        [config, account] = await Promise.all([
+        [config, account, runtimeProviders] = await Promise.all([
           this.#configSource.read(),
           this.#accountSource.read(),
+          this.#runtimeProviderSource?.read(),
         ]);
       } catch (error) {
         if (generation < this.#requestedGeneration) continue;
@@ -206,12 +241,13 @@ export class ProviderRegistryService {
         // Built-in 已变化但 Account 仍基于旧事实时，继续服务上一份完整 Registry。
         // 当前 generation 结束；等待 Account Source 的后续 change 再一次性发布最终组合。
         this.#completedGeneration = generation;
-        if (this.#snapshot) this.#resolveRefreshWaiters(generation, this.#snapshot);
+        if (this.#snapshot)
+          this.#resolveRefreshWaiters(generation, this.#snapshot);
         reasons.clear();
         continue;
       }
 
-      if (this.#hasSameSourceRevisions(config, account)) {
+      if (this.#hasSameSourceRevisions(config, account, runtimeProviders)) {
         this.#completedGeneration = generation;
         this.#resolveRefreshWaiters(generation, this.#snapshot!);
         reasons.clear();
@@ -229,14 +265,29 @@ export class ProviderRegistryService {
           accountStates: account.states,
           personalProviderOrder: config.personalProviderOrder,
         });
-        this.#registry.replace(resolution.registryProviders, [...reasons].join(","));
+        this.#registry.replace(
+          [
+            ...resolution.registryProviders,
+            ...(runtimeProviders?.providers ?? []),
+          ],
+          [...reasons].join(","),
+        );
         const snapshot = Object.freeze({
           sourceRevisions: Object.freeze({
             config: config.revision,
             account: account.revision,
+            ...(runtimeProviders
+              ? { runtimeProviders: runtimeProviders.revision }
+              : {}),
           }),
           config: Object.freeze({ ...config }),
           account: freezeAccountSnapshot(account),
+          ...(runtimeProviders
+            ? {
+                runtimeProviders:
+                  freezeRuntimeProviderSnapshot(runtimeProviders),
+              }
+            : {}),
           resolution,
           registry: this.#registry.getView(),
         });
@@ -254,7 +305,10 @@ export class ProviderRegistryService {
     }
   }
 
-  #resolveRefreshWaiters(generation: number, snapshot: ProviderRegistryServiceSnapshot): void {
+  #resolveRefreshWaiters(
+    generation: number,
+    snapshot: ProviderRegistryServiceSnapshot,
+  ): void {
     const remaining: RefreshWaiter[] = [];
     for (const waiter of this.#refreshWaiters) {
       if (waiter.generation <= generation) waiter.resolve(snapshot);
@@ -275,14 +329,20 @@ export class ProviderRegistryService {
   #hasSameSourceRevisions(
     config: ProviderConfigSnapshot,
     account: AccountProviderConfigSnapshot,
+    runtimeProviders: RuntimeProviderCatalogSnapshot | undefined,
   ): boolean {
     return (
       this.#snapshot?.sourceRevisions.config === config.revision &&
-      this.#snapshot.sourceRevisions.account === account.revision
+      this.#snapshot.sourceRevisions.account === account.revision &&
+      this.#snapshot.sourceRevisions.runtimeProviders ===
+        runtimeProviders?.revision
     );
   }
 
-  #emitChanged(snapshot: ProviderRegistryServiceSnapshot, reasons: ReadonlySet<string>): void {
+  #emitChanged(
+    snapshot: ProviderRegistryServiceSnapshot,
+    reasons: ReadonlySet<string>,
+  ): void {
     const event = Object.freeze({
       snapshot,
       reasons: Object.freeze([...reasons]),
@@ -311,5 +371,29 @@ function freezeAccountSnapshot(
     basedOnZCodeBuiltinRevision: snapshot.basedOnZCodeBuiltinRevision,
     providers: snapshot.providers,
     ...(snapshot.states ? { states: snapshot.states } : {}),
+  });
+}
+
+function freezeRuntimeProviderSnapshot(
+  snapshot: RuntimeProviderCatalogSnapshot,
+): RuntimeProviderCatalogSnapshot {
+  return Object.freeze({
+    revision: snapshot.revision,
+    ...(snapshot.cliExecutablePath ? { cliExecutablePath: snapshot.cliExecutablePath } : {}),
+    providers: Object.freeze(
+      snapshot.providers.map((provider) =>
+        Object.freeze({
+          providerId: provider.providerId,
+          providerName: provider.providerName,
+          templateId: provider.templateId,
+          config: provider.config,
+          models: Object.freeze(
+            provider.models.map((model) =>
+              Object.freeze({ modelId: model.modelId, config: model.config }),
+            ),
+          ),
+        }),
+      ),
+    ),
   });
 }

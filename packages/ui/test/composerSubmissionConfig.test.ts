@@ -44,7 +44,6 @@ describe("createComposerSubmissionConfig", () => {
     draft.planEnabled = false;
     draft.modelSelection.options.reasoningLevel = "high";
     expect(submission).toEqual({
-      executionRoute: { kind: "zcode" },
       mode: "yolo",
       planEnabled: true,
       modelSelection: {
@@ -56,14 +55,49 @@ describe("createComposerSubmissionConfig", () => {
     expect(Object.isFrozen(submission?.modelSelection.options)).toBe(true);
   });
 
-  it("OpenCode CLI uses its own catalog route without a ZCode provider selection", () => {
-    const route = {
-      kind: "opencode-acp" as const,
-      model: { kind: "catalog" as const, modelId: "opencode/deepseek-v4.1-flash-free" },
-    };
-    const submission = createComposerSubmissionConfig({ executionRoute: route }, null);
-    expect(submission).toEqual({ executionRoute: route });
-    expect(Object.isFrozen(submission?.executionRoute)).toBe(true);
+  it("OpenCode CLI выбор фиксируется как обычная ModelSelection для общего send pipeline", () => {
+    const modelId = "opencode/deepseek-v4.1-flash-free";
+    const openCodeView = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "opencode",
+          config: {
+            access: { type: "local-auth" },
+            api: { type: "opencode-sdk" },
+          },
+          models: [
+            {
+              modelId,
+              config: {
+                optionSpecs: { reasoningLevel: { values: ["low", "high"], map: "{}" } },
+              },
+            },
+          ],
+        },
+      ],
+    } as ModelSelectionView;
+    const submission = createComposerSubmissionConfig(
+      {
+        mode: "build",
+        modelSelection: {
+          providerId: "opencode",
+          modelId,
+          options: { reasoningLevel: "high" },
+        },
+      },
+      openCodeView,
+    );
+
+    expect(submission).toEqual({
+      mode: "build",
+      planEnabled: false,
+      modelSelection: {
+        providerId: "opencode",
+        modelId,
+        options: { reasoningLevel: "high" },
+      },
+    });
   });
 
   it("空选择、空档位和失效档位不创建 Submission，也不使用 preferred", () => {

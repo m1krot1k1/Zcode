@@ -1,10 +1,16 @@
 import {
   zcodeProviderRefreshRegistryParamsSchema,
+  zcodeProviderUpdateRuntimeCatalogParamsSchema,
+  zcodeProviderUpdateRuntimeCatalogResultSchema,
   zcodeProviderUpdateAccountConfigParamsSchema,
   type ZCodeProviderRefreshRegistryResult,
+  type ZCodeProviderUpdateRuntimeCatalogResult,
   type ZCodeProviderUpdateAccountConfigResult,
 } from "@zcode/shared";
-import { parseProcessAccountProviderConfigSnapshot } from "../app/process-provider-registry-runtime.js";
+import {
+  parseProcessAccountProviderConfigSnapshot,
+  parseProcessRuntimeProviderCatalogSnapshot,
+} from "../app/process-provider-registry-runtime.js";
 import {
   parseParams,
   ProtocolRequestError,
@@ -31,6 +37,27 @@ export async function updateAccountProviderConfig(
     providerCount: snapshot.providers.keys().length,
     status: changed ? "received" : "unchanged",
   };
+}
+
+/**
+ * Обновляет runtime-only каталог OpenCode CLI из authoritative snapshot владельца Host.
+ * В отличие от Provider Config, эти сведения не сохраняются в личный или аккаунтный файл.
+ */
+export async function updateRuntimeProviderCatalog(
+  context: ZCodeProtocolAgentServerContext,
+  params: unknown,
+): Promise<ZCodeProviderUpdateRuntimeCatalogResult> {
+  const envelope = parseParams(zcodeProviderUpdateRuntimeCatalogParamsSchema, params);
+  const snapshot = parseProcessRuntimeProviderCatalogSnapshot(envelope);
+  if (!context.deps.syncRuntimeProviderCatalog) {
+    throw new ProtocolRequestError(-32020, "Runtime Provider Catalog sync is not configured");
+  }
+  const changed = await context.deps.syncRuntimeProviderCatalog(snapshot);
+  return zcodeProviderUpdateRuntimeCatalogResultSchema.parse({
+    receivedRevision: snapshot.revision,
+    providerCount: snapshot.providers.length,
+    status: changed ? "applied" : "unchanged",
+  });
 }
 
 /**

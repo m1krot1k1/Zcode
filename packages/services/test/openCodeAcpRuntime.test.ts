@@ -10,6 +10,7 @@ import {
   downloadPinnedOpenCodeArchive,
   installOpenCodePinnedCli,
 } from "../src/opencode-acp-runtime/adapters/cliBinaryInstaller.js";
+import { parseOpenCodeVerboseModelCatalog } from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
 import {
   getOpenCodeCliReleaseAssets,
   OPEN_CODE_CLI_RELEASE_VERSION,
@@ -216,12 +217,37 @@ describe("POSIX OpenCode command resolution", () => {
 });
 
 describe("OpenCode ACP runtime", () => {
-  it("lists only validated local model IDs without creating an ACP session", async () => {
+  it("projects only validated verbose model metadata without creating an ACP session", async () => {
     const directory = await makeTempDir();
     const fakeCliPath = join(directory, "fake-model-list.mjs");
     await writeFile(
       fakeCliPath,
-      'if (process.argv[2] === "models") process.stdout.write("openai/gpt-test\\nlocal/test-model\\n"); else process.exit(2);\n',
+      `if (process.argv[2] === "models" && process.argv[3] === "--verbose") process.stdout.write(${JSON.stringify(
+        `openai/gpt-test\n${JSON.stringify(
+          {
+            id: "gpt-test",
+            providerID: "openai",
+            name: "GPT Test",
+            limit: { context: 32_000, output: 8_000 },
+            capabilities: {
+              input: { text: true, image: false, video: false, audio: false, pdf: false },
+              output: { text: true, image: false, video: false, audio: false, pdf: false },
+            },
+          },
+          null,
+          2,
+        )}\nlocal/incomplete-model\n${JSON.stringify(
+          {
+            id: "incomplete-model",
+            providerID: "local",
+            name: "Incomplete",
+            limit: { context: 32_000 },
+            capabilities: { input: { text: true }, output: { text: true } },
+          },
+          null,
+          2,
+        )}\n`,
+      )}); else process.exit(2);\n`,
       "utf8",
     );
     const runtime = createOpenCodeAcpRuntime({
@@ -234,11 +260,55 @@ describe("OpenCode ACP runtime", () => {
 
     await expect(runtime.listModels()).resolves.toEqual({
       status: "available",
-      models: ["openai/gpt-test", "local/test-model"],
+      models: [
+        {
+          modelId: "openai/gpt-test",
+          name: "GPT Test",
+          contextWindow: 32_000,
+          maxOutputTokens: 8_000,
+          inputFormat: {
+            supportsText: true,
+            supportsImage: false,
+            supportsVideo: false,
+            supportsAudio: false,
+            supportsPdf: false,
+          },
+          outputSupportsText: true,
+        },
+      ],
       authentication: "not-checked",
     });
     expect(runtime.onDynamicSessionUpdate).toBeDefined();
     await runtime.disposeAllAndWait();
+  });
+
+  it("parses a bounded OpenCode verbose catalog and rejects unverified metadata", () => {
+    const catalog = parseOpenCodeVerboseModelCatalog(
+      `opencode/model\n${JSON.stringify(
+        {
+          id: "model",
+          providerID: "opencode",
+          name: "Model",
+          limit: { context: 128_000, output: 16_000 },
+          capabilities: {
+            input: { text: true, image: true, video: false, audio: false, pdf: true },
+            output: { text: true },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    expect(catalog).toMatchObject([
+      {
+        modelId: "opencode/model",
+        contextWindow: 128_000,
+        maxOutputTokens: 16_000,
+        inputFormat: { supportsText: true, supportsImage: true, supportsPdf: true },
+        outputSupportsText: true,
+      },
+    ]);
   });
 
   it("normalizes ACP auth-required on session creation and can start a fresh session after cleanup", async () => {

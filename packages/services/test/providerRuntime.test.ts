@@ -17,7 +17,9 @@ import { createProviderConfigRuntime } from "../src/model-provider/providerConfi
 import {
   createProviderRuntime,
   createProviderRuntimeFromConfigRuntime,
+  OpenCodeCliProviderCatalogSource,
 } from "../src/model-provider/providerRuntime.js";
+import type { ObservableSettingService } from "../src/setting/observableSettingService.js";
 import { createAccountProviderConfig } from "./providerConfigFixtures.js";
 
 async function readBuiltinRevision(filePath: string): Promise<string> {
@@ -47,6 +49,65 @@ class StaticAccountSource implements ProviderSource<AccountProviderConfigSnapsho
 }
 
 describe("ProviderRuntime", () => {
+  it("publishes OpenCode CLI models with complete metadata from the CLI catalog", async () => {
+    const source = new OpenCodeCliProviderCatalogSource(
+      {
+        get: async () => ({ openCodeCliEnabled: true }),
+        onDidUpdate: () => () => {},
+      } as unknown as ObservableSettingService,
+      {
+        getCliStatus: async () => ({
+          status: "available",
+          version: "1.19.3",
+          executablePath: "/tmp/opencode",
+        }),
+        listModels: async () => ({
+          status: "available",
+          authentication: "not-checked",
+          models: [
+            {
+              modelId: "anthropic/claude-sonnet-4-5",
+              name: "DeepSeek V4.1 Flash Free",
+              contextWindow: 200_000,
+              maxOutputTokens: 32_000,
+              inputFormat: {
+                supportsText: true,
+                supportsImage: true,
+                supportsVideo: false,
+                supportsAudio: false,
+                supportsPdf: false,
+              },
+              outputSupportsText: true,
+            },
+          ],
+        }),
+      },
+    );
+
+    try {
+      const snapshot = await source.read();
+      expect(snapshot.providers).toHaveLength(1);
+      expect(snapshot.providers[0]?.models[0]).toMatchObject({
+        modelId: "anthropic/claude-sonnet-4-5",
+        config: {
+          enabled: true,
+          properties: {
+            contextWindow: 200_000,
+            inputFormat: { supportsText: true, supportsImage: true },
+            outputFormat: { supportsText: true },
+            supportsToolCall: true,
+          },
+          optionSpecs: {
+            reasoningLevel: { values: ["disabled"] },
+            maxOutputTokens: { max: 32_000 },
+          },
+        },
+      });
+    } finally {
+      source.dispose();
+    }
+  });
+
   it("Host View 原子返回 Configured Default 解析后的 preferredSelection", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-provider-runtime-preferred-"));
     const zcodeBuiltinFilePath = join(root, "zcode-builtin.json");

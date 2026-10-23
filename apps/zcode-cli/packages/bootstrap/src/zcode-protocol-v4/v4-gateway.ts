@@ -2568,10 +2568,19 @@ export class ConversationV4Gateway {
     this.localTtft.admitted(outcome.envelope.commandId);
     let durableInputIntent: ConversationInputIntent | null = null;
     let settledAck: CommandAck | null = null;
+    let commandPhase: "durable_input_admission" | "handler_execution" =
+      "durable_input_admission";
     type CommandFinal = Parameters<typeof outcome.settle>[0];
     const reportError = (scope: string, error: unknown): void => {
       try {
-        this.host.onError?.(scope, error);
+        this.host.onError?.(scope, error, {
+          commandId: outcome.envelope.commandId,
+          commandPhase,
+          commandType: outcome.envelope.type,
+          ...(outcome.envelope.sessionId
+            ? { sessionId: outcome.envelope.sessionId }
+            : {}),
+        });
       } catch {
         // 错误观察器不能反向破坏 command final 与 session FIFO 的收口。
       }
@@ -2646,6 +2655,7 @@ export class ConversationV4Gateway {
       if (durableInputIntent && outcome.envelope.sessionId !== null) {
         this.inbox.pinLiveInput(outcome.envelope.sessionId, durableInputIntent);
       }
+      commandPhase = "handler_execution";
       const result = await this.host.executeCommand(outcome.envelope, admission);
       // Bug 根因：首输入标题先于 deferred 提升发出，列表会过滤它；ACK 后若初始化/Hook
       // 尚未结束便没有下一事件。沿用成功执行边界补发当前摘要，不等待 TurnStarted。

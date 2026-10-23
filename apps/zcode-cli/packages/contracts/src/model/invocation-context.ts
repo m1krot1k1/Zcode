@@ -18,6 +18,8 @@ import type {
  * Runtime 只在统一模型调用边界设置，Adapter 在同一异步调用链内读取。
  */
 export interface ModelInvocationContext {
+  /** Рабочий каталог текущей сессии для локальных model runtime; не сохраняется в модели. */
+  workingDirectory?: string;
   metadata?: Record<string, unknown>;
   modelCall?: ModelApiCallObservation;
   modelRequestSessionType?: ModelRequestSessionType;

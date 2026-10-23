@@ -102,7 +102,7 @@ interface HostStub {
   frames: ConversationTopicFrame[];
   telemetryFacts: ConversationTelemetryFact[];
   executed: CommandEnvelope[];
-  errors: Array<{ scope: string; error: unknown }>;
+  errors: Array<{ scope: string; error: unknown; context?: Record<string, unknown> }>;
   sessions: Set<string>;
   executeImpl: (
     envelope: CommandEnvelope,
@@ -243,7 +243,7 @@ function makeGateway(host: HostStub): ConversationV4Gateway {
       lookupDiscardedCommand: (key: CommandKey) =>
         host.persistentCommands.discarded.get(`${key.sessionId ?? "@global"}\0${key.commandId}`) ??
         null,
-      onError: (scope, error) => host.errors.push({ scope, error }),
+      onError: (scope, error, context) => host.errors.push({ scope, error, context }),
     },
     { now: () => 1_700_000_999_000, createLogEpoch: () => "epoch-1" },
   );
@@ -3957,6 +3957,29 @@ describe("v4/command 收口", () => {
       },
     ]);
     expect(record.activeAbortController).toBeUndefined();
+  });
+
+  it("命令执行失败日志携带类型、阶段和会话，便于定位 SQLite 外键故障", async () => {
+    const host = makeHost();
+    const gateway = makeGateway(host);
+    const log = new EventLog();
+    gateway.ingest("session-1", sessionCreated(log));
+    host.executeImpl = async () => {
+      throw new Error("FOREIGN KEY constraint failed");
+    };
+
+    await gateway.handleCommand(commandParams({ commandId: "cmd-fk-fail" }));
+
+    expect(host.errors).toContainEqual({
+      scope: "v4.command.execute",
+      error: expect.any(Error),
+      context: {
+        commandId: "cmd-fk-fail",
+        commandPhase: "handler_execution",
+        commandType: "sendText",
+        sessionId: "session-1",
+      },
+    });
   });
 
   it("durable TurnStarted 因 raw gap pending 时，Core admission ACK 不等待 projection commit", async () => {

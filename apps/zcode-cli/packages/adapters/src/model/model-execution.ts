@@ -7,7 +7,12 @@ import { withoutRequestVerificationHeaders } from "@zcode/shared";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
+import type {
+  ClientManagerOptions,
+  OpencodeProvider,
+} from "ai-sdk-provider-opencode-sdk";
 import {
   compileModelOptionMaps,
   type CompiledModelOptionMaps,
@@ -19,6 +24,7 @@ import {
   type ModelProviderId,
   type ModelRequestAuth,
   type ProviderEndpointRoutingPort,
+  getCurrentModelInvocationContext,
 } from "@zcode/contracts";
 import type { RegistryModelConfig, RegistryProviderConfig } from "@zcode/provider";
 import { withOpenRouterAttributionHeaders } from "@zcode/shared";
@@ -36,15 +42,16 @@ import {
   withoutModelQuerySourceHeader,
 } from "./model-request-headers.js";
 
-export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible";
+export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible" | "opencode-sdk";
+type AiSdkModelExecutionKind = AiSdkProviderKind;
 
 export type EnvRecord = Record<string, string | undefined>;
 
 interface AiSdkProviderConfig {
   access: RegistryProviderConfig["access"];
-  kind: AiSdkProviderKind;
+  kind: AiSdkModelExecutionKind;
   apiKey?: string;
-  baseURL: string;
+  baseURL?: string;
   headers?: Record<string, string>;
   providerOptions?: Record<string, unknown>;
   name?: string;
@@ -59,6 +66,8 @@ export interface AiSdkModelExecutionConfig {
 }
 
 export interface AiSdkModelExecutionOptions {
+  /** 由 owning process 创建并注入；执行适配器不导入包级 singleton。 */
+  opencodeProvider?: OpencodeProvider;
   requestSecurityState?: ModelRequestSecurityState;
   logger?: Logger;
   transport?: ProviderFetch;
@@ -170,6 +179,7 @@ export class AiSdkModelExecution {
   private readonly endpointRoutingPort?: ProviderEndpointRoutingPort;
   private readonly logger?: Logger;
   private readonly baseTransport?: ProviderFetch;
+  private readonly opencodeProvider?: OpencodeProvider;
   private readonly providerTransports = new Map<string, ProviderFetch>();
   private readonly requestSecurity: ModelRequestSecurityPort;
 
@@ -180,6 +190,7 @@ export class AiSdkModelExecution {
     this.endpointRoutingPort = config.endpointRoutingPort;
     this.logger = options.logger;
     this.baseTransport = options.transport;
+    this.opencodeProvider = options.opencodeProvider;
     this.requestSecurity = (
       options.requestSecurityState ?? createModelRequestSecurityState()
     ).createExecution({ logger: options.logger });
@@ -226,10 +237,12 @@ export class AiSdkModelExecution {
     );
     // 重构后模型 SDK 曾只接到用户 Header，漏掉版本和站点归因；在公共绑定边界恢复，
     // 不依赖签名成功，不给各业务重复补头，也不修改 Provider 或已绑定 Model 的配置。
-    configuredProvider.headers = mergeModelRequestHeaders(
-      withOpenRouterAttributionHeaders(this.defaultHeaders, configuredProvider.baseURL),
-      configuredProvider.headers,
-    );
+    if (configuredProvider.kind !== "opencode-sdk") {
+      configuredProvider.headers = mergeModelRequestHeaders(
+        withOpenRouterAttributionHeaders(this.defaultHeaders, configuredProvider.baseURL),
+        configuredProvider.headers,
+      );
+    }
     const apiKey = this.resolveApiKey(configuredProvider);
     return {
       providerConfig: {
@@ -287,6 +300,37 @@ export class AiSdkModelExecution {
     supportsJsonSchemaOutput: boolean,
     apiKeyId?: string,
   ): LanguageModelFactory {
+    if (providerConfig.kind === "opencode-sdk") {
+      if (!this.opencodeProvider) {
+        throw new Error("OpenCode SDK provider is not initialized by the owning process");
+      }
+      return (modelId) => {
+        // OpenCode tools 已由 OpenCode server 执行；模型流原样经过 ZCode adapter，
+        // 由 providerExecuted 标记阻止 ZCode tool runner 二次派发。
+        const createModel = () => {
+          const context = getCurrentModelInvocationContext() as
+            | (ReturnType<typeof getCurrentModelInvocationContext> & {
+                workingDirectory?: string;
+              })
+            | undefined;
+          const workingDirectory = context?.workingDirectory;
+          return this.opencodeProvider!(
+            modelId,
+            workingDirectory ? { directory: workingDirectory } : undefined,
+          );
+        };
+        const initialModel = createModel();
+        return {
+          ...initialModel,
+          doGenerate: (options: LanguageModelV3CallOptions) => createModel().doGenerate(options),
+          doStream: (options: LanguageModelV3CallOptions) => createModel().doStream(options),
+        } as LanguageModel;
+      };
+    }
+    if (!providerConfig.baseURL) {
+      throw new Error(`Provider API base URL is missing: ${providerId}`);
+    }
+    const httpProviderConfig = { ...providerConfig, baseURL: providerConfig.baseURL };
     const apiKey = this.resolveApiKey(providerConfig);
     // SDK 会合并 factory 默认 header；必须在这里去掉静态来源，才能保证缺失时真正省略。
     const headers = withoutModelQuerySourceHeader(providerConfig.headers);
@@ -301,7 +345,7 @@ export class AiSdkModelExecution {
       : networkTransport;
     const requestTransport = this.requestSecurity.protectTransport({
       providerId,
-      providerConfig,
+      providerConfig: httpProviderConfig,
       transport: providerTransport,
     });
     const fetch = createProviderBusinessErrorFetch({
@@ -355,7 +399,13 @@ export class AiSdkModelExecution {
         });
         return provider as LanguageModelFactory;
       }
+
     }
+  }
+
+  /** OpenCode provider 生命周期由 owning process 显式结束。 */
+  async dispose(): Promise<void> {
+    await this.opencodeProvider?.dispose();
   }
 
   private resolveApiKey(providerConfig: AiSdkProviderConfig): string | undefined {
@@ -392,8 +442,17 @@ function toAiSdkProviderConfig(
   modelApi?: RegistryModelConfig["api"],
 ): AiSdkProviderConfig {
   const api = modelApi ?? config.api;
+  if (api.type === "opencode-sdk") {
+    return {
+      kind: "opencode-sdk",
+      access: config.access,
+    };
+  }
+  if (typeof api.baseUrl !== "string") {
+    throw new Error(`Provider API base URL is missing: ${providerId}`);
+  }
   const common = {
-    ...(config.access.type !== "zhipu-account" && config.access.apiKey
+    ...(config.access.type !== "zhipu-account" && config.access.type !== "local-auth" && config.access.apiKey
       ? { apiKey: config.access.apiKey }
       : {}),
     baseURL: api.baseUrl,
@@ -1116,4 +1175,91 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+export type OpenCodeModelProvider = OpencodeProvider;
+
+export interface OpenCodeModelProviderRuntime {
+  provider: OpenCodeModelProvider;
+  dispose(): Promise<void>;
+}
+
+type OpenCodeSdk = typeof import("ai-sdk-provider-opencode-sdk");
+type OpenCodeProcessSignal = "SIGINT" | "SIGTERM";
+type OpenCodeSignalListener = NodeJS.SignalsListener;
+
+const OPENCODE_PROCESS_SIGNALS: readonly OpenCodeProcessSignal[] = ["SIGINT", "SIGTERM"];
+
+/**
+ * Lazily creates an isolated OpenCode provider for the owning CLI process.
+ * The SDK constructs a default singleton during module evaluation, so only
+ * signal listeners added by that import are removed. The isolated manager's
+ * listeners remain until this runtime is disposed.
+ */
+export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProviderRuntime> {
+  const listenersBeforeImport = captureOpenCodeSignalListeners();
+  let sdk: OpenCodeSdk;
+
+  try {
+    sdk = await import("ai-sdk-provider-opencode-sdk");
+  } finally {
+    removeNewOpenCodeSignalListeners(listenersBeforeImport);
+  }
+
+  const clientManager = sdk!.OpencodeClientManager.createInstance({} satisfies ClientManagerOptions);
+
+  try {
+    const provider = sdk!.createOpencode({ clientManager });
+    const disposeProvider = provider.dispose.bind(provider);
+    let disposed = false;
+    const dispose = async () => {
+      if (disposed) return;
+      disposed = true;
+      await disposeProvider();
+    };
+    provider.dispose = dispose;
+
+    return {
+      provider,
+      dispose,
+    };
+  } catch (error) {
+    await clientManager.dispose();
+    throw error;
+  }
+}
+
+function captureOpenCodeSignalListeners(): Map<
+  OpenCodeProcessSignal,
+  OpenCodeSignalListener[]
+> {
+  return new Map(
+    OPENCODE_PROCESS_SIGNALS.map((signal) => [signal, process.listeners(signal)]),
+  );
+}
+
+function removeNewOpenCodeSignalListeners(
+  before: Map<OpenCodeProcessSignal, OpenCodeSignalListener[]>,
+): void {
+  for (const signal of OPENCODE_PROCESS_SIGNALS) {
+    const previousCounts = countOpenCodeSignalListeners(before.get(signal) ?? []);
+    for (const listener of process.listeners(signal)) {
+      const previousCount = previousCounts.get(listener) ?? 0;
+      if (previousCount > 0) {
+        previousCounts.set(listener, previousCount - 1);
+      } else {
+        process.removeListener(signal, listener);
+      }
+    }
+  }
+}
+
+function countOpenCodeSignalListeners(
+  listeners: OpenCodeSignalListener[],
+): Map<OpenCodeSignalListener, number> {
+  const counts = new Map<OpenCodeSignalListener, number>();
+  for (const listener of listeners) {
+    counts.set(listener, (counts.get(listener) ?? 0) + 1);
+  }
+  return counts;
 }

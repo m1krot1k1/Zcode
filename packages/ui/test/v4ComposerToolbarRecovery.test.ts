@@ -20,7 +20,6 @@ const customValue = "custom:custom-openai:gpt-4o";
 
 const captured = vi.hoisted(() => ({
   modelSelectProps: null as ModelConfigSelectProps | null,
-  openCodeCatalogRetry: null as (() => void) | null,
   thoughtControlProps: null as {
     indicatorClassName?: string;
     triggerClassName?: string;
@@ -42,10 +41,6 @@ const mocks = vi.hoisted(() => ({
   codingPlanEntitlementsEnabledStartPlanIds: [] as string[],
   configOptions: [] as Array<Record<string, unknown>>,
   configOptionsError: true,
-  openCodeRuntime: {
-    getCliStatus: vi.fn(async () => ({ status: "available", version: "1.0.0" })),
-    listModels: vi.fn(async () => ({ status: "available", models: ["opencode/model-a"] })),
-  },
   enterpriseProducts: { snapshot: { productList: [] }, loading: false, error: null } as Record<
     string,
     unknown
@@ -117,7 +112,7 @@ vi.mock("@/store/StoreProvider.js", () => ({
 }));
 vi.mock("@/hooks/useWorkspaceServices.js", () => ({ useBaseWorkspaceServices: () => ({}) }));
 vi.mock("@/hooks/useServices.js", () => ({
-  useServices: () => ({ openCodeAcpRuntime: mocks.openCodeRuntime }),
+  useServices: () => ({}),
 }));
 vi.mock("@/hooks/useComposerConnectionSwitch.js", () => ({
   useComposerConnectionSwitch: () => ({
@@ -154,9 +149,6 @@ vi.mock("@/components/ui/button.js", async () => {
       "data-testid"?: string;
       [key: string]: unknown;
     }) => {
-      if (props["data-testid"] === "chat-opencode-models-retry") {
-        captured.openCodeCatalogRetry = props.onClick ?? null;
-      }
       return React.createElement("button", props, props.children);
     },
   };
@@ -480,7 +472,6 @@ afterEach(() => {
   mocks.connectionSwitchError = null;
   mocks.selectConnection.mockClear();
   captured.modelSelectProps = null;
-  captured.openCodeCatalogRetry = null;
   captured.thoughtControlProps = null;
   captured.usageProps = [];
   mocks.codingPlanEntitlementsRefresh.mockClear();
@@ -489,8 +480,6 @@ afterEach(() => {
   mocks.codingPlanEntitlementsEnabledStartPlanIds = [];
   mocks.configOptions = [];
   mocks.configOptionsError = true;
-  mocks.openCodeRuntime.getCliStatus.mockClear();
-  mocks.openCodeRuntime.listModels.mockClear();
   mocks.enterpriseProducts = { snapshot: { productList: [] }, loading: false, error: null };
   mocks.modelSelectionView = {
     revision: 1,
@@ -544,102 +533,47 @@ describe("V4ComposerModelControls recovery", () => {
     ).toBe(true);
   });
 
-  it("показывает модели OpenCode в обычном picker при пустом API registry", async () => {
-    mocks.modelSelectionView = { revision: 1, providers: [] };
-    mocks.settings = {
-      providerFamilyConnectionSelections: {},
-      providerFamilyDomain: {},
-      openCodeCliEnabled: true,
+  it("показывает OpenCode CLI из общего ModelSelection и выбирает его обычным callback Composer", () => {
+    const modelId = "opencode/deepseek-v4.1-flash-free";
+    const selectionView = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: { access: { type: "local-auth" }, api: { type: "opencode-sdk" } },
+          models: [{ modelId, config: completeDisabledModelConfig() }],
+        },
+      ],
+    } as unknown as NonNullable<V4ComposerModelControlsProps["modelSelectionView"]>;
+    const config = {
+      provider: "",
+      model: "",
+      thought: "disabled",
+      thoughtLevels: [],
+      followupMode: "queue" as const,
+      mode: "build" as const,
     };
-    const root: Root = createRoot(installMinimalDom());
-    const props = {
-      workspacePath: "/workspace",
-      modelSelectionView: mocks.modelSelectionView,
-      modelSelectionState: { status: "unavailable", reason: "missing-target" as const },
-      sessionId: null,
-      phase: null,
-      draftConfig: { mode: "build" },
-      config: {
-        provider: "",
-        model: "",
-        thought: "disabled",
-        thoughtLevels: [],
-        followupMode: "queue" as const,
-        mode: "build" as const,
-      },
-      usage: null,
-      disabled: false,
-      onSelectModel: mocks.selectModel,
-      onSelectOpenCodeModel: vi.fn(),
-      onSelectThought: vi.fn(),
-      onSwitchMode: vi.fn(),
-    };
-
-    await act(async () => {
-      root.render(createElement(V4ComposerModelControls, props));
-      await flushMicrotasks();
+    renderToolbarMarkup({
+      modelSelectionView: selectionView,
+      config,
+      draftConfig: { mode: "build", modelSelection: { providerId: "", modelId: "" } },
     });
 
-    expect(mocks.openCodeRuntime.listModels).toHaveBeenCalledOnce();
-    expect(captured.modelSelectProps?.modelGroups).toEqual([
+    const openCodeGroup = captured.modelSelectProps?.modelGroups.find(
+      (group) => group.key === "registry-provider:opencode",
+    );
+    expect(openCodeGroup).toEqual(
       expect.objectContaining({
-        key: "opencode-cli",
-        items: [expect.objectContaining({ value: "zcode-opencode-cli:opencode/model-a" })],
+        label: "OpenCode CLI",
+        labelBadge: "CLI",
+        items: [expect.objectContaining({ name: modelId })],
       }),
-    ]);
-    await act(async () => root.unmount());
-  });
-
-  it("даёт повторить чтение каталога и выбрать CLI-модель после временной ошибки", async () => {
-    mocks.modelSelectionView = { revision: 1, providers: [] };
-    mocks.settings = {
-      providerFamilyConnectionSelections: {},
-      providerFamilyDomain: {},
-      openCodeCliEnabled: true,
-    };
-    mocks.openCodeRuntime.listModels
-      .mockRejectedValueOnce(new Error("temporary catalog error"))
-      .mockResolvedValueOnce({ status: "available", models: ["opencode/model-a"] });
-    const selectOpenCodeModel = vi.fn();
-    const root: Root = createRoot(installMinimalDom());
-    const props = {
-      workspacePath: "/workspace",
-      modelSelectionView: mocks.modelSelectionView,
-      sessionId: null,
-      phase: null,
-      draftConfig: { mode: "build" },
-      config: {
-        provider: "",
-        model: "",
-        thought: "disabled",
-        thoughtLevels: [],
-        followupMode: "queue" as const,
-        mode: "build" as const,
-      },
-      usage: null,
-      disabled: false,
-      onSelectModel: mocks.selectModel,
-      onSelectOpenCodeModel: selectOpenCodeModel,
-      onSelectThought: vi.fn(),
-      onSwitchMode: vi.fn(),
-    };
-
-    await act(async () => {
-      root.render(createElement(V4ComposerModelControls, props));
-      await flushMicrotasks();
-    });
-    expect(captured.openCodeCatalogRetry).toEqual(expect.any(Function));
-
-    await act(async () => {
-      captured.openCodeCatalogRetry?.();
-      await flushMicrotasks();
-    });
-    expect(captured.modelSelectProps?.modelGroups).toEqual([
-      expect.objectContaining({ key: "opencode-cli" }),
-    ]);
-    captured.modelSelectProps?.onValueChange("zcode-opencode-cli:opencode/model-a");
-    expect(selectOpenCodeModel).toHaveBeenCalledWith("opencode/model-a");
-    await act(async () => root.unmount());
+    );
+    const modelValue = openCodeGroup?.items[0]?.value;
+    expect(modelValue).toBe("custom:opencode:opencode%2Fdeepseek-v4.1-flash-free");
+    captured.modelSelectProps?.onValueChange(modelValue ?? "");
+    expect(mocks.selectModel).toHaveBeenCalledWith("opencode", modelId, null);
   });
 
   it("同 Host 重读保留目录时入口不切成禁用态，首次加载仍禁用", () => {

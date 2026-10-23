@@ -491,11 +491,8 @@ function submissionConfigFromCommand(
       : type === "sendText" || type === "sendGoalCommand"
         ? payload
         : undefined;
-  const route = candidate?.executionRoute as ComposerSubmissionConfig["executionRoute"] | undefined;
-  if (route?.kind === "opencode-acp") return { executionRoute: route };
   if (!candidate?.modelSelection || !candidate.mode) return null;
   return {
-    executionRoute: { kind: "zcode" },
     modelSelection: candidate.modelSelection as NonNullable<
       ComposerSubmissionConfig["modelSelection"]
     >,
@@ -684,7 +681,6 @@ export function SessionPane({
     usageStatsService,
     zcodeSessionService,
     zcodeTaskService,
-    openCodeAcpRuntime,
   } = useServices();
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
@@ -1769,7 +1765,6 @@ export function SessionPane({
     draftConfigRef,
     resolveInitialDraftConfig,
     handleDraftSelectModel,
-    handleDraftSelectOpenCodeModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
     promoteComposerDraft,
@@ -1787,7 +1782,6 @@ export function SessionPane({
   });
   // Bug 根因：部分 SessionPane 测试和重建中的旧草稿可能暂时没有 Composer intent，
   // 直接读取会在渲染阶段崩溃；缺少 intent 按普通 Provider 路由处理，不能阻断聊天界面。
-  const composerExecutionRoute = composerDraft?.executionRoute;
   useEffect(() => {
     if (
       !sessionId ||
@@ -1907,36 +1901,11 @@ export function SessionPane({
   }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
   const createSubmissionFromComposer = useCallback(() => {
-    if (
-      composerExecutionRoute?.kind === "opencode-acp" &&
-      sharedSettings?.openCodeCliEnabled !== true
-    ) {
-      return null;
-    }
-    return createComposerSubmissionConfig(
-      { ...draftConfigRef.current, executionRoute: composerExecutionRoute },
-      modelSelectionView,
-    );
-  }, [
-    composerExecutionRoute,
-    draftConfigRef,
-    modelSelectionView,
-    sharedSettings?.openCodeCliEnabled,
-  ]);
+    return createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView);
+  }, [draftConfigRef, modelSelectionView]);
   const composerSubmissionReady = useMemo(() => {
-    if (
-      composerExecutionRoute?.kind === "opencode-acp" &&
-      sharedSettings?.openCodeCliEnabled !== true
-    ) {
-      return false;
-    }
-    return (
-      createComposerSubmissionConfig(
-        { ...draftConfig, executionRoute: composerExecutionRoute },
-        modelSelectionView,
-      ) !== null
-    );
-  }, [composerExecutionRoute, draftConfig, modelSelectionView, sharedSettings?.openCodeCliEnabled]);
+    return createComposerSubmissionConfig(draftConfig, modelSelectionView) !== null;
+  }, [draftConfig, modelSelectionView]);
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
   const billingDiscount = useCodingPlanBillingDiscountFromService(
@@ -2116,12 +2085,13 @@ export function SessionPane({
       // 冻结的 submission（spec §5.1）。接纳写入另有加速身份兜底拦截。
       const recentSubmission = recentSubmissionOverride ?? submission;
       const zcodeRecentSubmission =
-        recentSubmission?.executionRoute?.kind === "zcode" &&
-        recentSubmission.modelSelection &&
-        recentSubmission.mode
+        recentSubmission?.modelSelection && recentSubmission.mode
           ? {
               modelSelection: recentSubmission.modelSelection,
               mode: recentSubmission.mode,
+              // Bug 根因：Recent 投影只复制模型和基础 mode，独立的 Plan 状态在新会话种子中丢失。
+              // 用冻结的提交值记录，避免接受后读取已变化的 Composer 草稿。
+              planEnabled: recentSubmission.planEnabled ?? false,
             }
           : null;
       // 发送时固定组织归属；同 cwd 可属于多个项目，切页和迟到 ACK 不得改写目标。
@@ -2158,7 +2128,6 @@ export function SessionPane({
           : null;
       const acceptSelection =
         submission &&
-        (submission.executionRoute?.kind === "zcode" || submission.executionRoute === undefined) &&
         submission.modelSelection &&
         (sessionId === null || targetSessionId === sessionId)
           ? captureAcceptedModelSelection(submission.modelSelection)
@@ -3197,7 +3166,6 @@ export function SessionPane({
     // 共享 identity；provider wrapper 重建产生的新 sendCommand 函数不能误判为 transport 换代。
     transportIdentity: layer,
     dispatchCommand,
-    openCodeAcpDraft: composerExecutionRoute?.kind === "opencode-acp",
     // 预热会话只消费当前 Root Composer Draft 的一次性初始化结果。
     resolveInitialConfig: resolveInitialDraftConfig,
   });
@@ -3636,7 +3604,6 @@ export function SessionPane({
         args[12] = options?.submittedDraftText ?? text;
         if (
           args[0] === "sendText" &&
-          submission?.executionRoute?.kind !== "opencode-acp" &&
           args[2] &&
           baseWorkspaceServices.genUiService &&
           typeof args[1]?.text === "string"
@@ -3664,11 +3631,9 @@ export function SessionPane({
       // 进入 barrier 前已经冻结；等待配置/附件期间不再回读 Composer 或 Session。
       let submission = options?.submission ?? null;
       if (submission) {
-        // Bug 根因：旧版冻结的 Composer intent 不含新加的 executionRoute/planEnabled，
-        // 直接读取会拒绝原本有效的 ZCode 消息；按协议兼容默认值归一化一次再走既有发送路径。
+        // Bug 根因：旧版冻结的 Composer intent 不含 planEnabled，按协议兼容默认值归一化一次再发送。
         submission = {
           ...submission,
-          executionRoute: submission.executionRoute ?? { kind: "zcode" },
           planEnabled: submission.planEnabled ?? false,
         };
       }
@@ -3680,89 +3645,6 @@ export function SessionPane({
       const slashCommand = parseV4VisibleSlashCommand(text, readyAttachments, {
         contextAttachmentCount,
       });
-
-      if (submission?.executionRoute?.kind === "opencode-acp") {
-        if (sharedSettings?.openCodeCliEnabled !== true || !openCodeAcpRuntime) {
-          toast(intl.formatMessage({ id: "settings.openCode.composerDisabled" }));
-          return "blocked" as const;
-        }
-        const cliStatus = await openCodeAcpRuntime.getCliStatus().catch(() => null);
-        if (!cliStatus || cliStatus.status !== "available") {
-          toast(
-            intl.formatMessage({
-              id:
-                cliStatus?.status === "missing"
-                  ? "settings.openCode.cli-missing"
-                  : "settings.openCode.unavailable",
-            }),
-          );
-          return "blocked" as const;
-        }
-        const cliCatalog = await openCodeAcpRuntime.listModels().catch(() => null);
-        if (
-          cliCatalog?.status !== "available" ||
-          !cliCatalog.models.includes(submission.executionRoute.model.modelId)
-        ) {
-          toast(intl.formatMessage({ id: "settings.openCode.modelsUnavailable" }));
-          return "blocked" as const;
-        }
-        const unsupportedContext =
-          slashCommand !== null ||
-          readyAttachments.length > 0 ||
-          contextAttachmentCount > 0 ||
-          Boolean(sharedContextRefs?.length) ||
-          Boolean(options?.conversationQuotes?.length) ||
-          Boolean(options?.source) ||
-          Boolean(options?.requestedDelivery && options.requestedDelivery !== "startNow") ||
-          heldQueueDisposition !== undefined ||
-          expectedHeldQueueItemIds !== undefined ||
-          snapshotRef.current?.inputRouting.mode === "choice";
-        if (unsupportedContext) {
-          toast(intl.formatMessage({ id: "settings.openCode.composerUnsupported" }));
-          return "blocked" as const;
-        }
-        if (!text.trim()) return "blocked" as const;
-
-        // OpenCode is a separate execution route: it must not wait for a ZCode provider/model,
-        // run Highspeed/recommendations, or send ZCode model execution fields to admission.
-        const draftBinding = sessionId === null ? await waitForDraftSession() : null;
-        if (draftBinding && !draftBinding.beginPromotion()) {
-          throw new Error("草稿会话已切换，请重新发送");
-        }
-        const targetSessionId = sessionId ?? draftBinding!.sessionId;
-        const ack = await dispatchSubmissionCommand(
-          "sendText",
-          {
-            text,
-            executionRoute: submission.executionRoute ?? { kind: "zcode" },
-            requestedDelivery: "startNow",
-          },
-          targetSessionId,
-          undefined,
-          undefined,
-          options?.telemetrySeed,
-          undefined,
-          options?.onCommandCreated
-            ? (envelope) => {
-                if (envelope.type === "sendText") options.onCommandCreated?.(envelope.commandId);
-              }
-            : undefined,
-          undefined,
-          undefined,
-          submission,
-        );
-        if (ack.status !== "accepted") throw new Error(ack.reasonCode ?? "sendText 被拒绝");
-        if (draftBinding) {
-          draftBinding.promote();
-          await handleDraftSessionCreated(
-            targetSessionId,
-            createSourceAtSend,
-            ack.commandId,
-            taskGroupIdAtSend,
-          );
-        }
-        return "sent" as const;
-      }
 
       if (!(await ensureDraftModelReadyForSend())) {
         return "blocked" as const;
@@ -3798,7 +3680,6 @@ export function SessionPane({
       }
       if (
         !submission ||
-        (submission.executionRoute !== undefined && submission.executionRoute.kind !== "zcode") ||
         !submission.modelSelection ||
         !submission.mode ||
         submission.planEnabled === undefined
@@ -3990,7 +3871,6 @@ export function SessionPane({
       captureAcceptedModelSelection,
       dispatchSlashCommand,
       ensureDraftModelReadyForSend,
-      openCodeAcpRuntime,
       sharedSettings?.openCodeCliEnabled,
       availableSelectionSideSlashCommandNames,
       appSlashCommands,
@@ -4609,17 +4489,6 @@ export function SessionPane({
     [handleDraftSelectThought],
   );
 
-  const handleSelectOpenCodeModel = useCallback(
-    (modelId: string) => {
-      if (activeHighspeedCard) {
-        toast(intl.formatMessage({ id: "chat.highspeed.modelLocked" }));
-        return;
-      }
-      handleDraftSelectOpenCodeModel(modelId);
-    },
-    [activeHighspeedCard, handleDraftSelectOpenCodeModel, intl],
-  );
-
   const handleRecoverCustomModelSelection = useCallback(
     async (value: string, sourceModel: ModelSelectionSource | null) => {
       const decoded = decodeCustomModelValue(value);
@@ -5189,7 +5058,7 @@ export function SessionPane({
     mcpUnavailableNotice,
   });
   const composerError =
-    (composerExecutionRoute?.kind === "opencode-acp" ? null : draftModelReadinessError) ??
+    draftModelReadinessError ??
     sendSubmissionError ??
     (quotaBanner.takesOverError ? null : projectedComposerError);
   useEffect(() => {
@@ -5679,7 +5548,6 @@ export function SessionPane({
       onComposerRestoreApplied={handleComposerRestoreApplied}
       onStop={handleStopFromButton}
       onSelectModel={handleSelectModel}
-      onSelectOpenCodeModel={handleSelectOpenCodeModel}
       onSelectThought={handleSelectThought}
       onSwitchMode={handleSwitchMode}
       onOpenRunningBackgroundWorks={

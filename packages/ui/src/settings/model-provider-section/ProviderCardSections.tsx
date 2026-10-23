@@ -12,7 +12,6 @@ import type {
   ProviderSettingsFormModel,
 } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
-import type { ProviderApiType } from "@zcode/provider";
 import {
   TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
   TID_MODEL_PROVIDER_BASE_URL_INPUT,
@@ -42,6 +41,7 @@ import { type ProviderModelDraftValues } from "@/settings/model-provider-section
 import { ProviderModelMetadataDialog } from "@/settings/model-provider-section/ProviderModelMetadataDialog.js";
 import {
   PROVIDER_CONNECTION_API_FORMATS,
+  type ProviderConnectionApiFormat,
   ProviderApiFormatSelect,
   resolveProviderConnectionApiFormatDisplayLabel,
 } from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
@@ -58,7 +58,7 @@ export { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";
 
 export function resolveProviderApiFormatOptions(
   _provider: Pick<ProviderSettingsFormProvider, "config" | "models">,
-): ProviderApiType[] {
+): ProviderConnectionApiFormat[] {
   return [...PROVIDER_CONNECTION_API_FORMATS];
 }
 
@@ -205,9 +205,9 @@ export function ProviderConnectionSection({
 }: {
   provider: ProviderSettingsFormProvider;
   readOnly?: boolean;
-  apiFormat: ProviderApiType;
+  apiFormat: ProviderConnectionApiFormat;
   baseUrlValue: string;
-  onApiFormatChange: (value: ProviderApiType) => void;
+  onApiFormatChange: (value: ProviderConnectionApiFormat) => void;
   onBaseUrlChange: (value: string) => void;
   onBaseUrlBlur: () => void;
   onBaseUrlKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
@@ -217,7 +217,10 @@ export function ProviderConnectionSection({
   const { intl } = useZCodeIntl();
   const showApiFormat = shouldShowProviderApiFormat(provider);
   const readOnlyBaseUrl = provider.config.api?.baseUrl ?? "";
-  const resolvedApiFormat = provider.config.api?.type ?? "anthropic-messages";
+  const resolvedApiFormat =
+    provider.config.api?.type === "opencode-sdk"
+      ? "openai-chat-completions"
+      : (provider.config.api?.type ?? "anthropic-messages");
 
   const renderReadOnlyField = (label: string, value: string) => (
     <div>

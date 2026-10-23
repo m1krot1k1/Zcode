@@ -14,6 +14,7 @@ import {
 } from "#src/process/processTreeTerminator.js";
 import type {
   OpenCodeCliModelCatalog,
+  OpenCodeCliModelDescriptor,
   OpenCodeCliStatus,
   OpenCodeInstallCommandOutcome,
 } from "../contract.js";
@@ -151,7 +152,7 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: st
   });
 }
 
-/** Read the CLI model list without opening an ACP session or exposing arbitrary CLI output. */
+/** Read the CLI's bounded model metadata without opening an ACP session or exposing raw output. */
 export async function runModelCatalog(
   spec: OpenCodeCommandSpec,
   sourceEnvironment: NodeJS.ProcessEnv = process.env,
@@ -169,7 +170,7 @@ export async function runModelCatalog(
     };
     const child = spawn(
       spec.command,
-      [...spec.prefixArgs, "models"],
+      [...spec.prefixArgs, "models", "--verbose"],
       spawnOptions(undefined, ["ignore", "pipe", "ignore"], sourceEnvironment, platform),
     );
     const timer = setTimeout(() => {
@@ -198,23 +199,118 @@ export async function runModelCatalog(
         finish({ status: "unavailable", diagnostic: "opencode.models-failed" });
         return;
       }
-      const models = [
-        ...new Set(
-          output
-            .split(/\r?\n/u)
-            .map((line) => line.trim())
-            .filter(Boolean),
-        ),
-      ];
-      if (
-        models.length > MAX_MODEL_CATALOG_SIZE ||
-        models.some((model) => !/^[A-Za-z0-9._:-]+\/[A-Za-z0-9._:-]+$/u.test(model))
-      ) {
+      const models = parseOpenCodeVerboseModelCatalog(output);
+      if (models.length === 0 || models.length > MAX_MODEL_CATALOG_SIZE) {
         finish({ status: "unavailable", diagnostic: "opencode.models-output-invalid" });
         return;
       }
       finish({ status: "available", models, authentication: "not-checked" });
     });
+  });
+}
+
+/** CLI output is `provider/model` followed by a JSON block; project only facts the registry needs. */
+export function parseOpenCodeVerboseModelCatalog(output: string): OpenCodeCliModelDescriptor[] {
+  const models = new Map<string, OpenCodeCliModelDescriptor>();
+  const idPattern = /^[A-Za-z0-9._:-]+\/[A-Za-z0-9._:-]+$/u;
+  let cursor = 0;
+
+  while (cursor < output.length && models.size <= MAX_MODEL_CATALOG_SIZE) {
+    const lineEnd = output.indexOf("\n", cursor);
+    const nextLineStart = lineEnd < 0 ? output.length : lineEnd + 1;
+    const listedId = output.slice(cursor, lineEnd < 0 ? output.length : lineEnd).trim();
+    cursor = nextLineStart;
+    if (!idPattern.test(listedId)) continue;
+
+    while (cursor < output.length && /\s/u.test(output[cursor] ?? "")) cursor += 1;
+    if (output[cursor] !== "{") continue;
+    const jsonStart = cursor;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (; cursor < output.length; cursor += 1) {
+      const char = output[cursor];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') inString = true;
+      else if (char === "{") depth += 1;
+      else if (char === "}" && --depth === 0) {
+        cursor += 1;
+        break;
+      }
+    }
+    if (depth !== 0) break;
+
+    let raw: unknown;
+    try {
+      raw = JSON.parse(output.slice(jsonStart, cursor));
+    } catch {
+      continue;
+    }
+    const model = projectOpenCodeModel(listedId, raw);
+    if (model) models.set(model.modelId, model);
+  }
+
+  return [...models.values()].sort((left, right) => left.modelId.localeCompare(right.modelId));
+}
+
+function projectOpenCodeModel(listedId: string, raw: unknown): OpenCodeCliModelDescriptor | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const value = raw as {
+    id?: unknown;
+    providerID?: unknown;
+    name?: unknown;
+    limit?: { context?: unknown; output?: unknown };
+    capabilities?: {
+      input?: Record<string, unknown>;
+      output?: Record<string, unknown>;
+    };
+  };
+  const modelId = `${String(value.providerID ?? "")}/${String(value.id ?? "")}`;
+  const contextWindow = value.limit?.context;
+  const maxOutputTokens = value.limit?.output;
+  const input = value.capabilities?.input;
+  const output = value.capabilities?.output;
+  const isPositiveInteger = (candidate: unknown): candidate is number =>
+    typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0;
+  const isBoolean = (candidate: unknown): candidate is boolean => typeof candidate === "boolean";
+  if (
+    modelId !== listedId ||
+    typeof value.name !== "string" ||
+    value.name.length === 0 ||
+    value.name.length > 160 ||
+    !isPositiveInteger(contextWindow) ||
+    !isPositiveInteger(maxOutputTokens) ||
+    maxOutputTokens > contextWindow ||
+    !input ||
+    !output ||
+    !isBoolean(input.text) ||
+    !isBoolean(input.image) ||
+    !isBoolean(input.video) ||
+    !isBoolean(input.audio) ||
+    !isBoolean(input.pdf) ||
+    !isBoolean(output.text)
+  ) {
+    return null;
+  }
+
+  return Object.freeze({
+    modelId,
+    name: value.name,
+    contextWindow,
+    maxOutputTokens,
+    inputFormat: Object.freeze({
+      supportsText: input.text,
+      supportsImage: input.image,
+      supportsVideo: input.video,
+      supportsAudio: input.audio,
+      supportsPdf: input.pdf,
+    }),
+    outputSupportsText: output.text,
   });
 }
 

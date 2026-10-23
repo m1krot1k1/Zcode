@@ -48,7 +48,9 @@ export class ProviderRegistry {
   #view: ProviderRegistryView;
   #providerById = new Map<ProviderId, Provider>();
   #modelByProviderId = new Map<ProviderId, Map<ModelId, ProviderModel>>();
-  readonly #listeners = new Set<(event: ProviderRegistryChangedEvent) => void>();
+  readonly #listeners = new Set<
+    (event: ProviderRegistryChangedEvent) => void
+  >();
 
   constructor(providers: readonly Provider[] = []) {
     this.#view = freezeView(0, providers);
@@ -67,7 +69,10 @@ export class ProviderRegistry {
     return this.#providerById.get(providerId);
   }
 
-  getModel(providerId: ProviderId, modelId: ModelId): ProviderModel | undefined {
+  getModel(
+    providerId: ProviderId,
+    modelId: ModelId,
+  ): ProviderModel | undefined {
     return this.#modelByProviderId.get(providerId)?.get(modelId);
   }
 
@@ -92,37 +97,54 @@ export class ProviderRegistry {
   }
 
   replace(providers: readonly Provider[], reason: string): void {
-    this.#view = freezeView(this.#view.revision + 1, providers);
-    this.#rebuildIndexes();
+    const view = freezeView(this.#view.revision + 1, providers);
+    const indexes = buildIndexes(view.providers);
+    // Сначала полностью проверяем кандидат и только затем заменяем все связанные
+    // структуры. Иначе ошибка из-за дубликата оставляла бы новый View со старыми индексами.
+    this.#view = view;
+    this.#providerById = indexes.providerById;
+    this.#modelByProviderId = indexes.modelByProviderId;
     const event = Object.freeze({ revision: this.#view.revision, reason });
     for (const listener of this.#listeners) listener(event);
   }
 
-  onDidChange(listener: (event: ProviderRegistryChangedEvent) => void): () => void {
+  onDidChange(
+    listener: (event: ProviderRegistryChangedEvent) => void,
+  ): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
   #rebuildIndexes(): void {
-    const providerById = new Map<ProviderId, Provider>();
-    const modelByProviderId = new Map<ProviderId, Map<ModelId, ProviderModel>>();
-    for (const provider of this.#view.providers) {
-      if (providerById.has(provider.providerId)) {
-        throw new Error(`Registry 中存在重复 Provider: ${provider.providerId}`);
-      }
-      providerById.set(provider.providerId, provider);
-      const models = new Map<ModelId, ProviderModel>();
-      for (const model of provider.models) {
-        if (models.has(model.modelId)) {
-          throw new Error(`Registry 中存在重复 Model: ${provider.providerId}/${model.modelId}`);
-        }
-        models.set(model.modelId, model);
-      }
-      modelByProviderId.set(provider.providerId, models);
-    }
-    this.#providerById = providerById;
-    this.#modelByProviderId = modelByProviderId;
+    const indexes = buildIndexes(this.#view.providers);
+    this.#providerById = indexes.providerById;
+    this.#modelByProviderId = indexes.modelByProviderId;
   }
+}
+
+function buildIndexes(providers: readonly Provider[]): {
+  readonly providerById: Map<ProviderId, Provider>;
+  readonly modelByProviderId: Map<ProviderId, Map<ModelId, ProviderModel>>;
+} {
+  const providerById = new Map<ProviderId, Provider>();
+  const modelByProviderId = new Map<ProviderId, Map<ModelId, ProviderModel>>();
+  for (const provider of providers) {
+    if (providerById.has(provider.providerId)) {
+      throw new Error(`Registry 中存在重复 Provider: ${provider.providerId}`);
+    }
+    providerById.set(provider.providerId, provider);
+    const models = new Map<ModelId, ProviderModel>();
+    for (const model of provider.models) {
+      if (models.has(model.modelId)) {
+        throw new Error(
+          `Registry 中存在重复 Model: ${provider.providerId}/${model.modelId}`,
+        );
+      }
+      models.set(model.modelId, model);
+    }
+    modelByProviderId.set(provider.providerId, models);
+  }
+  return { providerById, modelByProviderId };
 }
 
 /** Registry 与默认选择初始化共用同一套通用 Model Option 校验。 */
@@ -130,7 +152,9 @@ export function validateModelSelectionOptions(
   // 只依赖发布给 Renderer 的 Option 事实，避免 UI 另写一份档位校验或构造领域类。
   model: {
     readonly config: {
-      readonly optionSpecs: { readonly reasoningLevel: { readonly values: readonly string[] } };
+      readonly optionSpecs: {
+        readonly reasoningLevel: { readonly values: readonly string[] };
+      };
     };
   },
   selection: ModelSelection,
@@ -158,7 +182,10 @@ export function validateModelSelectionOptions(
   return { ok: true };
 }
 
-function freezeView(revision: number, providers: readonly Provider[]): ProviderRegistryView {
+function freezeView(
+  revision: number,
+  providers: readonly Provider[],
+): ProviderRegistryView {
   const frozenProviders = providers.map((provider) =>
     Object.freeze({
       providerId: provider.providerId,

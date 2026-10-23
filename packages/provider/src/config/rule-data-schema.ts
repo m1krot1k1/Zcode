@@ -6,8 +6,10 @@ import {
   apiKeyAccessDataSchema,
   personalProviderApiDataSchema,
   providerConfigDataSchema,
+  providerConfigDataObjectSchema,
   providerGroupDataSchema,
   providerTemplateDataSchema,
+  validateLocalAuthRuntimePair,
 } from "./provider-data-schema.js";
 
 const idSchema = z.string().min(1);
@@ -94,25 +96,40 @@ export const providerConfigRuleSchema = z
   })
   .strict();
 export const providerTemplateConfigRuleSchema = providerTemplateDataSchema.extend({
-  config: providerConfigDataSchema
+  config: providerConfigDataObjectSchema
     .pick({ logo: true, access: true, api: true, builtinModelIds: true })
     .extend({
       access: apiKeyAccessDataSchema.omit({ apiKey: true }).nullable().optional(),
     }),
 });
 export const builtinProviderConfigRuleSchema = providerConfigRuleSchema.extend({
-  config: providerConfigDataSchema.omit({ personalModelIds: true, modelOrder: true }).extend({
-    group: providerGroupDataSchema.exclude(["standard-personal"]),
-  }),
+  config: providerConfigDataObjectSchema
+    .omit({ personalModelIds: true, modelOrder: true })
+    .extend({
+      group: providerGroupDataSchema.exclude(["standard-personal"]),
+    })
+    .superRefine((config, context) => {
+      validateLocalAuthRuntimePair(config, context, ["config"]);
+    }),
 });
 export const personalProviderConfigRuleSchema = providerConfigRuleSchema
   .extend({
-    config: providerConfigDataSchema.omit({ builtinModelIds: true }).extend({
+    config: providerConfigDataObjectSchema.omit({ builtinModelIds: true }).extend({
       group: providerGroupDataSchema.extract(["standard-personal"]).nullable().optional(),
       api: personalProviderApiDataSchema.nullable().optional(),
     }),
   })
   .superRefine((rule, context) => {
+    if (
+      rule.config.access?.type === "local-auth" ||
+      rule.config.api?.type === "opencode-sdk"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["config"],
+        message: "local-auth / opencode-sdk 仅允许由 ZCode Built-in Config 声明",
+      });
+    }
     if (rule.providerId.startsWith("account:") && rule.config.access !== undefined) {
       context.addIssue({
         code: "custom",

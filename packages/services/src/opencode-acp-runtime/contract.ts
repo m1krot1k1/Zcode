@@ -53,9 +53,29 @@ export type OpenCodeInstallCommandOutcome =
   | { ok: true }
   | { ok: false; diagnostic: OpenCodeInstallFailureDiagnostic };
 
+/** Safe model metadata projected from `opencode models --verbose`. */
+export interface OpenCodeCliModelDescriptor {
+  readonly modelId: string;
+  readonly name: string;
+  readonly contextWindow: number;
+  readonly maxOutputTokens: number;
+  readonly inputFormat: {
+    readonly supportsText: boolean;
+    readonly supportsImage: boolean;
+    readonly supportsVideo: boolean;
+    readonly supportsAudio: boolean;
+    readonly supportsPdf: boolean;
+  };
+  readonly outputSupportsText: boolean;
+}
+
 /** Read-only OpenCode CLI catalog. Authentication is intentionally not queried by this call. */
 export type OpenCodeCliModelCatalog =
-  | { status: "available"; models: string[]; authentication: "not-checked" }
+  | {
+      status: "available";
+      models: OpenCodeCliModelDescriptor[];
+      authentication: "not-checked";
+    }
   | { status: "unavailable" | "timed-out"; diagnostic: string };
 
 export interface OpenCodeAcpSession {
@@ -69,9 +89,9 @@ export interface OpenCodeAcpPromptResult {
 }
 
 /**
- * Process-owning Host service for OpenCode CLI discovery and delegated ACP chat turns.
- * It never authenticates, reads OpenCode's auth store, or starts a session for catalog discovery.
- * A conversation turn is dispatched only after the normal ZCode command admission accepts it.
+ * Process-owning Host service for OpenCode CLI discovery, installation, and model catalog.
+ * New Composer sends use the ordinary Provider Registry/model runtime. The ACP methods below are
+ * retained only to recover/finish legacy delegated runs; discovery never starts an ACP session.
  */
 export interface IOpenCodeAcpRuntime {
   /** Runs only `opencode --version`; no process is retained and no ACP session is created. */

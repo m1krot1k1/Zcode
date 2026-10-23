@@ -2,12 +2,8 @@ import { resolveExecutionState, type ModelSelection } from "@zcode/shared";
 import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ModelSelectionView } from "@zcode/services";
 import { validateModelSelectionOptions } from "@zcode/provider";
-import type { OpenCodeComposerRoute } from "@/v4/composer/composerDraftStore.js";
 
 export interface ComposerSubmissionConfig {
-  executionRoute:
-    | { kind: "zcode" }
-    | { kind: "opencode-acp"; model: { kind: "catalog"; modelId: string } };
   modelSelection?: ModelSelection;
   mode?: SubmissionMode;
   planEnabled?: boolean;
@@ -20,7 +16,6 @@ export function createComposerSubmissionConfig(
         mode?: string;
         planEnabled?: boolean;
         modelSelection?: ModelSelection;
-        executionRoute?: OpenCodeComposerRoute;
       }
     | null
     | undefined,
@@ -30,18 +25,6 @@ export function createComposerSubmissionConfig(
   // 不能因为渲染提交门禁而读取 undefined 并让整个会话区域崩溃。
   if (!composer) {
     return null;
-  }
-  const route = composer.executionRoute;
-  if (route?.kind === "opencode-acp") {
-    const modelId = route.model?.kind === "catalog" ? route.model.modelId.trim() : "";
-    return modelId && modelId.length <= 512
-      ? Object.freeze({
-          executionRoute: Object.freeze({
-            kind: "opencode-acp" as const,
-            model: Object.freeze({ kind: "catalog" as const, modelId }),
-          }),
-        })
-      : null;
   }
   const selection = composer.modelSelection;
   const mode = submissionModeSchema.safeParse(composer.mode);
@@ -54,7 +37,6 @@ export function createComposerSubmissionConfig(
     return null;
   // 不读取 Session 或显示别名；复制所有选择叶子，防止 await 后用户切模改变本次请求。
   return Object.freeze({
-    executionRoute: Object.freeze({ kind: "zcode" as const }),
     mode: mode.data === "plan" ? "build" : mode.data,
     planEnabled: resolveExecutionState(composer).planEnabled,
     modelSelection: Object.freeze({

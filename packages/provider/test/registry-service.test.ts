@@ -9,6 +9,7 @@ import {
   type AccountProviderConfigSnapshot,
   type ProviderConfigSnapshot,
   type ProviderSource,
+  type RuntimeProviderCatalogSnapshot,
 } from "../src/index.js";
 import {
   createAccountProviderConfig,
@@ -68,7 +69,10 @@ function modelConfig(contextWindow = 200_000): ModelConfig {
   });
 }
 
-function configSnapshot(revision: string, modelId: string): ProviderConfigSnapshot {
+function configSnapshot(
+  revision: string,
+  modelId: string,
+): ProviderConfigSnapshot {
   return {
     revision,
     zcodeBuiltinRevision: revision,
@@ -96,7 +100,11 @@ function accountSnapshot(
   revision = "account-1",
   basedOnZCodeBuiltinRevision = "config-1",
 ): AccountProviderConfigSnapshot {
-  return { revision, basedOnZCodeBuiltinRevision, providers: ProviderConfigMap.empty() };
+  return {
+    revision,
+    basedOnZCodeBuiltinRevision,
+    providers: ProviderConfigMap.empty(),
+  };
 }
 
 function deferred<T>() {
@@ -108,10 +116,102 @@ function deferred<T>() {
 }
 
 describe("ProviderRegistryService", () => {
-  it("start 只返回就绪；Account 更新后显式读取当前快照，不重复启动刷新", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
+  it("合并运行时 Provider Source，并在 revision 更新时原子发布 Registry 与 ModelSelection 视图", async () => {
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
     const accountSource = new MutableSource(accountSnapshot());
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const runtimeProviderSource =
+      new MutableSource<RuntimeProviderCatalogSnapshot>({
+        revision: "runtime-0",
+        providers: [],
+      });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+      runtimeProviderSource,
+    });
+    const listener = vi.fn();
+    service.onDidChange(listener);
+    await service.start();
+
+    const configured = service.listProviders()[0]!;
+    const runtimeProvider = Object.freeze({
+      ...configured,
+      providerId: "runtime-opencode",
+      providerName: "OpenCode CLI",
+    });
+    runtimeProviderSource.current = {
+      revision: "runtime-1",
+      providers: [runtimeProvider],
+    };
+    runtimeProviderSource.emit("models-refreshed");
+
+    await vi.waitFor(() =>
+      expect(service.getSnapshot()?.sourceRevisions.runtimeProviders).toBe(
+        "runtime-1",
+      ),
+    );
+    const snapshot = service.getSnapshot()!;
+    expect(snapshot.runtimeProviders?.providers).toEqual([runtimeProvider]);
+    expect(
+      snapshot.registry.providers.map((provider) => provider.providerId),
+    ).toEqual(["local", "runtime-opencode"]);
+    expect(
+      service.validateSelection({
+        providerId: "runtime-opencode",
+        modelId: "model-a",
+        options: { reasoningLevel: "disabled" },
+      }),
+    ).toEqual({ ok: true });
+    expect(listener.mock.calls.at(-1)?.[0].snapshot).toBe(snapshot);
+  });
+
+  it("runtime Provider ID collision rejects the candidate and leaves the published snapshot intact", async () => {
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
+    const accountSource = new MutableSource(accountSnapshot());
+    const runtimeProviderSource =
+      new MutableSource<RuntimeProviderCatalogSnapshot>({
+        revision: "runtime-0",
+        providers: [],
+      });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+      runtimeProviderSource,
+    });
+    const errors = vi.fn();
+    service.onDidRefreshError(errors);
+    await service.start();
+    const originalSnapshot = service.getSnapshot()!;
+    const originalView = service.getView();
+
+    runtimeProviderSource.current = {
+      revision: "runtime-collision",
+      providers: [service.listProviders()[0]!],
+    };
+    runtimeProviderSource.emit("collision");
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledTimes(1));
+
+    expect(errors.mock.calls[0]?.[0].error).toMatchObject({
+      message: "Registry 中存在重复 Provider: local",
+    });
+    expect(service.getSnapshot()).toBe(originalSnapshot);
+    expect(service.getView()).toBe(originalView);
+    expect(service.getProvider("local")?.providerId).toBe("local");
+  });
+
+  it("start 只返回就绪；Account 更新后显式读取当前快照，不重复启动刷新", async () => {
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
+    const accountSource = new MutableSource(accountSnapshot());
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     try {
       expect(await service.start()).toBeUndefined();
       accountSource.current = accountSnapshot("account-2");
@@ -126,16 +226,24 @@ describe("ProviderRegistryService", () => {
   });
 
   it("通过注入的 Config 和 Account Source 初始化并发布完整快照", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
     const accountSource = new MutableSource(accountSnapshot());
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     const listener = vi.fn();
     service.onDidChange(listener);
 
     await service.start();
     const snapshot = service.getSnapshot()!;
 
-    expect(snapshot.sourceRevisions).toEqual({ config: "config-1", account: "account-1" });
+    expect(snapshot.sourceRevisions).toEqual({
+      config: "config-1",
+      account: "account-1",
+    });
     expect(service.listProviders()[0]?.models[0]?.modelId).toBe("model-a");
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener.mock.calls[0]?.[0].reasons).toEqual(["start"]);
@@ -147,8 +255,13 @@ describe("ProviderRegistryService", () => {
     const firstRead = deferred<ProviderConfigSnapshot>();
     const configSource = new MutableSource(configV1);
     configSource.nextRead = () => firstRead.promise;
-    const accountSource = new MutableSource(accountSnapshot("account-2", "config-2"));
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const accountSource = new MutableSource(
+      accountSnapshot("account-2", "config-2"),
+    );
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     const listener = vi.fn();
     service.onDidChange(listener);
 
@@ -168,9 +281,14 @@ describe("ProviderRegistryService", () => {
   });
 
   it("Source revision 未变化时不重复发布 Registry", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
     const accountSource = new MutableSource(accountSnapshot());
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     const listener = vi.fn();
     service.onDidChange(listener);
     await service.start();
@@ -184,9 +302,14 @@ describe("ProviderRegistryService", () => {
   });
 
   it("发布回调中请求的新刷新不会被即将结束的旧刷新吞掉", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
     const accountSource = new MutableSource(accountSnapshot());
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     let followUp: Promise<unknown> | null = null;
     service.onDidChange(() => {
       if (followUp) return;
@@ -203,9 +326,14 @@ describe("ProviderRegistryService", () => {
   });
 
   it("刷新失败保留上一份成功 View，并允许后续刷新恢复", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
     const accountSource = new MutableSource(accountSnapshot());
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     const errorListener = vi.fn();
     service.onDidRefreshError(errorListener);
     await service.start();
@@ -214,7 +342,9 @@ describe("ProviderRegistryService", () => {
     configSource.nextRead = async () => {
       throw new Error("config unavailable");
     };
-    await expect(service.refresh("broken-config")).rejects.toThrow("config unavailable");
+    await expect(service.refresh("broken-config")).rejects.toThrow(
+      "config unavailable",
+    );
 
     expect(service.getSnapshot()).toBe(initial);
     expect(service.listProviders()[0]?.models[0]?.modelId).toBe("model-a");
@@ -228,9 +358,16 @@ describe("ProviderRegistryService", () => {
   });
 
   it("Built-in 与 Account 来源 revision 不匹配时保留旧 Registry，匹配后只发布最终组合", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
-    const accountSource = new MutableSource(accountSnapshot("account-1", "config-1"));
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
+    const accountSource = new MutableSource(
+      accountSnapshot("account-1", "config-1"),
+    );
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     const listener = vi.fn();
     service.onDidChange(listener);
     await service.start();
@@ -246,14 +383,23 @@ describe("ProviderRegistryService", () => {
 
     accountSource.current = accountSnapshot("account-2", "config-2");
     accountSource.emit("account-recomputed");
-    await vi.waitFor(() => expect(service.listProviders()[0]?.models[0]?.modelId).toBe("model-b"));
+    await vi.waitFor(() =>
+      expect(service.listProviders()[0]?.models[0]?.modelId).toBe("model-b"),
+    );
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
   it("Personal-only revision 变化不等待新的 Account Snapshot", async () => {
-    const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
-    const accountSource = new MutableSource(accountSnapshot("account-1", "config-1"));
-    const service = new ProviderRegistryService({ configSource, accountSource });
+    const configSource = new MutableSource(
+      configSnapshot("config-1", "model-a"),
+    );
+    const accountSource = new MutableSource(
+      accountSnapshot("account-1", "config-1"),
+    );
+    const service = new ProviderRegistryService({
+      configSource,
+      accountSource,
+    });
     await service.start();
 
     configSource.current = {

@@ -5,6 +5,7 @@ export const providerApiTypeDataSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "opencode-sdk",
 ]);
 export const providerGroupDataSchema = z.enum([
   "standard-personal",
@@ -40,6 +41,8 @@ export const completeApiKeyAccessDataSchema = apiKeyAccessDataSchema.extend({
   apiKey: nonBlankRequiredString,
 });
 
+export const localAuthAccessDataSchema = z.object({ type: z.literal("local-auth") }).strict();
+
 export const completeZhipuAccountAccessDataSchema = z
   .object({
     type: z.literal("zhipu-account"),
@@ -56,33 +59,74 @@ export const zhipuAccountAccessDataSchema = z
   .strict();
 export const providerAccessDataSchema = z.discriminatedUnion("type", [
   apiKeyAccessDataSchema,
+  localAuthAccessDataSchema,
   zhipuAccountAccessDataSchema,
 ]);
 export const completeProviderAccessDataSchema = z.discriminatedUnion("type", [
   completeApiKeyAccessDataSchema,
+  localAuthAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
 ]);
 
+export const opencodeSdkProviderApiDataSchema = z
+  .object({ type: z.literal("opencode-sdk") })
+  .strict();
 export const completeProviderApiDataSchema = z
   .object({
     type: providerApiTypeDataSchema,
-    baseUrl: nonBlankRequiredString.pipe(z.string().url()),
+    baseUrl: z.string().url().nullable().optional(),
     headers: z.record(z.string(), z.string()).readonly().nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((api, context) => validateProviderApiShape(api, context, true));
 export const providerApiDataSchema = z
   .object({
-    ...sparseShape(completeProviderApiDataSchema.shape),
+    type: providerApiTypeDataSchema.nullable().optional(),
     baseUrl: z.string().url().nullable().optional(),
+    headers: z.record(z.string(), z.string()).readonly().nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((api, context) => validateProviderApiShape(api, context, false));
 // Personal 允许暂存编辑中的 endpoint；完整 schema 仍拒绝，且只影响该 Provider 的准入。
-export const personalProviderApiDataSchema = providerApiDataSchema.extend({
-  baseUrl: z.string().nullable().optional(),
-});
+export const personalProviderApiDataSchema = z
+  .object({
+    type: providerApiTypeDataSchema.nullable().optional(),
+    baseUrl: z.string().nullable().optional(),
+    headers: z.record(z.string(), z.string()).readonly().nullable().optional(),
+  })
+  .strict()
+  .superRefine((api, context) => validateProviderApiShape(api, context, false));
+
+function validateProviderApiShape(
+  api: {
+    type?: string | null;
+    baseUrl?: string | null;
+    headers?: Readonly<Record<string, string>> | null;
+  },
+  context: z.RefinementCtx,
+  requireEndpoint: boolean,
+): void {
+  if (api.type === "opencode-sdk") {
+    if (api.baseUrl !== undefined) {
+      context.addIssue({ code: "custom", path: ["baseUrl"], message: "opencode-sdk 不使用 endpoint" });
+    }
+    if (api.headers !== undefined) {
+      context.addIssue({ code: "custom", path: ["headers"], message: "opencode-sdk не использует headers" });
+    }
+    return;
+  }
+  if (requireEndpoint && api.type != null && api.baseUrl == null) {
+    context.addIssue({
+      code: "custom",
+      path: ["baseUrl"],
+      message: "缺少必填配置 baseUrl",
+      params: { configIssueCode: "required-field-missing" },
+    });
+  }
+}
 
 const modelIdsDataSchema = z.array(z.string().min(1)).readonly().nullable().optional();
-export const providerConfigDataSchema = z
+export const providerConfigDataObjectSchema = z
   .object({
     group: providerGroupDataSchema.nullable().optional(),
     logo: providerLogoDataSchema.nullable().optional(),
@@ -94,11 +138,40 @@ export const providerConfigDataSchema = z
     visibility: providerVisibilityDataSchema.nullable().optional(),
   })
   .strict();
-export const completeProviderConfigDataSchema = providerConfigDataSchema.extend({
-  group: providerGroupDataSchema,
-  access: completeProviderAccessDataSchema,
-  api: completeProviderApiDataSchema,
-});
+export const providerConfigDataSchema = providerConfigDataObjectSchema.superRefine(
+  validateLocalAuthRuntimePair,
+);
+export const completeProviderConfigDataSchema = z
+  .object({
+    group: providerGroupDataSchema,
+    logo: providerLogoDataSchema.nullable().optional(),
+    access: completeProviderAccessDataSchema,
+    api: completeProviderApiDataSchema,
+    builtinModelIds: modelIdsDataSchema,
+    personalModelIds: modelIdsDataSchema,
+    modelOrder: modelIdsDataSchema,
+    visibility: providerVisibilityDataSchema.nullable().optional(),
+  })
+  .strict()
+  .superRefine(validateLocalAuthRuntimePair);
+
+export function validateLocalAuthRuntimePair(
+  config: {
+    access?: { type?: string | null } | null;
+    api?: { type?: string | null } | null;
+  },
+  context: z.RefinementCtx,
+  pathPrefix: readonly (string | number)[] = [],
+): void {
+  const localAuth = config.access?.type === "local-auth";
+  const openCodeSdk = config.api?.type === "opencode-sdk";
+  if (localAuth === openCodeSdk) return;
+  context.addIssue({
+    code: "custom",
+    path: [...pathPrefix, localAuth ? "api" : "access"],
+    message: "local-auth и opencode-sdk должны использоваться только парой",
+  });
+}
 
 export const providerTemplateNameMapDataSchema = z
   .object({

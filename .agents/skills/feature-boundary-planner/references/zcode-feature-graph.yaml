@@ -5530,21 +5530,21 @@ nodes:
 
   - id: "capability.opencode-delegated-runtime"
     kind: "capability"
-    label: "OpenCode as a separately owned delegated ACP runtime"
-    aliases: ["OpenCode ACP", "opencode acp", "delegated OpenCode agent"]
-    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    label: "Legacy OpenCode ACP runtime awaiting retirement"
+    aliases: ["legacy OpenCode ACP", "opencode acp", "delegated OpenCode agent"]
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
     codeSeeds:
       - file: "packages/services/src/opencode-acp-runtime/index.ts"
       - file: "packages/services/src/node.ts"
         symbol: "getOpenCodeAcpRuntime"
     invariants:
-      - "The active process-owning Host owns the opencode acp child and ACP transport: window-scoped Local Host for local workspaces or standalone Source Server Host for Source Server workspaces; OpenCode owns auth, provider/model choice, session history, tools, and its agent loop."
-      - "Version diagnostics do not authenticate, create sessions, or prove model availability; model options are read only from an explicitly created ACP session."
-      - "OpenCode delegated work is not a ZCode CLI turn or Provider Registry model, and does not inherit ZCode permission policy without an explicit bridge."
+      - "The ACP implementation is legacy migration debt, not the accepted user-facing OpenCode CLI model-provider flow. Do not route new Composer selections through this separate transcript or session lifecycle."
+      - "The accepted flow is a local-auth Provider Registry model in ordinary Composer and the standard ZCode conversation runtime, as specified by docs/specs/opencode-cli-model-provider.md."
+      - "Retire the ACP-only route, panel, and persistence when the standard provider path is proven; preserve unrelated shared CLI discovery/install code only where still used."
   - id: "service.opencode-acp-runtime"
     kind: "service"
-    label: "Host-local OpenCode ACP lifecycle and session adapter"
-    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    label: "Legacy Host-local OpenCode ACP lifecycle and session adapter"
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
     codeSeeds:
       - file: "packages/services/src/opencode-acp-runtime/contract.ts"
       - file: "packages/services/src/opencode-acp-runtime/adapters/openCodeAcpRuntime.ts"
@@ -5552,46 +5552,88 @@ nodes:
         symbol: "disposeServiceResourcesAndWait"
   - id: "surface.opencode-agent-settings-ui"
     kind: "surface"
-    label: "Separately navigated Host-owned OpenCode CLI agent settings"
-    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    label: "Legacy separate OpenCode ACP settings panel awaiting retirement"
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
     codeSeeds:
       - file: "packages/ui/src/opencode-agent-settings/OpenCodeAgentSettingsPanel.tsx"
       - file: "packages/ui/src/settings/ModelProviderSection.tsx"
       - file: "packages/ui/src/settings/model-provider-section/useModelProviderNavigation.ts"
     invariants:
-      - "No ACP child or durable OpenCode session starts until the user selects Start OpenCode session in this separate panel."
-      - "Model and agent pickers contain only live session/new and session/set_config_option values returned by ACP; absent model options display OpenCode default."
-      - "OpenCode output and session state remain separate from ZCode conversation state; only a path valid on the owning Host can be sent to its runtime."
-      - "The ACP panel is visibly labeled as Host CLI-backed with no ZCode API key; API-key Provider cards display their credential mode without joining the two configuration or runtime owners."
-      - "The ACP panel is rendered only for its dedicated Agent integrations navigation item; selecting an API provider renders only the Provider Registry form. OpenCode CLI never appears in the Composer model selector."
+      - "This panel is legacy UI and must not be presented as the product path for OpenCode CLI model selection."
+      - "The accepted OpenCode UI is the existing Provider settings surface plus ordinary conversation model control; it does not ask the user to select a workspace or start a separate session."
   - id: "evidence.opencode-acp-runtime-tests"
     kind: "evidence"
-    label: "Fake-child OpenCode ACP lifecycle contract tests"
+    label: "Legacy fake-child OpenCode ACP lifecycle contract tests"
     docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
     codeSeeds:
       - file: "packages/services/src/opencode-acp-runtime/contract.test.ts"
-      - file: "packages/services/src/opencode-acp-runtime/adapters/openCodeAcpRuntime.test.ts"
+
+  - id: "capability.opencode-cli-model-provider"
+    kind: "capability"
+    label: "OpenCode CLI as a local-auth model provider in ordinary chat"
+    aliases: ["OpenCode CLI provider", "OpenCode local auth", "Cline-style OpenCode provider"]
+    docs: ["docs/specs/opencode-cli-model-provider.md"]
+    codeSeeds:
+      - symbol: "ProviderConfigResolver"
+        file: "packages/provider/src/resolver.ts"
+      - symbol: "ProviderRegistry"
+        file: "packages/provider/src/registry.ts"
+      - symbol: "ApiProviderModelRuntime"
+        file: "apps/zcode-cli/packages/bootstrap/src/app/provider-registry-model-runtime.ts"
+      - symbol: "V4ComposerModelControlsImpl"
+        file: "packages/ui/src/v4/composer/V4ComposerToolbar.tsx"
+    invariants:
+      - "OpenCode CLI uses its own Host-local authentication and appears as a normal provider/model choice in the Composer; no ZCode API key or fabricated API endpoint is used."
+      - "Ordinary ModelSelection, CommandInbox admission, ZCode run lifecycle, cancellation, and transcript remain authoritative. OpenCode Go/API credentials stay independent."
+      - "OpenCode-side tools and upstream limits remain owned by OpenCode; ZCode never reads/copies credentials, dispatches the same tool event twice, bypasses rate limits, or silently switches providers/models."
+      - "No separate ACP panel, workspace/session form, or transcript is part of the accepted user flow. The existing ACP implementation is retirement work and its tests do not prove this provider integration."
 
 edges:
   - from: "capability.opencode-delegated-runtime"
     to: "surface.opencode-agent-settings-ui"
     type: "renders-in"
-    rank: "must-inspect"
-    condition: "Only the explicit settings panel for the active owning Host starts a delegated OpenCode session and displays its independent transcript and ownership boundary."
+    rank: "evidence-only"
+    condition: "Legacy ACP panel and transcript are tracked for retirement; they are not the accepted Composer provider experience."
   - from: "surface.opencode-agent-settings-ui"
     to: "service.opencode-acp-runtime"
     type: "commits-to"
-    rank: "must-inspect"
-    condition: "UI consumes the active workspace's process-owning Host service; Source Server uses authenticated server RPC, while legacy desktop-attached remotes never inherit the Desktop Local Host process."
+    rank: "evidence-only"
+    condition: "This edge describes only the legacy ACP panel slated for retirement, not the standard provider path."
   - from: "capability.opencode-delegated-runtime"
     to: "service.opencode-acp-runtime"
     type: "owned-by"
-    rank: "must-inspect"
-    condition: "Host owns only process and ACP transport lifecycle; OpenCode owns agent execution, auth, tools, and durable session history."
+    rank: "evidence-only"
+    condition: "The service is the legacy ACP route; the ordinary provider integration uses Provider Registry and the standard model runtime."
   - from: "service.opencode-acp-runtime"
     to: "evidence.opencode-acp-runtime-tests"
     type: "verified-by"
     rank: "evidence-only"
+
+  - from: "capability.opencode-cli-model-provider"
+    to: "surface.provider-settings"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "The user enables or installs the Host-local CLI from the ordinary Model Providers page; no separate agent-settings panel is required."
+  - from: "capability.opencode-cli-model-provider"
+    to: "surface.conversation-model-control"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "CLI-reported models use the ordinary Composer ModelSelection picker and persist through the standard draft/session behavior."
+  - from: "capability.opencode-cli-model-provider"
+    to: "capability.provider-registry"
+    type: "registered-as"
+    rank: "must-inspect"
+    condition: "OpenCode CLI has typed local-auth semantics and a target-Host-owned catalog; do not model it as OpenCode Go/API or a fake-key custom provider."
+  - from: "capability.opencode-cli-model-provider"
+    to: "capability.model-selection"
+    type: "selected-through"
+    rank: "must-inspect"
+    condition: "Composer submission carries the complete ordinary provider/model identity into standard Registry validation and ModelFactory construction."
+  - from: "capability.opencode-cli-model-provider"
+    to: "capability.conversation-runtime"
+    type: "executes-through"
+    rank: "must-inspect"
+    condition: "The normal ZCode conversation admission, run lifecycle, cancellation, stream projection, and transcript are used; the legacy ACP route is not used."
 
   - from: "capability.tool-search"
     to: "surface.tool-search-settings"

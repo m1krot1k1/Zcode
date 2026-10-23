@@ -1,12 +1,21 @@
 # Conversation Session E2E Coverage Matrix
 
-## OpenCode CLI в обычном чате (OCAD, accepted)
+## OpenCode CLI как обычный provider чата (OCP, accepted product contract)
 
-| Case       | Setup / Action                                                                                            | Требуемые assertions                                                                                                              | Автоматизация / статус                                                                                                                             |
-| ---------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OCAD-E2E-1 | Изолированный HOME без ZCode provider; выбрать OpenCode CLI модель в обычном Composer и отправить marker. | Draft принят; точные модель и marker попали в ACP fake CLI; ответ проецируется в тот же transcript; нет запроса к model provider. | `conversation-session/manual-review/pending/conversation-session-opencode-cli-composer.test.ts`; pending, ожидает desktop capture и ручной review. |
+Продуктовый контракт принят, но реализация обычного AI SDK provider path и его Desktop E2E ещё не подтверждены. Старые проверки ACP доказывают только работу прежнего отдельного маршрута и не являются доказательством этой интеграции.
 
-Проверка 2026-10-23: fixture contract прошёл; локальный ACP subprocess smoke прошёл `initialize → newSession → set model → prompt → end_turn`; desktop build прошёл. WDIO не дошёл до запуска приложения: скачивание ChromiumDriver остановилось с DNS `ENOTFOUND` на `googlechromelabs.github.io`. Поэтому UI-кейс остаётся pending.
+| Case | Setup / Action | Требуемые assertions | Автоматизация / статус |
+| --- | --- | --- | --- |
+| OCP-01 | OpenCode CLI отсутствует; включить его в Model Providers. | Та же строка предлагает Install; установка проверяется обнаружением и версией CLI, после чего provider можно выбрать. | Unit + Desktop settings E2E; pending implementation. |
+| OCP-02 | CLI установлен, локальный catalog возвращает модели; открыть обычный Composer. | OpenCode CLI и его модели отображаются в штатном выборе provider/model без ACP панели или отдельной настройки workspace/session. | Provider registry + Composer tests; pending implementation. |
+| OCP-03 | В существующем ZCode чате выбрать модель OpenCode CLI и отправить marker. | Обычные ModelSelection/admission/runtime создают запрос через AI SDK adapter; ответ появляется в той же ленте. Интеграционный fixture проверяет payload/stream без внешнего model request. | Adapter integration + Desktop E2E; pending implementation. |
+| OCP-04 | Нажать Stop во время ответа OpenCode. | Отменяется тот же обычный ZCode run; последующие provider chunks не меняют transcript. | Adapter cancellation + conversation protocol; pending implementation. |
+| OCP-05 | OpenCode CLI не авторизован у своего model provider. | Показывается типизированная ошибка входа; ZCode не читает/копирует credentials и не переключает provider автоматически. | Provider integration; pending implementation. |
+| OCP-06 | Provider возвращает rate limit. | Ошибка показана пользователю; нет обхода лимита, скрытого повтора или автоматического переключения provider/model. | Model runtime test; pending implementation. |
+| OCP-07 | OpenCode stream содержит сведения об активности собственных инструментов. | Активность отображается не более одного раза; ZCode не запускает эти действия повторно своим tool runner. | Adapter/projection test; pending implementation. |
+| OCP-08 | CLI выключен или catalog refresh завершился ошибкой. | Выключенный provider отсутствует в выборе; ошибка обновления даёт retryable state; API providers продолжают работать. | Settings/registry tests; pending implementation. |
+
+Локальный unit/integration fixture не доказывает работу с настоящей авторизацией OpenCode. Реальный Desktop E2E с настоящим CLI и доступным пользователю model provider должен отдельно подтвердить выбор модели, ответ в исходном ZCode чате и Stop; он не требует входа в аккаунт ZCode и не должен записывать секреты.
 
 ## 项目与任务草稿生命周期（PD，2026-10-16）
 

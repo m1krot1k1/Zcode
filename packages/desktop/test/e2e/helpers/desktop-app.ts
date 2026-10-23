@@ -731,7 +731,9 @@ export async function readAgentsState(): Promise<Record<string, unknown>> {
 function convertPersonalProviderConfig(
   document: ProviderConfigLayerSnapshot,
 ): E2EModelProviderSnapshot[] {
-  return document.providers.entries().map(([providerId, provider]) => {
+  return document.providers.entries().flatMap(([providerId, provider]) => {
+    // E2E personal-provider fixture models HTTP endpoints only; local OpenCode SDK is runtime-owned.
+    if (provider.api?.type === "opencode-sdk") return [];
     const now = Date.now();
     const kind = mapPersonalProviderKind(provider);
     return {
@@ -791,6 +793,8 @@ function convertPersonalModelConfig(
 
 function mapPersonalProviderKind(provider: ProviderConfig): E2EProviderKind {
   switch (provider.api?.type) {
+    case "opencode-sdk":
+      return "openai-compatible";
     case "anthropic-messages":
       return "anthropic";
     case "openai-responses":

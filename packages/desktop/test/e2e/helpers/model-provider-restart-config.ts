@@ -153,6 +153,8 @@ function modelConfigFromSeed(
 
 function maxOutputTokensMap(apiFormat: ProviderApiType): string {
   switch (apiFormat) {
+    case "opencode-sdk":
+      return "{}";
     case "anthropic-messages":
       return '{"max_tokens":maxOutputTokens}';
     case "openai-chat-completions":

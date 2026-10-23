@@ -2,6 +2,7 @@
  * opencode-acp-runtime 标准调用示例：agent 靠模仿写代码，这里放的就是该模仿的那份。
  */
 import type { IOpenCodeAcpRuntime } from "./contract.js";
+import type { OpenCodeCliModelDescriptor } from "./contract.js";
 
 export async function exampleOpenCodeAcpSession(
   runtime: IOpenCodeAcpRuntime,
@@ -30,7 +31,7 @@ export async function exampleOpenCodeAcpSession(
 /** Read-only CLI discovery: no ACP session is created and login is never inferred. */
 export async function exampleOpenCodeCliModelCatalog(
   runtime: IOpenCodeAcpRuntime,
-): Promise<string[]> {
+): Promise<OpenCodeCliModelDescriptor[]> {
   const catalog = await runtime.listModels();
   if (catalog.status !== "available") return [];
   // `authentication` intentionally remains `not-checked`; model discovery is not sign-in proof.

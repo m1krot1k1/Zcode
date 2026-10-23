@@ -12,7 +12,22 @@ describe("opencode-acp-runtime contract", () => {
   it("keeps CLI model discovery explicit that authentication was not checked", () => {
     const catalog: OpenCodeCliModelCatalog = {
       status: "available",
-      models: ["provider/model"],
+      models: [
+        {
+          modelId: "provider/model",
+          name: "Model",
+          contextWindow: 32_000,
+          maxOutputTokens: 8_000,
+          inputFormat: {
+            supportsText: true,
+            supportsImage: false,
+            supportsVideo: false,
+            supportsAudio: false,
+            supportsPdf: false,
+          },
+          outputSupportsText: true,
+        },
+      ],
       authentication: "not-checked",
     };
     expect(catalog.authentication).toBe("not-checked");

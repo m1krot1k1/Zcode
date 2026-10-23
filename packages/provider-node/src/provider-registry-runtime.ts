@@ -4,6 +4,7 @@ import {
   createFailClosedAccountProviderConfigSnapshot,
   type AccountProviderConfigSnapshot,
   type ProviderSource,
+  type RuntimeProviderCatalogSnapshot,
 } from "@zcode/provider";
 import {
   NodeProviderConfigRuntime,
@@ -12,6 +13,7 @@ import {
 
 export interface NodeProviderRegistryRuntimeOptions extends NodeProviderConfigRuntimeOptions {
   readonly accountSource?: ProviderSource<AccountProviderConfigSnapshot>;
+  readonly runtimeProviderSource?: ProviderSource<RuntimeProviderCatalogSnapshot>;
   readonly createAccountSource?: (
     configService: NodeProviderConfigRuntime["configService"],
   ) => ProviderSource<AccountProviderConfigSnapshot>;
@@ -35,6 +37,9 @@ export class NodeProviderRegistryRuntime {
     this.registryService = new ProviderRegistryService({
       configSource: this.configService,
       accountSource: this.#accountSource,
+      ...(options.runtimeProviderSource
+        ? { runtimeProviderSource: options.runtimeProviderSource }
+        : {}),
     });
   }
 
@@ -45,7 +50,9 @@ export class NodeProviderRegistryRuntime {
       const account = await this.#accountSource.read();
       if (account.basedOnZCodeBuiltinRevision === "uninitialized") {
         this.#accountSource.replace(
-          createFailClosedAccountProviderConfigSnapshot(await this.configService.read()),
+          createFailClosedAccountProviderConfigSnapshot(
+            await this.configService.read(),
+          ),
           "initial-fail-closed",
         );
       }
@@ -69,7 +76,8 @@ export class NodeProviderRegistryRuntime {
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("NodeProviderRegistryRuntime 已 dispose");
+    if (this.#disposed)
+      throw new Error("NodeProviderRegistryRuntime 已 dispose");
   }
 }
 

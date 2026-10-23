@@ -3,6 +3,7 @@ import { ConfigOverlay, type ConfigValidationIssue } from "../config-overlay.js"
 import type { z } from "zod";
 import {
   completeApiKeyAccessDataSchema,
+  localAuthAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
   completeProviderApiDataSchema,
   completeProviderConfigDataSchema,
@@ -69,6 +70,30 @@ export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
   }
 }
 
+export type LocalAuthAccessConfigObject = Readonly<z.infer<typeof localAuthAccessDataSchema>>;
+
+/** Credentials are owned by the provider's installed local CLI. */
+export class LocalAuthAccessConfig extends ConfigOverlay<LocalAuthAccessConfig> {
+  readonly type = "local-auth" as const;
+
+  constructor() {
+    super();
+    Object.freeze(this);
+  }
+
+  overlay(_next: LocalAuthAccessConfig): LocalAuthAccessConfig {
+    return this;
+  }
+
+  validateComplete(path: readonly string[] = []): readonly ConfigValidationIssue[] {
+    return validateConfigSchema(localAuthAccessDataSchema, this.toJSON(), path);
+  }
+
+  toJSON(): LocalAuthAccessConfigObject {
+    return { type: this.type };
+  }
+}
+
 export type ZhipuAccountAccessConfigInput = Omit<ZhipuAccountAccessConfigObject, "type">;
 
 export type ZhipuAccountAccessConfigObject = Readonly<z.infer<typeof zhipuAccountAccessDataSchema>>;
@@ -111,7 +136,10 @@ export class ZhipuAccountAccessConfig extends ConfigOverlay<ZhipuAccountAccessCo
   }
 }
 
-export type ProviderAccessConfig = ApiKeyAccessConfig | ZhipuAccountAccessConfig;
+export type ProviderAccessConfig =
+  | ApiKeyAccessConfig
+  | LocalAuthAccessConfig
+  | ZhipuAccountAccessConfig;
 
 export type ProviderAccessConfigObject = Readonly<z.infer<typeof providerAccessDataSchema>>;
 
@@ -127,23 +155,27 @@ export type ProviderVisibility = z.infer<typeof providerVisibilityDataSchema>;
 export type ProviderLogoRef = Readonly<z.infer<typeof providerLogoDataSchema>>;
 
 export type ProviderApiConfigInput = Readonly<z.infer<typeof providerApiDataSchema>>;
+type HttpProviderApiConfigInput = Extract<ProviderApiConfigInput, { baseUrl?: unknown }>;
 
 export class ProviderApiConfig extends ConfigOverlay<ProviderApiConfig> {
   readonly type?: ProviderApiConfigInput["type"];
-  readonly baseUrl?: ProviderApiConfigInput["baseUrl"];
-  readonly headers?: ProviderApiConfigInput["headers"];
+  readonly baseUrl?: HttpProviderApiConfigInput["baseUrl"];
+  readonly headers?: HttpProviderApiConfigInput["headers"];
 
   constructor(input: ProviderApiConfigInput = {}) {
     super();
     this.type = input.type;
-    this.baseUrl = input.baseUrl;
-    this.headers = input.headers ? Object.freeze({ ...input.headers }) : input.headers;
+    this.baseUrl = "baseUrl" in input ? input.baseUrl : undefined;
+    const headers = "headers" in input ? input.headers : undefined;
+    this.headers = headers ? Object.freeze({ ...headers }) : headers;
     Object.freeze(this);
   }
 
   overlay(next: ProviderApiConfig): ProviderApiConfig {
+    const type = this.overlayValue(this.type, next.type);
+    if (type === "opencode-sdk") return new ProviderApiConfig({ type });
     return new ProviderApiConfig({
-      type: this.overlayValue(this.type, next.type),
+      type,
       baseUrl: this.overlayValue(this.baseUrl, next.baseUrl),
       headers: this.overlayValue(this.headers, next.headers),
     });
@@ -506,6 +538,8 @@ function overlayProviderAccess(
     case "api-key":
     case "zhipu-coding-plan-api-key":
       return current.overlay(next as ApiKeyAccessConfig);
+    case "local-auth":
+      return current.overlay(next as LocalAuthAccessConfig);
     case "zhipu-account":
       return current.overlay(next as ZhipuAccountAccessConfig);
   }

@@ -36,7 +36,10 @@ import { accountProviderUnavailableReasonSchema } from "../account-provider-stat
 import { bashOutputDisplaySchema } from "../bash-output-display.js";
 import { zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
-import { completeModelPropertiesDataSchema } from "../model-config.js";
+import {
+  completeModelConfigDataSchema,
+  completeModelPropertiesDataSchema,
+} from "../model-config.js";
 import { modelExecutionSchema } from "../model-execution.js";
 export type { ModelExecutionSelectionFallback } from "../model-execution.js";
 export * from "../off-peak-execution.js";
@@ -69,7 +72,10 @@ export const zcodeTopicResourceReadResultSchema = z
   })
   .strict();
 export const zcodeTopicResourceCancelParamsSchema = z
-  .object({ requestId: z.string().min(1).max(256), taskId: z.string().min(1).max(256) })
+  .object({
+    requestId: z.string().min(1).max(256),
+    taskId: z.string().min(1).max(256),
+  })
   .strict();
 export const zcodeTopicResourceCancelResultSchema = z.object({ cancelled: z.boolean() }).strict();
 export type ZCodeTopicResourceReadParams = z.infer<typeof zcodeTopicResourceReadParamsSchema>;
@@ -244,7 +250,10 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
             lane: z.string().min(1).max(64),
             steps: z.array(z.string().min(1).max(64)).min(1).max(64),
             member: z
-              .object({ index: z.number().int().nonnegative(), of: z.number().int().positive() })
+              .object({
+                index: z.number().int().nonnegative(),
+                of: z.number().int().positive(),
+              })
               .strict()
               .optional(),
             many: z.literal(true).optional(),
@@ -255,7 +264,9 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
     handoffs: z
       .array(
         zcodeWorkflowEdgeSchema
-          .extend({ types: z.array(z.string().min(1).max(128)).min(1).max(8).optional() })
+          .extend({
+            types: z.array(z.string().min(1).max(128)).min(1).max(8).optional(),
+          })
           .strict(),
       )
       .max(256),
@@ -285,7 +296,14 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
     // 阶段流（docs/dynamic-workflow/presentation.md「Streams」）：两端互为 alongside 的 data 边，
     // 只有 {from, to}——不是 runs after，不进 phaseEdges、不带 back。与词汇表同进同退。
     phaseStreams: z
-      .array(z.object({ from: z.string().min(1).max(64), to: z.string().min(1).max(64) }).strict())
+      .array(
+        z
+          .object({
+            from: z.string().min(1).max(64),
+            to: z.string().min(1).max(64),
+          })
+          .strict(),
+      )
       .max(128)
       .optional(),
     // 还开着的留白，源码序（docs/dynamic-workflow/authoring.md「Holes」）；镜像 v4。
@@ -484,7 +502,10 @@ export const zcodeStorageStartupStateSchema = z
   .strict()
   .superRefine((state, context) => {
     if (state.phase === "failed" && !state.errorCode)
-      context.addIssue({ code: "custom", message: "failed requires errorCode" });
+      context.addIssue({
+        code: "custom",
+        message: "failed requires errorCode",
+      });
   });
 export type ZCodeStorageStartupState = z.infer<typeof zcodeStorageStartupStateSchema>;
 
@@ -921,7 +942,10 @@ export const zcodeMcpUiSamplingParamsSchema = z
   })
   .strict();
 export const zcodeMcpUiCancelSamplingParamsSchema = z
-  .object({ ...zcodeMcpUiPluginScopeShape, operationId: nonEmptyString.max(128) })
+  .object({
+    ...zcodeMcpUiPluginScopeShape,
+    operationId: nonEmptyString.max(128),
+  })
   .strict();
 export const zcodeMcpUiSamplingResultSchema = mcpAppsSamplingResultSchema;
 export type ZCodeMcpUiSamplingParams = z.infer<typeof zcodeMcpUiSamplingParamsSchema>;
@@ -946,7 +970,10 @@ export const zcodeMcpUiCancelCallResultSchema = z.object({ cancelled: z.boolean(
 export type ZCodeMcpUiCancelCallResult = z.infer<typeof zcodeMcpUiCancelCallResultSchema>;
 /** 页面发起的 resources/list、resources/templates/list、subscribe、unsubscribe 代理。 */
 export const zcodeMcpUiListResourcesParamsSchema = z
-  .object({ ...zcodeMcpUiPluginScopeShape, cursor: nonEmptyString.max(2048).optional() })
+  .object({
+    ...zcodeMcpUiPluginScopeShape,
+    cursor: nonEmptyString.max(2048).optional(),
+  })
   .strict();
 export type ZCodeMcpUiListResourcesParams = z.infer<typeof zcodeMcpUiListResourcesParamsSchema>;
 const zcodeMcpUiResourceDescriptorSchema = z
@@ -1018,7 +1045,9 @@ export type ZCodeMcpUiRegisterAppToolsParams = z.infer<
   typeof zcodeMcpUiRegisterAppToolsParamsSchema
 >;
 export const zcodeMcpUiRegisterAppToolsResultSchema = z
-  .object({ tools: z.array(z.object({ name: z.string(), modelName: z.string() }).strict()) })
+  .object({
+    tools: z.array(z.object({ name: z.string(), modelName: z.string() }).strict()),
+  })
   .strict();
 export type ZCodeMcpUiRegisterAppToolsResult = z.infer<
   typeof zcodeMcpUiRegisterAppToolsResultSchema
@@ -1052,7 +1081,9 @@ export const zcodeMcpUiResolveAppToolCallParamsSchema = z
     callId: nonEmptyString.max(MCP_APPS_APP_TOOL_CALL_ID_MAX_CHARS),
     result: mcpAppsAppToolCallResultSchema.optional(),
     error: z
-      .object({ message: z.string().max(MCP_APPS_APP_TOOL_ERROR_MESSAGE_MAX_CHARS) })
+      .object({
+        message: z.string().max(MCP_APPS_APP_TOOL_ERROR_MESSAGE_MAX_CHARS),
+      })
       .strict()
       .optional(),
   })
@@ -2569,6 +2600,74 @@ export const zcodeProviderUpdateAccountConfigResultSchema = z
 export type ZCodeProviderUpdateAccountConfigResult = z.infer<
   typeof zcodeProviderUpdateAccountConfigResultSchema
 >;
+
+/**
+ * Safe runtime-discovered provider wire format. This deliberately cannot carry credentials,
+ * endpoints, or arbitrary provider config; the worker additionally validates it into domain types.
+ */
+const opencodeRuntimeProviderConfigSchema = z
+  .object({
+    group: z.enum(["standard-personal", "zai-family", "bigmodel-family"]),
+    logo: z
+      .object({ type: z.literal("builtin"), key: z.string().min(1).max(128) })
+      .strict()
+      .nullable()
+      .optional(),
+    access: z.object({ type: z.literal("local-auth") }).strict(),
+    api: z.object({ type: z.literal("opencode-sdk") }).strict(),
+    builtinModelIds: z.array(z.string().min(1).max(256)).max(4096).nullable().optional(),
+    personalModelIds: z.array(z.string().min(1).max(256)).max(4096).nullable().optional(),
+    modelOrder: z.array(z.string().min(1).max(256)).max(4096).nullable().optional(),
+    visibility: z.enum(["visible", "hidden"]).nullable().optional(),
+  })
+  .strict();
+/** 保留 CLI 给 SDK 的原始 provider/model 名称，同时拦截不安全协议 ID。 */
+export const opencodeRuntimeModelIdSchema = z
+  .string()
+  .min(3)
+  .max(256)
+  .regex(/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._:/-]+$/);
+const opencodeRuntimeProviderSchema = z
+  .object({
+    providerId: z.string().min(1).max(128),
+    providerName: z.string().min(1).max(256),
+    templateId: z.string().min(1).max(128).optional(),
+    config: opencodeRuntimeProviderConfigSchema,
+    models: z
+      .array(
+        z
+          .object({
+            modelId: opencodeRuntimeModelIdSchema,
+            config: completeModelConfigDataSchema.extend({
+              api: z.null().optional(),
+            }),
+          })
+          .strict(),
+      )
+      .max(4096),
+  })
+  .strict();
+export const zcodeProviderUpdateRuntimeCatalogParamsSchema = z
+  .object({
+    revision: nonEmptyString,
+    providers: z.array(opencodeRuntimeProviderSchema).max(8),
+    cliExecutablePath: z.string().min(1).max(4096).optional(),
+  })
+  .strict();
+export const zcodeProviderUpdateRuntimeCatalogResultSchema = z
+  .object({
+    receivedRevision: nonEmptyString,
+    providerCount: z.number().int().nonnegative(),
+    status: z.enum(["applied", "unchanged"]),
+  })
+  .strict();
+export type ZCodeProviderUpdateRuntimeCatalogParams = z.infer<
+  typeof zcodeProviderUpdateRuntimeCatalogParamsSchema
+>;
+export type ZCodeProviderUpdateRuntimeCatalogResult = z.infer<
+  typeof zcodeProviderUpdateRuntimeCatalogResultSchema
+>;
+
 /** Worker 从所属 Environment 的正式 Config Store 重建进程内 Provider Registry。 */
 export const zcodeProviderRefreshRegistryParamsSchema = z
   .object({
@@ -3457,7 +3556,10 @@ export type ZCodeWorkflowsSaveResult = z.infer<typeof zcodeWorkflowsSaveResultSc
 // 因此会自动不再算数。
 /** 转写自对话的候选：模型用 `SaveWorkflow` 存过、并在入参里认领了这次 run。 */
 export const zcodeWorkflowsForRunCandidateSchema = z
-  .object({ name: nonEmptyString, scope: zcodeSavedWorkflowScopeSchema.optional() })
+  .object({
+    name: nonEmptyString,
+    scope: zcodeSavedWorkflowScopeSchema.optional(),
+  })
   .strict();
 export type ZCodeWorkflowsForRunCandidate = z.infer<typeof zcodeWorkflowsForRunCandidateSchema>;
 /** 候选上界：一次 run 在一段对话里被存过的次数远小于它。 */
@@ -4343,6 +4445,7 @@ export const zcodeProtocolMethods = {
   workspaceHookTrustGrant: "workspace/hooks/trustGrant",
   // 进程级 Account Provider Config 与 workspace 运行目录分离。
   providerUpdateAccountConfig: "provider/updateAccountConfig",
+  providerUpdateRuntimeCatalog: "provider/updateRuntimeCatalog",
   providerRefreshRegistry: "provider/refreshRegistry",
   workspaceUpdateInteractionPreferences: "workspace/updateInteractionPreferences",
   workspaceUpdateModelIoPreferences: "workspace/updateModelIoPreferences",
@@ -4555,14 +4658,23 @@ export const zcodeStoragePreparationFrameSchema = z.discriminatedUnion("method",
     })
     .strict(),
   z
-    .object({ method: z.literal("startup/storagePrepared"), params: z.object({}).strict() })
+    .object({
+      method: z.literal("startup/storagePrepared"),
+      params: z.object({}).strict(),
+    })
     .strict(),
   z
-    .object({ method: z.literal("startup/storageState"), params: zcodeStorageStartupStateSchema })
+    .object({
+      method: z.literal("startup/storageState"),
+      params: zcodeStorageStartupStateSchema,
+    })
     .strict(),
 ]);
 export const zcodeStoragePathReadySchema = z
-  .object({ method: z.literal("startup/storagePathReady"), reuse: z.boolean().optional() })
+  .object({
+    method: z.literal("startup/storagePathReady"),
+    reuse: z.boolean().optional(),
+  })
   .strict();
 
 // 桌面本地 TTFT 的严格事实合同；检查点不能替代实际内容帧。

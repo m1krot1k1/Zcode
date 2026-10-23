@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ApiKeyAccessConfig,
+  LocalAuthAccessConfig,
   ProviderApiConfig,
   ProviderConfig,
   ZhipuAccountAccessConfig,
@@ -11,6 +12,7 @@ import {
   type ProviderGroup,
 } from "../src/index.js";
 import { completeProviderConfigDataSchema } from "../src/config/provider-data-schema.js";
+import { personalProviderConfigRuleSchema } from "../src/config/rule-data-schema.js";
 
 const api = new ProviderApiConfig({
   type: "anthropic-messages",
@@ -160,5 +162,81 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
     );
     expect(createRegistryProviderConfig(cleared).ok).toBe(false);
     expect(original.access?.toJSON()).toEqual(access.toJSON());
+  });
+
+  it("local-auth 与 opencode-sdk 是无凭据、无 endpoint 的完整组合", () => {
+    const config = parseProviderConfig({
+      group: "standard-personal",
+      access: { type: "local-auth" },
+      api: { type: "opencode-sdk" },
+      builtinModelIds: ["provider/model"],
+    });
+    const result = createRegistryProviderConfig(config);
+    expect(result.ok).toBe(true);
+    expect(config.toJSON()).toMatchObject({
+      access: { type: "local-auth" },
+      api: { type: "opencode-sdk" },
+    });
+    expect(config.toJSON().access).not.toHaveProperty("apiKey");
+    expect(config.toJSON().api).not.toHaveProperty("baseUrl");
+    if (!result.ok) throw new Error("local-auth fixture 应为完整配置");
+    const serialized = serializeRegistryProviderConfig(result.config);
+    expect(completeProviderConfigDataSchema.parse(serialized)).toEqual(serialized);
+    expect(
+      personalProviderConfigRuleSchema.safeParse({
+        providerId: "opencode",
+        config: { access: { type: "local-auth" }, api: { type: "opencode-sdk" } },
+      }).success,
+    ).toBe(false);
+    expect(
+      completeProviderConfigDataSchema.safeParse({
+        ...serialized,
+        api: { type: "opencode-sdk", baseUrl: "https://fake.invalid" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "local-auth requires opencode-sdk",
+      access: new LocalAuthAccessConfig(),
+      api,
+    },
+    {
+      name: "opencode-sdk requires local-auth",
+      access,
+      api: new ProviderApiConfig({ type: "opencode-sdk" }),
+    },
+  ])("rejects mismatched local provider pair: $name", ({ access: accessConfig, api: apiConfig }) => {
+    const config = new ProviderConfig({
+      group: "standard-personal",
+      access: accessConfig,
+      api: apiConfig,
+    });
+    expect(createRegistryProviderConfig(config).ok).toBe(false);
+    expect(() => parseProviderConfig(config.toJSON())).toThrow();
+  });
+
+  it("overlaying an API provider with OpenCode drops stale URL, headers, and API key", () => {
+    const current = parseProviderConfig({
+      group: "standard-personal",
+      access: { type: "api-key", apiKey: "test-key" },
+      api: {
+        type: "openai-chat-completions",
+        baseUrl: "https://api.example/v1",
+        headers: { Authorization: "Bearer test-key" },
+      },
+    });
+    const next = parseProviderConfig({
+      access: { type: "local-auth" },
+      api: { type: "opencode-sdk" },
+    });
+    const overlaid = current.overlay(next);
+    expect(overlaid.toJSON()).toEqual({
+      group: "standard-personal",
+      access: { type: "local-auth" },
+      api: { type: "opencode-sdk" },
+    });
+    expect(createRegistryProviderConfig(overlaid).ok).toBe(true);
   });
 });

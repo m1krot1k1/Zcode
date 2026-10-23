@@ -46,6 +46,7 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 
 import { createModelAdapter } from "../model-factory.js";
+import { createOpenCodeModelProvider } from "@zcode/adapters/model";
 import { StartupTimer, startupNow } from "../startup-logging.js";
 import { scheduleStartupLogRetentionCleanup } from "../log-retention.js";
 import type {
@@ -215,6 +216,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   let nodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
+  let ownedOpenCodeModelRuntime: Awaited<ReturnType<typeof createOpenCodeModelProvider>> | undefined;
+  let ownedModelAdapter: ReturnType<typeof createModelAdapter> | undefined;
   try {
     const storageRoot = resolvePath(configResult.config.storage.dir);
     const cliStorageRoot = getCliStorageRoot(storageRoot);
@@ -580,9 +583,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       network: configResult.config.network,
       sourceTitle: options.sourceTitle,
     });
-    const modelAdapter =
-      options.modelAdapter ??
-      createModelAdapter({
+    if (!options.modelAdapter) {
+      // 修复依据：目录同步只注册了 opencode-sdk 配置，生产 ModelExecution 从未获得 SDK 实例。
+      // 每个拥有 adapter 的 CLI App 现在创建一个运行时实例，并由同一 App 负责释放。
+      ownedOpenCodeModelRuntime = await createOpenCodeModelProvider();
+      ownedModelAdapter = createModelAdapter({
         env: options.env,
         logger: modelLogger,
         modelIoDir,
@@ -590,7 +595,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         executionConfig: modelExecutionConfig,
         statusSink: modelTelemetry.statusSink,
         streamIdleTimeoutMs: configResult.config.modelStream.idleTimeoutMs,
+        opencodeProvider: ownedOpenCodeModelRuntime.provider,
       });
+    }
+    const modelAdapter = options.modelAdapter ?? ownedModelAdapter!;
     if (options.modelAdapter && modelTelemetry.statusSink) {
       modelAdapter.addStatusSink(modelTelemetry.statusSink);
     }
@@ -1243,7 +1251,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           try {
             providerModelRuntime?.dispose();
           } finally {
-            await modelTelemetry.shutdown();
+            try {
+              await ownedModelAdapter?.dispose();
+            } finally {
+              await modelTelemetry.shutdown();
+            }
           }
         }
       },
@@ -1415,6 +1427,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     };
   } catch (error) {
     providerModelRuntime?.dispose();
+    if (ownedModelAdapter) {
+      void ownedModelAdapter.dispose().catch(() => undefined);
+    } else if (ownedOpenCodeModelRuntime) {
+      void ownedOpenCodeModelRuntime.dispose().catch(() => undefined);
+    }
     void modelTelemetry.shutdown().catch(() => undefined);
     void ownedNodeReplBrowserBroker?.close();
     startupTimer.fail("ZCode app startup failed", error, {

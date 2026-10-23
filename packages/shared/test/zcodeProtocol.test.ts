@@ -6,6 +6,7 @@ import {
   zcodeComputerUseOperationEventSchema,
   zcodeProviderRuntimeHeadersRequestParamsSchema,
   zcodeProviderRuntimeHeadersResponseSchema,
+  zcodeProviderUpdateRuntimeCatalogParamsSchema,
   zcodeProtocolMethods,
   zcodeProtocolMessageSchema,
   zcodeProcessResourceSampleSchema,
@@ -74,6 +75,89 @@ const modelProperties = {
 };
 
 describe("ZCode Protocol", () => {
+  it("runtime OpenCode catalog ограничен local-auth и SDK без секретов/endpoints", () => {
+    const valid = {
+      revision: "opencode-catalog:1",
+      cliExecutablePath: "/opt/opencode/bin/opencode",
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: {
+            group: "standard-personal",
+            access: { type: "local-auth" },
+            api: { type: "opencode-sdk" },
+          },
+          models: [
+            {
+              modelId: "anthropic/claude-sonnet-4-5",
+              config: {
+                enabled: true,
+                properties: {
+                  requiresMfjsToolSchema: false,
+                  contextWindow: 32_000,
+                  inputFormat: {
+                    supportsText: true,
+                    supportsImage: false,
+                    supportsVideo: false,
+                    supportsAudio: false,
+                    supportsPdf: false,
+                  },
+                  outputFormat: { supportsText: true },
+                  supportsToolCall: false,
+                  supportsJsonSchemaOutput: false,
+                  supportsNativeWebSearch: false,
+                  supportsMidConversationSystem: false,
+                },
+                optionSpecs: {
+                  reasoningLevel: { values: ["disabled"], map: "{}" },
+                  maxOutputTokens: { max: 4_000, map: "{}" },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(zcodeProviderUpdateRuntimeCatalogParamsSchema.parse(valid)).toEqual(valid);
+    expect(() =>
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        ...valid,
+        providers: [
+          {
+            ...valid.providers[0],
+            models: [{ ...valid.providers[0]?.models[0], modelId: "not-a-namespaced-model" }],
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        ...valid,
+        providers: [
+          {
+            ...valid.providers[0],
+            config: { ...valid.providers[0].config, apiKey: "secret" },
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        ...valid,
+        providers: [
+          {
+            ...valid.providers[0],
+            config: {
+              ...valid.providers[0].config,
+              api: { type: "opencode-sdk", baseUrl: "https://example.invalid" },
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("模型格式能力只接受完整的嵌套 properties 契约", () => {
     const properties = {
       inputFormat: {
@@ -174,7 +258,10 @@ describe("ZCode Protocol", () => {
     expect(() => zcodeProcessResourceSampleSchema.parse({ ...sample, lane: "chat" })).toThrow();
     // instanceToken 只用于 main 统计进程数，绝不能被拿来夹带 pid、路径或 workspace 标识。
     expect(() =>
-      zcodeProcessResourceSampleSchema.parse({ ...sample, instanceToken: "/private/repo" }),
+      zcodeProcessResourceSampleSchema.parse({
+        ...sample,
+        instanceToken: "/private/repo",
+      }),
     ).toThrow();
     expect(() =>
       zcodeProcessResourceSampleSchema.parse({ ...sample, instanceToken: "" }),
@@ -518,7 +605,12 @@ describe("ZCode Protocol", () => {
       { ...base, eventId: "", kind: "session-closed" },
       { ...base, sequenceNumber: -1, kind: "session-closed" },
       { ...base, kind: "turn-started" },
-      { ...base, kind: "tool-scheduled", turnId: "turn-1", toolCallId: "call-1" },
+      {
+        ...base,
+        kind: "tool-scheduled",
+        turnId: "turn-1",
+        toolCallId: "call-1",
+      },
       // computerUse 是布尔事实，只有 true 有意义；false 与动作名都不在契约里。
       {
         ...base,
@@ -684,7 +776,9 @@ describe("ZCode Protocol", () => {
 
   it("validates the dedicated automation task-binding query", () => {
     expect(
-      zcodeAutomationCheckTaskBindingParamsSchema.parse({ targetTaskId: "session-1" }),
+      zcodeAutomationCheckTaskBindingParamsSchema.parse({
+        targetTaskId: "session-1",
+      }),
     ).toEqual({ targetTaskId: "session-1" });
     expect(zcodeAutomationCheckTaskBindingResultSchema.parse({ bound: true })).toEqual({
       bound: true,
@@ -693,7 +787,10 @@ describe("ZCode Protocol", () => {
       zcodeAutomationCheckTaskBindingParamsSchema.parse({ targetTaskId: " " }),
     ).toThrow();
     expect(() =>
-      zcodeAutomationCheckTaskBindingResultSchema.parse({ bound: false, automations: [] }),
+      zcodeAutomationCheckTaskBindingResultSchema.parse({
+        bound: false,
+        automations: [],
+      }),
     ).toThrow();
   });
 
@@ -995,7 +1092,9 @@ describe("ZCode Protocol", () => {
         headers: { "X-Request": "request-header", ...runtimeProviderHeaders },
       },
     });
-    expect(response).toMatchObject({ requestAuth: { headers: runtimeProviderHeaders } });
+    expect(response).toMatchObject({
+      requestAuth: { headers: runtimeProviderHeaders },
+    });
     expect(() =>
       zcodeProviderRuntimeHeadersResponseSchema.parse({
         headersApplied: true,
@@ -1248,8 +1347,14 @@ describe("ZCode Protocol", () => {
 
         // 旧 CLI 没有消息归属字段时仍须兼容；新 CLI 的字段不能导致整条调度事件丢失。
         expect(zcodeSessionEventSchema.parse(event).payload).toEqual(event.payload);
-        const payload = { ...event.payload, assistantMessageId: "msg_assistant" };
-        expect(zcodeSessionEventSchema.parse({ ...event, payload })).toEqual({ ...event, payload });
+        const payload = {
+          ...event.payload,
+          assistantMessageId: "msg_assistant",
+        };
+        expect(zcodeSessionEventSchema.parse({ ...event, payload })).toEqual({
+          ...event,
+          payload,
+        });
 
         for (const assistantMessageId of ["", null, 42]) {
           expect(
@@ -1647,7 +1752,14 @@ describe("ZCode Protocol", () => {
             kind: "create_workflow",
             ok: false,
             errorCount: 1,
-            diagnostics: [{ line: 3, column: 5, code: 2304, message: "Cannot find name 'agent'." }],
+            diagnostics: [
+              {
+                line: 3,
+                column: 5,
+                code: 2304,
+                message: "Cannot find name 'agent'.",
+              },
+            ],
           },
         },
       },
@@ -1655,7 +1767,9 @@ describe("ZCode Protocol", () => {
 
     expect(zcodeSessionEventSchema.parse(event).payload).toMatchObject({
       kind: "result",
-      result: { display: { kind: "create_workflow", ok: false, errorCount: 1 } },
+      result: {
+        display: { kind: "create_workflow", ok: false, errorCount: 1 },
+      },
     });
     expect(() =>
       zcodeSessionEventSchema.parse({
@@ -1687,7 +1801,12 @@ describe("ZCode Protocol", () => {
         ok: false,
         errorCount: 2,
         diagnostics: [
-          { line: 3, column: 5, code: 2304, message: "Cannot find name 'agent'." },
+          {
+            line: 3,
+            column: 5,
+            code: 2304,
+            message: "Cannot find name 'agent'.",
+          },
           { line: 8, column: 1, code: 1005, message: "';' expected." },
         ],
         truncated: true,
@@ -1696,7 +1815,12 @@ describe("ZCode Protocol", () => {
 
     expect(row).toMatchObject({
       kind: "toolCall",
-      display: { kind: "create_workflow", ok: false, errorCount: 2, truncated: true },
+      display: {
+        kind: "create_workflow",
+        ok: false,
+        errorCount: 2,
+        truncated: true,
+      },
     });
   });
 
@@ -1744,8 +1868,18 @@ describe("ZCode Protocol", () => {
       // 无阶段词汇时 phase 恒为 `unphased`。字面量基数的家族每成员一张 `member` 卡，
       // 基数未知时一张 `many` 卡。同样钉在双边界用例里，防单边漏改。
       participants: [
-        { id: "unphased:workspace", phase: "unphased", lane: "workspace", steps: ["world-read#1"] },
-        { id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#1"] },
+        {
+          id: "unphased:workspace",
+          phase: "unphased",
+          lane: "workspace",
+          steps: ["world-read#1"],
+        },
+        {
+          id: "unphased:actor#1",
+          phase: "unphased",
+          lane: "actor#1",
+          steps: ["ask#1"],
+        },
         {
           id: "unphased:actor#2[0]",
           phase: "unphased",
@@ -1772,8 +1906,16 @@ describe("ZCode Protocol", () => {
       // `types` 是跨越这条交接的产物类型（检视器素材，不上箭头）。
       handoffs: [
         { from: "unphased:workspace", to: "unphased:actor#1" },
-        { from: "unphased:actor#1", to: "unphased:actor#2[0]", types: ["Plan"] },
-        { from: "unphased:actor#1", to: "unphased:actor#2[1]", types: ["Plan"] },
+        {
+          from: "unphased:actor#1",
+          to: "unphased:actor#2[0]",
+          types: ["Plan"],
+        },
+        {
+          from: "unphased:actor#1",
+          to: "unphased:actor#2[1]",
+          types: ["Plan"],
+        },
         { from: "unphased:actor#2[0]", to: "unphased:actor#1", back: true },
       ],
       sink: ["ask#2"],
@@ -1806,7 +1948,9 @@ describe("ZCode Protocol", () => {
     });
     expect(event.payload).toMatchObject({
       kind: "result",
-      result: { display: { kind: "create_workflow", ok: true, causalityGraph } },
+      result: {
+        display: { kind: "create_workflow", ok: true, causalityGraph },
+      },
     });
 
     // V4 rows: toolCallRow.display.
@@ -1840,7 +1984,13 @@ describe("ZCode Protocol", () => {
   it("carries typed-hole fields through both the legacy event and v4 rows", () => {
     const causalityGraph = {
       steps: [
-        { id: "ask#1", kind: "ask", label: "planner", lane: "actor#1", phase: "phase#1" },
+        {
+          id: "ask#1",
+          kind: "ask",
+          label: "planner",
+          lane: "actor#1",
+          phase: "phase#1",
+        },
         {
           id: "hole#1a2b3c4d",
           kind: "hole",
@@ -1862,8 +2012,18 @@ describe("ZCode Protocol", () => {
         { id: "actor#2", name: "judge" },
       ],
       participants: [
-        { id: "phase#1:actor#1", phase: "phase#1", lane: "actor#1", steps: ["ask#1"] },
-        { id: "phase#2:actor#2", phase: "phase#2", lane: "actor#2", steps: ["ask#2"] },
+        {
+          id: "phase#1:actor#1",
+          phase: "phase#1",
+          lane: "actor#1",
+          steps: ["ask#1"],
+        },
+        {
+          id: "phase#2:actor#2",
+          phase: "phase#2",
+          lane: "actor#2",
+          steps: ["ask#2"],
+        },
       ],
       handoffs: [{ from: "phase#1:actor#1", to: "phase#2:actor#2" }],
       phases: [
@@ -1892,7 +2052,12 @@ describe("ZCode Protocol", () => {
       errorCount: 0,
       diagnostics: [],
       causalityGraph,
-      fill: { siteId: "hole#1a2b3c4d", name: "verdict", draftPath: "/tmp/fill.ts", line: 3 },
+      fill: {
+        siteId: "hole#1a2b3c4d",
+        name: "verdict",
+        draftPath: "/tmp/fill.ts",
+        line: 3,
+      },
     };
 
     // Legacy protocol: result.display superRefine.
@@ -1910,7 +2075,10 @@ describe("ZCode Protocol", () => {
         result: { success: true, content: "The hole is filled.", display },
       },
     });
-    expect(event.payload).toMatchObject({ kind: "result", result: { display } });
+    expect(event.payload).toMatchObject({
+      kind: "result",
+      result: { display },
+    });
 
     // V4 rows: toolCallRow.display.
     const row = conversationRowSchema.parse({
@@ -1940,7 +2108,12 @@ describe("ZCode Protocol", () => {
       status: "success",
       inputText: "",
     };
-    const display = { kind: "create_workflow", ok: true, errorCount: 0, diagnostics: [] };
+    const display = {
+      kind: "create_workflow",
+      ok: true,
+      errorCount: 0,
+      diagnostics: [],
+    };
     const step = {
       id: "ask#1",
       kind: "ask",
@@ -1964,7 +2137,10 @@ describe("ZCode Protocol", () => {
     // 时主动抛错，好让下面每条 toThrow / not.toThrow 继续表达原来的意思。有界性没有放松：越界
     // 载荷同样到不了 UI，变的只是代价（拒整帧、连带打掉订阅 → 卡片退化成纯文本）。
     const parseWith = (causalityGraph: unknown) => {
-      const row = conversationRowSchema.parse({ ...base, display: { ...display, causalityGraph } });
+      const row = conversationRowSchema.parse({
+        ...base,
+        display: { ...display, causalityGraph },
+      });
       if (row.kind !== "toolCall" || row.display === undefined) {
         throw new Error("v4 row dropped the create_workflow display");
       }
@@ -1977,7 +2153,10 @@ describe("ZCode Protocol", () => {
     expect(() =>
       parseWith({
         ...graph,
-        steps: Array.from({ length: 65 }, (_, index) => ({ ...step, id: `ask#${index}` })),
+        steps: Array.from({ length: 65 }, (_, index) => ({
+          ...step,
+          id: `ask#${index}`,
+        })),
       }),
     ).toThrow();
 
@@ -2000,18 +2179,30 @@ describe("ZCode Protocol", () => {
     expect(() =>
       parseWith({
         ...graph,
-        participants: [{ ...participant, id: "unphased:actor#1[1]", member: { index: 1, of: 2 } }],
+        participants: [
+          {
+            ...participant,
+            id: "unphased:actor#1[1]",
+            member: { index: 1, of: 2 },
+          },
+        ],
       }),
     ).not.toThrow();
     expect(() =>
-      parseWith({ ...graph, participants: [{ ...participant, member: { of: 2 } }] }),
+      parseWith({
+        ...graph,
+        participants: [{ ...participant, member: { of: 2 } }],
+      }),
     ).toThrow();
 
     // 交接边只有 {from, to, back?, types?}：分析器的 kind / certainty 不进展示载荷。
     const handoff = { from: "unphased:actor#1", to: "unphased:actor#1" };
     // 257 handoffs exceed the 256-handoff bound.
     expect(() =>
-      parseWith({ ...graph, handoffs: Array.from({ length: 257 }, () => handoff) }),
+      parseWith({
+        ...graph,
+        handoffs: Array.from({ length: 257 }, () => handoff),
+      }),
     ).toThrow();
 
     // `types` 在场就是 1..8 个名字，每个 ≤ 128 字符。
@@ -2043,8 +2234,18 @@ describe("ZCode Protocol", () => {
       ],
       // 每条候选车道一张参与者卡，卡的 steps 指向该车道的拷贝 id。
       participants: [
-        { id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#2~actor#1"] },
-        { id: "unphased:actor#2", phase: "unphased", lane: "actor#2", steps: ["ask#2~actor#2"] },
+        {
+          id: "unphased:actor#1",
+          phase: "unphased",
+          lane: "actor#1",
+          steps: ["ask#2~actor#1"],
+        },
+        {
+          id: "unphased:actor#2",
+          phase: "unphased",
+          lane: "actor#2",
+          steps: ["ask#2~actor#2"],
+        },
       ],
       handoffs: [
         { from: "unphased:actor#1", to: "unphased:actor#2", back: true },
@@ -2072,7 +2273,11 @@ describe("ZCode Protocol", () => {
         toolCallId: "tool_workflow_may_set",
         toolName: "CreateWorkflow",
         duration: 7,
-        result: { success: true, content: "The workflow script compiled cleanly.", display },
+        result: {
+          success: true,
+          content: "The workflow script compiled cleanly.",
+          display,
+        },
       },
     });
     expect(event.payload).toMatchObject({
@@ -2161,10 +2366,30 @@ describe("ZCode Protocol", () => {
       ],
       // 参与者按阶段分卡：同一子代理在两个阶段各是一张卡（id 以阶段为前缀）。
       participants: [
-        { id: "unphased:workspace", phase: "unphased", lane: "workspace", steps: ["world-read#1"] },
-        { id: "phase#1:actor#1", phase: "phase#1", lane: "actor#1", steps: ["ask#1"] },
-        { id: "phase#1:actor#2", phase: "phase#1", lane: "actor#2", steps: ["ask#2~phase#1"] },
-        { id: "phase#2:actor#2", phase: "phase#2", lane: "actor#2", steps: ["ask#2~phase#2"] },
+        {
+          id: "unphased:workspace",
+          phase: "unphased",
+          lane: "workspace",
+          steps: ["world-read#1"],
+        },
+        {
+          id: "phase#1:actor#1",
+          phase: "phase#1",
+          lane: "actor#1",
+          steps: ["ask#1"],
+        },
+        {
+          id: "phase#1:actor#2",
+          phase: "phase#1",
+          lane: "actor#2",
+          steps: ["ask#2~phase#1"],
+        },
+        {
+          id: "phase#2:actor#2",
+          phase: "phase#2",
+          lane: "actor#2",
+          steps: ["ask#2~phase#2"],
+        },
       ],
       handoffs: [
         { from: "unphased:workspace", to: "phase#1:actor#1" },
@@ -2209,7 +2434,11 @@ describe("ZCode Protocol", () => {
         toolCallId: "tool_workflow_phases",
         toolName: "CreateWorkflow",
         duration: 7,
-        result: { success: true, content: "The workflow script compiled cleanly.", display },
+        result: {
+          success: true,
+          content: "The workflow script compiled cleanly.",
+          display,
+        },
       },
     });
     expect(event.payload).toMatchObject({
@@ -2280,14 +2509,18 @@ describe("ZCode Protocol", () => {
           },
         },
       }).payload,
-    ).toMatchObject({ result: { display: { causalityGraph: emptyVocabulary } } });
+    ).toMatchObject({
+      result: { display: { causalityGraph: emptyVocabulary } },
+    });
 
     // 33 phases exceed the 32-phase bound; the handler degrades the whole vocabulary
     // before this boundary, so a payload this shape must be rejected outright.
     expect(() =>
       parseWith({
         ...causalityGraph,
-        phases: Array.from({ length: 33 }, (_, index) => ({ id: `phase#${index + 1}` })),
+        phases: Array.from({ length: 33 }, (_, index) => ({
+          id: `phase#${index + 1}`,
+        })),
       }),
     ).toThrow();
 
@@ -2295,7 +2528,10 @@ describe("ZCode Protocol", () => {
     expect(() =>
       parseWith({
         ...causalityGraph,
-        phaseEdges: Array.from({ length: 129 }, () => ({ from: "phase#1", to: "phase#2" })),
+        phaseEdges: Array.from({ length: 129 }, () => ({
+          from: "phase#1",
+          to: "phase#2",
+        })),
       }),
     ).toThrow();
 
@@ -2303,7 +2539,10 @@ describe("ZCode Protocol", () => {
     expect(() =>
       parseWith({
         ...causalityGraph,
-        phaseStreams: Array.from({ length: 129 }, () => ({ from: "phase#1", to: "phase#2" })),
+        phaseStreams: Array.from({ length: 129 }, () => ({
+          from: "phase#1",
+          to: "phase#2",
+        })),
       }),
     ).toThrow();
     for (const stream of [
@@ -2326,7 +2565,13 @@ describe("ZCode Protocol", () => {
       parseWith({
         ...causalityGraph,
         phaseEdges: [
-          { from: "phase#1", to: "phase#2", kind: "seq", certainty: "maybe", exact: true },
+          {
+            from: "phase#1",
+            to: "phase#2",
+            kind: "seq",
+            certainty: "maybe",
+            exact: true,
+          },
         ],
       }),
     ).toThrow();
@@ -2394,15 +2639,32 @@ describe("ZCode Protocol", () => {
 
     const fresh = {
       steps: [
-        { id: "ask#1", kind: "ask", label: "planner", lane: "actor#1", phase: "phase#1" },
-        { id: "ask#2", kind: "ask", label: "reviewer", lane: "actor#2", phase: "phase#2" },
+        {
+          id: "ask#1",
+          kind: "ask",
+          label: "planner",
+          lane: "actor#1",
+          phase: "phase#1",
+        },
+        {
+          id: "ask#2",
+          kind: "ask",
+          label: "reviewer",
+          lane: "actor#2",
+          phase: "phase#2",
+        },
       ],
       lanes: [
         { id: "actor#1", name: "planner" },
         { id: "actor#2", name: "reviewer" },
       ],
       participants: [
-        { id: "phase#1:actor#1", phase: "phase#1", lane: "actor#1", steps: ["ask#1"] },
+        {
+          id: "phase#1:actor#1",
+          phase: "phase#1",
+          lane: "actor#1",
+          steps: ["ask#1"],
+        },
         {
           id: "phase#2:actor#2[0]",
           phase: "phase#2",
@@ -2464,7 +2726,13 @@ describe("ZCode Protocol", () => {
         { id: "loop#1", kind: "loop", parent: "seq#1" },
       ],
       edges: [
-        { from: "ask#1", to: "ask#2", kind: "data", certainty: "always", exact: true },
+        {
+          from: "ask#1",
+          to: "ask#2",
+          kind: "data",
+          certainty: "always",
+          exact: true,
+        },
         { from: "ask#2", to: "ask#1", kind: "carry", certainty: "maybe" },
       ],
       sink: ["ask#2"],
@@ -2480,8 +2748,14 @@ describe("ZCode Protocol", () => {
     const { handoffs: _h, ...noHandoffs } = fresh;
     for (const graph of [
       { ...fresh, steps: [{ ...freshStep, region: "seq#1" }, fresh.steps[1]] },
-      { ...fresh, steps: [{ ...freshStep, certainty: "always" }, fresh.steps[1]] },
-      { ...fresh, lanes: [{ ...freshLane, families: ["loop#1"] }, fresh.lanes[1]] },
+      {
+        ...fresh,
+        steps: [{ ...freshStep, certainty: "always" }, fresh.steps[1]],
+      },
+      {
+        ...fresh,
+        lanes: [{ ...freshLane, families: ["loop#1"] }, fresh.lanes[1]],
+      },
       { ...fresh, lanes: [freshLane, { ...fresh.lanes[1], nesting: 2 }] },
       { ...fresh, regions: [] },
       // step 级 edges 整个字段都不在了。
@@ -2494,9 +2768,18 @@ describe("ZCode Protocol", () => {
         ...fresh,
         participants: [{ ...freshParticipant, steps: [] }, ...fresh.participants.slice(1)],
       },
-      { ...fresh, participants: [{ ...freshParticipant, member: { index: -1, of: 2 } }] },
-      { ...fresh, participants: [{ ...freshParticipant, member: { index: 0, of: 0 } }] },
-      { ...fresh, participants: [{ ...freshParticipant, member: { index: 0 } }] },
+      {
+        ...fresh,
+        participants: [{ ...freshParticipant, member: { index: -1, of: 2 } }],
+      },
+      {
+        ...fresh,
+        participants: [{ ...freshParticipant, member: { index: 0, of: 0 } }],
+      },
+      {
+        ...fresh,
+        participants: [{ ...freshParticipant, member: { index: 0 } }],
+      },
       { ...fresh, participants: [{ ...freshParticipant, many: false }] },
       { ...fresh, participants: [{ ...freshParticipant, name: "planner" }] },
       { ...fresh, handoffs: [{ ...freshHandoff, kind: "data" }] },
@@ -2506,12 +2789,26 @@ describe("ZCode Protocol", () => {
       { ...fresh, handoffs: [{ ...freshHandoff, types: [] }] },
       {
         ...fresh,
-        handoffs: [{ ...freshHandoff, types: Array.from({ length: 9 }, (_, i) => `T${i}`) }],
+        handoffs: [
+          {
+            ...freshHandoff,
+            types: Array.from({ length: 9 }, (_, i) => `T${i}`),
+          },
+        ],
       },
       { ...fresh, handoffs: [{ ...freshHandoff, types: ["t".repeat(129)] }] },
-      { ...fresh, phaseEdges: [{ from: "phase#1", to: "phase#2", kind: "seq" }] },
-      { ...fresh, phaseEdges: [{ from: "phase#1", to: "phase#2", back: "yes" }] },
-      { ...fresh, phaseEdges: [{ from: "phase#1", to: "phase#2", types: ["Plan"] }] },
+      {
+        ...fresh,
+        phaseEdges: [{ from: "phase#1", to: "phase#2", kind: "seq" }],
+      },
+      {
+        ...fresh,
+        phaseEdges: [{ from: "phase#1", to: "phase#2", back: "yes" }],
+      },
+      {
+        ...fresh,
+        phaseEdges: [{ from: "phase#1", to: "phase#2", types: ["Plan"] }],
+      },
     ]) {
       expect(verdicts(graph)).toEqual([false, false]);
     }
@@ -2523,7 +2820,12 @@ describe("ZCode Protocol", () => {
       },
       {
         ...fresh,
-        handoffs: [{ ...freshHandoff, types: Array.from({ length: 8 }, (_, i) => `T${i}`) }],
+        handoffs: [
+          {
+            ...freshHandoff,
+            types: Array.from({ length: 8 }, (_, i) => `T${i}`),
+          },
+        ],
       },
       { ...fresh, participants: [], handoffs: [] },
     ]) {
@@ -2696,8 +2998,9 @@ describe("ZCode Protocol", () => {
 
   it("validates ToolSearch startup preferences and defaults old Host responses off", () => {
     expect(
-      zcodeSessionRuntimePreferencesResultSchema.parse({ nativeSearchEnhancementsEnabled: true })
-        .toolSearchMode,
+      zcodeSessionRuntimePreferencesResultSchema.parse({
+        nativeSearchEnhancementsEnabled: true,
+      }).toolSearchMode,
     ).toBe("off");
     for (const mode of ["auto", "local", "off"]) {
       expect(
@@ -2858,10 +3161,16 @@ describe("v4 workflowLaunch rows (direct-launch)", () => {
 
   it("rejects a description over the 500-char bound", () => {
     expect(
-      workflowLaunchMetaSchema.safeParse({ ...meta, description: "x".repeat(501) }).success,
+      workflowLaunchMetaSchema.safeParse({
+        ...meta,
+        description: "x".repeat(501),
+      }).success,
     ).toBe(false);
     expect(
-      workflowLaunchMetaSchema.safeParse({ ...meta, description: "x".repeat(500) }).success,
+      workflowLaunchMetaSchema.safeParse({
+        ...meta,
+        description: "x".repeat(500),
+      }).success,
     ).toBe(true);
   });
 
@@ -2901,7 +3210,10 @@ describe("v4 workflowLaunch rows (direct-launch)", () => {
       }).success,
     ).toBe(false);
     expect(
-      workflowLaunchMetaSchema.safeParse({ ...settings, amend: { predecessorRunId: "" } }).success,
+      workflowLaunchMetaSchema.safeParse({
+        ...settings,
+        amend: { predecessorRunId: "" },
+      }).success,
     ).toBe(false);
   });
 

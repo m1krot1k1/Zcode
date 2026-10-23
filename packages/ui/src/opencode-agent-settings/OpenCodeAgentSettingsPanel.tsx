@@ -133,7 +133,7 @@ export function OpenCodeAgentSettingsPanel({
       if (verified.status === "available") {
         // Install is the action used after the disabled switch reports a missing CLI.
         // Once the binary is verified, finish that original intent automatically.
-        onEnabledChange(true);
+        await onEnabledChange(true);
       } else {
         setDiagnostic(
           intl.formatMessage({

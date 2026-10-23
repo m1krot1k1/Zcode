@@ -104,6 +104,32 @@ describe("Agent Runtime Model lifecycle", () => {
     expect(runtime.getPlanEnabled()).toBe(true);
   });
 
+  it("binds the owning workspace directory to every model request context", async () => {
+    const selection = createTestModelSelection("opencode-cli/deepseek-v4.1-flash-free");
+    let workingDirectory: string | undefined;
+    const runtime = createTestAgentRuntime(
+      createSessionId("model-context-workspace-directory"),
+      {
+        mode: "build",
+        modelSelection: createTestModelSelection(selection),
+        workingDirectory: "/workspace/active-project",
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            workingDirectory = observation.invocationContext?.workingDirectory;
+            return result(selection, { finishReason: "stop", text: "done" });
+          },
+        }),
+      },
+    );
+
+    await runtime.executeTurn("use the active workspace");
+
+    expect(workingDirectory).toBe("/workspace/active-project");
+  });
+
   it("keeps an execution-scoped model isolated from the persistent Submission selection", async () => {
     const eventStore = createTestSessionEventStore();
     const createdModelIds: string[] = [];

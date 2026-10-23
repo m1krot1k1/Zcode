@@ -49,7 +49,7 @@ describe("Composer Draft 持久选择", () => {
       "g",
     );
   });
-  it("OpenCode CLI 的模型路由随 Composer 草稿保存，且不覆盖 ZCode 模型选择", () => {
+  it("旧版 ACP 路由不会恢复为 Composer 选择，旧草稿中的普通模型选择仍保留", () => {
     const executionRoute = {
       kind: "opencode-acp" as const,
       model: { kind: "catalog" as const, modelId: "opencode/deepseek-v4.1-flash-free" },
@@ -58,8 +58,9 @@ describe("Composer Draft 持久选择", () => {
       text: "继续工作",
       modelSelection: selection,
       executionRoute,
-    });
-    expect(read()).toMatchObject({ modelSelection: selection, executionRoute });
+    } as never);
+    expect(read()).toMatchObject({ modelSelection: selection });
+    expect(read()).not.toHaveProperty("executionRoute");
   });
   it("关闭分组草稿行只清理分组意图，保留正文、项目与模型", () => {
     persistV4ComposerDraft(workspace, undefined, V4_DRAFT_SCOPE_ROOT, {

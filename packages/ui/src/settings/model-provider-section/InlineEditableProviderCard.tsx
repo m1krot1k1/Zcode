@@ -7,11 +7,7 @@ import {
   type ProviderSettingsFormModel,
 } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
-import {
-  isApiKeyAccess,
-  type ProviderApiType,
-  type SavePersonalModelDraftInput,
-} from "@zcode/provider";
+import { isApiKeyAccess, type SavePersonalModelDraftInput } from "@zcode/provider";
 import { logger } from "@/logger.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Switch } from "@/components/ui/switch.js";
@@ -24,6 +20,7 @@ import {
   ProviderConnectionSection,
   ProviderModelsSection,
 } from "./ProviderCardSections.js";
+import type { ProviderConnectionApiFormat } from "./ProviderApiFormatSelect.js";
 import { resolveModelProviderDisplayName } from "./constants.js";
 import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
 import { MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS, useIdleTrigger } from "./useIdleTrigger.js";
@@ -187,8 +184,10 @@ export function InlineEditableProviderCard({
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(getProviderFormLabel(provider));
-  const [apiFormat, setApiFormat] = useState<ProviderApiType>(
-    provider.config.api?.type ?? "anthropic-messages",
+  const [apiFormat, setApiFormat] = useState<ProviderConnectionApiFormat>(
+    provider.config.api?.type === "opencode-sdk"
+      ? "openai-chat-completions"
+      : (provider.config.api?.type ?? "anthropic-messages"),
   );
   const [baseUrlValue, setBaseUrlValue] = useState(provider.config.api?.baseUrl ?? "");
   const [apiKeyValue, setApiKeyValue] = useState(getProviderFormApiKey(provider));
@@ -261,7 +260,9 @@ export function InlineEditableProviderCard({
       apply(value);
     };
     syncField("nameValue", resolvedLabel, setNameValue);
-    syncField("apiFormat", resolvedApiFormat, setApiFormat);
+    syncField("apiFormat", resolvedApiFormat, (value) =>
+      setApiFormat(value === "opencode-sdk" ? "openai-chat-completions" : value),
+    );
     syncField("baseUrlValue", resolvedBaseUrl, setBaseUrlValue);
     syncField("apiKeyValue", resolvedApiKey, setApiKeyValue);
   }, [provider]);
@@ -577,7 +578,7 @@ export function InlineEditableProviderCard({
   );
 
   const handleApiFormatChange = useCallback(
-    (value: ProviderApiType) => {
+    (value: ProviderConnectionApiFormat) => {
       markDraftDirty("apiFormat");
       draftRef.current.apiFormat = value;
       setApiFormat(value);

@@ -1154,6 +1154,10 @@ export function ModelProviderSection({
           onEnabledChange={async (enabled) => {
             try {
               await updateSharedSettings({ openCodeCliEnabled: enabled });
+              // Каталог локального CLI принадлежит Host Registry; после изменения доступности
+              // перечитываем обычные Provider Settings и ModelSelection для Composer.
+              await refresh();
+              await modelSelectionService.getView();
             } catch (error) {
               logger.warn("[settings] OpenCode CLI setting update failed", {
                 error: error instanceof Error ? error.message : String(error),

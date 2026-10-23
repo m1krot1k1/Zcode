@@ -138,6 +138,39 @@ describe("model selection groups", () => {
     ]);
   });
 
+  it("把 OpenCode CLI 的原始 provider/model ID 加入普通 Composer 模型列表", () => {
+    const modelId = "deepseek/deepseek-v4.1-flash-free";
+    const selectionView: ModelSelectionView = {
+      revision: 10,
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: {
+            access: { type: "local-auth" },
+            api: { type: "opencode-sdk" },
+          },
+          models: [{ modelId, config: {} }],
+        },
+      ],
+    };
+
+    expect(buildRegistryModelSelectGroups("glm", selectionView)).toEqual([
+      {
+        key: "registry-provider:opencode",
+        label: "OpenCode CLI",
+        labelBadge: "CLI",
+        items: [
+          {
+            key: `registry-provider:opencode:${modelId}`,
+            value: `custom:opencode:${encodeURIComponent(modelId)}`,
+            name: modelId,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("直接把 Registry Account Provider 投影为已选连接，不重新裁决 Family", () => {
     const providerId = BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan;
     const selectionView: ModelSelectionView = {

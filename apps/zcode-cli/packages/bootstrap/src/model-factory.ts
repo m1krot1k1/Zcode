@@ -3,6 +3,7 @@
 import {
   createModelRequestSecurityState,
   AiSdkModelAdapter,
+  type OpenCodeModelProviderRuntime,
   type AiSdkModelExecutionConfig,
   type EnvRecord,
 } from "@zcode/adapters/model";
@@ -19,6 +20,7 @@ interface CreateModelAdapterBaseOptions {
 
 export type CreateModelAdapterOptions = CreateModelAdapterBaseOptions & {
   executionConfig: AiSdkModelExecutionConfig;
+  opencodeProvider?: OpenCodeModelProviderRuntime["provider"];
 };
 
 // 可复用资源由进程拥有，每个 execution 保留自己的请求状态。
@@ -37,5 +39,6 @@ export function createModelAdapter(options: CreateModelAdapterOptions): AiSdkMod
     modelIoFullRetentionEnabled: options.modelIoFullRetentionEnabled,
     streamIdleTimeoutMs: options.streamIdleTimeoutMs,
     statusSink: options.statusSink,
+    ...(options.opencodeProvider ? { opencodeProvider: options.opencodeProvider } : {}),
   });
 }

@@ -1,15 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCliZCodeSourceHeaders,
   createRuntimeAiSdkModelExecutionConfig,
 } from "../src/model-config.js";
 import { createModelAdapter, type CreateModelAdapterOptions } from "../src/model-factory.js";
+import type { OpenCodeModelProviderRuntime } from "@zcode/adapters/model";
 
 describe("createModelAdapter", () => {
   it("缺少执行基础设施配置时拒绝创建 Adapter", () => {
     expect(() => createModelAdapter({ env: {} } as CreateModelAdapterOptions)).toThrow(
       "requires executionConfig",
     );
+  });
+
+  it("普通 Model Adapter 接收 OpenCode provider 并负责释放其资源", async () => {
+    const dispose = vi.fn(async () => undefined);
+    const provider = Object.assign(() => {
+      throw new Error("该测试只验证 provider 注入生命周期");
+    }, { dispose }) as OpenCodeModelProviderRuntime["provider"];
+    const adapter = createModelAdapter({
+      executionConfig: {},
+      opencodeProvider: provider,
+    });
+
+    await adapter.dispose();
+
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });
 

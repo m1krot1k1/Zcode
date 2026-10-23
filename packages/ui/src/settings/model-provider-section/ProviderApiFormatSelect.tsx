@@ -13,31 +13,34 @@ import {
   testId,
 } from "@zcode/shared/test-ids";
 
-export const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
+/** API-коннектор принимает только HTTP форматы; локальный OpenCode SDK здесь не настраивается. */
+export type ProviderConnectionApiFormat = Exclude<ProviderApiType, "opencode-sdk">;
+
+export const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderConnectionApiFormat[] = [
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
 ];
 
-const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
+const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderConnectionApiFormat, string> = {
   "anthropic-messages": "/v1/messages",
   "openai-chat-completions": "/chat/completions",
   "openai-responses": "/responses",
 };
 
-const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderApiType, string> = {
+const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderConnectionApiFormat, string> = {
   "anthropic-messages": "settings.modelProvider.apiFormat.title.anthropicMessages",
   "openai-chat-completions": "settings.modelProvider.apiFormat.title.chatCompletions",
   "openai-responses": "settings.modelProvider.apiFormat.title.responses",
 };
 
-export function resolveProviderConnectionApiFormatOptions(): ProviderApiType[] {
+export function resolveProviderConnectionApiFormatOptions(): ProviderConnectionApiFormat[] {
   return [...PROVIDER_CONNECTION_API_FORMATS];
 }
 
 export function resolveProviderConnectionApiFormatDisplayLabel(
   intl: { formatMessage: (descriptor: { id: string }) => string },
-  format: ProviderApiType,
+  format: ProviderConnectionApiFormat,
 ): string {
   const title = intl.formatMessage({
     id: PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS[format],
@@ -51,15 +54,18 @@ export function ProviderApiFormatSelect({
   value,
   onChange,
 }: {
-  apiFormatOptions?: readonly ProviderApiType[];
+  apiFormatOptions?: readonly ProviderConnectionApiFormat[];
   triggerId?: string;
-  value: ProviderApiType;
-  onChange: (value: ProviderApiType) => void;
+  value: ProviderConnectionApiFormat;
+  onChange: (value: ProviderConnectionApiFormat) => void;
 }) {
   const { intl } = useZCodeIntl();
 
   return (
-    <Select value={value} onValueChange={(nextValue) => onChange(nextValue as ProviderApiType)}>
+    <Select
+      value={value}
+      onValueChange={(nextValue) => onChange(nextValue as ProviderConnectionApiFormat)}
+    >
       <SelectTrigger
         id={triggerId}
         data-testid={TID_MODEL_PROVIDER_API_FORMAT_TRIGGER}
