@@ -11,6 +11,7 @@ import {
   logMediaCapabilityProjection,
   normalizeStreamError,
   normalizeModelToolCallsForRuntime,
+  throwIfTurnAborted,
   projectMessagesWithMediaAttachmentPaths,
   projectMessagesForInputFormat,
   projectMessagesForMediaBudget,
@@ -233,6 +234,9 @@ export async function runModelTextRequest(
   finishAssembly();
   try {
     for await (const event of modelStream) {
+      // Stop уже закрыл этот run. Следующий кадр провайдера не должен попасть в transcript,
+      // даже если сокет отдал его после abort.
+      throwIfTurnAborted(modelRequest.abortSignal);
       switch (event.type) {
         case "start": {
           await enqueueStreamingEvent({
