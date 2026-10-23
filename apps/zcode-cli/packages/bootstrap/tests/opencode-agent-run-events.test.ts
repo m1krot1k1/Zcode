@@ -35,6 +35,62 @@ function eventMessage(event: unknown): ZCodeProtocolMessage {
 }
 
 describe("OpenCode delegated run Host events", () => {
+  it("preserves the SessionStore receiver while reading the run before and after persistence", async () => {
+    const store = {
+      current: runRecord(),
+      async getOpenCodeAgentRun(this: { current: OpenCodeAgentRunRecord }) {
+        return this.current;
+      },
+      async applyOpenCodeAgentRunHostEvent(
+        this: { current: OpenCodeAgentRunRecord },
+        transition: {
+          status: OpenCodeAgentRunRecord["status"];
+          eventSequence: number;
+          hostEventSequence: number;
+          openCodeSessionID?: string;
+        },
+      ) {
+        this.current = runRecord({
+          ...this.current,
+          status: transition.status,
+          eventSequence: transition.eventSequence,
+          hostEventSequence: transition.hostEventSequence,
+          openCodeSessionID: transition.openCodeSessionID,
+        });
+        return true;
+      },
+    } as unknown as SessionStorePort & { current: OpenCodeAgentRunRecord };
+    const server = new ZCodeProtocolAgentServer({
+      createZCodeApp: (options) => createFakeApp(options),
+      cwd: "/workspace",
+      sessionStore: store,
+      version: "test-version",
+    });
+
+    try {
+      await expect(
+        server.handleMessage(
+          eventMessage({
+            protocolVersion: 1,
+            zcodeSessionId: "session-1",
+            commandId: "command-1",
+            runId: "command-1",
+            opencodeSessionId: "acp-session-1",
+            sequence: 1,
+            event: { type: "started" },
+          }),
+        ),
+      ).resolves.toBeUndefined();
+      expect(store.current).toMatchObject({
+        status: "running",
+        openCodeSessionID: "acp-session-1",
+        hostEventSequence: 1,
+      });
+    } finally {
+      await server.shutdown();
+    }
+  });
+
   it("applies only exact-next events for the matching run and ACP session", async () => {
     let current = runRecord();
     const apply = vi.fn(async (transition) => {

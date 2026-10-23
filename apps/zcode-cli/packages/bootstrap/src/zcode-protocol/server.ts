@@ -515,17 +515,14 @@ export class ZCodeProtocolAgentServer {
         const event = parsed.data;
         const store = this.context.deps.sessionStore;
         const sessionID = event.zcodeSessionId as SessionId;
-        const getOpenCodeAgentRun = store?.getOpenCodeAgentRun;
-        const run = await getOpenCodeAgentRun?.({
-          sessionID,
-          runID: event.runId,
-        });
+        // SqliteSessionStore 的方法通过 this.db 访问数据库；直接解构后调用会丢失 store 接收者，导致 CLI 进程崩溃。
+        const run = await store?.getOpenCodeAgentRun?.({ sessionID, runID: event.runId });
         if (
           !run ||
           run.commandID !== event.commandId ||
           run.runID !== event.runId ||
           run.sessionID !== sessionID ||
-          !getOpenCodeAgentRun ||
+          !store?.getOpenCodeAgentRun ||
           !store?.applyOpenCodeAgentRunHostEvent
         ) {
           this.logger?.warn("Ignored OpenCode delegated run event without matching outbox owner", {
@@ -595,7 +592,7 @@ export class ZCodeProtocolAgentServer {
           });
           return undefined;
         }
-        const updatedRun = await getOpenCodeAgentRun({ sessionID, runID: event.runId });
+        const updatedRun = await store.getOpenCodeAgentRun({ sessionID, runID: event.runId });
         const record = this.context.sessions.get(String(sessionID));
         if (updatedRun && record) {
           const projected = createSessionEvent(

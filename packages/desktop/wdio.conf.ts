@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { resolve } from "node:path";
+import { delimiter, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -86,6 +86,7 @@ import { createE2ERunnerFinalizationGuard } from "./test/e2e/helpers/e2e-runner-
 import { installHooksLifecycleFixture } from "./test/e2e/helpers/hooks-lifecycle-fixture.js";
 import { installStopToolResultsFixture } from "./test/e2e/helpers/stop-tool-results-fixture.js";
 import { installBashPrefixPermissionPnpmShim } from "./test/e2e/helpers/bash-prefix-permission-shim.js";
+import { installOpenCodeAcpFixture } from "./test/e2e/helpers/open-code-cli-fixture.js";
 import {
   applyE2EWorkerModelRetryEnv,
   applyE2EWorkerReplayProxyEnv,
@@ -220,6 +221,10 @@ const E2E_PACKAGED_APP_BINARY_PATH = process.env.ZCODE_E2E_PACKAGED_APP_PATH?.tr
 const E2E_STORAGE_ROOT = resolve(E2E_HOME_DIR, ".zcode");
 const E2E_APP_CONFIG_DIR = resolve(E2E_STORAGE_ROOT, "v2");
 const E2E_APP_SETTINGS_FILE = resolve(E2E_APP_CONFIG_DIR, "setting.json");
+let openCodeComposerOriginalPath: string | undefined;
+function isOpenCodeComposerE2E(specs: string[]) {
+  return specs.some((spec) => spec.endsWith("conversation-session-opencode-cli-composer.test.ts"));
+}
 const E2E_APP_CREDENTIALS_FILE = resolve(E2E_APP_CONFIG_DIR, "credentials.json");
 const E2E_APP_PROVIDER_CONFIG_FILE = resolve(E2E_APP_CONFIG_DIR, "provider_config.json");
 // staged Electron app 只有 main/host/renderer 产物，不携带仓库级 config/provider。
@@ -4976,6 +4981,29 @@ export const config: WebdriverIO.Config = {
           startPluginCdnZipFixtureIfNeeded,
           startOffPeakMockIfNeeded: startOffPeakE2EMock,
         });
+        if (isOpenCodeComposerE2E(specs)) {
+          if (process.platform !== "win32") {
+            const currentSettings = JSON.parse(
+              await readFile(E2E_APP_SETTINGS_FILE, "utf8").catch(() => "{}"),
+            ) as Record<string, unknown>;
+            // 本用例不得触达 ZCode production；意外后台请求也只能指向无法解析的 .invalid 域名。
+            await writeFile(
+              E2E_APP_SETTINGS_FILE,
+              JSON.stringify({
+                ...currentSettings,
+                openCodeCliEnabled: true,
+                zcodeEndpointOrigin: "https://zcode-e2e.invalid",
+              }),
+              "utf8",
+            );
+            const cliBin = await installOpenCodeAcpFixture(
+              E2E_HOME_DIR,
+              resolve(E2E_HOME_DIR, ".opencode", "acp-trace.jsonl"),
+            );
+            openCodeComposerOriginalPath ??= process.env.PATH ?? "";
+            process.env.PATH = [cliBin, process.env.PATH ?? ""].filter(Boolean).join(delimiter);
+          }
+        }
         // Client Scenes 是布局 case 的远端目录依赖；必须在 resetHome 完成、Electron
         // 启动前覆盖 endpoint，确保 Main → Host 首次 import 时拿到 case-local fixture。
         await startClientScenesE2EMockIfNeeded(specs);
@@ -5071,6 +5099,10 @@ export const config: WebdriverIO.Config = {
           // 就地归一化，避免全量 manual-review 把重复 source map 累积到磁盘上限。
           e2eReporter.compactNodeCoverage();
         } finally {
+          if (openCodeComposerOriginalPath !== undefined) {
+            process.env.PATH = openCodeComposerOriginalPath;
+            openCodeComposerOriginalPath = undefined;
+          }
           await stopRequestSecurityFixture();
           await stopModelContextBudgetConfigE2EMock();
           await stopDynamicWorkflowConfigE2EMock();

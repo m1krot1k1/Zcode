@@ -161,6 +161,94 @@ describe("v4 input admission canonical intent", () => {
     expect(legacyAdmission).not.toHaveBeenCalled();
   });
 
+  it("first ACP send persists a deferred session before the atomic input/run admission", async () => {
+    const command = envelope("sendText", {
+      text: "first OpenCode message",
+      executionRoute: {
+        kind: "opencode-acp",
+        model: { kind: "catalog", modelId: "free/provider-model" },
+      },
+    });
+    const intent = conversationInputIntentSchema.parse({
+      sourceCommandId: command.commandId,
+      queueItemId: "queue-cmd-new",
+      clientId: command.clientId,
+      kind: "sendText",
+      executionRoute: command.payload.executionRoute,
+      text: "first OpenCode message",
+      attachments: [],
+      delivery: { requested: "startNow", admitted: "startNow" },
+      order: { admissionSeq: 1 },
+      steer: { state: "notRequested" },
+      dispatch: { state: "admitted" },
+      admittedAt: 10,
+    });
+    const order: string[] = [];
+    const atomicAdmission = vi.fn(async () => {
+      order.push("atomic-input-and-run-admission");
+    });
+    let persistence: "deferred" | "immediate" = "deferred";
+
+    await persistOpenCodeAgentRunAdmission(
+      { admitOpenCodeAgentRun: atomicAdmission },
+      command,
+      "s-parent",
+      intent,
+      {
+        beforeAdmission: async () => {
+          if (persistence !== "deferred") return;
+          order.push("persist-session-row");
+          persistence = "immediate";
+        },
+      },
+    );
+
+    expect(order).toEqual(["persist-session-row", "atomic-input-and-run-admission"]);
+    expect(persistence).toBe("immediate");
+    expect(atomicAdmission).toHaveBeenCalledTimes(1);
+    expect(atomicAdmission.mock.calls[0]?.[0]).toMatchObject({
+      commandID: command.commandId,
+      runID: command.commandId,
+      input: { sessionID: "s-parent", kind: "sendText", delivery: "startNow" },
+    });
+  });
+
+  it("does not create an ACP outbox row when deferred session persistence fails", async () => {
+    const command = envelope("sendText", {
+      text: "first OpenCode message",
+      executionRoute: {
+        kind: "opencode-acp",
+        model: { kind: "catalog", modelId: "free/provider-model" },
+      },
+    });
+    const intent = conversationInputIntentSchema.parse({
+      sourceCommandId: command.commandId,
+      queueItemId: "queue-cmd-new",
+      clientId: command.clientId,
+      kind: "sendText",
+      executionRoute: command.payload.executionRoute,
+      text: "first OpenCode message",
+      attachments: [],
+      delivery: { requested: "startNow", admitted: "startNow" },
+      order: { admissionSeq: 1 },
+      steer: { state: "notRequested" },
+      dispatch: { state: "admitted" },
+      admittedAt: 10,
+    });
+    const atomicAdmission = vi.fn();
+
+    await expect(
+      persistOpenCodeAgentRunAdmission(
+        { admitOpenCodeAgentRun: atomicAdmission },
+        command,
+        "s-parent",
+        intent,
+        { beforeAdmission: async () => Promise.reject(new Error("session persistence failed")) },
+      ),
+    ).rejects.toThrow("session persistence failed");
+    expect(atomicAdmission).not.toHaveBeenCalled();
+  });
+
   it("retry 以新 commandId admission，但保留 canonical kind/delivery/attachments/provenance", () => {
     const resolve = vi.fn().mockReturnValue({
       ok: true,

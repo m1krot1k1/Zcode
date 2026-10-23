@@ -523,6 +523,7 @@ export async function persistOpenCodeAgentRunAdmission(
   envelope: CommandEnvelope,
   sessionId: string,
   intent: ConversationInputIntent,
+  options: { beforeAdmission?: () => Promise<void> } = {},
 ): Promise<void> {
   const admit = sessionStore.admitOpenCodeAgentRun;
   if (!admit) {
@@ -530,14 +531,12 @@ export async function persistOpenCodeAgentRunAdmission(
       reasonCode: "fault.command.opencodeAgentAdmissionUnavailable",
     });
   }
+  await options.beforeAdmission?.();
   await admit.call(sessionStore, buildOpenCodeAgentRunAdmission(envelope, sessionId, intent));
 }
 
 async function settleOpenCodeStartFailure(
-  sessionStore: Pick<
-    SessionStorePort,
-    "getOpenCodeAgentRun" | "transitionOpenCodeAgentRun"
-  >,
+  sessionStore: Pick<SessionStorePort, "getOpenCodeAgentRun" | "transitionOpenCodeAgentRun">,
   sessionID: SessionId,
   runID: string,
   result: ZCodeOpenCodeAgentRunResult,
@@ -552,7 +551,8 @@ async function settleOpenCodeStartFailure(
     return;
   }
   const current = await sessionStore.getOpenCodeAgentRun?.({ sessionID, runID });
-  if (!current || ["completed", "cancelled", "failed", "interrupted"].includes(current.status)) return;
+  if (!current || ["completed", "cancelled", "failed", "interrupted"].includes(current.status))
+    return;
   const status: OpenCodeAgentRunStatus = result.status;
   await sessionStore.transitionOpenCodeAgentRun?.({
     sessionID,
@@ -1131,6 +1131,17 @@ export function createConversationV4Gateway(
           envelope,
           sessionId,
           intent,
+          {
+            beforeAdmission: async () => {
+              if (record.persistence !== "deferred") return;
+              // Первая отправка из ACP draft должна создать строку session до FK-bound outbox admission;
+              // этот шаг фиксирует только контейнер разговора и не запускает ZCode модель.
+              await record.app.runtime.ensureSessionPersistedForExternalActivity(input.text ?? "", {
+                traceContext: record.traceContext,
+              });
+              record.persistence = "immediate";
+            },
+          },
         );
         return intent;
       }
@@ -2178,8 +2189,8 @@ export function createConversationV4Gateway(
         return undefined;
       }
       return nativeExecutor.supports(envelope.type)
-          ? nativeExecutor.execute(envelope, admission)
-          : Promise.reject(new V4CommandNotImplementedError(envelope.type));
+        ? nativeExecutor.execute(envelope, admission)
+        : Promise.reject(new V4CommandNotImplementedError(envelope.type));
     },
     admitCommandInput: async (envelope, admission) => {
       // 仅隐藏 composer 不能阻止旧 child 标签页续聊。类型准入必须早于

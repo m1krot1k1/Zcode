@@ -6778,9 +6778,17 @@ export function createZCodeAgentService(
         params.envelope.type === "createSession" &&
         commandPayloadSchemas.createSession.parse(params.envelope.payload).openCodeAcpDraft ===
           true;
-      // Marker is accepted only for an empty ACP draft by the shared command schema. It
-      // authorizes control-plane session creation, never ZCode model execution.
-      const client = openCodeAcpDraft ? await getReadOnlyClient(params) : await getClient(params);
+      const openCodeAcpSend =
+        params.envelope.type === "sendText" &&
+        commandPayloadSchemas.sendText.parse(params.envelope.payload).executionRoute.kind ===
+          "opencode-acp";
+      // Причина: ACP-команда не исполняется моделью ZCode, но общий клиент требовал ZCode-провайдера
+      // ещё до CLI admission. Валидация маршрута сохраняет этот обход только для пустого ACP draft
+      // и явного OpenCode ACP sendText; обычные команды проходят прежний gate.
+      const isOpenCodeControlCommand = openCodeAcpDraft || openCodeAcpSend;
+      const client = isOpenCodeControlCommand
+        ? await getReadOnlyClient(params)
+        : await getClient(params);
       const planPayload = params.envelope.payload as {
         planEnabled?: boolean;
         config?: { planEnabled?: boolean };
@@ -6800,7 +6808,7 @@ export function createZCodeAgentService(
         params.clientMode ??
         "desktop-continuous";
       let envelope = await buildConversationCommandEnvelope(params);
-      if (requiresProviderRegistryRefresh(envelope.type) && !openCodeAcpDraft) {
+      if (requiresProviderRegistryRefresh(envelope.type) && !isOpenCodeControlCommand) {
         await ensureAccountProviderConfigSynced({
           client,
           reason: "v4_command",

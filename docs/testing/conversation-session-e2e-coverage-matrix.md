@@ -1,5 +1,13 @@
 # Conversation Session E2E Coverage Matrix
 
+## OpenCode CLI в обычном чате (OCAD, accepted)
+
+| Case       | Setup / Action                                                                                            | Требуемые assertions                                                                                                              | Автоматизация / статус                                                                                                                             |
+| ---------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OCAD-E2E-1 | Изолированный HOME без ZCode provider; выбрать OpenCode CLI модель в обычном Composer и отправить marker. | Draft принят; точные модель и marker попали в ACP fake CLI; ответ проецируется в тот же transcript; нет запроса к model provider. | `conversation-session/manual-review/pending/conversation-session-opencode-cli-composer.test.ts`; pending, ожидает desktop capture и ручной review. |
+
+Проверка 2026-10-23: fixture contract прошёл; локальный ACP subprocess smoke прошёл `initialize → newSession → set model → prompt → end_turn`; desktop build прошёл. WDIO не дошёл до запуска приложения: скачивание ChromiumDriver остановилось с DNS `ENOTFOUND` на `googlechromelabs.github.io`. Поэтому UI-кейс остаётся pending.
+
 ## 项目与任务草稿生命周期（PD，2026-10-16）
 
 PD01–PD12 定义及分层验证见 [统一生命周期规格](../ui/project-task-draft-lifecycle.md#本轮验证记录2026-10-16)。产品语义 accepted；自动化保持 manual-review/pending，未自动转正或加入 CI。

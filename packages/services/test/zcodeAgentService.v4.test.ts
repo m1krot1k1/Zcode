@@ -936,6 +936,51 @@ describe("zcodeAgentService v4 conversation channel", () => {
     }
   });
 
+  it("forwards an explicit OpenCode ACP chat turn without requiring a ZCode provider", async () => {
+    const { service, workspacePath, logPath, commandResolver } = setupService({
+      providerReady: false,
+    });
+    try {
+      const ack = await service.sendConversationCommandV4({
+        workspacePath,
+        envelope: {
+          commandId: "opencode-chat-send",
+          clientId: "opencode-composer",
+          issuedAt: 1,
+          sessionId: "opencode-chat-session",
+          type: "sendText",
+          payload: {
+            text: "Привет",
+            executionRoute: {
+              kind: "opencode-acp",
+              model: { kind: "catalog", modelId: "opencode/deepseek-v4.1-flash-free" },
+            },
+          },
+        },
+      });
+
+      expect(ack).toMatchObject({ status: "accepted" });
+      const requests = readRequests(logPath);
+      expect(
+        requests.find((entry) => entry.method === "v4/command")?.params,
+      ).toMatchObject({
+        type: "sendText",
+        sessionId: "opencode-chat-session",
+        payload: {
+          text: "Привет",
+          executionRoute: {
+            kind: "opencode-acp",
+            model: { kind: "catalog", modelId: "opencode/deepseek-v4.1-flash-free" },
+          },
+        },
+      });
+      expect(requests.some((entry) => entry.method === "provider/config/update")).toBe(false);
+      expect(commandResolver).toHaveBeenCalledTimes(1);
+    } finally {
+      await service.disposeAllAndWait();
+    }
+  });
+
   it("uses the registry view only as a readiness gate for a cold conversation subscription", async () => {
     const { service, workspacePath, logPath } = setupService();
     try {
