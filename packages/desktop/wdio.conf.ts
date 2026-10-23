@@ -86,7 +86,7 @@ import { createE2ERunnerFinalizationGuard } from "./test/e2e/helpers/e2e-runner-
 import { installHooksLifecycleFixture } from "./test/e2e/helpers/hooks-lifecycle-fixture.js";
 import { installStopToolResultsFixture } from "./test/e2e/helpers/stop-tool-results-fixture.js";
 import { installBashPrefixPermissionPnpmShim } from "./test/e2e/helpers/bash-prefix-permission-shim.js";
-import { installOpenCodeAcpFixture } from "./test/e2e/helpers/open-code-cli-fixture.js";
+import { installOpenCodeCliE2EFixture } from "./test/e2e/helpers/open-code-cli-fixture.js";
 import {
   applyE2EWorkerModelRetryEnv,
   applyE2EWorkerReplayProxyEnv,
@@ -4996,9 +4996,9 @@ export const config: WebdriverIO.Config = {
               }),
               "utf8",
             );
-            const cliBin = await installOpenCodeAcpFixture(
+            const cliBin = await installOpenCodeCliE2EFixture(
               E2E_HOME_DIR,
-              resolve(E2E_HOME_DIR, ".opencode", "acp-trace.jsonl"),
+              resolve(E2E_HOME_DIR, ".opencode", "composer-trace.jsonl"),
             );
             openCodeComposerOriginalPath ??= process.env.PATH ?? "";
             process.env.PATH = [cliBin, process.env.PATH ?? ""].filter(Boolean).join(delimiter);
