@@ -14,6 +14,7 @@
 | OCP-06 | Provider возвращает rate limit. | Ошибка показана пользователю; нет обхода лимита, скрытого повтора или автоматического переключения provider/model. | Runtime test `opencode-rate-limit.test.ts`: один запрос, без stream recovery. |
 | OCP-07 | OpenCode stream содержит сведения об активности собственных инструментов. | Активность отображается не более одного раза; ZCode не запускает эти действия повторно своим tool runner. | Runtime test `opencode-provider-tool.test.ts`: handler не вызывается. Projection test: один `completed` update. |
 | OCP-08 | CLI выключен или catalog refresh завершился ошибкой. | Выключенный provider отсутствует в выборе; ошибка обновления даёт retryable state; API providers продолжают работать. | Source: disabled и throw → `providers: []`, revision `models-unavailable`. Registry: API `local` остаётся валидным. |
+| OCP-09 | CLI сообщает модель в чужом namespace. | Точный `providerID/modelID` принимается Host и Worker и остаётся выбираемым. | Host catalog, Composer group и Worker `validateSelection` сохраняют `anthropic/claude-sonnet-4-5`; SDK получает тот же id. |
 
 Локальный unit/integration fixture не доказывает работу с настоящей авторизацией OpenCode. Реальный Desktop E2E с настоящим CLI и доступным пользователю model provider должен отдельно подтвердить выбор модели, ответ в исходном ZCode чате и Stop; он не требует входа в аккаунт ZCode и не должен записывать секреты.
 

@@ -102,7 +102,7 @@ the worker Registry has applied the revision, not merely received the bytes.
 | OCP-06 | OpenCode provider reports a rate limit                              | The same OpenCode request fails visibly. Stream recovery does not reopen it, and a declared selection fallback does not switch provider or model | `opencode-rate-limit` runtime test + selection fallback unit |
 | OCP-07 | OpenCode streams a tool observation                                 | It is rendered once as completed provider-side activity and never dispatched to ZCode's tool runner | `opencode-provider-tool` runtime test + projection test |
 | OCP-08 | OpenCode disabled or catalog refresh fails                          | Provider is absent or shows a retryable catalog state; existing API providers still work     | `providerRuntime` empty snapshot + `registry-service` API provider remains |
-| OCP-09 | CLI reports a model under another provider namespace                 | Exact `providerID/modelID` is accepted by both Host and Worker and remains selectable         | shared protocol schema + Host/Worker catalog tests |
+| OCP-09 | CLI reports a model under another provider namespace                 | Exact `providerID/modelID` is accepted by both Host and Worker and remains selectable         | Host catalog + Worker `validateSelection` + SDK receives `anthropic/claude-sonnet-4-5` |
 
 ## Exit criteria
 

@@ -50,6 +50,37 @@ describe("OpenCode SDK model execution", () => {
     }
   });
 
+  it("passes a foreign provider/model id to the OpenCode SDK unchanged", async () => {
+    const calls: string[] = [];
+    const provider = createFakeOpenCodeProvider({
+      model: (modelId) => {
+        calls.push(modelId);
+        return {
+          doGenerate: async () => ({
+            content: [{ type: "text", text: "ok" }],
+            finishReason: { unified: "stop", raw: undefined },
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+            },
+            warnings: [],
+          }),
+        } as unknown as LanguageModelV3;
+      },
+    });
+    const registry = createRegistry(provider);
+    const modelId = "anthropic/claude-sonnet-4-5";
+
+    try {
+      const resolved = registry.resolve(`opencode/${modelId}`);
+      await resolved.model.doGenerate!(createCallOptions());
+      expect(calls.at(-1)).toBe(modelId);
+      expect(resolved.modelId).toBe(modelId);
+    } finally {
+      await registry.dispose();
+    }
+  });
+
   it("passes the standard request AbortSignal through OpenCode streaming and disposes its injected provider", async () => {
     let providerSignal: AbortSignal | undefined;
     const dispose = vi.fn(async () => undefined);

@@ -81,6 +81,13 @@ describe("process provider registry runtime", () => {
       expect(runtime.runtime.registryService.getProvider("opencode")?.models[0]?.modelId).toBe(
         "anthropic/claude-sonnet-4-5",
       );
+      expect(
+        runtime.runtime.registryService.validateSelection({
+          providerId: "opencode",
+          modelId: "anthropic/claude-sonnet-4-5",
+          options: { reasoningLevel: "disabled" },
+        }),
+      ).toEqual({ ok: true });
       expect(process.env.PATH?.split(":")[0]).toBe("/opt/opencode/bin");
 
       await runtime.syncRuntimeProviderCatalog({
