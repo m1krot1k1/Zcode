@@ -5,14 +5,14 @@ import { encodeCustomModelValue } from "@zcode/shared";
 import {
   TID_CHAT_MODEL_SELECT_ITEM,
   TID_CHAT_MODEL_SELECT_TRIGGER,
-  TID_V4_COMPOSER_INPUT,
-  TID_V4_COMPOSER_SEND,
   testId,
 } from "@zcode/shared/test-ids";
 import { clearAppData, getE2EAppDataPaths } from "../../../helpers/desktop-app.js";
 import {
   prepareV4ConversationE2E,
   setV4ComposerText,
+  waitForV4ComposerText,
+  clickV4Send,
   waitForV4AssistantMessageContaining,
 } from "../../../helpers/v4-conversation.js";
 import {
@@ -51,51 +51,44 @@ describe("OpenCode CLI в обычном Composer", () => {
         { timeout: 30_000, timeoutMsg: "OpenCode CLI не появился в обычном Composer" },
       );
       await browser.$(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`).click();
-      const modelItemTestId = testId(
-        TID_CHAT_MODEL_SELECT_ITEM,
-        encodeCustomModelValue("opencode", E2E_OPENCODE_MODEL_ID),
-      );
-      await browser.waitUntil(
-        async () =>
-          browser.execute(
-            (testId) => Boolean(document.querySelector(`[data-testid="${testId}"]`)),
-            modelItemTestId,
-          ),
-        { timeout: 30_000, timeoutMsg: "OpenCode CLI model catalog не загрузился в Composer" },
-      );
-      await browser.$(`[data-testid="${modelItemTestId}"]`).click();
+      // Composer 默认展示当前 provider 的模型；OpenCode 目录在 provider submenu 里。
+      // 点中 provider 后弹层保持打开，并自动选中该目录的第一个模型。
+      const providerTrigger = browser.$('[data-testid="composer-provider-trigger"]');
+      await providerTrigger.waitForClickable({
+        timeout: 30_000,
+        timeoutMsg: "Composer provider trigger не появился",
+      });
+      await providerTrigger.click();
+      const providerGroup = browser.$('[data-model-provider-key="registry-provider:opencode"]');
+      await providerGroup.waitForClickable({
+        timeout: 30_000,
+        timeoutMsg: "OpenCode CLI provider group не появился в Composer",
+      });
+      await providerGroup.click();
+      const expectedModelValue = encodeCustomModelValue("opencode", E2E_OPENCODE_MODEL_ID);
+      const modelItemTestId = testId(TID_CHAT_MODEL_SELECT_ITEM, expectedModelValue);
+      const modelItem = browser.$(`[data-testid="${modelItemTestId}"]`);
+      await modelItem.waitForExist({
+        timeout: 30_000,
+        timeoutMsg: "OpenCode CLI model catalog не загрузился в Composer",
+      });
+      await modelItem.click();
 
       await browser.waitUntil(
         async () =>
           browser.execute(
-            (testId, modelId) =>
-              document.querySelector(`[data-testid="${testId}"]`)?.textContent?.includes(modelId) ??
-              false,
+            (testId, modelValue) =>
+              document.querySelector(`[data-testid="${testId}"]`)?.getAttribute(
+                "data-model-current-value",
+              ) === modelValue,
             TID_CHAT_MODEL_SELECT_TRIGGER,
-            E2E_OPENCODE_MODEL_ID,
+            expectedModelValue,
           ),
         { timeout: 10_000, timeoutMsg: "Composer не сохранил выбор OpenCode-модели" },
       );
       await setV4ComposerText(marker);
-      await browser.waitUntil(
-        async () =>
-          browser.execute(
-            (testId, marker, sendTestId) => {
-              const input = document.querySelector<HTMLTextAreaElement | HTMLInputElement>(
-                `[data-testid="${testId}"]`,
-              );
-              const button = document.querySelector<HTMLButtonElement>(
-                `[data-testid="${sendTestId}"]`,
-              );
-              return input?.value === marker && Boolean(button && !button.disabled);
-            },
-            TID_V4_COMPOSER_INPUT,
-            marker,
-            TID_V4_COMPOSER_SEND,
-          ),
-        { timeout: 15_000, timeoutMsg: "Composer не подготовил marker к отправке" },
-      );
-      await browser.$(`[data-testid="${TID_V4_COMPOSER_SEND}"]`).click();
+      await waitForV4ComposerText(marker, "Composer не подготовил marker к отправке");
+      await clickV4Send();
 
       await waitForV4AssistantMessageContaining(E2E_OPENCODE_REPLY, 45_000);
 

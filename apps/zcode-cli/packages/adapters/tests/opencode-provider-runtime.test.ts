@@ -1,5 +1,25 @@
+import { delimiter } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createOpenCodeModelProvider } from "../src/model/model-execution.js";
+import {
+  createOpenCodeModelProvider,
+  preferOpenCodeE2ECliOnPath,
+} from "../src/model/model-execution.js";
+
+describe("preferOpenCodeE2ECliOnPath", () => {
+  it("puts the E2E fixture directory ahead of Homebrew on PATH", () => {
+    const env: NodeJS.ProcessEnv = {
+      PATH: ["/opt/homebrew/bin", "/usr/bin"].join(delimiter),
+      ZCODE_E2E_OPENCODE_CLI_PATH: "/tmp/e2e/.opencode/bin/opencode",
+    };
+    preferOpenCodeE2ECliOnPath(env);
+    const entries = env.PATH?.split(delimiter) ?? [];
+    expect(entries[0]).toBe("/tmp/e2e/.opencode/bin");
+    expect(entries.filter((entry) => entry === "/tmp/e2e/.opencode/bin")).toEqual([
+      "/tmp/e2e/.opencode/bin",
+    ]);
+    expect(entries).toContain("/opt/homebrew/bin");
+  });
+});
 
 describe("createOpenCodeModelProvider", () => {
   it("owns an isolated provider and removes only its new signal handlers on dispose", async () => {

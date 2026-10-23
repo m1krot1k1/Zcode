@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,8 +25,16 @@ export async function installOpenCodeCliE2EFixture(
 
   const sourceFixture = join(fixtureDir, "open-code-cli-e2e-fixture.mjs");
   const cliPath = join(binDir, process.platform === "win32" ? "opencode.cmd" : "opencode");
-  await copyFile(sourceFixture, cliPath);
-  if (process.platform !== "win32") await chmod(cliPath, 0o700);
+  if (process.platform === "win32") {
+    await copyFile(sourceFixture, cliPath);
+  } else {
+    // Host PATH после запуска Electron не содержит node, поэтому `#!/usr/bin/env node` не стартует.
+    // Shebang с абсолютным execPath воркера не зависит от PATH.
+    const source = await readFile(sourceFixture, "utf8");
+    const rewritten = source.replace(/^#![^\n]*\n/, `#!${process.execPath}\n`);
+    await writeFile(cliPath, rewritten, { mode: 0o700 });
+    await chmod(cliPath, 0o700);
+  }
 
   process.env.ZCODE_E2E_OPENCODE_TRACE_PATH = tracePath;
   process.env.ZCODE_E2E_OPENCODE_MODEL_ID = E2E_OPENCODE_MODEL_ID;

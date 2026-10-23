@@ -922,7 +922,8 @@ exceptions:
       - packages/ui/src/chat-input-toolbar/thoughtLevelLabels.ts
       - packages/ui/src/components/workflow-timeline/subagent-model-label.ts
       - packages/desktop/src/main/fileApplications.ts
-    reason: Feature-branch files admitted path-exact; adopting conversation-share, tool presentation or renderer directories needs a separate module boundary refactor (same pattern as settings-machine-unmanaged-edit).
+      - packages/desktop/src/main/loginShellPath.ts
+    reason: Feature-branch files admitted path-exact; adopting conversation-share, tool presentation or renderer directories needs a separate module boundary refactor (same pattern as settings-machine-unmanaged-edit). loginShellPath.ts is the Desktop Main login-shell PATH owner inside the already-unmanaged main process tree.
   - id: workflow-notifications-unmanaged-files
     rule: unmanaged-new-file
     paths:

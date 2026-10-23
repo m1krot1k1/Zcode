@@ -10,7 +10,7 @@ import {
   downloadPinnedOpenCodeArchive,
   installOpenCodePinnedCli,
 } from "../src/opencode-acp-runtime/adapters/cliBinaryInstaller.js";
-import { parseOpenCodeVerboseModelCatalog } from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
+import { parseOpenCodeVerboseModelCatalog, resolveCliCommand } from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
 import {
   getOpenCodeCliReleaseAssets,
   OPEN_CODE_CLI_RELEASE_VERSION,
@@ -35,6 +35,22 @@ afterEach(async () => {
   await Promise.all(
     temporaryPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
+});
+
+describe("OpenCode E2E CLI override", () => {
+  it("uses an absolute ZCODE_E2E_OPENCODE_CLI_PATH ahead of PATH lookup", async () => {
+    const previous = process.env.ZCODE_E2E_OPENCODE_CLI_PATH;
+    process.env.ZCODE_E2E_OPENCODE_CLI_PATH = process.execPath;
+    try {
+      await expect(resolveCliCommand()).resolves.toMatchObject({
+        status: "resolved",
+        executablePath: process.execPath,
+      });
+    } finally {
+      if (previous === undefined) delete process.env.ZCODE_E2E_OPENCODE_CLI_PATH;
+      else process.env.ZCODE_E2E_OPENCODE_CLI_PATH = previous;
+    }
+  });
 });
 
 describe("Windows OpenCode command resolution", () => {

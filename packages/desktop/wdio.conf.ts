@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { delimiter, resolve } from "node:path";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -221,7 +221,6 @@ const E2E_PACKAGED_APP_BINARY_PATH = process.env.ZCODE_E2E_PACKAGED_APP_PATH?.tr
 const E2E_STORAGE_ROOT = resolve(E2E_HOME_DIR, ".zcode");
 const E2E_APP_CONFIG_DIR = resolve(E2E_STORAGE_ROOT, "v2");
 const E2E_APP_SETTINGS_FILE = resolve(E2E_APP_CONFIG_DIR, "setting.json");
-let openCodeComposerOriginalPath: string | undefined;
 function isOpenCodeComposerE2E(specs: string[]) {
   return specs.some((spec) => spec.endsWith("conversation-session-opencode-cli-composer.test.ts"));
 }
@@ -4717,14 +4716,10 @@ export const config: WebdriverIO.Config = {
         windowTypes: ["page"],
         args: [...(containerE2E ? containerChromeArgs : [])],
       },
-      ...(containerE2E
-        ? {
-            "wdio:chromedriverOptions": {
-              // 修复原因：固定容器 cache，避免每轮从 /tmp 重新下载 Chromedriver。
-              cacheDir: E2E_BROWSER_DRIVER_CACHE_DIR,
-            },
-          }
-        : {}),
+      "wdio:chromedriverOptions": {
+        // 修复原因：固定 repo 内 cache，避免 /tmp 半解压 chromedriver 导致本地 macOS E2E 找不到可执行文件。
+        cacheDir: E2E_BROWSER_DRIVER_CACHE_DIR,
+      },
     },
   ],
   specs: configuredE2ESpecs,
@@ -5000,8 +4995,9 @@ export const config: WebdriverIO.Config = {
               E2E_HOME_DIR,
               resolve(E2E_HOME_DIR, ".opencode", "composer-trace.jsonl"),
             );
-            openCodeComposerOriginalPath ??= process.env.PATH ?? "";
-            process.env.PATH = [cliBin, process.env.PATH ?? ""].filter(Boolean).join(delimiter);
+            // 修复原因：Electron 在 macOS 上会重建 PATH，worker 里删掉 Homebrew 也到不了 Host。
+            // 绝对路径随环境变量进入 Host，resolver 不再先命中 /opt/homebrew/bin/opencode。
+            process.env.ZCODE_E2E_OPENCODE_CLI_PATH = resolve(cliBin, "opencode");
           }
         }
         // Client Scenes 是布局 case 的远端目录依赖；必须在 resetHome 完成、Electron
@@ -5099,10 +5095,7 @@ export const config: WebdriverIO.Config = {
           // 就地归一化，避免全量 manual-review 把重复 source map 累积到磁盘上限。
           e2eReporter.compactNodeCoverage();
         } finally {
-          if (openCodeComposerOriginalPath !== undefined) {
-            process.env.PATH = openCodeComposerOriginalPath;
-            openCodeComposerOriginalPath = undefined;
-          }
+          delete process.env.ZCODE_E2E_OPENCODE_CLI_PATH;
           await stopRequestSecurityFixture();
           await stopModelContextBudgetConfigE2EMock();
           await stopDynamicWorkflowConfigE2EMock();

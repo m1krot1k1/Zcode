@@ -47,11 +47,16 @@ if (sub === "serve") {
   let sessionCounter = 0;
   /** @type {Set<import('node:http').ServerResponse>} */
   const sseClients = new Set();
+  let pendingSse = "";
+  const publish = (payload) => {
+    pendingSse += payload;
+    for (const client of sseClients) client.write(payload);
+  };
 
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
-      if (url.pathname === "/health") {
+      if (url.pathname === "/health" || url.pathname === "/global/health") {
         res.writeHead(200);
         res.end("ok");
         return;
@@ -67,17 +72,18 @@ if (sub === "serve") {
         res.end(JSON.stringify({ id }));
         return;
       }
-      if (url.pathname === "/event" && req.method === "GET") {
+      if ((url.pathname === "/event" || url.pathname === "/global/event") && req.method === "GET") {
         res.writeHead(200, {
           "content-type": "text/event-stream",
           "cache-control": "no-cache",
           connection: "keep-alive",
         });
+        if (pendingSse) res.write(pendingSse);
         sseClients.add(res);
         req.on("close", () => sseClients.delete(res));
         return;
       }
-      const messageMatch = url.pathname.match(/^\/session\/([^/]+)\/message$/);
+      const messageMatch = url.pathname.match(/^\/session\/([^/]+)\/(?:message|prompt_async)$/);
       if (messageMatch && req.method === "POST") {
         let body = "";
         for await (const chunk of req) body += chunk;
@@ -101,12 +107,15 @@ if (sub === "serve") {
             },
           },
           {
-            type: "message.part.delta",
+            type: "message.part.updated",
             properties: {
-              partID: partId,
-              messageID: messageId,
-              field: "text",
-              delta: reply,
+              part: {
+                id: partId,
+                type: "text",
+                sessionID: sessionId,
+                messageID: messageId,
+                text: reply,
+              },
             },
           },
           {
@@ -117,12 +126,24 @@ if (sub === "serve") {
             },
           },
         ];
-        const ssePayload = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
-        for (const client of sseClients) {
-          client.write(ssePayload);
-        }
+        publish(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""));
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ data: {} }));
+        res.end(
+          JSON.stringify({
+            data: {
+              info: { id: messageId, role: "assistant", sessionID: sessionId },
+              parts: [
+                {
+                  id: partId,
+                  type: "text",
+                  sessionID: sessionId,
+                  messageID: messageId,
+                  text: reply,
+                },
+              ],
+            },
+          }),
+        );
         return;
       }
       res.writeHead(404);
@@ -136,8 +157,7 @@ if (sub === "serve") {
   server.listen(port, hostname, () => {
     process.stdout.write(`opencode server listening on http://${hostname}:${port}\n`);
   });
-  return;
+} else {
+  process.stderr.write(`Unsupported OpenCode E2E fixture invocation: ${args.join(" ")}\n`);
+  process.exit(1);
 }
-
-process.stderr.write(`Unsupported OpenCode E2E fixture invocation: ${args.join(" ")}\n`);
-process.exit(1);

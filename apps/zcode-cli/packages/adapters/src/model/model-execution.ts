@@ -1,4 +1,5 @@
 import { withoutRequestVerificationHeaders } from "@zcode/shared";
+import { delimiter, dirname, isAbsolute } from "node:path";
 /* eslint-disable max-lines -- AI SDK 模型执行装配集中维护 provider factory、鉴权和网络错误适配，拆分会让状态同步更脆弱。 */
 // ============================================================
 // Vercel AI SDK model execution
@@ -1196,7 +1197,18 @@ const OPENCODE_PROCESS_SIGNALS: readonly OpenCodeProcessSignal[] = ["SIGINT", "S
  * signal listeners added by that import are removed. The isolated manager's
  * listeners remain until this runtime is disposed.
  */
+/** SDK 的 `opencode serve` 只按 PATH 找二进制。E2E 把 fixture 绝对路径放在这个变量里。 */
+export function preferOpenCodeE2ECliOnPath(env: NodeJS.ProcessEnv = process.env): void {
+  const cliPath = env.ZCODE_E2E_OPENCODE_CLI_PATH?.trim();
+  if (!cliPath || !isAbsolute(cliPath)) return;
+  const binDir = dirname(cliPath);
+  const current = env.PATH ?? "";
+  const entries = current.split(delimiter).filter((entry) => entry && entry !== binDir);
+  env.PATH = [binDir, ...entries].join(delimiter);
+}
+
 export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProviderRuntime> {
+  preferOpenCodeE2ECliOnPath();
   const listenersBeforeImport = captureOpenCodeSignalListeners();
   let sdk: OpenCodeSdk;
 

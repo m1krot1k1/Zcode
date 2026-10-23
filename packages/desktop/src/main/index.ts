@@ -1,3 +1,4 @@
+import { applyDesktopProcessPath } from "./loginShellPath.js";
 import { installRequestSecurityDiagnostics } from "./request-security-edition/index.js";
 import { createLocalTtftExporter } from "./localTtftExporter.js";
 /* eslint-disable max-lines */
@@ -2048,6 +2049,8 @@ app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
 });
 
 app.whenReady().then(async () => {
+  // 与 Cline sidecar 相同：先解析 PATH，再创建会拉起 Host / opencode 的窗口。
+  const desktopPathPromise = applyDesktopProcessPath(process.env);
   markMainLaunchAppReady();
   installRequestSecurityDiagnostics(session.defaultSession.webRequest, logger);
   installLocalMediaPreviewProtocol(session.defaultSession.protocol, {
@@ -2539,6 +2542,8 @@ app.whenReady().then(async () => {
     return;
   }
 
+  const desktopPath = await desktopPathPromise;
+  logger.info("[startup] process PATH", desktopPath);
   logger.info("[startup] 创建主窗口");
   await primaryWindowCoordinator.ensurePrimaryWindow("app-ready");
 

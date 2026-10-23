@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { isAbsolute } from "node:path";
 import {
   resolveOpenCodeCli,
   type OpenCodeCliResolution,
@@ -97,6 +98,11 @@ async function isExecutableFile(
 
 export async function resolveCliCommand(cliPath?: string): Promise<OpenCodeCliResolution> {
   const linuxLibc = detectHostLinuxLibc();
+  // macOS Electron 会按 path_helper 重建 PATH，/opt/homebrew/bin 排在 E2E fixture 前面。
+  // 仅当调用方没有显式 cliPath 时，绝对路径的测试覆盖才生效。
+  const e2eCliPath = process.env.ZCODE_E2E_OPENCODE_CLI_PATH?.trim();
+  const explicitPath =
+    cliPath?.trim() || (e2eCliPath && isAbsolute(e2eCliPath) ? e2eCliPath : undefined);
   return await resolveOpenCodeCli({
     platform: process.platform,
     architecture: process.arch,
@@ -105,7 +111,7 @@ export async function resolveCliCommand(cliPath?: string): Promise<OpenCodeCliRe
     pathExtValue: process.env.PATHEXT,
     homeDirectory: homedir(),
     env: process.env,
-    explicitPath: cliPath?.trim() || undefined,
+    explicitPath,
     isExecutableFile,
   });
 }

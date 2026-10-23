@@ -74,6 +74,8 @@ sequenceDiagram
   Z->>CLI: abort active provider request
 ```
 
+Desktop Main merges the user's login-shell `PATH` into its own `PATH` before the first Host spawn: shell entries first, then any directories already present. Finder and Dock only provide launchd's `PATH`, so a terminal-installed `opencode` would otherwise be invisible. Windows skips the merge. `ZCODE_SKIP_LOGIN_SHELL_PATH=1` leaves `PATH` unchanged. An absolute `ZCODE_E2E_OPENCODE_CLI_PATH` is prepended and the login-shell merge is skipped, so the E2E fixture stays ahead of a developer install. The Host then passes that `PATH` to the Host process and the owning CLI.
+
 The Host owns the authoritative OpenCode catalog because it owns the local CLI and its filesystem. On
 worker attachment, the Host sends the current full snapshot before the worker can execute a model;
 toggle changes and catalog refreshes send a new full snapshot through a per-client serialized queue.
