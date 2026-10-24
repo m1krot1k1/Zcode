@@ -15,6 +15,7 @@ import {
   isContextExceededFailure,
   isNetworkFailure,
   isProviderMarkedRetryable,
+  isTransportFetchFailure,
   isProxyFailure,
   isTimeoutFailure,
   parseRetryAfterMs,
@@ -284,6 +285,23 @@ export function classifyModelFailure(
   }
 
   if (isNetworkFailure(code)) {
+    return {
+      code: ModelErrorCode.ModelRequestFailed,
+      message: "Network connection failed for the provider request.",
+      reason: ModelFailureReasonValue.NetworkError,
+      retryReason: ModelRetryReasonValue.NetworkError,
+      retryable: true,
+      retryAfterMs,
+      statusCode,
+    };
+  }
+
+  // Bug 原因：OpenCode SDK 的 createEmptyResponseDataError 把 undici "fetch failed"
+  // 只拼进 message，并写死 isRetryable:false，不保留 cause.code。分类器原先只看
+  // error.code 和 isRetryable，于是网络断开和「模型 id 无效的空响应」都变成
+  // reason=unknown、retryable=false。传输失败必须走既有 network_error 重试；
+  // 没有 Original error: fetch failed 的空响应仍保持不可重试。
+  if (isTransportFetchFailure(unwrapped)) {
     return {
       code: ModelErrorCode.ModelRequestFailed,
       message: "Network connection failed for the provider request.",

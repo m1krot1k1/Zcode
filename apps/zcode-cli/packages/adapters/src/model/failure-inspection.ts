@@ -274,6 +274,61 @@ export function isNetworkFailure(code?: string): boolean {
   );
 }
 
+const TRANSPORT_FETCH_FAILED_MESSAGES = new Set(["fetch failed", "failed to fetch"]);
+const ORIGINAL_ERROR_MARKER = "Original error: ";
+
+/**
+ * undici/Node 的传输失败经常只剩 TypeError message "fetch failed"，没有 ECONN* code。
+ * OpenCode SDK 还会把它写进 APICallError 的 "Original error:" 尾部，并强制 isRetryable:false。
+ * 只认整句 message 或这个固定尾部，避免把模型 id 无效的空响应误判成网络错误。
+ */
+export function isTransportFetchFailure(error: unknown): boolean {
+  return hasTransportFetchFailure(error, new WeakSet<object>());
+}
+
+function hasTransportFetchFailure(error: unknown, seen: WeakSet<object>): boolean {
+  if (markSeen(error, seen)) {
+    return false;
+  }
+
+  const record = asRecord(error);
+  if (isNetworkFailure(stringProperty(record, "code"))) {
+    return true;
+  }
+
+  const message = stringProperty(record, "message");
+  if (message && isExactFetchFailedMessage(message)) {
+    return true;
+  }
+
+  const originalTail = readOriginalErrorTail(message);
+  if (
+    originalTail &&
+    (isExactFetchFailedMessage(originalTail) || isNetworkFailure(originalTail))
+  ) {
+    return true;
+  }
+
+  const cause = record.cause;
+  return Boolean(cause && cause !== error && hasTransportFetchFailure(cause, seen));
+}
+
+function isExactFetchFailedMessage(message: string): boolean {
+  return TRANSPORT_FETCH_FAILED_MESSAGES.has(message.trim().toLowerCase());
+}
+
+function readOriginalErrorTail(message: string | undefined): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+  const index = message.lastIndexOf(ORIGINAL_ERROR_MARKER);
+  if (index < 0) {
+    return undefined;
+  }
+  const tail = message.slice(index + ORIGINAL_ERROR_MARKER.length).trim();
+  return tail.length > 0 ? tail : undefined;
+}
+
 export function isProviderMarkedRetryable(error: unknown): boolean {
   if (APICallError.isInstance(error)) {
     return error.isRetryable;

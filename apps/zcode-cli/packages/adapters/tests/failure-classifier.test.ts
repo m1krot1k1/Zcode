@@ -11,6 +11,15 @@ const AZURE_CONTEXT_LENGTH_ERROR =
 const GEMINI_CONTEXT_LENGTH_ERROR =
   "The input token count (131137) exceeds the maximum number of tokens allowed (131072).";
 
+function openCodeEmptyResponseMessage(modelId: string, originalError?: string): string {
+  const detail = originalError ? ` Original error: ${originalError}` : "";
+  return (
+    `OpenCode returned no response data for model "${modelId}". This usually means the configured provider/model ID is invalid or unavailable. ` +
+    "Run `opencode models` to list available model IDs and check the OpenCode provider configuration." +
+    detail
+  );
+}
+
 describe("classifyModelFailure context length errors", () => {
   it("maps the reported maximum context length message to context exceeded", () => {
     expect(classifyModelFailure(new Error(MAXIMUM_CONTEXT_LENGTH_ERROR))).toMatchObject({
@@ -425,6 +434,77 @@ describe("classifyModelFailure provider business codes", () => {
       reason: "auth_failed",
       retryable: false,
       statusCode: 401,
+    });
+  });
+
+  it("classifies an OpenCode empty response caused by fetch failed as a retryable network error", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage("opencode/deepseek-v4.1-flash-free", "fetch failed"),
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "model_request_failed",
+      reason: "network_error",
+      retryReason: "network_error",
+      retryable: true,
+    });
+  });
+
+  it("keeps an OpenCode empty response without a fetch failure non-retryable", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage("opencode/deepseek-v4.1-flash-free"),
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      reason: "unknown",
+      retryable: false,
+    });
+    expect(failure.reason).not.toBe("network_error");
+  });
+
+  it("classifies a bare undici TypeError fetch failed as a retryable network error", () => {
+    expect(classifyModelFailure(new TypeError("fetch failed"))).toMatchObject({
+      code: "model_request_failed",
+      reason: "network_error",
+      retryReason: "network_error",
+      retryable: true,
+    });
+  });
+
+  it("does not treat an HTTP 429 as a fetch failure when the message mentions fetch failed", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: "Provider rate limited the model request. Original error: fetch failed",
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        statusCode: 429,
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "model_rate_limited",
+      reason: "rate_limited",
+      retryable: true,
+      statusCode: 429,
     });
   });
 
