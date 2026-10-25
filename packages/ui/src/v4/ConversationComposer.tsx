@@ -62,6 +62,7 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import {
   ArrowUpIcon,
+  BotIcon,
   ClipboardPenLineIcon,
   InfoIcon,
   RotateCcwIcon,
@@ -209,6 +210,8 @@ const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading" }
 export interface ConversationComposerSendOptions {
   /** 原始正文供接纳恢复对账；协议正文可能已经附加文件或页面上下文。 */
   submittedDraftText?: string;
+  /** Одноразовое явное намерение запустить ZCode-owned рой для этой отправки. */
+  orchestrationMode?: "swarm";
   /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
   submission?: ComposerSubmissionConfig | null;
   heldQueueDisposition?: "clearQueueAndSend" | "keepQueueAndSend";
@@ -410,6 +413,8 @@ export interface ConversationComposerProps {
     content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
   ) => void;
   replaceComposerDraft: (draft: Omit<V4ComposerDraft, "updatedAt">) => void;
+  /** Меняет orchestration intent только текущего черновика. */
+  onSetComposerOrchestrationMode?: (enabled: boolean) => void;
   /** 当前 Composer 是否能构造完整 Submission；空模型或空 Reasoning 时为 false。 */
   submissionReady?: boolean;
   createSubmissionFromComposer?: () => ComposerSubmissionConfig | null;
@@ -553,6 +558,7 @@ function ConversationComposerImpl({
   rootDraftScopeKey,
   updateComposerContent,
   replaceComposerDraft,
+  onSetComposerOrchestrationMode,
   submissionReady = true,
   createSubmissionFromComposer,
   telemetryDraftConfig,
@@ -913,10 +919,7 @@ function ConversationComposerImpl({
   const draftPersistTimerRef = useRef<number | null>(null);
   const suppressDraftPersistRef = useRef(false);
 
-  const snapshotDraftOfEditor = useCallback((): {
-    text: string;
-    editorStateJson?: string;
-  } => {
+  const snapshotDraftOfEditor = useCallback((): Omit<V4ComposerDraft, "updatedAt"> => {
     const currentText = textRef.current;
     let editorStateJson: string | undefined;
     try {
@@ -926,8 +929,17 @@ function ConversationComposerImpl({
       logger.warn(`[v4-composer] 草稿 editorState 序列化失败: ${String(error)}`);
     }
     return currentText.trim()
-      ? { text: currentText, ...(editorStateJson ? { editorStateJson } : {}) }
-      : { text: "" };
+      ? {
+          ...ownerDraftRef.current.draft,
+          text: currentText,
+          ...(editorStateJson ? { editorStateJson } : { editorStateJson: undefined }),
+        }
+      : {
+          ...ownerDraftRef.current.draft,
+          text: "",
+          editorStateJson: undefined,
+          mention: undefined,
+        };
   }, []);
 
   useEffect(() => {
@@ -1463,6 +1475,7 @@ function ConversationComposerImpl({
         // 用户在等待期间已经产生更新时，当前完整正文是更新后的事实；旧失败回包不能覆盖。
         if (contentRevisionRef.current === cleanupRevision) {
           updateComposerContent(submittedDraft);
+          if (submittedDraft.orchestrationMode === "swarm") onSetComposerOrchestrationMode?.(true);
           if (submittedCommandId && !submittedCommandResolved) {
             // 传输层失败不等于 CLI 未 admission（ACK 丢失即如此）。正文虽已恢复回草稿，
             // 该 command 仍待权威结论；登记到模块级账本，让卸载重挂后的 composer 也能收口。
@@ -1612,6 +1625,9 @@ function ConversationComposerImpl({
         }
         const sendResult = await onSendText(promptText, {
           submittedDraftText: submittedDraft.text,
+          ...(submittedDraft.orchestrationMode === "swarm"
+            ? { orchestrationMode: "swarm" as const }
+            : {}),
           submission,
           ...(currentConversationSelections.length
             ? {
@@ -1718,6 +1734,7 @@ function ConversationComposerImpl({
       telemetryDraftConfig,
       modelSelectionView,
       onSendText,
+      onSetComposerOrchestrationMode,
       pendingShareContext,
       provider,
       readPlanIdentitySnapshot,
@@ -2383,6 +2400,23 @@ function ConversationComposerImpl({
             />
           </span>
         ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant={composerDraft.orchestrationMode === "swarm" ? "secondary" : "ghost"}
+          aria-pressed={composerDraft.orchestrationMode === "swarm"}
+          aria-label={intl.formatMessage({ id: "chat.composer.swarm" })}
+          title={intl.formatMessage({ id: "chat.composer.swarm.description" })}
+          data-testid="v4-composer-swarm-toggle"
+          disabled={disabled || runtimeBlocked || pending || !onSetComposerOrchestrationMode}
+          onClick={() =>
+            onSetComposerOrchestrationMode?.(composerDraft.orchestrationMode !== "swarm")
+          }
+          className="gap-1"
+        >
+          <BotIcon className="size-4" />
+          <span>{intl.formatMessage({ id: "chat.composer.swarm" })}</span>
+        </Button>
         {showStopControl ? (
           <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
             <Button
@@ -2425,6 +2459,7 @@ function ConversationComposerImpl({
       activeConfigPicker,
       composerPhase,
       composerUsage,
+      composerDraft.orchestrationMode,
       disabled,
       runtimeBlocked,
       draftConfig,
@@ -2444,6 +2479,7 @@ function ConversationComposerImpl({
       modelSelectionState,
       modelSelectionView,
       onSelectThought,
+      onSetComposerOrchestrationMode,
       onRecoverCustomModelSelection,
       onSendCompressionCommand,
       onSwitchMode,

@@ -10,6 +10,7 @@ import {
   V4ComposerModelControls,
 } from "@/v4/composer/V4ComposerToolbar.js";
 import type { ModelConfigSelect } from "@/ModelConfigSelect.js";
+import type { ComposerPlanGroup } from "@/lib/composerPlanGroups.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -574,6 +575,50 @@ describe("V4ComposerModelControls recovery", () => {
     expect(modelValue).toBe("custom:opencode:opencode%2Fdeepseek-v4.1-flash-free");
     captured.modelSelectProps?.onValueChange(modelValue ?? "");
     expect(mocks.selectModel).toHaveBeenCalledWith("opencode", modelId, null);
+  });
+
+  it("выбор группы OpenCode CLI в меню Composer не запускает синхронизацию аккаунта", () => {
+    const modelId = "opencode/big-pickle";
+    const selectionView = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: { access: { type: "local-auth" }, api: { type: "opencode-sdk" } },
+          models: [{ modelId, config: completeDisabledModelConfig() }],
+        },
+      ],
+    } as unknown as NonNullable<V4ComposerModelControlsProps["modelSelectionView"]>;
+    renderToolbarMarkup({
+      modelSelectionView: selectionView,
+      config: {
+        provider: "custom-openai",
+        model: "gpt-4o",
+        thought: "disabled",
+        thoughtLevels: [],
+        followupMode: "queue",
+        mode: "build",
+      },
+      draftConfig: {
+        mode: "build",
+        modelSelection: { providerId: "custom-openai", modelId: "gpt-4o" },
+      },
+    });
+
+    const openCodeGroup = captured.modelSelectProps?.composerOptions?.providerMenu?.groups.find(
+      (group) => group.key === "registry-provider:opencode",
+    );
+    expect(openCodeGroup).toBeDefined();
+    captured.modelSelectProps?.composerOptions?.providerMenu?.onSelect(
+      openCodeGroup as ComposerPlanGroup,
+    );
+
+    expect(mocks.selectModel).toHaveBeenCalledWith("opencode", modelId, {
+      provider: "custom-openai",
+      model: "gpt-4o",
+    });
+    expect(mocks.selectConnection).not.toHaveBeenCalled();
   });
 
   it("同 Host 重读保留目录时入口不切成禁用态，首次加载仍禁用", () => {

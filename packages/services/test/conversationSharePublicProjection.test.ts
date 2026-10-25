@@ -387,6 +387,25 @@ describe("conversation share public projection", () => {
     expectBuildFailure(rows, "invalid_conversation");
   });
 
+  it("rejects swarm rows that contain local child-session identities", () => {
+    const rows = rowsWithCompletedSubagent();
+    rows.push({
+      rowId: 107,
+      turnId: "local-turn-a",
+      entityId: "local-swarm-entity",
+      productTurnId: "local-product-turn-a",
+      createdAt: 1_050,
+      createdAtSeq: 16,
+      kind: "swarmRun",
+      swarmRunId: "local-swarm-run",
+      status: "completed",
+      taskCount: 1,
+      childSessionIds: ["private-child-session"],
+    });
+
+    expectBuildFailure(rows, "invalid_conversation");
+  });
+
   it.each([
     ["data:text/plain;base64,YQ==", "unsafe_structure"],
     ["file:///tmp/report.html", "unsafe_structure"],

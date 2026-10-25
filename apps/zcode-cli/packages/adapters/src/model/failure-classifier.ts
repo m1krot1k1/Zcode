@@ -19,6 +19,7 @@ import {
   isProxyFailure,
   isTimeoutFailure,
   parseRetryAfterMs,
+  readOpenCodeSessionDiagnostic,
   unwrapRetryError,
 } from "./failure-inspection.js";
 import { readMappedAiSdkProviderBusinessError } from "./failure-ai-sdk-provider-error.js";
@@ -55,6 +56,7 @@ export interface ProviderFailureDetails {
 
 export function inspectProviderFailure(error: unknown): ProviderFailureDetails {
   const unwrapped = unwrapRetryError(error);
+  const openCodeDiagnostic = readOpenCodeSessionDiagnostic(unwrapped);
   // 分类链路能读取 AI SDK parsed error，但观测链路只认识 ProviderBusinessError，
   // 导致同一次失败在 status event 与最终 error context 中丢失 provider 诊断字段。
   const businessError =
@@ -67,14 +69,20 @@ export function inspectProviderFailure(error: unknown): ProviderFailureDetails {
     };
   }
   const detected = readProviderBusinessFailureFromBody(getApiCallResponseBody(unwrapped));
-  return detected
+  if (detected) {
+    return {
+      providerErrorCode:
+        typeof detected.providerCode === "number"
+          ? String(detected.providerCode)
+          : detected.providerCode,
+      providerErrorMessage: detected.providerMessage,
+      providerRequestId: detected.providerRequestId,
+    };
+  }
+  return openCodeDiagnostic
     ? {
-        providerErrorCode:
-          typeof detected.providerCode === "number"
-            ? String(detected.providerCode)
-            : detected.providerCode,
-        providerErrorMessage: detected.providerMessage,
-        providerRequestId: detected.providerRequestId,
+        providerErrorCode: openCodeDiagnostic.code,
+        providerErrorMessage: openCodeDiagnostic.message,
       }
     : {};
 }
@@ -88,6 +96,18 @@ export function classifyModelFailure(
   const code = getErrorCode(unwrapped);
   const headers = getResponseHeaders(unwrapped);
   const retryAfterMs = parseRetryAfterMs(headers);
+
+  if (code === "OPENCODE_WORKSPACE_UNAVAILABLE") {
+    return {
+      code: ModelErrorCode.ModelRequestFailed,
+      message:
+        "OpenCode needs an available workspace folder. Reopen or restore the workspace, then try again.",
+      reason: ModelFailureReasonValue.Unknown,
+      retryReason: ModelRetryReasonValue.NetworkError,
+      retryable: false,
+      statusCode,
+    };
+  }
 
   if (code === ModelErrorCode.InvalidModelResponse) {
     return {
@@ -207,7 +227,9 @@ export function classifyModelFailure(
 
   if (statusCode === 401 || statusCode === 403) {
     // OpenCode 没有 ZCode API key：登录只发生在 CLI，这里只给出明确的 sign-in 错误。
-    const openCodeSignIn = findProviderBusinessError(unwrapped)?.providerId === "opencode";
+    const openCodeSignIn =
+      findProviderBusinessError(unwrapped)?.providerId === "opencode" ||
+      readOpenCodeSessionDiagnostic(unwrapped) !== undefined;
     return {
       code: ModelErrorCode.ProviderNotConfigured,
       message: openCodeSignIn
@@ -308,6 +330,28 @@ export function classifyModelFailure(
       reason: ModelFailureReasonValue.NetworkError,
       retryReason: ModelRetryReasonValue.NetworkError,
       retryable: true,
+      retryAfterMs,
+      statusCode,
+    };
+  }
+
+  // 根因：OpenCode SDK 把本地服务的异常响应包装成 “no response data”，旧文案却推断模型 ID 错误。
+  // 修复依据：上游只返回通用 500 时无法判定模型原因；提示查看 OpenCode 日志，不诱导用户换模型。
+  const emptyOpenCodeResponse =
+    unwrapped instanceof Error &&
+    unwrapped.message.includes("OpenCode returned no response data for model ");
+  if (emptyOpenCodeResponse) {
+    const localServerFailure = /Original error:\s*Unexpected server error\b/iu.test(
+      unwrapped.message,
+    );
+    return {
+      code: ModelErrorCode.ModelRequestFailed,
+      message: localServerFailure
+        ? "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause."
+        : "OpenCode returned no model response. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
+      reason: ModelFailureReasonValue.Unknown,
+      retryReason: ModelRetryReasonValue.NetworkError,
+      retryable: false,
       retryAfterMs,
       statusCode,
     };

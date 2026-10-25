@@ -1,4 +1,11 @@
-import { act, createElement, type ReactNode } from "react";
+import {
+  Children,
+  act,
+  createElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -307,6 +314,7 @@ function renderComposerElement(
     content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
   ) => void,
   submissionReady = true,
+  onSetComposerOrchestrationMode: (enabled: boolean) => void = vi.fn(),
 ) {
   const scopeId = sessionId ?? V4_DRAFT_SCOPE_ROOT;
   let ownedDraft = composerDraft ??
@@ -336,6 +344,7 @@ function renderComposerElement(
         ownedDraft = { ...next, updatedAt: Date.now() };
         persistV4ComposerDraft("/workspace", undefined, scopeId, ownedDraft);
       },
+      onSetComposerOrchestrationMode,
       onStop: vi.fn(),
       onSwitchMode: vi.fn(),
       provider: undefined,
@@ -346,6 +355,16 @@ function renderComposerElement(
       workspacePath: "/workspace",
     }),
   );
+}
+
+function findSwarmToggle(node: ReactNode): ReactElement<Record<string, unknown>> | null {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement<Record<string, unknown>>(child)) continue;
+    if (child.props["data-testid"] === "v4-composer-swarm-toggle") return child;
+    const nested = findSwarmToggle(child.props.children as ReactNode);
+    if (nested) return nested;
+  }
+  return null;
 }
 
 function renderComposer(
@@ -384,6 +403,76 @@ afterEach(() => {
 });
 
 describe("ConversationComposer prompt history", () => {
+  it("exposes a draft-scoped swarm toggle and sends its accepted intent", async () => {
+    const container = installMinimalDom();
+    const root = createRoot(container);
+    const onSendText = vi.fn(async () => {});
+    const setOrchestrationMode = vi.fn();
+    const selection = { providerId: "provider-a", modelId: "model-a" };
+    const draft: V4ComposerDraft = {
+      text: "Запустить независимые задачи",
+      orchestrationMode: "swarm",
+      updatedAt: 1,
+    };
+    act(() =>
+      root.render(
+        renderComposerElement(
+          onSendText,
+          "session-a",
+          undefined,
+          null,
+          () => ({ mode: "build", modelSelection: selection }),
+          draft,
+          undefined,
+          true,
+          setOrchestrationMode,
+        ),
+      ),
+    );
+
+    const toggle = findSwarmToggle(chatPromptEditorProps.at(-1)?.submitControl as ReactNode);
+    expect(toggle?.props["aria-pressed"]).toBe(true);
+    expect(toggle?.props["aria-label"]).toBe("智能体群");
+    await act(async () => {
+      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)(draft.text);
+      await flushAsyncWork();
+    });
+
+    expect(onSendText).toHaveBeenCalledWith(
+      draft.text,
+      expect.objectContaining({ orchestrationMode: "swarm" }),
+    );
+    await act(async () => root.unmount());
+  });
+
+  it("lets the user arm or disarm swarm for the current draft", async () => {
+    const container = installMinimalDom();
+    const root = createRoot(container);
+    const setOrchestrationMode = vi.fn();
+    act(() =>
+      root.render(
+        renderComposerElement(
+          vi.fn(async () => {}),
+          null,
+          undefined,
+          null,
+          undefined,
+          { text: "Черновик", updatedAt: 1 },
+          undefined,
+          true,
+          setOrchestrationMode,
+        ),
+      ),
+    );
+    const toggle = findSwarmToggle(chatPromptEditorProps.at(-1)?.submitControl as ReactNode);
+    expect(toggle?.props["aria-pressed"]).toBe(false);
+    await act(async () => {
+      (toggle?.props.onClick as (() => void) | undefined)?.();
+    });
+    expect(setOrchestrationMode).toHaveBeenCalledWith(true);
+    await act(async () => root.unmount());
+  });
+
   it("真实编辑器文本变更会推进草稿 revision，保护迟到的推荐 Prompt", async () => {
     const { root } = renderComposer(vi.fn(async () => {}));
     const revisionBefore = getComposerDraftRevision("/workspace");

@@ -131,6 +131,39 @@ function inputTextAppends(deltas: readonly ConversationDelta[]): string[] {
 // ── A 组：基础 turn 生命周期 ──
 
 describe("ProductProjection 黄金测试（L1）", () => {
+  it("projects the core-owned swarm lifecycle into one row with actual child session IDs", () => {
+    const log = new EventLog();
+    const projection = new ProductProjection("session-1", "epoch-1");
+    const planning = log.push(SessionEventType.SwarmRunUpdated, {
+      swarmRunId: "swarm_turn-1",
+      status: "planning",
+    });
+    expect(projection.applyEvent(planning).find((delta) => delta.op.startsWith("row."))).toMatchObject({
+      op: "row.appended",
+      row: { kind: "swarmRun", swarmRunId: "swarm_turn-1", status: "planning" },
+    });
+
+    const completed = log.push(SessionEventType.SwarmRunUpdated, {
+      swarmRunId: "swarm_turn-1",
+      status: "completed",
+      taskCount: 2,
+      childSessionIds: ["child-a", "child-b", "child-a"],
+      summary: "Задач: 2. Дочерних сессий: 2.",
+    });
+    expect(projection.applyEvent(completed).find((delta) => delta.op.startsWith("row."))).toMatchObject({
+      op: "row.upserted",
+    });
+    expect(projection.getSnapshot().rows.window.filter((row) => row.kind === "swarmRun")).toMatchObject([
+      {
+        kind: "swarmRun",
+        swarmRunId: "swarm_turn-1",
+        status: "completed",
+        taskCount: 2,
+        childSessionIds: ["child-a", "child-b"],
+      },
+    ]);
+  });
+
   it("OpenCode ACP 更新保持外部 agent 身份并原位更新摘要", () => {
     const log = new EventLog();
     const first = log.push(SessionEventType.OpenCodeAgentRunUpdated, {
@@ -6331,7 +6364,12 @@ describe("fork / modelChange marker", () => {
     const log = new EventLog();
     log.push(
       SessionEventType.TurnStarted,
-      { turnNumber: 1, input: "query", messageId: "message-user-1" },
+      {
+        turnNumber: 1,
+        input: "query",
+        messageId: "message-user-1",
+        intent: { orchestrationMode: "swarm" },
+      },
       { turnId: "turn-1" },
     );
     log.push(
@@ -6378,7 +6416,10 @@ describe("fork / modelChange marker", () => {
     expect(projection.resolveRowActionTarget(target, "editUserQuery")).toMatchObject({
       ok: true,
       action: "editUserQuery",
-      editTarget: { transcriptMessageId: "message-user-1" },
+      editTarget: {
+        transcriptMessageId: "message-user-1",
+        intent: { orchestrationMode: "swarm" },
+      },
     });
     expect(
       projection.resolveRowActionTarget(

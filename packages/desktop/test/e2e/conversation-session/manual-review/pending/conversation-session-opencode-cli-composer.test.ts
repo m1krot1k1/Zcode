@@ -5,9 +5,19 @@ import { encodeCustomModelValue } from "@zcode/shared";
 import {
   TID_CHAT_MODEL_SELECT_ITEM,
   TID_CHAT_MODEL_SELECT_TRIGGER,
+  TID_SETTINGS_BACK_BUTTON,
+  TID_SETTINGS_PAGE,
+  TID_SETTINGS_SECTION_NAV,
+  TID_TASK_SETTINGS_BUTTON,
+  TID_MODEL_PROVIDER_NAV_ITEM,
   testId,
 } from "@zcode/shared/test-ids";
-import { clearAppData, getE2EAppDataPaths } from "../../../helpers/desktop-app.js";
+import {
+  clearAppData,
+  clickTestIdByDom,
+  clickTestIdByWebDriver,
+  getE2EAppDataPaths,
+} from "../../../helpers/desktop-app.js";
 import {
   prepareV4ConversationE2E,
   setV4ComposerText,
@@ -19,6 +29,7 @@ import {
   E2E_OPENCODE_MODEL_ID,
   E2E_OPENCODE_REPLY,
 } from "../../../helpers/open-code-cli-fixture.js";
+import { sel } from "../../../helpers/selectors.js";
 
 const CASE_NAME = "conversation-session-opencode-cli-composer";
 const e2eIt = process.platform === "win32" ? it.skip : it;
@@ -41,6 +52,32 @@ describe("OpenCode CLI в обычном Composer", () => {
       );
 
       await prepareV4ConversationE2E({ skipProvider: true });
+
+      // Проверяем весь пользовательский переход: каталог не должен теряться после
+      // выключения/включения CLI и возврата из настроек в тот же Composer.
+      await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
+      await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15_000 });
+      await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "modelProvider"));
+      await clickTestIdByDom(testId(TID_MODEL_PROVIDER_NAV_ITEM, "agent-integration:opencode-cli"));
+      const enabledSwitchTestId = "opencode-cli-enabled-switch";
+      const enabledSwitch = $(`[data-testid="${enabledSwitchTestId}"]`);
+      await enabledSwitch.waitForDisplayed({ timeout: 15_000 });
+      const initialEnabled = (await enabledSwitch.getAttribute("aria-checked")) === "true";
+      if (initialEnabled) await clickTestIdByWebDriver(enabledSwitchTestId);
+      await browser.waitUntil(
+        async () => (await enabledSwitch.getAttribute("aria-checked")) === "false",
+        { timeout: 10_000, timeoutMsg: "OpenCode CLI не выключился в настройках" },
+      );
+      await clickTestIdByWebDriver(enabledSwitchTestId);
+      await browser.waitUntil(
+        async () => (await enabledSwitch.getAttribute("aria-checked")) === "true",
+        { timeout: 10_000, timeoutMsg: "OpenCode CLI не включился повторно в настройках" },
+      );
+      await clickTestIdByDom(TID_SETTINGS_BACK_BUTTON);
+      await browser.waitUntil(
+        async () => browser.execute(() => !document.querySelector('[data-testid="settings-page"]')),
+        { timeout: 15_000, timeoutMsg: "Не вернулись из настроек в чат" },
+      );
 
       await browser.waitUntil(
         async () =>

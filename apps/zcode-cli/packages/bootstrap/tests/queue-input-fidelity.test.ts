@@ -18,6 +18,7 @@ const intent: TurnInputIntentMetadata = {
   modelSelection: { providerId: "provider", modelId: "model", options: { reasoningLevel: "high" } },
   mode: "yolo",
   planEnabled: false,
+  orchestrationMode: "swarm",
   admissionSeq: 1,
   admittedAt: 1234,
   requestedDelivery: "queue",

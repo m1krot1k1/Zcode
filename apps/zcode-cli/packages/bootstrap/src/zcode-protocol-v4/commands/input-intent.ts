@@ -19,6 +19,7 @@ export interface CanonicalCommandIntent {
   modelSelection?: ModelSelection;
   mode?: SubmissionMode;
   planEnabled?: boolean;
+  orchestrationMode?: TurnInputIntentMetadata["orchestrationMode"];
   sourceCommandId?: string;
   clientId?: string;
   queueItemId?: string;
@@ -45,6 +46,7 @@ export function inputIntentMetadata(
     modelSelection?: ModelSelection;
     mode?: SubmissionMode;
     planEnabled?: boolean;
+    orchestrationMode?: TurnInputIntentMetadata["orchestrationMode"];
     sharedContextRefs?: TurnInputIntentMetadata["sharedContextRefs"];
     source?: TurnInputIntentMetadata["source"];
   },
@@ -54,6 +56,11 @@ export function inputIntentMetadata(
     envelope.type === "sendText"
       ? (envelope.payload as CommandPayloadMap["sendText"]).highspeedMeta
       : undefined;
+  const orchestrationMode =
+    options.orchestrationMode ??
+    (envelope.type === "sendText"
+      ? (envelope.payload as CommandPayloadMap["sendText"]).orchestrationMode
+      : undefined);
   return {
     executionRoute:
       envelope.type === "sendText"
@@ -77,6 +84,7 @@ export function inputIntentMetadata(
     ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
     ...(options.mode ? { mode: options.mode } : {}),
     ...(options.planEnabled !== undefined ? { planEnabled: options.planEnabled } : {}),
+    ...(orchestrationMode ? { orchestrationMode } : {}),
     admissionSeq: admission.admissionSeq,
     admittedAt: admission.admittedAt,
     requestedDelivery: options.requestedDelivery,
@@ -117,6 +125,7 @@ export function inputIntentMetadataFromCanonical(
     ...(canonical.modelSelection ? { modelSelection: canonical.modelSelection } : {}),
     ...(canonical.mode ? { mode: canonical.mode } : {}),
     ...(canonical.planEnabled !== undefined ? { planEnabled: canonical.planEnabled } : {}),
+    ...(canonical.orchestrationMode ? { orchestrationMode: canonical.orchestrationMode } : {}),
     admissionSeq: admission.admissionSeq,
     admittedAt: admission.admittedAt,
     requestedDelivery: canonical.requestedDelivery ?? "startNow",
@@ -155,6 +164,7 @@ export function inputIntentMetadataFromQueueItem(
     ...(item.modelSelection ? { modelSelection: item.modelSelection } : {}),
     ...(item.mode ? { mode: item.mode } : {}),
     ...(item.planEnabled !== undefined ? { planEnabled: item.planEnabled } : {}),
+    ...(item.orchestrationMode ? { orchestrationMode: item.orchestrationMode } : {}),
     admissionSeq: item.order.admissionSeq,
     admittedAt: item.admittedAt,
     requestedDelivery: item.delivery.requested,

@@ -95,6 +95,7 @@ export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
   modelSelection?: TurnInputIntentMetadata["modelSelection"];
   mode?: TurnInputIntentMetadata["mode"];
   planEnabled?: boolean;
+  orchestrationMode?: TurnInputIntentMetadata["orchestrationMode"];
   provenance?: {
     sourceCommandId: string;
     queueItemId?: string;
@@ -292,6 +293,9 @@ function normalizeTurnStarted(
     ...(payload.intent?.mode ? { mode: payload.intent.mode } : {}),
     ...(payload.intent?.planEnabled !== undefined
       ? { planEnabled: payload.intent.planEnabled }
+      : {}),
+    ...(payload.intent?.orchestrationMode
+      ? { orchestrationMode: payload.intent.orchestrationMode }
       : {}),
     ...(payload.intent?.inputOrigin ? { inputOrigin: payload.intent.inputOrigin } : {}),
     ...(payload.intent?.conversationQuotes

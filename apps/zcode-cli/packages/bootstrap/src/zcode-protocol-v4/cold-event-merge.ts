@@ -174,6 +174,7 @@ const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
   // External OpenCode run lifecycle/activity is projected from the bounded run snapshot, not
   // from ZCode assistant messages or native tool-call parts.
   SessionEventType.OpenCodeAgentRunUpdated,
+  SessionEventType.SwarmRunUpdated,
   SessionEventType.TargetChanged,
   SessionEventType.RewindTriggered,
   SessionEventType.TurnExecutionModelFallback,

@@ -81,9 +81,10 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
   it("WebSearch 工具内部的模型请求带 runtime 的准入端口与 workflow_child 的无上限预算", async () => {
     const admission = admissionStub();
     const requests: SeenRequest[] = [];
+    const workingDirectory = "/workspace/runtime-admission-websearch";
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-admission-websearch"),
-      { modelSelection, modelStreaming: "off", taskType: "workflow_child" },
+      { modelSelection, modelStreaming: "off", taskType: "workflow_child", workingDirectory },
       {
         eventStore: createTestSessionEventStore(),
         modelRequestAdmission: admission,
@@ -105,6 +106,7 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     expect(tool!.modelRequestAdmission).not.toBe(admission);
     expect(tool!.modelRequestAdmission?.acquire).toBeTypeOf("function");
     expect(tool!.modelRetryBudget).toBe("unbounded");
+    expect(tool!.workingDirectory).toBe(workingDirectory);
     expect(turn!.modelRequestAdmission).not.toBe(admission);
     expect(turn!.modelRequestAdmission?.acquire).toBeTypeOf("function");
     expect(turn!.modelRetryBudget).toBe("unbounded");

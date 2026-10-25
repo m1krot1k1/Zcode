@@ -611,6 +611,12 @@ export function createDefaultSubagentPort(
                 }
               : { offPeakTaskId: undefined }),
             abortSignal: options?.signal,
+            ...(options?.internalSwarmRootRunId
+              ? {
+                  internalSwarmRootRunId: options.internalSwarmRootRunId,
+                  internalSwarmRootTurnId: options.internalSwarmRootTurnId,
+                }
+              : {}),
             // 子 Runtime 的首轮输入来自父 Agent，而不是真实用户直接输入；保留源事实，避免
             // Subagent Turn 在 Trace 和成功率报表里被误归类为 user。
             inputSource: "subagent",

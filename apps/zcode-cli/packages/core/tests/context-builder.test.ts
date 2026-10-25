@@ -12,6 +12,7 @@ import {
   buildIdentitySection,
   buildSkillsSection,
 } from "../src/context/index.js";
+import { buildSessionGuidanceSection } from "../src/context/dynamic-sections.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ContextBuildResult, ContextMetaUserAttachmentSource } from "../src/context/types.js";
@@ -75,6 +76,34 @@ function memoryFixture(
   return content.endsWith("\n") ? content.slice(0, -1) : content;
 }
 
+describe("conditional Agent session guidance", () => {
+  it("guides real Agent delegation without naming unregistered profiles", () => {
+    const section = buildSessionGuidanceSection(["Read", "Agent"], false, true);
+
+    expect(section?.content).toContain("For complex tasks with multiple independent investigations");
+    expect(section?.content).toContain("launch independent calls together in one response");
+    expect(section?.content).toContain(
+      "Use task_graph when delegated work has prerequisite dependencies",
+    );
+    expect(section?.content).toContain("Wait for delegated results");
+    expect(section?.content).toContain("Keep simple or serial tasks inline");
+    expect(section?.content).not.toContain("subagent_type=Explore");
+    expect(section?.content).not.toContain("OpenCode");
+  });
+
+  it("does not advertise task_graph when the active SubagentPort has no DAG runner", () => {
+    const section = buildSessionGuidanceSection(["Read", "Agent"]);
+
+    expect(section?.content).toContain("For complex tasks with multiple independent investigations");
+    expect(section?.content).toContain("Wait for delegated results");
+    expect(section?.content).not.toContain("task_graph");
+  });
+
+  it("does not add swarm guidance when Agent is not exposed", () => {
+    expect(buildSessionGuidanceSection(["Read", "Edit"])).toBeNull();
+  });
+});
+
 describe("ContextBuilder meta user context", () => {
   it("renders CLI prefix, stable body, and dynamic system sections as separate system messages", () => {
     const result = createContextBuilder({
@@ -87,6 +116,7 @@ describe("ContextBuilder meta user context", () => {
         nodeVersion: "v24.14.0",
       },
       guidanceToolNames: ["Read", "Edit", "Bash", "Agent", "TodoWrite", "AskUserQuestion"],
+      taskDagAvailable: true,
     }).build();
 
     expect(result.systemMessages.map((message) => message.role)).toEqual([
@@ -128,10 +158,13 @@ describe("ContextBuilder meta user context", () => {
     expect(
       result.systemMessages[2]?.content.indexOf("For actions that are hard to reverse"),
     ).toBeLessThan(result.systemMessages[2]?.content.indexOf("# Environment") ?? -1);
-    expect(result.systemMessages[2]?.content).not.toContain("# Session-specific guidance");
+    expect(result.systemMessages[2]?.content).toContain("# Session-specific guidance");
     expect(result.systemMessages[2]?.content).not.toContain("`! <command>`");
-    expect(result.systemMessages[2]?.content).not.toContain(
-      "Use the Agent tool with specialized agents when the task at hand matches the agent's description.",
+    expect(result.systemMessages[2]?.content).toContain(
+      "For complex tasks with multiple independent investigations",
+    );
+    expect(result.systemMessages[2]?.content).toContain(
+      "Use task_graph when delegated work has prerequisite dependencies",
     );
     expect(result.systemMessages[2]?.content).not.toContain(
       "spawn Agent with subagent_type=Explore",
@@ -307,9 +340,9 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem.indexOf("For actions that are hard to reverse")).toBeLessThan(
       dynamicSystem.indexOf("# Environment"),
     );
-    expect(dynamicSystem).not.toContain("# Session-specific guidance");
+    expect(dynamicSystem).toContain("# Session-specific guidance");
     expect(dynamicSystem).not.toContain("`! <command>`");
-    expect(dynamicSystem).not.toContain("Use the Agent tool with specialized agents");
+    expect(dynamicSystem).toContain("For complex tasks with multiple independent investigations");
     expect(dynamicSystem).not.toContain("When the user types `/<skill-name>`");
     expect(dynamicSystem).not.toContain("Use AskUserQuestion");
     expect(dynamicSystem).not.toContain("spawn Agent with subagent_type=Explore");
@@ -454,7 +487,7 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamic.indexOf("For actions that are hard to reverse")).toBeLessThan(
       dynamic.indexOf("# Memory"),
     );
-    expect(dynamic).not.toContain("# Session-specific guidance");
+    expect(dynamic).toContain("# Session-specific guidance");
     expect(dynamic).not.toContain("`! <command>`");
     expect(dynamic).not.toContain("spawn Agent with subagent_type=Explore");
     expect(dynamic.indexOf("# Memory")).toBeLessThan(dynamic.indexOf("# Environment"));
@@ -1153,7 +1186,7 @@ describe("ContextBuilder meta user context", () => {
       "spawn Agent with subagent_type=Explore",
     );
     expect(result.systemMessages[2]?.content).not.toContain(
-      "Use the Agent tool with specialized agents",
+      "For complex tasks with multiple independent investigations",
     );
     expect(metaAttachment(result, "skills_listing")).not.toContain("<system-reminder>");
     expect(metaAttachment(result, "skills_listing")).toContain(

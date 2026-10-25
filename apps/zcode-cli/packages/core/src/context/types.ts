@@ -127,6 +127,8 @@ export interface ContextBuilderConfig {
   outputStyle?: OutputStylePromptConfig;
   compact?: AutoCompactPolicyConfig;
   guidanceToolNames?: readonly string[];
+  /** Agent DAG is optional on SubagentPort; only advertise it when the owning runtime can execute it. */
+  taskDagAvailable?: boolean;
 }
 
 /**

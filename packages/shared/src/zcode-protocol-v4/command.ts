@@ -63,6 +63,7 @@ function validateOpenCodeAgentRoute(
     modelSelection?: unknown;
     mode?: unknown;
     planEnabled?: unknown;
+    orchestrationMode?: unknown;
     modelExecution?: unknown;
     highspeedMeta?: unknown;
     automationId?: unknown;
@@ -82,6 +83,7 @@ function validateOpenCodeAgentRoute(
     ["modelSelection", "OpenCode ACP route forbids modelSelection"],
     ["mode", "OpenCode ACP route forbids ZCode mode"],
     ["planEnabled", "OpenCode ACP route forbids ZCode plan mode"],
+    ["orchestrationMode", "OpenCode ACP route forbids ZCode swarm orchestration"],
     ["modelExecution", "OpenCode ACP route forbids model execution metadata"],
     ["highspeedMeta", "OpenCode ACP route forbids Highspeed metadata"],
     ["browserAmbientContext", "OpenCode ACP route forbids browser context"],
@@ -198,6 +200,8 @@ export const commandPayloadSchemas = {
       modelSelection: modelSelectionSchema.optional(),
       mode: submissionModeSchema.optional(),
       planEnabled: z.boolean().optional(),
+      // Режим оркестрации относится только к этой принятой отправке и переживает очередь.
+      orchestrationMode: z.literal("swarm").optional(),
       // 本次执行仍使用上面的标准 Selection；这里只携带不持久化语义、动态鉴权和 child 策略。
       // 仅 idle startNow 接受，防止 Secret/Ticket 进入普通 CommandInbox。
       modelExecution: modelExecutionSchema.optional(),

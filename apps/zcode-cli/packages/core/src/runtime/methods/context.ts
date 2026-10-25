@@ -158,6 +158,7 @@ export function createContextBuilderFromSnapshot(
     outputStyle: this.config.outputStyle,
     compact: this.config.compact,
     guidanceToolNames: this.getTools(options.model).map((tool) => tool.name),
+    taskDagAvailable: this.subagentPort?.runTaskDag !== undefined,
   };
 
   return createContextBuilder(contextConfig).setToolRegistry(this.registry);

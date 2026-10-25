@@ -16,6 +16,7 @@ import type {
   ModelCompletePayload,
   OpenCodeAgentPermissionUpdatedPayload,
   OpenCodeAgentRunUpdatedPayload,
+  SwarmRunUpdatedPayload,
   ModelNetworkStatusPayload,
   ModelSelectedPayload,
   TurnExecutionModelFallbackPayload,
@@ -337,6 +338,7 @@ export interface ConversationEditTarget {
     modelSelection?: TurnInputIntentMetadata["modelSelection"];
     mode?: TurnInputIntentMetadata["mode"];
     planEnabled?: boolean;
+    orchestrationMode?: TurnInputIntentMetadata["orchestrationMode"];
     provenance?: CanonicalUserIntentFact["provenance"];
   };
 }
@@ -1555,6 +1557,8 @@ export class ProductProjection {
         return this.onSubagentStopped(event);
       case SessionEventType.OpenCodeAgentRunUpdated:
         return this.onOpenCodeAgentRunUpdated(event);
+      case SessionEventType.SwarmRunUpdated:
+        return this.onSwarmRunUpdated(event);
       case SessionEventType.OpenCodeAgentPermissionUpdated:
         return this.onOpenCodeAgentPermissionUpdated(event);
       default:
@@ -2201,6 +2205,9 @@ export class ProductProjection {
                 ...(fact.modelSelection ? { modelSelection: fact.modelSelection } : {}),
                 ...(fact.mode ? { mode: fact.mode } : {}),
                 ...(fact.planEnabled !== undefined ? { planEnabled: fact.planEnabled } : {}),
+                ...(fact.orchestrationMode
+                  ? { orchestrationMode: fact.orchestrationMode }
+                  : {}),
                 ...(fact.provenance ? { provenance: fact.provenance } : {}),
               },
             }
@@ -3718,6 +3725,7 @@ export class ProductProjection {
       modelSelection: payload.intent?.modelSelection ?? existing?.modelSelection,
       mode: payload.intent?.mode ?? existing?.mode,
       planEnabled: payload.intent?.planEnabled ?? existing?.planEnabled,
+      orchestrationMode: payload.intent?.orchestrationMode ?? existing?.orchestrationMode,
       sharedContextRefs: payload.intent?.sharedContextRefs ?? existing?.sharedContextRefs,
       provenance: payload.intent?.provenance ?? existing?.provenance,
       // 排队事件和原地编辑都必须保留可信接入来源，不能在 UI 投影时丢掉发送者。
@@ -3862,6 +3870,9 @@ export class ProductProjection {
           ...(queueItem.modelSelection ? { modelSelection: queueItem.modelSelection } : {}),
           ...(queueItem.mode ? { mode: queueItem.mode } : {}),
           ...(queueItem.planEnabled !== undefined ? { planEnabled: queueItem.planEnabled } : {}),
+          ...(queueItem.orchestrationMode
+            ? { orchestrationMode: queueItem.orchestrationMode }
+            : {}),
           admissionSeq: queueItem.order.admissionSeq,
           admittedAt: queueItem.admittedAt,
           requestedDelivery: queueItem.delivery.requested,
@@ -3973,6 +3984,9 @@ export class ProductProjection {
                 ...(item.intent?.mode ? { mode: item.intent.mode } : {}),
                 ...(item.intent?.planEnabled !== undefined
                   ? { planEnabled: item.intent.planEnabled }
+                  : {}),
+                ...(item.intent?.orchestrationMode
+                  ? { orchestrationMode: item.intent.orchestrationMode }
                   : {}),
                 ...(item.intent?.provenance ? { provenance: item.intent.provenance } : {}),
               },
@@ -4676,6 +4690,28 @@ export class ProductProjection {
       });
     }
     return deltas;
+  }
+
+  private onSwarmRunUpdated(event: SessionEvent): ConversationDelta[] {
+    const payload = event.payload as SwarmRunUpdatedPayload;
+    const existing = this.snapshot.rows.window.find(
+      (candidate) => candidate.kind === "swarmRun" && candidate.swarmRunId === payload.swarmRunId,
+    );
+    const childSessionIds = Array.isArray(payload.childSessionIds)
+      ? [...new Set(payload.childSessionIds.filter((id): id is string => typeof id === "string" && id.length > 0))].slice(0, 128)
+      : existing?.kind === "swarmRun"
+        ? existing.childSessionIds
+        : undefined;
+    const row: ConversationRow = {
+      ...(existing ?? this.rowBase(event, `swarm:${payload.swarmRunId}`, payload.swarmRunId)),
+      kind: "swarmRun",
+      swarmRunId: payload.swarmRunId,
+      status: payload.status,
+      ...(payload.taskCount === undefined ? {} : { taskCount: payload.taskCount }),
+      ...(childSessionIds === undefined ? {} : { childSessionIds }),
+      ...(payload.summary === undefined ? {} : { summary: payload.summary.slice(0, 500) }),
+    };
+    return [{ op: existing ? "row.upserted" : "row.appended", row }];
   }
 
   /** Apply permission state from the live gateway only; this event is never journaled. */

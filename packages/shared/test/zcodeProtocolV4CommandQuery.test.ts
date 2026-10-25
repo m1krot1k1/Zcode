@@ -88,6 +88,18 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
     ).toBe(false);
   });
 
+  it("QueueItem preserves explicit swarm mode while legacy inputs stay ordinary", () => {
+    const queued = queueItemSchema.parse({
+      ...baseIntent,
+      orchestrationMode: "swarm",
+      attachments: [],
+      dispatch: { state: "queued" },
+    });
+    expect(queued.orchestrationMode).toBe("swarm");
+    expect(queueItemSchema.parse({ ...baseIntent, attachments: [], dispatch: { state: "queued" } }))
+      .not.toHaveProperty("orchestrationMode");
+  });
+
   it("canonical OpenCode route is explicit, text-only and immediate", () => {
     const openCodeIntent = {
       ...baseIntent,
@@ -100,6 +112,19 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
     expect(conversationInputIntentSchema.parse(openCodeIntent).executionRoute).toEqual(
       openCodeIntent.executionRoute,
     );
+    const swarmOnAcp = conversationInputIntentSchema.safeParse({
+      ...openCodeIntent,
+      orchestrationMode: "swarm",
+    });
+    expect(swarmOnAcp.success).toBe(false);
+    if (!swarmOnAcp.success) {
+      expect(swarmOnAcp.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ["orchestrationMode"],
+          message: "OpenCode ACP route forbids ZCode swarm orchestration",
+        }),
+      );
+    }
     expect(
       conversationInputIntentSchema.safeParse({
         ...openCodeIntent,

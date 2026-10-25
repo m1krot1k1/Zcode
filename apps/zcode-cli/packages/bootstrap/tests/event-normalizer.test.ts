@@ -28,6 +28,7 @@ describe("Conversation Event Normalizer", () => {
       input: "hello",
       messageId: "message-user-1",
       inputId: "command-1",
+      intent: { orchestrationMode: "swarm" },
     };
     const live = normalizeConversationEvent(event(SessionEventType.TurnStarted, payload));
     const cold = normalizeConversationEvent(
@@ -53,6 +54,8 @@ describe("Conversation Event Normalizer", () => {
     }
     expect(live.runtimeTurnId).toBe("runtime-turn-1");
     expect(cold.runtimeTurnId).toBe("hydrate-turn-1");
+    expect(live).toMatchObject({ orchestrationMode: "swarm" });
+    expect(cold).toMatchObject({ orchestrationMode: "swarm" });
   });
 
   it("旧 TurnStarted 缺少 messageId 时生成确定性 fallback 并留下诊断", () => {

@@ -312,6 +312,7 @@ async function previewConversationFileRewind(
 
 interface InputCommandForAdmission {
   executionRoute?: ConversationInputIntent["executionRoute"];
+  orchestrationMode?: ConversationInputIntent["orchestrationMode"];
   inputOrigin?: "desktop" | "mobile";
   conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
   botGroupSource?: ConversationInputIntent["botGroupSource"];
@@ -399,6 +400,7 @@ export function resolveInputCommandForAdmission(
       inputOrigin?: "desktop" | "mobile";
       conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
       botGroupSource?: ConversationInputIntent["botGroupSource"];
+      orchestrationMode?: ConversationInputIntent["orchestrationMode"];
     };
     return {
       kind: envelope.type,
@@ -410,6 +412,7 @@ export function resolveInputCommandForAdmission(
       ...(payload.inputOrigin ? { inputOrigin: payload.inputOrigin } : {}),
       ...(payload.conversationQuotes ? { conversationQuotes: payload.conversationQuotes } : {}),
       ...(payload.botGroupSource ? { botGroupSource: payload.botGroupSource } : {}),
+      ...(payload.orchestrationMode ? { orchestrationMode: payload.orchestrationMode } : {}),
     };
   }
   if (envelope.type === "compact") {
@@ -453,6 +456,9 @@ export function resolveInputCommandForAdmission(
       : {}),
     ...(canonical.intent.fallbackReasonCode
       ? { fallbackReasonCode: canonical.intent.fallbackReasonCode }
+      : {}),
+    ...(canonical.intent.orchestrationMode
+      ? { orchestrationMode: canonical.intent.orchestrationMode }
       : {}),
     ...(originalSourceCommandId
       ? {
@@ -1118,6 +1124,7 @@ export function createConversationV4Gateway(
           clientId: envelope.clientId || "cli",
           kind,
           executionRoute: input.executionRoute,
+          ...(input.orchestrationMode ? { orchestrationMode: input.orchestrationMode } : {}),
           text: input.text ?? "",
           attachments: input.attachments,
           delivery: { requested: "startNow", admitted: "startNow" },
@@ -1187,6 +1194,7 @@ export function createConversationV4Gateway(
         clientId: envelope.clientId || "cli",
         kind,
         executionRoute: input.executionRoute ?? { kind: "zcode" },
+        ...(input.orchestrationMode ? { orchestrationMode: input.orchestrationMode } : {}),
         text: input.text ?? "",
         attachments: attachmentRefs,
         ...(input.sharedContextRefs ? { sharedContextRefs: input.sharedContextRefs } : {}),

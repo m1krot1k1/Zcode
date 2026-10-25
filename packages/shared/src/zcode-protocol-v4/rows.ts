@@ -277,6 +277,19 @@ export const subagentRowSchema = z.object({
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
 
+/** Core-owned swarm lifecycle; the row is an event-derived summary, not a provider tool call. */
+export const swarmRunRowSchema = z.object({
+  ...rowBaseFields,
+  kind: z.literal("swarmRun"),
+  swarmRunId: z.string().min(1),
+  status: z.enum(["planning", "running", "completed", "failed", "cancelled"]),
+  taskCount: z.number().int().nonnegative().optional(),
+  childSessionIds: z.array(z.string().min(1)).max(128).optional(),
+  // Keep provider/task output out of the timeline contract; this is a short bounded summary only.
+  summary: z.string().max(500).optional(),
+});
+export type SwarmRunRow = z.infer<typeof swarmRunRowSchema>;
+
 /** A separately owned CLI agent run; its content is not a ZCode assistant/tool turn. */
 export const externalAgentRunRowSchema = z.object({
   ...rowBaseFields,
@@ -490,6 +503,7 @@ export const conversationRowSchema = z.discriminatedUnion("kind", [
   toolCallRowSchema,
   artifactRowSchema,
   subagentRowSchema,
+  swarmRunRowSchema,
   externalAgentRunRowSchema,
   hookInvocationRowSchema,
   timelineMarkerRowSchema,

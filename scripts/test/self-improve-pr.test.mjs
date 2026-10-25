@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile, symlink } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+  symlink,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { SELF_IMPROVE_EVALUATOR_CHECK } from "../self-improve-contract.mjs";
 import {
   SELF_IMPROVE_RECEIPT_CRITERIA,
   buildSelfImprovePlan,
@@ -18,19 +26,29 @@ const patch = "diff --git a/a.ts b/a.ts\n+change\n";
 const patchSha = sha256(patch);
 const criterionId = Object.keys(SELF_IMPROVE_RECEIPT_CRITERIA)[0];
 const command = SELF_IMPROVE_RECEIPT_CRITERIA[criterionId].command;
-const evaluationScope = SELF_IMPROVE_RECEIPT_CRITERIA[criterionId].evaluationScope;
+const evaluationScope =
+  SELF_IMPROVE_RECEIPT_CRITERIA[criterionId].evaluationScope;
 
 function git(cwd, args, { trim = true } = {}) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
-  assert.equal(result.status, 0, result.stderr || `git ${args.join(" ")} failed`);
+  assert.equal(
+    result.status,
+    0,
+    result.stderr || `git ${args.join(" ")} failed`,
+  );
   return trim ? result.stdout.trim() : result.stdout;
 }
 
 async function createEvidenceDirectory(t) {
-  const evidenceDirectory = await mkdtemp(path.join(os.tmpdir(), "zcode-prism-evidence-"));
+  const evidenceDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "zcode-prism-evidence-"),
+  );
   t.after(() => rm(evidenceDirectory, { recursive: true, force: true }));
   const artifactBytes = Buffer.from("test output\n", "utf8");
-  await writeFile(path.join(evidenceDirectory, "helper-tests.log"), artifactBytes);
+  await writeFile(
+    path.join(evidenceDirectory, "helper-tests.log"),
+    artifactBytes,
+  );
   const receipt = {
     schema: "zcode.prism.receipt.v3",
     criterion_id: criterionId,
@@ -53,18 +71,28 @@ async function createGitFixture(
   t,
   { secretCandidate = false, secretRenameCandidate = false } = {},
 ) {
-  const fixtureDirectory = await mkdtemp(path.join(os.tmpdir(), "zcode-self-improve-git-"));
+  const fixtureDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "zcode-self-improve-git-"),
+  );
   t.after(() => rm(fixtureDirectory, { recursive: true, force: true }));
   const rootDirectory = path.join(fixtureDirectory, "repo");
   const originDirectory = path.join(fixtureDirectory, "origin.git");
   await mkdir(rootDirectory);
-  git(fixtureDirectory, ["init", "--bare", "--initial-branch=dev", originDirectory]);
+  git(fixtureDirectory, [
+    "init",
+    "--bare",
+    "--initial-branch=dev",
+    originDirectory,
+  ]);
   git(rootDirectory, ["init", "--initial-branch=dev"]);
   git(rootDirectory, ["config", "user.name", "PRISM Test"]);
   git(rootDirectory, ["config", "user.email", "prism-test@example.invalid"]);
   await writeFile(path.join(rootDirectory, "baseline.txt"), "baseline\n");
   if (secretRenameCandidate) {
-    await writeFile(path.join(rootDirectory, ".env.local"), "secret-from-old-path\n");
+    await writeFile(
+      path.join(rootDirectory, ".env.local"),
+      "secret-from-old-path\n",
+    );
   }
   git(rootDirectory, ["add", "baseline.txt"]);
   if (secretRenameCandidate) git(rootDirectory, ["add", ".env.local"]);
@@ -80,13 +108,22 @@ async function createGitFixture(
     git(rootDirectory, ["add", candidatePath]);
   }
   const actualBaseSha = git(rootDirectory, ["rev-parse", "HEAD"]);
-  const candidatePatch = git(rootDirectory, ["diff", "--cached", "--binary", "HEAD"], {
-    trim: false,
-  });
-  const evidenceDirectory = await mkdtemp(path.join(os.tmpdir(), "zcode-prism-evidence-"));
+  const candidatePatch = git(
+    rootDirectory,
+    ["diff", "--cached", "--binary", "HEAD"],
+    {
+      trim: false,
+    },
+  );
+  const evidenceDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "zcode-prism-evidence-"),
+  );
   t.after(() => rm(evidenceDirectory, { recursive: true, force: true }));
   const artifactBytes = Buffer.from("self-improve test output\n", "utf8");
-  await writeFile(path.join(evidenceDirectory, "helper-tests.log"), artifactBytes);
+  await writeFile(
+    path.join(evidenceDirectory, "helper-tests.log"),
+    artifactBytes,
+  );
   const receipt = {
     schema: "zcode.prism.receipt.v3",
     criterion_id: criterionId,
@@ -102,16 +139,25 @@ async function createGitFixture(
   };
   const evidencePath = path.join(evidenceDirectory, "receipts.jsonl");
   await writeFile(evidencePath, `${JSON.stringify(receipt)}\n`);
-  return { rootDirectory, originDirectory, evidenceDirectory, evidencePath, receipt };
+  return {
+    rootDirectory,
+    originDirectory,
+    evidenceDirectory,
+    evidencePath,
+    receipt,
+  };
 }
 
 test("receipt принимает только repo allowlist и пересчитанный локальный artifact hash", async (t) => {
   const fixture = await createEvidenceDirectory(t);
-  const parsed = await parseCandidateEvidence(await readFile(fixture.evidencePath, "utf8"), {
-    baseSha,
-    candidatePatchSha256: patchSha,
-    evidenceDirectory: fixture.evidenceDirectory,
-  });
+  const parsed = await parseCandidateEvidence(
+    await readFile(fixture.evidencePath, "utf8"),
+    {
+      baseSha,
+      candidatePatchSha256: patchSha,
+      evidenceDirectory: fixture.evidenceDirectory,
+    },
+  );
   assert.equal(parsed[0].artifact_sha256, sha256(fixture.artifactBytes));
   assert.equal(parsed[0].command, command);
 
@@ -126,15 +172,30 @@ test("receipt принимает только repo allowlist и пересчит
     );
   };
   await rejects({ ...fixture.receipt, criterion_id: "OPEN-02" });
-  await rejects({ ...fixture.receipt, evaluation_scope: "CANDIDATE_EVALUATED" });
+  await rejects({
+    ...fixture.receipt,
+    evaluation_scope: "CANDIDATE_EVALUATED",
+  });
   await rejects({ ...fixture.receipt, schema: "zcode.prism.receipt.v2" });
-  await rejects({ ...fixture.receipt, command: "pnpm test --filter opencode-go" });
-  await rejects({ ...fixture.receipt, artifact_sha256: "a".repeat(64) }, /не совпадает/u);
-  await rejects({ ...fixture.receipt, artifact_url: "https://example.invalid/artifact" });
+  await rejects({
+    ...fixture.receipt,
+    command: "pnpm test --filter opencode-go",
+  });
+  await rejects(
+    { ...fixture.receipt, artifact_sha256: "a".repeat(64) },
+    /не совпадает/u,
+  );
+  await rejects({
+    ...fixture.receipt,
+    artifact_url: "https://example.invalid/artifact",
+  });
   await rejects({ ...fixture.receipt, extra: "ignored fields are forbidden" });
   await rejects({ ...fixture.receipt, reported_status: "unknown" });
 
-  await writeFile(path.join(fixture.evidenceDirectory, "helper-tests.log"), "tampered output\n");
+  await writeFile(
+    path.join(fixture.evidenceDirectory, "helper-tests.log"),
+    "tampered output\n",
+  );
   await rejects(fixture.receipt, /не совпадает/u);
 });
 
@@ -159,13 +220,33 @@ test("receipt требует каждый allowlist criterion ровно оди�
   );
 });
 
-test("artifact traversal, symlink и превышение лимита отклоняются", async (t) => {
+test("парсер ограничивает JSONL по размеру из общего контракта", async () => {
+  await assert.rejects(
+    parseCandidateEvidence(
+      "x".repeat(SELF_IMPROVE_EVALUATOR_CHECK.maxEvidenceBytes + 1),
+      {
+        baseSha,
+        candidatePatchSha256: patchSha,
+        evidenceDirectory: "unused-before-size-check",
+      },
+    ),
+    /превышает локальный лимит/u,
+  );
+});
+
+test("artifact traversal и symlink отклоняются, общий лимит bytes соблюдается на границе", async (t) => {
   const fixture = await createEvidenceDirectory(t);
-  const outsidePath = path.join(path.dirname(fixture.evidenceDirectory), "outside-artifact.log");
+  const outsidePath = path.join(
+    path.dirname(fixture.evidenceDirectory),
+    "outside-artifact.log",
+  );
   await writeFile(outsidePath, "outside\n");
   t.after(() => rm(outsidePath, { force: true }));
 
-  const traversing = { ...fixture.receipt, artifact_path: "../outside-artifact.log" };
+  const traversing = {
+    ...fixture.receipt,
+    artifact_path: "../outside-artifact.log",
+  };
   await assert.rejects(
     parseCandidateEvidence(JSON.stringify(traversing), {
       baseSha,
@@ -176,7 +257,10 @@ test("artifact traversal, symlink и превышение лимита откл�
   );
 
   try {
-    await symlink(outsidePath, path.join(fixture.evidenceDirectory, "outside-link.log"));
+    await symlink(
+      outsidePath,
+      path.join(fixture.evidenceDirectory, "outside-link.log"),
+    );
     const linked = { ...fixture.receipt, artifact_path: "outside-link.log" };
     await assert.rejects(
       parseCandidateEvidence(JSON.stringify(linked), {
@@ -188,14 +272,35 @@ test("artifact traversal, symlink и превышение лимита откл�
     );
   } catch (error) {
     if (error?.code === "EPERM" || error?.code === "EACCES") {
-      t.diagnostic("Symlink creation is unavailable on this host; path traversal remains covered.");
+      t.diagnostic(
+        "Symlink creation is unavailable on this host; path traversal remains covered.",
+      );
     } else {
       throw error;
     }
   }
 
   const oversizedPath = path.join(fixture.evidenceDirectory, "oversized.log");
-  await writeFile(oversizedPath, Buffer.alloc(10 * 1024 * 1024 + 1));
+  const exactLimitBytes = Buffer.alloc(
+    SELF_IMPROVE_EVALUATOR_CHECK.maxArtifactBytes,
+  );
+  await writeFile(oversizedPath, exactLimitBytes);
+  const atLimit = {
+    ...fixture.receipt,
+    artifact_path: "oversized.log",
+    artifact_sha256: sha256(exactLimitBytes),
+  };
+  const parsedAtLimit = await parseCandidateEvidence(JSON.stringify(atLimit), {
+    baseSha,
+    candidatePatchSha256: patchSha,
+    evidenceDirectory: fixture.evidenceDirectory,
+  });
+  assert.equal(parsedAtLimit[0].artifact_sha256, atLimit.artifact_sha256);
+
+  const overLimitBytes = Buffer.alloc(
+    SELF_IMPROVE_EVALUATOR_CHECK.maxArtifactBytes + 1,
+  );
+  await writeFile(oversizedPath, overLimitBytes);
   const oversized = { ...fixture.receipt, artifact_path: "oversized.log" };
   await assert.rejects(
     parseCandidateEvidence(JSON.stringify(oversized), {
@@ -203,7 +308,7 @@ test("artifact traversal, symlink и превышение лимита откл�
       candidatePatchSha256: patchSha,
       evidenceDirectory: fixture.evidenceDirectory,
     }),
-    /10 MiB/u,
+    /превышает локальный лимит/u,
   );
 });
 
@@ -277,7 +382,10 @@ test("CLI default mode is read-only in a temporary Git repository", async (t) =>
   assert.deepEqual(runCalls, []);
   assert.deepEqual(ghCalls, []);
   assert.equal(git(fixture.rootDirectory, ["branch", "--show-current"]), "dev");
-  assert.equal(git(fixture.rootDirectory, ["status", "--porcelain"]), "A  candidate.txt");
+  assert.equal(
+    git(fixture.rootDirectory, ["status", "--porcelain"]),
+    "A  candidate.txt",
+  );
 });
 
 test("CLI blocks apply before any git or GitHub command without an external protected gate", async (t) => {
@@ -296,9 +404,16 @@ test("CLI blocks apply before any git or GitHub command without an external prot
   assert.deepEqual(captureCommands, []);
   assert.deepEqual(commands, []);
   assert.equal(git(fixture.rootDirectory, ["branch", "--show-current"]), "dev");
-  assert.equal(git(fixture.rootDirectory, ["status", "--porcelain"]), "A  candidate.txt");
   assert.equal(
-    git(fixture.originDirectory, ["for-each-ref", "--format=%(refname)", "refs/heads/dev"]),
+    git(fixture.rootDirectory, ["status", "--porcelain"]),
+    "A  candidate.txt",
+  );
+  assert.equal(
+    git(fixture.originDirectory, [
+      "for-each-ref",
+      "--format=%(refname)",
+      "refs/heads/dev",
+    ]),
     "refs/heads/dev",
   );
 });
@@ -352,7 +467,10 @@ test("CLI receipt rejection and branch collision happen before write commands", 
 
 test("CLI rejects an untracked workspace file before write commands", async (t) => {
   const fixture = await createGitFixture(t);
-  await writeFile(path.join(fixture.rootDirectory, "untracked.txt"), "outside staged diff\n");
+  await writeFile(
+    path.join(fixture.rootDirectory, "untracked.txt"),
+    "outside staged diff\n",
+  );
   const runCalls = [];
   await assert.rejects(
     runSelfImproveCli(["--evidence", fixture.evidencePath], {
@@ -366,15 +484,25 @@ test("CLI rejects an untracked workspace file before write commands", async (t) 
 });
 
 test("candidate secret paths are rejected before applying", async (t) => {
-  assert.throws(() => validateCandidatePaths([".env.local"]), /секретный файл/u);
-  assert.throws(() => validateCandidatePaths(["config/keys/client.p12"]), /секретный файл/u);
+  assert.throws(
+    () => validateCandidatePaths([".env.local"]),
+    /секретный файл/u,
+  );
+  assert.throws(
+    () => validateCandidatePaths(["config/keys/client.p12"]),
+    /секретный файл/u,
+  );
   assert.doesNotThrow(() => validateCandidatePaths(["docs/specs/prism10.md"]));
 
   const fixture = await createGitFixture(t, { secretCandidate: true });
   const evidence = await createEvidenceDirectory(t);
-  const expectedPatch = git(fixture.rootDirectory, ["diff", "--cached", "--binary", "HEAD"], {
-    trim: false,
-  });
+  const expectedPatch = git(
+    fixture.rootDirectory,
+    ["diff", "--cached", "--binary", "HEAD"],
+    {
+      trim: false,
+    },
+  );
   const receipt = {
     ...evidence.receipt,
     base_sha: git(fixture.rootDirectory, ["rev-parse", "HEAD"]),
@@ -396,9 +524,13 @@ test("candidate secret paths are rejected before applying", async (t) => {
 test("candidate secret paths remain rejected after a staged rename", async (t) => {
   const fixture = await createGitFixture(t, { secretRenameCandidate: true });
   const evidence = await createEvidenceDirectory(t);
-  const expectedPatch = git(fixture.rootDirectory, ["diff", "--cached", "--binary", "HEAD"], {
-    trim: false,
-  });
+  const expectedPatch = git(
+    fixture.rootDirectory,
+    ["diff", "--cached", "--binary", "HEAD"],
+    {
+      trim: false,
+    },
+  );
   const receipt = {
     ...evidence.receipt,
     base_sha: git(fixture.rootDirectory, ["rev-parse", "HEAD"]),

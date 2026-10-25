@@ -14,8 +14,7 @@ const GEMINI_CONTEXT_LENGTH_ERROR =
 function openCodeEmptyResponseMessage(modelId: string, originalError?: string): string {
   const detail = originalError ? ` Original error: ${originalError}` : "";
   return (
-    `OpenCode returned no response data for model "${modelId}". This usually means the configured provider/model ID is invalid or unavailable. ` +
-    "Run `opencode models` to list available model IDs and check the OpenCode provider configuration." +
+    `OpenCode returned no response data for model "${modelId}".` +
     detail
   );
 }
@@ -233,6 +232,64 @@ describe("classifyModelFailure context length errors", () => {
       reason: "invalid_request",
       retryable: false,
       statusCode,
+    });
+  });
+});
+
+describe("OpenCode session.create diagnostics", () => {
+  it("retains the sanitized upstream status, code, and message through the SDK error wrapper", () => {
+    const error = new APICallError({
+      message:
+        'Failed to create session: {"statusCode":429,"code":"RATE_LIMITED","message":"OpenCode usage limit reached."}',
+      url: "opencode://session",
+      requestBodyValues: {},
+      isRetryable: false,
+      data: { errorType: "OpenCodeRequestError", modelId: "opencode/deepseek-v4.1-flash-free" },
+    });
+
+    expect(inspectProviderFailure(error)).toEqual({
+      providerErrorCode: "RATE_LIMITED",
+      providerErrorMessage: "OpenCode usage limit reached.",
+    });
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "model_rate_limited",
+      reason: "rate_limited",
+      retryable: true,
+      statusCode: 429,
+    });
+  });
+
+  it("identifies an OpenCode authentication failure without exposing the upstream body", () => {
+    const error = new APICallError({
+      message:
+        'Failed to create session: {"statusCode":401,"code":"AUTH_REQUIRED","message":"Sign in required."}',
+      url: "opencode://session",
+      requestBodyValues: {},
+      isRetryable: false,
+      data: { errorType: "OpenCodeRequestError" },
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "provider_not_configured",
+      reason: "auth_failed",
+      retryable: false,
+      statusCode: 401,
+      message:
+        "OpenCode sign-in is required. Sign in with the OpenCode CLI; ZCode does not read or copy those credentials.",
+    });
+  });
+
+  it("surfaces the OpenCode workspace preflight error instead of a generic model failure", () => {
+    const error = Object.assign(new Error("private workspace detail"), {
+      code: "OPENCODE_WORKSPACE_UNAVAILABLE",
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "model_request_failed",
+      message:
+        "OpenCode needs an available workspace folder. Reopen or restore the workspace, then try again.",
+      reason: "unknown",
+      retryable: false,
     });
   });
 });
@@ -460,22 +517,26 @@ describe("classifyModelFailure provider business codes", () => {
   });
 
   it("keeps an OpenCode empty response without a fetch failure non-retryable", () => {
-    const failure = classifyModelFailure(
-      new APICallError({
-        message: openCodeEmptyResponseMessage("opencode/deepseek-v4.1-flash-free"),
-        url: "opencode://session",
-        requestBodyValues: {},
-        isRetryable: false,
-        data: {
-          errorType: "EmptyResponseData",
-          modelId: "opencode/deepseek-v4.1-flash-free",
-        },
-      }),
-    );
+    const error = new APICallError({
+      message: openCodeEmptyResponseMessage(
+        "opencode/deepseek-v4.1-flash-free",
+        "Unexpected server error. Check server logs for details.",
+      ),
+      url: "opencode://session",
+      requestBodyValues: {},
+      isRetryable: false,
+      data: {
+        errorType: "EmptyResponseData",
+        modelId: "opencode/deepseek-v4.1-flash-free",
+      },
+    });
+    const failure = classifyModelFailure(error);
 
     expect(failure).toMatchObject({
       reason: "unknown",
       retryable: false,
+      message:
+        "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
     });
     expect(failure.reason).not.toBe("network_error");
   });

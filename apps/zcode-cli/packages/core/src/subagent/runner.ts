@@ -213,9 +213,17 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         ...(rawRequest.maxParallel === undefined ? {} : { max_parallel: rawRequest.maxParallel }),
       });
       const maxParallel = graph.max_parallel ?? 8;
+      // Swarm uses its own runtime correlation key. The legacy runner still needs an internal
+      // parentCall-shaped key for task records, but it is never emitted as a provider ToolCall.
+      const internalParentCorrelationId =
+        rawRequest.orchestrationRunId ?? rawRequest.parentToolCallId;
+      if (!internalParentCorrelationId) {
+        throw new Error("A task DAG requires a model call ID or an orchestration run ID.");
+      }
       return executeSubagentTaskDag(
         {
           ...rawRequest,
+          parentToolCallId: internalParentCorrelationId,
           nodes: graph.nodes,
           maxParallel,
         },
@@ -224,7 +232,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             {
               sessionId: rawRequest.sessionId,
               turnId: rawRequest.turnId,
-              parentToolCallId: rawRequest.parentToolCallId,
+              parentToolCallId: internalParentCorrelationId,
+              ...(rawRequest.orchestrationRunId
+                ? { orchestrationRunId: rawRequest.orchestrationRunId }
+                : {}),
               agentType: node.subagent_type ?? rawRequest.agentType,
               description: node.description,
               prompt,
@@ -324,6 +335,12 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           signal: taskAbort.signal,
           ...(runOptions?.model ? { model: runOptions.model } : {}),
           ...(runOptions?.modelOverride ? { modelOverride: runOptions.modelOverride } : {}),
+          ...(runOptions?.internalSwarmRootRunId
+            ? {
+                internalSwarmRootRunId: runOptions.internalSwarmRootRunId,
+                internalSwarmRootTurnId: runOptions.internalSwarmRootTurnId,
+              }
+            : {}),
         },
         {
           reportActivity: activityWatchdog.reportActivity,
@@ -590,7 +607,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         taskAbort.dispose();
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
         const totalDurationMs = Date.now() - lifecycle.startedAt;
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        // 根因：前台子代理收到 Turn failure wrapper，因此 message 可能只有通用文案；依据：
+        // 后台 settlement 已从 cause 链选择原始错误，任务注册表应保留同一诊断原因。
+        const errorMessage = selectExecutionErrorMessage(error);
         registry.beginSubagentTaskFinalization(lifecycle.agentId);
         await writeFailedAgentArtifacts(lifecycle, request, errorMessage);
         const terminalTask = registry.update(lifecycle.agentId, (task) => ({
@@ -2943,7 +2962,15 @@ async function emitSubagentEvent(
   traceContext: TraceContext,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  const event = createSessionEvent(type, request.sessionId, payload, {
+  const eventPayload = request.orchestrationRunId
+    ? {
+        ...payload,
+        orchestrationRunId: request.orchestrationRunId,
+        // The internal legacy correlation key is not a model-issued tool call.
+        parentToolCallId: undefined,
+      }
+    : payload;
+  const event = createSessionEvent(type, request.sessionId, eventPayload, {
     turnId: request.turnId,
     traceId: traceContext.traceId,
   });

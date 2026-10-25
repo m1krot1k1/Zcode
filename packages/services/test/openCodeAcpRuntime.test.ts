@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +10,10 @@ import {
   downloadPinnedOpenCodeArchive,
   installOpenCodePinnedCli,
 } from "../src/opencode-acp-runtime/adapters/cliBinaryInstaller.js";
-import { parseOpenCodeVerboseModelCatalog, resolveCliCommand } from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
+import {
+  parseOpenCodeVerboseModelCatalog,
+  resolveCliCommand,
+} from "../src/opencode-acp-runtime/adapters/childProcessSupport.js";
 import {
   getOpenCodeCliReleaseAssets,
   OPEN_CODE_CLI_RELEASE_VERSION,
@@ -236,9 +239,13 @@ describe("OpenCode ACP runtime", () => {
   it("projects only validated verbose model metadata without creating an ACP session", async () => {
     const directory = await makeTempDir();
     const fakeCliPath = join(directory, "fake-model-list.mjs");
+    const observedDataHomePath = join(directory, "observed-data-home.txt");
     await writeFile(
       fakeCliPath,
-      `if (process.argv[2] === "models" && process.argv[3] === "--verbose") process.stdout.write(${JSON.stringify(
+      `import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+writeFileSync(${JSON.stringify(observedDataHomePath)}, process.env.XDG_DATA_HOME ?? "");
+if (process.argv[2] === "models" && process.argv[3] === "--verbose") process.stdout.write(${JSON.stringify(
         `openai/gpt-test\n${JSON.stringify(
           {
             id: "gpt-test",
@@ -267,6 +274,7 @@ describe("OpenCode ACP runtime", () => {
       "utf8",
     );
     const runtime = createOpenCodeAcpRuntime({
+      processEnv: { ...process.env, XDG_DATA_HOME: join(directory, "persistent-user-data") },
       resolveCli: () => ({
         status: "resolved",
         executablePath: process.execPath,
@@ -294,6 +302,10 @@ describe("OpenCode ACP runtime", () => {
       ],
       authentication: "not-checked",
     });
+    const isolatedDataHome = await readFile(observedDataHomePath, "utf8");
+    expect(isolatedDataHome).not.toBe(join(directory, "persistent-user-data"));
+    expect(isolatedDataHome.startsWith(tmpdir())).toBe(true);
+    await expect(stat(isolatedDataHome)).rejects.toMatchObject({ code: "ENOENT" });
     expect(runtime.onDynamicSessionUpdate).toBeDefined();
     await runtime.disposeAllAndWait();
   });

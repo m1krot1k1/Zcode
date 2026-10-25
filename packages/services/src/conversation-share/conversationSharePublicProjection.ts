@@ -426,6 +426,11 @@ function projectRow(row: ConversationRow, index: number, ids: PublicIdMaps): Con
         ...(row.lane ? { lane: row.lane } : {}),
         marker: projectTimelineMarker(row),
       };
+    case "swarmRun":
+      throwProjectionError(
+        "invalid_conversation",
+        "Swarm lifecycle rows contain local child-session identities and cannot be shared",
+      );
     case "externalAgentRun":
       return {
         ...base,

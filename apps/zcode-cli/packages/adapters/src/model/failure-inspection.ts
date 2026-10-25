@@ -11,6 +11,36 @@ export function getStatusCode(error: unknown): number | undefined {
   return getStatusCodeFromError(error, new WeakSet<object>());
 }
 
+export interface OpenCodeSessionDiagnostic {
+  statusCode?: number;
+  code?: string;
+  message?: string;
+}
+
+/** Read only the bounded diagnostic envelope emitted by the OpenCode session.create adapter. */
+export function readOpenCodeSessionDiagnostic(
+  error: unknown,
+): OpenCodeSessionDiagnostic | undefined {
+  const record = asRecord(error);
+  const message = stringProperty(record, "message");
+  const prefix = "Failed to create session: ";
+  if (!message?.startsWith(prefix)) return undefined;
+  try {
+    const diagnostic = asRecord(JSON.parse(message.slice(prefix.length)));
+    if (!diagnostic) return undefined;
+    const statusCode = numberProperty(diagnostic, "statusCode");
+    const code = stringProperty(diagnostic, "code");
+    const providerMessage = stringProperty(diagnostic, "message");
+    return {
+      ...(statusCode !== undefined && statusCode >= 100 && statusCode <= 599 ? { statusCode } : {}),
+      ...(code && /^[A-Za-z0-9_.:-]{1,80}$/u.test(code) ? { code } : {}),
+      ...(providerMessage && providerMessage.length <= 280 ? { message: providerMessage } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function getHttpResponseStatus(error: unknown): number | undefined {
   return getHttpResponseStatusFromError(error, new WeakSet<object>());
 }
@@ -29,6 +59,8 @@ function getHttpResponseStatusFromError(error: unknown, seen: WeakSet<object>): 
   if (responseStatus !== undefined) {
     return responseStatus;
   }
+  const diagnosticStatus = readOpenCodeSessionDiagnostic(error)?.statusCode;
+  if (diagnosticStatus !== undefined) return diagnosticStatus;
 
   const response = asRecord(record.response);
   const nestedResponseStatus =
@@ -58,6 +90,8 @@ function getStatusCodeFromError(error: unknown, seen: WeakSet<object>): number |
   if (statusCode !== undefined) {
     return statusCode;
   }
+  const diagnosticStatus = readOpenCodeSessionDiagnostic(error)?.statusCode;
+  if (diagnosticStatus !== undefined) return diagnosticStatus;
 
   const response = asRecord(record.response);
   const responseStatus =
@@ -302,10 +336,7 @@ function hasTransportFetchFailure(error: unknown, seen: WeakSet<object>): boolea
   }
 
   const originalTail = readOriginalErrorTail(message);
-  if (
-    originalTail &&
-    (isExactFetchFailedMessage(originalTail) || isNetworkFailure(originalTail))
-  ) {
+  if (originalTail && (isExactFetchFailedMessage(originalTail) || isNetworkFailure(originalTail))) {
     return true;
   }
 

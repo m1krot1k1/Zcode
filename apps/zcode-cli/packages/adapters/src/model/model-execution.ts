@@ -1,4 +1,5 @@
 import { withoutRequestVerificationHeaders } from "@zcode/shared";
+import { stat } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute } from "node:path";
 /* eslint-disable max-lines -- AI SDK 模型执行装配集中维护 provider factory、鉴权和网络错误适配，拆分会让状态同步更脆弱。 */
 // ============================================================
@@ -10,10 +11,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
-import type {
-  ClientManagerOptions,
-  OpencodeProvider,
-} from "ai-sdk-provider-opencode-sdk";
+import type { ClientManagerOptions, OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
 import {
   compileModelOptionMaps,
   type CompiledModelOptionMaps,
@@ -172,6 +170,22 @@ const PROVIDER_BUSINESS_ERROR_BODY_CLEANUP_TIMEOUT_MS = 1_000;
 const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
 const SSE_FRAME_SEPARATOR_PATTERN = /\r\n\r\n|\n\n|\r\r/;
 const AUTHORIZATION_HEADER_NAME = "Authorization";
+const OPENCODE_DIAGNOSTIC_BODY_MAX_BYTES = 8_192;
+const OPENCODE_DIAGNOSTIC_READ_TIMEOUT_MS = 750;
+const OPENCODE_SESSION_CREATE_PATH = /(?:^|\/)session\/?$/u;
+const OPENCODE_SAFE_TRANSPORT_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "ETIMEDOUT",
+]);
 
 export class AiSdkModelExecution {
   private readonly env: EnvRecord;
@@ -308,13 +322,15 @@ export class AiSdkModelExecution {
       return (modelId) => {
         // OpenCode tools 已由 OpenCode server 执行；模型流原样经过 ZCode adapter，
         // 由 providerExecuted 标记阻止 ZCode tool runner 二次派发。
-        const createModel = () => {
+        const getWorkingDirectory = () => {
           const context = getCurrentModelInvocationContext() as
             | (ReturnType<typeof getCurrentModelInvocationContext> & {
                 workingDirectory?: string;
               })
             | undefined;
-          const workingDirectory = context?.workingDirectory;
+          return context?.workingDirectory;
+        };
+        const createModel = (workingDirectory = getWorkingDirectory()) => {
           return this.opencodeProvider!(
             modelId,
             workingDirectory ? { directory: workingDirectory } : undefined,
@@ -323,8 +339,16 @@ export class AiSdkModelExecution {
         const initialModel = createModel();
         return {
           ...initialModel,
-          doGenerate: (options: LanguageModelV3CallOptions) => createModel().doGenerate(options),
-          doStream: (options: LanguageModelV3CallOptions) => createModel().doStream(options),
+          doGenerate: async (options: LanguageModelV3CallOptions) => {
+            const workingDirectory = getWorkingDirectory();
+            await assertOpenCodeWorkspaceDirectory(workingDirectory);
+            return createModel(workingDirectory).doGenerate(options);
+          },
+          doStream: async (options: LanguageModelV3CallOptions) => {
+            const workingDirectory = getWorkingDirectory();
+            await assertOpenCodeWorkspaceDirectory(workingDirectory);
+            return createModel(workingDirectory).doStream(options);
+          },
         } as LanguageModel;
       };
     }
@@ -400,7 +424,6 @@ export class AiSdkModelExecution {
         });
         return provider as LanguageModelFactory;
       }
-
     }
   }
 
@@ -430,6 +453,29 @@ export class AiSdkModelExecution {
   }
 }
 
+const OPENCODE_WORKSPACE_DIRECTORY_ERROR =
+  "OpenCode needs an available workspace folder. Reopen or restore the workspace, then try again.";
+const OPENCODE_WORKSPACE_UNAVAILABLE_CODE = "OPENCODE_WORKSPACE_UNAVAILABLE";
+
+function createOpenCodeWorkspaceUnavailableError(): Error & { code: string } {
+  const error = new Error(OPENCODE_WORKSPACE_DIRECTORY_ERROR) as Error & { code: string };
+  error.code = OPENCODE_WORKSPACE_UNAVAILABLE_CODE;
+  return error;
+}
+
+async function assertOpenCodeWorkspaceDirectory(directory: string | undefined): Promise<void> {
+  if (!directory) throw createOpenCodeWorkspaceUnavailableError();
+
+  try {
+    if (!(await stat(directory)).isDirectory()) {
+      throw createOpenCodeWorkspaceUnavailableError();
+    }
+  } catch {
+    // Не отдаём путь или детали файловой системы: каталог workspace может быть удалён между сессиями.
+    throw createOpenCodeWorkspaceUnavailableError();
+  }
+}
+
 interface AiSdkModelSnapshot {
   readonly supportsJsonSchemaOutput: boolean;
   readonly providerConfig: AiSdkProviderConfig;
@@ -453,7 +499,9 @@ function toAiSdkProviderConfig(
     throw new Error(`Provider API base URL is missing: ${providerId}`);
   }
   const common = {
-    ...(config.access.type !== "zhipu-account" && config.access.type !== "local-auth" && config.access.apiKey
+    ...(config.access.type !== "zhipu-account" &&
+    config.access.type !== "local-auth" &&
+    config.access.apiKey
       ? { apiKey: config.access.apiKey }
       : {}),
     baseURL: api.baseUrl,
@@ -1218,7 +1266,9 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
     removeNewOpenCodeSignalListeners(listenersBeforeImport);
   }
 
-  const clientManager = sdk!.OpencodeClientManager.createInstance({} satisfies ClientManagerOptions);
+  const clientManager = sdk!.OpencodeClientManager.createInstance({
+    clientOptions: { fetch: createOpenCodeDiagnosticFetch() },
+  } satisfies ClientManagerOptions);
 
   try {
     const provider = sdk!.createOpencode({ clientManager });
@@ -1241,13 +1291,169 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
   }
 }
 
-function captureOpenCodeSignalListeners(): Map<
-  OpenCodeProcessSignal,
-  OpenCodeSignalListener[]
-> {
-  return new Map(
-    OPENCODE_PROCESS_SIGNALS.map((signal) => [signal, process.listeners(signal)]),
+/**
+ * 根因：OpenCode SDK 在 session.create 没有返回 id 时丢弃 HTTP 响应并抛出 `{}`。
+ * 修复：只保留状态码和经白名单、脱敏的短错误字段；不转发 URL 或原始响应体。
+ */
+export function createOpenCodeDiagnosticFetch(
+  fetchImpl: ProviderFetch = globalThis.fetch,
+): ProviderFetch {
+  return async (input, init) => {
+    const request = input instanceof Request ? input : undefined;
+    const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+    const requestUrl = request?.url ?? (input instanceof URL ? input.href : String(input));
+    let isSessionCreate = false;
+    try {
+      isSessionCreate =
+        method === "POST" && OPENCODE_SESSION_CREATE_PATH.test(new URL(requestUrl).pathname);
+    } catch {
+      // URL parsing is only used to identify the endpoint and is never included in diagnostics.
+    }
+
+    try {
+      const response = await fetchImpl(input, init);
+      if (!isSessionCreate) return response;
+
+      if (!response.ok) {
+        const fields = await readOpenCodeDiagnosticFields(response);
+        return createOpenCodeDiagnosticResponse(response.status, fields);
+      }
+      if (response.status === 204) {
+        return createOpenCodeDiagnosticResponse(204, {
+          message: "OpenCode returned an empty session creation response.",
+        });
+      }
+      return response;
+    } catch (cause) {
+      if (!isSessionCreate || isOpenCodeAbortError(cause)) throw cause;
+      const causeRecord = asRecord(cause);
+      const causeCode = typeof causeRecord?.code === "string" ? causeRecord.code.toUpperCase() : "";
+      // Error.message от Node fetch может содержать URL. Наружу передаём только известный errno
+      // и нейтральный текст; AbortError оставляем без изменений для обычной отмены запроса.
+      throw {
+        name: "OpenCodeTransportError",
+        code: OPENCODE_SAFE_TRANSPORT_CODES.has(causeCode) ? causeCode : "OPENCODE_TRANSPORT_ERROR",
+        message: "OpenCode local server request failed.",
+      };
+    }
+  };
+}
+
+async function readOpenCodeDiagnosticFields(response: Response): Promise<{
+  code?: string;
+  message?: string;
+}> {
+  const text = await readBoundedOpenCodeResponseText(response);
+  try {
+    await response.body?.cancel();
+  } catch {
+    // 取消原响应流仅用于尽快释放连接，不能覆盖已解析的错误字段。
+  }
+  if (!text) return {};
+  try {
+    const root = asRecord(JSON.parse(text));
+    const nested = asRecord(root?.error);
+    const code = sanitizeOpenCodeDiagnosticCode(root?.code ?? nested?.code);
+    const message = sanitizeOpenCodeDiagnosticMessage(root?.message ?? nested?.message);
+    return { ...(code ? { code } : {}), ...(message ? { message } : {}) };
+  } catch {
+    return {};
+  }
+}
+
+async function readBoundedOpenCodeResponseText(response: Response): Promise<string | undefined> {
+  const reader = response.clone().body?.getReader();
+  if (!reader) return undefined;
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const read = (async () => {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      byteLength += result.value.byteLength;
+      if (byteLength > OPENCODE_DIAGNOSTIC_BODY_MAX_BYTES) {
+        void reader.cancel();
+        return undefined;
+      }
+      chunks.push(result.value);
+    }
+    const body = new Uint8Array(byteLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(body);
+  })();
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      void reader.cancel();
+      resolve(undefined);
+    }, OPENCODE_DIAGNOSTIC_READ_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([read, timeout]);
+  } catch {
+    return undefined;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function sanitizeOpenCodeDiagnosticCode(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const code = String(value)
+    .replace(/[^A-Za-z0-9_.:-]/gu, "")
+    .slice(0, 80);
+  return code || undefined;
+}
+
+function sanitizeOpenCodeDiagnosticMessage(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  // 逐字符删除控制字符，避免供应商错误消息污染 Host 诊断日志。
+  const withoutControls = Array.from(value, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint < 0x20 || codePoint === 0x7f ? " " : character;
+  }).join("");
+  const message = withoutControls
+    .replace(/\bBearer\s+[^\s,;]+/giu, "Bearer [redacted]")
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}\b/gu, "[redacted]")
+    .replace(/\bapi[_-]?key\s*[:=]\s*[^\s,;]+/giu, "api_key=[redacted]")
+    .replace(/https?:\/\/[^\s"'<>]+/giu, "[URL]")
+    .replace(/(?:\/Users\/|\/home\/|\/private\/|\/tmp\/)[^\s"'<>]+/gu, "[path]")
+    .replace(/\b[A-Za-z]:\\(?:Users|home|tmp)\\[^\s"'<>]+/giu, "[path]")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, 280);
+  return message || undefined;
+}
+
+function createOpenCodeDiagnosticResponse(
+  upstreamStatus: number,
+  fields: { code?: string; message?: string },
+): Response {
+  // Response forbids bodies for 204/304; use a JSON envelope and encode the actual status there.
+  const responseStatus = upstreamStatus === 204 || upstreamStatus === 304 ? 200 : upstreamStatus;
+  const message =
+    fields.message ?? `OpenCode server returned HTTP ${upstreamStatus} while creating a session.`;
+  return new Response(
+    JSON.stringify({
+      statusCode: upstreamStatus,
+      ...(fields.code ? { code: fields.code } : {}),
+      message,
+    }),
+    { status: responseStatus, headers: { "content-type": "application/json" } },
   );
+}
+
+function isOpenCodeAbortError(error: unknown): boolean {
+  const record = asRecord(error);
+  return record?.name === "AbortError" || record?.code === "ABORT_ERR";
+}
+
+function captureOpenCodeSignalListeners(): Map<OpenCodeProcessSignal, OpenCodeSignalListener[]> {
+  return new Map(OPENCODE_PROCESS_SIGNALS.map((signal) => [signal, process.listeners(signal)]));
 }
 
 function removeNewOpenCodeSignalListeners(

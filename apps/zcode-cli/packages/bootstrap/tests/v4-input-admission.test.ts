@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
-import { conversationInputIntentSchema } from "@zcode/shared/zcode-protocol-v4";
+import { conversationInputIntentSchema, queueItemSchema } from "@zcode/shared/zcode-protocol-v4";
 import {
   buildOpenCodeAgentRunAdmission,
   isConversationInputAdmissionCommand,
@@ -10,6 +10,7 @@ import {
 import {
   inputIntentMetadata,
   inputIntentMetadataFromCanonical,
+  inputIntentMetadataFromQueueItem,
 } from "../src/zcode-protocol-v4/commands/input-intent.js";
 
 function envelope(type: CommandEnvelope["type"], payload: unknown): CommandEnvelope {
@@ -104,6 +105,59 @@ describe("v4 input admission canonical intent", () => {
         executionRoute,
       }).executionRoute,
     ).toEqual(executionRoute);
+  });
+
+  it("sendText swarm mode survives canonical admission, queue promotion and canonical retry", () => {
+    const command = envelope("sendText", { text: "分成独立工作", orchestrationMode: "swarm" });
+    const resolved = resolveInputCommandForAdmission(command, "s-parent", vi.fn());
+    expect(resolved).toMatchObject({ kind: "sendText", orchestrationMode: "swarm" });
+
+    const admittedCommand = {
+      ...command,
+      __v4Admission: { admissionSeq: 9, admittedAt: 10, queueItemId: "queue-swarm" },
+    } as unknown as CommandEnvelope;
+    const metadata = inputIntentMetadata(admittedCommand, {
+      requestedDelivery: "queue",
+      admittedDelivery: "queue",
+      text: "分成独立工作",
+    });
+    expect(metadata.orchestrationMode).toBe("swarm");
+
+    const queueItem = queueItemSchema.parse({
+      ...conversationInputIntentSchema.parse({
+        sourceCommandId: command.commandId,
+        queueItemId: "queue-swarm",
+        clientId: command.clientId,
+        kind: "sendText",
+        text: "分成独立工作",
+        orchestrationMode: resolved.orchestrationMode,
+        attachments: [],
+        delivery: { requested: "queue", admitted: "queue" },
+        order: { admissionSeq: 9, queuePosition: 1 },
+        steer: { state: "notRequested" },
+        dispatch: { state: "queued" },
+        admittedAt: 10,
+      }),
+    });
+    expect(inputIntentMetadataFromQueueItem(queueItem, queueItem.text).orchestrationMode).toBe(
+      "swarm",
+    );
+
+    const retried = inputIntentMetadataFromCanonical(admittedCommand, {
+      kind: "sendText",
+      text: "разделить и повторить",
+      orchestrationMode: metadata.orchestrationMode,
+    });
+    expect(retried.orchestrationMode).toBe("swarm");
+    expect(
+      inputIntentMetadata(
+        {
+          ...envelope("sendText", { text: "ordinary" }),
+          __v4Admission: { admissionSeq: 10, admittedAt: 11, queueItemId: "queue-normal" },
+        } as unknown as CommandEnvelope,
+        { requestedDelivery: "startNow", text: "ordinary" },
+      ),
+    ).not.toHaveProperty("orchestrationMode");
   });
 
   it("ACP admission uses the atomic command-keyed outbox transaction only", async () => {

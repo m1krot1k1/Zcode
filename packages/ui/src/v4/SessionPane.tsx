@@ -1771,6 +1771,7 @@ export function SessionPane({
     captureAcceptedModelSelection,
     replaceComposerDraft,
     updateComposerContent,
+    setComposerOrchestrationMode,
   } = useDraftConfigControl({
     workspacePath,
     workspaceIdentity,
@@ -3798,6 +3799,7 @@ export function SessionPane({
         {
           text,
           ...submission,
+          ...(options?.orchestrationMode ? { orchestrationMode: options.orchestrationMode } : {}),
           ...(options?.requestedDelivery ? { requestedDelivery: options.requestedDelivery } : {}),
           conversationQuotes: options?.conversationQuotes,
           ...(readyAttachments.length > 0 ? { attachments: readyAttachments } : {}),
@@ -5499,6 +5501,7 @@ export function SessionPane({
       composerDraft={composerDraft}
       rootDraftScopeKey={composerScopeKey(newTaskComposerScope)}
       replaceComposerDraft={replaceComposerDraft}
+      onSetComposerOrchestrationMode={setComposerOrchestrationMode}
       submissionReady={composerSubmissionReady && runtimeReady && !recoveringDraft}
       updateComposerContent={updateComposerContent}
       createSubmissionFromComposer={createSubmissionFromComposer}

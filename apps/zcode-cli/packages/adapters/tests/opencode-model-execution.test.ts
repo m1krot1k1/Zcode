@@ -4,6 +4,9 @@ import type {
   LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
 import { runWithModelInvocationContext } from "@zcode/contracts";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { TestProviderConfigFixture } from "./test-provider-config.js";
@@ -31,16 +34,15 @@ describe("OpenCode SDK model execution", () => {
 
     try {
       const resolved = registry.resolve("opencode/deepseek-v4.1-flash-free");
-      const result = await runWithModelInvocationContext(
-        { workingDirectory: "/workspace/project-a" },
-        () => resolved.model.doGenerate!(createCallOptions()),
+      const result = await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        resolved.model.doGenerate!(createCallOptions()),
       );
 
       expect(result.content).toEqual([{ type: "text", text: "ok" }]);
       expect(calls).toHaveLength(3);
       expect(calls.at(-1)).toEqual({
         modelId: "deepseek-v4.1-flash-free",
-        directory: "/workspace/project-a",
+        directory: process.cwd(),
       });
       expect(resolved.baseURL).toBeUndefined();
       expect(resolved.headers).toBeUndefined();
@@ -73,7 +75,9 @@ describe("OpenCode SDK model execution", () => {
 
     try {
       const resolved = registry.resolve(`opencode/${modelId}`);
-      await resolved.model.doGenerate!(createCallOptions());
+      await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        resolved.model.doGenerate!(createCallOptions()),
+      );
       expect(calls.at(-1)).toBe(modelId);
       expect(resolved.modelId).toBe(modelId);
     } finally {
@@ -86,18 +90,19 @@ describe("OpenCode SDK model execution", () => {
     const dispose = vi.fn(async () => undefined);
     const provider = createFakeOpenCodeProvider({
       dispose,
-      model: () => ({
-        doStream: async (options) => {
-          providerSignal = options.abortSignal;
-          const stream = new ReadableStream<LanguageModelV3StreamPart>({
-            start(controller) {
-              const abort = () => controller.error(new Error("cancelled"));
-              options.abortSignal?.addEventListener("abort", abort, { once: true });
-            },
-          });
-          return { stream };
-        },
-      }) as unknown as LanguageModelV3,
+      model: () =>
+        ({
+          doStream: async (options) => {
+            providerSignal = options.abortSignal;
+            const stream = new ReadableStream<LanguageModelV3StreamPart>({
+              start(controller) {
+                const abort = () => controller.error(new Error("cancelled"));
+                options.abortSignal?.addEventListener("abort", abort, { once: true });
+              },
+            });
+            return { stream };
+          },
+        }) as unknown as LanguageModelV3,
     });
     const registry = createRegistry(provider);
     const controller = new AbortController();
@@ -105,7 +110,9 @@ describe("OpenCode SDK model execution", () => {
     try {
       const resolved = registry.resolve("opencode/deepseek-v4.1-flash-free");
       const model = resolved.model as LanguageModelV3;
-      const output = await model.doStream(createCallOptions({ abortSignal: controller.signal }));
+      const output = await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doStream(createCallOptions({ abortSignal: controller.signal })),
+      );
       expect(providerSignal).toBe(controller.signal);
 
       controller.abort();
@@ -126,27 +133,63 @@ describe("OpenCode SDK model execution", () => {
       providerExecuted: true,
     } as unknown as LanguageModelV3StreamPart;
     const provider = createFakeOpenCodeProvider({
-      model: () => ({
-        doStream: async () => ({
-          stream: new ReadableStream<LanguageModelV3StreamPart>({
-            start(controller) {
-              controller.enqueue(observedPart);
-              controller.close();
-            },
+      model: () =>
+        ({
+          doStream: async () => ({
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              start(controller) {
+                controller.enqueue(observedPart);
+                controller.close();
+              },
+            }),
           }),
-        }),
-      }) as unknown as LanguageModelV3,
+        }) as unknown as LanguageModelV3,
     });
     const registry = createRegistry(provider);
 
     try {
       const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model as LanguageModelV3;
-      const output = await model.doStream(createCallOptions());
+      const output = await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doStream(createCallOptions()),
+      );
       const reader = output.stream.getReader();
       await expect(reader.read()).resolves.toEqual({ done: false, value: observedPart });
       // OpenCode's providerExecuted marker survives the factory unchanged, so downstream ZCode
       // tool dispatch can continue to exclude this already-run provider-side tool.
       expect(observedPart.providerExecuted).toBe(true);
+    } finally {
+      await registry.dispose();
+    }
+  });
+
+  it.each([
+    ["missing invocation directory", undefined],
+    ["removed workspace", join(tmpdir(), `zcode-opencode-missing-${randomUUID()}`)],
+    ["file instead of a directory", process.execPath],
+  ])("fails closed before the SDK request for %s", async (_label, workingDirectory) => {
+    let sdkRequests = 0;
+    const provider = createFakeOpenCodeProvider({
+      model: () =>
+        ({
+          doGenerate: async () => {
+            sdkRequests += 1;
+            throw new Error("SDK must not receive an invalid workspace");
+          },
+        }) as unknown as LanguageModelV3,
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model;
+      const invoke = () => model.doGenerate!(createCallOptions());
+      const result = runWithModelInvocationContext(
+        workingDirectory ? { workingDirectory } : {},
+        invoke,
+      );
+      await expect(result).rejects.toThrow(
+        "OpenCode needs an available workspace folder. Reopen or restore the workspace, then try again.",
+      );
+      expect(sdkRequests).toBe(0);
     } finally {
       await registry.dispose();
     }
@@ -166,10 +209,7 @@ function createRegistry(provider: OpencodeProvider) {
 }
 
 function createFakeOpenCodeProvider(options: {
-  model: (
-    modelId: string,
-    settings?: { directory?: string },
-  ) => LanguageModelV3;
+  model: (modelId: string, settings?: { directory?: string }) => LanguageModelV3;
   dispose?: () => Promise<void>;
 }): OpencodeProvider {
   const create = ((modelId: string, settings?: { directory?: string }) =>

@@ -42,6 +42,7 @@ import {
   TID_V4_FORK,
   TID_V4_ROW,
   TID_V4_ROW_ATTACHMENTS,
+  TID_V4_SUBAGENT_OPEN_SIDE_PANE,
   testId,
 } from "@zcode/shared/test-ids";
 import type {
@@ -55,6 +56,7 @@ import type {
   HookInvocationRow,
   ReasoningRow,
   SubagentRow,
+  SwarmRunRow,
   TimelineMarkerRow,
   ToolCallRow,
   TurnHeaderRow,
@@ -2316,6 +2318,94 @@ const SubagentRowView = memo(function SubagentRowView({ row }: { row: SubagentRo
   );
 });
 
+const SWARM_STATUS_MESSAGE_IDS: Record<SwarmRunRow["status"], string> = {
+  planning: "conversation.swarm.status.planning",
+  running: "conversation.swarm.status.running",
+  completed: "conversation.swarm.status.completed",
+  failed: "conversation.swarm.status.failed",
+  cancelled: "conversation.swarm.status.cancelled",
+};
+
+const SwarmRunRowView = memo(function SwarmRunRowView({
+  row,
+  context,
+}: {
+  row: SwarmRunRow;
+  context: ConversationRowRenderContext;
+}) {
+  const { intl } = useZCodeIntl();
+  const parentSessionId = context.sessionId;
+  const openChildSession = context.onOpenSubagentSession;
+  return (
+    <RowShell rowId={row.rowId}>
+      <section
+        className="my-2 rounded-xl border border-border bg-muted/20 px-4 py-3"
+        data-row-kind="swarmRun"
+        data-swarm-run-id={row.swarmRunId}
+        data-status={row.status}
+        data-testid={`swarm-run-${row.swarmRunId}`}
+        aria-label={intl.formatMessage({ id: "conversation.swarm.title" })}
+      >
+        <header className="flex items-center justify-between gap-3 text-sm">
+          <strong>{intl.formatMessage({ id: "conversation.swarm.title" })}</strong>
+          <span
+            className="text-muted-foreground"
+            data-testid={`swarm-run-status-${row.swarmRunId}`}
+          >
+            {intl.formatMessage({ id: SWARM_STATUS_MESSAGE_IDS[row.status] })}
+          </span>
+        </header>
+        {row.taskCount !== undefined ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {intl.formatMessage({ id: "conversation.swarm.taskCount" }, { count: row.taskCount })}
+          </p>
+        ) : null}
+        {row.childSessionIds?.length ? (
+          <ul
+            className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle"
+            aria-label={intl.formatMessage({ id: "conversation.swarm.children" })}
+          >
+            {row.childSessionIds.map((childSessionId, index) => (
+              <li key={childSessionId}>
+                {parentSessionId && openChildSession ? (
+                  <button
+                    type="button"
+                    className="cursor-pointer text-primary underline-offset-4 hover:underline"
+                    aria-label={intl.formatMessage(
+                      { id: "conversation.swarm.openChild" },
+                      { index: index + 1, sessionId: childSessionId },
+                    )}
+                    data-testid={testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, childSessionId)}
+                    onClick={() =>
+                      openChildSession({
+                        rootSessionId: context.rootSessionId ?? parentSessionId,
+                        parentSessionId,
+                        childSessionId,
+                        subagentType: "swarm-task",
+                        title: intl.formatMessage(
+                          { id: "conversation.swarm.childTitle" },
+                          { index: index + 1 },
+                        ),
+                      })
+                    }
+                  >
+                    {childSessionId}
+                  </button>
+                ) : (
+                  <span>{childSessionId}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {row.summary ? (
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm">{row.summary}</p>
+        ) : null}
+      </section>
+    </RowShell>
+  );
+});
+
 /**
  * v4 row 渲染分发。memo：虚拟列表逐行渲染，父投影变化时只有 props 真正变化的行才重渲染
  * （前提是 onFork/onRetry/onEdit 为稳定引用 + context 引用稳定，见 SessionPane 的
@@ -2389,6 +2479,8 @@ function ConversationRowViewImpl({
       return <ToolCallRowView row={row} context={context} />;
     case "subagent":
       return <SubagentRowView row={row} />;
+    case "swarmRun":
+      return <SwarmRunRowView row={row} context={context} />;
     case "externalAgentRun":
       return <ExternalAgentRunRowView row={row} context={context} />;
     case "artifact":

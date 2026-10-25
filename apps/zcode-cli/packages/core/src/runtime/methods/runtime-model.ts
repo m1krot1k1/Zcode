@@ -84,6 +84,9 @@ function withRuntimeInvocationLayer(
   retryBudget?: ModelRetryBudget,
 ): Model {
   const layer: ModelInvocationContext = {
+    // Bugfix: вспомогательные запросы OpenCode (инструменты, compaction, заголовки) обходили
+    // основной turn wrapper и теряли workspace. Привязываем каталог к каждому runtime model handle.
+    workingDirectory: runtime.workingDirectory,
     // 原因：标题、Memory、工具调用曾按用途覆写 other，丢失宿主分类。
     // 会话类型统一绑定在句柄上；工作区独立请求即使借用会话 runtime 也保持 other。
     modelRequestSessionType: sessionType,

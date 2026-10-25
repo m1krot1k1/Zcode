@@ -98,6 +98,7 @@ export interface DraftConfigControl {
   handleDraftSelectModel: (modelProvider: string, model: string, reasoningLevel?: string) => void;
   handleDraftSelectThought: (thought: string) => void;
   handleDraftSwitchMode: (mode: string) => void;
+  setComposerOrchestrationMode: (enabled: boolean) => void;
 }
 
 interface ComposerState {
@@ -420,6 +421,9 @@ export function useDraftConfigControl(params: {
     (content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
       updateComposerDraft((current) => ({
         ...current,
+        ...(content.text !== undefined && !content.text.trim()
+          ? { orchestrationMode: undefined }
+          : {}),
         editorStateJson: undefined,
         mention: undefined,
         ...content,
@@ -430,6 +434,15 @@ export function useDraftConfigControl(params: {
   const replaceComposerDraft = useCallback(
     (replacement: Omit<V4ComposerDraft, "updatedAt">) => {
       updateComposerDraft(() => ({ ...replacement, updatedAt: Date.now() }));
+    },
+    [updateComposerDraft],
+  );
+  const setComposerOrchestrationMode = useCallback(
+    (enabled: boolean) => {
+      updateComposerDraft((current) => ({
+        ...current,
+        ...(enabled ? { orchestrationMode: "swarm" as const } : { orchestrationMode: undefined }),
+      }));
     },
     [updateComposerDraft],
   );
@@ -641,6 +654,7 @@ export function useDraftConfigControl(params: {
     handleDraftSelectModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
+    setComposerOrchestrationMode,
   };
 }
 

@@ -100,6 +100,8 @@ export const conversationInputIntentSchema = z
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),
+    // Явный режим оркестрации является частью canonical intent, а не состоянием сессии.
+    orchestrationMode: z.literal("swarm").optional(),
     sharedContextRefs: z.array(sharedContextRefSchema).max(1).optional(),
     delivery: conversationInputDeliverySchema,
     order: conversationInputOrderSchema,
@@ -127,6 +129,8 @@ export const conversationInputIntentSchema = z
     if (intent.mode !== undefined) reject("mode", "OpenCode ACP route forbids ZCode mode");
     if (intent.planEnabled !== undefined)
       reject("planEnabled", "OpenCode ACP route forbids ZCode plan mode");
+    if (intent.orchestrationMode !== undefined)
+      reject("orchestrationMode", "OpenCode ACP route forbids ZCode swarm orchestration");
     if (intent.attachments.length > 0) reject("attachments", "OpenCode ACP route is text-only");
     if (intent.sharedContextRefs?.length)
       reject("sharedContextRefs", "OpenCode ACP route forbids shared context");

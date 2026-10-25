@@ -524,6 +524,9 @@ export interface ExecuteTurnOptionsBase {
   inputSource?: SyntheticUserMessageSource;
   inputPresentation?: RuntimeInputPresentation;
   inputVisibility?: MessageVisibility;
+  /** 内部继承的 swarm lineage；仅 root turn 创建并结算共享预算。 */
+  internalSwarmRootRunId?: string;
+  internalSwarmRootTurnId?: TurnId;
   originMeta?: BackgroundResultOriginMeta;
   /** 仅用于冻结 background notification batch 的整批因果来源，不用于展示。 */
   backgroundSource?: BackgroundResultOriginMeta["backgroundSource"];

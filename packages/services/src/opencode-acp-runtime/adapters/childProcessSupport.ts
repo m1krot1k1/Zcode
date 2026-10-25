@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
+import { access, mkdtemp, rm, stat } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import {
   resolveOpenCodeCli,
   type OpenCodeCliResolution,
@@ -164,55 +164,85 @@ export async function runModelCatalog(
   sourceEnvironment: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): Promise<OpenCodeCliModelCatalog> {
-  return await new Promise<OpenCodeCliModelCatalog>((resolve) => {
-    let output = "";
-    let oversized = false;
-    let settled = false;
-    const finish = (result: OpenCodeCliModelCatalog) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-    const child = spawn(
-      spec.command,
-      [...spec.prefixArgs, "models", "--verbose"],
-      spawnOptions(undefined, ["ignore", "pipe", "ignore"], sourceEnvironment, platform),
-    );
-    const timer = setTimeout(() => {
-      finish({ status: "timed-out", diagnostic: "opencode.models-timeout" });
-      void terminateProcessTreeAndWait(child);
-    }, MODEL_CATALOG_TIMEOUT_MS);
-    child.stdout?.on("data", (chunk: Buffer | string) => {
-      const text = String(chunk);
-      if (output.length + text.length > MAX_MODEL_CATALOG_OUTPUT_CHARS) {
-        oversized = true;
-        finish({ status: "unavailable", diagnostic: "opencode.models-output-invalid" });
-        void terminateProcessTreeAndWait(child);
-        return;
-      }
-      output += text;
-    });
-    child.once("error", (error: NodeJS.ErrnoException) => {
-      finish({
-        status: "unavailable",
-        diagnostic: error.code === "ENOENT" ? "opencode.cli-missing" : "opencode.models-failed",
+  let isolatedDataHome: string;
+  try {
+    // Bug 根因：IDE Host 对 OpenCode 持久数据目录可能只有读权限；`models` 因无法打开日志直接退出，导致 Composer 没有可选模型。
+    // 修复依据：同一 CLI 在临时 XDG_DATA_HOME 下可正常列出目录。此命令只读模型元数据，不需要用户 data/auth 文件。
+    // 为发现命令单独隔离可写数据目录，保留正常 config/cache，并在进程退出后清理，绝不改动用户 OpenCode 登录态。
+    isolatedDataHome = await mkdtemp(join(tmpdir(), "zcode-opencode-model-catalog-"));
+  } catch {
+    return { status: "unavailable", diagnostic: "opencode.models-failed" };
+  }
+
+  try {
+    return await new Promise<OpenCodeCliModelCatalog>((resolve) => {
+      let output = "";
+      let oversized = false;
+      let settled = false;
+      let timedOut = false;
+      const finish = (result: OpenCodeCliModelCatalog) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const child = spawn(spec.command, [...spec.prefixArgs, "models", "--verbose"], {
+        ...spawnOptions(undefined, ["ignore", "pipe", "ignore"], sourceEnvironment, platform),
+        env: childProcessEnvironment(
+          { ...sourceEnvironment, XDG_DATA_HOME: isolatedDataHome },
+          platform,
+        ),
+      });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        void terminateProcessTreeAndWait(child).finally(() => {
+          finish({ status: "timed-out", diagnostic: "opencode.models-timeout" });
+        });
+      }, MODEL_CATALOG_TIMEOUT_MS);
+      child.stdout?.on("data", (chunk: Buffer | string) => {
+        const text = String(chunk);
+        if (output.length + text.length > MAX_MODEL_CATALOG_OUTPUT_CHARS) {
+          oversized = true;
+          void terminateProcessTreeAndWait(child).finally(() => {
+            finish({ status: "unavailable", diagnostic: "opencode.models-output-invalid" });
+          });
+          return;
+        }
+        output += text;
+      });
+      child.once("error", (error: NodeJS.ErrnoException) => {
+        finish({
+          status: "unavailable",
+          diagnostic: error.code === "ENOENT" ? "opencode.cli-missing" : "opencode.models-failed",
+        });
+      });
+      child.once("close", (code) => {
+        if (settled) return;
+        if (timedOut) {
+          finish({ status: "timed-out", diagnostic: "opencode.models-timeout" });
+          return;
+        }
+        if (oversized) {
+          finish({ status: "unavailable", diagnostic: "opencode.models-output-invalid" });
+          return;
+        }
+        if (code !== 0) {
+          finish({ status: "unavailable", diagnostic: "opencode.models-failed" });
+          return;
+        }
+        const models = parseOpenCodeVerboseModelCatalog(output);
+        if (models.length === 0 || models.length > MAX_MODEL_CATALOG_SIZE) {
+          finish({ status: "unavailable", diagnostic: "opencode.models-output-invalid" });
+          return;
+        }
+        finish({ status: "available", models, authentication: "not-checked" });
       });
     });
-    child.once("close", (code) => {
-      if (settled) return;
-      if (code !== 0 || oversized) {
-        finish({ status: "unavailable", diagnostic: "opencode.models-failed" });
-        return;
-      }
-      const models = parseOpenCodeVerboseModelCatalog(output);
-      if (models.length === 0 || models.length > MAX_MODEL_CATALOG_SIZE) {
-        finish({ status: "unavailable", diagnostic: "opencode.models-output-invalid" });
-        return;
-      }
-      finish({ status: "available", models, authentication: "not-checked" });
-    });
-  });
+  } catch {
+    return { status: "unavailable", diagnostic: "opencode.models-failed" };
+  } finally {
+    await rm(isolatedDataHome, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 /** CLI output is `provider/model` followed by a JSON block; project only facts the registry needs. */

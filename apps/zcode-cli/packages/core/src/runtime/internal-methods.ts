@@ -38,6 +38,10 @@ import type { BackgroundResultOriginMeta, ContextUsageBreakdownItem } from "@zco
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
+  WorkspaceGenerateTextInput,
+  WorkspaceGenerateTextResult,
+} from "./methods/workspace-generate-text.js";
+import type {
   ActiveTurnInfo,
   AcquireForegroundPromotionLeaseResult,
   ActiveTurnKind,
@@ -65,6 +69,10 @@ import type {
 } from "./types.js";
 
 export interface AgentRuntimeCoreMethods {
+  generateWorkspaceText(
+    input: WorkspaceGenerateTextInput,
+    options?: { abortSignal?: AbortSignal; traceContext?: TraceContext },
+  ): Promise<WorkspaceGenerateTextResult>;
   updateConfig(
     patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
   ): void;

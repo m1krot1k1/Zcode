@@ -80,6 +80,9 @@ export async function testModelConnectivity(
   let finished = false;
   await runWithModelInvocationContext(
     {
+      // Bugfix: OpenCode CLI валидирует cwd в каждом модельном запросе; настройка проверки соединения
+      // раньше теряла каталог владельца. Передаём тот же workspace, что использует AgentRuntime.
+      workingDirectory: this.workingDirectory,
       metadata: traceContextToLogContext(traceContext),
       modelCall: { operation: "workspace_generate_text" },
       statusSink: this.createModelStatusSink(traceContext, []),
@@ -196,6 +199,9 @@ async function generateWorkspaceTextImpl(
 
   const result = await runWithModelInvocationContext(
     {
+      // Bugfix: swarm planner и остальные auxiliary calls шли без cwd, и OpenCode отвечал 500
+      // на отсутствующую папку. Контекст всегда получает cwd текущего runtime, без подмены fallback.
+      workingDirectory: this.workingDirectory,
       metadata: traceContextToLogContext(modelTraceContext),
       modelCall: {
         operation:

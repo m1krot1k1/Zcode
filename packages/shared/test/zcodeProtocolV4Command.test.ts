@@ -52,6 +52,24 @@ describe("zcode-protocol-v4 command", () => {
     });
   });
 
+  it("accepts only the explicit one-shot swarm mode and leaves normal sends unchanged", () => {
+    const ordinary = commandPayloadSchemas.sendText.parse({ text: "ordinary turn" });
+    expect(ordinary).not.toHaveProperty("orchestrationMode");
+
+    expect(
+      commandPayloadSchemas.sendText.parse({
+        text: "split this task",
+        orchestrationMode: "swarm",
+      }).orchestrationMode,
+    ).toBe("swarm");
+    expect(
+      commandPayloadSchemas.sendText.safeParse({
+        text: "invalid mode",
+        orchestrationMode: "recursive",
+      }).success,
+    ).toBe(false);
+  });
+
   it("defaults legacy submissions to ZCode and accepts explicit OpenCode model routes", () => {
     expect(commandPayloadSchemas.sendText.parse({ text: "ordinary turn" }).executionRoute).toEqual({
       kind: "zcode",
@@ -86,6 +104,31 @@ describe("zcode-protocol-v4 command", () => {
         executionRoute: { kind: "unknown" },
       }).success,
     ).toBe(false);
+  });
+
+  it("rejects ZCode swarm orchestration on an OpenCode ACP send command", () => {
+    const result = parseCommandEnvelope({
+      commandId: "018f0000-0000-7000-8000-000000000002",
+      clientId: "client-1",
+      sessionId: "s-1",
+      type: "sendText",
+      payload: {
+        text: "split this task",
+        executionRoute: { kind: "opencode-acp", model: { kind: "default" } },
+        orchestrationMode: "swarm",
+      },
+      issuedAt: 1000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ["orchestrationMode"],
+          message: "OpenCode ACP route forbids ZCode swarm orchestration",
+        }),
+      );
+    }
   });
 
   it("limits the providerless session marker to an empty draft without a ZCode model", () => {

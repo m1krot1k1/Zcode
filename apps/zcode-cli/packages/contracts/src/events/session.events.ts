@@ -187,6 +187,8 @@ export const SessionEventType = {
   SubagentExecutionTerminal: "subagent_execution_terminal",
   /** External OpenCode ACP lifecycle fact; never projected as ZCode model/tool output. */
   OpenCodeAgentRunUpdated: "opencode_agent_run_updated",
+  /** Core-owned explicit ZCode swarm lifecycle; separate from provider tool calls. */
+  SwarmRunUpdated: "swarm_run_updated",
   /** Live-only ACP permission prompt; must be ingested directly and never appended to EventStore. */
   OpenCodeAgentPermissionUpdated: "opencode_agent_permission_updated",
   PrismTaskContractDeclared: "prism_task_contract_declared",
@@ -1310,6 +1312,14 @@ export interface OpenCodeAgentRunUpdatedPayload {
   diagnosticCode?: string;
 }
 
+export interface SwarmRunUpdatedPayload {
+  swarmRunId: string;
+  status: "planning" | "running" | "completed" | "failed" | "cancelled";
+  taskCount?: number;
+  childSessionIds?: string[];
+  summary?: string;
+}
+
 /** Ephemeral ACP permission state. This payload is only sent through the live V4 gateway. */
 export interface OpenCodeAgentPermissionUpdatedPayload {
   runId: string;
@@ -1426,6 +1436,7 @@ export type SessionEventPayload =
   | BackgroundTaskCompletedPayload
   | SubagentExecutionTerminalPayload
   | OpenCodeAgentRunUpdatedPayload
+  | SwarmRunUpdatedPayload
   | OpenCodeAgentPermissionUpdatedPayload
   | PrismTaskContractDeclaredPayload
   | PrismEvidenceReceiptObservedPayload

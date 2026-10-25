@@ -126,18 +126,29 @@ export interface SubagentRunRequest {
   workingDirectory: string;
   workspaceRoot: string;
   trace: TraceContext;
+  /** Core orchestration lineage; distinct from a provider-issued tool call. */
+  orchestrationRunId?: string;
   /** Explicit machine-checkable criteria; absent criteria must remain acceptance=unknown. */
   acceptanceCriteria?: readonly PrismTaskAcceptanceRequestCriterion[];
 }
 
 /** Foreground DAG request; individual nodes own their prompts, agent types, and evidence criteria. */
-export type SubagentTaskDagRequest = Omit<SubagentRunRequest, "acceptanceCriteria"> & {
+export type SubagentTaskDagRequest = Omit<
+  SubagentRunRequest,
+  "acceptanceCriteria" | "parentToolCallId"
+> & {
+  /** Present for model-requested DAGs; core-owned DAGs use orchestrationRunId instead. */
+  parentToolCallId?: ToolCallId | string;
   nodes: AgentTaskGraph["nodes"];
   maxParallel?: number;
+  orchestrationRunId?: string;
 };
 
 export interface SubagentRunOptions {
   signal?: AbortSignal;
+  /** Swarm descendants share the root turn budget; this is core-owned metadata. */
+  internalSwarmRootRunId?: string;
+  internalSwarmRootTurnId?: TurnId;
   /** 未显式选模的 child 从父 Agent Loop 继承的不可变 Model。 */
   model?: Model;
   /** Core Server 对前台 child 的最高优先级 Selection；每个 child 仍自行创建 Model。 */

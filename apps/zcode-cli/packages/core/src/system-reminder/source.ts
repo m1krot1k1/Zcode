@@ -53,6 +53,7 @@ export const SYSTEM_REMINDER_PER_REQUEST_SOURCES = [
   "model_anomaly",
   "prompt_attachment",
   "diagnostics",
+  "swarm_results",
 ] as const;
 
 export type SystemReminderPrefixSource = (typeof SYSTEM_REMINDER_PREFIX_SOURCES)[number];
@@ -181,6 +182,7 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     "sr.shell_environment_change",
   ),
   diagnostics: descriptor("mid_turn_event", "mid_turn_event", true, "sr.diagnostics"),
+  swarm_results: descriptor("mid_turn_event", "mid_turn_event", true, "sr.swarm_results"),
   // 第四批 4a-0（2026-09-12）：原 plugin_ui_state 源已删除，插件给模型的信息改走 ui/update-model-context。
 };
 

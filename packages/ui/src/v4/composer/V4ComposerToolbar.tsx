@@ -1181,6 +1181,11 @@ function V4ComposerModelControlsImpl({
               decodeCustomModelValue(normalizedModelValue)?.modelName,
             );
             const providerId = decodeCustomModelValue(model?.value ?? "")?.providerId;
+            // OpenCode CLI 是 Host 本地 provider，不是账号/API 连接；走连接同步会读取错误 owner 的目录并拒绝选择。
+            if (providerId === "opencode" && model) {
+              handleModelValueChange(model.value);
+              return;
+            }
             // 原因：普通 API 原先绕过连接切换 owner，缺少 loading 且会暴露旧目录。
             if (providerId)
               void selectConnection(

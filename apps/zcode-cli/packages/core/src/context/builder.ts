@@ -144,6 +144,7 @@ export class ContextBuilder {
         : buildSessionGuidanceSection(
             this.config.guidanceToolNames ?? [],
             (this.config.skills?.skills.length ?? 0) > 0,
+            this.config.taskDagAvailable === true,
           );
       if (sessionGuidanceSection) {
         sections.push(sessionGuidanceSection);

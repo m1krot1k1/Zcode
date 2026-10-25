@@ -4,7 +4,9 @@ export const SELF_IMPROVE_EVALUATOR_CHECK = Object.freeze({
   evaluationScope: "HEAD_INFRASTRUCTURE_ONLY",
   args: Object.freeze(["--test", "scripts/test/self-improve-pr.test.mjs"]),
   timeoutMs: 5 * 60 * 1000,
+  maxOutputBytes: 10 * 1024 * 1024 - 1024,
   maxArtifactBytes: 10 * 1024 * 1024,
+  maxEvidenceBytes: 1024 * 1024,
 });
 
 export const SELF_IMPROVE_RECEIPT_CRITERIA = Object.freeze({

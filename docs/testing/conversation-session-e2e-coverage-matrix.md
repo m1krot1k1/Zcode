@@ -2,13 +2,13 @@
 
 ## OpenCode CLI как обычный provider чата (OCP, accepted product contract)
 
-Продуктовый контракт принят, но реализация обычного AI SDK provider path и его Desktop E2E ещё не подтверждены. Старые проверки ACP доказывают только работу прежнего отдельного маршрута и не являются доказательством этой интеграции.
+Продуктовый контракт принят. Локальный Desktop E2E с mock CLI подтверждает переключение OpenCode CLI в настройках, возврат в чат, выбор модели и ответ в обычной ленте. Это не проверка реальной авторизации/сетевого запроса к OpenCode. Старые проверки ACP доказывают только работу прежнего отдельного маршрута.
 
 | Case | Setup / Action | Требуемые assertions | Автоматизация / статус |
 | --- | --- | --- | --- |
 | OCP-01 | OpenCode CLI отсутствует; включить его в Model Providers. | Та же строка предлагает Install; установка проверяется обнаружением и версией CLI, после чего provider можно выбрать. | Unit + Desktop settings E2E; pending implementation. |
-| OCP-02 | CLI установлен, локальный catalog возвращает модели; открыть обычный Composer. | OpenCode CLI и его модели отображаются в штатном выборе provider/model без ACP панели или отдельной настройки workspace/session. | Provider registry + Composer tests; pending implementation. |
-| OCP-03 | В существующем ZCode чате выбрать модель OpenCode CLI и отправить marker. | Обычные ModelSelection/admission/runtime создают запрос через AI SDK adapter; ответ появляется в той же ленте. Интеграционный fixture проверяет payload/stream без внешнего model request. | Adapter integration + Desktop E2E; pending implementation. |
+| OCP-02 | В Model Providers выключить и снова включить OpenCode CLI; вернуться в Composer, выбрать OpenCode CLI и другую модель. | Настройка сохраняется; локальный каталог доступен в штатном меню выбора provider/model без ACP панели и account/API connection sync. | Provider registry + Composer tests + manual-review Desktop E2E `conversation-session-opencode-cli-composer`; mock CLI fixture. |
+| OCP-03 | В существующем ZCode чате выбрать модель OpenCode CLI и отправить marker. | Обычные ModelSelection/admission/runtime создают запрос через AI SDK adapter; mock ответ появляется в той же ленте. Внешний запрос к модели не выполняется. | Adapter integration + manual-review Desktop E2E `conversation-session-opencode-cli-composer`; настоящий CLI/auth остаются отдельным pending подтверждением. |
 | OCP-04 | Нажать Stop во время ответа OpenCode. | Отменяется тот же обычный ZCode run; последующие provider chunks не меняют transcript. | Runtime test `opencode-cancel.test.ts`: Stop, затем поздний delta не пишется. |
 | OCP-05 | OpenCode CLI не авторизован у своего model provider. | Показывается типизированная ошибка входа; ZCode не читает/копирует credentials и не переключает provider автоматически. | Classifier test: OpenCode 401 → sign-in message, `retryable: false`. Fallback test: selection не переключается. |
 | OCP-06 | Provider возвращает rate limit. | Ошибка показана пользователю; нет обхода лимита, скрытого повтора или автоматического переключения provider/model. | Runtime test `opencode-rate-limit.test.ts`: один запрос, без stream recovery. |
@@ -17,6 +17,19 @@
 | OCP-09 | CLI сообщает модель в чужом namespace. | Точный `providerID/modelID` принимается Host и Worker и остаётся выбираемым. | Host catalog, Composer group и Worker `validateSelection` сохраняют `anthropic/claude-sonnet-4-5`; SDK получает тот же id. |
 
 Локальный unit/integration fixture не доказывает работу с настоящей авторизацией OpenCode. Реальный Desktop E2E с настоящим CLI и доступным пользователю model provider должен отдельно подтвердить выбор модели, ответ в исходном ZCode чате и Stop; он не требует входа в аккаунт ZCode и не должен записывать секреты.
+
+## Явный режим роя (SWARM, accepted product contract)
+
+| Case | Setup / Action | Требуемые assertions | Автоматизация / статус |
+| --- | --- | --- | --- |
+| SWARM-01 | Обычный Composer send без переключателя. | Нет planner request и DAG dispatch; обычный turn работает как прежде. | Core regression; pending implementation. |
+| SWARM-02/03 | Включить одноразовый режим, отправить независимые задачи; повторить с OpenCode CLI. | Accepted intent сохраняет режим; runtime планирует и реально запускает параллельные child; lifecycle row и настоящие child rows появляются из event store. | Core scripted-provider integration + Desktop `manual-review/pending`; pending implementation. |
+| SWARM-04 | Planner вернул некорректный/циклический/одноузловый план или завершился ошибкой. | До child spawn выдаётся видимый typed failure; ложного успешного ответа/dispatch нет. | Core tests; pending implementation. |
+| SWARM-05/06 | Child запускает nested DAG и читает уникальный fixture marker. | Сохраняется lineage без depth cap; подтверждены фактический child `ToolUse`/`ToolResult`, marker и итоговая связь. | Core integration с реальным RuntimeTaskRegistry; pending implementation. |
+| SWARM-07/08 | Остановить во время nested run; отдельно replay queued accepted intent. | Все descendants завершаются до root terminal; late output исключён; replay не дублирует dispatch. | Core cancellation/replay + Desktop `manual-review/pending`; pending implementation. |
+
+Пользовательский Composer и UI timeline не подменяют runtime evidence. Pending Desktop кейсы
+остаются ручной проверкой до capture/review, не являются формальными тестами и не входят в Docker suite.
 
 ## 项目与任务草稿生命周期（PD，2026-10-16）
 
