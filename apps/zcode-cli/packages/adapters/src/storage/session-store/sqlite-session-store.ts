@@ -669,6 +669,9 @@ export class SqliteSessionStore
     sessionID: SessionId;
     type?: SessionEntryType | string;
     idPrefix?: string;
+    limit?: number;
+    order?: "asc" | "desc";
+    maxDataBytes?: number;
   }): Promise<SessionEntryInfo[]> {
     return sessionEntryRepository.sessionEntries(this.db, input);
   }

@@ -46,7 +46,10 @@ import {
 } from "../../runtime-task/registry.js";
 
 const SESSION_EVENT_APPEND_SUMMARY_FLUSH_COUNT = 100;
-
+const PRISM_PROJECTION_MAX_EVENTS = 512;
+const PRISM_PROJECTION_MAX_BYTES = 8 * 1024 * 1024;
+const PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE = 512;
+const PRISM_PROJECTION_MAX_ENTRY_BYTES = 16 * 1024;
 const SUMMARY_SESSION_EVENT_TYPES = new Set<SessionEventType>([
   SessionEventType.ModelStreaming,
   SessionEventType.ModelNetworkStatus,
@@ -74,6 +77,16 @@ const PERSIST_BEFORE_EVENT_STORE_TYPES = new Set<SessionEventType>([
   SessionEventType.SubagentExecutionTerminal,
 ]);
 
+interface PrismProjectionEventEnvelope {
+  schema: "zcode.prism.event-projection.v1";
+  eventId: string;
+  eventSessionId: string;
+  eventType: string;
+  timestampMs: number;
+  turnId?: string;
+  traceId: string;
+}
+
 interface SessionEventAppendAggregate {
   eventCount: number;
   eventType: SessionEventType;
@@ -89,7 +102,7 @@ const sessionEventAppendAggregates = new WeakMap<
   AgentRuntimeInternal,
   Map<string, SessionEventAppendAggregate>
 >();
-const prismTerminalPersistenceLocks = new WeakMap<
+const prismFactPersistenceLocks = new WeakMap<
   AgentRuntimeInternal,
   Map<string, Promise<void>>
 >();
@@ -104,6 +117,294 @@ export function createEvent(
     turnId: traceContext.turnId,
     traceId: traceContext.traceId,
   });
+}
+export async function restorePrismProjectionEvents(
+  this: AgentRuntimeInternal,
+  traceContext: TraceContext,
+  branchGeneration: number,
+): Promise<void> {
+  try {
+    await restorePrismProjectionEventsFromStore.call(this, traceContext, branchGeneration);
+  } catch (error) {
+    this.logger?.warn("PRISM event projection recovery could not read durable entries", {
+      ...traceContextToLogContext(traceContext),
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      event: "session.event.prism_projection_read_failed",
+      module: "core.runtime",
+      status: "failed",
+    });
+  }
+}
+
+async function restorePrismProjectionEventsFromStore(
+  this: AgentRuntimeInternal,
+  traceContext: TraceContext,
+  branchGeneration: number,
+): Promise<void> {
+  const store = this.sessionStore;
+  if (!store?.sessionEntries) return;
+
+  const [contractEntries, receiptEntries, terminalEntries] = await Promise.all([
+    store.sessionEntries({
+      sessionID: this.sessionId,
+      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      limit: PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE,
+      order: "desc",
+      maxDataBytes: PRISM_PROJECTION_MAX_ENTRY_BYTES,
+    }),
+    store.sessionEntries({
+      sessionID: this.sessionId,
+      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      limit: PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE,
+      order: "desc",
+      maxDataBytes: PRISM_PROJECTION_MAX_ENTRY_BYTES,
+    }),
+    store.sessionEntries({
+      sessionID: this.sessionId,
+      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      limit: PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE,
+      order: "desc",
+      maxDataBytes: PRISM_PROJECTION_MAX_ENTRY_BYTES,
+    }),
+  ]);
+
+  const contractsByAttempt = new Map<string, PrismTaskContract>();
+  const terminalsByAttempt = new Set<string>();
+  const candidates: Array<{ entryId: string; event: SessionEvent }> = [];
+
+  for (const entry of contractEntries) {
+    const data = isRecord(entry.data) ? entry.data : undefined;
+    const contract = data?.contract;
+    const envelope = parsePrismProjectionEventEnvelope(data?.projectionEvent);
+    if (
+      !isValidPrismTaskContract(contract) ||
+      contract.branchGeneration !== branchGeneration ||
+      entry.id !== prismTaskContractEntryId(this.sessionId, contract) ||
+      !envelopeMatchesEntry(
+        envelope,
+        entry,
+        this.sessionId,
+        SessionEventType.PrismTaskContractDeclared,
+      )
+    ) {
+      continue;
+    }
+    contractsByAttempt.set(prismAttemptKey(contract), contract);
+    candidates.push({
+      entryId: entry.id,
+      event: restorePrismProjectionEvent(envelope, SessionEventType.PrismTaskContractDeclared, {
+        contract,
+      }),
+    });
+  }
+
+  for (const entry of terminalEntries) {
+    const data = isRecord(entry.data) ? entry.data : undefined;
+    const terminal = restorePrismTerminalPayload(data?.terminal);
+    const envelope = parsePrismProjectionEventEnvelope(data?.projectionEvent);
+    if (
+      !terminal ||
+      terminal.branchGeneration !== branchGeneration ||
+      terminal.terminalId !==
+        `${terminal.rootRunId}/${terminal.taskId}/${terminal.branchGeneration}/${terminal.attemptId}` ||
+      entry.id !== prismTaskTerminalEntryId(this.sessionId, terminal) ||
+      !envelopeMatchesEntry(
+        envelope,
+        entry,
+        this.sessionId,
+        SessionEventType.SubagentExecutionTerminal,
+      )
+    ) {
+      continue;
+    }
+    const contract = contractsByAttempt.get(prismAttemptKey(terminal));
+    if (
+      !contract ||
+      contract.parentTaskId !== terminal.parentTaskId ||
+      terminal.childSessionId.length === 0
+    ) {
+      continue;
+    }
+    terminalsByAttempt.add(prismAttemptKey(terminal));
+    candidates.push({
+      entryId: entry.id,
+      event: restorePrismProjectionEvent(envelope, SessionEventType.SubagentExecutionTerminal, {
+        ...terminal,
+      }),
+    });
+  }
+
+  for (const entry of receiptEntries) {
+    const data = isRecord(entry.data) ? entry.data : undefined;
+    const receipt = data?.receipt;
+    const envelope = parsePrismProjectionEventEnvelope(data?.projectionEvent);
+    if (
+      !isValidPrismHostEvidenceReceipt(receipt) ||
+      receipt.branchGeneration !== branchGeneration ||
+      entry.id !== prismEvidenceReceiptEntryId(this.sessionId, receipt) ||
+      !envelopeMatchesEntry(
+        envelope,
+        entry,
+        this.sessionId,
+        SessionEventType.PrismEvidenceReceiptObserved,
+      )
+    ) {
+      continue;
+    }
+    const key = prismAttemptKey(receipt);
+    const contract = contractsByAttempt.get(key);
+    const terminal = terminalEntries
+      .map((candidate) => {
+        const candidateData = isRecord(candidate.data) ? candidate.data : undefined;
+        return restorePrismTerminalPayload(candidateData?.terminal);
+      })
+      .find(
+        (candidate) =>
+          candidate &&
+          candidate.branchGeneration === branchGeneration &&
+          prismAttemptKey(candidate) === key &&
+          candidate.childSessionId === receipt.artifact.evidence.childSessionId,
+      );
+    const criterion = contract?.criteria.find(
+      (candidate) =>
+        candidate.id === receipt.criterionId &&
+        candidate.evaluatorId === receipt.evaluatorId &&
+        candidate.evaluatorVersion === receipt.evaluatorVersion,
+    );
+    if (
+      !contract ||
+      !terminal ||
+      !terminalsByAttempt.has(key) ||
+      contract.contractSha256 !== receipt.contractSha256 ||
+      contract.parentTaskId !== receipt.parentTaskId ||
+      !criterion ||
+      !isPrismReceiptForCriterion(receipt, criterion)
+    ) {
+      continue;
+    }
+    candidates.push({
+      entryId: entry.id,
+      event: restorePrismProjectionEvent(envelope, SessionEventType.PrismEvidenceReceiptObserved, {
+        receipt,
+      }),
+    });
+  }
+
+  const groups = new Map<
+    string,
+    { events: Array<{ entryId: string; event: SessionEvent }>; terminalTimestampMs?: number }
+  >();
+  for (const candidate of candidates) {
+    const attemptKey = prismAttemptKeyFromEvent(candidate.event);
+    if (!attemptKey) continue;
+    const group = groups.get(attemptKey) ?? { events: [] };
+    group.events.push(candidate);
+    if (candidate.event.type === SessionEventType.SubagentExecutionTerminal) {
+      group.terminalTimestampMs = candidate.event.timestamp.getTime();
+    }
+    groups.set(attemptKey, group);
+  }
+  const completeGroups = [...groups.values()]
+    .filter(
+      (group) =>
+        group.terminalTimestampMs !== undefined &&
+        group.events.some(({ event }) => event.type === SessionEventType.PrismTaskContractDeclared),
+    )
+    .sort(
+      (left, right) =>
+        right.terminalTimestampMs! - left.terminalTimestampMs! ||
+        left.events[0]!.entryId.localeCompare(right.events[0]!.entryId),
+    );
+  const selected: Array<{ entryId: string; event: SessionEvent }> = [];
+  let selectedBytes = 0;
+  let skippedGroupCount = 0;
+  for (const group of completeGroups) {
+    const orderedGroupEvents = [...group.events].sort(
+      (left, right) =>
+        left.event.timestamp.getTime() - right.event.timestamp.getTime() ||
+        prismProjectionEventOrder(left.event.type) - prismProjectionEventOrder(right.event.type) ||
+        left.entryId.localeCompare(right.entryId),
+    );
+    const groupBytes = orderedGroupEvents.reduce(
+      (total, candidate) => total + Buffer.byteLength(JSON.stringify(candidate.event), "utf8"),
+      0,
+    );
+    if (
+      selected.length + orderedGroupEvents.length > PRISM_PROJECTION_MAX_EVENTS ||
+      selectedBytes + groupBytes > PRISM_PROJECTION_MAX_BYTES
+    ) {
+      skippedGroupCount += 1;
+      continue;
+    }
+    selected.push(...orderedGroupEvents);
+    selectedBytes += groupBytes;
+  }
+
+  // 只保留完整 attempt group；SessionEntry 和历史 acceptance 不受内存 projection 上限影响。
+  selected.sort(
+    (left, right) =>
+      left.event.timestamp.getTime() - right.event.timestamp.getTime() ||
+      prismProjectionEventOrder(left.event.type) - prismProjectionEventOrder(right.event.type) ||
+      left.entryId.localeCompare(right.entryId),
+  );
+  let appendFailureCount = 0;
+  let firstAppendFailure:
+    | { entryId: string; errorName: string; eventId: string; eventType: SessionEvent["type"] }
+    | undefined;
+  for (const { entryId, event } of selected) {
+    try {
+      const existing = (await this.eventStore.getEvents(event.sessionId)).find(
+        (candidate) => candidate.id === event.id,
+      );
+      if (existing) {
+        if (!samePrismProjectionEvent(existing, event)) {
+          this.logger?.warn("Conflicting PRISM event projection was not replaced", {
+            ...traceContextToLogContext(traceContext),
+            event: "session.event.prism_projection_conflict",
+            module: "core.runtime",
+            sessionEventType: event.type,
+            sessionEventId: event.id,
+            sessionEntryId: entryId,
+            status: "failed",
+          });
+        }
+        continue;
+      }
+      await this.eventStore.append(event);
+    } catch (error) {
+      appendFailureCount += 1;
+      firstAppendFailure ??= {
+        entryId,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        eventId: event.id,
+        eventType: event.type,
+      };
+    }
+  }
+  if (appendFailureCount > 0) {
+    this.logger?.warn("PRISM event projection recovery could not append some events", {
+      ...traceContextToLogContext(traceContext),
+      ...firstAppendFailure,
+      event: "session.event.prism_projection_append_failed",
+      module: "core.runtime",
+      appendFailureCount,
+      selectedEventCount: selected.length,
+      status: "failed",
+    });
+  }
+  if (skippedGroupCount > 0) {
+    this.logger?.warn("PRISM event projection recovery reached its memory budget", {
+      ...traceContextToLogContext(traceContext),
+      event: "session.event.prism_projection_budget_reached",
+      module: "core.runtime",
+      maxEventCount: PRISM_PROJECTION_MAX_EVENTS,
+      maxPayloadBytes: PRISM_PROJECTION_MAX_BYTES,
+      skippedGroupCount,
+      selectedEventCount: selected.length,
+      selectedPayloadBytes: selectedBytes,
+      status: "completed",
+    });
+  }
 }
 
 export async function appendEvent(
@@ -131,11 +432,36 @@ export async function appendEvent(
   let phase = persistBeforeEventStore ? "session_event.persist_durable" : "event_store.append";
   try {
     if (persistBeforeEventStore) {
-      await persistDurableSessionEvent.call(this, event, traceContext);
+      const canonicalEvent = await persistDurableSessionEvent.call(this, event, traceContext);
+      if (canonicalEvent) event = canonicalEvent;
       prismDurableCommitCompleted = true;
     }
     phase = "event_store.append";
-    const storedEvent = await this.eventStore.append(event);
+    let storedEvent: SessionEvent;
+    if (persistBeforeEventStore) {
+      let appended = false;
+      storedEvent = await serializePrismFactPersistence.call(
+        this,
+        `event:${event.id}`,
+        async () => {
+          const existing = (await this.eventStore.getEvents(event.sessionId)).find(
+            (candidate) => candidate.id === event.id,
+          );
+          if (existing) {
+            if (!samePrismProjectionEvent(existing, event)) {
+              throw new Error("Conflicting PRISM event-store projection");
+            }
+            return existing;
+          }
+          const appendedEvent = await this.eventStore.append(event);
+          appended = true;
+          return appendedEvent;
+        },
+      );
+      if (!appended) return;
+    } else {
+      storedEvent = await this.eventStore.append(event);
+    }
     if (!persistBeforeEventStore) {
       phase = "session_event.persist_durable";
       await persistDurableSessionEvent.call(this, storedEvent, traceContext);
@@ -317,20 +643,17 @@ async function persistDurableSessionEvent(
   this: AgentRuntimeInternal,
   event: SessionEvent,
   traceContext: TraceContext,
-): Promise<void> {
+): Promise<SessionEvent | undefined> {
   if (event.type === SessionEventType.PrismTaskContractDeclared) {
-    await persistPrismTaskContract.call(this, event, traceContext);
-    return;
+    return persistPrismTaskContract.call(this, event, traceContext);
   }
 
   if (event.type === SessionEventType.PrismEvidenceReceiptObserved) {
-    await persistPrismEvidenceReceipt.call(this, event, traceContext);
-    return;
+    return persistPrismEvidenceReceipt.call(this, event, traceContext);
   }
 
   if (event.type === SessionEventType.SubagentExecutionTerminal) {
-    await persistSubagentExecutionTerminal.call(this, event, traceContext);
-    return;
+    return persistSubagentExecutionTerminal.call(this, event, traceContext);
   }
 
   if (!this.sessionStore) return;
@@ -576,11 +899,13 @@ async function persistPrismTaskContract(
   this: AgentRuntimeInternal,
   event: SessionEvent,
   traceContext: TraceContext,
-): Promise<void> {
+): Promise<SessionEvent> {
   const store = this.sessionStore;
   if (!store?.saveSessionEntry || !store.sessionEntries) {
     throw new Error("PRISM task contract persistence is unavailable");
   }
+  const readSessionEntries = store.sessionEntries.bind(store);
+  const saveSessionEntry = store.saveSessionEntry.bind(store);
   const contract = (event.payload as PrismTaskContractDeclaredPayload | undefined)?.contract;
   if (!isValidPrismTaskContract(contract)) {
     throw new Error("Invalid PRISM task contract");
@@ -592,55 +917,61 @@ async function persistPrismTaskContract(
   }
 
   const entryId = prismTaskContractEntryId(lineage.rootSessionId, contract);
-  const entries = await store.sessionEntries({
-    sessionID: lineage.rootSessionId,
-    type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  });
-  const existing = entries.find((entry) => entry.id === entryId);
-  if (existing) {
-    const existingContract = isRecord(existing.data) ? existing.data.contract : undefined;
-    if (
-      isValidPrismTaskContract(existingContract) &&
-      existingContract.contractSha256 === contract.contractSha256
-    ) {
-      return;
-    }
-    // 原因：SessionEntry upsert 会静默覆盖同一个 id；冲突时必须 fail-closed 才能保持 append-only。
-    throw new Error("Conflicting PRISM task contract receipt");
-  }
-
-  const timestamp = event.timestamp.getTime();
-  try {
-    await store.saveSessionEntry({
-      id: entryId,
+  return serializePrismFactPersistence.call(this, entryId, async () => {
+    const entries = await readSessionEntries({
       sessionID: lineage.rootSessionId,
       type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
-      touchSession: false,
-      time: { created: timestamp, updated: timestamp },
-      data: { contract },
     });
-  } catch (error) {
-    this.logger?.warn("Failed to persist PRISM task contract", {
-      ...traceContextToLogContext(traceContext),
-      errorMessage: error instanceof Error ? error.message : String(error),
-      event: "session_entry.prism_task_contract.persist_failed",
-      module: "core.runtime",
-      taskId: contract.taskId,
-      status: "failed",
-    });
-    throw error;
-  }
+    const existing = entries.find((entry) => entry.id === entryId);
+    if (existing) {
+      const existingContract = isRecord(existing.data) ? existing.data.contract : undefined;
+      if (
+        isValidPrismTaskContract(existingContract) &&
+        existingContract.contractSha256 === contract.contractSha256
+      ) {
+        const envelope = await ensurePrismProjectionEnvelope.call(this, existing, event);
+        return restorePrismProjectionEvent(envelope, event.type, { contract: existingContract });
+      }
+      // 原因：SessionEntry upsert 会静默覆盖同一个 id；冲突时必须 fail-closed 才能保持 append-only。
+      throw new Error("Conflicting PRISM task contract receipt");
+    }
+
+    const timestamp = event.timestamp.getTime();
+    try {
+      await saveSessionEntry({
+        id: entryId,
+        sessionID: lineage.rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        touchSession: false,
+        time: { created: timestamp, updated: timestamp },
+        data: { contract, projectionEvent: createPrismProjectionEventEnvelope(event) },
+      });
+    } catch (error) {
+      this.logger?.warn("Failed to persist PRISM task contract", {
+        ...traceContextToLogContext(traceContext),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "session_entry.prism_task_contract.persist_failed",
+        module: "core.runtime",
+        taskId: contract.taskId,
+        status: "failed",
+      });
+      throw error;
+    }
+    return event;
+  });
 }
 
 async function persistPrismEvidenceReceipt(
   this: AgentRuntimeInternal,
   event: SessionEvent,
   traceContext: TraceContext,
-): Promise<void> {
+): Promise<SessionEvent> {
   const store = this.sessionStore;
   if (!store?.saveSessionEntry || !store.sessionEntries) {
     throw new Error("PRISM evidence persistence is unavailable");
   }
+  const readSessionEntries = store.sessionEntries.bind(store);
+  const saveSessionEntry = store.saveSessionEntry.bind(store);
   const receipt = (event.payload as PrismEvidenceReceiptObservedPayload | undefined)?.receipt;
   if (!isValidPrismHostEvidenceReceipt(receipt)) {
     throw new Error("Invalid PRISM Host evidence receipt");
@@ -655,7 +986,7 @@ async function persistPrismEvidenceReceipt(
     throw new Error("PRISM evidence receipt child session does not match the registered task");
   }
 
-  const contractEntries = await store.sessionEntries({
+  const contractEntries = await readSessionEntries({
     sessionID: lineage.rootSessionId,
     type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
   });
@@ -684,52 +1015,56 @@ async function persistPrismEvidenceReceipt(
   }
 
   const entryId = prismEvidenceReceiptEntryId(lineage.rootSessionId, receipt);
-  const entries = await store.sessionEntries({
-    sessionID: lineage.rootSessionId,
-    type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  });
-  const existing = entries.find((entry) => entry.id === entryId);
-  if (existing) {
-    const existingReceipt = isRecord(existing.data) ? existing.data.receipt : undefined;
-    if (
-      isValidPrismHostEvidenceReceipt(existingReceipt) &&
-      JSON.stringify(existingReceipt) === JSON.stringify(receipt)
-    ) {
-      return;
-    }
-    // 原因：同一个 verifier invocation 的结果不可被后续 upsert 改写。
-    throw new Error("Conflicting PRISM evidence receipt");
-  }
-
-  const timestamp = event.timestamp.getTime();
-  try {
-    await store.saveSessionEntry({
-      id: entryId,
+  return serializePrismFactPersistence.call(this, entryId, async () => {
+    const entries = await readSessionEntries({
       sessionID: lineage.rootSessionId,
       type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-      touchSession: false,
-      time: { created: timestamp, updated: timestamp },
-      data: { receipt },
     });
-  } catch (error) {
-    this.logger?.warn("Failed to persist PRISM evidence receipt", {
-      ...traceContextToLogContext(traceContext),
-      errorMessage: error instanceof Error ? error.message : String(error),
-      event: "session_entry.prism_evidence_receipt.persist_failed",
-      module: "core.runtime",
-      receiptId: receipt.receiptId,
-      status: "failed",
-      taskId: receipt.taskId,
-    });
-    throw error;
-  }
+    const existing = entries.find((entry) => entry.id === entryId);
+    if (existing) {
+      const existingReceipt = isRecord(existing.data) ? existing.data.receipt : undefined;
+      if (
+        isValidPrismHostEvidenceReceipt(existingReceipt) &&
+        JSON.stringify(existingReceipt) === JSON.stringify(receipt)
+      ) {
+        const envelope = await ensurePrismProjectionEnvelope.call(this, existing, event);
+        return restorePrismProjectionEvent(envelope, event.type, { receipt: existingReceipt });
+      }
+      // 原因：同一个 verifier invocation 的结果不可被后续 upsert 改写。
+      throw new Error("Conflicting PRISM evidence receipt");
+    }
+
+    const timestamp = event.timestamp.getTime();
+    try {
+      await saveSessionEntry({
+        id: entryId,
+        sessionID: lineage.rootSessionId,
+        type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+        touchSession: false,
+        time: { created: timestamp, updated: timestamp },
+        data: { receipt, projectionEvent: createPrismProjectionEventEnvelope(event) },
+      });
+    } catch (error) {
+      this.logger?.warn("Failed to persist PRISM evidence receipt", {
+        ...traceContextToLogContext(traceContext),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "session_entry.prism_evidence_receipt.persist_failed",
+        module: "core.runtime",
+        receiptId: receipt.receiptId,
+        status: "failed",
+        taskId: receipt.taskId,
+      });
+      throw error;
+    }
+    return event;
+  });
 }
 
 async function persistSubagentExecutionTerminal(
   this: AgentRuntimeInternal,
   event: SessionEvent,
   traceContext: TraceContext,
-): Promise<void> {
+): Promise<SessionEvent> {
   const store = this.sessionStore;
   if (!store?.saveSessionEntry || !store.sessionEntries) {
     throw new Error("PRISM terminal lifecycle persistence is unavailable");
@@ -779,7 +1114,7 @@ async function persistSubagentExecutionTerminal(
   }
 
   const entryId = prismTaskTerminalEntryId(lineage.rootSessionId, payload);
-  await serializePrismTerminalPersistence.call(this, entryId, async () => {
+  return serializePrismFactPersistence.call(this, entryId, async () => {
     const entries = await readSessionEntries({
       sessionID: lineage.rootSessionId,
       type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
@@ -787,7 +1122,12 @@ async function persistSubagentExecutionTerminal(
     const existing = entries.find((entry) => entry.id === entryId);
     if (existing) {
       const existingPayload = isRecord(existing.data) ? existing.data.terminal : undefined;
-      if (JSON.stringify(existingPayload) === JSON.stringify(payload)) return;
+      if (JSON.stringify(existingPayload) === JSON.stringify(payload)) {
+        const canonicalPayload = restorePrismTerminalPayload(existingPayload);
+        if (!canonicalPayload) throw new Error("Malformed PRISM terminal lifecycle projection");
+        const envelope = await ensurePrismProjectionEnvelope.call(this, existing, event);
+        return restorePrismProjectionEvent(envelope, event.type, canonicalPayload);
+      }
       // 原因：同一稳定 terminal id 只允许重复写入同一个终态快照。
       throw new Error("Conflicting PRISM terminal lifecycle projection");
     }
@@ -800,7 +1140,7 @@ async function persistSubagentExecutionTerminal(
         type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
         touchSession: false,
         time: { created: timestamp, updated: timestamp },
-        data: { terminal: payload },
+        data: { terminal: payload, projectionEvent: createPrismProjectionEventEnvelope(event) },
       });
     } catch (error) {
       this.logger?.warn("Failed to persist PRISM terminal lifecycle", {
@@ -814,18 +1154,19 @@ async function persistSubagentExecutionTerminal(
       });
       throw error;
     }
+    return event;
   });
 }
 
-async function serializePrismTerminalPersistence(
+async function serializePrismFactPersistence(
   this: AgentRuntimeInternal,
   key: string,
-  operation: () => Promise<void>,
-): Promise<void> {
-  let locks = prismTerminalPersistenceLocks.get(this);
+  operation: () => Promise<SessionEvent>,
+): Promise<SessionEvent> {
+  let locks = prismFactPersistenceLocks.get(this);
   if (!locks) {
     locks = new Map();
-    prismTerminalPersistenceLocks.set(this, locks);
+    prismFactPersistenceLocks.set(this, locks);
   }
   const previous = locks.get(key);
   let release!: () => void;
@@ -835,7 +1176,7 @@ async function serializePrismTerminalPersistence(
   locks.set(key, current);
   await previous;
   try {
-    await operation();
+    return await operation();
   } finally {
     release();
     if (locks.get(key) === current) locks.delete(key);
@@ -923,6 +1264,226 @@ function prismTaskTerminalEntryId(
   terminal: Pick<SubagentExecutionTerminalPayload, "terminalId">,
 ): string {
   return `prism-task-terminal:${rootSessionId}:${terminal.terminalId}`;
+}
+
+export function createPrismProjectionEventEnvelope(
+  event: SessionEvent,
+): PrismProjectionEventEnvelope {
+  return {
+    schema: "zcode.prism.event-projection.v1",
+    eventId: event.id,
+    eventSessionId: event.sessionId,
+    eventType: event.type,
+    timestampMs: event.timestamp.getTime(),
+    ...(event.turnId ? { turnId: event.turnId } : {}),
+    // SessionEvent 契约要求 traceId；投影 envelope 同样必须保留它供冷启动校验。
+    traceId: event.traceId,
+  };
+}
+
+export async function ensurePrismProjectionEnvelope(
+  this: AgentRuntimeInternal,
+  entry: {
+    id: string;
+    sessionID: SessionId;
+    type: string;
+    touchSession?: boolean;
+    time: { created: number; updated: number };
+    data: unknown;
+  },
+  event: SessionEvent,
+): Promise<PrismProjectionEventEnvelope> {
+  const store = this.sessionStore;
+  if (!store?.saveSessionEntry) {
+    throw new Error("PRISM projection envelope storage is unavailable");
+  }
+  const data = isRecord(entry.data) ? entry.data : undefined;
+  if (!data) throw new Error("Malformed PRISM durable entry data");
+  const existingEnvelope = parsePrismProjectionEventEnvelope(data.projectionEvent);
+  if (existingEnvelope) {
+    if (!envelopeMatchesEntry(existingEnvelope, entry, entry.sessionID, event.type)) {
+      throw new Error("Conflicting PRISM projection event envelope");
+    }
+    return existingEnvelope;
+  }
+  if (data.projectionEvent !== undefined) {
+    throw new Error("Malformed PRISM projection event envelope");
+  }
+
+  // 原因：旧版事实的创建时间是唯一可证明的持久顺序；新 envelope 采用它，确保 cold-resume 校验一致。
+  if (!Number.isFinite(entry.time.created)) {
+    throw new Error("Malformed PRISM durable entry timestamp");
+  }
+  const envelope = {
+    ...createPrismProjectionEventEnvelope(event),
+    timestampMs: entry.time.created,
+  };
+  await store.saveSessionEntry({
+    ...entry,
+    data: { ...data, projectionEvent: envelope },
+    time: { ...entry.time, updated: Date.now() },
+  });
+  return envelope;
+}
+
+function parsePrismProjectionEventEnvelope(
+  value: unknown,
+): PrismProjectionEventEnvelope | undefined {
+  if (!isRecord(value) || value.schema !== "zcode.prism.event-projection.v1") return undefined;
+  if (
+    typeof value.eventId !== "string" ||
+    value.eventId.length === 0 ||
+    typeof value.eventSessionId !== "string" ||
+    value.eventSessionId.length === 0 ||
+    typeof value.eventType !== "string" ||
+    !Number.isSafeInteger(value.timestampMs) ||
+    typeof value.timestampMs !== "number" ||
+    typeof value.traceId !== "string" ||
+    value.traceId.length === 0 ||
+    (value.turnId !== undefined && typeof value.turnId !== "string")
+  ) {
+    return undefined;
+  }
+  return value as unknown as PrismProjectionEventEnvelope;
+}
+
+function envelopeMatchesEntry(
+  envelope: PrismProjectionEventEnvelope | undefined,
+  entry: { time: { created: number }; sessionID: SessionId },
+  expectedSessionId: SessionId,
+  expectedType: SessionEvent["type"],
+): envelope is PrismProjectionEventEnvelope {
+  return Boolean(
+    envelope &&
+    entry.sessionID === expectedSessionId &&
+    envelope.eventId.length <= 256 &&
+    envelope.eventSessionId.length <= 256 &&
+    envelope.eventSessionId === expectedSessionId &&
+    envelope.eventType === expectedType &&
+    envelope.traceId.length <= 256 &&
+    (envelope.turnId === undefined ||
+      (envelope.turnId.length > 0 && envelope.turnId.length <= 256)) &&
+    envelope.timestampMs === entry.time.created &&
+    Number.isFinite(new Date(envelope.timestampMs).getTime()),
+  );
+}
+
+function restorePrismProjectionEvent(
+  envelope: PrismProjectionEventEnvelope,
+  type: SessionEvent["type"],
+  payload: unknown,
+): SessionEvent {
+  return {
+    id: envelope.eventId as SessionEvent["id"],
+    sessionId: envelope.eventSessionId as SessionId,
+    turnId: envelope.turnId as SessionEvent["turnId"],
+    type,
+    timestamp: new Date(envelope.timestampMs),
+    traceId: envelope.traceId as SessionEvent["traceId"],
+    sequenceNumber: 0,
+    payload,
+  };
+}
+
+function restorePrismTerminalPayload(value: unknown): SubagentExecutionTerminalPayload | undefined {
+  if (!isRecord(value)) return undefined;
+  const observedAt =
+    value.observedAt instanceof Date
+      ? value.observedAt
+      : typeof value.observedAt === "string"
+        ? new Date(value.observedAt)
+        : undefined;
+  if (
+    value.schema !== "zcode.prism.subagent-terminal.v3" ||
+    typeof value.terminalId !== "string" ||
+    typeof value.rootRunId !== "string" ||
+    typeof value.taskId !== "string" ||
+    typeof value.attemptId !== "string" ||
+    typeof value.branchGeneration !== "number" ||
+    !Number.isSafeInteger(value.branchGeneration) ||
+    typeof value.childSessionId !== "string" ||
+    typeof value.childStarted !== "boolean" ||
+    !["completed", "failed", "cancelled", "killed", "timed_out"].includes(
+      String(value.terminalStatus),
+    ) ||
+    value.provenance !== "runtime_lifecycle" ||
+    !["unknown", "verified", "rejected"].includes(String(value.acceptanceStatus)) ||
+    !observedAt ||
+    !Number.isFinite(observedAt.getTime())
+  ) {
+    return undefined;
+  }
+  return { ...value, observedAt } as unknown as SubagentExecutionTerminalPayload;
+}
+
+function prismAttemptKey(value: { rootRunId: string; taskId: string; attemptId: string }): string {
+  return JSON.stringify([value.rootRunId, value.taskId, value.attemptId]);
+}
+
+function prismAttemptKeyFromEvent(event: SessionEvent): string | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  if (event.type === SessionEventType.PrismTaskContractDeclared) {
+    const contract = isRecord(payload?.contract) ? payload.contract : undefined;
+    return typeof contract?.rootRunId === "string" &&
+      typeof contract.taskId === "string" &&
+      typeof contract.attemptId === "string"
+      ? prismAttemptKey({
+          rootRunId: contract.rootRunId,
+          taskId: contract.taskId,
+          attemptId: contract.attemptId,
+        })
+      : undefined;
+  }
+  if (event.type === SessionEventType.PrismEvidenceReceiptObserved) {
+    const receipt = isRecord(payload?.receipt) ? payload.receipt : undefined;
+    return typeof receipt?.rootRunId === "string" &&
+      typeof receipt.taskId === "string" &&
+      typeof receipt.attemptId === "string"
+      ? prismAttemptKey({
+          rootRunId: receipt.rootRunId,
+          taskId: receipt.taskId,
+          attemptId: receipt.attemptId,
+        })
+      : undefined;
+  }
+  if (event.type === SessionEventType.SubagentExecutionTerminal) {
+    const terminal = payload;
+    return typeof terminal?.rootRunId === "string" &&
+      typeof terminal.taskId === "string" &&
+      typeof terminal.attemptId === "string"
+      ? prismAttemptKey({
+          rootRunId: terminal.rootRunId,
+          taskId: terminal.taskId,
+          attemptId: terminal.attemptId,
+        })
+      : undefined;
+  }
+  return undefined;
+}
+
+function prismProjectionEventOrder(type: SessionEvent["type"]): number {
+  switch (type) {
+    case SessionEventType.PrismTaskContractDeclared:
+      return 0;
+    case SessionEventType.PrismEvidenceReceiptObserved:
+      return 1;
+    case SessionEventType.SubagentExecutionTerminal:
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function samePrismProjectionEvent(left: SessionEvent, right: SessionEvent): boolean {
+  return (
+    left.id === right.id &&
+    left.sessionId === right.sessionId &&
+    left.type === right.type &&
+    left.timestamp.getTime() === right.timestamp.getTime() &&
+    left.turnId === right.turnId &&
+    left.traceId === right.traceId &&
+    JSON.stringify(left.payload) === JSON.stringify(right.payload)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

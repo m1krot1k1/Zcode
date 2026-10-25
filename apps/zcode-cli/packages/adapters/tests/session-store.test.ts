@@ -1173,6 +1173,24 @@ describe("SQLite session store", () => {
           time: { created: entryOnlyTimestamp - 1, updated: entryOnlyTimestamp },
         },
       ]);
+      await expect(
+        store.sessionEntries({
+          sessionID,
+          type: SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
+          limit: 1,
+          order: "desc",
+        }),
+      ).resolves.toMatchObject([{ id: "entry_later" }]);
+      await expect(
+        store.sessionEntries({
+          sessionID,
+          type: SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
+          maxDataBytes: 1,
+        }),
+      ).resolves.toEqual([]);
+      await expect(store.sessionEntries({ sessionID, limit: 0 })).rejects.toThrow(
+        "Session entry limit must be a positive safe integer",
+      );
       await expect(store.getSession(sessionID)).resolves.toMatchObject({
         time: { updated: defaultTouchTimestamp },
       });
@@ -3538,7 +3556,12 @@ describe("OpenCode delegated run outbox", () => {
           eventSequence: 4,
           expectedHostEventSequence: 2,
           hostEventSequence: 3,
-          hostEvent: { type: "tool", toolCallId: "tool-1", title: "Чтение файла", status: "completed" },
+          hostEvent: {
+            type: "tool",
+            toolCallId: "tool-1",
+            title: "Чтение файла",
+            status: "completed",
+          },
           status: "completed",
           openCodeSessionID: null,
           resultText: "Готово",

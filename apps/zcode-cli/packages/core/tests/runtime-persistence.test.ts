@@ -166,6 +166,180 @@ function registerShellSnapshotProbe(
 }
 
 describe("AgentRuntime session persistence", () => {
+  it("ограничивает восстановленную PRISM-проекцию, сохраняя полную durable-историю", async () => {
+    const rootSessionId = createSessionId("prism-projection-budget-root");
+    const turnId = createTurnId("prism-projection-budget-turn");
+    const workingDirectory = "/tmp/zcode-prism-projection-budget";
+    const store = createRecordingSessionStore();
+    await store.createSession({
+      id: rootSessionId,
+      projectID: createProjectId("prism-projection-budget"),
+      slug: "prism-projection-budget",
+      directory: workingDirectory,
+      path: workingDirectory,
+      title: "PRISM projection budget",
+      version: "test",
+    });
+
+    const fixtureCount = 257;
+    const staleBranchGeneration = 1;
+    for (let index = 0; index <= fixtureCount; index += 1) {
+      const branchGeneration = index === fixtureCount ? staleBranchGeneration : 0;
+      const rootRunId = `projection-root-${index}`;
+      const taskId = `projection-task-${index}`;
+      const attemptId = `projection-attempt-${index}`;
+      const childSessionId = createSessionId(`prism-projection-child-${index}`);
+      const timestampMs = 10_000 + index * 10;
+      const contract = createPrismTaskContract({
+        rootRunId,
+        taskId,
+        attemptId,
+        branchGeneration,
+        description: "Проверить bounded PRISM projection",
+        criteria: [
+          {
+            id: "projection-check",
+            description: "Контракт остаётся в durable SessionEntry",
+            evaluatorId: "projection-test",
+            evaluatorVersion: "1",
+            check: {
+              kind: "bash_exit_code",
+              commandSha256: hashCommand("true"),
+              expectedExitCode: 0,
+            },
+          },
+        ],
+      });
+      const contractEvent = createSessionEvent(
+        SessionEventType.PrismTaskContractDeclared,
+        rootSessionId,
+        { contract },
+        { turnId, traceId: "prism-projection-budget-trace" },
+      );
+      const contractId = `prism-task-contract:${rootSessionId}:${rootRunId}:${taskId}:${attemptId}`;
+      await store.saveSessionEntry!({
+        id: contractId,
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        touchSession: false,
+        time: { created: timestampMs, updated: timestampMs },
+        data: {
+          contract,
+          projectionEvent: {
+            schema: "zcode.prism.event-projection.v1",
+            eventId: contractEvent.id,
+            eventSessionId: rootSessionId,
+            eventType: contractEvent.type,
+            timestampMs,
+            turnId,
+            traceId: "prism-projection-budget-trace",
+          },
+        },
+      });
+
+      const terminalId = `${rootRunId}/${taskId}/${branchGeneration}/${attemptId}`;
+      const terminal = {
+        schema: "zcode.prism.subagent-terminal.v3" as const,
+        terminalId,
+        rootRunId,
+        taskId,
+        attemptId,
+        branchGeneration,
+        childSessionId,
+        childStarted: true,
+        terminalStatus: "completed" as const,
+        provenance: "runtime_lifecycle" as const,
+        acceptanceStatus: "unknown" as const,
+        observedAt: new Date(timestampMs + 5),
+      };
+      const terminalEvent = createSessionEvent(
+        SessionEventType.SubagentExecutionTerminal,
+        rootSessionId,
+        terminal,
+        { turnId, traceId: "prism-projection-budget-trace" },
+      );
+      await store.saveSessionEntry!({
+        id: `prism-task-terminal:${rootSessionId}:${terminalId}`,
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        touchSession: false,
+        time: { created: timestampMs + 5, updated: timestampMs + 5 },
+        data: {
+          terminal,
+          projectionEvent: {
+            schema: "zcode.prism.event-projection.v1",
+            eventId: terminalEvent.id,
+            eventSessionId: rootSessionId,
+            eventType: terminalEvent.type,
+            timestampMs: timestampMs + 5,
+            turnId,
+            traceId: "prism-projection-budget-trace",
+          },
+        },
+      });
+    }
+
+    const recoveredEventStore = createTestSessionEventStore();
+    const recoveredRuntime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory },
+      {
+        eventStore: recoveredEventStore,
+        sessionStore: store,
+        runtimeTaskRegistry: new InMemoryRuntimeTaskRegistry(),
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    await recoveredRuntime.resumeFromStore({
+      traceContext: createRootTraceContext({ sessionId: rootSessionId, turnId }),
+    });
+
+    const recovered = (await recoveredEventStore.getEvents(rootSessionId)).filter(
+      ({ type }) =>
+        type === SessionEventType.PrismTaskContractDeclared ||
+        type === SessionEventType.SubagentExecutionTerminal,
+    );
+    expect(recovered).toHaveLength(512);
+    const recoveredTaskIds = new Set(
+      recovered.flatMap((event) => {
+        if (event.type === SessionEventType.PrismTaskContractDeclared) {
+          return [(event.payload as { contract: { taskId: string } }).contract.taskId];
+        }
+        return [(event.payload as { taskId: string }).taskId];
+      }),
+    );
+    expect(recoveredTaskIds.size).toBe(256);
+    expect(recoveredTaskIds).toContain(`projection-task-${fixtureCount - 1}`);
+    expect(recoveredTaskIds).not.toContain("projection-task-0");
+    expect(recoveredTaskIds).not.toContain(`projection-task-${fixtureCount}`);
+    for (const taskId of recoveredTaskIds) {
+      expect(
+        recovered.filter((event) => {
+          const eventTaskId =
+            event.type === SessionEventType.PrismTaskContractDeclared
+              ? (event.payload as { contract: { taskId: string } }).contract.taskId
+              : (event.payload as { taskId: string }).taskId;
+          return eventTaskId === taskId;
+        }),
+      ).toHaveLength(2);
+    }
+
+    // Projection budget controls only memory: durable facts, including stale-branch history,
+    // remain available to the historical acceptance reducer.
+    expect(
+      await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      }),
+    ).toHaveLength(fixtureCount + 1);
+    expect(
+      await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      }),
+    ).toHaveLength(fixtureCount + 1);
+  });
+
   it("сохраняет PRISM контракт и Host receipt в корневой session_entry", async () => {
     const rootSessionId = createSessionId("prism-session-entry-root");
     const childSessionId = createSessionId("prism-session-entry-child");
@@ -266,20 +440,78 @@ describe("AgentRuntime session persistence", () => {
           ? { terminal: event.payload }
           : event.payload;
       expect(
-        durableEntries.some(({ data }) => JSON.stringify(data) === JSON.stringify(expectedData)),
+        durableEntries.some(({ data }) => {
+          const persisted = data as Record<string, unknown>;
+          const { projectionEvent: _projectionEvent, ...fact } = persisted;
+          return JSON.stringify(fact) === JSON.stringify(expectedData);
+        }),
       ).toBe(true);
       expect(
         (await eventStore.getEventsAfter(rootSessionId, 0)).some(({ id }) => id === event.id),
       ).toBe(false);
     };
-    await appendWithProjectionFailure(
-      createSessionEvent(
+    const contractEvent = createSessionEvent(
+      SessionEventType.PrismTaskContractDeclared,
+      rootSessionId,
+      { contract },
+      { turnId, traceId: traceContext.traceId },
+    );
+    await appendWithProjectionFailure(contractEvent);
+    const contractEntryId = `prism-task-contract:${rootSessionId}:${lineage.rootRunId}:${taskId}:${lineage.attemptId}`;
+    const durableContractEntry = (
+      await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      })
+    ).find(({ id }) => id === contractEntryId);
+    if (!durableContractEntry) throw new Error("PRISM contract fixture was not persisted");
+    const { projectionEvent: _legacyEnvelope, ...legacyContractData } =
+      durableContractEntry.data as Record<string, unknown>;
+    await store.saveSessionEntry!({
+      ...durableContractEntry,
+      data: legacyContractData,
+    });
+    const duplicateContractEvent = {
+      ...createSessionEvent(
+      SessionEventType.PrismTaskContractDeclared,
+      rootSessionId,
+      { contract },
+      { turnId, traceId: "prism-contract-retry-trace" },
+      ),
+      timestamp: new Date(durableContractEntry.time.created + 1_000),
+    };
+    const concurrentContractRetry = {
+      ...createSessionEvent(
         SessionEventType.PrismTaskContractDeclared,
         rootSessionId,
         { contract },
-        { turnId, traceId: traceContext.traceId },
+        { turnId, traceId: "prism-contract-concurrent-retry-trace" },
       ),
+      timestamp: new Date(durableContractEntry.time.created + 2_000),
+    };
+    await Promise.all([
+      runtime.appendEvent(duplicateContractEvent, traceContext),
+      runtime.appendEvent(concurrentContractRetry, traceContext),
+    ]);
+    const liveContractEvents = (await eventStore.getEvents(rootSessionId)).filter(
+      ({ type }) => type === SessionEventType.PrismTaskContractDeclared,
     );
+    expect(liveContractEvents).toHaveLength(1);
+    expect(liveContractEvents[0]).toMatchObject({
+      id: duplicateContractEvent.id,
+      traceId: duplicateContractEvent.traceId,
+      timestamp: new Date(durableContractEntry.time.created),
+    });
+    const canonicalContractEntry = (
+      await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      })
+    ).find(({ id }) => id === contractEntryId);
+    expect(
+      (canonicalContractEntry?.data as { projectionEvent?: { timestampMs?: number } })
+        .projectionEvent?.timestampMs,
+    ).toBe(durableContractEntry.time.created);
 
     // Синтетический receipt здесь доказывает только persistence contract; live evaluator проверяется отдельно.
     const receipt = createPrismHostEvidenceReceipt({
@@ -343,15 +575,22 @@ describe("AgentRuntime session persistence", () => {
       ),
     ).toBe(false);
 
-    await runtime.appendEvent(
-      createSessionEvent(
-        SessionEventType.PrismEvidenceReceiptObserved,
-        rootSessionId,
-        { receipt },
-        { turnId, traceId: traceContext.traceId },
-      ),
-      traceContext,
+    const duplicateReceiptEvent = createSessionEvent(
+      SessionEventType.PrismEvidenceReceiptObserved,
+      rootSessionId,
+      { receipt },
+      { turnId, traceId: "prism-receipt-retry-trace" },
     );
+    await runtime.appendEvent(duplicateReceiptEvent, traceContext);
+    const liveReceiptEvents = (await eventStore.getEvents(rootSessionId)).filter(
+      ({ type }) => type === SessionEventType.PrismEvidenceReceiptObserved,
+    );
+    expect(liveReceiptEvents).toHaveLength(1);
+    expect(liveReceiptEvents[0]).toMatchObject({
+      id: receiptEvent.id,
+      traceId: receiptEvent.traceId,
+      timestamp: receiptEvent.timestamp,
+    });
 
     const terminalTask = registry.update(taskId, (task) => ({
       ...task,
@@ -380,6 +619,278 @@ describe("AgentRuntime session persistence", () => {
       { turnId, traceId: traceContext.traceId },
     );
     await appendWithProjectionFailure(terminalEvent);
+    const duplicateTerminalEvent = createSessionEvent(
+      SessionEventType.SubagentExecutionTerminal,
+      rootSessionId,
+      terminalPayload,
+      { turnId, traceId: "prism-terminal-retry-trace" },
+    );
+    await runtime.appendEvent(duplicateTerminalEvent, traceContext);
+    const liveTerminalEvents = (await eventStore.getEvents(rootSessionId)).filter(
+      ({ type }) => type === SessionEventType.SubagentExecutionTerminal,
+    );
+    expect(liveTerminalEvents).toHaveLength(1);
+    expect(liveTerminalEvents[0]).toMatchObject({
+      id: terminalEvent.id,
+      traceId: terminalEvent.traceId,
+      timestamp: terminalEvent.timestamp,
+    });
+
+    const legacyContract = createPrismTaskContract({
+      rootRunId: "legacy-prism-root-run",
+      taskId: "legacy-prism-task",
+      attemptId: "legacy-prism-attempt",
+      branchGeneration: 0,
+      description: "Legacy durable history without an event envelope",
+      criteria: [
+        {
+          id: "legacy-check",
+          description: "Legacy row remains historical-only",
+          evaluatorId: "test-host-verifier",
+          evaluatorVersion: "1",
+          check: {
+            kind: "bash_exit_code",
+            commandSha256: hashCommand("true"),
+            expectedExitCode: 0,
+          },
+        },
+      ],
+    });
+    await store.saveSessionEntry!({
+      id: `prism-task-contract:${rootSessionId}:legacy-prism-root-run:legacy-prism-task:legacy-prism-attempt`,
+      sessionID: rootSessionId,
+      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      touchSession: false,
+      time: { created: 126, updated: 126 },
+      data: { contract: legacyContract },
+    });
+
+    const staleReceipt = createPrismHostEvidenceReceipt({
+      ...lineage,
+      branchGeneration: lineage.branchGeneration + 1,
+      criterionId: "persisted-check",
+      contractSha256: contract.contractSha256,
+      evaluatorId: "test-host-verifier",
+      evaluatorVersion: "1",
+      verifierInvocationId: "stale-branch-invocation",
+      result: "pass",
+      artifact: {
+        uri: "zcode-artifact://tests/prism-stale-branch",
+        ...createTestPrismArtifact(hashCommand("pnpm typecheck"), childSessionId),
+      },
+      observedAt: 127,
+    });
+    const staleReceiptEvent = createSessionEvent(
+      SessionEventType.PrismEvidenceReceiptObserved,
+      rootSessionId,
+      { receipt: staleReceipt },
+      { turnId, traceId: traceContext.traceId },
+    );
+    await store.saveSessionEntry!({
+      id: `prism-evidence-receipt:${rootSessionId}:${staleReceipt.receiptId}`,
+      sessionID: rootSessionId,
+      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      touchSession: false,
+      time: { created: 127, updated: 127 },
+      data: {
+        receipt: staleReceipt,
+        projectionEvent: {
+          schema: "zcode.prism.event-projection.v1",
+          eventId: staleReceiptEvent.id,
+          eventSessionId: rootSessionId,
+          eventType: staleReceiptEvent.type,
+          timestampMs: staleReceiptEvent.timestamp.getTime(),
+          turnId,
+          traceId: traceContext.traceId,
+        },
+      },
+    });
+
+    const restoredEventStore = createTestSessionEventStore();
+    const restoredRuntime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory },
+      {
+        eventStore: restoredEventStore,
+        sessionStore: store,
+        runtimeTaskRegistry: new InMemoryRuntimeTaskRegistry(),
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    await restoredRuntime.resumeFromStore({ traceContext });
+    const recoveredPrismEvents = (await restoredEventStore.getEvents(rootSessionId)).filter(
+      (event) =>
+        event.type === SessionEventType.PrismTaskContractDeclared ||
+        event.type === SessionEventType.PrismEvidenceReceiptObserved ||
+        event.type === SessionEventType.SubagentExecutionTerminal,
+    );
+    expect(recoveredPrismEvents.map(({ type }) => type)).toEqual([
+      SessionEventType.PrismTaskContractDeclared,
+      SessionEventType.PrismEvidenceReceiptObserved,
+      SessionEventType.SubagentExecutionTerminal,
+    ]);
+    expect(recoveredPrismEvents.map(({ id }) => id)).toEqual([
+      duplicateContractEvent.id,
+      receiptEvent.id,
+      terminalEvent.id,
+    ]);
+    expect(recoveredPrismEvents.map(({ id }) => id)).not.toContain(staleReceiptEvent.id);
+    expect(
+      recoveredPrismEvents.some(
+        (event) =>
+          event.type === SessionEventType.PrismTaskContractDeclared &&
+          (event.payload as { contract?: { taskId?: string } }).contract?.taskId ===
+            "legacy-prism-task",
+      ),
+    ).toBe(false);
+    expect(
+      (
+        await store.sessionEntries!({
+          sessionID: rootSessionId,
+          type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+        })
+      ).some(
+        ({ data }) =>
+          (data as { receipt?: { receiptId?: string } }).receipt?.receiptId ===
+          staleReceipt.receiptId,
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await store.sessionEntries!({
+          sessionID: rootSessionId,
+          type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        })
+      ).some(
+        ({ data }) =>
+          (data as { contract?: { taskId?: string } }).contract?.taskId === "legacy-prism-task",
+      ),
+    ).toBe(true);
+
+    await restoredRuntime.resumeFromStore({ traceContext });
+    expect(
+      (await restoredEventStore.getEvents(rootSessionId)).filter(
+        (event) =>
+          event.type === SessionEventType.PrismTaskContractDeclared ||
+          event.type === SessionEventType.PrismEvidenceReceiptObserved ||
+          event.type === SessionEventType.SubagentExecutionTerminal,
+      ),
+    ).toHaveLength(3);
+
+    const partialRecoveryEventStore = createTestSessionEventStore();
+    const appendPartialRecoveryEvent =
+      partialRecoveryEventStore.append.bind(partialRecoveryEventStore);
+    partialRecoveryEventStore.append = async (event) => {
+      if (event.id === duplicateContractEvent.id) {
+        throw new Error("fixture cold-resume projection failure");
+      }
+      return appendPartialRecoveryEvent(event);
+    };
+    const partialRecoveryRuntime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory },
+      {
+        eventStore: partialRecoveryEventStore,
+        sessionStore: store,
+        runtimeTaskRegistry: new InMemoryRuntimeTaskRegistry(),
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    await expect(partialRecoveryRuntime.resumeFromStore({ traceContext })).resolves.toMatchObject({
+      directory: workingDirectory,
+    });
+    const partiallyRecoveredPrismEvents = (
+      await partialRecoveryEventStore.getEvents(rootSessionId)
+    ).filter(
+      (event) =>
+        event.type === SessionEventType.PrismTaskContractDeclared ||
+        event.type === SessionEventType.PrismEvidenceReceiptObserved ||
+        event.type === SessionEventType.SubagentExecutionTerminal,
+    );
+    expect(partiallyRecoveredPrismEvents.map(({ id }) => id)).toEqual([
+      receiptEvent.id,
+      terminalEvent.id,
+    ]);
+
+    const contractEntry = (
+      await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      })
+    ).find((entry) => {
+      const data = entry.data as { contract?: { taskId?: string } };
+      return data.contract?.taskId === taskId;
+    });
+    const projectionEvent = (
+      contractEntry?.data as { projectionEvent?: { eventId?: string } } | undefined
+    )?.projectionEvent;
+    if (!projectionEvent?.eventId) throw new Error("PRISM projection envelope is missing");
+    const conflictingEventStore = createTestSessionEventStore();
+    await conflictingEventStore.append({
+      ...createSessionEvent(
+        SessionEventType.TurnStarted,
+        rootSessionId,
+        { turnId },
+        { turnId, traceId: traceContext.traceId },
+      ),
+      id: projectionEvent.eventId as SessionEvent["id"],
+    });
+    const conflictingRuntime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory },
+      {
+        eventStore: conflictingEventStore,
+        sessionStore: store,
+        runtimeTaskRegistry: new InMemoryRuntimeTaskRegistry(),
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    await conflictingRuntime.resumeFromStore({ traceContext });
+    expect(
+      (await conflictingEventStore.getEvents(rootSessionId)).find(
+        ({ id }) => id === projectionEvent.eventId,
+      )?.type,
+    ).toBe(SessionEventType.TurnStarted);
+
+    const contractData = contractEntry?.data as { contract?: unknown } | undefined;
+    const mismatchedMetadataEventStore = createTestSessionEventStore();
+    const mismatchedTurnId = createTurnId("prism-projection-mismatch-turn");
+    const mismatchedTraceId = createRootTraceContext({
+      sessionId: rootSessionId,
+      turnId: mismatchedTurnId,
+    }).traceId;
+    const mismatchedMetadataEvent = createSessionEvent(
+      SessionEventType.PrismTaskContractDeclared,
+      rootSessionId,
+      { contract: contractData?.contract },
+      { turnId: mismatchedTurnId, traceId: mismatchedTraceId },
+    );
+    await mismatchedMetadataEventStore.append({
+      ...mismatchedMetadataEvent,
+      id: projectionEvent.eventId as SessionEvent["id"],
+      timestamp: new Date(contractEvent.timestamp),
+    });
+    const mismatchedMetadataRuntime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory },
+      {
+        eventStore: mismatchedMetadataEventStore,
+        sessionStore: store,
+        runtimeTaskRegistry: new InMemoryRuntimeTaskRegistry(),
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    await mismatchedMetadataRuntime.resumeFromStore({ traceContext });
+    expect(
+      (await mismatchedMetadataEventStore.getEvents(rootSessionId)).find(
+        ({ id }) => id === projectionEvent.eventId,
+      ),
+    ).toMatchObject({
+      id: projectionEvent.eventId,
+      traceId: mismatchedTraceId,
+      turnId: mismatchedTurnId,
+    });
+
     await runtime.appendEvent(terminalEvent, traceContext);
     await expect(
       runtime.appendEvent(
@@ -392,6 +903,44 @@ describe("AgentRuntime session persistence", () => {
         traceContext,
       ),
     ).rejects.toThrow("Conflicting PRISM terminal lifecycle projection");
+
+    const malformedContractEntry = (
+      await store.sessionEntries!({
+        sessionID: rootSessionId,
+        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      })
+    ).find((entry) => entry.id === contractEntry?.id);
+    if (!malformedContractEntry) throw new Error("PRISM contract entry fixture is missing");
+    const malformedContractData = malformedContractEntry.data as {
+      contract: unknown;
+      projectionEvent: Record<string, unknown>;
+    };
+    const { traceId: _discardedTraceId, ...envelopeWithoutTrace } =
+      malformedContractData.projectionEvent;
+    await store.saveSessionEntry!({
+      ...malformedContractEntry,
+      data: { ...malformedContractData, projectionEvent: envelopeWithoutTrace },
+    });
+    const malformedEnvelopeEventStore = createTestSessionEventStore();
+    const malformedEnvelopeRuntime = createTestAgentRuntime(
+      rootSessionId,
+      { mode: "build", workingDirectory },
+      {
+        eventStore: malformedEnvelopeEventStore,
+        sessionStore: store,
+        runtimeTaskRegistry: new InMemoryRuntimeTaskRegistry(),
+        modelFactory: createTestModelFactory({} as never),
+      },
+    );
+    await malformedEnvelopeRuntime.resumeFromStore({ traceContext });
+    expect(
+      (await malformedEnvelopeEventStore.getEvents(rootSessionId)).filter(
+        (event) =>
+          event.type === SessionEventType.PrismTaskContractDeclared ||
+          event.type === SessionEventType.PrismEvidenceReceiptObserved ||
+          event.type === SessionEventType.SubagentExecutionTerminal,
+      ),
+    ).toEqual([]);
 
     const retryAdmission = registry.registerSubagentTask(
       {
@@ -519,16 +1068,16 @@ describe("AgentRuntime session persistence", () => {
       sessionID: rootSessionId,
       type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
     });
-    expect(contractEntries).toHaveLength(1);
-    expect(receiptEntries).toHaveLength(1);
+    expect(contractEntries).toHaveLength(2);
+    expect(receiptEntries).toHaveLength(2);
     expect(terminalEntries).toHaveLength(3);
-    expect(contractEntries[0]?.sessionID).toBe(rootSessionId);
-    expect(receiptEntries[0]?.sessionID).toBe(rootSessionId);
+    expect(contractEntries.every((entry) => entry.sessionID === rootSessionId)).toBe(true);
+    expect(receiptEntries.every((entry) => entry.sessionID === rootSessionId)).toBe(true);
     expect(terminalEntries[0]?.sessionID).toBe(rootSessionId);
-    expect(contractEntries[0]?.data).toEqual({ contract });
-    expect(receiptEntries[0]?.data).toEqual({ receipt });
-    expect(terminalEntries[0]?.data).toEqual({ terminal: terminalPayload });
-    expect(terminalEntries[1]?.data).toEqual({
+    expect(contractEntries.some(({ data }) => data.contract === contract)).toBe(true);
+    expect(receiptEntries.some(({ data }) => data.receipt === receipt)).toBe(true);
+    expect(terminalEntries[0]?.data).toMatchObject({ terminal: terminalPayload });
+    expect(terminalEntries[1]?.data).toMatchObject({
       terminal: retryTerminalEvents[0]?.payload,
     });
     expect((terminalEntries[2]?.data as { terminal?: unknown }).terminal).toMatchObject({
@@ -539,7 +1088,13 @@ describe("AgentRuntime session persistence", () => {
     });
     expect(
       reducePrismTaskAcceptance({
-        contract: (contractEntries[0]?.data as { contract?: unknown }).contract,
+        contract: (
+          contractEntries.find(
+            (entry) =>
+              (entry.data as { contract?: { taskId?: string } }).contract?.taskId ===
+              lineage.taskId,
+          )?.data as { contract?: unknown } | undefined
+        )?.contract,
         receipts: receiptEntries.map((entry) => (entry.data as { receipt?: unknown }).receipt),
         current: lineage,
       }).status,
@@ -5334,12 +5889,19 @@ function createRecordingSessionStore(): RecordingSessionStore {
       savedSessionEntries.push(input);
     },
     async sessionEntries(input) {
-      return savedSessionEntries
+      const rows = savedSessionEntries
         .filter(
           (entry) =>
             entry.sessionID === input.sessionID && (!input.type || entry.type === input.type),
         )
+        .filter(
+          (entry) =>
+            input.maxDataBytes === undefined ||
+            Buffer.byteLength(JSON.stringify(entry.data) ?? "", "utf8") <= input.maxDataBytes,
+        )
         .sort((left, right) => left.time.created - right.time.created);
+      if (input.order === "desc") rows.reverse();
+      return input.limit === undefined ? rows : rows.slice(0, input.limit);
     },
     async readTodos(input) {
       return [...(todos.get(input.sessionID) ?? [])];

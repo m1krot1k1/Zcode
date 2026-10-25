@@ -53,22 +53,43 @@ export function saveSessionEntry(db: DatabaseSync, input: SessionEntryInfo): voi
 
 export function sessionEntries(
   db: DatabaseSync,
-  input: { sessionID: SessionId; type?: SessionEntryType | string; idPrefix?: string },
+  input: {
+    sessionID: SessionId;
+    type?: SessionEntryType | string;
+    idPrefix?: string;
+    limit?: number;
+    order?: "asc" | "desc";
+    maxDataBytes?: number;
+  },
 ): SessionEntryInfo[] {
-  const prefixFilter = input.idPrefix
-    ? " and substr(id, 1, length(?)) = ?"
-    : "";
+  if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1)) {
+    throw new Error("Session entry limit must be a positive safe integer");
+  }
+  if (
+    input.maxDataBytes !== undefined &&
+    (!Number.isSafeInteger(input.maxDataBytes) || input.maxDataBytes < 1)
+  ) {
+    throw new Error("Session entry maxDataBytes must be a positive safe integer");
+  }
+  const order = input.order === "desc" ? "desc" : "asc";
+  const prefixFilter = input.idPrefix ? " and substr(id, 1, length(?)) = ?" : "";
+  const dataSizeFilter =
+    input.maxDataBytes === undefined ? "" : " and length(cast(data as blob)) <= ?";
   const query = `
     select * from session_entry
     where session_id = ?
     ${input.type ? "and type = ?" : ""}
     ${prefixFilter}
-    order by time_created, rowid
+    ${dataSizeFilter}
+    order by time_created ${order}, rowid ${order}
+    ${input.limit === undefined ? "" : "limit ?"}
   `;
   const parameters = [
     input.sessionID,
     ...(input.type ? [input.type] : []),
     ...(input.idPrefix ? [input.idPrefix, input.idPrefix] : []),
+    ...(input.maxDataBytes === undefined ? [] : [input.maxDataBytes]),
+    ...(input.limit === undefined ? [] : [input.limit]),
   ];
   const rows = db.prepare(query).all(...parameters);
 

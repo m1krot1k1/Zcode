@@ -1248,6 +1248,11 @@ export interface SessionStorePort {
     sessionID: SessionId;
     type?: SessionEntryType | string;
     idPrefix?: string;
+    /** Optional bounded newest/oldest-first window; storage adapters enforce this in the query. */
+    limit?: number;
+    order?: "asc" | "desc";
+    /** Excludes larger serialized rows before decoding them into memory. */
+    maxDataBytes?: number;
   }): Promise<SessionEntryInfo[]>;
   // ── session_input 账本（可选方法，旧宿主可不实现）──
   /** admission：输入已被接受（排队/待注入），durable 记账。幂等（同 id 重入更新 payload）。 */

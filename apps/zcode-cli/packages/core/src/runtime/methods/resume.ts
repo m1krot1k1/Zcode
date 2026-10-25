@@ -42,6 +42,7 @@ import {
   restoreWorkspaceFileRewindEntries,
 } from "./workspace-checkpoint-persistence.js";
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
+import { restorePrismProjectionEvents } from "./events.js";
 
 export function toScheduleState(
   this: AgentRuntimeInternal,
@@ -118,6 +119,8 @@ export async function resumeFromStore(
     this.sessionId,
     this.branchGeneration,
   );
+  // PRISM SessionEntry — durable authority; recover its event projection before resuming.
+  await restorePrismProjectionEvents.call(this, traceContext, this.branchGeneration);
   if (messages.length === 0) {
     this.logger?.warn("Session resume loaded zero persisted messages", {
       ...traceContextToLogContext(traceContext),
