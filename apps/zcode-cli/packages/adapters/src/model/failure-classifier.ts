@@ -271,18 +271,6 @@ export function classifyModelFailure(
     };
   }
 
-  if (statusCode !== undefined && statusCode >= 500) {
-    return {
-      code: ModelErrorCode.ModelRequestFailed,
-      message: "Provider returned a server error.",
-      reason: ModelFailureReasonValue.ServerError,
-      retryReason: ModelRetryReasonValue.ServerError,
-      retryable: true,
-      retryAfterMs,
-      statusCode,
-    };
-  }
-
   if (isTlsFailure(code)) {
     return {
       code: ModelErrorCode.ModelRequestFailed,
@@ -343,7 +331,7 @@ export function classifyModelFailure(
   if (emptyOpenCodeResponse) {
     const localServerFailure = /Original error:\s*Unexpected server error\b/iu.test(
       unwrapped.message,
-    );
+    ) || (statusCode !== undefined && statusCode >= 500);
     return {
       code: ModelErrorCode.ModelRequestFailed,
       message: localServerFailure
@@ -352,6 +340,18 @@ export function classifyModelFailure(
       reason: ModelFailureReasonValue.Unknown,
       retryReason: ModelRetryReasonValue.NetworkError,
       retryable: false,
+      retryAfterMs,
+      statusCode,
+    };
+  }
+
+  if (statusCode !== undefined && statusCode >= 500) {
+    return {
+      code: ModelErrorCode.ModelRequestFailed,
+      message: "Provider returned a server error.",
+      reason: ModelFailureReasonValue.ServerError,
+      retryReason: ModelRetryReasonValue.ServerError,
+      retryable: true,
       retryAfterMs,
       statusCode,
     };

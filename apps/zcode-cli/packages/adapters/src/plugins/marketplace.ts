@@ -6,7 +6,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { PluginDiagnostic, PluginManifest, PluginStoreListing } from "@zcode/contracts";
 import { isOfficialMarketplaceId, ZCODE_OFFICIAL_PLUGIN_MARKETPLACE } from "@zcode/contracts";
-import { DEFAULT_PLUGIN_MARKETPLACES, sanitizeZCodeRuntimeEnv } from "@zcode/shared";
+import {
+  DEFAULT_PLUGIN_MARKETPLACES,
+  isZCodeOfficialPluginCdnUrl,
+  sanitizeZCodeRuntimeEnv,
+  ZCODE_OFFLINE_PREVIEW,
+  ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+} from "@zcode/shared";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
 import {
   appendPluginSourceCleanupError,
@@ -387,6 +393,10 @@ export async function ensureMarketplaceManifestAvailable(input: {
     (item) => item.id === input.marketplace,
   );
   if (!record) return null;
+  // Offline Preview 保留已有官方目录快照；没有缓存时不自动连接 ZCode 生产 CDN。
+  if (ZCODE_OFFLINE_PREVIEW && record.id === ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID) {
+    throw new Error("The official ZCode plugin catalog is not cached in this offline Preview build.");
+  }
   // 受信任的内部懒加载：用 known record 的规范 source 拉取，并以 record.id 作为 trustedId，
   // 使官方 id 只能由本来就是该官方 id 的记录刷新得到。
   return await addMarketplace({
@@ -661,6 +671,7 @@ async function requestMarketplaceJson(
   let currentHeaders = headers;
   let currentUrl = url;
   for (let redirectCount = 0; redirectCount <= MARKETPLACE_JSON_MAX_REDIRECTS; redirectCount += 1) {
+    assertMarketplaceUrlAvailableInBuild(currentUrl);
     const response = await client.request(
       {
         ...(currentHeaders ? { headers: currentHeaders } : {}),
@@ -692,6 +703,12 @@ async function requestMarketplaceJson(
   throw new Error(`Marketplace fetch exceeded redirect limit: ${url}`);
 }
 
+function assertMarketplaceUrlAvailableInBuild(url: string): void {
+  if (ZCODE_OFFLINE_PREVIEW && isZCodeOfficialPluginCdnUrl(url)) {
+    throw new Error("Official ZCode plugin downloads are unavailable in the offline Preview build.");
+  }
+}
+
 function isMarketplaceJsonRedirectStatus(status: number): boolean {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
@@ -712,6 +729,14 @@ export async function updateMarketplace(input: {
   const updated: KnownMarketplaceRecord[] = [];
   for (const record of selected) {
     throwIfPluginOperationAborted(input.signal);
+    // 更新全部目录时跳过官方生产 CDN；用户手动刷新单一官方目录时给出明确原因。
+    if (ZCODE_OFFLINE_PREVIEW && record.id === ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID) {
+      if (input.marketplace) {
+        throw new Error("Official ZCode plugin updates are unavailable in the offline Preview build.");
+      }
+      updated.push(record);
+      continue;
+    }
 
     // 受信任的刷新会重新拉取已知 marketplace 自带的 source；record.id 作为 trustedId，
     // 使官方 id 只能由原本就是该 id 的记录刷新得到。
@@ -1467,6 +1492,7 @@ async function resolvePluginSourceRoot(input: {
     }
     if (sourceKind === "url") {
       const url = readRequiredPluginSourceString(source, "url", "URL");
+      assertMarketplaceUrlAvailableInBuild(url);
       const sourceType = typeof source.type === "string" ? source.type : "";
       if (sourceType === "zip") {
         return resolveZipPluginSource({

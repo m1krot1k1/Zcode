@@ -173,6 +173,7 @@ const AUTHORIZATION_HEADER_NAME = "Authorization";
 const OPENCODE_DIAGNOSTIC_BODY_MAX_BYTES = 8_192;
 const OPENCODE_DIAGNOSTIC_READ_TIMEOUT_MS = 750;
 const OPENCODE_SESSION_CREATE_PATH = /(?:^|\/)session\/?$/u;
+const OPENCODE_SESSION_PROMPT_PATH = /(?:^|\/)session\/[^/]+\/(?:message|prompt_async)\/?$/u;
 const OPENCODE_SAFE_TRANSPORT_CODES = new Set([
   "ECONNRESET",
   "ECONNREFUSED",
@@ -1292,8 +1293,8 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
 }
 
 /**
- * 根因：OpenCode SDK 在 session.create 没有返回 id 时丢弃 HTTP 响应并抛出 `{}`。
- * 修复：只保留状态码和经白名单、脱敏的短错误字段；不转发 URL 或原始响应体。
+ * 根因：OpenCode SDK 在 session.create/prompt 失败时会丢弃 HTTP 状态并包装成空响应。
+ * 修复依据：为这些本地端点保留状态码与脱敏错误字段，不转发 URL 或任意响应体。
  */
 export function createOpenCodeDiagnosticFetch(
   fetchImpl: ProviderFetch = globalThis.fetch,
@@ -1303,29 +1304,32 @@ export function createOpenCodeDiagnosticFetch(
     const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
     const requestUrl = request?.url ?? (input instanceof URL ? input.href : String(input));
     let isSessionCreate = false;
+    let isSessionPrompt = false;
     try {
-      isSessionCreate =
-        method === "POST" && OPENCODE_SESSION_CREATE_PATH.test(new URL(requestUrl).pathname);
+      const pathname = new URL(requestUrl).pathname;
+      isSessionCreate = method === "POST" && OPENCODE_SESSION_CREATE_PATH.test(pathname);
+      isSessionPrompt = method === "POST" && OPENCODE_SESSION_PROMPT_PATH.test(pathname);
     } catch {
       // URL parsing is only used to identify the endpoint and is never included in diagnostics.
     }
+    const isOpenCodeModelRequest = isSessionCreate || isSessionPrompt;
 
     try {
       const response = await fetchImpl(input, init);
-      if (!isSessionCreate) return response;
+      if (!isOpenCodeModelRequest) return response;
 
       if (!response.ok) {
         const fields = await readOpenCodeDiagnosticFields(response);
         return createOpenCodeDiagnosticResponse(response.status, fields);
       }
-      if (response.status === 204) {
+      if (isSessionCreate && response.status === 204) {
         return createOpenCodeDiagnosticResponse(204, {
           message: "OpenCode returned an empty session creation response.",
         });
       }
       return response;
     } catch (cause) {
-      if (!isSessionCreate || isOpenCodeAbortError(cause)) throw cause;
+      if (!isOpenCodeModelRequest || isOpenCodeAbortError(cause)) throw cause;
       const causeRecord = asRecord(cause);
       const causeCode = typeof causeRecord?.code === "string" ? causeRecord.code.toUpperCase() : "";
       // Error.message от Node fetch может содержать URL. Наружу передаём только известный errno
@@ -1353,8 +1357,14 @@ async function readOpenCodeDiagnosticFields(response: Response): Promise<{
   try {
     const root = asRecord(JSON.parse(text));
     const nested = asRecord(root?.error);
-    const code = sanitizeOpenCodeDiagnosticCode(root?.code ?? nested?.code);
-    const message = sanitizeOpenCodeDiagnosticMessage(root?.message ?? nested?.message);
+    const data = asRecord(root?.data);
+    const nestedData = asRecord(nested?.data);
+    const code = sanitizeOpenCodeDiagnosticCode(
+      root?.code ?? root?.error_code ?? root?.name ?? nested?.code ?? nestedData?.code,
+    );
+    const message = sanitizeOpenCodeDiagnosticMessage(
+      root?.message ?? data?.message ?? nested?.message ?? nestedData?.message,
+    );
     return { ...(code ? { code } : {}), ...(message ? { message } : {}) };
   } catch {
     return {};
@@ -1436,7 +1446,7 @@ function createOpenCodeDiagnosticResponse(
   // Response forbids bodies for 204/304; use a JSON envelope and encode the actual status there.
   const responseStatus = upstreamStatus === 204 || upstreamStatus === 304 ? 200 : upstreamStatus;
   const message =
-    fields.message ?? `OpenCode server returned HTTP ${upstreamStatus} while creating a session.`;
+    fields.message ?? `OpenCode server returned HTTP ${upstreamStatus} while processing a request.`;
   return new Response(
     JSON.stringify({
       statusCode: upstreamStatus,

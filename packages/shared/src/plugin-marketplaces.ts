@@ -9,6 +9,21 @@ export interface DefaultPluginMarketplace {
 
 export const ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID = "zcode-plugins-official";
 
+/** Production CDN hosts owned by ZCode; Offline Preview must not request their catalog or assets. */
+export function isZCodeOfficialPluginCdnUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    if (url.hostname === "cdn-zcode.z.ai") {
+      return url.pathname.startsWith("/zcode/official-plugin/");
+    }
+    return url.hostname === "cdn.codegeex.cn" && url.pathname.startsWith("/zcode/");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Claude Code 官方市场（GitHub git 源）。它不是 ZCode 的强依赖：GitHub 不可达时刷新必然失败，
  * 该失败不应作为错误提示打扰用户，UI 侧按此 id 静默处理其刷新失败（任何原因）。

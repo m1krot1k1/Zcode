@@ -37,6 +37,38 @@ describe("createOpenCodeDiagnosticFetch", () => {
     expect(JSON.stringify(diagnostic)).not.toContain("must not pass through");
   });
 
+  it.each(["message", "prompt_async"] as const)(
+    "preserves safe HTTP diagnostics when OpenCode %s returns an error",
+    async (endpoint) => {
+      const fetch = createOpenCodeDiagnosticFetch(
+        async () =>
+          new Response(
+            JSON.stringify({
+              name: "UnknownError",
+              data: {
+                message: "Unexpected server error. Check server logs for details.",
+                code: "INTERNAL_ERROR",
+                debug: "must not pass through",
+              },
+            }),
+            { status: 500 },
+          ),
+      );
+
+      const response = await fetch(
+        new Request(`http://127.0.0.1:4096/session/ses_safe/${endpoint}`, { method: "POST" }),
+      );
+      const diagnostic = await response.json();
+      expect(response.status).toBe(500);
+      expect(diagnostic).toEqual({
+        statusCode: 500,
+        code: "UnknownError",
+        message: "Unexpected server error. Check server logs for details.",
+      });
+      expect(JSON.stringify(diagnostic)).not.toContain("must not pass through");
+    },
+  );
+
   it("does not modify non-session requests and preserves aborts", async () => {
     const ordinaryResponse = new Response("ok", { status: 200 });
     const fetch = createOpenCodeDiagnosticFetch(async () => ordinaryResponse);

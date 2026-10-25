@@ -541,6 +541,33 @@ describe("classifyModelFailure provider business codes", () => {
     expect(failure.reason).not.toBe("network_error");
   });
 
+  it("keeps the local OpenCode HTTP status while treating a 500 as an upstream server failure", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage(
+          "opencode/deepseek-v4.1-flash-free",
+          "Unexpected server error. Check server logs for details.",
+        ),
+        url: "opencode://session",
+        requestBodyValues: {},
+        statusCode: 500,
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      statusCode: 500,
+      reason: "unknown",
+      retryable: false,
+      message:
+        "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
+    });
+  });
+
   it("classifies a bare undici TypeError fetch failed as a retryable network error", () => {
     expect(classifyModelFailure(new TypeError("fetch failed"))).toMatchObject({
       code: "model_request_failed",

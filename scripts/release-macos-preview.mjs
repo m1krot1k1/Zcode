@@ -100,7 +100,7 @@ export function buildPreviewReleaseCreateArgs({ tag, commitSha, targetArch, asse
     "--title",
     `ZCode Preview ${tag.slice(1)} для macOS`,
     "--notes",
-    `Автономная Preview-сборка macOS (${targetArch}): аккаунт и backend ZCode недоступны, запросы ZCode направляются только в loopback; локальный OpenCode ACP и настроенные внешние model providers остаются доступны. Артефакты имеют суффикс _TEST. Сборка без Apple-подписи и notarization. При первом запуске macOS может блокировать приложение: откройте его через Finder и подтвердите запуск в системном предупреждении. Это Preview, не production-релиз.`,
+    `Автономная Preview-сборка macOS (${targetArch}): аккаунт и backend ZCode недоступны; официальный каталог и загрузки плагинов требуют подключения к CDN и в этой сборке недоступны, локально сохранённые каталоги и встроенные плагины остаются доступны. Локальный OpenCode CLI и настроенные внешние model providers работают отдельно. Артефакты имеют суффикс _TEST. Сборка без Apple-подписи и notarization. При первом запуске macOS может блокировать приложение: откройте его через Finder и подтвердите запуск в системном предупреждении. Это Preview, не production-релиз.`,
     "--prerelease",
     ...assetPaths,
   ];
