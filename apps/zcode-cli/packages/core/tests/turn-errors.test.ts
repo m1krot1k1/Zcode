@@ -199,6 +199,27 @@ describe("projectExecutionErrorPayload", () => {
     });
   });
 
+  it("suppresses the OpenCode SDK model-ID guess from nested error details", () => {
+    const sdkError = new Error(
+      'OpenCode returned no response data for model "opencode/deepseek-v4.1-flash-free". This usually means the configured provider/model ID is invalid or unavailable. Original error: Unexpected server error.',
+    );
+    const modelError = Object.assign(
+      new Error(
+        "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
+        { cause: sdkError },
+      ),
+      { code: "model_request_failed" },
+    );
+
+    const projection = projectExecutionErrorPayload(modelError);
+    const visible = JSON.stringify(projection);
+
+    expect(projection.message).toContain("local server failed");
+    expect(projection.underlyingErrorMessage).toContain("model ID has not been identified as the cause");
+    expect(visible).not.toContain("configured provider/model ID is invalid");
+    expect(visible).not.toContain("Original error: Unexpected server error");
+  });
+
   it("uses model/network cause as the visible message and keeps low-level detail", () => {
     const socketError = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:9091"), {
       code: "ECONNREFUSED",

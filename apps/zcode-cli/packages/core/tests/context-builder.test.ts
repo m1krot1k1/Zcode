@@ -1419,10 +1419,13 @@ describe("ContextBuilder meta user context", () => {
     expect(protocol).toBeGreaterThan(harness);
     expect(section.content).toContain("## 2. Expert Goal Contract");
     expect(section.content).toContain("# МОДУЛЬ SWARM EXECUTION 9.0");
-    expect(section.content).toContain("не проверяй и не применяй патчи ZCode");
-    expect(section.content).not.toContain("# EXPERIMENTAL RECURSIVE DISCOVERY MODULE (v10)");
-    expect(section.content).not.toContain("patch_or_module");
-    expect(section.content).not.toContain("experiment_gate");
+    expect(section.content).toContain("## 5. Контур проверки поколения");
+    expect(section.content).toContain("Proof-Carrying Upgrade");
+    expect(section.content).toContain("# EXPERIMENTAL RECURSIVE DISCOVERY MODULE (v10)");
+    expect(section.content).toContain("patch_or_module");
+    expect(section.content).toContain("Локальный PRISM gate сравнивает предъявленные результаты");
+    expect(section.content).not.toContain("python scripts/experiment_gate.py");
+    expect(section.content).not.toContain("PRISM ∞ 10.0 активирован.");
     expect(section.content).not.toContain("PRISM Ω FULL 5.1");
     expect(section.content).toContain("You are an interactive ZCode agent");
   });
