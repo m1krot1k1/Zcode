@@ -3,7 +3,9 @@ import {
   ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE,
   type IMcpSyncService,
 } from "@zcode/services";
+import { COMMUNITY_MCP_PRESETS, type ZCodeMcpServer } from "@zcode/shared";
 import {
+  addCommunityMcpPresetToScope,
   buildMcpOAuthAuthorizationStatusRefreshOptions,
   buildPluginMcpServerStatusListKey,
   buildMcpOAuthAuthorizationStatusRefreshServers,
@@ -20,6 +22,106 @@ import {
 } from "../src/settings/McpSettingsSection.js";
 
 describe("McpSettingsSection status list", () => {
+  it("adds a bundled preset to the selected workspace scope through the store owner", async () => {
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "todoist");
+    if (!preset) throw new Error("Todoist preset is missing");
+    const addServer = vi.fn(async () => undefined);
+    const loadCurrentScope = vi.fn(async () => true);
+
+    const result = await addCommunityMcpPresetToScope({
+      addServer,
+      listSavedServers: () => [],
+      loadCurrentScope,
+      preset,
+      scopeKey: "workspace",
+      workspacePath: "/workspace/project",
+    });
+
+    expect(result).toBe("added");
+    expect(loadCurrentScope).toHaveBeenCalledTimes(1);
+    expect(addServer).toHaveBeenCalledWith(
+      "todoist",
+      { type: "http", url: "https://ai.todoist.net/mcp" },
+      "/workspace/project",
+    );
+  });
+
+  it("does not overwrite an existing preset in the same scope", async () => {
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "todoist");
+    if (!preset) throw new Error("Todoist preset is missing");
+    const addServer = vi.fn(async () => undefined);
+    const existing: ZCodeMcpServer = {
+      id: "saved-todoist",
+      name: preset.id,
+      source: "zcodeagentmcp",
+      scope: "workspace",
+      projectPath: "/workspace/project",
+      enabled: true,
+      config: { type: "http", url: "https://custom.example/mcp" },
+    };
+
+    const result = await addCommunityMcpPresetToScope({
+      addServer,
+      listSavedServers: () => [existing],
+      loadCurrentScope: async () => true,
+      preset,
+      scopeKey: "workspace",
+      workspacePath: "/workspace/project",
+    });
+
+    expect(result).toBe("already-added");
+    expect(addServer).not.toHaveBeenCalled();
+  });
+
+  it("allows the same preset in a different scope without overwriting the other scope", async () => {
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "todoist");
+    if (!preset) throw new Error("Todoist preset is missing");
+    const addServer = vi.fn(async () => undefined);
+    const workspaceServer: ZCodeMcpServer = {
+      id: "workspace-todoist",
+      name: preset.id,
+      source: "zcodeagentmcp",
+      scope: "workspace",
+      projectPath: "/workspace/project",
+      enabled: true,
+      config: { type: "http", url: "https://custom.example/mcp" },
+    };
+
+    const result = await addCommunityMcpPresetToScope({
+      addServer,
+      listSavedServers: () => [workspaceServer],
+      loadCurrentScope: async () => true,
+      preset,
+      scopeKey: "user",
+      workspacePath: "/workspace/project",
+    });
+
+    expect(result).toBe("added");
+    expect(addServer).toHaveBeenCalledWith(
+      "todoist",
+      { type: "http", url: "https://ai.todoist.net/mcp" },
+      undefined,
+    );
+  });
+
+  it("does not persist a preset when the current scope cannot be loaded", async () => {
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "todoist");
+    if (!preset) throw new Error("Todoist preset is missing");
+    const addServer = vi.fn(async () => undefined);
+
+    const result = await addCommunityMcpPresetToScope({
+      addServer,
+      listSavedServers: () => [],
+      loadCurrentScope: async () => false,
+      preset,
+      scopeKey: "user",
+      workspacePath: "/workspace/project",
+    });
+
+    expect(result).toBe("unavailable");
+    expect(addServer).not.toHaveBeenCalled();
+  });
+
   it("re-arms automatic refresh after the status key becomes empty", () => {
     const workspaceAKey = "workspace-a\neverything:enabled";
     const first = transitionMcpAutoStatusListRefreshKey("", workspaceAKey);
@@ -28,20 +130,14 @@ describe("McpSettingsSection status list", () => {
       shouldRefresh: true,
     });
 
-    const emptyWorkspace = transitionMcpAutoStatusListRefreshKey(
-      first.lastRefreshKey,
-      "",
-    );
+    const emptyWorkspace = transitionMcpAutoStatusListRefreshKey(first.lastRefreshKey, "");
     expect(emptyWorkspace).toEqual({
       lastRefreshKey: "",
       shouldRefresh: false,
     });
 
     expect(
-      transitionMcpAutoStatusListRefreshKey(
-        emptyWorkspace.lastRefreshKey,
-        workspaceAKey,
-      ),
+      transitionMcpAutoStatusListRefreshKey(emptyWorkspace.lastRefreshKey, workspaceAKey),
     ).toEqual({
       lastRefreshKey: workspaceAKey,
       shouldRefresh: true,
@@ -276,9 +372,7 @@ describe("McpSettingsSection status list", () => {
         mode: "status",
         mcpServers: [
           {
-            headers: [
-              { name: "Authorization", value: "Bearer workspace-a-header-secret" },
-            ],
+            headers: [{ name: "Authorization", value: "Bearer workspace-a-header-secret" }],
             name: "http-a",
             oauth: {
               clientId: "workspace-a-client",
@@ -480,9 +574,9 @@ describe("McpSettingsSection status list", () => {
       workspaceIdentity: workspaceBKey,
       workspacePath: "/remote/workspace-b",
     });
-    expect(JSON.stringify(workspaceBService.listWorkspaceMcpServerStatuses.mock.calls)).not.toContain(
-      "workspace-a-",
-    );
+    expect(
+      JSON.stringify(workspaceBService.listWorkspaceMcpServerStatuses.mock.calls),
+    ).not.toContain("workspace-a-");
     expect(mergeServerStatusSnapshots).toHaveBeenCalledTimes(1);
     expect(mergeServerStatusSnapshots).toHaveBeenCalledWith(
       {
@@ -561,15 +655,11 @@ describe("McpSettingsSection status list", () => {
 
     expect(deadline).toBe(startedAt + 5 * 60_000);
 
-    expect(
-      isMcpOAuthAuthorizationStatusRefreshExpired(deadline, () => deadline - 1),
-    ).toBe(false);
-    expect(
-      isMcpOAuthAuthorizationStatusRefreshExpired(deadline, () => deadline),
-    ).toBe(true);
-    expect(
-      isMcpOAuthAuthorizationStatusRefreshExpired(deadline, () => deadline + 30_000),
-    ).toBe(true);
+    expect(isMcpOAuthAuthorizationStatusRefreshExpired(deadline, () => deadline - 1)).toBe(false);
+    expect(isMcpOAuthAuthorizationStatusRefreshExpired(deadline, () => deadline)).toBe(true);
+    expect(isMcpOAuthAuthorizationStatusRefreshExpired(deadline, () => deadline + 30_000)).toBe(
+      true,
+    );
   });
 
   it("status list key changes for enable toggles but ignores display status", () => {
@@ -587,9 +677,7 @@ describe("McpSettingsSection status list", () => {
     const connectingKey = buildMcpServerStatusListKey([
       { ...baseServer, status: "connecting" as const },
     ]);
-    const disabledKey = buildMcpServerStatusListKey([
-      { ...baseServer, enabled: false },
-    ]);
+    const disabledKey = buildMcpServerStatusListKey([{ ...baseServer, enabled: false }]);
 
     expect(connectingKey).toBe(enabledKey);
     expect(disabledKey).not.toBe(enabledKey);
@@ -615,14 +703,10 @@ describe("McpSettingsSection status list", () => {
       "zcodeagentmcp-global-figma:2026-07-08T00:00:00.000Z",
     );
     expect(
-      buildPendingMcpOAuthAuthorizationRefreshKey([
-        { ...pendingServer, authorization: undefined },
-      ]),
+      buildPendingMcpOAuthAuthorizationRefreshKey([{ ...pendingServer, authorization: undefined }]),
     ).toBe("");
     expect(
-      buildPendingMcpOAuthAuthorizationRefreshKey([
-        { ...pendingServer, enabled: false },
-      ]),
+      buildPendingMcpOAuthAuthorizationRefreshKey([{ ...pendingServer, enabled: false }]),
     ).toBe("");
     expect(
       buildPendingMcpOAuthAuthorizationRefreshKey([

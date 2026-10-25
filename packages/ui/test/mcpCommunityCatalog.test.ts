@@ -9,6 +9,7 @@ import { McpCommunityCatalog } from "../src/settings/McpSettingsSection.js";
 describe("MCP curated catalog", () => {
   it("shows Firecrawl auth and provenance and delegates selection to the existing draft flow", () => {
     const onSelect = vi.fn();
+    const onInstall = vi.fn();
     const onOpenSource = vi.fn();
     const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "firecrawl");
     if (!preset) throw new Error("Firecrawl catalog entry is missing");
@@ -24,6 +25,9 @@ describe("MCP curated catalog", () => {
           rejectedEntryCount: 0,
           onRefreshDiscovery: vi.fn(),
           onSelect,
+          addedPresetIds: new Set(),
+          installingPresetIds: new Set(),
+          onInstall,
           onOpenSource,
         }),
       ),
@@ -35,6 +39,9 @@ describe("MCP curated catalog", () => {
     expect(card.getByText("Optional API key for account features")).toBeTruthy();
     fireEvent.click(card.getByRole("button", { name: "Open Firecrawl source" }));
     expect(onOpenSource).toHaveBeenCalledWith("https://github.com/firecrawl/firecrawl-mcp-server");
+
+    fireEvent.click(card.getByRole("button", { name: "Add Firecrawl" }));
+    expect(onInstall).toHaveBeenCalledWith(preset);
 
     fireEvent.click(card.getByRole("button", { name: "Configure" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
@@ -57,6 +64,9 @@ describe("MCP curated catalog", () => {
           rejectedEntryCount: 0,
           onRefreshDiscovery: vi.fn(),
           onSelect,
+          addedPresetIds: new Set(),
+          installingPresetIds: new Set(),
+          onInstall: vi.fn(),
           onOpenSource,
         }),
       ),
@@ -97,6 +107,9 @@ describe("MCP curated catalog", () => {
           rejectedEntryCount: 0,
           onRefreshDiscovery: vi.fn(),
           onSelect,
+          addedPresetIds: new Set(),
+          installingPresetIds: new Set(),
+          onInstall: vi.fn(),
           onOpenSource,
         }),
       ),
@@ -106,15 +119,46 @@ describe("MCP curated catalog", () => {
     if (!(entry instanceof HTMLElement)) throw new Error("External listing is missing");
     const card = within(entry);
     expect(card.getByText("Cline listing · unverified")).toBeTruthy();
-    expect(card.queryByRole("button", { name: /install|configure/i })).toBeNull();
+    expect(card.queryByRole("button", { name: /add|install|configure/i })).toBeNull();
     fireEvent.click(card.getByRole("button", { name: "Open source for Remote Search" }));
     expect(onOpenSource).toHaveBeenCalledWith("https://github.com/example/search-mcp");
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("shows an added preset as complete and prevents another install click", () => {
+    const onInstall = vi.fn();
+    const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "context7");
+    if (!preset) throw new Error("Context7 catalog entry is missing");
+
+    const { container } = render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(McpCommunityCatalog, {
+          presets: [preset],
+          discoveredEntries: [],
+          discoveryState: "ready",
+          rejectedEntryCount: 0,
+          onRefreshDiscovery: vi.fn(),
+          onSelect: vi.fn(),
+          addedPresetIds: new Set([preset.id]),
+          installingPresetIds: new Set(),
+          onInstall,
+          onOpenSource: vi.fn(),
+        }),
+      ),
+    );
+
+    const button = within(container).getByRole("button", { name: "Context7 added" });
+    expect(button).toHaveProperty("disabled", true);
+    fireEvent.click(button);
+    expect(onInstall).not.toHaveBeenCalled();
+  });
+
   it("keeps local presets available when discovery fails and offers retry", () => {
     const onRefreshDiscovery = vi.fn();
     const onSelect = vi.fn();
+    const onInstall = vi.fn();
     const preset = COMMUNITY_MCP_PRESETS.find((item) => item.id === "playwright");
     if (!preset) throw new Error("Playwright catalog entry is missing");
 
@@ -129,6 +173,9 @@ describe("MCP curated catalog", () => {
           rejectedEntryCount: 0,
           onRefreshDiscovery,
           onSelect,
+          addedPresetIds: new Set(),
+          installingPresetIds: new Set(),
+          onInstall,
           onOpenSource: vi.fn(),
         }),
       ),
@@ -142,5 +189,7 @@ describe("MCP curated catalog", () => {
     expect(onRefreshDiscovery).toHaveBeenCalledTimes(1);
     fireEvent.click(view.getByRole("button", { name: "Configure" }));
     expect(onSelect).toHaveBeenCalledWith(preset);
+    fireEvent.click(view.getByRole("button", { name: "Add Playwright" }));
+    expect(onInstall).toHaveBeenCalledWith(preset);
   });
 });

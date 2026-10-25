@@ -3542,7 +3542,7 @@ const enUS: Record<string, string> = {
   "settings.mcp.import.action": "Import",
   "settings.mcp.communityPresets.title": "Curated MCP catalog",
   "settings.mcp.communityPresets.description":
-    "Choose a server to review its source and configuration. Selecting it opens a draft; it is saved only when you confirm.",
+    "Add a reviewed server to this scope, or configure it first. Cline listings stay unverified until reviewed.",
   "settings.mcp.communityPresets.authNone": "No API key required",
   "settings.mcp.communityPresets.authOptionalApiKey": "Optional API key for account features",
   "settings.mcp.communityPresets.auth.oauth": "Connect with provider OAuth",
@@ -3555,11 +3555,20 @@ const enUS: Record<string, string> = {
   "settings.mcp.communityPresets.usage.apify-actor-usage-may-cost":
     "Actor runs and platform usage may cost money; individual Actor pricing varies.",
   "settings.mcp.communityPresets.configure": "Configure",
+  "settings.mcp.communityPresets.add": "Add",
+  "settings.mcp.communityPresets.adding": "Adding…",
+  "settings.mcp.communityPresets.added": "Added",
+  "settings.mcp.communityPresets.addNamed": "Add {name}",
+  "settings.mcp.communityPresets.addingNamed": "Adding {name}",
+  "settings.mcp.communityPresets.addedNamed": "{name} added",
+  "settings.mcp.communityPresets.addedToast": "{name} added to MCP servers.",
+  "settings.mcp.communityPresets.addFailed":
+    "Could not add this MCP server. Check the current workspace and try again.",
   "settings.mcp.communityPresets.source": "Open {name} source",
   "settings.mcp.communityPresets.sourceLabel": "Provider source",
   "settings.mcp.marketplace.discovery.title": "Discover MCP servers from Cline",
   "settings.mcp.marketplace.discovery.unverified":
-    "Listings are unverified metadata. Only ZCode's built-in presets can be configured here.",
+    "Listings are unverified metadata. Only ZCode's built-in presets can be added or configured.",
   "settings.mcp.marketplace.discovery.loadingAction": "Loading…",
   "settings.mcp.marketplace.discovery.refresh": "Refresh Cline catalog",
   "settings.mcp.marketplace.discovery.loading": "Loading external listings…",

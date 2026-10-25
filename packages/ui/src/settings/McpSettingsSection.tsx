@@ -15,6 +15,7 @@ import {
   type ClineMcpMarketplaceCatalog,
   type ClineMcpMarketplaceEntry,
   type CommunityMcpPreset,
+  type McpServerConfig,
 } from "@zcode/shared";
 import {
   TID_MCP_OPEN_AUTHORIZATION_BUTTON,
@@ -105,6 +106,39 @@ export function isMcpOAuthAuthorizationStatusRefreshExpired(
   return now() >= deadline;
 }
 
+interface AddCommunityMcpPresetInput {
+  addServer: (name: string, config: McpServerConfig, projectPath?: string) => Promise<void>;
+  listSavedServers: () => readonly ZCodeMcpServer[];
+  loadCurrentScope: () => Promise<boolean>;
+  preset: CommunityMcpPreset;
+  scopeKey: string;
+  workspacePath: string | undefined;
+}
+
+export async function addCommunityMcpPresetToScope({
+  addServer,
+  listSavedServers,
+  loadCurrentScope,
+  preset,
+  scopeKey,
+  workspacePath,
+}: AddCommunityMcpPresetInput): Promise<"added" | "already-added" | "unavailable"> {
+  if (!workspacePath || !(await loadCurrentScope())) return "unavailable";
+
+  const projectPath = scopeKey === "user" ? undefined : workspacePath;
+  const alreadyAdded = listSavedServers().some(
+    (server) =>
+      server.source === DEFAULT_MCP_SOURCE &&
+      server.name === preset.id &&
+      server.projectPath === projectPath,
+  );
+  if (alreadyAdded) return "already-added";
+
+  // Store action persists before publishing state; the preset's command and credentials stay local.
+  await addServer(preset.id, communityMcpPresetConfig(preset), projectPath);
+  return "added";
+}
+
 export function McpCommunityCatalog({
   presets,
   discoveredEntries,
@@ -112,6 +146,9 @@ export function McpCommunityCatalog({
   rejectedEntryCount,
   onRefreshDiscovery,
   onSelect,
+  addedPresetIds,
+  installingPresetIds,
+  onInstall,
   onOpenSource,
 }: {
   presets: readonly CommunityMcpPreset[];
@@ -120,6 +157,9 @@ export function McpCommunityCatalog({
   rejectedEntryCount: number;
   onRefreshDiscovery: () => void;
   onSelect: (preset: CommunityMcpPreset) => void;
+  addedPresetIds: ReadonlySet<string>;
+  installingPresetIds: ReadonlySet<string>;
+  onInstall: (preset: CommunityMcpPreset) => void;
   onOpenSource: (sourceUrl: string) => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -162,9 +202,36 @@ export function McpCommunityCatalog({
                   </p>
                 ) : null}
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={() => onSelect(preset)}>
-                {intl.formatMessage({ id: "settings.mcp.communityPresets.configure" })}
-              </Button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={addedPresetIds.has(preset.id) || installingPresetIds.has(preset.id)}
+                  aria-label={intl.formatMessage(
+                    {
+                      id: addedPresetIds.has(preset.id)
+                        ? "settings.mcp.communityPresets.addedNamed"
+                        : installingPresetIds.has(preset.id)
+                          ? "settings.mcp.communityPresets.addingNamed"
+                          : "settings.mcp.communityPresets.addNamed",
+                    },
+                    { name: preset.name },
+                  )}
+                  onClick={() => onInstall(preset)}
+                >
+                  {intl.formatMessage({
+                    id: addedPresetIds.has(preset.id)
+                      ? "settings.mcp.communityPresets.added"
+                      : installingPresetIds.has(preset.id)
+                        ? "settings.mcp.communityPresets.adding"
+                        : "settings.mcp.communityPresets.add",
+                  })}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => onSelect(preset)}>
+                  {intl.formatMessage({ id: "settings.mcp.communityPresets.configure" })}
+                </Button>
+              </div>
             </div>
             <button
               className="inline-flex w-fit items-center gap-1 text-ui-sm text-foreground-subtle underline-offset-2 hover:text-foreground hover:underline"
@@ -837,6 +904,8 @@ export function McpSettingsSection({
   const [presetDraft, setPresetDraft] = useState<ZCodeMcpServer | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
+  const [installingPresetIds, setInstallingPresetIds] = useState<Set<string>>(() => new Set());
+  const installingPresetIdsRef = useRef(new Set<string>());
   const query = searchQuery;
   const [clineMarketplaceState, setClineMarketplaceState] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -1399,6 +1468,19 @@ export function McpSettingsSection({
     () => filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, query),
     [query],
   );
+  const presetScopeProjectPath = parentScopeKey === "user" ? undefined : activeWorkspacePath;
+  const addedPresetIds = useMemo(
+    () =>
+      new Set(
+        servers
+          .filter(
+            (server) =>
+              server.source === DEFAULT_MCP_SOURCE && server.projectPath === presetScopeProjectPath,
+          )
+          .map((server) => server.name),
+      ),
+    [presetScopeProjectPath, servers],
+  );
   const filteredClineMarketplaceEntries = useMemo(
     () => filterClineMcpMarketplaceEntries(clineMarketplaceCatalog?.entries ?? [], query),
     [clineMarketplaceCatalog, query],
@@ -1614,6 +1696,50 @@ export function McpSettingsSection({
     setShowForm(true);
   }
 
+  async function handleInstallPreset(preset: CommunityMcpPreset) {
+    if (installingPresetIdsRef.current.has(preset.id)) return;
+    installingPresetIdsRef.current.add(preset.id);
+    setInstallingPresetIds(new Set(installingPresetIdsRef.current));
+    try {
+      const outcome = await addCommunityMcpPresetToScope({
+        addServer: (name, config, projectPath) =>
+          addScopedMcpServer(DEFAULT_MCP_SOURCE, name, config, projectPath),
+        listSavedServers: () => useMcpStore.getState().servers,
+        loadCurrentScope: () =>
+          activeWorkspacePath
+            ? ensureLoadedForWorkspace(
+                activeWorkspacePath,
+                services.mcpSyncService,
+                activeWorkspaceIdentity,
+                cacheAuthorityKey,
+              )
+            : Promise.resolve(false),
+        preset,
+        scopeKey: parentScopeKey,
+        workspacePath: activeWorkspacePath ?? undefined,
+      });
+      if (outcome === "unavailable") {
+        toast(intl.formatMessage({ id: "settings.mcp.communityPresets.addFailed" }));
+      } else if (outcome === "added") {
+        toast(
+          intl.formatMessage(
+            { id: "settings.mcp.communityPresets.addedToast" },
+            { name: preset.name },
+          ),
+        );
+      }
+    } catch (error) {
+      logger.warn("[mcp] Failed to add bundled MCP preset", {
+        presetId: preset.id,
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+      toast(intl.formatMessage({ id: "settings.mcp.communityPresets.addFailed" }));
+    } finally {
+      installingPresetIdsRef.current.delete(preset.id);
+      setInstallingPresetIds(new Set(installingPresetIdsRef.current));
+    }
+  }
+
   function handleOpenAuthorization(server: ZCodeMcpServer) {
     const authorizationUrl = server.authorization?.authorizationUrl;
     if (!authorizationUrl) {
@@ -1761,6 +1887,9 @@ export function McpSettingsSection({
           rejectedEntryCount={clineMarketplaceCatalog?.rejectedEntryCount ?? 0}
           onRefreshDiscovery={() => void loadClineMcpCatalog()}
           onSelect={handleCreateFromPreset}
+          addedPresetIds={addedPresetIds}
+          installingPresetIds={installingPresetIds}
+          onInstall={(preset) => void handleInstallPreset(preset)}
           onOpenSource={(sourceUrl) => platform.openExternal(sourceUrl)}
         />
         <section
