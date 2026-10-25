@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { buildPrismRuntimeProfile } from "../prism10-runtime-profile.mjs";
@@ -39,4 +40,21 @@ test("identity.ts is the current generated PRISM runtime artifact", async () => 
   assert.equal(identity, artifact.identitySource);
   assert.ok(identity.includes(`// PRISM_SOURCE_SHA256: ${artifact.sourceDigest}`));
   assert.ok(identity.includes(`// PRISM_PROFILE_SHA256: ${artifact.profileDigest}`));
+});
+
+test("Git checks out the generated identity source with LF even when autocrlf is enabled", () => {
+  const eol = execFileSync(
+    "git",
+    [
+      "-c",
+      "core.autocrlf=true",
+      "check-attr",
+      "eol",
+      "--",
+      "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
+    ],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  ).trim();
+
+  assert.match(eol, /: eol: lf$/u);
 });
