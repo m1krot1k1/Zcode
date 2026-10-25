@@ -2360,6 +2360,16 @@ const SwarmRunRowView = memo(function SwarmRunRowView({
             {intl.formatMessage({ id: "conversation.swarm.taskCount" }, { count: row.taskCount })}
           </p>
         ) : null}
+        {row.status === "completed" || row.status === "failed" || row.status === "cancelled" ? (
+          <p
+            className="mt-1 text-xs text-muted-foreground"
+            data-testid={`swarm-run-acceptance-${row.swarmRunId}`}
+          >
+            {intl.formatMessage({
+              id: `conversation.swarm.acceptance.${row.outcomeAcceptance ?? "unknown"}`,
+            })}
+          </p>
+        ) : null}
         {row.childSessionIds?.length ? (
           <ul
             className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle"

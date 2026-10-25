@@ -4702,11 +4702,20 @@ export class ProductProjection {
       : existing?.kind === "swarmRun"
         ? existing.childSessionIds
         : undefined;
+    const isTerminal = payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled";
+    const outcomeAcceptance =
+      payload.outcomeAcceptance ??
+      (isTerminal
+        ? "unknown"
+        : existing?.kind === "swarmRun"
+          ? existing.outcomeAcceptance
+          : undefined);
     const row: ConversationRow = {
       ...(existing ?? this.rowBase(event, `swarm:${payload.swarmRunId}`, payload.swarmRunId)),
       kind: "swarmRun",
       swarmRunId: payload.swarmRunId,
       status: payload.status,
+      ...(outcomeAcceptance === undefined ? {} : { outcomeAcceptance }),
       ...(payload.taskCount === undefined ? {} : { taskCount: payload.taskCount }),
       ...(childSessionIds === undefined ? {} : { childSessionIds }),
       ...(payload.summary === undefined ? {} : { summary: payload.summary.slice(0, 500) }),

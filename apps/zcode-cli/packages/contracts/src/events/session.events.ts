@@ -1315,6 +1315,8 @@ export interface OpenCodeAgentRunUpdatedPayload {
 export interface SwarmRunUpdatedPayload {
   swarmRunId: string;
   status: "planning" | "running" | "completed" | "failed" | "cancelled";
+  /** Host-derived PRISM aggregate; absent in legacy events means unknown, never execution success. */
+  outcomeAcceptance?: "unknown" | "verified" | "rejected";
   taskCount?: number;
   childSessionIds?: string[];
   summary?: string;

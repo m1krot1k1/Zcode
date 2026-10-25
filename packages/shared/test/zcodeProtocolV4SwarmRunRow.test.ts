@@ -17,6 +17,7 @@ describe("swarmRun conversation row", () => {
       conversationRowSchema.parse({
         ...baseRow,
         status: "completed",
+        outcomeAcceptance: "verified",
         taskCount: 3,
         summary: "Three branches completed.",
       }),
@@ -24,6 +25,7 @@ describe("swarmRun conversation row", () => {
       kind: "swarmRun",
       swarmRunId: "swarm-1",
       status: "completed",
+      outcomeAcceptance: "verified",
       taskCount: 3,
       summary: "Three branches completed.",
     });
@@ -38,5 +40,28 @@ describe("swarmRun conversation row", () => {
     ]) {
       expect(conversationRowSchema.safeParse(invalid).success).toBe(false);
     }
+  });
+
+  it("accepts the three separate PRISM acceptance states", () => {
+    for (const outcomeAcceptance of [
+      "unknown",
+      "verified",
+      "rejected",
+    ] as const) {
+      expect(
+        conversationRowSchema.safeParse({
+          ...baseRow,
+          status: "completed",
+          outcomeAcceptance,
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      conversationRowSchema.safeParse({
+        ...baseRow,
+        status: "completed",
+        outcomeAcceptance: "passed",
+      }).success,
+    ).toBe(false);
   });
 });

@@ -149,6 +149,7 @@ describe("ProductProjection 黄金测试（L1）", () => {
       taskCount: 2,
       childSessionIds: ["child-a", "child-b", "child-a"],
       summary: "Задач: 2. Дочерних сессий: 2.",
+        outcomeAcceptance: "verified",
     });
     expect(projection.applyEvent(completed).find((delta) => delta.op.startsWith("row."))).toMatchObject({
       op: "row.upserted",
@@ -158,9 +159,25 @@ describe("ProductProjection 黄金测试（L1）", () => {
         kind: "swarmRun",
         swarmRunId: "swarm_turn-1",
         status: "completed",
+        outcomeAcceptance: "verified",
         taskCount: 2,
         childSessionIds: ["child-a", "child-b"],
       },
+    ]);
+  });
+
+  it("projects legacy terminal swarm events as unknown instead of inferring success", () => {
+    const log = new EventLog();
+    const projection = new ProductProjection("session-1", "epoch-1");
+    const completed = log.push(SessionEventType.SwarmRunUpdated, {
+      swarmRunId: "swarm-legacy",
+      status: "completed",
+    });
+
+    projection.applyEvent(completed);
+
+    expect(projection.getSnapshot().rows.window).toMatchObject([
+      { kind: "swarmRun", swarmRunId: "swarm-legacy", status: "completed", outcomeAcceptance: "unknown" },
     ]);
   });
 

@@ -18,7 +18,10 @@ const context: ConversationRowRenderContext = {
   workspacePath: "/workspace",
 };
 
-function renderSwarm(row: SwarmRunRow, locale: "en-US" | "zh-CN" = "en-US"): string {
+function renderSwarm(
+  row: SwarmRunRow,
+  locale: "en-US" | "zh-CN" = "en-US",
+): string {
   return renderToStaticMarkup(
     createElement(
       ZCodeIntlProvider,
@@ -54,7 +57,7 @@ describe("ConversationRowView swarm row", () => {
     expect(html).toContain("Two independent tasks are running.");
   });
 
-  it("localizes terminal status in Chinese", () => {
+  it("shows unknown acceptance for legacy terminal rows and localizes status in Chinese", () => {
     const row: SwarmRunRow = {
       rowId: 5,
       turnId: "turn-1",
@@ -65,7 +68,26 @@ describe("ConversationRowView swarm row", () => {
       status: "completed",
     };
 
-    expect(renderSwarm(row, "zh-CN")).toContain("已完成");
+    const html = renderSwarm(row, "zh-CN");
+    expect(html).toContain("已完成");
+    expect(html).toContain("目标尚未验证");
+  });
+
+  it("distinguishes passed declared checks from semantic goal verification", () => {
+    const row: SwarmRunRow = {
+      rowId: 8,
+      turnId: "turn-1",
+      createdAt: 1_800_000_000_000,
+      createdAtSeq: 8,
+      kind: "swarmRun",
+      swarmRunId: "swarm-verified-checks",
+      status: "completed",
+      outcomeAcceptance: "verified",
+    };
+
+    expect(renderSwarm(row)).toContain(
+      "Declared checks passed; semantic goal is unverified",
+    );
   });
 
   it("shows actual child session IDs and opens the selected child in the side pane", () => {
@@ -91,13 +113,24 @@ describe("ConversationRowView swarm row", () => {
       createElement(
         ZCodeIntlProvider,
         { initialLocale: "en-US" },
-        createElement(ConversationRowView, { context: contextWithChildNavigation, row }),
+        createElement(ConversationRowView, {
+          context: contextWithChildNavigation,
+          row,
+        }),
       ),
     );
 
-    expect(screen.getByLabelText("Child sessions").textContent).toContain("child-session-1");
-    expect(screen.getByLabelText("Child sessions").textContent).toContain("child-session-2");
-    fireEvent.click(screen.getByTestId(testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, "child-session-2")));
+    expect(screen.getByLabelText("Child sessions").textContent).toContain(
+      "child-session-1",
+    );
+    expect(screen.getByLabelText("Child sessions").textContent).toContain(
+      "child-session-2",
+    );
+    fireEvent.click(
+      screen.getByTestId(
+        testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, "child-session-2"),
+      ),
+    );
 
     expect(onOpenSubagentSession).toHaveBeenCalledWith({
       rootSessionId: "root-session-1",

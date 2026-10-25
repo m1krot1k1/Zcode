@@ -283,6 +283,7 @@ export const swarmRunRowSchema = z.object({
   kind: z.literal("swarmRun"),
   swarmRunId: z.string().min(1),
   status: z.enum(["planning", "running", "completed", "failed", "cancelled"]),
+  outcomeAcceptance: z.enum(["unknown", "verified", "rejected"]).optional(),
   taskCount: z.number().int().nonnegative().optional(),
   childSessionIds: z.array(z.string().min(1)).max(128).optional(),
   // Keep provider/task output out of the timeline contract; this is a short bounded summary only.

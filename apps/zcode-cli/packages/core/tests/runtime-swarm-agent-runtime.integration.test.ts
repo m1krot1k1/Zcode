@@ -222,7 +222,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       const rootEvents = await eventStore.getEvents(rootSessionId);
       const terminalSwarmEvent = rootEvents
         .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
-        .map((event) => event.payload as { status: string; childSessionIds?: string[] })
+        .map((event) => event.payload as { status: string; childSessionIds?: string[]; outcomeAcceptance?: string })
         .find((event) => event.status === "completed");
       const childSessionIds = [...childBySession.keys()];
       const childEvents = await Promise.all(childSessionIds.map((sessionId) => eventStore.getEvents(sessionId)));
@@ -253,6 +253,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
         expect(events.some((event) => event.type === SessionEventType.ToolCallResult)).toBe(true);
       }
       expect(terminalSwarmEvent?.childSessionIds).toEqual(expect.arrayContaining([...directChildSessions]));
+      expect(terminalSwarmEvent?.outcomeAcceptance).toBe("unknown");
       expect(terminalSwarmEvent?.childSessionIds).toHaveLength(2);
       const taskSnapshots = Object.values(runtimeTaskRegistry.all()).filter((snapshot) =>
         snapshot.type === "local_agent" && childSessionIds.includes(snapshot.childSessionId!),

@@ -998,6 +998,7 @@ export async function executeSubagentTaskDag(
     description: request.description,
     prompt: request.prompt,
     content: [{ type: "text", text: content }],
+    acceptance: aggregateTaskDagAcceptance(request, states),
     totalToolUseCount: completedOutputs.reduce((sum, output) => sum + output.totalToolUseCount, 0),
     totalDurationMs: Math.max(0, Date.now() - startedAt),
     ...(allTokenCountsKnown
@@ -1005,6 +1006,41 @@ export async function executeSubagentTaskDag(
           totalTokens: completedOutputs.reduce((sum, output) => sum + (output.totalTokens ?? 0), 0),
         }
       : {}),
+  };
+}
+
+/** PRISM acceptance is derived only from Host decisions attached to each settled task node. */
+function aggregateTaskDagAcceptance(
+  request: SubagentTaskDagRequest,
+  states: ReadonlyMap<string, SubagentDagNodeResult>,
+): PrismTaskAcceptanceDecision {
+  const decisions = request.nodes.map((node) => ({
+    nodeId: node.id,
+    state: states.get(node.id),
+    acceptance: states.get(node.id)?.output?.acceptance,
+  }));
+  const status: PrismTaskAcceptanceDecision["status"] = decisions.some(
+    ({ acceptance }) => acceptance?.status === "rejected",
+  )
+    ? "rejected"
+    : decisions.length > 0 &&
+        decisions.every(({ state, acceptance }) => state?.status === "completed" && acceptance?.status === "verified")
+      ? "verified"
+      : "unknown";
+  const qualifyIds = (nodeId: string, ids: readonly string[] | undefined) =>
+    (ids ?? []).map((id) => `${nodeId}:${id}`);
+
+  return {
+    status,
+    passedCriterionIds: decisions.flatMap(({ nodeId, acceptance }) =>
+      qualifyIds(nodeId, acceptance?.passedCriterionIds),
+    ),
+    failedCriterionIds: decisions.flatMap(({ nodeId, acceptance }) =>
+      qualifyIds(nodeId, acceptance?.failedCriterionIds),
+    ),
+    missingCriterionIds: decisions.flatMap(({ nodeId, acceptance }) =>
+      qualifyIds(nodeId, acceptance?.missingCriterionIds),
+    ),
   };
 }
 

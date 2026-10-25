@@ -824,6 +824,44 @@ describe("PRISM task DAG execution", () => {
     const result = await execution;
     expect(started).toEqual(["a", "b", "c"]);
     expect(result.content[0]?.text).toContain('[completed] "c" |');
+    expect(result.acceptance).toEqual({
+      status: "unknown",
+      passedCriterionIds: [],
+      failedCriterionIds: [],
+      missingCriterionIds: [],
+    });
+  });
+
+  it("aggregates only complete Host acceptance decisions across the full DAG", async () => {
+    const request = makeTaskDagRequest([dagNode("a"), dagNode("b")]);
+    const verified = await executeSubagentTaskDag(request, async (node) =>
+      completedDagOutput(node.id, {
+        status: "verified",
+        passedCriterionIds: ["check"],
+        failedCriterionIds: [],
+        missingCriterionIds: [],
+      }),
+    );
+    expect(verified.acceptance).toEqual({
+      status: "verified",
+      passedCriterionIds: ["a:check", "b:check"],
+      failedCriterionIds: [],
+      missingCriterionIds: [],
+    });
+
+    const rejected = await executeSubagentTaskDag(request, async (node) =>
+      completedDagOutput(node.id, {
+        status: node.id === "a" ? "rejected" : "verified",
+        passedCriterionIds: node.id === "a" ? [] : ["check"],
+        failedCriterionIds: node.id === "a" ? ["check"] : [],
+        missingCriterionIds: [],
+      }),
+    );
+    expect(rejected.acceptance).toMatchObject({
+      status: "rejected",
+      passedCriterionIds: ["b:check"],
+      failedCriterionIds: ["a:check"],
+    });
   });
 
   it("blocks only descendants of a failed or rejected node", async () => {
