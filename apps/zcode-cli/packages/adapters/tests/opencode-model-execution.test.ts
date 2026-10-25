@@ -8,10 +8,80 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
+import { createOpencode, OpencodeClientManager } from "ai-sdk-provider-opencode-sdk";
+import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it, vi } from "vitest";
+import { classifyModelFailure, inspectProviderFailure } from "../src/model/failure-classifier.js";
+import { createOpenCodeDiagnosticFetch } from "../src/model/model-execution.js";
 import { TestProviderConfigFixture } from "./test-provider-config.js";
 
 describe("OpenCode SDK model execution", () => {
+  it("preserves sanitized prompt HTTP diagnostics through the real SDK wrapper", async () => {
+    const requests: string[] = [];
+    const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const pathname = new URL(request.url).pathname;
+      requests.push(`${request.method} ${pathname}`);
+      if (request.method === "POST" && pathname === "/session") {
+        return Response.json({
+          id: "ses_test",
+          projectID: "global",
+          directory: process.cwd(),
+          title: "test",
+          version: "1.19.3",
+          time: { created: 1, updated: 1 },
+        });
+      }
+      if (request.method === "POST" && pathname === "/session/ses_test/message") {
+        return new Response(
+          JSON.stringify({
+            name: "UnknownError",
+            data: {
+              code: "INTERNAL_ERROR",
+              message: "Free usage limit reached. OpenCode Go is required.",
+              debug: "must not cross the provider boundary",
+            },
+          }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        );
+      }
+      return Response.json({ name: "NotFound", data: { message: "not found" } }, { status: 404 });
+    });
+    const client = createOpencodeClient({ baseUrl: "http://opencode.test", fetch });
+    const provider = createOpencode({
+      clientManager: OpencodeClientManager.createInstance({ client }),
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model;
+      const result = runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doGenerate!(createCallOptions()),
+      );
+      let failure: unknown;
+      try {
+        await result;
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(requests).toContain("POST /session/ses_test/message");
+      expect(failure).toBeDefined();
+      expect(classifyModelFailure(failure)).toMatchObject({
+        statusCode: 500,
+        reason: "unknown",
+        retryable: false,
+      });
+      expect(inspectProviderFailure(failure)).toEqual({
+        providerErrorCode: "INTERNAL_ERROR",
+        providerErrorMessage: "Free usage limit reached. OpenCode Go is required.",
+      });
+      expect(String(failure)).not.toContain("must not cross the provider boundary");
+    } finally {
+      await registry.dispose();
+    }
+  });
+
   it("uses local-auth without constructing a URL or an API key and routes by the active workspace", async () => {
     const calls: Array<{ modelId: string; directory?: string }> = [];
     const provider = createFakeOpenCodeProvider({

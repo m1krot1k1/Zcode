@@ -19,6 +19,7 @@ import {
   isProxyFailure,
   isTimeoutFailure,
   parseRetryAfterMs,
+  readOpenCodeRequestDiagnostic,
   readOpenCodeSessionDiagnostic,
   unwrapRetryError,
 } from "./failure-inspection.js";
@@ -56,7 +57,8 @@ export interface ProviderFailureDetails {
 
 export function inspectProviderFailure(error: unknown): ProviderFailureDetails {
   const unwrapped = unwrapRetryError(error);
-  const openCodeDiagnostic = readOpenCodeSessionDiagnostic(unwrapped);
+  const openCodeDiagnostic =
+    readOpenCodeSessionDiagnostic(unwrapped) ?? readOpenCodeRequestDiagnostic(unwrapped);
   // 分类链路能读取 AI SDK parsed error，但观测链路只认识 ProviderBusinessError，
   // 导致同一次失败在 status event 与最终 error context 中丢失 provider 诊断字段。
   const businessError =
@@ -229,7 +231,8 @@ export function classifyModelFailure(
     // OpenCode 没有 ZCode API key：登录只发生在 CLI，这里只给出明确的 sign-in 错误。
     const openCodeSignIn =
       findProviderBusinessError(unwrapped)?.providerId === "opencode" ||
-      readOpenCodeSessionDiagnostic(unwrapped) !== undefined;
+      readOpenCodeSessionDiagnostic(unwrapped) !== undefined ||
+      readOpenCodeRequestDiagnostic(unwrapped) !== undefined;
     return {
       code: ModelErrorCode.ProviderNotConfigured,
       message: openCodeSignIn
@@ -329,9 +332,9 @@ export function classifyModelFailure(
     unwrapped instanceof Error &&
     unwrapped.message.includes("OpenCode returned no response data for model ");
   if (emptyOpenCodeResponse) {
-    const localServerFailure = /Original error:\s*Unexpected server error\b/iu.test(
-      unwrapped.message,
-    ) || (statusCode !== undefined && statusCode >= 500);
+    const localServerFailure =
+      /Original error:\s*Unexpected server error\b/iu.test(unwrapped.message) ||
+      (statusCode !== undefined && statusCode >= 500);
     return {
       code: ModelErrorCode.ModelRequestFailed,
       message: localServerFailure

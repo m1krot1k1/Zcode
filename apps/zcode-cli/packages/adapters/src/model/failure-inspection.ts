@@ -17,6 +17,8 @@ export interface OpenCodeSessionDiagnostic {
   message?: string;
 }
 
+const OPENCODE_REQUEST_DIAGNOSTIC_PREFIX = "OpenCode request diagnostic: ";
+
 /** Read only the bounded diagnostic envelope emitted by the OpenCode session.create adapter. */
 export function readOpenCodeSessionDiagnostic(
   error: unknown,
@@ -27,6 +29,32 @@ export function readOpenCodeSessionDiagnostic(
   if (!message?.startsWith(prefix)) return undefined;
   try {
     const diagnostic = asRecord(JSON.parse(message.slice(prefix.length)));
+    if (!diagnostic) return undefined;
+    const statusCode = numberProperty(diagnostic, "statusCode");
+    const code = stringProperty(diagnostic, "code");
+    const providerMessage = stringProperty(diagnostic, "message");
+    return {
+      ...(statusCode !== undefined && statusCode >= 100 && statusCode <= 599 ? { statusCode } : {}),
+      ...(code && /^[A-Za-z0-9_.:-]{1,80}$/u.test(code) ? { code } : {}),
+      ...(providerMessage && providerMessage.length <= 280 ? { message: providerMessage } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read the bounded message envelope retained by the OpenCode SDK empty-response wrapper. */
+export function readOpenCodeRequestDiagnostic(
+  error: unknown,
+): OpenCodeSessionDiagnostic | undefined {
+  const message = stringProperty(asRecord(error), "message");
+  if (!message) return undefined;
+  const markerIndex = message.lastIndexOf(OPENCODE_REQUEST_DIAGNOSTIC_PREFIX);
+  if (markerIndex < 0) return undefined;
+  const encoded = message.slice(markerIndex + OPENCODE_REQUEST_DIAGNOSTIC_PREFIX.length).trim();
+  if (encoded.length === 0 || encoded.length > 1_024) return undefined;
+  try {
+    const diagnostic = asRecord(JSON.parse(encoded));
     if (!diagnostic) return undefined;
     const statusCode = numberProperty(diagnostic, "statusCode");
     const code = stringProperty(diagnostic, "code");
@@ -61,6 +89,8 @@ function getHttpResponseStatusFromError(error: unknown, seen: WeakSet<object>): 
   }
   const diagnosticStatus = readOpenCodeSessionDiagnostic(error)?.statusCode;
   if (diagnosticStatus !== undefined) return diagnosticStatus;
+  const requestDiagnosticStatus = readOpenCodeRequestDiagnostic(error)?.statusCode;
+  if (requestDiagnosticStatus !== undefined) return requestDiagnosticStatus;
 
   const response = asRecord(record.response);
   const nestedResponseStatus =
@@ -92,6 +122,8 @@ function getStatusCodeFromError(error: unknown, seen: WeakSet<object>): number |
   }
   const diagnosticStatus = readOpenCodeSessionDiagnostic(error)?.statusCode;
   if (diagnosticStatus !== undefined) return diagnosticStatus;
+  const requestDiagnosticStatus = readOpenCodeRequestDiagnostic(error)?.statusCode;
+  if (requestDiagnosticStatus !== undefined) return requestDiagnosticStatus;
 
   const response = asRecord(record.response);
   const responseStatus =

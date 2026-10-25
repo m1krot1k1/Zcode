@@ -62,8 +62,9 @@ describe("createOpenCodeDiagnosticFetch", () => {
       expect(response.status).toBe(500);
       expect(diagnostic).toEqual({
         statusCode: 500,
-        code: "UnknownError",
-        message: "Unexpected server error. Check server logs for details.",
+        code: "INTERNAL_ERROR",
+        message:
+          'OpenCode request diagnostic: {"statusCode":500,"code":"INTERNAL_ERROR","message":"Unexpected server error. Check server logs for details."}',
       });
       expect(JSON.stringify(diagnostic)).not.toContain("must not pass through");
     },

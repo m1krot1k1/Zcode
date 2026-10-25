@@ -1320,12 +1320,14 @@ export function createOpenCodeDiagnosticFetch(
 
       if (!response.ok) {
         const fields = await readOpenCodeDiagnosticFields(response);
-        return createOpenCodeDiagnosticResponse(response.status, fields);
+        return createOpenCodeDiagnosticResponse(response.status, fields, isSessionPrompt);
       }
       if (isSessionCreate && response.status === 204) {
-        return createOpenCodeDiagnosticResponse(204, {
-          message: "OpenCode returned an empty session creation response.",
-        });
+        return createOpenCodeDiagnosticResponse(
+          204,
+          { message: "OpenCode returned an empty session creation response." },
+          false,
+        );
       }
       return response;
     } catch (cause) {
@@ -1360,7 +1362,12 @@ async function readOpenCodeDiagnosticFields(response: Response): Promise<{
     const data = asRecord(root?.data);
     const nestedData = asRecord(nested?.data);
     const code = sanitizeOpenCodeDiagnosticCode(
-      root?.code ?? root?.error_code ?? root?.name ?? nested?.code ?? nestedData?.code,
+      nested?.code ??
+        nestedData?.code ??
+        data?.code ??
+        root?.code ??
+        root?.error_code ??
+        root?.name,
     );
     const message = sanitizeOpenCodeDiagnosticMessage(
       root?.message ?? data?.message ?? nested?.message ?? nestedData?.message,
@@ -1442,16 +1449,26 @@ function sanitizeOpenCodeDiagnosticMessage(value: unknown): string | undefined {
 function createOpenCodeDiagnosticResponse(
   upstreamStatus: number,
   fields: { code?: string; message?: string },
+  preserveThroughEmptyResponseWrapper: boolean,
 ): Response {
   // Response forbids bodies for 204/304; use a JSON envelope and encode the actual status there.
   const responseStatus = upstreamStatus === 204 || upstreamStatus === 304 ? 200 : upstreamStatus;
   const message =
     fields.message ?? `OpenCode server returned HTTP ${upstreamStatus} while processing a request.`;
+  // 根因：SDK 将 HTTP 错误折叠成 EmptyResponseData，只保留 Error.message 和根级状态，丢掉 response body 的 code/message。
+  // 修复依据：将已脱敏且有界的完整诊断编码进 SDK 必然保留的 message，供错误投影恢复字段。
+  const sdkVisibleMessage = preserveThroughEmptyResponseWrapper
+    ? `OpenCode request diagnostic: ${JSON.stringify({
+        statusCode: upstreamStatus,
+        ...(fields.code ? { code: fields.code } : {}),
+        message,
+      })}`
+    : message;
   return new Response(
     JSON.stringify({
       statusCode: upstreamStatus,
       ...(fields.code ? { code: fields.code } : {}),
-      message,
+      message: sdkVisibleMessage,
     }),
     { status: responseStatus, headers: { "content-type": "application/json" } },
   );
