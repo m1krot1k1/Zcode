@@ -6,7 +6,7 @@ import { createTestModelFactory } from "./test-runtime-model.js";
 import { createTestModelSelection } from "./test-model-selection.js";
 
 describe("OpenCode rate limit", () => {
-  it("shows the 429 on the same request and does not reopen the stream", async () => {
+  it("persists a terminal quota error without retrying before any stream output", async () => {
     const sessionId = createSessionId("runtime-opencode-rate-limit");
     const eventStore = createTestSessionEventStore();
     let modelCallCount = 0;
@@ -26,8 +26,9 @@ describe("OpenCode rate limit", () => {
           },
           async *streamText() {
             modelCallCount += 1;
-            yield { type: "text_delta", text: "partial before limit" };
-            const error = new Error("OpenCode rate limit") as Error & {
+            const error = new Error(
+              "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+            ) as Error & {
               code?: string;
               context?: Record<string, unknown>;
             };
@@ -35,8 +36,8 @@ describe("OpenCode rate limit", () => {
             error.context = {
               providerId: "opencode",
               reason: "rate_limited",
-              retryable: true,
-              statusCode: 429,
+              retryable: false,
+              statusCode: 500,
             };
             throw error;
           },
@@ -53,6 +54,17 @@ describe("OpenCode rate limit", () => {
     expect(events.some((event) => event.type === SessionEventType.StreamRecoveryRetryStarted)).toBe(
       false,
     );
-    expect(events.some((event) => event.type === SessionEventType.TurnError)).toBe(true);
+    const turnError = events.find((event) => event.type === SessionEventType.TurnError);
+    expect(turnError?.payload.error).toMatchObject({
+      code: "model_rate_limited",
+      message:
+        "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+      attribution: {
+        providerId: "opencode",
+        reason: "rate_limited",
+        retryable: false,
+        statusCode: 500,
+      },
+    });
   });
 });
