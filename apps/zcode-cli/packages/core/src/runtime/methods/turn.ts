@@ -1205,7 +1205,11 @@ async function executeSwarmRun(
       {
         selection,
         querySource: "swarm_planner",
-        maxOutputTokens: SWARM_PLAN_MAX_OUTPUT_TOKENS,
+        // 注释依据：模型能力上限可能低于通用规划预算；按能力夹紧，避免请求在 provider 调用前被拒绝。
+        maxOutputTokens: Math.min(
+          SWARM_PLAN_MAX_OUTPUT_TOKENS,
+          state.model.optionSpecs.maxOutputTokens.max,
+        ),
         prompt: buildSwarmPlannerPrompt(task),
       },
       { abortSignal: state.turnAbortSignal, traceContext: state.turnTraceContext },

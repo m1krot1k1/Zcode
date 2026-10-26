@@ -3416,8 +3416,9 @@ describe("AgentRuntime tool loop", () => {
   it("runs the bounded swarm planner through the selected model and feeds child output to synthesis", async () => {
     const sessionId = createSessionId("runtime-swarm-plan");
     const eventStore = createTestSessionEventStore();
-    const selection = createTestModelSelection("test/swarm-selected-model");
+    const selection = createTestModelSelection("test/swarm-selected-model", { reasoningLevel: "high" });
     const dagRequests: unknown[] = [];
+    const plannerRequestOptions: Array<{ maxOutputTokens?: number }> = [];
     let synthesisRequestText = "";
     const subagentPort = {
       async runTaskDag(request: unknown) {
@@ -3436,23 +3437,32 @@ describe("AgentRuntime tool loop", () => {
     };
     const runtime = createTestAgentRuntime(
       sessionId,
-      { mode: "build", modelSelection: selection },
+      { maxOutputTokens: 80, mode: "build", modelSelection: selection },
       {
         eventStore,
         subagentPort: subagentPort as never,
         modelFactory: createTestModelFactory({
           async generateText(request, observation) {
             const requestText = providerMessagesToText(request.messages);
-            if (requestText.includes("Create a bounded task DAG")) {
-              expect(observation.factoryInput.selection).toEqual(selection);
+            if (requestText.includes("Decide whether this task needs independent parallel work")) {
+              expect(observation.factoryInput.selection).toMatchObject({
+                modelId: selection.modelId,
+                options: { reasoningLevel: "high" },
+                providerId: selection.providerId,
+              });
+              plannerRequestOptions.push({ maxOutputTokens: request.options?.maxOutputTokens });
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
                 text: JSON.stringify({
-                  nodes: [
-                    { id: "branch-a", description: "Inspect A", prompt: "Inspect A" },
-                    { id: "branch-b", description: "Inspect B", prompt: "Inspect B" },
-                  ],
+                  decision: "split",
+                  graph: {
+                    max_parallel: 2,
+                    nodes: [
+                      { id: "branch-a", description: "Inspect A", prompt: "Inspect A" },
+                      { id: "branch-b", description: "Inspect B", prompt: "Inspect B" },
+                    ],
+                  },
                 }),
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
@@ -3478,6 +3488,7 @@ describe("AgentRuntime tool loop", () => {
       .map((event) => event.payload as { status: string; taskCount?: number });
 
     expect(result.response).toBe("synthesized swarm response");
+    expect(plannerRequestOptions).toEqual([{ maxOutputTokens: 80 }]);
     expect(dagRequests).toHaveLength(1);
     expect(dagRequests[0]).toMatchObject({ orchestrationRunId: expect.stringMatching(/^swarm_/), nodes: expect.any(Array) });
     expect(JSON.stringify(dagRequests[0])).not.toContain("parentToolCallId");
@@ -3500,11 +3511,17 @@ describe("AgentRuntime tool loop", () => {
         subagentPort: { runTaskDag } as never,
         modelFactory: createTestModelFactory({
           async generateText(request) {
-            if (providerMessagesToText(request.messages).includes("Create a bounded task DAG")) {
+            if (providerMessagesToText(request.messages).includes("Decide whether this task needs independent parallel work")) {
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
-                text: JSON.stringify({ nodes: [{ id: "only", description: "one", prompt: "one" }] }),
+                text: JSON.stringify({
+                  decision: "split",
+                  graph: {
+                    max_parallel: 2,
+                    nodes: [{ id: "only", description: "one", prompt: "one" }],
+                  },
+                }),
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
