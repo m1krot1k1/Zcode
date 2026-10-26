@@ -115,9 +115,9 @@ describe("OpenCode CLI в обычном Composer", () => {
         async () =>
           browser.execute(
             (testId, modelValue) =>
-              document.querySelector(`[data-testid="${testId}"]`)?.getAttribute(
-                "data-model-current-value",
-              ) === modelValue,
+              document
+                .querySelector(`[data-testid="${testId}"]`)
+                ?.getAttribute("data-model-current-value") === modelValue,
             TID_CHAT_MODEL_SELECT_TRIGGER,
             expectedModelValue,
           ),
@@ -129,20 +129,32 @@ describe("OpenCode CLI в обычном Composer", () => {
 
       await waitForV4AssistantMessageContaining(E2E_OPENCODE_REPLY, 45_000);
 
-      const traceRaw = await readFile(tracePath, "utf8").catch(() => "");
-      if (traceRaw.trim()) {
-        const trace = traceRaw
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as { event: string; prompt?: string; modelId?: string });
-        assert.ok(trace.some((entry) => entry.event === "prompt" && entry.prompt?.includes(marker)));
-      }
+      const traceRaw = await readFile(tracePath, "utf8");
+      const trace = traceRaw
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              event: string;
+              prompt?: string;
+              model?: { providerID?: string; modelID?: string } | null;
+            },
+        );
+      const promptTrace = trace.find(
+        (entry) => entry.event === "prompt" && entry.prompt?.includes(marker),
+      );
+      // Раньше canned-ответ мог пройти тест без trace и без запроса к OpenCode.
+      assert.ok(promptTrace, "mock OpenCode не получил отправленный marker");
+      const [expectedProviderID, expectedModelID] = E2E_OPENCODE_MODEL_ID.split("/", 2);
+      assert.deepEqual(promptTrace.model, {
+        providerID: expectedProviderID,
+        modelID: expectedModelID,
+      });
 
       await mkdir(artifactDir, { recursive: true });
-      if (traceRaw.trim()) {
-        await writeFile(join(artifactDir, "composer-trace.jsonl"), traceRaw);
-      }
+      await writeFile(join(artifactDir, "composer-trace.jsonl"), traceRaw);
       await browser.saveScreenshot(join(artifactDir, "opencode-composer-reply.png"));
     },
   );

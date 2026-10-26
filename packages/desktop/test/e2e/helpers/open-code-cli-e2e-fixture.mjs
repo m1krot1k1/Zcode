@@ -95,7 +95,7 @@ if (sub === "serve") {
           payload = {};
         }
         const promptText = (payload.parts ?? []).map((p) => p.text ?? "").join("");
-        await trace({ event: "prompt", prompt: promptText, modelId });
+        await trace({ event: "prompt", prompt: promptText, model: payload.model ?? null });
         const sessionId = messageMatch[1];
         const messageId = "msg-assistant-1";
         const partId = "part-text-1";
