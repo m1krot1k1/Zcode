@@ -227,6 +227,40 @@ const E2E_APP_SETTINGS_FILE = resolve(E2E_APP_CONFIG_DIR, "setting.json");
 function isOpenCodeComposerE2E(specs: string[]) {
   return specs.some((spec) => spec.endsWith("conversation-session-opencode-cli-composer.test.ts"));
 }
+function isOpenCodeCliInstallE2E(specs: string[]) {
+  return specs.some((spec) => spec.endsWith("conversation-session-opencode-cli-install.test.ts"));
+}
+const OPENCODE_INSTALL_E2E_ENV_KEYS = [
+  "ZCODE_E2E_OPENCODE_CLI_PATH",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_STATE_HOME",
+] as const;
+let originalOpenCodeInstallE2EEnv: Map<
+  (typeof OPENCODE_INSTALL_E2E_ENV_KEYS)[number],
+  string | undefined
+> | null = null;
+
+function isolateOpenCodeInstallE2EEnvironment() {
+  originalOpenCodeInstallE2EEnv = new Map(
+    OPENCODE_INSTALL_E2E_ENV_KEYS.map((key) => [key, process.env[key]]),
+  );
+  process.env.ZCODE_E2E_OPENCODE_CLI_PATH = resolve(E2E_HOME_DIR, ".opencode", "bin", "opencode");
+  process.env.XDG_CONFIG_HOME = resolve(E2E_HOME_DIR, ".config");
+  process.env.XDG_DATA_HOME = resolve(E2E_HOME_DIR, ".local", "share");
+  process.env.XDG_CACHE_HOME = resolve(E2E_HOME_DIR, ".cache");
+  process.env.XDG_STATE_HOME = resolve(E2E_HOME_DIR, ".local", "state");
+}
+
+function restoreOpenCodeInstallE2EEnvironment() {
+  if (!originalOpenCodeInstallE2EEnv) return;
+  for (const [key, value] of originalOpenCodeInstallE2EEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  originalOpenCodeInstallE2EEnv = null;
+}
 const E2E_APP_CREDENTIALS_FILE = resolve(E2E_APP_CONFIG_DIR, "credentials.json");
 const E2E_APP_PROVIDER_CONFIG_FILE = resolve(E2E_APP_CONFIG_DIR, "provider_config.json");
 // staged Electron app 只有 main/host/renderer 产物，不携带仓库级 config/provider。
@@ -5006,6 +5040,24 @@ export const config: WebdriverIO.Config = {
             process.env.ZCODE_E2E_OPENCODE_CLI_PATH = resolve(cliBin, "opencode");
           }
         }
+        if (isOpenCodeCliInstallE2E(specs)) {
+          if (process.platform === "darwin") {
+            const currentSettings = JSON.parse(
+              await readFile(E2E_APP_SETTINGS_FILE, "utf8").catch(() => "{}"),
+            ) as Record<string, unknown>;
+            // 安装 smoke 只能访问隔离配置/数据目录，绝不能复用开发者的 OpenCode 登录态。
+            await writeFile(
+              E2E_APP_SETTINGS_FILE,
+              JSON.stringify({
+                ...currentSettings,
+                openCodeCliEnabled: false,
+                zcodeEndpointOrigin: "https://zcode-e2e.invalid",
+              }),
+              "utf8",
+            );
+            isolateOpenCodeInstallE2EEnvironment();
+          }
+        }
         // Client Scenes 是布局 case 的远端目录依赖；必须在 resetHome 完成、Electron
         // 启动前覆盖 endpoint，确保 Main → Host 首次 import 时拿到 case-local fixture。
         await startClientScenesE2EMockIfNeeded(specs);
@@ -5106,6 +5158,7 @@ export const config: WebdriverIO.Config = {
           delete process.env.ZCODE_E2E_OPENCODE_MODEL_ID;
           delete process.env.ZCODE_E2E_OPENCODE_REPLY;
           delete process.env.ZCODE_E2E_OPENCODE_TRACE_PATH;
+          restoreOpenCodeInstallE2EEnvironment();
           await stopRequestSecurityFixture();
           await stopModelContextBudgetConfigE2EMock();
           await stopDynamicWorkflowConfigE2EMock();

@@ -8,6 +8,7 @@ import {
   type OpenCodeCliResolution,
   type OpenCodeCommandSpec,
 } from "./cliResolver.js";
+import { resolveOpenCodeCliReleaseAsset } from "./cliReleaseManifest.js";
 import { installOpenCodePinnedCli } from "./cliBinaryInstaller.js";
 import {
   shouldSpawnInDetachedProcessGroup,
@@ -103,7 +104,7 @@ export async function resolveCliCommand(cliPath?: string): Promise<OpenCodeCliRe
   const e2eCliPath = process.env.ZCODE_E2E_OPENCODE_CLI_PATH?.trim();
   const explicitPath =
     cliPath?.trim() || (e2eCliPath && isAbsolute(e2eCliPath) ? e2eCliPath : undefined);
-  return await resolveOpenCodeCli({
+  const resolution = await resolveOpenCodeCli({
     platform: process.platform,
     architecture: process.arch,
     linuxLibc,
@@ -114,6 +115,31 @@ export async function resolveCliCommand(cliPath?: string): Promise<OpenCodeCliRe
     explicitPath,
     isExecutableFile,
   });
+
+  // 根因：missing-CLI E2E 必须把开发机上的全局 OpenCode 隔离掉，但显式测试路径在安装前
+  // 不存在时会被解析成 invalid-explicit-path，设置页因此隐藏 Install。
+  // 修复依据：仅在 ZCODE_ENV=test 且使用 E2E 专用绝对路径时，把该路径的“尚未安装”映射为
+  // 可安装状态；安装仍写入隔离 HOME，正式运行和用户手选路径语义不变。
+  if (
+    process.env.ZCODE_ENV === "test" &&
+    e2eCliPath &&
+    isAbsolute(e2eCliPath) &&
+    resolution.status === "invalid-explicit-path" &&
+    resolution.diagnostic === "opencode.explicit-cli-unavailable"
+  ) {
+    return {
+      status: "missing",
+      diagnostic: "opencode.cli-missing",
+      installSupported: Boolean(
+        resolveOpenCodeCliReleaseAsset({
+          platform: process.platform,
+          architecture: process.arch,
+          linuxLibc,
+        }),
+      ),
+    };
+  }
+  return resolution;
 }
 
 export function childProcessEnvironment(

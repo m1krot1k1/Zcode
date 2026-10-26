@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -52,6 +52,46 @@ describe("OpenCode E2E CLI override", () => {
     } finally {
       if (previous === undefined) delete process.env.ZCODE_E2E_OPENCODE_CLI_PATH;
       else process.env.ZCODE_E2E_OPENCODE_CLI_PATH = previous;
+    }
+  });
+
+  it("treats an absent isolated E2E CLI path as installable, then resolves that installed path", async () => {
+    const directory = await makeTempDir();
+    const cliPath = join(
+      directory,
+      ".opencode",
+      "bin",
+      process.platform === "win32" ? "opencode.exe" : "opencode",
+    );
+    const previous = {
+      cliPath: process.env.ZCODE_E2E_OPENCODE_CLI_PATH,
+      environment: process.env.ZCODE_ENV,
+      home: process.env.HOME,
+    };
+    process.env.ZCODE_ENV = "test";
+    process.env.HOME = directory;
+    process.env.ZCODE_E2E_OPENCODE_CLI_PATH = cliPath;
+    try {
+      await expect(resolveCliCommand()).resolves.toMatchObject({
+        status: "missing",
+        diagnostic: "opencode.cli-missing",
+      });
+
+      await mkdir(join(directory, ".opencode", "bin"), { recursive: true });
+      await writeFile(cliPath, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+      if (process.platform !== "win32") await chmod(cliPath, 0o700);
+
+      await expect(resolveCliCommand()).resolves.toMatchObject({
+        status: "resolved",
+        executablePath: cliPath,
+      });
+    } finally {
+      if (previous.cliPath === undefined) delete process.env.ZCODE_E2E_OPENCODE_CLI_PATH;
+      else process.env.ZCODE_E2E_OPENCODE_CLI_PATH = previous.cliPath;
+      if (previous.environment === undefined) delete process.env.ZCODE_ENV;
+      else process.env.ZCODE_ENV = previous.environment;
+      if (previous.home === undefined) delete process.env.HOME;
+      else process.env.HOME = previous.home;
     }
   });
 });
