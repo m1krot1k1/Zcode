@@ -22,8 +22,9 @@ test("PRISM runtime profile derives from the checksum-verified all source", asyn
   assert.match(artifact.prompt, /## 5\. Контур проверки поколения/u);
   assert.match(artifact.prompt, /Proof-Carrying Upgrade/u);
   assert.match(artifact.prompt, /EXPERIMENTAL RECURSIVE DISCOVERY MODULE \(v10\)/u);
-  assert.match(artifact.prompt, /не запускает LLM и не удостоверяет receipts/u);
-  assert.match(artifact.prompt, /Если исходный пакет PRISM с `experiment_gate\.py` доступен/u);
+  assert.match(artifact.prompt, /не запускает LLM/u);
+  assert.match(artifact.prompt, /node scripts\/prism10-experiment-gate\.mjs/u);
+  assert.match(artifact.prompt, /не проверяет подлинность receipts/u);
   assert.doesNotMatch(artifact.prompt, /PRISM ∞ 10\.0 активирован\./u);
   assert.doesNotMatch(artifact.prompt, /python scripts\/experiment_gate\.py/u);
   assert.doesNotMatch(artifact.prompt, /не проверяй и не применяй патчи ZCode/u);

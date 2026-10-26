@@ -24,6 +24,20 @@ dev + HEAD + staged index
   → отдельный self-improve CLI может показать dry-run план; фактический --apply заблокирован без внешнего protected gate
 ```
 
+## Контракт идентификации запросов для будущей оценки промптов
+
+Текущий локальный infrastructure evaluator выше не запускает модель и не получает оценку candidate. Для отдельного будущего prompt evaluator `AgentRuntime.generateWorkspaceText` возвращает успешный provider `requestId`, если он опубликован runtime status sink; CLI protocol передаёт поле дальше как optional для совместимости со старыми app-server. При отсутствии ID trial не может быть принят в пару и recorder должен отказать, а не генерировать фиктивный ID.
+
+Единственный владелец ID — `AgentRuntime`: порядок событий `ModelRequest` → provider `model_request_completed` → `ModelComplete` → runtime result → protocol response. Во всех представлениях присутствует один и тот же ID. Bootstrap/server только проецируют результат и не создают второй ID. Это связывает локальный результат с наблюдавшимся запросом; поле не удостоверяет ответ провайдера и не создаёт внешнюю attestation.
+
+## Локальный PRISM gate предъявленных пар
+
+`scripts/prism10-experiment-gate.mjs` — перенос локального PRISM sign-test gate на Node, поэтому установленный ZCode не зависит от Python. Он принимает только заранее записанный JSONL и считает пары baseline/candidate; пользовательский ввод не исполняется и модель не вызывается. Предел входа — 10 MiB и 10 000 строк. По умолчанию требуется не менее 20 разных case и 2 trial на каждый; все записи обязаны иметь единый `environment_id`, `grader_id` и `split=protected_holdout`.
+
+Gate повторяет направления исходного алгоритма PRISM: двоичный успех либо `confirmed_discoveries`, парный односторонний exact sign test по агрегированному результату на case, veto на candidate safety violations и critical regressions, ограничения на среднюю стоимость (1.25x) и latency (1.30x), отказ в promotion для синтетических записей. Если baseline resource average равен нулю, а candidate тратит больше нуля, соответствующая ratio выводится как JSON `null` и результат отклоняется, чтобы не сериализовать `Infinity`. Ручная сверка алгоритма и порога выполнена по Python-оригиналу и README; автоматического differential test между реализациями пока нет. Статус `PROMOTE_CANDIDATE` остаётся лишь локальной рекомендацией технической проверки, не меняет prompt/model config, не создаёт ветки/PR/release и всегда требует ручной независимой проверки исходных receipts и holdout. Missing/invalid data дают `INVALID_INPUT`; REJECT и INSUFFICIENT_EVIDENCE не равны PASS.
+
+Команда: `node scripts/prism10-experiment-gate.mjs --input <jsonl> [--objective success|discovery] [--min-cases N] [--min-trials N]`. Exit code 0 означает только `PROMOTE_CANDIDATE`, 2 — корректно рассчитанный `REJECT`/`INSUFFICIENT_EVIDENCE`, 3 — некорректный ввод. В локальный `verify:pre-push` входит regression-suite самого gate. Vendor-файл с Python остаётся неизменённым; Node-перенос и различие порога по умолчанию проверяются против исходного алгоритма и README PRISM.
+
 ## Admission и snapshot
 
 - CLI принимает только необязательный `--evidence-dir <path>`; команда, executable, argv, exit code, timestamp, artifact hash, base SHA и patch hash не принимаются от вызывающего.

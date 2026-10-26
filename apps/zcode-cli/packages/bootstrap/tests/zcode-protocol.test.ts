@@ -6067,6 +6067,7 @@ describe("ZCodeProtocolAgentServer", () => {
       text: "fix(git): generate message",
       selection: { providerId: "custom-openai", modelId: "backup-model" },
       finishReason: "stop",
+      requestId: "request-protocol-projection",
     }));
     const providerRegistry = createProtocolTestProviderRegistry();
     const server = new ZCodeProtocolAgentServer({
@@ -6092,6 +6093,7 @@ describe("ZCodeProtocolAgentServer", () => {
     );
 
     expect(result.text).toBe("fix(git): generate message");
+    expect(result.requestId).toBe("request-protocol-projection");
     expect(generateWorkspaceText).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
     const temporaryAppOptions = appOptions.at(-1);

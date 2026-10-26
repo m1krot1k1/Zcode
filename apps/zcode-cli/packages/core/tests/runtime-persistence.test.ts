@@ -4767,6 +4767,35 @@ describe("AgentRuntime session persistence", () => {
     expect(factoryInputs[0]).not.toHaveProperty("providerOptions");
   });
 
+  it("returns the observed provider request ID for workspace text generation", async () => {
+    const requestId = "request-prism-trial-1";
+    const selection = createTestModelSelection("test-provider/test-model");
+    const runtime = createTestAgentRuntime(
+      createSessionId("workspace-generate-text-request-id"),
+      { modelSelection: selection },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            await observation.invocationContext?.statusSink?.publish({
+              type: "model_request_completed",
+              requestId,
+            } as never);
+            return { finishReason: "stop", text: "observed response" };
+          },
+        }),
+      },
+    );
+
+    const result = await runtime.generateWorkspaceText({
+      selection,
+      prompt: "Return a short answer",
+      querySource: "test_prism_prompt_trial",
+    });
+
+    expect(result.requestId).toBe(requestId);
+  });
+
   it("uses a 60 second default timeout for generated session title requests", async () => {
     const sessionId = createSessionId("runtime-persistence-title-default-timeout");
     const store = createRecordingSessionStore();

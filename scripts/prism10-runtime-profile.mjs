@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_ROOT = path.join(REPOSITORY_ROOT, "docs/vendor/prism10");
 const PROFILE_COMPILER_PATH = fileURLToPath(import.meta.url);
+const EXPERIMENT_GATE_PATH = path.join(REPOSITORY_ROOT, "scripts/prism10-experiment-gate.mjs");
 const IDENTITY_PATH = path.join(
   REPOSITORY_ROOT,
   "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
@@ -19,9 +20,9 @@ const ACTIVATION_REPLACEMENT = [
 ].join("\n");
 
 const GATE_COMMAND_REPLACEMENT =
-  "Используй только evaluation gate, который действительно доступен в текущем проекте. Локальный PRISM gate сравнивает предъявленные результаты, но не запускает LLM и не удостоверяет receipts.";
+  "В ZCode доступен локальный Node gate: `node scripts/prism10-experiment-gate.mjs --input <jsonl> --objective success`. Он сравнивает только предъявленные записи и не запускает LLM.";
 const GATE_AVAILABILITY_REPLACEMENT =
-  "Если исходный пакет PRISM с `experiment_gate.py` доступен, он может сравнить предъявленные результаты и выдать техническую рекомендацию; иначе используй только evaluation gate, который действительно доступен в текущем проекте. Сам gate не запускает LLM и не удостоверяет receipts.";
+  "Локальный PRISM gate принимает заранее записанные пары baseline/candidate, требует одинаковые protected_holdout, environment и grader, проверяет парные результаты, safety, критические регрессии, стоимость и latency. Он не запускает LLM, не проверяет подлинность receipts, не доказывает улучшение и не разрешает выпуск; его рекомендация требует ручной независимой проверки.";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -130,6 +131,9 @@ export async function buildPrismRuntimeProfile() {
   );
   provenance.push(
     `zcode/scripts/prism10-runtime-profile.mjs\0${sha256(await readFile(PROFILE_COMPILER_PATH))}\n`,
+  );
+  provenance.push(
+    `zcode/scripts/prism10-experiment-gate.mjs\0${sha256(await readFile(EXPERIMENT_GATE_PATH))}\n`,
   );
   const sourceDigest = sha256(
     `${ADAPTER_VERSION}\n${provenance.join("")}\n${ACTIVATION_REPLACEMENT}\n${GATE_COMMAND_REPLACEMENT}\n${GATE_AVAILABILITY_REPLACEMENT}`,

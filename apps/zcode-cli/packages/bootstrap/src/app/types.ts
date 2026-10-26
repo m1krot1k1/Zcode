@@ -631,6 +631,7 @@ export interface ZCodeApp {
     text: string;
     selection: WorkspaceGenerateTextInput["selection"];
     finishReason: string;
+    requestId?: string;
     usage?: ModelUsage;
     toolCalls?: ModelToolCall[];
   }>;

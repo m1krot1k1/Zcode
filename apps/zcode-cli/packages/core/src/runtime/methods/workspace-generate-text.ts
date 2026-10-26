@@ -41,6 +41,7 @@ export interface WorkspaceGenerateTextResult {
   text: string;
   selection: ModelSelection;
   finishReason: string;
+  requestId?: string;
   usage?: ModelUsage;
   toolCalls?: ModelToolCall[];
 }
@@ -271,6 +272,7 @@ async function generateWorkspaceTextImpl(
       ...(requestedSelection.options ? { options: { ...requestedSelection.options } } : {}),
     },
     finishReason: result.finishReason,
+    ...(completedRequestId ? { requestId: completedRequestId } : {}),
     usage: result.usage,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
   };

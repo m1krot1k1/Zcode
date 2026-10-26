@@ -2514,6 +2514,7 @@ export const zcodeWorkspaceGenerateTextResultSchema = z
     text: z.string(),
     selection: modelSelectionSchema,
     toolCalls: z.array(zcodeWorkspaceModelToolCallSchema).optional(),
+    requestId: nonEmptyString.optional(),
     // 可选以兼容仍在运行的旧 app-server；新 CLI 始终返回结构化结束原因。
     finishReason: z.string().optional(),
     usage: z

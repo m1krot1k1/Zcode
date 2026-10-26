@@ -2927,6 +2927,7 @@ export async function generateWorkspaceText(
       text: result.text,
       selection: result.selection,
       finishReason: result.finishReason,
+      ...(result.requestId ? { requestId: result.requestId } : {}),
       ...(result.usage ? { usage: result.usage } : {}),
       ...(result.toolCalls ? { toolCalls: result.toolCalls } : {}),
     };
