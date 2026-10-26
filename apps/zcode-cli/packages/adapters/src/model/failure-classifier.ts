@@ -99,6 +99,26 @@ export function classifyModelFailure(
   const headers = getResponseHeaders(unwrapped);
   const retryAfterMs = parseRetryAfterMs(headers);
 
+  const openCodeDiagnostic =
+    readOpenCodeSessionDiagnostic(unwrapped) ?? readOpenCodeRequestDiagnostic(unwrapped);
+  const openCodeProviderFailure = findProviderBusinessError(unwrapped);
+  const openCodeProviderMessage =
+    openCodeDiagnostic?.message ??
+    (openCodeProviderFailure?.providerId === "opencode"
+      ? providerBusinessMessage(openCodeProviderFailure)
+      : undefined);
+  if (isOpenCodeFreeUsageLimitMessage(openCodeProviderMessage)) {
+    return {
+      code: ModelErrorCode.ModelRateLimited,
+      message:
+        "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+      reason: ModelFailureReasonValue.RateLimited,
+      retryReason: ModelRetryReasonValue.RateLimited,
+      retryable: false,
+      statusCode,
+    };
+  }
+
   if (code === "OPENCODE_WORKSPACE_UNAVAILABLE") {
     return {
       code: ModelErrorCode.ModelRequestFailed,
@@ -329,11 +349,13 @@ export function classifyModelFailure(
   // 根因：OpenCode SDK 把本地服务的异常响应包装成 “no response data”，旧文案却推断模型 ID 错误。
   // 修复依据：上游只返回通用 500 时无法判定模型原因；提示查看 OpenCode 日志，不诱导用户换模型。
   const emptyOpenCodeResponse =
-    unwrapped instanceof Error &&
-    unwrapped.message.includes("OpenCode returned no response data for model ");
+    code === "OPENCODE_EMPTY_RESPONSE" ||
+    (unwrapped instanceof Error &&
+      unwrapped.message.includes("OpenCode returned no response data for model "));
   if (emptyOpenCodeResponse) {
     const localServerFailure =
-      /Original error:\s*Unexpected server error\b/iu.test(unwrapped.message) ||
+      (unwrapped instanceof Error &&
+        /Original error:\s*Unexpected server error\b/iu.test(unwrapped.message)) ||
       (statusCode !== undefined && statusCode >= 500);
     return {
       code: ModelErrorCode.ModelRequestFailed,
@@ -372,6 +394,10 @@ export function classifyModelFailure(
     retryAfterMs,
     statusCode,
   };
+}
+
+function isOpenCodeFreeUsageLimitMessage(message: string | undefined): boolean {
+  return Boolean(message && /free usage limit reached|free models work in opencode/i.test(message));
 }
 
 export function isRetryableFailure(failure: ClassifiedModelFailure): boolean {

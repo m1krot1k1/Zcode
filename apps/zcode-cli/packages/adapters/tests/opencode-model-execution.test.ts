@@ -8,7 +8,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
-import { createOpencode, OpencodeClientManager } from "ai-sdk-provider-opencode-sdk";
+import {
+  createEmptyResponseDataError,
+  createOpencode,
+  OpencodeClientManager,
+} from "ai-sdk-provider-opencode-sdk";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it, vi } from "vitest";
 import { classifyModelFailure, inspectProviderFailure } from "../src/model/failure-classifier.js";
@@ -68,8 +72,11 @@ describe("OpenCode SDK model execution", () => {
       expect(requests).toContain("POST /session/ses_test/message");
       expect(failure).toBeDefined();
       expect(classifyModelFailure(failure)).toMatchObject({
+        code: "model_rate_limited",
         statusCode: 500,
-        reason: "unknown",
+        message:
+          "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+        reason: "rate_limited",
         retryable: false,
       });
       expect(inspectProviderFailure(failure)).toEqual({
@@ -80,6 +87,159 @@ describe("OpenCode SDK model execution", () => {
     } finally {
       await registry.dispose();
     }
+  });
+
+  it("does not infer an invalid model from OpenCode's generic prompt server error", async () => {
+    const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const pathname = new URL(request.url).pathname;
+      if (request.method === "POST" && pathname === "/session") {
+        return Response.json({
+          id: "ses_test",
+          projectID: "global",
+          directory: process.cwd(),
+          title: "test",
+          version: "1.19.3",
+          time: { created: 1, updated: 1 },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          name: "UnknownError",
+          data: {
+            code: "INTERNAL_ERROR",
+            message: "Unexpected server error. Check server logs for details.",
+          },
+        }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    });
+    const client = createOpencodeClient({ baseUrl: "http://opencode.test", fetch });
+    const provider = createOpencode({
+      clientManager: OpencodeClientManager.createInstance({ client }),
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model;
+      const result = runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doGenerate!(createCallOptions()),
+      );
+      let failure: unknown;
+      try {
+        await result;
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toBeDefined();
+      expect(classifyModelFailure(failure)).toMatchObject({
+        statusCode: 500,
+        reason: "unknown",
+        retryable: false,
+      });
+      expect(inspectProviderFailure(failure)).toEqual({
+        providerErrorCode: "INTERNAL_ERROR",
+        providerErrorMessage: "Unexpected server error. Check server logs for details.",
+      });
+      expect(String(failure)).not.toMatch(/invalid model|model id.*invalid/i);
+    } finally {
+      await registry.dispose();
+    }
+  });
+
+  it("sanitizes empty-response errors raised after OpenCode streaming starts", async () => {
+    const sdkFailure = createEmptyResponseDataError(
+      new Error(
+        'OpenCode request diagnostic: {"statusCode":500,"code":"INTERNAL_ERROR","message":"Unexpected server error. Check server logs for details."}',
+      ),
+      { sessionId: "ses_test", modelId: "opencode/deepseek-v4.1-flash-free" },
+    );
+    const provider = createFakeOpenCodeProvider({
+      model: () =>
+        ({
+          doStream: async () => ({
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              start(controller) {
+                controller.error(sdkFailure);
+              },
+            }),
+          }),
+        }) as unknown as LanguageModelV3,
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model;
+      const output = await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doStream!(createCallOptions()),
+      );
+      let failure: unknown;
+      try {
+        await output.stream.getReader().read();
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toBeInstanceOf(Error);
+      expect(String(failure)).not.toMatch(/invalid model|model id.*invalid/i);
+      expect(classifyModelFailure(failure)).toMatchObject({
+        statusCode: 500,
+        reason: "unknown",
+        retryable: false,
+      });
+      expect(inspectProviderFailure(failure)).toEqual({
+        providerErrorCode: "INTERNAL_ERROR",
+        providerErrorMessage: "Unexpected server error. Check server logs for details.",
+      });
+    } finally {
+      await registry.dispose();
+    }
+  });
+
+  it("projects prompt_async HTTP diagnostics through the generated client and SDK empty-response wrapper", async () => {
+    let promptPath: string | undefined;
+    const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      promptPath = new URL(request.url).pathname;
+      return new Response(
+        JSON.stringify({
+          name: "UnknownError",
+          data: {
+            code: "INTERNAL_ERROR",
+            message: "Unexpected server error. Check server logs for details.",
+            debug: "must not cross the provider boundary",
+          },
+        }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    });
+    const client = createOpencodeClient({ baseUrl: "http://opencode.test", fetch });
+    const result = await client.session.promptAsync({
+      sessionID: "ses_test",
+      parts: [{ type: "text", text: "hello" }],
+    });
+    expect(promptPath).toBe("/session/ses_test/prompt_async");
+    expect(result.error).toBeDefined();
+
+    // The current provider model adapter calls session.prompt (/message), not promptAsync.
+    // Exercise the generated promptAsync client and the provider SDK's same empty-response
+    // wrapper separately so this endpoint's declared compatibility path remains covered.
+    const failure = createEmptyResponseDataError(result.error, {
+      sessionId: "ses_test",
+      modelId: "opencode/deepseek-v4.1-flash-free",
+    });
+    expect(failure.message).toContain("OpenCode request diagnostic:");
+    expect(classifyModelFailure(failure)).toMatchObject({
+      statusCode: 500,
+      reason: "unknown",
+      retryable: false,
+    });
+    expect(inspectProviderFailure(failure)).toEqual({
+      providerErrorCode: "INTERNAL_ERROR",
+      providerErrorMessage: "Unexpected server error. Check server logs for details.",
+    });
+    expect(failure.message).not.toContain("must not cross the provider boundary");
   });
 
   it("uses local-auth without constructing a URL or an API key and routes by the active workspace", async () => {

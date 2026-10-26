@@ -9,7 +9,10 @@ import { delimiter, dirname, isAbsolute } from "node:path";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
+import type {
+  LanguageModelV3CallOptions,
+  LanguageModelV3StreamPart,
+} from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
 import type { ClientManagerOptions, OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
 import {
@@ -35,6 +38,7 @@ import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-o
 import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
 import { createProviderEndpointRoutingFetch } from "./provider-endpoint-routing-fetch.js";
 import { normalizeModelTlsFailure } from "./failure-tls.js";
+import { readOpenCodeRequestDiagnostic } from "./failure-inspection.js";
 import {
   mergeModelRequestHeaders,
   withoutModelAuthHeaders,
@@ -343,12 +347,21 @@ export class AiSdkModelExecution {
           doGenerate: async (options: LanguageModelV3CallOptions) => {
             const workingDirectory = getWorkingDirectory();
             await assertOpenCodeWorkspaceDirectory(workingDirectory);
-            return createModel(workingDirectory).doGenerate(options);
+            try {
+              return await createModel(workingDirectory).doGenerate(options);
+            } catch (error) {
+              throw sanitizeOpenCodeEmptyResponseError(error);
+            }
           },
           doStream: async (options: LanguageModelV3CallOptions) => {
             const workingDirectory = getWorkingDirectory();
             await assertOpenCodeWorkspaceDirectory(workingDirectory);
-            return createModel(workingDirectory).doStream(options);
+            try {
+              const result = await createModel(workingDirectory).doStream(options);
+              return { ...result, stream: sanitizeOpenCodeStreamErrors(result.stream) };
+            } catch (error) {
+              throw sanitizeOpenCodeEmptyResponseError(error);
+            }
           },
         } as LanguageModel;
       };
@@ -452,6 +465,58 @@ export class AiSdkModelExecution {
     this.providerTransports.set(providerId, networkTransport);
     return networkTransport;
   }
+}
+
+function sanitizeOpenCodeEmptyResponseError(error: unknown): unknown {
+  if (!(error instanceof Error) || !error.message.includes("OpenCode returned no response data")) {
+    return error;
+  }
+
+  const diagnostic = readOpenCodeRequestDiagnostic(error);
+  const diagnosticSuffix = diagnostic
+    ? ` OpenCode request diagnostic: ${JSON.stringify(diagnostic)}`
+    : "";
+  // 根因：SDK 的空响应文案会把通用服务器错误猜成无效模型 ID，随后原样出现在 UI 详情中。
+  // 修复依据：只保留诊断 fetch 已脱敏的状态/错误字段；不保留原始 SDK Error 或 cause。
+  const safeError = new Error(`OpenCode returned an empty response.${diagnosticSuffix}`) as Error & {
+    code: string;
+    statusCode?: number;
+    isRetryable: false;
+  };
+  safeError.name = "OpenCodeEmptyResponseError";
+  safeError.code = "OPENCODE_EMPTY_RESPONSE";
+  if (diagnostic?.statusCode !== undefined) safeError.statusCode = diagnostic.statusCode;
+  safeError.isRetryable = false;
+  return safeError;
+}
+
+function sanitizeOpenCodeStreamErrors(
+  stream: ReadableStream<LanguageModelV3StreamPart>,
+): ReadableStream<LanguageModelV3StreamPart> {
+  const reader = stream.getReader();
+  return new ReadableStream<LanguageModelV3StreamPart>({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          controller.close();
+          reader.releaseLock();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        controller.error(sanitizeOpenCodeEmptyResponseError(error));
+        reader.releaseLock();
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
 }
 
 const OPENCODE_WORKSPACE_DIRECTORY_ERROR =

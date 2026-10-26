@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { isRealComputerUseProducerInstalled } from "../packages/desktop/scripts/computer-use-producer.mjs";
 import { resolveDevDesktopWindowsCuaEnv } from "./dev-desktop-cua-env.mjs";
+import { resolveDevDesktopEndpointEnv } from "./dev-desktop-endpoint-env.mjs";
 import { withPinnedNodePath } from "./mise-toolchain-env.mjs";
 import { quoteArgsForWindowsShell } from "./spawn-command.mjs";
 
@@ -72,6 +73,7 @@ function run(command, args) {
           ZCODE_ENV: requestedEnv,
           ZCODE_DESKTOP_AGENT_BYTECODE: agentBytecode ? "1" : "0",
           ...computerUseDevEnv,
+          ...resolveDevDesktopEndpointEnv(requestedEnv, process.env),
         },
         process.execPath,
       ),
