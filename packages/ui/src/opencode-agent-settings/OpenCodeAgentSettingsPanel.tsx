@@ -187,7 +187,8 @@ export function OpenCodeAgentSettingsPanel({
         <Switch
           aria-label={intl.formatMessage({ id: "settings.openCode.enable" })}
           checked={displayedEnabled}
-          disabled={busy || !runtime || (!enabled && cliStatus?.status !== "available")}
+          // 启用开关保存用户偏好；CLI/目录是否可选仍由 Host 的运行时发现结果决定。
+          disabled={busy || !runtime}
           onCheckedChange={(nextEnabled) => void handleEnabledChange(nextEnabled)}
           data-testid="opencode-cli-enabled-switch"
         />

@@ -75,6 +75,29 @@ describe("OpenCode CLI provider settings", () => {
     expect(onEnabledChange).toHaveBeenCalledWith(true);
   });
 
+  it("keeps the enable switch usable while the CLI is missing", async () => {
+    const runtime = {
+      getCliStatus: vi.fn(async () => ({
+        status: "missing" as const,
+        diagnostic: "opencode.cli-missing",
+        installSupported: true,
+      })),
+      installCli: vi.fn(),
+    };
+    const { onEnabledChange } = renderPanel(runtime);
+
+    await screen.findByText("OpenCode CLI is not installed");
+    const toggle = screen.getByRole("switch", { name: "Enable OpenCode CLI" });
+    expect(toggle.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
+    expect(onEnabledChange).toHaveBeenCalledOnce();
+    expect(onEnabledChange).toHaveBeenCalledWith(true);
+    expect(screen.getByRole("button", { name: "Install OpenCode" })).toBeTruthy();
+    expect(runtime.installCli).not.toHaveBeenCalled();
+  });
+
   it("offers direct installation for a missing CLI and verifies before enabling it", async () => {
     const runtime = {
       getCliStatus: vi
@@ -123,7 +146,7 @@ describe("OpenCode CLI provider settings", () => {
     expect(screen.queryByRole("button", { name: "Install OpenCode" })).toBeNull();
     expect(
       screen.getByRole("switch", { name: "Enable OpenCode CLI" }).hasAttribute("disabled"),
-    ).toBe(true);
+    ).toBe(false);
     expect(runtime.installCli).not.toHaveBeenCalled();
   });
 
