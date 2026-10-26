@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveClineMcpConfigPath } from "../src/settings-sync/settingsSyncService.js";
+import {
+  resolveClineMcpConfigPath,
+  selectClineMcpConfigPath,
+} from "../src/settings-sync/settingsSyncService.js";
 
 describe("resolveClineMcpConfigPath", () => {
   it("prefers explicit Cline overrides before editor discovery", () => {
@@ -115,5 +118,47 @@ describe("resolveClineMcpConfigPath", () => {
         exists: (path) => path.includes("/.config/Code/"),
       }),
     ).toContain("/.config/Code/");
+  });
+});
+
+describe("selectClineMcpConfigPath", () => {
+  it("skips an empty editor profile and chooses the populated Cline CLI profile", async () => {
+    const editor = "/profile/Code/User/globalStorage/cline/settings.json";
+    const cli = "/profile/.cline/data/settings/cline_mcp_settings.json";
+
+    await expect(
+      selectClineMcpConfigPath([editor, cli], async (path) => ({
+        exists: true,
+        serverCount: path === editor ? 0 : 10,
+      })),
+    ).resolves.toBe(cli);
+  });
+
+  it("keeps explicit paths authoritative, including when the profile is empty", async () => {
+    const explicit = "/explicit/cline_mcp_settings.json";
+
+    await expect(
+      selectClineMcpConfigPath([explicit], async () => ({ exists: true, serverCount: 0 })),
+    ).resolves.toBe(explicit);
+  });
+
+  it("uses the first existing profile for diagnostics when every profile is empty", async () => {
+    const editor = "/profile/Code/User/globalStorage/cline/settings.json";
+    const cli = "/profile/.cline/data/settings/cline_mcp_settings.json";
+
+    await expect(
+      selectClineMcpConfigPath([editor, cli], async () => ({ exists: true, serverCount: 0 })),
+    ).resolves.toBe(editor);
+  });
+
+  it("uses the standard CLI path when no candidate exists", async () => {
+    const cli = "/profile/.cline/data/settings/cline_mcp_settings.json";
+
+    await expect(
+      selectClineMcpConfigPath(["/missing/editor.json", cli], async () => ({
+        exists: false,
+        serverCount: 0,
+      })),
+    ).resolves.toBe(cli);
   });
 });

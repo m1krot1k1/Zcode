@@ -37,7 +37,6 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -155,7 +154,7 @@ interface ExternalAgentMcpPathSource {
   agent: SettingsSyncAgent;
   projectFiles: string[][];
   globalFiles: string[][];
-  resolveGlobalFile?: () => string;
+  resolveGlobalFile?: () => Promise<string>;
   format: McpConfigFormat;
 }
 
@@ -505,13 +504,59 @@ function getClineEditorUserDataRoot({
   return undefined;
 }
 
-function getClineMcpSettingsPath(): string {
-  // 修复原因：Cline IDE 将 MCP 配置写入 VS Code 扩展 globalStorage；仅查找 CLI 的 ~/.cline 会漏掉用户现有配置。
-  return resolveClineMcpConfigPath({
+function getClineMcpConfigCandidates({
+  env,
+  homeDir,
+  platform,
+}: Pick<ClineMcpConfigPathOptions, "env" | "homeDir" | "platform">): string[] {
+  const explicitPath = env.CLINE_MCP_SETTINGS_PATH?.trim();
+  if (explicitPath) return [explicitPath];
+  const dataDir = env.CLINE_DATA_DIR?.trim();
+  if (dataDir) return [join(dataDir, ...CLINE_SETTINGS_RELATIVE_PATH)];
+  const clineDir = env.CLINE_DIR?.trim();
+  if (clineDir) return [join(clineDir, "data", ...CLINE_SETTINGS_RELATIVE_PATH)];
+
+  const editorRoot = getClineEditorUserDataRoot({ env, homeDir, platform });
+  const editorCandidates = editorRoot
+    ? CLINE_EDITOR_PROFILE_DIRS.map((editor) =>
+        join(
+          editorRoot,
+          editor,
+          "User",
+          "globalStorage",
+          CLINE_EXTENSION_ID,
+          ...CLINE_SETTINGS_RELATIVE_PATH,
+        ),
+      )
+    : [];
+  return [...editorCandidates, join(homeDir, ".cline", "data", ...CLINE_SETTINGS_RELATIVE_PATH)];
+}
+
+export async function selectClineMcpConfigPath(
+  candidates: string[],
+  inspect: (path: string) => Promise<{ exists: boolean; serverCount: number }>,
+): Promise<string> {
+  let firstExistingPath: string | undefined;
+  for (const candidate of candidates) {
+    const profile = await inspect(candidate);
+    if (!profile.exists) continue;
+    firstExistingPath ??= candidate;
+    if (profile.serverCount > 0) return candidate;
+  }
+  return firstExistingPath ?? candidates.at(-1) ?? "";
+}
+
+async function getClineMcpSettingsPath(): Promise<string> {
+  // Пустой профиль редактора не должен скрывать заполненный профиль Cline CLI.
+  const candidates = getClineMcpConfigCandidates({
     env: process.env,
     homeDir: resolveUserHomeDir(),
     platform: process.platform,
-    exists: existsSync,
+  });
+  return selectClineMcpConfigPath(candidates, async (path) => {
+    if (!(await pathExists(path))) return { exists: false, serverCount: 0 };
+    const profile = await readMcpServersFromSourceFile(path, "clineMcpJson");
+    return { exists: true, serverCount: Object.keys(profile.servers).length };
   });
 }
 
@@ -794,19 +839,23 @@ function getExternalPluginRoots(workspacePath?: string): PluginSourceRoot[] {
   ];
 }
 
-function getExternalMcpRoots(workspacePath?: string): McpSourceRoot[] {
+async function getExternalMcpRoots(workspacePath?: string): Promise<McpSourceRoot[]> {
   const home = resolveUserHomeDir();
-  const userRoots: McpSourceRoot[] = SUPPORTED_MCP_AGENT_SOURCES.flatMap((source) =>
-    [
+  const userRoots: McpSourceRoot[] = [];
+  for (const source of SUPPORTED_MCP_AGENT_SOURCES) {
+    const resolvedGlobalFile = source.resolveGlobalFile ? await source.resolveGlobalFile() : undefined;
+    for (const rootPath of [
       ...source.globalFiles.map((globalFile) => join(home, ...globalFile)),
-      ...(source.resolveGlobalFile ? [source.resolveGlobalFile()] : []),
-    ].map((rootPath) => ({
-      agent: source.agent,
-      rootPath,
-      scope: "user" as const,
-      format: source.format,
-    })),
-  );
+      ...(resolvedGlobalFile ? [resolvedGlobalFile] : []),
+    ]) {
+      userRoots.push({
+        agent: source.agent,
+        rootPath,
+        scope: "user",
+        format: source.format,
+      });
+    }
+  }
   if (!workspacePath) {
     return userRoots;
   }
@@ -2122,11 +2171,13 @@ async function collectPluginImportCandidates(
 async function scanMcpImportSources(workspacePath?: string): Promise<{
   candidates: McpImportCandidate[];
   diagnostics: SettingsSyncSourceDiagnostic[];
+  roots: McpSourceRoot[];
 }> {
   const candidates: McpImportCandidate[] = [];
   const diagnostics: SettingsSyncSourceDiagnostic[] = [];
   const seenSourceNames = new Set<string>();
-  for (const root of getExternalMcpRoots(workspacePath)) {
+  const roots = await getExternalMcpRoots(workspacePath);
+  for (const root of roots) {
     if (!(await pathExists(root.rootPath))) {
       continue;
     }
@@ -2153,7 +2204,7 @@ async function scanMcpImportSources(workspacePath?: string): Promise<{
       });
     }
   }
-  return { candidates, diagnostics };
+  return { candidates, diagnostics, roots };
 }
 
 async function collectMcpImportCandidates(workspacePath?: string): Promise<McpImportCandidate[]> {
@@ -2285,9 +2336,7 @@ async function buildPluginsDiscovery(workspacePath?: string): Promise<SettingsSy
 async function buildMcpDiscovery(workspacePath?: string): Promise<SettingsSyncDiscoveryResult> {
   const scan = await scanMcpImportSources(workspacePath);
   const candidates = scan.candidates;
-  const sourceRootsByPath = new Map(
-    getExternalMcpRoots(workspacePath).map((root) => [root.rootPath, root]),
-  );
+  const sourceRootsByPath = new Map(scan.roots.map((root) => [root.rootPath, root]));
   const agents: SettingsSyncDiscoveryResult["agents"] = [];
   for (const { agent } of SUPPORTED_MCP_AGENT_SOURCES) {
     const agentCandidates = candidates.filter((candidate) => candidate.agent === agent);
