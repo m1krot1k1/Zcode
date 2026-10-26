@@ -1323,6 +1323,8 @@ export function preferOpenCodeE2ECliOnPath(env: NodeJS.ProcessEnv = process.env)
 
 export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProviderRuntime> {
   preferOpenCodeE2ECliOnPath();
+  const e2ePortValue = process.env.ZCODE_E2E_OPENCODE_PORT?.trim();
+  const e2ePort = e2ePortValue && /^\d+$/.test(e2ePortValue) ? Number(e2ePortValue) : undefined;
   const listenersBeforeImport = captureOpenCodeSignalListeners();
   let sdk: OpenCodeSdk;
 
@@ -1333,6 +1335,8 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
   }
 
   const clientManager = sdk!.OpencodeClientManager.createInstance({
+    // В E2E нельзя подключаться к пользовательскому OpenCode на стандартном порту 4096.
+    ...(e2ePort && e2ePort <= 65_535 ? { port: e2ePort } : {}),
     clientOptions: { fetch: createOpenCodeDiagnosticFetch() },
   } satisfies ClientManagerOptions);
 

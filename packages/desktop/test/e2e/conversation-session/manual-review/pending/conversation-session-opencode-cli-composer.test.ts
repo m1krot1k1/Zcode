@@ -16,7 +16,6 @@ import {
   clearAppData,
   clickTestIdByDom,
   clickTestIdByWebDriver,
-  getE2EAppDataPaths,
 } from "../../../helpers/desktop-app.js";
 import {
   prepareV4ConversationE2E,
@@ -27,6 +26,7 @@ import {
 } from "../../../helpers/v4-conversation.js";
 import {
   E2E_OPENCODE_MODEL_ID,
+  E2E_OPENCODE_COMPOSER_TRACE_FILE,
   E2E_OPENCODE_REPLY,
 } from "../../../helpers/open-code-cli-fixture.js";
 import { sel } from "../../../helpers/selectors.js";
@@ -44,11 +44,14 @@ describe("OpenCode CLI в обычном Composer", () => {
     async function () {
       this.timeout(180_000);
       const marker = `E2E_OPENCODE_COMPOSER_${Date.now()}`;
-      const paths = getE2EAppDataPaths();
-      const tracePath = join(paths.homeDir, ".opencode", "composer-trace.jsonl");
       const artifactDir = join(
         process.env.ZCODE_E2E_ARTIFACT_DIR ?? join(process.cwd(), ".e2e-artifacts"),
         CASE_NAME,
+      );
+      // Трасса живёт вне временного E2E-профиля, который удаляется в after-hook.
+      const tracePath = join(
+        process.env.ZCODE_E2E_ARTIFACT_DIR ?? join(process.cwd(), ".e2e-artifacts"),
+        E2E_OPENCODE_COMPOSER_TRACE_FILE,
       );
 
       await prepareV4ConversationE2E({ skipProvider: true });

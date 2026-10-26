@@ -4,7 +4,8 @@
  * Env: ZCODE_E2E_OPENCODE_MODEL_ID, ZCODE_E2E_OPENCODE_REPLY, ZCODE_E2E_OPENCODE_TRACE_PATH
  */
 import http from "node:http";
-import { appendFile } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 
 const modelId = process.env.ZCODE_E2E_OPENCODE_MODEL_ID ?? "opencode/deepseek-v4.1-flash-free";
 const reply = process.env.ZCODE_E2E_OPENCODE_REPLY ?? "E2E_OPENCODE_COMPOSER_REPLY";
@@ -12,6 +13,7 @@ const tracePath = process.env.ZCODE_E2E_OPENCODE_TRACE_PATH;
 
 async function trace(entry) {
   if (!tracePath) return;
+  await mkdir(dirname(tracePath), { recursive: true });
   await appendFile(tracePath, `${JSON.stringify(entry)}\n`);
 }
 
@@ -56,6 +58,7 @@ if (sub === "serve") {
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
+      await trace({ event: "http", method: req.method, path: url.pathname });
       if (url.pathname === "/health" || url.pathname === "/global/health") {
         res.writeHead(200);
         res.end("ok");
@@ -128,20 +131,20 @@ if (sub === "serve") {
         ];
         publish(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""));
         res.writeHead(200, { "content-type": "application/json" });
+        // OpenCode API отвечает телом SessionPromptResponse напрямую; SDK сам оборачивает
+        // разобранное тело в Result.data.
         res.end(
           JSON.stringify({
-            data: {
-              info: { id: messageId, role: "assistant", sessionID: sessionId },
-              parts: [
-                {
-                  id: partId,
-                  type: "text",
-                  sessionID: sessionId,
-                  messageID: messageId,
-                  text: reply,
-                },
-              ],
-            },
+            info: { id: messageId, role: "assistant", sessionID: sessionId },
+            parts: [
+              {
+                id: partId,
+                type: "text",
+                sessionID: sessionId,
+                messageID: messageId,
+                text: reply,
+              },
+            ],
           }),
         );
         return;

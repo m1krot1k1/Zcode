@@ -86,7 +86,10 @@ import { createE2ERunnerFinalizationGuard } from "./test/e2e/helpers/e2e-runner-
 import { installHooksLifecycleFixture } from "./test/e2e/helpers/hooks-lifecycle-fixture.js";
 import { installStopToolResultsFixture } from "./test/e2e/helpers/stop-tool-results-fixture.js";
 import { installBashPrefixPermissionPnpmShim } from "./test/e2e/helpers/bash-prefix-permission-shim.js";
-import { installOpenCodeCliE2EFixture } from "./test/e2e/helpers/open-code-cli-fixture.js";
+import {
+  E2E_OPENCODE_COMPOSER_TRACE_FILE,
+  installOpenCodeCliE2EFixture,
+} from "./test/e2e/helpers/open-code-cli-fixture.js";
 import {
   applyE2EWorkerModelRetryEnv,
   applyE2EWorkerReplayProxyEnv,
@@ -4993,7 +4996,10 @@ export const config: WebdriverIO.Config = {
             );
             const cliBin = await installOpenCodeCliE2EFixture(
               E2E_HOME_DIR,
-              resolve(E2E_HOME_DIR, ".opencode", "composer-trace.jsonl"),
+              resolve(
+                process.env.ZCODE_E2E_ARTIFACT_DIR ?? resolve(process.cwd(), ".e2e-artifacts"),
+                E2E_OPENCODE_COMPOSER_TRACE_FILE,
+              ),
             );
             // 修复原因：Electron 在 macOS 上会重建 PATH，worker 里删掉 Homebrew 也到不了 Host。
             // 绝对路径随环境变量进入 Host，resolver 不再先命中 /opt/homebrew/bin/opencode。
@@ -5096,6 +5102,10 @@ export const config: WebdriverIO.Config = {
           e2eReporter.compactNodeCoverage();
         } finally {
           delete process.env.ZCODE_E2E_OPENCODE_CLI_PATH;
+          delete process.env.ZCODE_E2E_OPENCODE_PORT;
+          delete process.env.ZCODE_E2E_OPENCODE_MODEL_ID;
+          delete process.env.ZCODE_E2E_OPENCODE_REPLY;
+          delete process.env.ZCODE_E2E_OPENCODE_TRACE_PATH;
           await stopRequestSecurityFixture();
           await stopModelContextBudgetConfigE2EMock();
           await stopDynamicWorkflowConfigE2EMock();

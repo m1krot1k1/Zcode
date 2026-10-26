@@ -1,11 +1,14 @@
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const E2E_OPENCODE_MODEL_ID = "opencode/deepseek-v4.1-flash-free";
 /** Ответ mock OpenCode server для Composer (AI SDK path), не ACP panel. */
 export const E2E_OPENCODE_REPLY = "E2E_OPENCODE_COMPOSER_REPLY";
+export const E2E_OPENCODE_COMPOSER_TRACE_FILE =
+  "conversation-session-opencode-cli-composer/composer-trace.jsonl";
 
 const fixtureDir = dirname(fileURLToPath(import.meta.url));
 
@@ -39,8 +42,29 @@ export async function installOpenCodeCliE2EFixture(
   process.env.ZCODE_E2E_OPENCODE_TRACE_PATH = tracePath;
   process.env.ZCODE_E2E_OPENCODE_MODEL_ID = E2E_OPENCODE_MODEL_ID;
   process.env.ZCODE_E2E_OPENCODE_REPLY = E2E_OPENCODE_REPLY;
+  // SDK-manager обычно использует 4096; на машине пользователя там может уже работать OpenCode.
+  // Выделяем свободный порт для mock, чтобы E2E никогда не отправлял prompt реальному серверу.
+  process.env.ZCODE_E2E_OPENCODE_PORT = String(await reserveLocalPort());
 
   return binDir;
+}
+
+async function reserveLocalPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("Не удалось выделить локальный порт для OpenCode E2E");
+  }
+  const { port } = address;
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  return port;
 }
 
 /** @deprecated Используйте installOpenCodeCliE2EFixture — прежнее имя из ACP-only эпохи. */
