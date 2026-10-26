@@ -11,6 +11,7 @@ import {
   createPreviewReleasePlan,
   isMissingGitHubRelease,
   replaceRootPackageLockVersion,
+  runPreviewReleaseLocalGates,
   OFFLINE_PREVIEW_ZCODE_ENDPOINT,
 } from "../release-macos-preview.mjs";
 
@@ -137,6 +138,29 @@ test("Preview publication refuses non-macOS, non-dev, dirty, stale, or already-t
     /уже существует/u,
   );
   assert.doesNotThrow(() => assertPreviewReleaseTagAvailable("v3.17.1", ""));
+});
+
+test("Preview release runs its local verification gates in the required order", async () => {
+  const commands = [];
+  await runPreviewReleaseLocalGates(async (command) => {
+    commands.push(command);
+  });
+  assert.deepEqual(commands, [
+    ["pnpm", "verify:pre-push"],
+    ["pnpm", "typecheck"],
+  ]);
+});
+
+test("Preview release stops before typecheck when its local pre-push gate fails", async () => {
+  const commands = [];
+  await assert.rejects(
+    runPreviewReleaseLocalGates(async (command) => {
+      commands.push(command);
+      throw new Error("local verification failed");
+    }),
+    /local verification failed/u,
+  );
+  assert.deepEqual(commands, [["pnpm", "verify:pre-push"]]);
 });
 
 test("Preview resume requires the exact pushed version commit and permits only its tag target", () => {

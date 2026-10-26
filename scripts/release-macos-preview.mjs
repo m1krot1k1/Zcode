@@ -128,6 +128,11 @@ export function assertPreviewReleaseTagAvailable(tag, existingTagSha) {
   if (existingTagSha.trim()) throw new Error(`Удалённый Git tag уже существует: ${tag}`);
 }
 
+export async function runPreviewReleaseLocalGates(runCommand = run) {
+  await runCommand(["pnpm", "verify:pre-push"]);
+  await runCommand(["pnpm", "typecheck"]);
+}
+
 export function assertPreviewResumeCandidate({
   version,
   branchName,
@@ -312,6 +317,7 @@ async function main() {
   await run(["gh", "auth", "status"]);
   await run(["git", "fetch", "origin", "dev:refs/remotes/origin/dev"]);
   assertPreviewReleaseBaseSha(baseSha, await capture(["git", "rev-parse", "origin/dev"]));
+  await runPreviewReleaseLocalGates(run);
 
   const packagePath = path.join(root, "package.json");
   const packageLockPath = path.join(root, "package-lock.json");
