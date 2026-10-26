@@ -148,7 +148,9 @@ export interface SettingsSyncPluginImportResult {
 export type SettingsSyncMcpServerImportStatus = "imported" | "skipped" | "failed";
 export type SettingsSyncMcpServerImportWarning =
   | "secretsOmittedForProjectScope"
-  | "clineOAuthReauthenticationRequired";
+  | "clineOAuthReauthenticationRequired"
+  | "clinePortablePresetApplied"
+  | "clineCommandMayNotBePortable";
 
 export interface SettingsSyncMcpServerImportResult {
   name: string;

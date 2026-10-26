@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -62,6 +63,52 @@ function writePlugin(
 function writeJsonConfig(filePath: string, value: Record<string, unknown>): void {
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(value, null, 2), "utf-8");
+}
+
+function writeClineNpmBinFixture(
+  home: string,
+  options: {
+    version?: string;
+    args?: string[];
+    cwd?: string;
+    escapeRoot?: boolean;
+    foreignInstallRoot?: boolean;
+  } = {},
+): { settingsPath: string; commandPath: string } {
+  const settingsPath = join(home, ".cline", "data", "settings", "cline_mcp_settings.json");
+  const installRoot = options.foreignInstallRoot
+    ? join(home, "other-data", "mcp-servers", "playwright-server")
+    : join(home, ".cline", "data", "mcp-servers", "playwright-server");
+  const packagePath = join(installRoot, "node_modules", "@playwright", "mcp");
+  const outsidePackagePath = join(home, "outside-node-modules", "@playwright", "mcp");
+  const actualPackagePath = options.escapeRoot ? outsidePackagePath : packagePath;
+  const executablePath = join(actualPackagePath, "bin", "cli.js");
+  const commandPath = join(installRoot, "node_modules", ".bin", "playwright-mcp");
+  mkdirSync(dirname(executablePath), { recursive: true });
+  mkdirSync(dirname(commandPath), { recursive: true });
+  writeFileSync(executablePath, "throw new Error('must not execute while importing');", "utf-8");
+  writeJsonConfig(join(actualPackagePath, "package.json"), {
+    name: "@playwright/mcp",
+    version: options.version ?? "0.0.83",
+    bin: { "playwright-mcp": "bin/cli.js" },
+  });
+  symlinkSync(executablePath, commandPath);
+  writeJsonConfig(settingsPath, {
+    mcpServers: {
+      playwright: {
+        transport: {
+          type: "stdio",
+          command: commandPath,
+          ...(options.args ? { args: options.args } : {}),
+          ...(options.cwd ? { cwd: options.cwd } : {}),
+          env: { PLAYWRIGHT_FIXTURE: "kept-for-global" },
+        },
+        disabled: true,
+        timeout: 20,
+      },
+    },
+  });
+  return { settingsPath, commandPath };
 }
 
 function writeTextConfig(filePath: string, value: string): void {
@@ -1123,6 +1170,113 @@ describe("settingsSyncService MCP server import", () => {
       expect(observableOutput).not.toContain(marker);
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "replaces an exact Cline npm symlink with the pinned portable preset without executing it",
+    async () => {
+      const home = makeTempHome();
+      process.env.HOME = home;
+      const { settingsPath } = writeClineNpmBinFixture(home);
+      const { createSettingsSyncService } =
+        await import("../src/settings-sync/settingsSyncService.js");
+      const service = createSettingsSyncService({ settingService: createSettingService() });
+
+      const result = await service.importSelected({
+        selections: [{ agent: "cline", category: "mcpServers" }],
+      });
+      expect(result.successCount).toBe(1);
+      expect(result.taskResults[0]?.mcpServerResults[0]?.warnings).toEqual([
+        "clinePortablePresetApplied",
+      ]);
+      const config = JSON.parse(
+        readFileSync(join(home, ".zcode", "cli", "config.json"), "utf-8"),
+      ) as { mcp?: { servers?: Record<string, Record<string, unknown>> } };
+      expect(config.mcp?.servers?.playwright).toEqual({
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@playwright/mcp@0.0.83"],
+        env: { PLAYWRIGHT_FIXTURE: "kept-for-global" },
+        enabled: false,
+        timeoutMs: 20000,
+      });
+      expect(result.taskResults[0]?.mcpServerResults[0]?.warnings?.join(" ")).not.toContain(
+        settingsPath,
+      );
+    },
+  );
+
+  it.skipIf(process.platform === "win32").each([
+    { name: "version mismatch", options: { version: "0.0.84" } },
+    { name: "extra arguments", options: { args: ["--user-data-dir", "/custom"] } },
+    { name: "fixed working directory", options: { cwd: "/custom/workspace" } },
+    { name: "symlink escaping the Cline install", options: { escapeRoot: true } },
+    { name: "foreign Cline-shaped install root", options: { foreignInstallRoot: true } },
+  ])("keeps a Cline command unchanged when $name", async ({ options }) => {
+    const home = makeTempHome();
+    process.env.HOME = home;
+    const { commandPath } = writeClineNpmBinFixture(home, options);
+    const { createSettingsSyncService } =
+      await import("../src/settings-sync/settingsSyncService.js");
+    const service = createSettingsSyncService({ settingService: createSettingService() });
+
+    const result = await service.importSelected({
+      selections: [{ agent: "cline", category: "mcpServers" }],
+    });
+    expect(result.successCount).toBe(1);
+    expect(result.taskResults[0]?.mcpServerResults[0]?.warnings).toEqual([
+      "clineCommandMayNotBePortable",
+    ]);
+    const config = JSON.parse(
+      readFileSync(join(home, ".zcode", "cli", "config.json"), "utf-8"),
+    ) as { mcp?: { servers?: Record<string, Record<string, unknown>> } };
+    expect(config.mcp?.servers?.playwright).toMatchObject({
+      type: "stdio",
+      command: commandPath,
+      enabled: false,
+      timeoutMs: 20000,
+      env: { PLAYWRIGHT_FIXTURE: "kept-for-global" },
+    });
+    expect(result.taskResults[0]?.mcpServerResults[0]?.warnings?.join(" ")).not.toContain(home);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "keeps project-scope secret filtering after applying an exact portable preset",
+    async () => {
+      const home = makeTempHome();
+      process.env.HOME = home;
+      const workspacePath = join(home, "workspace");
+      const { settingsPath } = writeClineNpmBinFixture(home);
+      const raw = JSON.parse(readFileSync(settingsPath, "utf-8")) as {
+        mcpServers: { playwright: { transport: { env: Record<string, string> } } };
+      };
+      raw.mcpServers.playwright.transport.env = { TOKEN: "portable-project-secret-marker" };
+      writeJsonConfig(settingsPath, raw);
+      const { createSettingsSyncService } =
+        await import("../src/settings-sync/settingsSyncService.js");
+      const service = createSettingsSyncService({ settingService: createSettingService() });
+
+      const result = await service.importSelected({
+        workspacePath,
+        selections: [{ agent: "cline", category: "mcpServers", targetScope: "project" }],
+      });
+      expect(result.successCount).toBe(1);
+      expect(result.taskResults[0]?.mcpServerResults[0]?.warnings).toEqual([
+        "secretsOmittedForProjectScope",
+        "clinePortablePresetApplied",
+      ]);
+      const config = JSON.parse(
+        readFileSync(join(workspacePath, ".zcode", "config.json"), "utf-8"),
+      ) as { mcp?: { servers?: Record<string, Record<string, unknown>> } };
+      expect(config.mcp?.servers?.playwright).toEqual({
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@playwright/mcp@0.0.83"],
+        enabled: false,
+        timeoutMs: 20000,
+      });
+      expect(JSON.stringify(config)).not.toContain("portable-project-secret-marker");
+    },
+  );
 
   it("does not scan external MCP servers during first-run detection", async () => {
     const home = makeTempHome();

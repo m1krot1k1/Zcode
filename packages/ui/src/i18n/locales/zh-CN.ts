@@ -3501,6 +3501,10 @@ const zhCN: Record<string, string> = {
     "项目范围未导入环境变量、请求头和 OAuth 客户端密钥。若要保留这些内容，请导入到全局范围的私有用户配置。",
   "settings.mcpServers.import.warning.clineOAuthReauthenticationRequired":
     "未导入 Cline OAuth 会话数据。请在 ZCode 中重新授权此服务器。",
+  "settings.mcpServers.import.warning.clinePortablePresetApplied":
+    "已将匹配的 Cline 本地程序包替换为 ZCode 固定的可移植版本。",
+  "settings.mcpServers.import.warning.clineCommandMayNotBePortable":
+    "此 Cline 命令可能仅适用于当前设备，已保留原命令。",
   "settings.mcpServers.import.scanning": "正在扫描可导入 MCP 服务器...",
   "settings.mcpServers.import.empty":
     "暂无可导入 MCP 服务器。可检查外部 Agent 的 MCP 配置文件后重新扫描。",

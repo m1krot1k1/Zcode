@@ -3747,6 +3747,10 @@ const enUS: Record<string, string> = {
     "Environment values, headers, and OAuth client secret were omitted for project scope. Import to Global to keep them in the private user config.",
   "settings.mcpServers.import.warning.clineOAuthReauthenticationRequired":
     "Cline OAuth session data was not imported. Authorize this server again in ZCode.",
+  "settings.mcpServers.import.warning.clinePortablePresetApplied":
+    "Matched an installed Cline package to ZCode's pinned portable version.",
+  "settings.mcpServers.import.warning.clineCommandMayNotBePortable":
+    "This Cline command is machine-specific. Its command was kept unchanged.",
   "settings.mcpServers.import.scanning": "Scanning importable MCP servers...",
   "settings.mcpServers.import.empty":
     "No importable MCP servers found. Check the external agent MCP config files and scan again.",

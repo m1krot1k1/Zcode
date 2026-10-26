@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../src/components/ui/tooltip.js";
@@ -100,5 +100,37 @@ describe("external agent MCP import diagnostics", () => {
         "Cline OAuth session data was not imported. Authorize this server again in ZCode.",
       ),
     ).toBeTruthy();
+  });
+
+  it("localizes portability diagnostics on imported Cline commands", () => {
+    cleanup();
+    render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(
+          TooltipProvider,
+          {},
+          createElement(ExternalAgentImportResultRow, {
+            category: "mcpServers",
+            result: {
+              name: "playwright",
+              path: "/private/cline/settings.json#playwright",
+              sourceScope: "global",
+              status: "imported",
+              warnings: ["clinePortablePresetApplied", "clineCommandMayNotBePortable"],
+            },
+          }),
+        ),
+      ),
+    );
+
+    const warning = screen.getByRole("note").textContent ?? "";
+    expect(warning).toContain(
+      "Matched an installed Cline package to ZCode's pinned portable version.",
+    );
+    expect(warning).toContain(
+      "This Cline command is machine-specific. Its command was kept unchanged.",
+    );
   });
 });

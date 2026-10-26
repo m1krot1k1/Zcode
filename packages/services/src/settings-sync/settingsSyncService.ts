@@ -23,6 +23,7 @@ import type {
   SettingsSyncSourceDiagnostic,
   SettingsSyncTaskImportResult,
 } from "@zcode/shared";
+import { COMMUNITY_MCP_PRESETS, communityMcpPresetConfig } from "@zcode/shared";
 import {
   chmod,
   copyFile,
@@ -32,12 +33,13 @@ import {
   mkdir,
   readFile,
   readdir,
+  realpath,
   symlink,
   writeFile,
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parse as parseToml } from "smol-toml";
 import { CommandFileParser } from "../commands/commandFileParser.js";
@@ -511,6 +513,14 @@ function getClineMcpSettingsPath(): string {
     platform: process.platform,
     exists: existsSync,
   });
+}
+
+function getClineMcpServersRoot(): string {
+  const dataDir = process.env.CLINE_DATA_DIR?.trim();
+  if (dataDir) return join(resolve(dataDir), "mcp-servers");
+  const clineDir = process.env.CLINE_DIR?.trim();
+  if (clineDir) return join(resolve(clineDir), "data", "mcp-servers");
+  return join(resolveUserHomeDir(), ".cline", "data", "mcp-servers");
 }
 
 function getWorkspaceZcodeSkillRoot(workspacePath: string): string {
@@ -1327,6 +1337,151 @@ function prepareMcpConfigForTargetScope(
     warnings.push("clineOAuthReauthenticationRequired");
   }
   return { config, ...(warnings.length > 0 ? { warnings } : {}) };
+}
+
+interface ClineNpmBinCommand {
+  commandPath: string;
+  commandName: string;
+  installRoot: string;
+}
+
+function parseClineNpmBinCommand(command: string): ClineNpmBinCommand | undefined {
+  if (!isAbsolute(command)) return undefined;
+  const commandPath = resolve(command);
+  const binDirectory = dirname(commandPath);
+  const nodeModulesDirectory = dirname(binDirectory);
+  const installRoot = dirname(nodeModulesDirectory);
+  if (
+    basename(binDirectory) !== ".bin" ||
+    basename(nodeModulesDirectory) !== "node_modules" ||
+    basename(dirname(installRoot)) !== "mcp-servers" ||
+    basename(installRoot).length === 0
+  ) {
+    return undefined;
+  }
+  return { commandPath, commandName: basename(commandPath), installRoot };
+}
+
+function isPathWithin(parentPath: string, childPath: string): boolean {
+  const pathFromParent = relative(parentPath, childPath);
+  return (
+    pathFromParent === "" ||
+    (!isAbsolute(pathFromParent) &&
+      pathFromParent !== ".." &&
+      !pathFromParent.startsWith(`..${sep}`))
+  );
+}
+
+async function findClinePackageForBin(
+  command: ClineNpmBinCommand,
+  configuredMcpServersRoot: string,
+): Promise<{ name: string; version: string } | undefined> {
+  try {
+    const linkInfo = await lstat(command.commandPath);
+    if (!linkInfo.isSymbolicLink()) return undefined;
+    const realMcpServersRoot = await realpath(configuredMcpServersRoot);
+    const realInstallRoot = await realpath(command.installRoot);
+    const resolvedCommand = await realpath(command.commandPath);
+    // Причина: похожий абсолютный путь сам по себе не доказывает, что пакет принадлежит Cline.
+    // Сверяем реальную ссылку с настроенной папкой Cline, чтобы не переписывать чужие команды.
+    if (
+      dirname(realInstallRoot) !== realMcpServersRoot ||
+      !isPathWithin(realInstallRoot, resolvedCommand)
+    ) {
+      return undefined;
+    }
+
+    const nodeModulesDirectory = join(realInstallRoot, "node_modules");
+    let packageDirectory = dirname(resolvedCommand);
+    while (isPathWithin(nodeModulesDirectory, packageDirectory)) {
+      const packagePath = join(packageDirectory, "package.json");
+      try {
+        const parsed = JSON.parse(await readFile(packagePath, "utf-8")) as Record<string, unknown>;
+        const name = typeof parsed.name === "string" ? parsed.name : undefined;
+        const version = typeof parsed.version === "string" ? parsed.version : undefined;
+        const bin = parsed.bin;
+        const declaredBin =
+          typeof bin === "string"
+            ? basename(name ?? "") === command.commandName
+              ? bin
+              : undefined
+            : isRecord(bin) && typeof bin[command.commandName] === "string"
+              ? (bin[command.commandName] as string)
+              : undefined;
+        if (name && version && declaredBin) {
+          const resolvedDeclaredBin = await realpath(resolve(packageDirectory, declaredBin));
+          if (resolvedDeclaredBin === resolvedCommand) return { name, version };
+        }
+      } catch {
+        // Проверяем следующий родительский package.json; конфиг импорта не должен падать из-за метаданных.
+      }
+
+      const parentDirectory = dirname(packageDirectory);
+      if (parentDirectory === packageDirectory) break;
+      packageDirectory = parentDirectory;
+    }
+  } catch {
+    // Отсутствующая команда или повреждённая ссылка не должны блокировать импорт Cline.
+  }
+  return undefined;
+}
+
+async function findPortableClinePreset(
+  config: McpServerConfig,
+): Promise<McpServerConfig | undefined> {
+  if (
+    config.type !== "stdio" ||
+    typeof config.command !== "string" ||
+    (config.args?.length ?? 0) > 0 ||
+    config.cwd !== undefined
+  ) {
+    return undefined;
+  }
+  const command = parseClineNpmBinCommand(config.command);
+  if (!command) return undefined;
+  const installedPackage = await findClinePackageForBin(command, getClineMcpServersRoot());
+  if (!installedPackage) return undefined;
+  const preset = COMMUNITY_MCP_PRESETS.find(
+    (entry) =>
+      entry.kind === "stdio" &&
+      entry.packageName === installedPackage.name &&
+      entry.version === installedPackage.version,
+  );
+  if (!preset || preset.kind !== "stdio") return undefined;
+
+  const portableConfig = communityMcpPresetConfig(preset);
+  return {
+    ...portableConfig,
+    ...(config.enabled === false ? { enabled: false } : {}),
+    ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+    ...(config.env && Object.keys(config.env).length > 0 ? { env: { ...config.env } } : {}),
+  };
+}
+
+async function prepareClineMcpConfigForTargetScope(
+  candidate: McpImportCandidate,
+  targetScope: SettingsSyncSourceScope,
+): Promise<{ config: McpServerConfig; warnings?: SettingsSyncMcpServerImportWarning[] }> {
+  const command =
+    candidate.agent === "cline" &&
+    candidate.config.type === "stdio" &&
+    typeof candidate.config.command === "string"
+      ? parseClineNpmBinCommand(candidate.config.command)
+      : undefined;
+  const portablePresetConfig =
+    command && candidate.agent === "cline"
+      ? await findPortableClinePreset(candidate.config)
+      : undefined;
+  const prepared = prepareMcpConfigForTargetScope(
+    candidate.agent === "cline" && portablePresetConfig
+      ? { ...candidate, config: portablePresetConfig }
+      : candidate,
+    targetScope,
+  );
+  const warnings = [...(prepared.warnings ?? [])];
+  if (portablePresetConfig) warnings.push("clinePortablePresetApplied");
+  else if (command) warnings.push("clineCommandMayNotBePortable");
+  return { config: prepared.config, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 function readOpenCodeMcpServers(parsed: Record<string, unknown>): Record<string, McpServerConfig> {
@@ -2526,7 +2681,7 @@ async function importMcpServersForAgent(
       continue;
     }
     try {
-      const prepared = prepareMcpConfigForTargetScope(candidate, selectedTargetScope);
+      const prepared = await prepareClineMcpConfigForTargetScope(candidate, selectedTargetScope);
       await addMcpServerToZcodeConfig(selectedConfigPath, candidate.name, prepared.config);
       importedCount += 1;
       const existingNameKeys = existingNameKeysByTargetScope.get(selectedTargetScope);
