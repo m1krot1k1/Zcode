@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // ========== WebSocket Protocol (RFC 6455) ==========
@@ -76,7 +77,8 @@ function decodeFrame(buffer) {
 const PORT = process.env.BRAINSTORM_PORT || (49152 + Math.floor(Math.random() * 16383));
 const HOST = process.env.BRAINSTORM_HOST || '127.0.0.1';
 const URL_HOST = process.env.BRAINSTORM_URL_HOST || (HOST === '127.0.0.1' ? 'localhost' : HOST);
-const SESSION_DIR = process.env.BRAINSTORM_DIR || '/tmp/brainstorm';
+// 缺陷原因：Windows 和其他 Unix 环境不保证存在 /tmp；改用 Node 提供的系统临时目录。
+const SESSION_DIR = process.env.BRAINSTORM_DIR || path.join(os.tmpdir(), 'brainstorm');
 const CONTENT_DIR = path.join(SESSION_DIR, 'content');
 const STATE_DIR = path.join(SESSION_DIR, 'state');
 let ownerPid = process.env.BRAINSTORM_OWNER_PID ? Number(process.env.BRAINSTORM_OWNER_PID) : null;

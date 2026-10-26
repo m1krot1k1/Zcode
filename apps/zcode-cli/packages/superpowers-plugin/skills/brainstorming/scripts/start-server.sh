@@ -7,7 +7,7 @@
 #
 # Options:
 #   --project-dir <path>  Store session files under <path>/.superpowers/brainstorm/
-#                         instead of /tmp. Files persist after server stops.
+#                         instead of the OS temporary directory. Files persist after server stops.
 #   --host <bind-host>    Host/interface to bind (default: 127.0.0.1).
 #                         Use 0.0.0.0 in remote/containerized environments.
 #   --url-host <host>     Hostname shown in returned URL JSON.
@@ -15,6 +15,7 @@
 #   --background          Force background mode (overrides Codex auto-foreground).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/resolve-system-temp-dir.sh"
 
 # Parse arguments
 PROJECT_DIR=""
@@ -80,7 +81,14 @@ SESSION_ID="$$-$(date +%s)"
 if [[ -n "$PROJECT_DIR" ]]; then
   SESSION_DIR="${PROJECT_DIR}/.superpowers/brainstorm/${SESSION_ID}"
 else
-  SESSION_DIR="/tmp/brainstorm-${SESSION_ID}"
+  SYSTEM_TEMP_DIR="$(resolve_system_temp_dir)" || {
+    echo '{"error": "Could not resolve the operating system temporary directory"}'
+    exit 1
+  }
+  SESSION_DIR="$(mktemp -d "${SYSTEM_TEMP_DIR%/}/brainstorm-${SESSION_ID}.XXXXXX")" || {
+    echo '{"error": "Could not create a temporary brainstorming session directory"}'
+    exit 1
+  }
 fi
 
 STATE_DIR="${SESSION_DIR}/state"
@@ -89,6 +97,9 @@ LOG_FILE="${STATE_DIR}/server.log"
 
 # Create fresh session directory with content and state peers
 mkdir -p "${SESSION_DIR}/content" "$STATE_DIR"
+if [[ -z "$PROJECT_DIR" ]]; then
+  : > "${SESSION_DIR}/.brainstorm-ephemeral"
+fi
 
 # Kill any existing server
 if [[ -f "$PID_FILE" ]]; then
