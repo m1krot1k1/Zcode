@@ -503,7 +503,15 @@ function sanitizeOpenCodeStreamErrors(
           reader.releaseLock();
           return;
         }
-        controller.enqueue(result.value);
+        const part = result.value;
+        if (part.type === "error") {
+          // 根因：OpenCode SDK 会把 HTTP 失败作为 `type: error` 数据块返回，而不是 reject stream；
+          // 原先只净化 reader.read() 的异常，导致聊天路径丢失安全诊断并把空响应暴露给分类器。
+          // 修复依据：同一安全转换覆盖流内 error part，保留经脱敏的状态/错误消息供 UI 分类。
+          controller.enqueue({ ...part, error: sanitizeOpenCodeEmptyResponseError(part.error) });
+          return;
+        }
+        controller.enqueue(part);
       } catch (error) {
         controller.error(sanitizeOpenCodeEmptyResponseError(error));
         reader.releaseLock();
