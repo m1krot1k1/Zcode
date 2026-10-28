@@ -4,12 +4,18 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TID_V4_SUBAGENT_OPEN_SIDE_PANE, testId } from "@zcode/shared/test-ids";
-import type { SwarmRunRow } from "@zcode/shared/zcode-protocol-v4";
+import {
+  TID_V4_SUBAGENT_DRILLDOWN,
+  TID_V4_SUBAGENT_OPEN_SIDE_PANE,
+  testId,
+} from "@zcode/shared/test-ids";
+import type { AssistantTextRow, SwarmRunRow } from "@zcode/shared/zcode-protocol-v4";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { ConversationRowView } from "@/v4/ConversationRowView.js";
+import { V4ConversationContext } from "@/v4/V4ConversationContext.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
+import { TooltipProvider } from "@/components/ui/tooltip.js";
 
 const context: ConversationRowRenderContext = {
   codePreviewSettings: DEFAULT_CODE_PREVIEW_SETTINGS,
@@ -18,10 +24,7 @@ const context: ConversationRowRenderContext = {
   workspacePath: "/workspace",
 };
 
-function renderSwarm(
-  row: SwarmRunRow,
-  locale: "en-US" | "zh-CN" = "en-US",
-): string {
+function renderSwarm(row: SwarmRunRow, locale: "en-US" | "zh-CN" = "en-US"): string {
   return renderToStaticMarkup(
     createElement(
       ZCodeIntlProvider,
@@ -85,9 +88,7 @@ describe("ConversationRowView swarm row", () => {
       outcomeAcceptance: "verified",
     };
 
-    expect(renderSwarm(row)).toContain(
-      "Declared checks passed; semantic goal is unverified",
-    );
+    expect(renderSwarm(row)).toContain("Declared checks passed; semantic goal is unverified");
   });
 
   it("shows actual child session IDs and opens the selected child in the side pane", () => {
@@ -103,6 +104,10 @@ describe("ConversationRowView swarm row", () => {
       status: "running",
       taskCount: 2,
       childSessionIds,
+      childAgentTypes: {
+        "child-session-1": "researcher",
+        "child-session-2": "implementer",
+      },
     };
     const contextWithChildNavigation: ConversationRowRenderContext = {
       ...context,
@@ -113,24 +118,33 @@ describe("ConversationRowView swarm row", () => {
       createElement(
         ZCodeIntlProvider,
         { initialLocale: "en-US" },
-        createElement(ConversationRowView, {
-          context: contextWithChildNavigation,
-          row,
-        }),
+        createElement(
+          V4ConversationContext.Provider,
+          {
+            value: {
+              layer: { acquire: vi.fn(() => ({ store: null, release: vi.fn() })) },
+            } as never,
+          },
+          createElement(ConversationRowView, {
+            context: contextWithChildNavigation,
+            row,
+          }),
+        ),
       ),
     );
 
-    expect(screen.getByLabelText("Child sessions").textContent).toContain(
-      "child-session-1",
+    expect(screen.getByLabelText("Child sessions").textContent).toContain("child-session-1");
+    expect(screen.getByLabelText("Child sessions").textContent).toContain("child-session-2");
+    expect(screen.getByTestId("swarm-child-role-child-session-1").textContent).toBe(
+      "Role: researcher",
     );
-    expect(screen.getByLabelText("Child sessions").textContent).toContain(
-      "child-session-2",
+    expect(screen.getByTestId("swarm-child-role-child-session-2").textContent).toBe(
+      "Role: implementer",
     );
-    fireEvent.click(
-      screen.getByTestId(
-        testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, "child-session-2"),
-      ),
-    );
+    expect(
+      screen.getByTestId("swarm-child-output-toggle-child-session-2").getAttribute("aria-expanded"),
+    ).toBe("true");
+    fireEvent.click(screen.getByTestId(testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, "child-session-2")));
 
     expect(onOpenSubagentSession).toHaveBeenCalledWith({
       rootSessionId: "root-session-1",
@@ -139,5 +153,129 @@ describe("ConversationRowView swarm row", () => {
       subagentType: "swarm-task",
       title: "Swarm task 2",
     });
+  });
+
+  it("mounts live child outputs by default and lets each preview be collapsed", async () => {
+    const row: SwarmRunRow = {
+      rowId: 9,
+      turnId: "turn-1",
+      createdAt: 1_800_000_000_000,
+      createdAtSeq: 9,
+      kind: "swarmRun",
+      swarmRunId: "swarm-live-output",
+      status: "running",
+      childSessionIds: ["child-live-1", "child-live-2"],
+    };
+    const release = vi.fn();
+    const acquire = vi.fn((_sessionId: string) => ({ store: null, release }));
+    render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(
+            V4ConversationContext.Provider,
+            { value: { layer: { acquire } } as never },
+            createElement(ConversationRowView, {
+              context: { ...context, theme: "light" },
+              row,
+            }),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      await screen.findByTestId(testId(TID_V4_SUBAGENT_DRILLDOWN, "child-live-1")),
+    ).toBeTruthy();
+    expect(screen.getByTestId(testId(TID_V4_SUBAGENT_DRILLDOWN, "child-live-2"))).toBeTruthy();
+    expect(screen.queryByTestId("swarm-child-role-child-live-1")).toBeNull();
+    expect(acquire.mock.calls.map(([sessionId]) => sessionId)).toEqual([
+      "child-live-1",
+      "child-live-2",
+    ]);
+
+    fireEvent.click(screen.getByTestId("swarm-child-output-toggle-child-live-1"));
+    expect(screen.queryByTestId(testId(TID_V4_SUBAGENT_DRILLDOWN, "child-live-1"))).toBeNull();
+    expect(
+      screen.getByTestId("swarm-child-output-toggle-child-live-1").getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId(testId(TID_V4_SUBAGENT_DRILLDOWN, "child-live-2"))).toBeTruthy();
+  });
+
+  it("keeps the live preview to the latest three assistant rows", async () => {
+    const row: SwarmRunRow = {
+      rowId: 10,
+      turnId: "turn-1",
+      createdAt: 1_800_000_000_000,
+      createdAtSeq: 10,
+      kind: "swarmRun",
+      swarmRunId: "swarm-bounded-output",
+      status: "running",
+      childSessionIds: ["child-bounded"],
+    };
+    const childRows = [1, 2, 3, 4, 5].map(
+      (rowId) =>
+        ({
+          rowId,
+          turnId: "turn-child",
+          createdAt: 1_800_000_000_000 + rowId,
+          createdAtSeq: rowId,
+          kind: "assistantText",
+          text: `child-output-${rowId}`,
+          state: "complete",
+        }) satisfies AssistantTextRow,
+    );
+    const childState = {
+      status: "live",
+      snapshot: {
+        rows: { window: childRows, totalCount: childRows.length, firstRowId: 1 },
+      },
+      subscriptionId: "sub-child",
+      lastError: null,
+      optimisticCommands: [],
+      loadingOlder: false,
+      sessionPlans: [],
+      planDirectoryRevision: 0,
+      plansLoading: false,
+      turnNavigatorDirectoryRevision: 0,
+    };
+    const acquire = vi.fn(() => ({
+      store: {
+        subscribe: () => () => {},
+        getState: () => childState,
+      },
+      release: vi.fn(),
+    }));
+    render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(
+            V4ConversationContext.Provider,
+            { value: { layer: { acquire } } as never },
+            createElement(ConversationRowView, {
+              context: { ...context, theme: "light" },
+              row,
+            }),
+          ),
+        ),
+      ),
+    );
+
+    const preview = await screen.findByTestId(testId(TID_V4_SUBAGENT_DRILLDOWN, "child-bounded"));
+    expect(preview.getAttribute("data-row-count")).toBe("5");
+    expect(preview.getAttribute("data-visible-row-count")).toBe("3");
+    expect(preview.textContent).toContain("child-output-3");
+    expect(preview.textContent).toContain("child-output-4");
+    expect(preview.textContent).toContain("child-output-5");
+    expect(preview.textContent).not.toContain("child-output-1");
+    expect(preview.textContent).not.toContain("child-output-2");
   });
 });

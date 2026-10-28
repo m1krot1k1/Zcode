@@ -37,16 +37,11 @@ ZCode 的子智能体调度工具名是 `Agent`，Claude Code 插件生态里的
 - `apps/zcode-cli/packages/core/src/tool/handlers/index.ts`
 - `apps/zcode-cli/packages/core/src/tool/compat.ts`
 
-## 子 Runtime 防递归
+## 子 Runtime 递归与计划模式
 
-子 agent runtime 当前禁止继续递归创建 subagent。过去只过滤 `Agent`，加入 `Task` 后必须把二者视为同一类 subagent dispatch 工具。
+ZCode 子 runtime 可以继续调用 `Agent`/`Task`。递归深度本身没有固定上限；整棵树仍共享 root-run deadline/token budget 和 active-task quota。不要把并发配额、预算或终端快照保留量称为 nesting-depth 限制。
 
-规则：
-
-- `allowedTools: ["*"]` 时，从父工具列表继承可用工具，但过滤 `Agent` / `Task`。
-- `disallowedTools` 存在时，仍先过滤 subagent dispatch 工具，再应用 disallow。
-- 显式 `allowedTools` 不额外扩展 alias；子 runtime 本身不会注册 `Agent` / `Task`，所以即使 profile 误写也不会可用。
-- 子 runtime 不暴露 `EnterPlanMode` / `ExitPlanMode`。原因是 subagent 没有可靠的用户审批恢复面；一旦子模型进入 plan mode，`ExitPlanMode` 会请求用户确认并可能让父 turn 永久等待。该限制必须在 child provider-visible tool list 层统一执行，覆盖内置 `general-purpose`、`Explore`、自定义 profile 的 `tools: ["*"]` 和显式 `tools`。
+`EnterPlanMode` / `ExitPlanMode` 仍在子 runtime 中禁止。原因是 subagent 没有可靠的用户审批恢复面；一旦子模型进入 plan mode，`ExitPlanMode` 会请求用户确认并可能让父 turn 永久等待。过滤必须在 child provider-visible tool list 层统一执行，覆盖内置 `general-purpose`、`Explore`、自定义 profile 的 `tools: ["*"]` 和显式 `tools`。
 
 核心实现位置：
 

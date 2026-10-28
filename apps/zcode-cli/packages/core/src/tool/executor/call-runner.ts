@@ -482,6 +482,9 @@ async function executeToolCallImpl(
         bashAvailable: deps.registry.has("Bash"),
       });
       const context: ToolExecutionContext = {
+        ...(deps.getAvailableAgentTypes === undefined
+          ? {}
+          : { availableAgentTypes: deps.getAvailableAgentTypes() }),
         toolCallId: canonicalToolCall.id,
         toolSearch: options?.toolSearch,
         telemetry,

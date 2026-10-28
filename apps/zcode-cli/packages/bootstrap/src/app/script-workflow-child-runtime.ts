@@ -17,6 +17,7 @@ import {
   type AgentExecutionTelemetryPort,
   type BrowserControlPort,
   type ContextSourcePort,
+  type ContextSourceSnapshot,
   type FileSystemPort,
   type HttpClientPort,
   type ImageProcessorPort,
@@ -37,6 +38,7 @@ import {
 } from "@zcode/contracts";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { parseProviderQualifiedModelSelection } from "./provider-registry-selection.js";
+import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import type { ZCodeAppOptions } from "./types.js";
 
 export interface ScriptWorkflowAgentRuntimeDeps {
@@ -56,10 +58,11 @@ export interface ScriptWorkflowAgentRuntimeDeps {
   modelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]>;
   permissionService: PermissionService;
   /**
-   * 插件的技能根（主会话 skill 端口的同一份 `pluginOutcome.skillRoots`）。捆绑技能根不在内：
-   * 那里只有 dynamic-workflows，子代理不能起工作流。
+   * 插件与内置技能根（主会话 skill 端口的同一份 root 集合）。子代理不能起工作流，
+   * 因此只从内置 root 中禁用 dynamic-workflows，其他系统技能仍可被其 profile 按需调用。
    */
   pluginSkillRoots: readonly SkillRoot[];
+  bundledSkillRoots: readonly SkillRoot[];
   runtime: AgentRuntime;
   runtimeConfig: AgentRuntimeConfig;
   sessionId: SessionId;
@@ -71,6 +74,7 @@ export interface ScriptWorkflowAgentRuntimeDeps {
 export function createScriptWorkflowAgentRuntime(input: {
   childSessionId: SessionId;
   deps: ScriptWorkflowAgentRuntimeDeps;
+  initialContextSourceSnapshot?: ContextSourceSnapshot;
   request: WorkflowAgentCallInput;
   traceContext: TraceContext;
   /**
@@ -156,23 +160,29 @@ export function createScriptWorkflowAgentRuntime(input: {
       ...input.configOverrides,
     },
     {
-      ...createRuntimeDeps(input.deps, input.traceContext, input.childSessionId, {
-        // 对外交互端口只能由父 runtime 铸造：子会话不是客户端认识的身份。
-        // 这里过去直接用 `appOptions.providerRuntimeHeadersPort` /
-        // `deps.permissionBroker`，于是 actor 带着 `sess_dwf-…` 去问桌面，桌面
-        // `requireSession` 抛错、response 永不发出，子代理在首个模型请求前挂死。
-        agentId: input.childSessionId,
-        agentType: input.request.opts?.agentType ?? "zcode-workflow",
-        childSessionId: input.childSessionId,
-        description:
-          input.interactionDescription ??
-          input.request.opts?.label ??
-          input.request.opts?.agentType ??
-          "workflow agent",
-        ...(input.traceContext.turnId === undefined
-          ? {}
-          : { parentTurnId: input.traceContext.turnId }),
-      }),
+      ...createRuntimeDeps(
+        input.deps,
+        input.traceContext,
+        input.childSessionId,
+        {
+          // 对外交互端口只能由父 runtime 铸造：子会话不是客户端认识的身份。
+          // 这里过去直接用 `appOptions.providerRuntimeHeadersPort` /
+          // `deps.permissionBroker`，于是 actor 带着 `sess_dwf-…` 去问桌面，桌面
+          // `requireSession` 抛错、response 永不发出，子代理在首个模型请求前挂死。
+          agentId: input.childSessionId,
+          agentType: input.request.opts?.agentType ?? "zcode-workflow",
+          childSessionId: input.childSessionId,
+          description:
+            input.interactionDescription ??
+            input.request.opts?.label ??
+            input.request.opts?.agentType ??
+            "workflow agent",
+          ...(input.traceContext.turnId === undefined
+            ? {}
+            : { parentTurnId: input.traceContext.turnId }),
+        },
+        input.initialContextSourceSnapshot,
+      ),
       ...(input.browserControlPort === undefined
         ? {}
         : {
@@ -199,6 +209,7 @@ function createRuntimeDeps(
   traceContext: TraceContext,
   childSessionId: SessionId,
   clientPortsContext: ChildClientPortsContext,
+  initialContextSourceSnapshot?: ContextSourceSnapshot,
 ): ConstructorParameters<typeof AgentRuntime>[2] {
   return {
     agentTelemetry: deps.agentTelemetry,
@@ -207,10 +218,14 @@ function createRuntimeDeps(
     agentTelemetryCausationMode: "linked_root",
     appVersion: deps.appVersion,
     artifactStore: deps.artifactStore,
-    contextSourcePort:
-      deps.contextSourcePort ??
-      deps.appOptions.contextSourcePort ??
-      createNodeContextSourceAdapter({ env: deps.appOptions.env }),
+    ...(initialContextSourceSnapshot === undefined
+      ? {
+          contextSourcePort:
+            deps.contextSourcePort ??
+            deps.appOptions.contextSourcePort ??
+            createNodeContextSourceAdapter({ env: deps.appOptions.env }),
+        }
+      : { initialContextSourceSnapshot }),
     // 直播通道（照 subagent 同款）：原始子会话事件只**通知**父 runtime 的外部 sink 集，
     // 保留子 sessionId 让协议层按 detached live session 路由；父侧不再 append，
     // 所以共享 store 里每条事件恰好一份。
@@ -280,7 +295,10 @@ function createRuntimeDeps(
  * child 这边漂掉了——dwf 子代理看不见 browser-use 的 control-browser，只能自己翻插件目录摸索。
  */
 export function createWorkflowChildSkillPort(
-  deps: Pick<ScriptWorkflowAgentRuntimeDeps, "appOptions" | "configResult" | "pluginSkillRoots">,
+  deps: Pick<
+    ScriptWorkflowAgentRuntimeDeps,
+    "appOptions" | "configResult" | "pluginSkillRoots" | "bundledSkillRoots"
+  >,
 ): SkillPort | undefined {
   if (!deps.configResult.config.features.skill || !deps.configResult.config.skills.enabled) {
     return undefined;
@@ -289,9 +307,12 @@ export function createWorkflowChildSkillPort(
     deps.appOptions.skillPort ??
     createNodeSkillAdapter({
       extraRoots: deps.configResult.config.skills.roots,
-      extraResolvedRoots: [...deps.pluginSkillRoots],
+      extraResolvedRoots: [...deps.pluginSkillRoots, ...deps.bundledSkillRoots],
       // 脚本 workflow child runtime 不能绕过用户禁用的 SKILL.md 路径。
-      disabledPaths: collectDisabledPaths(deps.configResult.config.skillOverrides),
+      disabledPaths: [
+        ...collectDisabledPaths(deps.configResult.config.skillOverrides),
+        ...collectDynamicWorkflowDisabledSkillPaths(deps.bundledSkillRoots),
+      ],
     })
   );
 }

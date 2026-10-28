@@ -95,7 +95,7 @@ describe("AgentRuntime model anomaly guards", () => {
     );
 
     await expect(runtime.executeTurn("trigger empty model result")).rejects.toMatchObject({
-      message: "Model returned no text, no tool calls, and no usage before completing the turn.",
+      message: "Model completed without returning visible text or tool calls.",
       type: CoreErrorType.ModelError,
     });
 
@@ -109,7 +109,48 @@ describe("AgentRuntime model anomaly guards", () => {
           reason: "empty_model_response",
           source: "provider",
         },
-        message: "Model returned no text, no tool calls, and no usage before completing the turn.",
+        message: "Model completed without returning visible text or tool calls.",
+        type: CoreErrorType.ModelError,
+      },
+    });
+  });
+
+  it("fails a silent stop in the interactive root turn even when usage is nonzero", async () => {
+    const sessionId = createSessionId("runtime-empty-stop-with-usage");
+    const eventStore = createTestSessionEventStore();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {},
+      {
+        eventStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            return {
+              finishReason: "stop",
+              text: "",
+              usage: { inputTokens: 32, outputTokens: 1, totalTokens: 33 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await expect(runtime.executeTurn("answer with no visible text")).rejects.toMatchObject({
+      message: "Model completed without returning visible text or tool calls.",
+      type: CoreErrorType.ModelError,
+    });
+
+    const events = await eventStore.getEvents(sessionId);
+    expect(events.some((event) => event.type === SessionEventType.TurnComplete)).toBe(false);
+    expect(
+      events.find((event) => event.type === SessionEventType.TurnError)?.payload,
+    ).toMatchObject({
+      error: {
+        attribution: {
+          reason: "empty_model_response",
+          source: "provider",
+        },
+        message: "Model completed without returning visible text or tool calls.",
         type: CoreErrorType.ModelError,
       },
     });

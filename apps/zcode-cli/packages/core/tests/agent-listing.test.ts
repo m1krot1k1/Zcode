@@ -30,11 +30,34 @@ describe("agent listing attachments", () => {
     const profiles = [profile("A")];
     const read = createAgentDefinitionsReader(profiles);
     expect(read().activeAgents.map((agent) => agent.name)).toEqual(
-      expect.arrayContaining(["A", "Explore", "general-purpose"]),
+      expect.arrayContaining(["A", "Explore", "start", "orchestrator"]),
     );
     profiles.push(profile("B"));
     expect(read()).toBe(read());
     expect(read().activeAgents.some((agent) => agent.name === "B")).toBe(false);
+  });
+  it("does not offer built-in compatibility profiles but preserves explicit custom roles", () => {
+    const builtIns = createAgentDefinitionsReader([])().activeAgents;
+    const builtInListing = collectAgentListingAttachment({
+      definitions: { activeAgents: builtIns },
+      entries: [],
+      tools: [{ name: "Agent" }],
+    })!;
+    expect(builtInListing.metadata.agentListingDelta?.addedTypes).not.toContain("general-purpose");
+    expect(builtInListing.metadata.agentListingDelta?.addedTypes).not.toContain("Explore");
+    expect(builtInListing.metadata.agentListingDelta?.addedTypes).toContain("orchestrator");
+
+    const explicitCompatibilityNames = createAgentDefinitionsReader([
+      profile("general-purpose", "Project-defined general-purpose role"),
+      profile("Explore", "User-defined Explore role"),
+    ])().activeAgents;
+    const customListing = collectAgentListingAttachment({
+      definitions: { activeAgents: explicitCompatibilityNames },
+      entries: [],
+      tools: [{ name: "Agent" }],
+    })!;
+    expect(customListing.metadata.agentListingDelta?.addedTypes).not.toContain("general-purpose");
+    expect(customListing.metadata.agentListingDelta?.addedTypes).toContain("Explore");
   });
   it("announces the exact supplied directory once, without adding built-ins", () => {
     const entry = collect(["B", "A"])!;
@@ -45,10 +68,18 @@ describe("agent listing attachments", () => {
       isInitial: true,
       showConcurrencyNote: true,
     });
-    expect(entry.content).toContain("Available agent types for the Agent tool:");
+    expect(entry.content).toContain("Available named agent types for Agent/Task tools:");
     expect(entry.content).not.toContain("private instructions");
     expect(collect(["A", "B"], [entry])).toBeUndefined();
     expect(collect([])).toBeUndefined();
+  });
+
+  it("announces the same named role catalog to Task-only child runtimes", () => {
+    const entry = collect(["researcher", "implementer"], [], [{ name: "Task" }]);
+
+    expect(entry?.metadata.agentListingDelta?.addedTypes).toEqual(["implementer", "researcher"]);
+    expect(entry?.content).toContain("Available named agent types for Agent/Task tools:");
+    expect(collect(["researcher"], [], [{ name: "Bash" }])).toBeUndefined();
   });
 
   it("announces additions, removals and renames, and restarts after removing all", () => {
@@ -60,7 +91,9 @@ describe("agent listing attachments", () => {
       isInitial: false,
     });
     expect(delta.content).toContain("The following agent types are no longer available:");
-    expect(delta.content).toContain("New agent types are now available for the Agent tool:");
+    expect(delta.content).toContain(
+      "New named agent types are now available for Agent/Task tools:",
+    );
     expect(delta.content).toContain("This is ambient context");
     expect(delta.content).not.toContain("When you launch multiple agents");
     const renamed = collect(["a", "B"], [initial])!;

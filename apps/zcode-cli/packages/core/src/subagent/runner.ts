@@ -220,6 +220,28 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (!internalParentCorrelationId) {
         throw new Error("A task DAG requires a model call ID or an orchestration run ID.");
       }
+      const profileSnapshot = runOptions?.internalAgentProfilesSnapshot ?? getProfiles();
+      // 修复依据：整个 DAG 必须先对同一份活动 profile 快照做角色校验，避免发现坏角色前已创建子会话。
+      for (const node of graph.nodes) {
+        resolveAgentProfileForRequest(profileSnapshot, {
+          sessionId: rawRequest.sessionId,
+          turnId: rawRequest.turnId,
+          parentToolCallId: internalParentCorrelationId,
+          agentType: node.subagent_type,
+          description: node.description,
+          prompt: node.prompt,
+          workingDirectory: rawRequest.workingDirectory,
+          workspaceRoot: rawRequest.workspaceRoot,
+          callerCanReadOutputFile: rawRequest.callerCanReadOutputFile,
+          trace: rawRequest.trace,
+        });
+      }
+      const dagRunOptions: SubagentRunOptions = {
+        ...runOptions,
+        // План и admission должны сверяться с одним и тем же snapshot профилей,
+        // даже если Host обновит список агентов во время параллельного запуска.
+        internalAgentProfilesSnapshot: profileSnapshot,
+      };
       return executeSubagentTaskDag(
         {
           ...rawRequest,
@@ -236,7 +258,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               ...(rawRequest.orchestrationRunId
                 ? { orchestrationRunId: rawRequest.orchestrationRunId }
                 : {}),
-              agentType: node.subagent_type ?? rawRequest.agentType,
+              // 修复依据：缺失节点角色不应继承父角色，否则 Swarm DAG 可以绕过精确角色选择。
+              agentType: node.subagent_type,
               description: node.description,
               prompt,
               callerCanReadOutputFile: rawRequest.callerCanReadOutputFile,
@@ -247,9 +270,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 ? {}
                 : { acceptanceCriteria: node.acceptance_criteria }),
             },
-            runOptions,
+            dagRunOptions,
           ),
-        runOptions,
+        dagRunOptions,
       );
     },
 
@@ -257,7 +280,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentRunRequest,
       runOptions?: SubagentRunOptions,
     ): Promise<AgentOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(getProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(
+        runOptions?.internalAgentProfilesSnapshot ?? getProfiles(),
+        rawRequest,
+      );
       if (runOptions?.signal?.aborted) {
         throw runOptions.signal.reason ?? new Error("Subagent run aborted before admission");
       }
@@ -341,6 +367,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 internalSwarmRootTurnId: runOptions.internalSwarmRootTurnId,
               }
             : {}),
+          ...(runOptions?.internalAgentProfilesSnapshot
+            ? { internalAgentProfilesSnapshot: runOptions.internalAgentProfilesSnapshot }
+            : {}),
         },
         {
           reportActivity: activityWatchdog.reportActivity,
@@ -366,6 +395,12 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                   : undefined,
               },
             );
+            // Причина гонки: registry admission предшествует созданию читаемой child-сессии.
+            // Публикуем readiness только после записи SubagentSpawned, чтобы UI не получил sessionNotFound.
+            registry.update(lifecycle.agentId, (task) => ({
+              ...task,
+              childSessionReady: true,
+            }));
             sessionReady = true;
             readyGate.resolve();
           },
@@ -1024,7 +1059,10 @@ function aggregateTaskDagAcceptance(
   )
     ? "rejected"
     : decisions.length > 0 &&
-        decisions.every(({ state, acceptance }) => state?.status === "completed" && acceptance?.status === "verified")
+        decisions.every(
+          ({ state, acceptance }) =>
+            state?.status === "completed" && acceptance?.status === "verified",
+        )
       ? "verified"
       : "unknown";
   const qualifyIds = (nodeId: string, ids: readonly string[] | undefined) =>
@@ -1869,10 +1907,7 @@ async function resumeTerminalAgentInBackground(
   const previousTaskWasArchived = latestTaskBeforeAdmission
     ? Boolean(task.attemptId && registry.isTerminalTaskArchived?.(task.taskId, task.attemptId))
     : true;
-  if (
-    latestTaskBeforeAdmission &&
-    latestTaskBeforeAdmission.attemptId !== task.attemptId
-  ) {
+  if (latestTaskBeforeAdmission && latestTaskBeforeAdmission.attemptId !== task.attemptId) {
     taskAbort.dispose();
     taskAbort.settle(latestTaskBeforeAdmission);
     return createSendMessageFailure(
@@ -2449,6 +2484,7 @@ function createRuntimeTaskSnapshot(input: {
     prompt: input.request.prompt,
     startedAt: input.startedAt,
     status: input.status,
+    childSessionReady: false,
     taskType: "local_agent",
     traceContext: input.lifecycle.runTraceContext,
     type: "local_agent",
@@ -3230,9 +3266,13 @@ function resolveAllowedTools(
   const profileTools = isBuiltInExploreAgentProfile(profile)
     ? (options.getAllowedTools?.(profile) ?? EXPLORE_AGENT_ALLOWED_TOOLS)
     : profile.tools;
-  const baseTools = [...(profileTools ?? [])];
+  const hasAllowedSkills = (profile.skills?.length ?? 0) > 0;
+  // 配置可显式写 tools: [Skill]；不允许它绕过空/缺失的技能白名单。
+  const baseTools = [...(profileTools ?? [])].filter(
+    (toolName) => toolName !== "Skill" || hasAllowedSkills,
+  );
   const disallowed = new Set(profile.disallowedTools ?? []);
-  if (profile.skills && profile.skills.length > 0 && !disallowed.has("Skill")) {
+  if (hasAllowedSkills && !disallowed.has("Skill")) {
     baseTools.push("Skill");
   }
   return filterSubagentChildToolNames(baseTools, profile.disallowedTools);

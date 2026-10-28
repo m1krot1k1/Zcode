@@ -75,6 +75,7 @@ export type ShouldEnqueueBackgroundTaskNotification = (
 ) => boolean;
 
 export interface ToolExecutorOptions {
+  getAvailableAgentTypes?: () => readonly string[];
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;
@@ -191,6 +192,7 @@ export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
 }
 
 export interface ToolExecutorDeps {
+  getAvailableAgentTypes?: () => readonly string[];
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;

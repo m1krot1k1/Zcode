@@ -1,6 +1,46 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, parse, resolve } from "node:path";
+import { cpSync, existsSync, readFileSync } from "node:fs";
+import { builtinModules } from "node:module";
+import { dirname, parse, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
+
+const nodeBuiltinModules = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
+
+export function collectExternalRuntimeModuleNames(sources) {
+  const moduleNames = new Set();
+  const specifierPattern = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)["'](@?[A-Za-z0-9][A-Za-z0-9._/-]*)["']/g;
+
+  for (const source of sources) {
+    for (const match of source.matchAll(specifierPattern)) {
+      const specifier = match[1];
+      if (
+        !specifier ||
+        specifier.startsWith(".") ||
+        specifier.startsWith("#") ||
+        specifier.includes(":") ||
+        nodeBuiltinModules.has(specifier) ||
+        specifier === "electron"
+      ) {
+        continue;
+      }
+
+      const segments = specifier.split("/");
+      const packageName = specifier.startsWith("@") ? segments.slice(0, 2).join("/") : segments[0];
+      if (packageName) moduleNames.add(packageName);
+    }
+  }
+
+  return [...moduleNames].sort((left, right) => left.localeCompare(right));
+}
+
+export function copyRuntimeModulePackage(sourcePackageRoot, targetPackageRoot) {
+  cpSync(sourcePackageRoot, targetPackageRoot, {
+    recursive: true,
+    // pnpm 包目录可能含有指向工作区 .bin 的链接（例如 electron），它不是包的运行时代码，
+    // 且可能是断链；复制后 sourcemap 清理会跟随该链接并在打包中断。依赖闭包由收集器单独复制。
+    filter: (sourcePath) =>
+      !relative(sourcePackageRoot, sourcePath).split(sep).includes("node_modules"),
+  });
+}
 
 function findPackageRoot(entryPath) {
   let currentDir = dirname(entryPath);

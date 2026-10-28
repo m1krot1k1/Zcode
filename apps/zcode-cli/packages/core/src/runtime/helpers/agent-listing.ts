@@ -11,7 +11,9 @@ export function collectRuntimeAgentListing(
   entries: readonly RuntimeMessageEntry[],
   tools: readonly { name: string }[],
 ): RuntimeAttachmentEntry | undefined {
-  if (!tools.some((tool) => tool.name === "Agent")) return undefined;
+  // Причина бага: каталог профилей читался до проверки toolset и мог сорвать обычный turn,
+  // когда Agent/Task выключен или запрещён. В этом случае listing не нужен вовсе.
+  if (!tools.some((tool) => tool.name === "Agent" || tool.name === "Task")) return undefined;
   return collectAgentListingAttachment({
     definitions: runtime.getAgentDefinitions(),
     entries,

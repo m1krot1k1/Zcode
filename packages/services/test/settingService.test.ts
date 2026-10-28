@@ -1334,6 +1334,23 @@ describe("settingService", () => {
     expect(settings.httpProxy).toBeUndefined();
   });
 
+  it("会按行规范化并持久化代理列表，清空后删除旧列表", async () => {
+    const home = makeTempHome();
+    const service = await createSettingServiceInHome(home);
+
+    await service.update({
+      httpProxyList: "  http://127.0.0.1:9091  \n\n socks5://127.0.0.1:1080 \n",
+    });
+
+    await expect(service.get()).resolves.toMatchObject({
+      httpProxyList: "http://127.0.0.1:9091\nsocks5://127.0.0.1:1080",
+    });
+
+    await service.update({ httpProxyList: "\n  \n" });
+    const reloadedService = await createSettingServiceInHome(home);
+    expect((await reloadedService.get()).httpProxyList).toBeUndefined();
+  });
+
   it("会持久化 HTTP 代理绕过规则，并支持清空后删除旧字段", async () => {
     const home = makeTempHome();
     const service = await createSettingServiceInHome(home);

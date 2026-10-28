@@ -16,6 +16,9 @@ export function createDesktopPlatform(options: {
     selectDirectory: () => window.zcode.selectDirectory(),
     selectDirectories: () => window.zcode.selectDirectories(),
     selectFile: () => window.zcode.selectFile(),
+    testProxyConnectivity: (proxyEndpoint) =>
+      window.zcode.testProxyConnectivity?.(proxyEndpoint) ??
+      Promise.resolve({ ok: false, reason: "connection_failed" }),
     selectFiles: () => window.zcode.selectFiles?.() ?? Promise.resolve([]),
     createTempTextAttachment: (payload) => window.zcode.createTempTextAttachment(payload),
     materializeWorkflowArtifactFile: (payload) =>

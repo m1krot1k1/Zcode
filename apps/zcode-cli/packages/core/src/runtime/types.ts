@@ -1,16 +1,7 @@
-import type {
-  ToolSearchExecutionContext,
-  ToolSearchMode,
-} from "@zcode/contracts";
+import type { ToolSearchExecutionContext, ToolSearchMode } from "@zcode/contracts";
 import type { RequestVerificationReason } from "@zcode/shared";
-import type {
-  GetAgentDefinitions,
-  LoadAgentDefinitions,
-} from "../subagent/definitions.js";
-import type {
-  RuntimeInputPresentation,
-  TurnExecutionModelFallbackReason,
-} from "@zcode/contracts";
+import type { GetAgentDefinitions, LoadAgentDefinitions } from "../subagent/definitions.js";
+import type { RuntimeInputPresentation, TurnExecutionModelFallbackReason } from "@zcode/contracts";
 /* eslint-disable max-lines -- Runtime 类型集中承载 core/runtime 对外结构，拆分需要单独迁移。 */
 import { PermissionService, ToolScheduler } from "./deps.js";
 import type {
@@ -27,6 +18,9 @@ import type {
   ModelSelection,
   PluginReferenceCatalog,
   ResolvedUserInstructions,
+  ResolvedHarnessRule,
+  ResolvedWorkspaceRule,
+  ContextSourceSnapshot,
   StableForkGoalBoundaryMetadata,
   StableForkTargetMetadata,
   WorkspaceHookBundleSnapshot,
@@ -160,9 +154,7 @@ export interface AgentRuntimeConfig {
     maxTurns?: number;
     outputRootDir?: string;
     profiles?: readonly AgentProfile[];
-    builtInModelSelectionOverrides?: Partial<
-      Record<"general-purpose" | "Explore", ModelSelection>
-    >;
+    builtInModelSelectionOverrides?: Partial<Record<"general-purpose" | "Explore", ModelSelection>>;
   };
   toolAllowlist?: readonly string[];
   toolDisallowlist?: readonly string[];
@@ -255,6 +247,9 @@ export interface AgentRuntimeConfig {
   subagentContext?: {
     agentPrompt: string;
     userInstructions?: ResolvedUserInstructions;
+    bundledHarnessRules?: readonly ResolvedHarnessRule[];
+    workspaceRules?: readonly ResolvedWorkspaceRule[];
+    ruleTargetPaths?: readonly string[];
   };
   language?: string;
   outputStyle?: OutputStylePromptConfig;
@@ -296,9 +291,7 @@ export interface MainTurnCacheHitAggregate {
   totalCacheWriteTokens: number;
 }
 
-export type BackgroundTaskNotificationSealReason =
-  | "subagent_terminal"
-  | "subagent_cancelled";
+export type BackgroundTaskNotificationSealReason = "subagent_terminal" | "subagent_cancelled";
 
 export interface SealBackgroundTaskNotificationsInput {
   reason: BackgroundTaskNotificationSealReason;
@@ -345,14 +338,17 @@ export interface AgentRuntimeDeps {
   agentTelemetryCausation?: AgentTelemetryCausation;
   agentTelemetryCausationMode?: "child" | "linked_root";
   appVersion?: string;
+  /**
+   * Accepted context snapshot inherited by an externally constructed child runtime.
+   * Core owns this copy; children must not resolve a second workspace/bundle snapshot.
+   */
+  initialContextSourceSnapshot?: ContextSourceSnapshot;
   eventStore: SessionEventStorePort;
   sessionStore?: SessionStorePort;
   sessionMailboxPort?: SessionMailboxPort;
   modelFactory: RuntimeModelFactory;
   /** 可选宿主能力：解析未来执行的显式意图；不用于修改已冻结 Model。 */
-  resolveEffectiveModelSelection?: (
-    selection: ModelSelection,
-  ) => EffectiveModelSelectionResult;
+  resolveEffectiveModelSelection?: (selection: ModelSelection) => EffectiveModelSelectionResult;
   modelIoDir?: string;
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
   permissionService?: PermissionService;
@@ -433,10 +429,7 @@ export type RuntimeModelFactory = (input: RuntimeModelFactoryInput) => Model;
  * 子 runtime 通过 deriveChildClientPorts 派生端口，将请求路由到父端口绑定的客户端会话。
  */
 export interface ProviderRuntimeHeadersPort {
-  shouldRefreshBeforeModelRequest?(input: {
-    providerId: string;
-    modelId: string;
-  }): boolean;
+  shouldRefreshBeforeModelRequest?(input: { providerId: string; modelId: string }): boolean;
   refreshBeforeModelRequest(input: {
     accountAccess?: ZCodeProviderAccountAccess;
     expectedAccountScope?: string;
@@ -572,10 +565,7 @@ export type PromptAdmissionReceipt =
     }
   | TurnSteerResult;
 
-export type ActiveTargetLoopTrigger =
-  | "manual"
-  | "user-prompt"
-  | "task-notification";
+export type ActiveTargetLoopTrigger = "manual" | "user-prompt" | "task-notification";
 
 export interface ContinueActiveTargetLoopOptions {
   abortSignal?: AbortSignal;
@@ -959,10 +949,7 @@ export type ParsedRewindCommand =
       action: "status";
     };
 
-export type ContextUsageTokenMethod =
-  | "estimated"
-  | "provider_count"
-  | "proportional_estimate";
+export type ContextUsageTokenMethod = "estimated" | "provider_count" | "proportional_estimate";
 
 export type ContextUsageConfidence = "high" | "medium" | "low";
 

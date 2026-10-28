@@ -22,6 +22,7 @@ import {
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
+import { isModelSelectableAgentProfile } from "../../subagent/profile.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
 const EMPTY_RUNTIME_HOOK_CONFIG = {
@@ -51,6 +52,14 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),
+    // 原因：ZCode 原生路由规则要求根会话用 Task(start) 作为可见入口，但此前 Task 只对子代理进入 provider schema，模型无法遵循这条规则。
+    // 修复依据：交互根会话和可递归子代理共用精确 profile 校验的 Task 别名；工作流 actor 仍不暴露该入口。
+    includeTaskAlias:
+      runtime.config.taskType === undefined ||
+      runtime.config.taskType === "interactive" ||
+      runtime.config.taskType === "fork" ||
+      runtime.config.taskType === "selection_side_chat" ||
+      runtime.config.taskType === "subagent_child",
     includeSendMessage: runtime.subagentPort?.sendMessage !== undefined,
     includeRespondToCoordinator:
       runtime.config.taskType === "subagent_child" && Boolean(deps.coordinatorResponsePort),
@@ -183,6 +192,11 @@ function createRuntimeToolExecutor(
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
     skillPort: deps.skillPort,
     subagentPort: runtime.subagentPort,
+    getAvailableAgentTypes: () =>
+      runtime
+        .getAgentDefinitions()
+        .activeAgents.filter(isModelSelectableAgentProfile)
+        .map((profile) => profile.name),
     coordinatorResponsePort: deps.coordinatorResponsePort,
     workflowSubmitPort: deps.workflowSubmitPort,
     workflowEscalatePort: deps.workflowEscalatePort,

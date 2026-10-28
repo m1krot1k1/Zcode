@@ -152,6 +152,42 @@ description: 项目级中文审查 agent
     }
   });
 
+  it("ignores .cursor agents and loads only native .zcode profiles", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-cursor-agents-"));
+    const storageRoot = join(root, "home");
+    const workingDirectory = join(root, "workspace");
+    try {
+      await mkdir(join(workingDirectory, ".zcode", "agents"), { recursive: true });
+      await mkdir(join(workingDirectory, ".cursor", "agents"), { recursive: true });
+      await writeFile(
+        join(workingDirectory, ".zcode", "agents", "reviewer.md"),
+        "---\nname: reviewer\ndescription: Native review\n---\nUse native policy.",
+      );
+      await writeFile(
+        join(workingDirectory, ".cursor", "agents", "reviewer.md"),
+        "---\nname: reviewer\ndescription: Cursor review\n---\nCursor instructions.",
+      );
+      await writeFile(
+        join(workingDirectory, ".cursor", "agents", "researcher.md"),
+        "---\nname: researcher\ndescription: Cursor research\n---\nResearch carefully.",
+      );
+      await writeFile(
+        join(workingDirectory, ".cursor", "agents", "malformed.md"),
+        "---\nname: malformed\n---\nThis profile has no description.",
+      );
+
+      const result = await loadZCodeAgentProfiles({ storageRoot, workingDirectory });
+
+      expect(result.profiles.map(({ name, description }) => [name, description])).toEqual([
+        ["reviewer", "Native review"],
+      ]);
+      expect(result.profiles.every((profile) => profile.source === "project")).toBe(true);
+      expect(result.diagnostics).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("ignores project Markdown permissionMode because project profiles are untrusted", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-subagents-project-permission-"));
     const storageRoot = join(root, "home");

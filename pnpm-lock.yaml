@@ -215,6 +215,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 2.0.0
         version: 2.0.0
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.6.5)
       '@zcode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -239,6 +242,9 @@ importers:
       ai-sdk-provider-opencode-sdk:
         specifier: 3.0.6
         version: 3.0.6(zod@4.6.5)
+      '@opencode-ai/sdk':
+        specifier: 1.19.4
+        version: 1.19.4
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0

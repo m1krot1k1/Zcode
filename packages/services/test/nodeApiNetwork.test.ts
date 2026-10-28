@@ -1,9 +1,12 @@
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Dispatcher } from "undici";
 import {
   createHostApiNetworkTransport,
   mergeHostApiCaCertificates,
+  readSocketBytes,
   resolveHostProxyForUrl,
+  testProxyConnectivity,
   type HostApiNetworkTransport,
 } from "../src/providers/api/nodeApiNetwork.js";
 
@@ -45,21 +48,66 @@ describe("Host API proxy routing", () => {
       httpProxy: "http://proxy.example.com:8080",
       noProxy: "api.example.com:443,*.internal",
     };
-    expect(resolveHostProxyForUrl("https://api.example.com/v1", options)).toMatchObject({
+    expect(
+      resolveHostProxyForUrl("https://api.example.com/v1", options),
+    ).toMatchObject({
       kind: "direct",
       noProxyMatched: true,
     });
-    expect(resolveHostProxyForUrl("http://service.internal/v1", options)).toMatchObject({
+    expect(
+      resolveHostProxyForUrl("http://service.internal/v1", options),
+    ).toMatchObject({
       kind: "direct",
       noProxyMatched: true,
     });
+  });
+
+  it("归一化 SOCKS 别名和 ip:port:login:pass 格式", () => {
+    expect(
+      resolveHostProxyForUrl("https://api.example.com/v1", {
+        httpProxy: "socks://user:pass@proxy.example:1080",
+      }),
+    ).toMatchObject({
+      kind: "proxy",
+      proxyUrl: "socks5://user:pass@proxy.example:1080",
+    });
+    expect(
+      resolveHostProxyForUrl("https://api.example.com/v1", {
+        httpProxy: "192.0.2.4:1080:user:pass",
+      }),
+    ).toMatchObject({
+      kind: "proxy",
+      proxyUrl: "socks5://user:pass@192.0.2.4:1080",
+    });
+  });
+
+  it("возвращает безопасную ошибку для некорректного proxy без сетевого запроса", async () => {
+    await expect(testProxyConnectivity("not a proxy")).resolves.toEqual({
+      ok: false,
+      reason: "invalid_proxy",
+    });
+  });
+
+  it("сохраняет остаток SOCKS-ответа, пришедший одним TCP-пакетом", async () => {
+    const socket = new EventEmitter();
+    const packet = Buffer.from([5, 0, 0, 1, 127, 0, 0, 1, 1, 187]);
+
+    const firstRead = readSocketBytes(socket as never, 4);
+    socket.emit("data", packet);
+
+    await expect(firstRead).resolves.toEqual(packet.subarray(0, 4));
+    await expect(readSocketBytes(socket as never, 6)).resolves.toEqual(
+      packet.subarray(4),
+    );
   });
 
   it("显式代理配置无效时 fail closed，不回退到直连", async () => {
     const directFetch = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("direct", { status: 200 }));
-    const transport = createHostApiNetworkTransport(async () => ({ httpProxy: "not a proxy" }));
+    const transport = createHostApiNetworkTransport(async () => ({
+      httpProxy: "not a proxy",
+    }));
 
     await expect(transport.fetch("https://api.example.com/v1")).rejects.toThrow(
       "Configured Host proxy URL is invalid",
@@ -91,12 +139,12 @@ describe("Host API proxy routing", () => {
       .mockResolvedValue(new Response("direct", { status: 200 }));
     const transport = createHostApiNetworkTransport(resolveOptions);
 
-    await expect(transport.fetch("https://api.example.com/first")).rejects.toThrow(
-      "settings unavailable",
-    );
-    await expect(transport.fetch("https://api.example.com/second")).resolves.toBeInstanceOf(
-      Response,
-    );
+    await expect(
+      transport.fetch("https://api.example.com/first"),
+    ).rejects.toThrow("settings unavailable");
+    await expect(
+      transport.fetch("https://api.example.com/second"),
+    ).resolves.toBeInstanceOf(Response);
 
     expect(resolveOptions).toHaveBeenCalledTimes(2);
     expect(directFetch).toHaveBeenCalledOnce();
@@ -136,16 +184,19 @@ describe("Host API proxy routing", () => {
       .mockResolvedValueOnce(dispatcher);
     const fetchWithDispatcher = vi.fn(async () => new Response("proxied"));
     const transport = createHostApiNetworkTransport(
-      async () => ({ httpProxy: "http://proxy.example.com:8080", caCertPath: "/tmp/ca.pem" }),
+      async () => ({
+        httpProxy: "http://proxy.example.com:8080",
+        caCertPath: "/tmp/ca.pem",
+      }),
       { createDispatcher, fetchWithDispatcher },
     );
 
-    await expect(transport.fetch("https://api.example.com/first")).rejects.toThrow(
-      "CA unavailable",
-    );
-    await expect(transport.fetch("https://api.example.com/second")).resolves.toBeInstanceOf(
-      Response,
-    );
+    await expect(
+      transport.fetch("https://api.example.com/first"),
+    ).rejects.toThrow("CA unavailable");
+    await expect(
+      transport.fetch("https://api.example.com/second"),
+    ).resolves.toBeInstanceOf(Response);
 
     expect(createDispatcher).toHaveBeenCalledTimes(2);
     expect(fetchWithDispatcher).toHaveBeenCalledOnce();
@@ -160,12 +211,15 @@ describe("Host API proxy routing", () => {
     });
     transport = createHostApiNetworkTransport(
       async () => ({ httpProxy: "http://proxy.example.com:8080" }),
-      { createDispatcher, fetchWithDispatcher: async () => new Response("proxied") },
+      {
+        createDispatcher,
+        fetchWithDispatcher: async () => new Response("proxied"),
+      },
     );
 
-    await expect(transport.fetch("https://api.example.com/race")).rejects.toThrow(
-      "Host API network transport has been disposed",
-    );
+    await expect(
+      transport.fetch("https://api.example.com/race"),
+    ).rejects.toThrow("Host API network transport has been disposed");
     await Promise.resolve();
 
     expect(createDispatcher).toHaveBeenCalledOnce();
@@ -195,12 +249,16 @@ describe("Host API proxy routing", () => {
     });
     transport = createHostApiNetworkTransport(
       async () => ({ httpProxy: "http://proxy.example.com:8080" }),
-      { createDispatcher, fetchWithDispatcher: async () => new Response("proxied") },
+      {
+        createDispatcher,
+        fetchWithDispatcher: async () => new Response("proxied"),
+      },
     );
 
-    const fetchPromise = transport
-      .fetch("https://api.example.com/race")
-      .then(() => undefined, (error: unknown) => error);
+    const fetchPromise = transport.fetch("https://api.example.com/race").then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     await factoryStarted;
     resolveDispatcher(dispatcher);
     await vi.waitFor(() => expect(dispatcher.close).toHaveBeenCalledOnce());
@@ -212,7 +270,9 @@ describe("Host API proxy routing", () => {
     await expect(disposeFinished).resolves.toBe(false);
     resolveClose();
     await disposeAndWaitPromise;
-    await expect(fetchPromise).resolves.toMatchObject({ message: expect.stringContaining("disposed") });
+    await expect(fetchPromise).resolves.toMatchObject({
+      message: expect.stringContaining("disposed"),
+    });
   });
 
   it("同步释放 best-effort 销毁 dispatcher，并拒绝释放后的新请求", async () => {
@@ -230,9 +290,9 @@ describe("Host API proxy routing", () => {
 
     await transport.fetch("https://api.example.com/one");
     transport.dispose();
-    await expect(transport.fetch("https://api.example.com/two")).rejects.toThrow(
-      "Host API network transport has been disposed",
-    );
+    await expect(
+      transport.fetch("https://api.example.com/two"),
+    ).rejects.toThrow("Host API network transport has been disposed");
 
     expect(dispatcher.destroy).toHaveBeenCalledOnce();
     expect(dispatcher.close).not.toHaveBeenCalled();

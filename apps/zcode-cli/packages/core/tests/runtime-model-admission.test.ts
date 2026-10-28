@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createSessionEvent,
   createSessionId,
   createTurnId,
+  SessionEventType,
   runWithModelInvocationContext,
   type ModelInvocationContext,
   type ModelRequestAdmission,
@@ -9,10 +11,16 @@ import {
   type ModelSelection,
 } from "@zcode/contracts";
 import { createRuntimeModel } from "../src/runtime/methods/runtime-model.js";
+import {
+  createOpenCodeSkillDispatcher,
+  createOpenCodeTaskDispatcher,
+} from "../src/runtime/methods/model.js";
+import { skillHandler } from "../src/tool/handlers/skill.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
+import { createTestRuntimeModel } from "./test-runtime-model.js";
 
 // docs/dynamic-workflow/concurrency.md「Where the port is bound」：准入端口与重试预算绑定在 runtime 的模型工厂上，
 // runtime 交出的每一个句柄——turn step 与工具内部的模型调用——都带它们；调用层设什么都压不过。
@@ -24,6 +32,222 @@ function admissionStub(): ModelRequestAdmission {
   const ticket: ModelRequestAdmissionTicket = { publish() {}, release() {} };
   return { acquire: async () => ticket };
 }
+
+describe("OpenCode Core task bridge dispatcher", () => {
+  it("dispatches only through the invocation runtime ToolExecutor with signal, trace and model", async () => {
+    const sessionId = createSessionId("opencode-core-dispatch");
+    const turnId = createTurnId("opencode-core-dispatch-turn");
+    const traceContext = {
+      sessionId,
+      turnId,
+      traceId: "trace-opencode",
+      spanId: "span-opencode",
+    } as never;
+    const signal = new AbortController().signal;
+    const model = createTestRuntimeModel({
+      generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+    });
+    const execute = vi.fn(
+      async () =>
+        ({
+          success: true,
+          output: { status: "completed" },
+          serialization: { content: "child result" },
+        }) as never,
+    );
+    const runtime = {
+      registry: { get: vi.fn((name: string) => (name === "Task" ? {} : undefined)) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeTaskDispatcher(runtime as never, {
+      allowedToolNames: ["Task"],
+      model,
+      signal,
+      traceContext,
+    });
+
+    await expect(
+      dispatch({
+        description: "Inspect task",
+        prompt: "Check the module",
+        subagent_type: "researcher",
+      }),
+    ).resolves.toBe("child result");
+    expect(execute).toHaveBeenCalledTimes(1);
+    const [call, options] = execute.mock.calls[0]!;
+    expect(call).toMatchObject({ name: "Task", input: { subagent_type: "researcher" } });
+    expect(call.id).toMatch(/^opencode-/u);
+    expect(options).toEqual({ model, signal, traceContext });
+  });
+
+  it("fails closed when the current model request did not expose Agent or Task", async () => {
+    const execute = vi.fn();
+    const runtime = {
+      registry: { get: vi.fn(() => ({})) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeTaskDispatcher(runtime as never, {
+      allowedToolNames: ["Read"],
+      model: createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+      traceContext: {} as never,
+    });
+    await expect(
+      dispatch({
+        description: "Inspect task",
+        prompt: "Check the module",
+        subagent_type: "researcher",
+      }),
+    ).rejects.toThrow("capability is unavailable");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("marks only the Core unknown-agent validation so OpenCode can select an active profile", async () => {
+    const execute = vi.fn(async () => ({
+      success: false,
+      error: {
+        type: "tool_execution_failed",
+        message: "Agent type 'general-purpose' is not available. Choose one exact active role ID: researcher, implementer, reviewer",
+      },
+    }) as never);
+    const runtime = {
+      registry: { get: vi.fn((name: string) => name === "Task" ? {} : undefined) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeTaskDispatcher(runtime as never, {
+      allowedToolNames: ["Task"],
+      model: createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+      traceContext: {} as never,
+    });
+
+    await expect(dispatch({
+      description: "Delegate",
+      prompt: "Inspect the repository",
+      subagent_type: "general-purpose",
+    })).rejects.toMatchObject({
+      code: "agent_unknown_type",
+      message: expect.stringContaining("Choose one exact active role ID"),
+    });
+  });
+
+  it("propagates root cancellation before tool admission", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("root turn cancelled"));
+    const execute = vi.fn();
+    const runtime = {
+      registry: { get: vi.fn(() => ({})) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeTaskDispatcher(runtime as never, {
+      allowedToolNames: ["Agent"],
+      model: createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+      signal: controller.signal,
+      traceContext: {} as never,
+    });
+    await expect(
+      dispatch({
+        description: "Inspect task",
+        prompt: "Check the module",
+        subagent_type: "researcher",
+      }),
+    ).rejects.toThrow("Turn was cancelled.");
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("OpenCode Core skill bridge dispatcher", () => {
+  it("loads the named skill through the invocation ToolExecutor and current SkillPort", async () => {
+    const sessionId = createSessionId("opencode-core-skill-dispatch");
+    const turnId = createTurnId("opencode-core-skill-dispatch-turn");
+    const traceContext = {
+      sessionId,
+      turnId,
+      traceId: "trace-opencode-skill",
+      spanId: "span-opencode-skill",
+    } as never;
+    const metadata = {
+      name: "review",
+      description: "Review code",
+      path: "/private/skill-root/review/SKILL.md",
+      directory: "/private/skill-root/review",
+      rootPath: "/private/skill-root",
+      scope: "project",
+      source: "zcode",
+      safeToAutoLoad: false,
+      frontmatterKeys: ["name", "description"],
+      policy: { allowImplicitInvocation: true },
+    };
+    const loadSkill = vi.fn(async () => ({
+      metadata,
+      content: "UNIQUE_SKILL_PORT_BODY_MARKER",
+      baseDirectory: "/private/skill-root/review",
+      bytesRead: 29,
+      sizeBytes: 29,
+      truncated: false,
+    }));
+    const skillPort = { discoverSkills: vi.fn(), loadSkill };
+    const execute = vi.fn(async (call: { input: unknown }) => {
+      const content = await skillHandler(call.input, {
+        skillPort,
+        workingDirectory: "/workspace",
+        toolCallId: "tool-opencode-skill",
+        sessionId,
+        turnId,
+        traceId: "trace-opencode-skill",
+        spanId: "span-opencode-skill",
+        abortSignal: undefined,
+      } as never);
+      return {
+        success: true,
+        output: content,
+        serialization: { content },
+      } as never;
+    });
+    const model = createTestRuntimeModel({
+      generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+    });
+    const runtime = {
+      registry: { get: vi.fn((name: string) => (name === "Skill" ? {} : undefined)) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeSkillDispatcher(runtime as never, {
+      allowedToolNames: ["Skill"],
+      model,
+      traceContext,
+    });
+
+    await expect(dispatch({ skill: "review" })).resolves.toContain("UNIQUE_SKILL_PORT_BODY_MARKER");
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]?.[0]).toMatchObject({ name: "Skill", input: { skill: "review" } });
+    expect(loadSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "review", workingDirectory: "/workspace" }),
+      expect.objectContaining({ signal: undefined }),
+    );
+  });
+
+  it("fails closed when the child model request did not expose Skill", async () => {
+    const execute = vi.fn();
+    const runtime = {
+      registry: { get: vi.fn(() => ({})) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeSkillDispatcher(runtime as never, {
+      allowedToolNames: ["Read"],
+      model: createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+      traceContext: {} as never,
+    });
+
+    await expect(dispatch({ skill: "review" })).rejects.toThrow("capability is unavailable");
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
 
 /** adapter 看到的请求：runner 把调用上下文整份铺进请求（adapters/src/model/runner.ts），这里照样记。 */
 type SeenRequest = Record<string, unknown> & Partial<ModelInvocationContext>;
@@ -191,12 +415,15 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
       tokenLimit: 100,
       deadlineMs: 60_000,
     });
-    const releaseConcurrentReservation = registry.reserveRootRunTokens({
-      rootRunId,
-      sessionId,
-      contextWindow: 100,
-      maxTokens: 0,
-    });
+    // 当前预算按实际 usage 结算；仅仅打开大 context window 不代表已经耗尽 token。
+    registry.recordRootRunUsage(
+      createSessionEvent(
+        SessionEventType.ModelComplete,
+        sessionId,
+        { content: "", stopReason: "stop", usage: { totalTokens: 100 } },
+        { turnId },
+      ),
+    );
     const providerCall = vi.fn(async () => ({
       finishReason: "stop",
       providerMetadata: undefined,
@@ -227,12 +454,88 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     );
     const model = createRuntimeModel(runtime as never, { selection: modelSelection });
     await expect(
-      runWithModelInvocationContext(
-        { traceContext: { sessionId, turnId } as never },
-        () => model.generateText({ messages: [{ role: "user", content: "test" }] }),
+      runWithModelInvocationContext({ traceContext: { sessionId, turnId } as never }, () =>
+        model.generateText({ messages: [{ role: "user", content: "test" }] }),
       ),
     ).rejects.toThrow("Root run resource budget is exhausted");
     expect(providerCall).not.toHaveBeenCalled();
-    releaseConcurrentReservation();
+  });
+
+  it("子 Agent 按 trace 中的子会话解析并共享根 turn 的模型预算", async () => {
+    const rootSessionId = createSessionId("runtime-child-budget-root");
+    const childSessionId = createSessionId("runtime-child-budget-child");
+    const rootTurnId = createTurnId("runtime-child-budget-root-turn");
+    const childTurnId = createTurnId("runtime-child-budget-child-turn");
+    const rootRunId = `${rootSessionId}:${rootTurnId}`;
+    const registry = new InMemoryRuntimeTaskRegistry();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId,
+      turnId: rootTurnId,
+      tokenLimit: 100,
+      deadlineMs: 60_000,
+    });
+    registry.registerSubagentTask(
+      {
+        taskId: "runtime-child-budget-task",
+        agentId: "runtime-child-budget-agent",
+        agentType: "general-purpose",
+        description: "Verify child model admission",
+        status: "running",
+        startedAt: new Date(),
+        childSessionId,
+        parentSessionId: rootSessionId,
+        turnId: rootTurnId,
+        type: "local_agent",
+      },
+      { abort() {}, settled: Promise.resolve() },
+    );
+    // 根 turn 的实际 usage 已达到上限；child admission 必须看到同一 root-run 状态。
+    registry.recordRootRunUsage(
+      createSessionEvent(
+        SessionEventType.ModelComplete,
+        rootSessionId,
+        { content: "", stopReason: "stop", usage: { totalTokens: 100 } },
+        { turnId: rootTurnId },
+      ),
+    );
+    const providerCall = vi.fn(async () => ({
+      finishReason: "stop",
+      providerMetadata: undefined,
+      text: "should not run",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    }));
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      { modelSelection, modelStreaming: "off", taskType: "interactive" },
+      {
+        eventStore: createTestSessionEventStore(),
+        runtimeTaskRegistry: registry,
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            const ticket = await observation.invocationContext?.modelRequestAdmission?.acquire({
+              model: {
+                providerId: observation.model.providerId,
+                modelId: observation.model.modelId,
+              },
+            });
+            ticket?.release();
+            return providerCall();
+          },
+          maxOutputTokens: 50,
+          properties: { contextWindow: 60 },
+        }),
+      },
+    );
+    const model = createRuntimeModel(runtime as never, { selection: modelSelection });
+    await expect(
+        runWithModelInvocationContext(
+          {
+            traceContext: { sessionId: childSessionId, turnId: childTurnId } as never,
+          },
+          () => model.generateText({ messages: [{ role: "user", content: "child" }] }),
+        ),
+      ).rejects.toThrow(rootRunId);
+    expect(providerCall).not.toHaveBeenCalled();
   });
 });

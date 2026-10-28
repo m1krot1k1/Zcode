@@ -104,6 +104,7 @@ describe("subagent tool event projection", () => {
                     input: {
                       description: "Run independent research before synthesis",
                       prompt: "Complete the three-node plan.",
+                      subagent_type: "orchestrator",
                       task_graph: {
                         max_parallel: 2,
                         nodes: [
@@ -111,17 +112,20 @@ describe("subagent tool event projection", () => {
                             id: "alpha",
                             description: nodeDescriptions.get("alpha"),
                             prompt: "Complete alpha.",
+                            subagent_type: "researcher",
                           },
                           {
                             id: "beta",
                             description: nodeDescriptions.get("beta"),
                             prompt: "Complete beta.",
+                            subagent_type: "researcher",
                           },
                           {
                             id: "dependent",
                             description: nodeDescriptions.get("dependent"),
                             prompt: "Synthesize alpha and beta.",
                             depends_on: ["alpha", "beta"],
+                            subagent_type: "researcher",
                           },
                         ],
                       },
@@ -249,6 +253,7 @@ describe("subagent tool event projection", () => {
                     input: {
                       description: "Cancel a running node",
                       prompt: "Cancel while a node is running.",
+                      subagent_type: "orchestrator",
                       task_graph: {
                         max_parallel: 1,
                         nodes: [
@@ -256,12 +261,14 @@ describe("subagent tool event projection", () => {
                             id: "active",
                             description: "DAG active",
                             prompt: "Wait for cancellation.",
+                            subagent_type: "researcher",
                           },
                           {
                             id: "pending",
                             description: "DAG pending",
                             prompt: "Must not start after cancellation.",
                             depends_on: ["active"],
+                            subagent_type: "researcher",
                           },
                         ],
                       },
@@ -455,7 +462,10 @@ describe("subagent tool event projection", () => {
         runtimeTaskRegistry,
         modelFactory: createTestModelFactory({
           async generateText() {
-            requestCount.set(independentSessionId, (requestCount.get(independentSessionId) ?? 0) + 1);
+            requestCount.set(
+              independentSessionId,
+              (requestCount.get(independentSessionId) ?? 0) + 1,
+            );
             return {
               finishReason: "stop",
               providerMetadata: undefined,
@@ -478,10 +488,13 @@ describe("subagent tool event projection", () => {
 
       expect(childSessionId).toBeDefined();
       const childEvents = await eventStore.getEvents(childSessionId!);
-      expect(childEvents.some((event) =>
-        event.type === SessionEventType.ModelComplete &&
-        (event.payload as { usage?: { totalTokens?: number } }).usage?.totalTokens === 500_001,
-      )).toBe(true);
+      expect(
+        childEvents.some(
+          (event) =>
+            event.type === SessionEventType.ModelComplete &&
+            (event.payload as { usage?: { totalTokens?: number } }).usage?.totalTokens === 500_001,
+        ),
+      ).toBe(true);
       expect(requestCount.get(rootSessionId)).toBe(1);
       expect(requestCount.get(childSessionId!)).toBe(1);
       expect(requestCount.get(independentSessionId)).toBe(1);
@@ -499,9 +512,11 @@ describe("subagent tool event projection", () => {
         childSessionId,
       });
       expect(terminalPayload?.terminalStatus).not.toBe("completed");
-      expect((await eventStore.getEvents(independentSessionId)).some(
-        (event) => event.type === SessionEventType.TurnComplete,
-      )).toBe(true);
+      expect(
+        (await eventStore.getEvents(independentSessionId)).some(
+          (event) => event.type === SessionEventType.TurnComplete,
+        ),
+      ).toBe(true);
     } finally {
       releaseChild.resolve();
       await Promise.all([

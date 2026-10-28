@@ -6,6 +6,32 @@ import {
 
 const BUILTIN_PROMPT_COMMAND_PATTERN = /^\/([^\s]+)(?:\s+([\s\S]*))?$/;
 const INIT_COMMAND_NAME = "init";
+const ZCODE_NATIVE_AGENT_COMMANDS = {
+  start: {
+    role: "start",
+    instruction:
+      "Use the start gateway: preserve the user's goal, scope, constraints, and authorization; handle a small task or delegate complex work to orchestrator. Do not ask again for permission already granted.",
+    defaultTask: "Handle the user's actionable workspace request.",
+  },
+  review: {
+    role: "reviewer",
+    instruction:
+      "Perform an independent read-only review. Report confirmed findings with file, scenario, impact, and evidence; if none, state the reviewed scope and limits.",
+    defaultTask: "Review the current workspace changes against their requirements.",
+  },
+  evolve: {
+    role: "self-improver",
+    instruction:
+      "Investigate one observable failure or limitation. Establish evidence, one testable mechanism, a narrow reversible improvement, a before/after check, and a rollback condition. Do not change anything if the failure cannot be grounded.",
+    defaultTask: "Ask the user for the observable failure to investigate.",
+  },
+  evaluate: {
+    role: "evaluator",
+    instruction:
+      "Evaluate each explicit criterion as pass, fail, or not run, with direct evidence. Missing evidence must remain not run.",
+    defaultTask: "Evaluate the current task's requested outcomes against available evidence.",
+  },
+} as const;
 
 export interface ResolveZCodeBuiltinPromptCommandOptions {
   /**
@@ -59,6 +85,23 @@ export function resolveZCodeBuiltinPromptCommandInvocation(
     return {
       name: BUILTIN_WORKFLOW_COMMAND_NAME,
       prompt: expandBuiltinWorkflowCommandPrompt(invocation.args),
+    };
+  }
+
+  const nativeAgentCommand =
+    ZCODE_NATIVE_AGENT_COMMANDS[invocation.name as keyof typeof ZCODE_NATIVE_AGENT_COMMANDS];
+  if (nativeAgentCommand) {
+    const task = invocation.args || nativeAgentCommand.defaultTask;
+    return {
+      name: invocation.name,
+      prompt: [
+        `You are handling the built-in /${invocation.name} command in ZCode.`,
+        `The user's task is: ${task}`,
+        "Use the ordinary typed Task tool to dispatch exactly the named profile below. Do not substitute a generic role, and do not claim the agent ran unless the tool result confirms it.",
+        `Required exact profile: ${nativeAgentCommand.role}`,
+        nativeAgentCommand.instruction,
+        "Return the agent's evidence-backed result to the user. Preserve normal tool permissions, cancellation, and session behavior.",
+      ].join("\n\n"),
     };
   }
 

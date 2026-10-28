@@ -1,6 +1,6 @@
 /** 与 core `model-errors.ts` 中 anomaly guard 文案保持一致。 */
 export const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
-  "Model returned no text, no tool calls, and no usage before completing the turn.";
+  "Model completed without returning visible text or tool calls.";
 
 import {
   requestVerificationActionMessages,

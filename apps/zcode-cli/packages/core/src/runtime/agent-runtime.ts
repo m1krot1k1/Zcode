@@ -358,6 +358,9 @@ export class AgentRuntime {
     this.runtimeCommandQueue = createRuntimeCommandQueue();
     this.workingDirectory = config.workingDirectory ?? ".";
     this.contextSourcePort = deps.contextSourcePort;
+    this.contextSourceSnapshot = deps.initialContextSourceSnapshot
+      ? structuredClone(deps.initialContextSourceSnapshot)
+      : undefined;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
     this.runtimeTaskRegistry =
@@ -653,6 +656,8 @@ export interface AgentRuntime {
    */
   createChildClientPorts(context: ChildClientPortsContext): ClientFacingPorts;
   getContextBuilder(): ContextBuilder;
+  /** Возвращает защитную копию принятого контекста для конструирования дочернего runtime. */
+  getAcceptedContextSourceSnapshot(traceContext: TraceContext): Promise<ContextSourceSnapshot>;
   /** Composer 使用的 Session Skill 快照；同一 runtime 冻结，runtime 重建后重新发现。 */
   getSkillCatalog(traceContext: TraceContext): Promise<SkillLoadOutcome>;
   resumeFromStore(options?: ResumeSessionOptions): Promise<ResumeSessionResult>;

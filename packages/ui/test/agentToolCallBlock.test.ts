@@ -402,7 +402,7 @@ describe("AgentToolCallBlock", () => {
     expect(html).not.toContain("general-purpose");
   });
 
-  it("falls back to the default general-purpose agent type only after complete input omits subagent_type", () => {
+  it("uses a neutral SubAgent label only after complete input omits subagent_type", () => {
     const html = renderToStaticMarkup(
       createElement(
         ZCodeIntlProvider,
@@ -464,7 +464,8 @@ describe("AgentToolCallBlock", () => {
       ),
     );
 
-    expect(html).toContain("general-purpose");
+    expect(html).toContain("子智能体");
+    expect(html).not.toContain("general-purpose");
   });
 
   it("uses the latest child tool summary for a collapsed running subagent", () => {

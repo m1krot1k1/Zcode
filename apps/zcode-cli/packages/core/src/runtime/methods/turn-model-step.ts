@@ -1,5 +1,4 @@
 import type { ToolSearchExecutionContext } from "@zcode/contracts";
-import { getTurnTools } from "./turn-tool-visibility.js";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 
 import { beginLocalTurnPreparation } from "@zcode/contracts";
@@ -61,6 +60,7 @@ import {
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
 import {
   evaluateRapidRefill,
+  getTurnTools,
   MAX_CONSECUTIVE_RAPID_REFILLS,
   RAPID_REFILL_TOOL_TURN_THRESHOLD,
   recordCompactHistoryRound,
@@ -598,19 +598,28 @@ async function runModelBackedTurnStepImpl(
     }
     throw contextError;
   }
-  if (
+  const emptyMainTurnResult =
+    querySource === "main_turn" &&
     !localTerminalResponse &&
     outputTokenContinuation === "none" &&
-    isSuspiciousEmptyModelResult(result.finishReason, responseLength, toolCalls.length, usage)
+    responseLength === 0 &&
+    toolCalls.length === 0;
+  if (
+    emptyMainTurnResult ||
+    (!localTerminalResponse &&
+      outputTokenContinuation === "none" &&
+      isSuspiciousEmptyModelResult(result.finishReason, responseLength, toolCalls.length, usage))
   ) {
-    this.logger?.warn("Model returned an empty non-stop result", {
+    // 根因：空 stop + 非零 usage 会绕过 adapter 的 zero-usage retry/anomaly 判据，随后被写成成功空 TurnComplete。
+    // 修复依据：普通主 turn 必须给用户可见正文或工具调用；内部查询仍由各自调用方处理空结果。
+    this.logger?.warn("Model returned an empty final result", {
       ...traceContextToLogContext(modelTraceContext),
       event: "model.response.suspicious_empty",
       finishReason: result.finishReason,
       module: "core.runtime",
       rawFinishReason,
       responseLength,
-      status: "completed",
+      status: "failed",
       toolCallCount: toolCalls.length,
       usageTotalTokens: usage.totalTokens,
     });

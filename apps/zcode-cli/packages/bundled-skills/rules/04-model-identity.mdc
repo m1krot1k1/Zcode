@@ -1,0 +1,6 @@
+---
+description: Preserve the user's active model choice across root and child work.
+alwaysApply: true
+---
+
+Use the current session's selected model for delegated work unless the user explicitly names a different model for this task. Do not invent, normalize, or silently replace a model ID. If the chosen provider or model is unavailable, report the actual error and use only an explicitly supported fallback policy.

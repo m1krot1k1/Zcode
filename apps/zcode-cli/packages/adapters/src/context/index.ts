@@ -2,9 +2,9 @@
 // Node Context Source Adapter
 // ============================================================
 
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { arch, homedir, release } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { formatLocalIsoDate } from "@zcode/contracts";
 import type {
   ContextSourceDiagnostic,
@@ -15,24 +15,43 @@ import type {
   PackageManager,
   ProjectContext,
   ProjectType,
+  ResolvedHarnessRule,
   ResolvedUserInstructionSource,
   ResolvedUserInstructions,
+  ResolvedWorkspaceRule,
   UserInstructionsOptions,
 } from "@zcode/contracts";
 import { resolveGitSnapshot } from "./git-snapshot.js";
 
 const DEFAULT_PRIORITY_FILES = ["AGENTS.md"];
 const DEFAULT_MAX_BYTES = 100 * 1024;
+const WORKSPACE_RULE_DIRECTORIES = [".zcode/rules"] as const;
+const WORKSPACE_RULE_MAX_BYTES = 64 * 1024;
+const WORKSPACE_RULE_TOTAL_MAX_BYTES = 256 * 1024;
+const WORKSPACE_RULE_MAX_GLOBS = 32;
+const WORKSPACE_RULE_MAX_GLOB_EXPANSIONS = 64;
+const BUNDLED_HARNESS_RULE_DIRECTORY_CANDIDATES = [
+  "packages/bundled-skills/rules",
+  "../bundled-skills/rules",
+  "../../bundled-skills/rules",
+  "../../../bundled-skills/rules",
+] as const;
+const BUNDLED_HARNESS_RULE_MAX_BYTES = 16 * 1024;
+const BUNDLED_HARNESS_RULE_TOTAL_MAX_BYTES = 64 * 1024;
 
 export interface NodeContextSourceAdapterOptions {
   env?: NodeJS.ProcessEnv;
+  /** Explicit package asset root; normally supplied by bootstrap for Desktop and SEA. */
+  bundledHarnessRulesDirectory?: string;
 }
 
 export class NodeContextSourceAdapter implements ContextSourcePort {
   private readonly env: NodeJS.ProcessEnv;
+  private readonly bundledHarnessRulesDirectory?: string;
 
   constructor(options: NodeContextSourceAdapterOptions = {}) {
     this.env = options.env ?? process.env;
+    this.bundledHarnessRulesDirectory = options.bundledHarnessRulesDirectory;
   }
 
   async resolveContextSources(request: ContextSourceRequest): Promise<ContextSourceSnapshot> {
@@ -54,6 +73,15 @@ export class NodeContextSourceAdapter implements ContextSourcePort {
           this.env,
         )
       : undefined;
+    const workspaceRules = await resolveWorkspaceRules(
+      projectRoot ?? workingDirectory,
+      [...(request.ruleTargetPaths ?? []), ...(request.userInstructions?.ruleTargetPaths ?? [])],
+      diagnostics,
+    );
+    const bundledHarnessRules = await resolveBundledHarnessRules(
+      this.bundledHarnessRulesDirectory,
+      diagnostics,
+    );
     const projectContext =
       request.projectContext ?? (projectRoot ? await detectProjectContext(projectRoot) : undefined);
 
@@ -62,6 +90,8 @@ export class NodeContextSourceAdapter implements ContextSourcePort {
       envInfo,
       currentDate: request.currentDate ?? formatLocalIsoDate(new Date()),
       userInstructions,
+      ...(bundledHarnessRules.length > 0 ? { bundledHarnessRules } : {}),
+      ...(workspaceRules.length > 0 ? { workspaceRules } : {}),
       projectContext,
       diagnostics,
     };
@@ -83,6 +113,453 @@ export class NodeContextSourceAdapter implements ContextSourcePort {
       ...gitSnapshot,
     };
   }
+}
+
+async function resolveBundledHarnessRules(
+  configuredDirectory: string | undefined,
+  diagnostics: ContextSourceDiagnostic[],
+): Promise<ResolvedHarnessRule[]> {
+  const entryDirectory = process.argv[1] ? dirname(resolve(process.argv[1])) : undefined;
+  const candidates = configuredDirectory
+    ? [resolve(configuredDirectory)]
+    : [
+        ...BUNDLED_HARNESS_RULE_DIRECTORY_CANDIDATES.map((candidate) => resolve(candidate)),
+        ...(entryDirectory
+          ? BUNDLED_HARNESS_RULE_DIRECTORY_CANDIDATES.map((candidate) =>
+              resolve(entryDirectory, candidate),
+            )
+          : []),
+      ];
+  let canonicalRoot: string | undefined;
+  for (const candidate of candidates) {
+    try {
+      canonicalRoot = await realpath(candidate);
+      break;
+    } catch {
+      // A source tree can be run from several package directories. Try the next known layout.
+    }
+  }
+  if (!canonicalRoot) {
+    if (configuredDirectory) {
+      diagnostics.push({
+        code: "bundled_harness_rules_missing",
+        message: "The required bundled harness rules directory could not be resolved.",
+        path: configuredDirectory,
+      });
+    }
+    return [];
+  }
+
+  let entries;
+  try {
+    entries = await readdir(canonicalRoot, { withFileTypes: true });
+  } catch (error) {
+    diagnostics.push({
+      code: "bundled_harness_rules_read_failed",
+      message: error instanceof Error ? error.message : "Failed to list bundled harness rules.",
+      path: canonicalRoot,
+    });
+    return [];
+  }
+
+  const resolved: ResolvedHarnessRule[] = [];
+  let totalBytes = 0;
+  for (const entry of entries.filter((item) => item.isFile() && item.name.endsWith(".mdc"))) {
+    const rulePath = join(canonicalRoot, entry.name);
+    try {
+      const canonicalPath = await realpath(rulePath);
+      if (!isContainedPath(canonicalRoot, canonicalPath)) {
+        diagnostics.push({
+          code: "bundled_harness_rule_path_escape",
+          message: "Bundled harness rule resolves outside its package directory and was ignored.",
+          path: rulePath,
+        });
+        continue;
+      }
+      const info = await stat(canonicalPath);
+      const remainingBytes = BUNDLED_HARNESS_RULE_TOTAL_MAX_BYTES - totalBytes;
+      if (!info.isFile() || remainingBytes <= 0) {
+        if (remainingBytes <= 0) {
+          diagnostics.push({
+            code: "bundled_harness_rules_size_limit",
+            message:
+              "Further bundled harness rules were ignored after reaching the aggregate size limit.",
+            path: rulePath,
+          });
+          break;
+        }
+        continue;
+      }
+      const maxBytes = Math.min(BUNDLED_HARNESS_RULE_MAX_BYTES, remainingBytes);
+      const { content, bytesRead } = await readBoundedText(canonicalPath, maxBytes);
+      totalBytes += bytesRead;
+      const parsed = parseWorkspaceRule(content, rulePath, diagnostics);
+      if (!parsed) continue;
+      if (!parsed.alwaysApply || parsed.globs.length > 0 || !parsed.body) {
+        diagnostics.push({
+          code: "bundled_harness_rule_not_always_on",
+          message:
+            "Bundled harness rules must have alwaysApply: true, no globs, and a non-empty body.",
+          path: rulePath,
+        });
+        continue;
+      }
+      resolved.push({
+        id: entry.name.slice(0, -".mdc".length),
+        ...(parsed.description ? { description: parsed.description } : {}),
+        content: parsed.body,
+      });
+    } catch (error) {
+      diagnostics.push({
+        code: "bundled_harness_rule_read_failed",
+        message: error instanceof Error ? error.message : "Failed to read bundled harness rule.",
+        path: rulePath,
+      });
+    }
+  }
+  return resolved.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function resolveWorkspaceRules(
+  projectRoot: string,
+  rawTargets: readonly string[],
+  diagnostics: ContextSourceDiagnostic[],
+): Promise<ResolvedWorkspaceRule[]> {
+  const targets = normalizeRuleTargetPaths(projectRoot, rawTargets, diagnostics);
+  const candidates = new Map<string, { path: string; name: string; root: string }>();
+  let canonicalRoot: string;
+  try {
+    canonicalRoot = await realpath(projectRoot);
+  } catch {
+    return [];
+  }
+
+  for (const directory of WORKSPACE_RULE_DIRECTORIES) {
+    const directoryPath = join(canonicalRoot, directory);
+    let canonicalDirectory: string;
+    let entries;
+    try {
+      canonicalDirectory = await realpath(directoryPath);
+      if (!isContainedPath(canonicalRoot, canonicalDirectory)) {
+        diagnostics.push({
+          code: "workspace_rule_path_escape",
+          message: "Rules directory resolves outside the workspace and was ignored.",
+          path: directoryPath,
+        });
+        continue;
+      }
+      entries = await readdir(canonicalDirectory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.name.endsWith(".mdc")) continue;
+      candidates.set(join(canonicalDirectory, entry.name), {
+        path: join(canonicalDirectory, entry.name),
+        name: entry.name,
+        root: canonicalRoot,
+      });
+    }
+  }
+
+  const resolved: ResolvedWorkspaceRule[] = [];
+  let totalBytes = 0;
+  for (const candidate of [...candidates.values()].sort((a, b) => a.path.localeCompare(b.path))) {
+    let canonicalPath: string;
+    try {
+      canonicalPath = await realpath(candidate.path);
+      if (!isContainedPath(candidate.root, canonicalPath)) {
+        diagnostics.push({
+          code: "workspace_rule_path_escape",
+          message: "Rule file resolves outside the workspace and was ignored.",
+          path: candidate.path,
+        });
+        continue;
+      }
+      const info = await stat(canonicalPath);
+      if (!info.isFile()) continue;
+      const remainingBytes = WORKSPACE_RULE_TOTAL_MAX_BYTES - totalBytes;
+      if (remainingBytes <= 0) {
+        diagnostics.push({
+          code: "workspace_rule_total_size_limit",
+          message: "Further workspace rules were ignored after reaching the aggregate size limit.",
+          path: candidate.path,
+        });
+        break;
+      }
+      const maxBytes = Math.min(WORKSPACE_RULE_MAX_BYTES, remainingBytes);
+      const { content, bytesRead } = await readBoundedText(canonicalPath, maxBytes);
+      totalBytes += bytesRead;
+      const parsed = parseWorkspaceRule(content, candidate.path, diagnostics);
+      if (!parsed) continue;
+      const appliedBy = parsed.alwaysApply
+        ? "alwaysApply"
+        : parsed.globs.some((glob) =>
+              targets.some((target) => matchesWorkspaceRuleGlob(glob, target)),
+            )
+          ? "glob"
+          : undefined;
+      if (!appliedBy) continue;
+      resolved.push({
+        filePath: canonicalPath,
+        fileName: candidate.name,
+        ...(parsed.description ? { description: parsed.description } : {}),
+        globs: parsed.globs,
+        alwaysApply: parsed.alwaysApply,
+        appliedBy,
+        content: parsed.body,
+        bytesRead,
+        sizeBytes: info.size,
+        truncated: info.size > maxBytes,
+      });
+    } catch (error) {
+      diagnostics.push({
+        code: "workspace_rule_read_failed",
+        message: error instanceof Error ? error.message : "Failed to read workspace rule.",
+        path: candidate.path,
+      });
+    }
+  }
+  return resolved;
+}
+
+async function readBoundedText(
+  path: string,
+  maxBytes: number,
+): Promise<{ content: string; bytesRead: number }> {
+  const handle = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    return { content: buffer.subarray(0, bytesRead).toString("utf8"), bytesRead };
+  } finally {
+    await handle.close();
+  }
+}
+
+function normalizeRuleTargetPaths(
+  projectRoot: string,
+  rawTargets: readonly string[],
+  diagnostics: ContextSourceDiagnostic[],
+): string[] {
+  const targets = new Set<string>();
+  for (const rawTarget of rawTargets) {
+    const normalized = rawTarget.replaceAll("\\", "/").trim();
+    if (
+      !normalized ||
+      normalized.startsWith("/") ||
+      /^[A-Za-z]:\//u.test(normalized) ||
+      isAbsolute(rawTarget) ||
+      normalized.split("/").includes("..")
+    ) {
+      diagnostics.push({
+        code: "workspace_rule_target_invalid",
+        message: "Rule target must be a workspace-relative path.",
+        path: rawTarget,
+      });
+      continue;
+    }
+    const absolutePath = resolve(projectRoot, normalized);
+    const relativePath = relative(projectRoot, absolutePath);
+    if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
+      diagnostics.push({
+        code: "workspace_rule_target_invalid",
+        message: "Rule target resolves outside the workspace and was ignored.",
+        path: rawTarget,
+      });
+      continue;
+    }
+    targets.add(relativePath.split(sep).join("/"));
+  }
+  return [...targets];
+}
+
+function isContainedPath(root: string, path: string): boolean {
+  const pathRelativeToRoot = relative(root, path);
+  return (
+    pathRelativeToRoot === "" ||
+    (pathRelativeToRoot !== ".." &&
+      !pathRelativeToRoot.startsWith(`..${sep}`) &&
+      !isAbsolute(pathRelativeToRoot))
+  );
+}
+
+function parseWorkspaceRule(
+  source: string,
+  filePath: string,
+  diagnostics: ContextSourceDiagnostic[],
+): { description?: string; alwaysApply: boolean; globs: string[]; body: string } | undefined {
+  const lines = source.replace(/^\uFEFF/u, "").split(/\r?\n/u);
+  if (lines[0] !== "---") {
+    diagnostics.push({
+      code: "workspace_rule_frontmatter_missing",
+      message: "Rule has no YAML frontmatter and was ignored.",
+      path: filePath,
+    });
+    return undefined;
+  }
+  const end = lines.indexOf("---", 1);
+  if (end < 0) {
+    diagnostics.push({
+      code: "workspace_rule_frontmatter_malformed",
+      message: "Rule frontmatter is not closed and was ignored.",
+      path: filePath,
+    });
+    return undefined;
+  }
+
+  const metadata = new Map<string, string[]>();
+  let currentKey: string | undefined;
+  for (const line of lines.slice(1, end)) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    const listItem = line.match(/^\s+-\s+(.+)$/u);
+    if (listItem && currentKey === "globs") {
+      metadata.get("globs")?.push(listItem[1]!.trim());
+      continue;
+    }
+    const field = line.match(/^([A-Za-z][A-Za-z0-9_-]*):(?:\s*(.*))?$/u);
+    if (!field) {
+      diagnostics.push({
+        code: "workspace_rule_frontmatter_malformed",
+        message: "Rule frontmatter contains an unsupported line and was ignored.",
+        path: filePath,
+      });
+      return undefined;
+    }
+    const key = field[1]!;
+    if (metadata.has(key)) {
+      diagnostics.push({
+        code: "workspace_rule_frontmatter_duplicate",
+        message: `Duplicate frontmatter field '${key}' was ignored.`,
+        path: filePath,
+      });
+      return undefined;
+    }
+    currentKey = key;
+    metadata.set(key, field[2] ? [field[2]!.trim()] : []);
+  }
+
+  for (const key of metadata.keys()) {
+    if (!["description", "alwaysApply", "globs"].includes(key)) {
+      diagnostics.push({
+        code: "workspace_rule_frontmatter_unknown",
+        message: `Unknown frontmatter field '${key}' was ignored.`,
+        path: filePath,
+      });
+    }
+  }
+  const descriptionValue = metadata.get("description")?.[0];
+  const description = descriptionValue ? parseRuleScalar(descriptionValue) : undefined;
+  const alwaysApplyValue = metadata.get("alwaysApply")?.[0];
+  let alwaysApply = false;
+  if (alwaysApplyValue !== undefined) {
+    const parsed = parseRuleScalar(alwaysApplyValue).toLowerCase();
+    if (parsed !== "true" && parsed !== "false") {
+      diagnostics.push({
+        code: "workspace_rule_frontmatter_invalid",
+        message: "alwaysApply must be true or false; rule was ignored.",
+        path: filePath,
+      });
+      return undefined;
+    }
+    alwaysApply = parsed === "true";
+  }
+  const globs = (metadata.get("globs") ?? []).flatMap((value) => parseRuleList(value));
+  if (
+    globs.length > WORKSPACE_RULE_MAX_GLOBS ||
+    globs.some(
+      (glob) =>
+        !glob ||
+        glob.length > 512 ||
+        glob.startsWith("/") ||
+        /^[A-Za-z]:\//u.test(glob) ||
+        glob.replaceAll("\\", "/").split("/").includes("..") ||
+        (glob.match(/\{/gu)?.length ?? 0) !== (glob.match(/\}/gu)?.length ?? 0),
+    )
+  ) {
+    diagnostics.push({
+      code: "workspace_rule_glob_invalid",
+      message: "Rule has an invalid glob pattern and was ignored.",
+      path: filePath,
+    });
+    return undefined;
+  }
+  const body = lines
+    .slice(end + 1)
+    .join("\n")
+    .trim();
+  return { ...(description ? { description } : {}), alwaysApply, globs, body };
+}
+
+function parseRuleScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      return JSON.parse(trimmed) as string;
+    } catch {
+      return trimmed.slice(1, -1);
+    }
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    return trimmed.slice(1, -1).replaceAll("''", "'");
+  return trimmed.replace(/\s+#.*$/u, "").trim();
+}
+
+function parseRuleList(value: string): string[] {
+  const trimmed = parseRuleScalar(value);
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return [trimmed];
+  return trimmed
+    .slice(1, -1)
+    .split(",")
+    .map((item) => parseRuleScalar(item))
+    .filter(Boolean);
+}
+
+function matchesWorkspaceRuleGlob(pattern: string, target: string): boolean {
+  const expanded = expandWorkspaceRuleBraces(pattern);
+  if (expanded.length > WORKSPACE_RULE_MAX_GLOB_EXPANSIONS) return false;
+  return expanded.some((candidate) => globPatternToRegExp(candidate).test(target));
+}
+
+function expandWorkspaceRuleBraces(pattern: string): string[] {
+  const match = pattern.match(/\{([^{}]+)\}/u);
+  if (!match) return [pattern];
+  const alternatives = match[1]!.split(",");
+  if (alternatives.length < 2) return [pattern];
+  const results: string[] = [];
+  for (const part of alternatives) {
+    results.push(
+      ...expandWorkspaceRuleBraces(
+        `${pattern.slice(0, match.index)}${part}${pattern.slice(match.index! + match[0].length)}`,
+      ),
+    );
+    if (results.length > WORKSPACE_RULE_MAX_GLOB_EXPANSIONS) break;
+  }
+  return results;
+}
+
+function globPatternToRegExp(pattern: string): RegExp {
+  let expression = "^";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index]!;
+    if (char === "*" && pattern[index + 1] === "*") {
+      index += 1;
+      if (pattern[index + 1] === "/") {
+        index += 1;
+        expression += "(?:.*/)?";
+      } else {
+        expression += ".*";
+      }
+    } else if (char === "*") {
+      expression += "[^/]*";
+    } else if (char === "?") {
+      expression += "[^/]";
+    } else {
+      expression += char.replace(/[|\\{}()[\]^$+?.]/gu, "\\$&");
+    }
+  }
+  return new RegExp(`${expression}$`, "u");
 }
 
 export function createNodeContextSourceAdapter(

@@ -15,6 +15,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Readable, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createNodeLoggerFactory } from "@zcode/adapters/logging";
+import { createNodeContextSourceAdapter } from "@zcode/adapters/context";
 import {
   createInMemorySessionEventStore,
   createNodeToolArtifactStore,
@@ -1208,14 +1209,34 @@ describe("session persistence", () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-bootstrap-workflow-shell-"));
     const configPath = join(tempRoot, "config.json");
     const shellDir = join(tempRoot, "bin");
+    const bundledRulesDir = join(tempRoot, "sea-resources", "rules");
     const zshPath = join(shellDir, "zsh");
     const dbPath = join(tempRoot, "session.sqlite");
     const store = await createSqliteSessionStore({ dbPath });
     const requestTexts: string[] = [];
+    const baseContextSourcePort = createNodeContextSourceAdapter({
+      env: { PATH: join(tempRoot, "bin"), SHELL: join(tempRoot, "bin", "fish") },
+      bundledHarnessRulesDirectory: bundledRulesDir,
+    });
+    let contextResolutionCount = 0;
+    const contextSourcePort = {
+      async resolveContextSources(
+        request: Parameters<typeof baseContextSourcePort.resolveContextSources>[0],
+        options?: Parameters<typeof baseContextSourcePort.resolveContextSources>[1],
+      ) {
+        contextResolutionCount += 1;
+        return baseContextSourcePort.resolveContextSources(request, options);
+      },
+    };
 
     try {
       await mkdir(shellDir, { recursive: true });
+      await mkdir(bundledRulesDir, { recursive: true });
       await writeFile(zshPath, "#!/bin/sh\n");
+      await writeFile(
+        join(bundledRulesDir, "workflow-child-inheritance-test.mdc"),
+        "---\nalwaysApply: true\n---\nWORKFLOW_CONTEXT_ACCEPTED\n",
+      );
       await chmod(zshPath, 0o755);
       await writeFile(
         configPath,
@@ -1261,6 +1282,7 @@ describe("session persistence", () => {
           },
         } as never,
         projectConfigPath: configPath,
+        contextSourcePort,
         runtimeConfig: {
           workingDirectory: tempRoot,
         },
@@ -1276,6 +1298,8 @@ describe("session persistence", () => {
       const providerText = requestTexts.join("\n");
       expect(providerText).toContain("- Shell: zsh");
       expect(providerText).not.toContain("- Shell: fish");
+      expect(providerText).toContain("WORKFLOW_CONTEXT_ACCEPTED");
+      expect(contextResolutionCount).toBe(1);
     } finally {
       store.close();
       await rm(tempRoot, { recursive: true, force: true });

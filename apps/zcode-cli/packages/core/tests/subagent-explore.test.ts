@@ -1682,7 +1682,7 @@ describe("Explore subagent", () => {
 
     expect(result.response).toBe("父 agent 采纳了自定义 agent 的结论。");
     expect(parentFirstRequestText).toContain(
-      "Available agent types for the Agent tool:",
+      "Available named agent types for Agent/Task tools:",
     );
     expect(parentFirstRequestText).toContain("zcode-reviewer");
     expect(parentAgentToolDescription).toContain(
@@ -1848,7 +1848,7 @@ describe("Explore subagent", () => {
 
     expect(result.response).toBe("父 agent 采纳了自定义 agent 的结论。");
     expect(parentFirstRequestText).toContain(
-      "Available agent types for the Agent tool:",
+      "Available named agent types for Agent/Task tools:",
     );
     expect(parentFirstRequestText).toContain("自定义可写 Explore");
     expect(parentAgentToolDescription).toContain(
@@ -2022,6 +2022,7 @@ describe("Explore subagent", () => {
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
+    let nestedCalls = 0;
 
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -2083,6 +2084,26 @@ describe("Explore subagent", () => {
             }
 
             childRequests.push(request);
+            if (toolNames.includes("Task") && nestedCalls === 0) {
+              nestedCalls += 1;
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: "call_wildcard_nested_task",
+                    name: "Task",
+                    input: {
+                      description: "检查下一层 wildcard 继承",
+                      prompt: "继续使用继承的工具面完成只读检查。",
+                      subagent_type: "wildcard-reviewer",
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
             return {
               finishReason: "stop",
               providerMetadata: undefined,
@@ -2096,6 +2117,7 @@ describe("Explore subagent", () => {
 
     const result = await runtime.executeTurn("让 wildcard-reviewer 跑一下");
     const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
+    const grandchildToolNames = childRequests[1].tools.map((tool: any) => tool.name);
 
     expect(result.response).toBe("父 agent 收到 wildcard 结果。");
     expect(childToolNames).toContain("Read");
@@ -2103,7 +2125,9 @@ describe("Explore subagent", () => {
     expect(childToolNames).not.toContain("EnterPlanMode");
     expect(childToolNames).not.toContain("ExitPlanMode");
     expect(childToolNames).toContain("Agent");
-    expect(childToolNames).not.toContain("Task");
+    expect(childToolNames).toContain("Task");
+    expect(grandchildToolNames).toContain("Agent");
+    expect(grandchildToolNames).toContain("Task");
   });
 
   it("removes plan-mode tools from explicit custom subagent tool lists", async () => {
@@ -2191,7 +2215,7 @@ describe("Explore subagent", () => {
       modelMessageContentToText(
         parentRequests[0].messages.find((message: any) =>
           modelMessageContentToText(message.content).includes(
-            "Available agent types for the Agent tool:",
+            "Available named agent types for Agent/Task tools:",
           ),
         ).content,
       ),
@@ -2420,6 +2444,124 @@ describe("Explore subagent", () => {
     expect(childToolNames).not.toContain("Bash");
   });
 
+  it("keeps an ancestor tool allowlist through a nested Task profile", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-nested-ancestor-allowlist");
+    const eventStore = createTestSessionEventStore();
+    const grandchildRequests: any[] = [];
+    let rootCalls = 0;
+    let delegatorCalls = 0;
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "build",
+        toolAllowlist: ["Agent", "Task", "Read"],
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "delegating-specialist",
+              description: "Delegates a focused check.",
+              source: "project",
+              systemPrompt: "Delegate with Task.",
+              tools: ["Task", "Read"],
+              maxTurns: 2,
+            },
+            {
+              name: "bash-specialist",
+              description: "Requests Bash and Read.",
+              source: "project",
+              systemPrompt: "Inspect the result.",
+              tools: ["Bash", "Read"],
+              maxTurns: 2,
+            },
+          ],
+        },
+      },
+      {
+        eventStore,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any, observation: any) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (sessionId === rootSessionId) {
+              rootCalls += 1;
+              if (rootCalls === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{
+                    id: "call_delegating_specialist",
+                    name: "Agent",
+                    input: {
+                      description: "Delegate the nested permission check",
+                      prompt: "Use Task for the permission check.",
+                      subagent_type: "delegating-specialist",
+                    },
+                  }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Nested permission check completed.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            if (toolNames.includes("Task")) {
+              delegatorCalls += 1;
+              if (delegatorCalls === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{
+                    id: "call_bash_specialist",
+                    name: "Task",
+                    input: {
+                      description: "Check inherited permissions",
+                      prompt: "Run a read-only permission check.",
+                      subagent_type: "bash-specialist",
+                    },
+                  }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Grandchild result received.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            grandchildRequests.push(request);
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Permission check complete.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run the nested permission check.");
+    const grandchildTools = (grandchildRequests[0]?.tools ?? []).map(
+      (tool: any) => tool.name,
+    );
+
+    expect(result.response).toBe("Nested permission check completed.");
+    expect(delegatorCalls).toBe(2);
+    expect(grandchildRequests).toHaveLength(1);
+    expect(grandchildTools).toContain("Read");
+    expect(grandchildTools).not.toContain("Bash");
+  });
+
   it("auto-enables Skill and allows bare aliases for declared plugin skills", async () => {
     const sessionId = createSessionId("runtime-subagent-filtered-skills");
     const eventStore = createTestSessionEventStore();
@@ -2580,6 +2722,113 @@ describe("Explore subagent", () => {
     expect(result.response).toBe("父 agent 收到了 skill-agent 的结论。");
     expect(loadedSkills).toEqual(["superpowers:allowed-skill"]);
     expect(childRequests).toHaveLength(2);
+  });
+
+  it("does not grant parent skills to a child with an explicit empty allowlist", async () => {
+    const sessionId = createSessionId("runtime-subagent-empty-skill-allowlist");
+    const eventStore = createTestSessionEventStore();
+    let loadedSkillCount = 0;
+    const skill = skillMetadata("parent-only-skill", "/skills/parent-only/SKILL.md");
+    const skillPort: SkillPort = {
+      async discoverSkills() {
+        return { diagnostics: [], skills: [skill], totalDiscovered: 1 };
+      },
+      async loadSkill() {
+        loadedSkillCount += 1;
+        return {
+          baseDirectory: skill.directory,
+          bytesRead: 10,
+          content: "must remain private to parent",
+          metadata: skill,
+          sizeBytes: 10,
+          truncated: false,
+        };
+      },
+    };
+    const childToolSets: string[][] = [];
+    let parentCallCount = 0;
+    let childCallCount = 0;
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [{
+            name: "no-skills-agent",
+            description: "Agent with no skill access.",
+            source: "project",
+            systemPrompt: "Do not load skills.",
+            tools: ["Read", "Skill"],
+            skills: [],
+          }],
+        },
+      },
+      {
+        eventStore,
+        skillPort,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            if (toolNames.includes("Agent")) {
+              parentCallCount += 1;
+              if (parentCallCount === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{
+                    id: "call_no_skills_agent",
+                    name: "Agent",
+                    input: {
+                      description: "Check empty skill permissions",
+                      prompt: "Return a short result without loading skills.",
+                      subagent_type: "no-skills-agent",
+                    },
+                  }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Child completed without a skill.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            childToolSets.push(toolNames);
+            childCallCount += 1;
+            expect(toolNames).not.toContain("Skill");
+            if (childCallCount > 1) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Child completed without a skill.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "tool-calls",
+              providerMetadata: undefined,
+              text: "",
+              toolCalls: [{
+                id: "forged_parent_skill_call",
+                name: "Skill",
+                input: { skill: "parent-only-skill" },
+              }],
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run the no-skills agent.");
+
+    expect(result.response).toBe("Child completed without a skill.");
+    expect(childToolSets).toHaveLength(2);
+    expect(loadedSkillCount).toBe(0);
   });
 
   it("fails before the child request when a scoped MCP server is unavailable in the parent startup snapshot", async () => {
@@ -3745,13 +3994,13 @@ describe("Explore subagent", () => {
     );
   });
 
-  it("ignores a legacy call model and runs the built-in general-purpose agent on its configured model", async () => {
+  it("rejects a legacy Agent call without an explicit role instead of selecting general-purpose", async () => {
     const sessionId = createSessionId(
       "runtime-general-purpose-built-in-model-override",
     );
     const eventStore = createTestSessionEventStore();
     const childRequests: any[] = [];
-    const childObservations: TestModelExecutionObservation[] = [];
+    const parentRequests: any[] = [];
     let parentCallCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -3775,7 +4024,7 @@ describe("Explore subagent", () => {
       {
         eventStore,
         modelFactory: createTestModelFactory({
-          async generateText(request: any, observation) {
+          async generateText(request: any) {
             const toolNames = (request.tools ?? []).map(
               (tool: any) => tool.name,
             );
@@ -3783,6 +4032,7 @@ describe("Explore subagent", () => {
               toolNames.includes("Agent") &&
               !toolNames.includes("RespondToCoordinator")
             ) {
+              parentRequests.push(request);
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -3813,7 +4063,6 @@ describe("Explore subagent", () => {
             }
 
             childRequests.push(request);
-            childObservations.push(observation);
             return {
               finishReason: "stop",
               providerMetadata: undefined,
@@ -3827,11 +4076,13 @@ describe("Explore subagent", () => {
 
     await runtime.executeTurn("Use the default Agent");
 
-    expect(childRequests).toHaveLength(1);
-    expect(childObservations[0].model).toMatchObject({
-      providerId: "custom-openai",
-      modelId: "gpt-5.4",
-    });
+    expect(childRequests).toHaveLength(0);
+    expect(parentRequests).toHaveLength(2);
+    const retryText = parentRequests[1].messages
+      .map((message: any) => modelMessageContentToText(message.content))
+      .join("\n");
+    expect(retryText).toContain("subagent_type");
+    expect(retryText).not.toContain("general-purpose");
   });
 
   it("ignores a legacy call model and uses the built-in Explore override for child request, spawn event, and tool branch capability", async () => {

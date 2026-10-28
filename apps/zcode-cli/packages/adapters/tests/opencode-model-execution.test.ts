@@ -16,10 +16,53 @@ import {
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { describe, expect, it, vi } from "vitest";
 import { classifyModelFailure, inspectProviderFailure } from "../src/model/failure-classifier.js";
-import { createOpenCodeDiagnosticFetch } from "../src/model/model-execution.js";
+import {
+  createOpenCodeDiagnosticFetch,
+  projectOpenCodePrompt,
+} from "../src/model/model-execution.js";
 import { TestProviderConfigFixture } from "./test-provider-config.js";
 
 describe("OpenCode SDK model execution", () => {
+  it("sends the OpenCode-only prompt projection to the SDK without rewriting the caller history", async () => {
+    let receivedPrompt: LanguageModelV3CallOptions["prompt"] | undefined;
+    const provider = createFakeOpenCodeProvider({
+      model: () =>
+        ({
+          doGenerate: async (options: LanguageModelV3CallOptions) => {
+            receivedPrompt = options.prompt;
+            return {
+              content: [{ type: "text", text: "ok" }],
+              finishReason: { unified: "stop", raw: undefined },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+                outputTokens: { total: 1, text: 1, reasoning: undefined },
+              },
+              warnings: [],
+            };
+          },
+        }) as unknown as LanguageModelV3,
+    });
+    const registry = createRegistry(provider);
+    const prompt: LanguageModelV3CallOptions["prompt"] = [
+      {
+        role: "system",
+        content: "For complex tasks, delegate them with Agent. Use only agent types listed in the current Agent system-reminder, and launch independent calls together in one response.",
+      },
+    ];
+    const options = createCallOptions({ prompt });
+
+    try {
+      await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        registry.resolve("opencode/deepseek-v4.1-flash-free").model.doGenerate!(options),
+      );
+      expect(receivedPrompt).toEqual(projectOpenCodePrompt(prompt));
+      expect(receivedPrompt?.[0]).not.toEqual(prompt[0]);
+      expect(prompt[0].role === "system" && prompt[0].content).toContain("listed in the current Agent system-reminder");
+    } finally {
+      await registry.dispose();
+    }
+  });
+
   it("preserves sanitized prompt HTTP diagnostics through the real SDK wrapper", async () => {
     const requests: string[] = [];
     const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {

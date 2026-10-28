@@ -39,7 +39,7 @@ describe("subagent definitions at execution boundaries", () => {
       const running = (await scenario.spawned())[1]!;
       const listing = (request: (typeof scenario.parents)[number]) =>
         request.messages.filter((message) =>
-          JSON.stringify(message).includes("Available agent types for the Agent tool:"),
+          JSON.stringify(message).includes("Available named agent types for Agent/Task tools:"),
         );
       const before = listing(scenario.parents.at(-1)!);
       expect(before).toHaveLength(1);

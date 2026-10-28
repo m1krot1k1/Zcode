@@ -212,6 +212,8 @@ export const PlatformChannels = {
   SelectDirectories: "zcode:select-directories",
   /** 打开系统文件选择框 */
   SelectFile: "zcode:select-file",
+  /** Renderer → Main: проверить один proxy endpoint через публичный IP echo сервис. */
+  TestProxyConnectivity: "zcode:test-proxy-connectivity",
   /** 打开系统多文件选择框 */
   SelectFiles: "zcode:select-files",
   /** Renderer → Main：写入宿主 ~/.zcode 临时文本附件 */
@@ -784,6 +786,15 @@ export interface PlatformChannelMap {
   [PlatformChannels.SelectFile]: {
     request: void;
     response: string | null;
+  };
+  [PlatformChannels.TestProxyConnectivity]: {
+    request: string;
+    response:
+      | { ok: true; outboundIp: string }
+      | {
+          ok: false;
+          reason: "invalid_proxy" | "connection_failed" | "timeout" | "invalid_response";
+        };
   };
   [PlatformChannels.SelectFiles]: {
     request: void;

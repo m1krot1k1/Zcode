@@ -797,6 +797,7 @@ export function SettingsPage({
     IntegratedTerminalShellOption[]
   >([]);
   const [httpProxy, setHttpProxy] = useState("");
+  const [httpProxyList, setHttpProxyList] = useState("");
   const [httpProxyNoProxy, setHttpProxyNoProxy] = useState("");
   const [httpProxyCaCertPath, setHttpProxyCaCertPath] = useState("");
   const [embeddedBrowserAllowInsecureCertificates, setEmbeddedBrowserAllowInsecureCertificates] =
@@ -887,6 +888,8 @@ export function SettingsPage({
         setDataBaseDir(settings.dataBaseDir ?? "");
         setIntegratedTerminalShell(settings.integratedTerminalShell ?? { mode: "auto" });
         setHttpProxy(settings.httpProxy ?? "");
+        // 旧配置只保存活动代理；首次显示时将其作为列表中的唯一一项，避免升级后地址消失。
+        setHttpProxyList(settings.httpProxyList ?? settings.httpProxy ?? "");
         setHttpProxyNoProxy(settings.httpProxyNoProxy ?? "");
         setHttpProxyCaCertPath(settings.httpProxyCaCertPath ?? "");
         setEmbeddedBrowserAllowInsecureCertificates(
@@ -1104,6 +1107,38 @@ export function SettingsPage({
       toast(intl.formatMessage({ id: "settings.httpProxySavedHint" }));
     },
     [localHostServices.settingService, intl],
+  );
+  const handleHttpProxyListChange = useCallback(
+    async (proxyList: string) => {
+      const normalizedProxyList = proxyList
+        .split(/\r?\n/u)
+        .map((proxy) => proxy.trim())
+        .filter(Boolean)
+        .join("\n");
+      const entries = normalizedProxyList.split("\n").filter(Boolean);
+      const nextActiveProxy =
+        !httpProxy || entries.includes(httpProxy) ? httpProxy : (entries[0] ?? "");
+      await runSettingsActionAsync({
+        featureId: "settings.network",
+        action: "save_http_proxy_list",
+        trigger: "button",
+        operation: () =>
+          localHostServices.settingService.update({
+            httpProxyList: normalizedProxyList,
+            // 列表与活动代理一次写入，删除当前活动项时切换到首项；清空列表则恢复直连。
+            httpProxy: nextActiveProxy,
+          }),
+        completed: {
+          resultSource: "setting_service",
+          configured: entries.length > 0,
+          requiresRestart: true,
+        },
+      });
+      setHttpProxyList(normalizedProxyList);
+      setHttpProxy(nextActiveProxy);
+      toast(intl.formatMessage({ id: "settings.httpProxySavedHint" }));
+    },
+    [httpProxy, intl, localHostServices.settingService],
   );
   const handleHttpProxyNoProxyChange = useCallback(
     async (noProxy: string) => {
@@ -1839,6 +1874,7 @@ export function SettingsPage({
                               onToolSearchModeChange={handleToolSearchModeChange}
                               nativeSearchEnhancementsEnabled={nativeSearchEnhancementsEnabled}
                               httpProxy={httpProxy}
+                              httpProxyList={httpProxyList}
                               httpProxyNoProxy={httpProxyNoProxy}
                               httpProxyCaCertPath={httpProxyCaCertPath}
                               defaultHomeDir={defaultHomeDir}
@@ -1898,6 +1934,7 @@ export function SettingsPage({
                                 handleModelIoFullRetentionEnabledChange
                               }
                               onHttpProxyChange={handleHttpProxyChange}
+                              onHttpProxyListChange={handleHttpProxyListChange}
                               onHttpProxyNoProxyChange={handleHttpProxyNoProxyChange}
                               onHttpProxyCaCertPathChange={handleHttpProxyCaCertPathChange}
                               onCloseToTrayOnWindowsChange={handleCloseToTrayOnWindowsChange}

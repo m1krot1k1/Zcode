@@ -213,7 +213,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const prompt = getAgentPrompt(toolCall);
   const fallbackLabel = formatAgentMessage(intl, "chat.toolCall.agent.fallback", "SubAgent");
   const primaryText = getAgentPrimaryText(toolCall, fallbackLabel);
-  const agentName = getAgentKindLabel(toolCall, "", context.authoritativeAgentType);
+  const agentName = getAgentKindLabel(toolCall, fallbackLabel, context.authoritativeAgentType);
   const configuredAgentColor = useToolPresentationCapabilities().agentColor?.(agentName);
   const agentColor = agentName
     ? (configuredAgentColor ?? getAgentColor(toolCall) ?? resolveSubagentColorFromName(agentName))

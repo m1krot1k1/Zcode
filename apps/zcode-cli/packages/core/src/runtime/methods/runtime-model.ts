@@ -99,8 +99,11 @@ function withRuntimeInvocationLayer(
   return withModelInvocationContext(model, (request) => {
     const context = getCurrentModelInvocationContext();
     const traceContext = context?.traceContext;
+    // 子 Agent 的 runtime 句柄可能仍归属根会话；根预算必须按本次请求的子会话查 lineage，
+    // 否则会把 child turn 拼成一个不存在的 rootRunId，并在首个模型请求时误判预算耗尽。
+    const invocationSessionId = traceContext?.sessionId ?? runtime.sessionId;
     const rootRunId = runtime.runtimeTaskRegistry.getRootRunIdForSession(
-      runtime.sessionId,
+      invocationSessionId,
       traceContext?.turnId,
     );
     const contextWindow =
@@ -123,7 +126,7 @@ function withRuntimeInvocationLayer(
         maxTokens,
         rootRunId,
         registry: runtime.runtimeTaskRegistry,
-        sessionId: runtime.sessionId,
+        sessionId: invocationSessionId,
       }),
     };
   });

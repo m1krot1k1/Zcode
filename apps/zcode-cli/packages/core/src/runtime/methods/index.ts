@@ -76,7 +76,7 @@ import {
 } from "./steering.js";
 import { discardPersistedPendingSteerInputs } from "./steering.js";
 import { createDefaultSubagentPort } from "./subagent.js";
-import { ensureContextInitialized, getSkillCatalog } from "./context.js";
+import { ensureContextInitialized, getAcceptedContextSourceSnapshot, getSkillCatalog } from "./context.js";
 import { createContextBuilderFromSnapshot } from "./context.js";
 import { loadProjectMemoryRoot } from "./context.js";
 import { logMemorySkipped } from "./context.js";
@@ -228,6 +228,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.notifyExternalChildSessionEvent = notifyExternalChildSessionEvent;
   proto.createChildClientPorts = createChildClientPorts;
   proto.getContextBuilder = getContextBuilder;
+  proto.getAcceptedContextSourceSnapshot = getAcceptedContextSourceSnapshot;
   proto.getPendingPermissionRequests = getPendingPermissionRequests;
   proto.recordUserInputAutoResolutionUpdate = recordUserInputAutoResolutionUpdate;
   proto.recordDynamicWorkflowRunProgress = recordDynamicWorkflowRunProgress;

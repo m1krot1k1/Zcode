@@ -45,14 +45,18 @@ interface ParsedPluginAgentProfile {
   profile: AgentProfile;
 }
 
-const RESERVED_AGENT_NAMES = new Set(["general-purpose", "Explore"]);
+const RESERVED_AGENT_NAMES = new Set(["general", "general-purpose", "Explore"]);
 
 export async function loadZCodeAgentProfiles(
   input: LoadZCodeAgentProfilesInput,
 ): Promise<LoadZCodeAgentProfilesResult> {
   const migration = await migrateUserSubagentMarkdown(join(input.storageRoot, "agents"));
   await migrateSubagentStateFile(join(input.storageRoot, "v2", "agents-state.json"));
-  const roots: Array<{ path: string; source: "user" | "project"; namespace?: string }> = [
+  const roots: Array<{
+    path: string;
+    source: "user" | "project";
+    namespace?: string;
+  }> = [
     { path: join(input.storageRoot, "agents"), source: "user" as const },
     { path: join(input.workingDirectory, ".zcode", "agents"), source: "project" as const },
   ];

@@ -52,8 +52,10 @@ describe("zcode-protocol-v4 command", () => {
     });
   });
 
-  it("accepts only the explicit one-shot swarm mode and leaves normal sends unchanged", () => {
-    const ordinary = commandPayloadSchemas.sendText.parse({ text: "ordinary turn" });
+  it("accepts automatic and explicit orchestration modes and leaves normal sends unchanged", () => {
+    const ordinary = commandPayloadSchemas.sendText.parse({
+      text: "ordinary turn",
+    });
     expect(ordinary).not.toHaveProperty("orchestrationMode");
 
     expect(
@@ -63,6 +65,12 @@ describe("zcode-protocol-v4 command", () => {
       }).orchestrationMode,
     ).toBe("swarm");
     expect(
+      commandPayloadSchemas.sendText.parse({
+        text: "automatically plan this task",
+        orchestrationMode: "auto",
+      }).orchestrationMode,
+    ).toBe("auto");
+    expect(
       commandPayloadSchemas.sendText.safeParse({
         text: "invalid mode",
         orchestrationMode: "recursive",
@@ -71,7 +79,10 @@ describe("zcode-protocol-v4 command", () => {
   });
 
   it("defaults legacy submissions to ZCode and accepts explicit OpenCode model routes", () => {
-    expect(commandPayloadSchemas.sendText.parse({ text: "ordinary turn" }).executionRoute).toEqual({
+    expect(
+      commandPayloadSchemas.sendText.parse({ text: "ordinary turn" })
+        .executionRoute,
+    ).toEqual({
       kind: "zcode",
     });
     expect(
@@ -85,7 +96,10 @@ describe("zcode-protocol-v4 command", () => {
         text: "delegated turn",
         executionRoute: {
           kind: "opencode-acp",
-          model: { kind: "catalog", modelId: "opencode/deepseek-v4.1-flash-free" },
+          model: {
+            kind: "catalog",
+            modelId: "opencode/deepseek-v4.1-flash-free",
+          },
         },
       }).executionRoute,
     ).toEqual({
@@ -161,14 +175,31 @@ describe("zcode-protocol-v4 command", () => {
       { modelExecution: { selectionFallback: {} } },
       { mode: "build" },
       { planEnabled: true },
-      { attachments: [{ ref: "artifact:1", fileName: "a.txt", mime: "text/plain", bytes: 1 }] },
+      {
+        attachments: [
+          {
+            ref: "artifact:1",
+            fileName: "a.txt",
+            mime: "text/plain",
+            bytes: 1,
+          },
+        ],
+      },
       { requestedDelivery: "queue" },
       { requestedDelivery: "guide" },
       { heldQueueDisposition: "clearQueueAndSend" },
       { browserAmbientContext: { url: "https://example.com" } },
-      { context_refs: [{ kind: "shared_context_import", context_id: "ctx-1" }] },
+      {
+        context_refs: [{ kind: "shared_context_import", context_id: "ctx-1" }],
+      },
       { conversationQuotes: [{ text: "quote" }] },
-      { source: { kind: "pluginUi", pluginId: "plugin-1", toolCallId: "call-1" } },
+      {
+        source: {
+          kind: "pluginUi",
+          pluginId: "plugin-1",
+          toolCallId: "call-1",
+        },
+      },
       { highspeedMeta: { schemaVersion: 1 } },
       { automationId: "automation-1" },
       { offPeakTaskId: "off-peak-1" },
@@ -185,7 +216,10 @@ describe("zcode-protocol-v4 command", () => {
       ).toBe(false);
     }
     expect(
-      commandPayloadSchemas.sendText.safeParse({ text: "  ", executionRoute: route }).success,
+      commandPayloadSchemas.sendText.safeParse({
+        text: "  ",
+        executionRoute: route,
+      }).success,
     ).toBe(false);
     expect(
       commandPayloadSchemas.sendText.safeParse({
@@ -207,7 +241,12 @@ describe("zcode-protocol-v4 command", () => {
       expiresAt: 10_000,
     };
 
-    expect(commandPayloadSchemas.sendText.parse({ text: "accelerate", highspeedMeta })).toEqual({
+    expect(
+      commandPayloadSchemas.sendText.parse({
+        text: "accelerate",
+        highspeedMeta,
+      }),
+    ).toEqual({
       text: "accelerate",
       executionRoute: { kind: "zcode" },
       highspeedMeta,
@@ -223,7 +262,9 @@ describe("zcode-protocol-v4 command", () => {
   it("preserves strict shared-context references on sendText", () => {
     const payload = commandPayloadSchemas.sendText.parse({
       text: "请继续这个分享里的工作",
-      context_refs: [{ kind: "shared_context_import", context_id: "context-1" }],
+      context_refs: [
+        { kind: "shared_context_import", context_id: "context-1" },
+      ],
     });
     expect(payload.context_refs).toEqual([
       { kind: "shared_context_import", context_id: "context-1" },
@@ -243,12 +284,17 @@ describe("zcode-protocol-v4 command", () => {
   });
 
   it("accepts the authoritative shared-context discard command", () => {
-    expect(commandPayloadSchemas.discardSharedContext.parse({ contextId: "context-1" })).toEqual({
+    expect(
+      commandPayloadSchemas.discardSharedContext.parse({
+        contextId: "context-1",
+      }),
+    ).toEqual({
       contextId: "context-1",
     });
-    expect(commandPayloadSchemas.discardSharedContext.safeParse({ contextId: "" }).success).toBe(
-      false,
-    );
+    expect(
+      commandPayloadSchemas.discardSharedContext.safeParse({ contextId: "" })
+        .success,
+    ).toBe(false);
   });
 
   it("parses a one-message start-now, queue or guide delivery override", () => {
@@ -376,7 +422,9 @@ describe("zcode-protocol-v4 command", () => {
         },
       },
       turnRuntimeModel: {
-        provider: { api: { baseUrl: "https://must-not-cross-the-wire.example" } },
+        provider: {
+          api: { baseUrl: "https://must-not-cross-the-wire.example" },
+        },
       },
     });
 
@@ -407,7 +455,10 @@ describe("zcode-protocol-v4 command", () => {
       commandPayloadSchemas.sendText.safeParse({
         text: "invalid Memory policy",
         modelSelection: { providerId: "offpeak", modelId: "model" },
-        modelExecution: { memoryExtraction: "disabled", selectionScope: "execution" },
+        modelExecution: {
+          memoryExtraction: "disabled",
+          selectionScope: "execution",
+        },
       }).success,
     ).toBe(false);
   });
@@ -519,11 +570,17 @@ describe("zcode-protocol-v4 command", () => {
         selectionFallback: {
           providerId: "account:bigmodel-highspeed-card",
           rules: [
-            { reason: "highspeed_card_expired" as const, providerErrorCode: "3402" },
+            {
+              reason: "highspeed_card_expired" as const,
+              providerErrorCode: "3402",
+            },
             { reason: "highspeed_request_failed" as const },
           ],
           // 退回目标随声明下发：重跑时也必须带上当时的会话原模型，CLI 不再依赖运行态常驻选择。
-          target: { providerId: "account:bigmodel-team-coding-plan", modelId: "GLM-5.3" },
+          target: {
+            providerId: "account:bigmodel-team-coding-plan",
+            modelId: "GLM-5.3",
+          },
         },
       };
       const result = parseCommandEnvelope({
@@ -535,14 +592,27 @@ describe("zcode-protocol-v4 command", () => {
         type,
         payload:
           type === "editUserQuery"
-            ? { target, newText: "edited", highspeedMeta, modelSelection, modelExecution }
-            : { queueItemId: "queue-1", highspeedMeta, modelSelection, modelExecution },
+            ? {
+                target,
+                newText: "edited",
+                highspeedMeta,
+                modelSelection,
+                modelExecution,
+              }
+            : {
+                queueItemId: "queue-1",
+                highspeedMeta,
+                modelSelection,
+                modelExecution,
+              },
         issuedAt: 1_000,
       });
 
       expect(result).toMatchObject({
         ok: true,
-        envelope: { payload: { highspeedMeta, modelSelection, modelExecution } },
+        envelope: {
+          payload: { highspeedMeta, modelSelection, modelExecution },
+        },
       });
     },
   );
@@ -644,11 +714,15 @@ describe("zcode-protocol-v4 command", () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok)
-      expect(result.envelope.payload).toEqual({ firstInput: { text: "hello", modelSelection } });
+      expect(result.envelope.payload).toEqual({
+        firstInput: { text: "hello", modelSelection },
+      });
     expect(
       parseCommandEnvelope({
         ...command,
-        payload: { firstInput: { text: "hello", modelSelection: { providerId: "" } } },
+        payload: {
+          firstInput: { text: "hello", modelSelection: { providerId: "" } },
+        },
       }).ok,
     ).toBe(false);
   });
@@ -899,7 +973,10 @@ describe("zcode-protocol-v4 command", () => {
           decision: { action: "trust_selected", reviewItemIds: ["item-1"] },
         },
       ],
-      ["toggleWorkspaceHookReviewItem", { ...target, reviewItemId: "item-1", enabled: false }],
+      [
+        "toggleWorkspaceHookReviewItem",
+        { ...target, reviewItemId: "item-1", enabled: false },
+      ],
       ["revokeWorkspaceHookTrust", { ...target, reviewItemIds: ["item-1"] }],
     ] as const) {
       expect(
@@ -1037,19 +1114,30 @@ describe("zcode-protocol-v4 command", () => {
         clientId: "client-1",
         sessionId: "s-empty",
         type: "startSavedWorkflow",
-        payload: { name: "deep-research", scope: "global", args: { topic: "x", depth: 2 } },
+        payload: {
+          name: "deep-research",
+          scope: "global",
+          args: { topic: "x", depth: 2 },
+        },
         issuedAt: 1000,
       }).ok,
     ).toBe(true);
     // scope 可选：项目档缺省不传。
-    expect(commandPayloadSchemas.startSavedWorkflow.parse({ name: "cleanup" })).toEqual({
+    expect(
+      commandPayloadSchemas.startSavedWorkflow.parse({ name: "cleanup" }),
+    ).toEqual({
       name: "cleanup",
     });
     // 空名字被拒（invalid_name 属于运行时诊断，但 schema 先挡空串）。
-    expect(commandPayloadSchemas.startSavedWorkflow.safeParse({ name: "" }).success).toBe(false);
+    expect(
+      commandPayloadSchemas.startSavedWorkflow.safeParse({ name: "" }).success,
+    ).toBe(false);
     // scope 只认 project / global。
     expect(
-      commandPayloadSchemas.startSavedWorkflow.safeParse({ name: "x", scope: "team" }).success,
+      commandPayloadSchemas.startSavedWorkflow.safeParse({
+        name: "x",
+        scope: "team",
+      }).success,
     ).toBe(false);
   });
 
@@ -1071,8 +1159,11 @@ describe("zcode-protocol-v4 command", () => {
     });
     // runId / toolCallId 必带且非空。
     expect(
-      commandResultSchema.safeParse({ type: "startSavedWorkflow", runId: "", toolCallId: "x" })
-        .success,
+      commandResultSchema.safeParse({
+        type: "startSavedWorkflow",
+        runId: "",
+        toolCallId: "x",
+      }).success,
     ).toBe(false);
   });
 
@@ -1100,19 +1191,35 @@ describe("zcode-protocol-v4 command", () => {
         clientId: "client-1",
         sessionId: "s-1",
         type: "amendWorkflowRunSettings",
-        payload: { workId: "run-a", subagentModel: "zhipu/glm-5.3-flash$high", maxConcurrency: 4 },
+        payload: {
+          workId: "run-a",
+          subagentModel: "zhipu/glm-5.3-flash$high",
+          maxConcurrency: 4,
+        },
         issuedAt: 1000,
       }).ok,
     ).toBe(true);
     expect(schema.parse({ workId: "run-a" })).toEqual({ workId: "run-a" });
-    expect(schema.parse({ workId: "run-a", subagentModel: null, maxConcurrency: null })).toEqual({
+    expect(
+      schema.parse({
+        workId: "run-a",
+        subagentModel: null,
+        maxConcurrency: null,
+      }),
+    ).toEqual({
       workId: "run-a",
       subagentModel: null,
       maxConcurrency: null,
     });
-    expect(schema.safeParse({ workId: "run-a", maxConcurrency: 0 }).success).toBe(false);
-    expect(schema.safeParse({ workId: "run-a", maxConcurrency: 2.5 }).success).toBe(false);
-    expect(schema.safeParse({ workId: "run-a", subagentModel: "" }).success).toBe(false);
+    expect(
+      schema.safeParse({ workId: "run-a", maxConcurrency: 0 }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ workId: "run-a", maxConcurrency: 2.5 }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ workId: "run-a", subagentModel: "" }).success,
+    ).toBe(false);
   });
 
   it("parses the amendWorkflowRunSettings accepted result and exposes its rejection vocabulary", () => {
@@ -1163,10 +1270,14 @@ describe("zcode-protocol-v4 command", () => {
       requestId: "permission-1",
       optionId: "allow-once",
     };
-    expect(commandPayloadSchemas.respondToOpenCodePermission.parse(base)).toEqual(base);
     expect(
-      commandPayloadSchemas.respondToOpenCodePermission.safeParse({ ...base, runId: "run-2" })
-        .success,
+      commandPayloadSchemas.respondToOpenCodePermission.parse(base),
+    ).toEqual(base);
+    expect(
+      commandPayloadSchemas.respondToOpenCodePermission.safeParse({
+        ...base,
+        runId: "run-2",
+      }).success,
     ).toBe(false);
   });
 });

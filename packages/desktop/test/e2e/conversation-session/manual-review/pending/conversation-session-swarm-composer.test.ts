@@ -16,6 +16,10 @@ import {
 } from "../../../helpers/v4-conversation.js";
 
 const CASE_MARKER = "E2E_SWARM_COMPOSER_02";
+const ALPHA_PARTIAL = "E2E_SWARM_ALPHA_RUNNING";
+const BETA_PARTIAL = "E2E_SWARM_BETA_RUNNING";
+const ALPHA_DONE = "E2E_SWARM_ALPHA_RUNNING_COMPOSER_ALPHA_DONE";
+const BETA_DONE = "E2E_SWARM_BETA_RUNNING_COMPOSER_BETA_DONE";
 const ROOT_DONE = `${CASE_MARKER}_SYNTHESIS_DONE`;
 const artifactDir = resolve(process.env.ZCODE_E2E_ARTIFACT_DIR ?? ".e2e-artifacts/swarm-composer");
 
@@ -90,7 +94,9 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
           );
           const row = rows.find((candidate) => {
             const buttons = Array.from(
-              candidate.querySelectorAll<HTMLButtonElement>("ul li button"),
+              candidate.querySelectorAll<HTMLButtonElement>(
+                'ul li button[data-testid^="v4-subagent-open-side-pane-"]',
+              ),
             );
             return buttons.length === 2 && candidate.getAttribute("data-status") === rowStatus;
           });
@@ -99,13 +105,14 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
             runId: row.dataset.swarmRunId ?? null,
             status: row.dataset.status ?? null,
             taskCount: row.querySelector("p")?.textContent ?? null,
-            children: Array.from(row.querySelectorAll<HTMLButtonElement>("ul li button")).map(
-              (button) => ({
-                sessionId:
-                  button.dataset.testid?.replace(/^v4-subagent-open-side-pane-/u, "") ?? "",
-                label: button.getAttribute("aria-label"),
-              }),
-            ),
+            children: Array.from(
+              row.querySelectorAll<HTMLButtonElement>(
+                'ul li button[data-testid^="v4-subagent-open-side-pane-"]',
+              ),
+            ).map((button) => ({
+              sessionId: button.dataset.testid?.replace(/^v4-subagent-open-side-pane-/u, "") ?? "",
+              label: button.getAttribute("aria-label"),
+            })),
             rootSessionId: rootId,
           };
         },
@@ -156,6 +163,102 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
     expect(overlappingChildSessionIds.every(Boolean)).toBe(true);
     expect(new Set(overlappingChildSessionIds).size).toBe(2);
 
+    await browser.waitUntil(async () => (await readSwarmRow("running"))?.children.length === 2, {
+      interval: 150,
+      timeout: 15_000,
+      timeoutMsg: `${CASE_MARKER}: строка роя не показала child IDs до ответа моделей`,
+    });
+    const runningEvidence = await readSwarmRow("running");
+    expect(runningEvidence?.children.map((child) => child.sessionId).sort()).toEqual(
+      [...overlappingChildSessionIds].sort(),
+    );
+    const runningChildIds = runningEvidence?.children.map((child) => child.sessionId) ?? [];
+    if (runningChildIds.length !== 2 || runningChildIds.some((id) => !id)) {
+      throw new Error(`${CASE_MARKER}: отсутствуют child IDs для live previews`);
+    }
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (sessionIds) =>
+            sessionIds.every((sessionId) =>
+              Boolean(document.querySelector(`[data-testid="v4-subagent-drilldown-${sessionId}"]`)),
+            ),
+          runningChildIds,
+        ),
+      {
+        interval: 100,
+        timeout: 10_000,
+        timeoutMsg: `${CASE_MARKER}: строки роя не подключили child previews автоматически`,
+      },
+    );
+
+    // releaseAfterChunks=3 already delivered each *_RUNNING delta and holds the same HTTP
+    // response before *_DONE. This proves the preview is live while the child model is pending.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (sessionIds, alphaPartial, betaPartial) => {
+            const previews = sessionIds.map(
+              (sessionId) =>
+                document.querySelector<HTMLElement>(
+                  `[data-testid="v4-subagent-drilldown-${sessionId}"]`,
+                )?.textContent ?? "",
+            );
+            return (
+              previews.some((text) => text.includes(alphaPartial)) &&
+              previews.some((text) => text.includes(betaPartial))
+            );
+          },
+          runningChildIds,
+          ALPHA_PARTIAL,
+          BETA_PARTIAL,
+        ),
+      {
+        interval: 150,
+        timeout: 15_000,
+        timeoutMsg: `${CASE_MARKER}: previews не показали partial child text до завершения моделей`,
+      },
+    );
+    const partialEvidence = await browser.execute(
+      (sessionIds, alphaPartial, betaPartial, alphaDone, betaDone) => {
+        const previews = sessionIds.map(
+          (sessionId) =>
+            document.querySelector<HTMLElement>(
+              `[data-testid="v4-subagent-drilldown-${sessionId}"]`,
+            )?.textContent ?? "",
+        );
+        return {
+          hasAlphaPartial: previews.some((text) => text.includes(alphaPartial)),
+          hasBetaPartial: previews.some((text) => text.includes(betaPartial)),
+          hasAlphaDone: previews.some((text) => text.includes(alphaDone)),
+          hasBetaDone: previews.some((text) => text.includes(betaDone)),
+        };
+      },
+      runningChildIds,
+      ALPHA_PARTIAL,
+      BETA_PARTIAL,
+      ALPHA_DONE,
+      BETA_DONE,
+    );
+    expect(partialEvidence).toEqual({
+      hasAlphaPartial: true,
+      hasBetaPartial: true,
+      hasAlphaDone: false,
+      hasBetaDone: false,
+    });
+    expect((await readRunningSubagentIds()).sort()).toEqual([...overlappingChildSessionIds].sort());
+    expect((await getV4PaneSnapshot()).canStop).toBe(true);
+    expect(await readSwarmRow("running")).not.toBeNull();
+    const pendingChildGatesResponse = await fetch(`${replayBaseUrl}/__e2e__/gates`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(pendingChildGatesResponse.status).toBe(200);
+    const pendingChildGates = (await pendingChildGatesResponse.json()) as string[];
+    expect(childResultFixtureIds.every((fixtureId) => pendingChildGates.includes(fixtureId))).toBe(
+      true,
+    );
+    expect(pendingChildGates).not.toContain("swarm-composer-root-synthesis");
+
     const releases = await Promise.all(
       childResultFixtureIds.map((fixtureId) =>
         fetch(`${replayBaseUrl}/__e2e__/release/${encodeURIComponent(fixtureId)}`, {
@@ -166,6 +269,61 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
     );
     expect(releases.map((response) => response.status)).toEqual([204, 204]);
 
+    // Root synthesis тоже ждёт на gate: его текст пока не должен отображаться.
+    await browser.waitUntil(
+      async () => {
+        const response = await fetch(`${replayBaseUrl}/__e2e__/gates`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) throw new Error(`Не удалось прочитать replay gates: ${response.status}`);
+        return ((await response.json()) as string[]).includes("swarm-composer-root-synthesis");
+      },
+      {
+        interval: 100,
+        timeout: 60_000,
+        timeoutMsg: `${CASE_MARKER}: root synthesis не остановился на локальном gate`,
+      },
+    );
+
+    // browser.execute сериализует callback в renderer: константы тестового процесса туда не замыкаются.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (sessionIds, alphaDone, betaDone) => {
+            const previews = sessionIds.map(
+              (sessionId) =>
+                document.querySelector<HTMLElement>(
+                  `[data-testid="v4-subagent-drilldown-${sessionId}"]`,
+                )?.textContent ?? "",
+            );
+            return (
+              previews.some((text) => text.includes(alphaDone)) &&
+              previews.some((text) => text.includes(betaDone))
+            );
+          },
+          runningChildIds,
+          ALPHA_DONE,
+          BETA_DONE,
+        ),
+      {
+        interval: 150,
+        timeout: 15_000,
+        timeoutMsg: `${CASE_MARKER}: автоматические child previews не показали оба ответа`,
+      },
+    );
+
+    const waitingForRootSynthesis = await getV4PaneSnapshot();
+    expect(waitingForRootSynthesis.canStop).toBe(true);
+    expect(waitingForRootSynthesis.timelineText).not.toContain(ROOT_DONE);
+    // Row tracks child orchestration only; after all children finish it is completed
+    // even while the foreground root model is still synthesizing their results.
+    expect(await readSwarmRow("completed")).not.toBeNull();
+
+    const releaseSynthesis = await fetch(
+      `${replayBaseUrl}/__e2e__/release/swarm-composer-root-synthesis`,
+      { method: "POST", signal: AbortSignal.timeout(5000) },
+    );
+    expect(releaseSynthesis.status).toBe(204);
     await waitForV4TimelineContaining(ROOT_DONE, 90_000);
 
     await browser.waitUntil(async () => (await readSwarmRow("completed")) !== null, {
@@ -231,7 +389,7 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
       {
         fixtureId: "swarm-composer-root-synthesis",
         query: {
-          includes: [CASE_MARKER, "E2E_SWARM_COMPOSER_ALPHA_DONE", "E2E_SWARM_COMPOSER_BETA_DONE"],
+          includes: [CASE_MARKER, ALPHA_DONE, BETA_DONE],
           excludes: [
             "Decide whether this task needs independent parallel work",
             "Generate a concise title",
@@ -251,8 +409,8 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
     const synthesis = capturedFixtures
       .find((entry) => entry.fixtureId === "swarm-composer-root-synthesis")
       ?.records.find((record) => record.fixtureId === "swarm-composer-root-synthesis");
-    expect(JSON.stringify(synthesis?.requestJson)).toContain("E2E_SWARM_COMPOSER_ALPHA_DONE");
-    expect(JSON.stringify(synthesis?.requestJson)).toContain("E2E_SWARM_COMPOSER_BETA_DONE");
+    expect(JSON.stringify(synthesis?.requestJson)).toContain(ALPHA_DONE);
+    expect(JSON.stringify(synthesis?.requestJson)).toContain(BETA_DONE);
 
     await mkdir(artifactDir, { recursive: true });
     await writeFile(

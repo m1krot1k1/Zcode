@@ -43,11 +43,7 @@ describe("swarmRun conversation row", () => {
   });
 
   it("accepts the three separate PRISM acceptance states", () => {
-    for (const outcomeAcceptance of [
-      "unknown",
-      "verified",
-      "rejected",
-    ] as const) {
+    for (const outcomeAcceptance of ["unknown", "verified", "rejected"] as const) {
       expect(
         conversationRowSchema.safeParse({
           ...baseRow,
@@ -61,6 +57,30 @@ describe("swarmRun conversation row", () => {
         ...baseRow,
         status: "completed",
         outcomeAcceptance: "passed",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts bounded runtime role labels and rejects oversized maps", () => {
+    expect(
+      conversationRowSchema.safeParse({
+        ...baseRow,
+        childSessionIds: ["child-a"],
+        childAgentTypes: { "child-a": "researcher" },
+      }).success,
+    ).toBe(true);
+    expect(
+      conversationRowSchema.safeParse({
+        ...baseRow,
+        childAgentTypes: { "child-a": "r".repeat(81) },
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationRowSchema.safeParse({
+        ...baseRow,
+        childAgentTypes: Object.fromEntries(
+          Array.from({ length: 129 }, (_, index) => [`child-${index}`, "researcher"]),
+        ),
       }).success,
     ).toBe(false);
   });

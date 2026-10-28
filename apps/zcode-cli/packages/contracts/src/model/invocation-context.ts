@@ -20,6 +20,18 @@ import type {
 export interface ModelInvocationContext {
   /** Рабочий каталог текущей сессии для локальных model runtime; не сохраняется в модели. */
   workingDirectory?: string;
+  /**
+   * Invocation-scoped capability exposed only when the current runtime model request
+   * already includes Agent or Task. OpenCode's MCP bridge delegates through the same
+   * Core ToolExecutor rather than invoking a provider-owned subagent runtime.
+   */
+  executeOpenCodeTask?: (input: {
+    description: string;
+    prompt: string;
+    subagent_type: string;
+  }) => Promise<string>;
+  /** Invocation-scoped capability exposed only when Core registered Skill for this request. */
+  executeOpenCodeSkill?: (input: { skill: string; args?: string }) => Promise<string>;
   metadata?: Record<string, unknown>;
   modelCall?: ModelApiCallObservation;
   modelRequestSessionType?: ModelRequestSessionType;

@@ -1319,6 +1319,8 @@ export interface SwarmRunUpdatedPayload {
   outcomeAcceptance?: "unknown" | "verified" | "rejected";
   taskCount?: number;
   childSessionIds?: string[];
+  /** Runtime-reported profile ID keyed by child session ID; bounded by the child count. */
+  childAgentTypes?: Record<string, string>;
   summary?: string;
 }
 

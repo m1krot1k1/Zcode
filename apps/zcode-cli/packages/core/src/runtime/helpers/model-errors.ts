@@ -80,7 +80,7 @@ export function isSuspiciousEmptyModelResult(
 }
 
 const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
-  "Model returned no text, no tool calls, and no usage before completing the turn.";
+  "Model completed without returning visible text or tool calls.";
 
 export function createSuspiciousEmptyModelResultError(
   finishReason: string | undefined,

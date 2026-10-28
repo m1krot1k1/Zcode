@@ -33,8 +33,20 @@ if (sub === "models" && args.includes("--verbose")) {
     name: modelId,
     limit: { context: 128_000, output: 8_000 },
     capabilities: {
-      input: { text: true, image: false, video: false, audio: false, pdf: false },
-      output: { text: true, image: false, video: false, audio: false, pdf: false },
+      input: {
+        text: true,
+        image: false,
+        video: false,
+        audio: false,
+        pdf: false,
+      },
+      output: {
+        text: true,
+        image: false,
+        video: false,
+        audio: false,
+        pdf: false,
+      },
     },
   };
   process.stdout.write(`${modelId}\n${JSON.stringify(meta, null, 2)}\n`);
@@ -98,10 +110,73 @@ if (sub === "serve") {
           payload = {};
         }
         const promptText = (payload.parts ?? []).map((p) => p.text ?? "").join("");
-        await trace({ event: "prompt", prompt: promptText, model: payload.model ?? null });
+        await trace({
+          event: "prompt",
+          prompt: promptText,
+          model: payload.model ?? null,
+        });
+        const isPlanner = promptText.includes(
+          "Decide whether this task needs independent parallel work",
+        );
+        const userTaskStart = promptText.lastIndexOf("<user_task>");
+        const currentUserTask =
+          userTaskStart >= 0
+            ? promptText.slice(userTaskStart, promptText.indexOf("</user_task>", userTaskStart))
+            : promptText;
+        let responseText = reply;
+        if (
+          isPlanner &&
+          currentUserTask.includes("E2E_OPENCODE_SWARM_ROOT") &&
+          !currentUserTask.includes('Task node "') &&
+          !promptText.includes("<untrusted_subagent_results>")
+        ) {
+          responseText = JSON.stringify({
+            decision: "split",
+            graph: {
+              max_parallel: 2,
+              nodes: [
+                {
+                  id: "opencode-alpha",
+                  description: "OpenCode branch alpha",
+                  prompt: "E2E_OPENCODE_SWARM_ALPHA",
+                  subagent_type: "researcher",
+                },
+                {
+                  id: "opencode-beta",
+                  description: "OpenCode branch beta",
+                  prompt: "E2E_OPENCODE_SWARM_BETA",
+                  subagent_type: "reviewer",
+                },
+              ],
+            },
+          });
+        } else if (isPlanner) {
+          responseText = JSON.stringify({
+            decision: "leaf",
+            reason: "No independent work is needed.",
+          });
+        } else if (
+          promptText.includes("E2E_OPENCODE_SWARM_ROOT") &&
+          promptText.includes("<untrusted_subagent_results>")
+        ) {
+          responseText = "E2E_OPENCODE_SWARM_SYNTHESIS_DONE";
+        } else if (currentUserTask.includes("E2E_OPENCODE_SWARM_ALPHA")) {
+          responseText = "E2E_OPENCODE_SWARM_ALPHA_DONE";
+        } else if (currentUserTask.includes("E2E_OPENCODE_SWARM_BETA")) {
+          responseText = "E2E_OPENCODE_SWARM_BETA_DONE";
+        }
         const sessionId = messageMatch[1];
         const messageId = "msg-assistant-1";
         const partId = "part-text-1";
+        const finishPartId = "part-finish-1";
+        const inputTokens = Math.ceil(promptText.length / 4);
+        const outputTokens = Math.ceil(responseText.length / 4);
+        const usage = {
+          input: inputTokens,
+          output: outputTokens,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        };
         const events = [
           {
             type: "message.updated",
@@ -117,7 +192,21 @@ if (sub === "serve") {
                 type: "text",
                 sessionID: sessionId,
                 messageID: messageId,
-                text: reply,
+                text: responseText,
+              },
+            },
+          },
+          {
+            type: "message.part.updated",
+            properties: {
+              part: {
+                id: finishPartId,
+                type: "step-finish",
+                reason: "stop",
+                sessionID: sessionId,
+                messageID: messageId,
+                cost: 0,
+                tokens: usage,
               },
             },
           },
@@ -142,7 +231,16 @@ if (sub === "serve") {
                 type: "text",
                 sessionID: sessionId,
                 messageID: messageId,
-                text: reply,
+                text: responseText,
+              },
+              {
+                id: finishPartId,
+                type: "step-finish",
+                reason: "stop",
+                sessionID: sessionId,
+                messageID: messageId,
+                cost: 0,
+                tokens: usage,
               },
             ],
           }),

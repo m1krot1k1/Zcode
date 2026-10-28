@@ -44,26 +44,32 @@ export async function ensureContextInitialized(
   if (this.contextInitialized) return;
 
   const shellDisplayName = getContextSourceShellDisplayName(this);
-  const snapshot = this.contextSourcePort
-    ? await this.contextSourcePort.resolveContextSources(
-        {
-          workingDirectory: this.workingDirectory,
-          currentDate: this.config.currentDate,
-          effectiveShellDisplayName: shellDisplayName,
-          envInfo: this.config.envInfo,
-          userInstructions: this.config.userInstructions
-            ? {
-                ...this.config.userInstructions,
-                workingDirectory:
-                  this.config.userInstructions.workingDirectory ?? this.workingDirectory,
-              }
-            : undefined,
-          projectContext: this.config.projectContext,
-          trace: traceContext,
-        },
-        { signal: undefined },
-      )
-    : this.createConfigOnlyContextSnapshot(this.workingDirectory);
+  // 修复依据：外部构造的 workflow child 已由父 Core 接受上下文；不能再次从磁盘解析另一份规则快照。
+  const snapshot =
+    this.contextSourceSnapshot ??
+    (this.contextSourcePort
+      ? await this.contextSourcePort.resolveContextSources(
+          {
+            workingDirectory: this.workingDirectory,
+            currentDate: this.config.currentDate,
+            effectiveShellDisplayName: shellDisplayName,
+            envInfo: this.config.envInfo,
+            userInstructions: this.config.userInstructions
+              ? {
+                  ...this.config.userInstructions,
+                  workingDirectory:
+                    this.config.userInstructions.workingDirectory ?? this.workingDirectory,
+                }
+              : undefined,
+            ruleTargetPaths:
+              this.config.subagentContext?.ruleTargetPaths ??
+              this.config.userInstructions?.ruleTargetPaths,
+            projectContext: this.config.projectContext,
+            trace: traceContext,
+          },
+          { signal: undefined },
+        )
+      : this.createConfigOnlyContextSnapshot(this.workingDirectory));
 
   this.workingDirectory = snapshot.workingDirectory;
   // Bash cd 之后 workingDirectory 会变化，但 workspaceRoot 仍表示会话初始工作区边界。
@@ -88,6 +94,21 @@ export async function ensureContextInitialized(
   this.initializeMessageHistoryFromContext(this.contextBuilder, traceContext);
   this.messageHistory.addEntries(preContextEntries);
   this.contextInitialized = true;
+}
+
+/**
+ * Snapshot the owner-approved context for an externally constructed child runtime.
+ * The copy prevents descendants from sharing mutable arrays with the parent runtime.
+ */
+export async function getAcceptedContextSourceSnapshot(
+  this: AgentRuntimeInternal,
+  traceContext: TraceContext,
+): Promise<ContextSourceSnapshot> {
+  await this.ensureContextInitialized(traceContext);
+  if (!this.contextSourceSnapshot) {
+    throw new Error("Accepted context snapshot is unavailable after initialization.");
+  }
+  return structuredClone(this.contextSourceSnapshot);
 }
 
 export async function getSkillCatalog(
@@ -133,6 +154,9 @@ export function createContextBuilderFromSnapshot(
       skillMetadataBudget: this.config.skillMetadataBudget,
       skills: this.skillLoadOutcome,
       userInstructions: this.config.subagentContext.userInstructions,
+      bundledHarnessRules:
+        snapshot.bundledHarnessRules ?? this.config.subagentContext.bundledHarnessRules,
+      workspaceRules: snapshot.workspaceRules ?? this.config.subagentContext.workspaceRules,
     });
   }
 
@@ -145,6 +169,8 @@ export function createContextBuilderFromSnapshot(
     genUiOutputDirectory: resolveGenUiOutputDirectory(this),
     currentDate: snapshot.currentDate,
     userInstructions: snapshot.userInstructions,
+    bundledHarnessRules: snapshot.bundledHarnessRules,
+    workspaceRules: snapshot.workspaceRules,
     projectContext: snapshot.projectContext,
     memoryIndexContent: options.memoryIndexContent,
     memoryRoot,
@@ -287,6 +313,16 @@ export function createConfigOnlyContextSnapshot(
       nodeVersion: "unknown",
     },
     currentDate: this.config.currentDate,
+    // Причина: вложенный агент без ContextSourcePort создаёт config-only snapshot;
+    // без копии принятого снимка его потомки теряли AGENTS.md после первого уровня.
+    // Исправление: держать тот же снимок в runtime-owned контексте для следующей делегации.
+    userInstructions: this.config.subagentContext?.userInstructions,
+    bundledHarnessRules: this.config.subagentContext?.bundledHarnessRules
+      ? [...this.config.subagentContext.bundledHarnessRules]
+      : undefined,
+    workspaceRules: this.config.subagentContext?.workspaceRules
+      ? [...this.config.subagentContext.workspaceRules]
+      : undefined,
     projectContext: this.config.projectContext,
     diagnostics: [],
   };

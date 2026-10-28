@@ -1,6 +1,6 @@
 import { subagentProfilesFromSnapshot } from "../runtime-subagents/index.js";
 import { CliDefaultSelection } from "./cli-default-selection.js";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createInMemorySessionEventStore,
@@ -216,7 +216,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   let nodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
-  let ownedOpenCodeModelRuntime: Awaited<ReturnType<typeof createOpenCodeModelProvider>> | undefined;
+  let ownedOpenCodeModelRuntime:
+    | Awaited<ReturnType<typeof createOpenCodeModelProvider>>
+    | undefined;
   let ownedModelAdapter: ReturnType<typeof createModelAdapter> | undefined;
   try {
     const storageRoot = resolvePath(configResult.config.storage.dir);
@@ -632,6 +634,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       modelFactory,
       permissionService,
       pluginSkillRoots: pluginOutcome.skillRoots,
+      bundledSkillRoots,
       prepareUserExecutionBoundary,
       getRuntime,
       runtimeConfig,
@@ -652,7 +655,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         ? undefined
         : createDynamicWorkflowRunService({
             concurrency: workflowConcurrencyGovernor,
-            createActorRuntime: ({
+            createActorRuntime: async ({
               actor,
               persona,
               pinnedModel,
@@ -664,9 +667,13 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
               submitProfile,
               escalatePort,
               modelRequestAdmission,
-            }) =>
-              createScriptWorkflowAgentRuntime({
+            }) => {
+              const parentRuntime = getRuntime();
+              const initialContextSourceSnapshot =
+                await parentRuntime.getAcceptedContextSourceSnapshot(traceContext);
+              return createScriptWorkflowAgentRuntime({
                 childSessionId: actorSessionId,
+                initialContextSourceSnapshot,
                 configOverrides: {
                   // persona 的身份（有效名 + system）→ context builder 的工作流子代理路径。
                   // 匿名 / 无 system 时字段缺席，builder 据此省略 named 从句与 persona 段。
@@ -712,7 +719,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                   modelFactory,
                   permissionService,
                   pluginSkillRoots: pluginOutcome.skillRoots,
-                  runtime: getRuntime(),
+                  bundledSkillRoots,
+                  runtime: parentRuntime,
                   runtimeConfig,
                   sessionId,
                   sessionStore,
@@ -745,7 +753,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                 workflowEscalatePort: escalatePort,
                 // 请求级准入端口：driver 在治理器在场时给出，runner 每次尝试先过闸门。
                 ...(modelRequestAdmission === undefined ? {} : { modelRequestAdmission }),
-              }),
+              });
+            },
             // 边界记账与转录截断都读写 actor 会话的消息，走的必须是同一个 store。
             actorTranscriptStore: sessionStore,
             // 用户面产物的字节落点：与主会话、workflow 子
@@ -862,7 +871,13 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       pdfDocumentPort,
       artifactStore,
       contextSourcePort:
-        options.contextSourcePort ?? createNodeContextSourceAdapter({ env: options.env }),
+        options.contextSourcePort ??
+        createNodeContextSourceAdapter({
+          env: options.env,
+          bundledHarnessRulesDirectory: bundledSkillRoots[0]
+            ? join(dirname(bundledSkillRoots[0].path), "rules")
+            : undefined,
+        }),
       skillPort:
         configResult.config.features.skill && configResult.config.skills.enabled
           ? (options.skillPort ??
@@ -972,6 +987,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       mcpPort,
       modelFactory,
       permissionService,
+      pluginSkillRoots: pluginOutcome.skillRoots,
+      bundledSkillRoots,
       prepareUserExecutionBoundary,
       runtime,
       runtimeConfig,

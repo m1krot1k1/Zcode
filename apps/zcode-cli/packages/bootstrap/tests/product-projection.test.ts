@@ -148,6 +148,11 @@ describe("ProductProjection 黄金测试（L1）", () => {
       status: "completed",
       taskCount: 2,
       childSessionIds: ["child-a", "child-b", "child-a"],
+      childAgentTypes: {
+        "child-a": "researcher",
+        "child-b": "implementer",
+        rogue: "security-reviewer",
+      },
       summary: "Задач: 2. Дочерних сессий: 2.",
         outcomeAcceptance: "verified",
     });
@@ -162,6 +167,7 @@ describe("ProductProjection 黄金测试（L1）", () => {
         outcomeAcceptance: "verified",
         taskCount: 2,
         childSessionIds: ["child-a", "child-b"],
+        childAgentTypes: { "child-a": "researcher", "child-b": "implementer" },
       },
     ]);
   });

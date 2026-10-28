@@ -1,4 +1,6 @@
-import { beginLocalTurnPreparation } from "@zcode/contracts";
+import { AgentErrorCode, beginLocalTurnPreparation } from "@zcode/contracts";
+import type { ModelInvocationContext } from "@zcode/contracts";
+import { randomUUID } from "node:crypto";
 import { runWithModelInvocationContext, traceContextToLogContext } from "../deps.js";
 import type { ModelReasoningContentBlock, ModelToolCall, ModelUsage, ToolCallId } from "../deps.js";
 import {
@@ -80,6 +82,26 @@ export async function runModelTextRequest(
   const modelInvocationContext = {
     // Локальный OpenCode SDK должен работать в каталоге этой сессии, а не в cwd процесса.
     workingDirectory: this.workingDirectory,
+    ...(resolveOpenCodeTaskToolName(projectedOptions.tools)
+      ? {
+          executeOpenCodeTask: createOpenCodeTaskDispatcher(this, {
+            allowedToolNames: projectedOptions.tools.map((tool) => tool.name),
+            model,
+            signal: projectedOptions.abortSignal,
+            traceContext: projectedOptions.traceContext,
+          }),
+        }
+      : {}),
+    ...(projectedOptions.tools.some((tool) => tool.name === "Skill")
+      ? {
+          executeOpenCodeSkill: createOpenCodeSkillDispatcher(this, {
+            allowedToolNames: projectedOptions.tools.map((tool) => tool.name),
+            model,
+            signal: projectedOptions.abortSignal,
+            traceContext: projectedOptions.traceContext,
+          }),
+        }
+      : {}),
     metadata: traceContextToLogContext(projectedOptions.traceContext),
     // 会话类型、重试预算与准入端口由 createRuntimeModel 绑在句柄上
     // turn step 与工具内部的模型调用同一来源。
@@ -527,5 +549,97 @@ export async function runModelTextRequest(
     text,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     usage,
+  };
+}
+
+function resolveOpenCodeTaskToolName(
+  tools: readonly { name: string }[],
+): "Task" | "Agent" | undefined {
+  if (tools.some((tool) => tool.name === "Task")) return "Task";
+  if (tools.some((tool) => tool.name === "Agent")) return "Agent";
+  return undefined;
+}
+
+/**
+ * Core owns the accepted runtime and its registered tool executor. This callback is
+ * captured by one model request and cannot route through a mutable current-runtime pointer.
+ */
+export function createOpenCodeTaskDispatcher(
+  runtime: Pick<AgentRuntimeInternal, "getToolExecutor" | "registry">,
+  options: {
+    allowedToolNames: readonly string[];
+    model: RunModelTextRequestOptions["model"];
+    signal?: AbortSignal;
+    traceContext: RunModelTextRequestOptions["traceContext"];
+  },
+): NonNullable<ModelInvocationContext["executeOpenCodeTask"]> {
+  const toolName = resolveOpenCodeTaskToolName(options.allowedToolNames.map((name) => ({ name })));
+  return async (input) => {
+    if (!toolName || !runtime.registry.get(toolName)) {
+      throw new Error("OpenCode ZCode task capability is unavailable for this model request");
+    }
+    throwIfTurnAborted(options.signal);
+    const result = await runtime.getToolExecutor().execute(
+      {
+        id: `opencode-${randomUUID()}`,
+        name: toolName,
+        input,
+      },
+      {
+        model: options.model,
+        signal: options.signal,
+        traceContext: options.traceContext,
+      },
+    );
+    if (!result.success) {
+      const message = result.error?.message ?? "OpenCode ZCode task failed";
+      const error = new Error(message);
+      // Причина: MCP-мост скрывает произвольные ошибки Core, поэтому OpenCode не видел
+      // допустимые роли и зацикливался на general/general-purpose. Помечаем только точный
+      // ответ штатного Agent handler; мост отдельно проверяет и очищает его перед выдачей.
+      if (/^Agent type '[^'\r\n]{1,128}' is not available\. Choose one exact active role ID: /u.test(message)) {
+        Object.assign(error, { code: AgentErrorCode.UNKNOWN_AGENT_TYPE });
+      }
+      throw error;
+    }
+    if (result.serialization?.content) return result.serialization.content;
+    if (typeof result.output === "string") return result.output;
+    return JSON.stringify(result.output ?? null);
+  };
+}
+
+// 根因：OpenCode 的原生 read 会绕开 SkillPort 过滤；修复依据：复用当前 runtime 注册的 Skill handler。
+export function createOpenCodeSkillDispatcher(
+  runtime: Pick<AgentRuntimeInternal, "getToolExecutor" | "registry">,
+  options: {
+    allowedToolNames: readonly string[];
+    model: RunModelTextRequestOptions["model"];
+    signal?: AbortSignal;
+    traceContext: RunModelTextRequestOptions["traceContext"];
+  },
+): NonNullable<ModelInvocationContext["executeOpenCodeSkill"]> {
+  return async (input) => {
+    if (!options.allowedToolNames.includes("Skill") || !runtime.registry.get("Skill")) {
+      throw new Error("OpenCode ZCode skill capability is unavailable for this model request");
+    }
+    throwIfTurnAborted(options.signal);
+    const result = await runtime.getToolExecutor().execute(
+      {
+        id: `opencode-${randomUUID()}`,
+        name: "Skill",
+        input,
+      },
+      {
+        model: options.model,
+        signal: options.signal,
+        traceContext: options.traceContext,
+      },
+    );
+    if (!result.success) {
+      throw new Error(result.error?.message ?? "OpenCode ZCode skill load failed");
+    }
+    if (result.serialization?.content) return result.serialization.content;
+    if (typeof result.output === "string") return result.output;
+    return JSON.stringify(result.output ?? null);
   };
 }

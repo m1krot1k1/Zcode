@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createNodeContextSourceAdapter } from "@zcode/adapters/context";
 import { createNodeExecutionAdapter } from "@zcode/adapters/exec";
 import { createNodeFileSystemAdapter } from "@zcode/adapters/fs";
 import { createNodeWebFetchHttpClientAdapter } from "@zcode/adapters/http";
@@ -24,7 +23,7 @@ import {
   type AgentExecutionTelemetryPort,
   createChildTraceContext,
   createSessionId,
-  type ContextSourcePort,
+  type ContextSourceSnapshot,
   type ExecutionPort,
   type FileSystemPort,
   type HttpClientPort,
@@ -35,11 +34,14 @@ import {
   type SessionEventSink,
   type SessionId,
   type SessionStorePort,
+  type SkillPort,
+  type SkillRoot,
   type ToolArtifactStorePort,
   type TraceContext,
   type WorkflowDefinition,
 } from "@zcode/contracts";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
+import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import type { PrepareUserExecutionBoundary, ZCodeAppOptions } from "./types.js";
 import { createWorkflowMethods, type WorkflowFacade } from "./workflow-methods.js";
 
@@ -50,7 +52,6 @@ interface CreateWorkflowFacadeDeps {
   artifactStore?: ToolArtifactStorePort;
   cliStorageRoot: string;
   configResult: ConfigResult;
-  contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   executionPort?: ExecutionPort;
   fileSystemPort?: FileSystemPort;
@@ -59,6 +60,9 @@ interface CreateWorkflowFacadeDeps {
   pdfDocumentPort?: PdfDocumentPort;
   logger: Logger;
   mcpPort?: McpPort;
+  /** Корни встроенных и plugin-навыков, уже разрешённые владельцем root-runtime. */
+  pluginSkillRoots: readonly SkillRoot[];
+  bundledSkillRoots: readonly SkillRoot[];
   /** 父会话的 model factory（与 script-workflow-child-runtime.ts 同一约定）。 */
   modelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]>;
   permissionService: PermissionService;
@@ -107,6 +111,8 @@ export function createWorkflowFacade(deps: CreateWorkflowFacadeDeps): WorkflowFa
       const childRuntime = createWorkflowChildRuntime(deps, {
         childSessionId,
         childTraceContext,
+        initialContextSourceSnapshot:
+          await deps.runtime.getAcceptedContextSourceSnapshot(childTraceContext),
         workflowKind,
       });
       const unsubscribe = request.onEvent
@@ -278,6 +284,7 @@ function createWorkflowChildRuntime(
   options: {
     childSessionId: SessionId;
     childTraceContext: TraceContext;
+    initialContextSourceSnapshot: ContextSourceSnapshot;
     workflowKind: string;
   },
 ): AgentRuntime {
@@ -301,6 +308,7 @@ function createWorkflowChildRuntime(
       // Workflow 在父工具返回后独立调度，不能伪装成父 Span 的同步 Child。
       agentTelemetryCausationMode: "linked_root",
       eventStore: createInMemorySessionEventStore(),
+      initialContextSourceSnapshot: options.initialContextSourceSnapshot,
       sessionStore: deps.sessionStore,
       logger: deps.logger,
       executionPort:
@@ -329,18 +337,14 @@ function createWorkflowChildRuntime(
       imageProcessorPort: deps.imageProcessorPort,
       pdfDocumentPort: deps.pdfDocumentPort,
       artifactStore: deps.artifactStore,
-      contextSourcePort:
-        deps.appOptions.contextSourcePort ??
-        createNodeContextSourceAdapter({ env: deps.appOptions.env }),
-      skillPort:
-        deps.configResult.config.features.skill && deps.configResult.config.skills.enabled
-          ? (deps.appOptions.skillPort ??
-            createNodeSkillAdapter({
-              extraRoots: deps.configResult.config.skills.roots,
-              // workflow 子 agent 复用同一套 skill 发现逻辑，也必须继承主配置里的禁用路径。
-              disabledPaths: collectDisabledPaths(deps.configResult.config.skillOverrides),
-            }))
-          : undefined,
+      skillPort: createWorkflowChildSkillPort({
+        bundledSkillRoots: deps.bundledSkillRoots,
+        configuredRoots: deps.configResult.config.skills.roots,
+        customSkillPort: deps.appOptions.skillPort,
+        disabledPaths: collectDisabledPaths(deps.configResult.config.skillOverrides),
+        enabled: deps.configResult.config.features.skill && deps.configResult.config.skills.enabled,
+        pluginSkillRoots: deps.pluginSkillRoots,
+      }),
       mcpPort: deps.mcpPort,
       eventSink: deps.eventSink,
       modelFactory: deps.modelFactory,
@@ -362,4 +366,28 @@ function createWorkflowChildRuntime(
       traceContext: options.childTraceContext,
     },
   );
+}
+
+/** Workflow descendants use the same resolved skill roots as the primary runtime. */
+export function createWorkflowChildSkillPort(input: {
+  bundledSkillRoots: readonly SkillRoot[];
+  configuredRoots: readonly string[];
+  customSkillPort?: SkillPort;
+  disabledPaths: readonly string[];
+  enabled: boolean;
+  pluginSkillRoots: readonly SkillRoot[];
+}): SkillPort | undefined {
+  if (!input.enabled) return undefined;
+  if (input.customSkillPort) return input.customSkillPort;
+
+  return createNodeSkillAdapter({
+    extraRoots: [...input.configuredRoots],
+    extraResolvedRoots: [...input.pluginSkillRoots, ...input.bundledSkillRoots],
+    // Workflow runtime не предоставляет запуск вложенного workflow: скрываем его skill,
+    // сохраняя остальные bundled/plugin навыки и пользовательские отключения.
+    disabledPaths: [
+      ...input.disabledPaths,
+      ...collectDynamicWorkflowDisabledSkillPaths(input.bundledSkillRoots),
+    ],
+  });
 }

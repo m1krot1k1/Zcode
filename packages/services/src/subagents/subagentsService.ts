@@ -83,7 +83,7 @@ interface PluginAgentDiscovery {
   runtimeAgents: AgentSummary[];
 }
 
-const BUILT_IN_AGENT_NAMES = new Set(["general-purpose", "Explore"]);
+const BUILT_IN_AGENT_NAMES = new Set(["Explore"]);
 const PLUGIN_MANIFEST_PATHS = [
   join(".zcode-plugin", "plugin.json"),
   join(".claude-plugin", "plugin.json"),
@@ -93,31 +93,8 @@ const PLUGIN_MANIFEST_PATHS = [
 function createBuiltInAgents(
   modelSelectionOverrides: BuiltInSubagentModelSelectionOverrides = {},
 ): AgentSummary[] {
-  const generalPurposeOverride = modelSelectionOverrides["general-purpose"];
   const exploreOverride = modelSelectionOverrides.Explore;
   return [
-    {
-      id: createAgentStateId({
-        name: "general-purpose",
-        scope: "built-in",
-        source: "built-in",
-      }),
-      name: "general-purpose",
-      description:
-        "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
-      // 内置子智能体使用显式身份色，避免 UI 按名称 hash 后把 general-purpose 显示为红色。
-      color: "blue",
-      injectAgentsMd: true,
-      modelSelection: generalPurposeOverride,
-      modelSelectionOverride: generalPurposeOverride,
-      systemPrompt: "",
-      tools: ["*"],
-      path: "built-in:general-purpose",
-      scope: "built-in",
-      source: "built-in",
-      enabled: true,
-      readOnly: true,
-    },
     {
       id: createAgentStateId({
         name: "Explore",

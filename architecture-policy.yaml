@@ -960,3 +960,10 @@ exceptions:
       - packages/ui/src/settings/DynamicWorkflowModeSetting.tsx
       - packages/ui/src/store/dynamicWorkflowAvailabilityStore.ts
     reason: Admitted upstream files edited only to let the user's dynamic workflow mode choice always win and keep the settings row visible; adopting packages/shared/src and packages/ui/src needs a separate module boundary refactor.
+  - id: zcode-agent-runtime-native-assets-unmanaged-edits
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/app/bundled-skills.ts
+      - apps/zcode-cli/packages/core/src/runtime/helpers/agent-listing.ts
+      - apps/zcode-cli/packages/core/src/subagent/listing.ts
+    reason: Existing upstream files are edited within their current bootstrap/core owners to keep ZCode roles, rules, and bundled skills native to its runtime; no new files or dependency edges are introduced, and adopting broad legacy CLI directories is outside this change.

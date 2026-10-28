@@ -46,16 +46,22 @@ describe("protocol slash command surface", () => {
         { name: "workflow", source: "builtin" },
         { name: "compact", source: "builtin" },
         { name: "init", source: "builtin" },
-        { name: "review", source: "custom" },
+        { name: "start", source: "builtin" },
+        { name: "review", source: "builtin" },
+        { name: "evolve", source: "builtin" },
+        { name: "evaluate", source: "builtin" },
         { name: "ship", source: "custom" },
       ]);
       expect(commands.find((command) => command.name === "review")?.description).toBe(
-        "User review",
+        "Review changes with the named reviewer agent.",
       );
       expect(commands.find((command) => command.name === "ship")?.inputHint).toBe("/ship [target]");
       expect(commands.find((command) => command.name === "workflow")?.inputHint).toBe(
         "/workflow [what the workflow should accomplish]",
       );
+      for (const name of ["start", "review", "evolve", "evaluate"]) {
+        expect(commands.find((command) => command.name === name)?.source).toBe("builtin");
+      }
     } finally {
       await rm(tempRoot, { force: true, recursive: true });
     }
@@ -70,7 +76,8 @@ describe("protocol slash command surface", () => {
     try {
       await mkdir(workspace, { recursive: true });
       await mkdir(userCommands, { recursive: true });
-      await writeCommand(userCommands, "review", "Review changes", "Review $ARGUMENTS.");
+      await writeCommand(userCommands, "audit", "Audit changes", "Audit $ARGUMENTS.");
+      await writeCommand(userCommands, "review", "Shadowing review", "Should not expand.");
       await writeCommand(userCommands, "init", "Custom init", "Should not expand.");
       await writeCommand(userCommands, "model", "Reserved model", "Should not expand.");
       await writeCommand(userCommands, "plan", "Reserved Plan action", "Should not expand.");
@@ -81,11 +88,14 @@ describe("protocol slash command surface", () => {
         skipUserConfig: true,
         workingDirectory: workspace,
       };
-      const prompt = await resolveZCodeCustomCommandPrompt("/review src packages", options);
+      const prompt = await resolveZCodeCustomCommandPrompt("/audit src packages", options);
 
-      expect(prompt).toContain("Run custom command /review.");
+      expect(prompt).toContain("Run custom command /audit.");
       expect(prompt).toContain("Command source: user/zcode.");
-      expect(prompt).toContain("Review src packages.");
+      expect(prompt).toContain("Audit src packages.");
+      await expect(resolveZCodeCustomCommandPrompt("/review src packages", options)).resolves.toBe(
+        undefined,
+      );
       await expect(resolveZCodeCustomCommandPrompt("/model glm-5", options)).resolves.toBe(
         undefined,
       );
@@ -164,8 +174,8 @@ describe("protocol slash command surface", () => {
       expect(prompt).toContain("they already have an instructions file");
       expect(prompt).not.toContain("Do not create CLAUDE.md or AGNENTS.md");
       expect(prompt).toContain("include pnpm scripts");
-      expect(resolveZCodeBuiltinPromptCommand("/review", { workingDirectory: workspace })).toBe(
-        undefined,
+      expect(resolveZCodeBuiltinPromptCommand("/review", { workingDirectory: workspace })).toContain(
+        "Required exact profile: reviewer",
       );
       expect(
         resolveZCodeBuiltinPromptCommand("please /init", { workingDirectory: workspace }),

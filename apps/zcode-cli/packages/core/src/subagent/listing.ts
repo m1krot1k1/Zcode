@@ -1,10 +1,10 @@
 import type { AgentListingDelta } from "../agent/agent-listing-metadata.js";
 import { type RuntimeAttachmentEntry, type RuntimeMessageEntry } from "../agent/message-history.js";
 import type { AgentDefinitionsSnapshot } from "./definitions.js";
-import { formatAgentProfileForPrompt } from "./profile.js";
+import { formatAgentProfileForPrompt, isModelSelectableAgentProfile } from "./profile.js";
 
-const INITIAL_HEADING = "Available agent types for the Agent tool:";
-const ADDED_HEADING = "New agent types are now available for the Agent tool:";
+const INITIAL_HEADING = "Available named agent types for Agent/Task tools:";
+const ADDED_HEADING = "New named agent types are now available for Agent/Task tools:";
 const REMOVED_HEADING = "The following agent types are no longer available:";
 const AMBIENT_CONTEXT_NOTE =
   "This is ambient context — do not narrate it to the user unless they ask or it is directly relevant to their request.";
@@ -17,7 +17,9 @@ export function collectAgentListingAttachment(input: {
   tools: readonly { name: string }[];
   embeddedSearchEnabled?: boolean;
 }): RuntimeAttachmentEntry | undefined {
-  if (!input.tools.some((tool) => tool.name === "Agent")) return undefined;
+  if (!input.tools.some((tool) => tool.name === "Agent" || tool.name === "Task")) {
+    return undefined;
+  }
   const announced = new Set<string>();
   for (const entry of input.entries) {
     if (entry.kind !== "attachment" || entry.metadata.source !== "agent_listing_delta") continue;
@@ -28,7 +30,7 @@ export function collectAgentListingAttachment(input: {
     for (const name of delta.addedTypes) announced.add(name);
     for (const name of delta.removedTypes) announced.delete(name);
   }
-  const active = input.definitions.activeAgents;
+  const active = input.definitions.activeAgents.filter(isModelSelectableAgentProfile);
   const current = new Set(active.map((profile) => profile.name));
   const added = active.filter((profile) => !announced.has(profile.name));
   const removedTypes: string[] = [];

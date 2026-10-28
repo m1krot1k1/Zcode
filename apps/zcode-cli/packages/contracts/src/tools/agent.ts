@@ -46,7 +46,8 @@ const AgentTaskGraphNodeSchema = z
     description: z.string().min(1).max(500),
     prompt: z.string().min(1).max(20_000),
     depends_on: z.array(z.string().min(1).max(128)).max(AGENT_TASK_GRAPH_MAX_NODES).optional(),
-    subagent_type: z.string().min(1).max(128).optional(),
+    // 修复依据：task graph 中缺失角色时 runner 会继承父角色，仍可能绕过节点级 profile 选择。
+    subagent_type: z.string().min(1).max(128),
     acceptance_criteria: z.array(AgentAcceptanceCriterionSchema).max(16).optional(),
   })
   .strict()
@@ -157,34 +158,37 @@ export const AgentTaskGraphSchema = z
 
 export type AgentTaskGraph = z.infer<typeof AgentTaskGraphSchema>;
 
-export const AgentInputSchema = z
-  .object({
-    description: z.string().describe("A short (3-5 word) description of the task"),
-    prompt: z.string().describe("The task for the agent to perform"),
-    acceptance_criteria: z
-      .array(AgentAcceptanceCriterionSchema)
-      .max(16)
-      .optional()
-      .describe(
-        "Optional Host-verifiable acceptance checks. Currently supports only an exact Bash command that must complete with exit code 0; omitted or unsupported evidence remains unknown.",
-      ),
-    task_graph: AgentTaskGraphSchema.optional().describe(
-      "Optional bounded foreground task graph. Every dependency must reference a unique node in the graph; dependencies cannot contain cycles. Do not combine with run_in_background:true or top-level acceptance_criteria.",
+const AgentInputObjectSchema = z.object({
+  description: z.string().describe("A short (3-5 word) description of the task"),
+  prompt: z.string().describe("The task for the agent to perform"),
+  acceptance_criteria: z
+    .array(AgentAcceptanceCriterionSchema)
+    .max(16)
+    .optional()
+    .describe(
+      "Optional Host-verifiable acceptance checks. Currently supports only an exact Bash command that must complete with exit code 0; omitted or unsupported evidence remains unknown.",
     ),
-    subagent_type: z
-      .string()
-      .optional()
-      .describe("The type of specialized agent to use for this task"),
-    // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
-    // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
-    run_in_background: z
-      .boolean()
-      .optional()
-      .describe(
-        "Set to true to run this agent in the background. You will be notified when it completes.",
-      ),
-  })
-  .superRefine((input, context) => {
+  task_graph: AgentTaskGraphSchema.optional().describe(
+    "Optional bounded foreground task graph. Every dependency must reference a unique node in the graph; dependencies cannot contain cycles. Do not combine with run_in_background:true or top-level acceptance_criteria.",
+  ),
+  // 修复依据：Agent 与递归 Task 必须共享精确角色合同，缺省角色会静默落到通用代理。
+  subagent_type: z
+    .string()
+    .min(1)
+    .max(128)
+    .describe("Required exact ID of an active agent profile listed in the current conversation"),
+  // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
+  // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
+  run_in_background: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set to true to run this agent in the background. You will be notified when it completes.",
+    ),
+});
+
+function withAgentInputConstraints<T extends z.ZodObject<any>>(schema: T) {
+  return schema.superRefine((input, context) => {
     if (input.task_graph && input.run_in_background === true) {
       context.addIssue({
         code: "custom",
@@ -201,10 +205,18 @@ export const AgentInputSchema = z
       });
     }
   });
+}
+
+export const AgentInputSchema = withAgentInputConstraints(AgentInputObjectSchema);
+
+/** Task and Agent share one exact-profile dispatch contract. */
+export const TaskInputSchema = AgentInputSchema;
 
 export type AgentInput = z.infer<typeof AgentInputSchema>;
+export type TaskInput = z.infer<typeof TaskInputSchema>;
 
 export const AgentInputJsonSchema = toToolJsonSchema(AgentInputSchema);
+export const TaskInputJsonSchema = toToolJsonSchema(TaskInputSchema);
 
 export interface AgentTextContentBlock {
   type: "text";

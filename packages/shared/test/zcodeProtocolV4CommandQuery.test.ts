@@ -16,7 +16,10 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
     text: "原文",
     delivery: { requested: "guide" as const, admitted: "queue" as const },
     order: { admissionSeq: 3, queuePosition: 1 },
-    steer: { state: "fellBack" as const, reasonCode: "guide.attachmentsUnsupported" },
+    steer: {
+      state: "fellBack" as const,
+      reasonCode: "guide.attachmentsUnsupported",
+    },
     dispatch: { state: "queued" as const },
     admittedAt: 1000,
   };
@@ -41,12 +44,18 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       dispatch: { state: "reserved", reservationId: "reservation-1" },
     });
     expect(parsed.attachments).toHaveLength(1);
-    expect(parsed.dispatch).toEqual({ state: "reserved", reservationId: "reservation-1" });
+    expect(parsed.dispatch).toEqual({
+      state: "reserved",
+      reservationId: "reservation-1",
+    });
   });
 
   it("严格拒绝额外字段和非法顺序", () => {
     expect(
-      conversationInputIntentSchema.safeParse({ ...baseIntent, unknownField: true }).success,
+      conversationInputIntentSchema.safeParse({
+        ...baseIntent,
+        unknownField: true,
+      }).success,
     ).toBe(false);
     expect(
       conversationInputIntentSchema.safeParse({
@@ -88,7 +97,7 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
     ).toBe(false);
   });
 
-  it("QueueItem preserves explicit swarm mode while legacy inputs stay ordinary", () => {
+  it("QueueItem preserves orchestration mode while legacy inputs stay ordinary", () => {
     const queued = queueItemSchema.parse({
       ...baseIntent,
       orchestrationMode: "swarm",
@@ -96,8 +105,20 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       dispatch: { state: "queued" },
     });
     expect(queued.orchestrationMode).toBe("swarm");
-    expect(queueItemSchema.parse({ ...baseIntent, attachments: [], dispatch: { state: "queued" } }))
-      .not.toHaveProperty("orchestrationMode");
+    const autoQueued = queueItemSchema.parse({
+      ...baseIntent,
+      orchestrationMode: "auto",
+      attachments: [],
+      dispatch: { state: "queued" },
+    });
+    expect(autoQueued.orchestrationMode).toBe("auto");
+    expect(
+      queueItemSchema.parse({
+        ...baseIntent,
+        attachments: [],
+        dispatch: { state: "queued" },
+      }),
+    ).not.toHaveProperty("orchestrationMode");
   });
 
   it("canonical OpenCode route is explicit, text-only and immediate", () => {
@@ -105,13 +126,16 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       ...baseIntent,
       text: "run delegated task",
       executionRoute: { kind: "opencode-acp", model: { kind: "default" } },
-      delivery: { requested: "startNow" as const, admitted: "startNow" as const },
+      delivery: {
+        requested: "startNow" as const,
+        admitted: "startNow" as const,
+      },
       steer: { state: "notRequested" as const },
       dispatch: { state: "admitted" as const },
     };
-    expect(conversationInputIntentSchema.parse(openCodeIntent).executionRoute).toEqual(
-      openCodeIntent.executionRoute,
-    );
+    expect(
+      conversationInputIntentSchema.parse(openCodeIntent).executionRoute,
+    ).toEqual(openCodeIntent.executionRoute);
     const swarmOnAcp = conversationInputIntentSchema.safeParse({
       ...openCodeIntent,
       orchestrationMode: "swarm",
@@ -134,7 +158,14 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
     expect(
       conversationInputIntentSchema.safeParse({
         ...openCodeIntent,
-        attachments: [{ ref: "artifact:1", fileName: "note.txt", mime: "text/plain", bytes: 4 }],
+        attachments: [
+          {
+            ref: "artifact:1",
+            fileName: "note.txt",
+            mime: "text/plain",
+            bytes: 4,
+          },
+        ],
       }).success,
     ).toBe(false);
     expect(
@@ -150,6 +181,16 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("preserves automatic orchestration in canonical queued input intents", () => {
+    const intent = conversationInputIntentSchema.parse({
+      ...baseIntent,
+      orchestrationMode: "auto",
+      attachments: [],
+      dispatch: { state: "queued" },
+    });
+    expect(intent.orchestrationMode).toBe("auto");
+  });
 });
 
 describe("ZCode Protocol v4 commands/query", () => {
@@ -160,7 +201,9 @@ describe("ZCode Protocol v4 commands/query", () => {
 
   it("方法名冻结，1/64 个 key 与 null global key 通过", () => {
     expect(V4_METHODS.commandsQuery).toBe("v4/commands/query");
-    expect(commandsQueryParamsSchema.parse({ commands: [key(1, null)] }).commands).toHaveLength(1);
+    expect(
+      commandsQueryParamsSchema.parse({ commands: [key(1, null)] }).commands,
+    ).toHaveLength(1);
     expect(
       commandsQueryParamsSchema.parse({
         commands: Array.from({ length: 64 }, (_, index) => key(index)),
@@ -169,15 +212,19 @@ describe("ZCode Protocol v4 commands/query", () => {
   });
 
   it("0/65 个 key 与额外字段拒绝", () => {
-    expect(commandsQueryParamsSchema.safeParse({ commands: [] }).success).toBe(false);
+    expect(commandsQueryParamsSchema.safeParse({ commands: [] }).success).toBe(
+      false,
+    );
     expect(
       commandsQueryParamsSchema.safeParse({
         commands: Array.from({ length: 65 }, (_, index) => key(index)),
       }).success,
     ).toBe(false);
     expect(
-      commandsQueryParamsSchema.safeParse({ commands: [key(1)], callerWorkspace: "/forged" })
-        .success,
+      commandsQueryParamsSchema.safeParse({
+        commands: [key(1)],
+        callerWorkspace: "/forged",
+      }).success,
     ).toBe(false);
   });
 
@@ -196,7 +243,10 @@ describe("ZCode Protocol v4 commands/query", () => {
         },
       ],
     });
-    expect(parsed.results.map((item) => item.key.commandId)).toEqual(["command-1", "command-2"]);
+    expect(parsed.results.map((item) => item.key.commandId)).toEqual([
+      "command-1",
+      "command-2",
+    ]);
     expect(
       commandsQueryResultSchema.safeParse({
         results: [{ key: key(1), result: "unknown", extra: 1 }],

@@ -2,6 +2,7 @@ import { GenUiMessageResponse } from "@/gen-ui/index.js";
 import { ConversationUserInputBubble } from "@/v4/ConversationUserInputBubble.js";
 import { expandTopicInputMessages } from "@/v4/topicInputMessages.js";
 import { ConnectedBotGroupDeliveryAction } from "@/v4/BotGroupDeliveryAction.js";
+import { SubagentDrilldown } from "@/v4/SubagentDrilldown.js";
 /* oxlint-disable eslint(max-lines) -- v4 逐行 row 渲染分发集中收口（每种 row 一个 memo 叶子 + timelineMarker 分隔线），拆分会打散行类型对照。 */
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import {
@@ -2336,6 +2337,9 @@ const SwarmRunRowView = memo(function SwarmRunRowView({
   const { intl } = useZCodeIntl();
   const parentSessionId = context.sessionId;
   const openChildSession = context.onOpenSubagentSession;
+  const [collapsedChildSessionIds, setCollapsedChildSessionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   return (
     <RowShell rowId={row.rowId}>
       <section
@@ -2375,37 +2379,76 @@ const SwarmRunRowView = memo(function SwarmRunRowView({
             className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle"
             aria-label={intl.formatMessage({ id: "conversation.swarm.children" })}
           >
-            {row.childSessionIds.map((childSessionId, index) => (
-              <li key={childSessionId}>
-                {parentSessionId && openChildSession ? (
-                  <button
-                    type="button"
-                    className="cursor-pointer text-primary underline-offset-4 hover:underline"
-                    aria-label={intl.formatMessage(
-                      { id: "conversation.swarm.openChild" },
-                      { index: index + 1, sessionId: childSessionId },
-                    )}
-                    data-testid={testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, childSessionId)}
-                    onClick={() =>
-                      openChildSession({
-                        rootSessionId: context.rootSessionId ?? parentSessionId,
-                        parentSessionId,
-                        childSessionId,
-                        subagentType: "swarm-task",
-                        title: intl.formatMessage(
-                          { id: "conversation.swarm.childTitle" },
-                          { index: index + 1 },
-                        ),
-                      })
-                    }
-                  >
-                    {childSessionId}
-                  </button>
-                ) : (
-                  <span>{childSessionId}</span>
-                )}
-              </li>
-            ))}
+            {row.childSessionIds.map((childSessionId, index) => {
+              const outputCollapsed = collapsedChildSessionIds.has(childSessionId);
+              const outputId = `swarm-child-output-${childSessionId}`;
+              return (
+                <li key={childSessionId}>
+                  {parentSessionId && openChildSession ? (
+                    <button
+                      type="button"
+                      className="cursor-pointer text-primary underline-offset-4 hover:underline"
+                      aria-label={intl.formatMessage(
+                        { id: "conversation.swarm.openChild" },
+                        { index: index + 1, sessionId: childSessionId },
+                      )}
+                      data-testid={testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, childSessionId)}
+                      onClick={() =>
+                        openChildSession({
+                          rootSessionId: context.rootSessionId ?? parentSessionId,
+                          parentSessionId,
+                          childSessionId,
+                          subagentType: "swarm-task",
+                          title: intl.formatMessage(
+                            { id: "conversation.swarm.childTitle" },
+                            { index: index + 1 },
+                          ),
+                        })
+                      }
+                    >
+                      {childSessionId}
+                    </button>
+                  ) : (
+                    <span>{childSessionId}</span>
+                  )}
+                  {row.childAgentTypes?.[childSessionId] ? (
+                    <span
+                      className="ml-2 text-ui-xs text-foreground-subtlest"
+                      data-testid={`swarm-child-role-${childSessionId}`}
+                    >
+                      {intl.formatMessage(
+                        { id: "conversation.swarm.childRole" },
+                        { role: row.childAgentTypes[childSessionId] },
+                      )}
+                    </span>
+                  ) : null}
+                  <div className="mt-1">
+                    <button
+                      type="button"
+                      className="cursor-pointer text-ui-xs text-foreground-subtle hover:text-foreground"
+                      aria-expanded={!outputCollapsed}
+                      aria-controls={outputId}
+                      data-testid={`swarm-child-output-toggle-${childSessionId}`}
+                      onClick={() =>
+                        setCollapsedChildSessionIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(childSessionId)) next.delete(childSessionId);
+                          else next.add(childSessionId);
+                          return next;
+                        })
+                      }
+                    >
+                      {intl.formatMessage({ id: "chat.toolCall.agent.output" })}
+                    </button>
+                    {!outputCollapsed ? (
+                      <div id={outputId} className="mt-2 rounded-lg border border-border p-2">
+                        <SubagentDrilldown childSessionId={childSessionId} context={context} />
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
         {row.summary ? (

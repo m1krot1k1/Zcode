@@ -1,0 +1,8 @@
+---
+description: Verify behavior at the layer the task claims to change.
+alwaysApply: true
+---
+
+For behavior changes, read the owning specification and add or update a focused regression check. Run the narrowest relevant check, then required type, lint, integration, packaging, or UI checks for the changed surface. Read the command result rather than inferring success from its start.
+
+For asynchronous or user-visible behavior, verify event ownership and ordering and use the real runtime or UI path when available. State separately what tests prove and what remains unverified.

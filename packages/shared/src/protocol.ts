@@ -273,6 +273,8 @@ export interface AppSettings {
   integratedTerminalShell?: IntegratedTerminalShellSelection;
   /** HTTP/HTTPS 出口代理，例如 http://127.0.0.1:7890；为空时直连。下次启动 app/agent 生效。 */
   httpProxy?: string;
+  /** 设置页中按行保存的代理地址清单；实际流量仍只使用 httpProxy 指向的活动地址。 */
+  httpProxyList?: string;
   /** 代理绕过规则，例如 localhost,127.0.0.1,.example.com；只在 httpProxy 存在时影响 renderer，agent/tool 仍按显式环境使用。 */
   httpProxyNoProxy?: string;
   /** 自定义 PEM 根证书路径；下次启动 app/agent 时用于 renderer 校验与 agent NODE_EXTRA_CA_CERTS。 */

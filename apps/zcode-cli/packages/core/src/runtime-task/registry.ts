@@ -70,6 +70,8 @@ export interface RuntimeTaskMessageSink {
 }
 
 export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
+  /** UI may subscribe only after the child runtime has opened its session. */
+  childSessionReady?: boolean;
   /** Immutable acceptance declaration owned by this admitted task attempt. */
   prismTaskContract?: PrismTaskContract;
   /** Reducer projection for the current attempt; receipts remain the durable evidence source. */
@@ -1242,6 +1244,8 @@ function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+type RootRunBudgetExhaustionReason = "deadline" | "token_limit";
+
 export interface RuntimeTaskRegistry {
   subscribe?(listener: () => void): () => void;
   setOffPeakExecutionId?(executionId: string | undefined): void;
@@ -1294,7 +1298,7 @@ export interface RuntimeTaskRegistry {
     startedAt?: number;
     deadlineMs?: number;
     tokenLimit?: number;
-    onDeadline?: () => void;
+    onExhausted?: (reason: RootRunBudgetExhaustionReason) => void;
   }): void;
   reserveRootRunTokens(input: {
     rootRunId: string;
@@ -1320,7 +1324,7 @@ interface RootRunBudgetState {
   turnFinished: boolean;
   expired: boolean;
   deadlineTimer?: ReturnType<typeof setTimeout>;
-  onDeadline?: () => void;
+  onExhausted?: (reason: RootRunBudgetExhaustionReason) => void;
   cancellationPromise?: Promise<void>;
 }
 
@@ -1390,7 +1394,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     startedAt?: number;
     deadlineMs?: number;
     tokenLimit?: number;
-    onDeadline?: () => void;
+    onExhausted?: (reason: RootRunBudgetExhaustionReason) => void;
   }): void {
     if (this.rootRunBudgets.has(input.rootRunId)) return;
     const deadlineAt = (input.startedAt ?? Date.now()) + (input.deadlineMs ?? 2 * 60 * 60 * 1000);
@@ -1406,12 +1410,12 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       seenUsageEvents: new Set(),
       turnFinished: false,
       expired: false,
-      onDeadline: input.onDeadline,
+      onExhausted: input.onExhausted,
     });
     const state = this.rootRunBudgets.get(input.rootRunId)!;
     state.deadlineTimer = setTimeout(() => {
       if (!this.rootRunBudgets.has(input.rootRunId)) return;
-      this.expireRootRunBudget(state);
+      this.expireRootRunBudget(state, "deadline");
     }, Math.max(0, deadlineAt - Date.now()));
     state.deadlineTimer.unref?.();
   }
@@ -1423,8 +1427,13 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     maxTokens: number;
   }): RootRunReservationRelease {
     const state = this.rootRunBudgets.get(input.rootRunId);
-    const requestedReservation = input.contextWindow + input.maxTokens;
-    if (state && Date.now() >= state.deadlineAt) this.expireRootRunBudget(state);
+    // 根因：把模型声明的最大 contextWindow 当成每个并发请求的实际费用预留，
+    // 两个 200k 窗口就能耗尽 500k root-run budget，导致普通双 Agent 任务拒绝子请求。
+    // 修复依据：上限只对 provider 实际 usage 结算；admission 暂按该请求的输出 token 上限预留。
+    const requestedReservation = input.maxTokens;
+    if (state && Date.now() >= state.deadlineAt) {
+      this.expireRootRunBudget(state, "deadline");
+    }
     if (
       !state ||
       state.expired ||
@@ -1438,8 +1447,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       // Резерв другого запроса временно занимает остаток; это отказ admission, а не исчерпание фактического бюджета.
       throw new RootRunBudgetExceededError(input.rootRunId);
     }
-    // Каталог может объявлять окно больше бюджета RootRun. Ограничиваем оценку остатком:
-    // запрос допускается эксклюзивно, а фактический provider usage после ответа всё равно списывается целиком.
+    // Если остаток меньше разрешённого output budget, request получает только доступный резерв.
     const reservation = Math.min(requestedReservation, remaining);
     state.reservedTokens += reservation;
     const reservations = state.activeReservationsBySession.get(input.sessionId) ?? [];
@@ -1488,8 +1496,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 没有对应 reservation 时 fail closed，避免未知请求被误当作零成本。
     const debitedTokens = usage?.totalTokens ?? reservation?.reservedTokens ?? state.tokenLimit;
     state.usedTokens += debitedTokens;
-    if (state.usedTokens + state.reservedTokens >= state.tokenLimit) {
-      this.expireRootRunBudget(state);
+    // Резервации активных запросов ограничивают новый admission, но не являются расходом.
+    // Иначе параллельные дочерние ветки отменяли весь рой при полном, но ещё не потраченном резерве.
+    if (state.usedTokens >= state.tokenLimit) {
+      this.expireRootRunBudget(state, "token_limit");
     }
     this.changed();
   }
@@ -1571,10 +1581,13 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     this.rootRunBudgets.delete(rootRunId);
   }
 
-  private expireRootRunBudget(state: RootRunBudgetState): void {
+  private expireRootRunBudget(
+    state: RootRunBudgetState,
+    reason: RootRunBudgetExhaustionReason,
+  ): void {
     if (state.expired) return;
     state.expired = true;
-    state.onDeadline?.();
+    state.onExhausted?.(reason);
     state.cancellationPromise = this.cancelRootRunChildren(
       state.rootRunId,
       new RootRunBudgetExceededError(state.rootRunId),
@@ -1946,8 +1959,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     state.activeReservationsBySession.delete(sessionId);
     state.reservedTokens = Math.max(0, state.reservedTokens - debitedTokens);
     state.usedTokens += debitedTokens;
-    if (state.usedTokens + state.reservedTokens >= state.tokenLimit) {
-      this.expireRootRunBudget(state);
+    if (state.usedTokens >= state.tokenLimit) {
+      this.expireRootRunBudget(state, "token_limit");
     }
   }
 

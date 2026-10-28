@@ -484,6 +484,14 @@ describe("SettingsPage integrated terminal shell", () => {
     ],
     ["onHttpProxyChange", " http://127.0.0.1:7890 ", { httpProxy: "http://127.0.0.1:7890" }],
     [
+      "onHttpProxyListChange",
+      " http://127.0.0.1:7890 \n\nsocks5://127.0.0.1:1080 ",
+      {
+        httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+        httpProxy: "",
+      },
+    ],
+    [
       "onHttpProxyNoProxyChange",
       " localhost, , .example.test ",
       { httpProxyNoProxy: "localhost,.example.test" },

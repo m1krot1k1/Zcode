@@ -33,18 +33,23 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import type { ComposerSubmissionConfig } from "@/v4/composer/composerSubmissionConfig.js";
 
-const { attachmentState, chatPromptEditorProps, dialogOpenStates, inputClear, inputSetText } =
-  vi.hoisted(() => ({
-    attachmentState: {
-      adoptSentAttachments: vi.fn(async () => {}),
-      hasUnreadyAttachments: false,
-      prepareForSend: vi.fn(async () => []),
-    },
-    chatPromptEditorProps: [] as Array<Record<string, unknown>>,
-    dialogOpenStates: [] as boolean[],
-    inputClear: vi.fn(),
-    inputSetText: vi.fn(),
-  }));
+const {
+  attachmentState,
+  chatPromptEditorProps,
+  dialogOpenStates,
+  inputClear,
+  inputSetText,
+} = vi.hoisted(() => ({
+  attachmentState: {
+    adoptSentAttachments: vi.fn(async () => {}),
+    hasUnreadyAttachments: false,
+    prepareForSend: vi.fn(async () => []),
+  },
+  chatPromptEditorProps: [] as Array<Record<string, unknown>>,
+  dialogOpenStates: [] as boolean[],
+  inputClear: vi.fn(),
+  inputSetText: vi.fn(),
+}));
 
 function expectedTelemetrySendOptions() {
   return expect.objectContaining({
@@ -129,7 +134,8 @@ vi.mock("@/components/ai-elements/attachments.js", async () => {
   } & Record<string, unknown>) => React.createElement("div", props, children);
   const Trigger = ({ children }: { children?: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children);
-  const Span = (props: Record<string, unknown>) => React.createElement("span", props);
+  const Span = (props: Record<string, unknown>) =>
+    React.createElement("span", props);
   return {
     Attachment: Passthrough,
     AttachmentHoverCard: Passthrough,
@@ -137,7 +143,8 @@ vi.mock("@/components/ai-elements/attachments.js", async () => {
     AttachmentHoverCardTrigger: Trigger,
     AttachmentInfo: Span,
     AttachmentPreview: Span,
-    AttachmentRemove: (props: Record<string, unknown>) => React.createElement("button", props),
+    AttachmentRemove: (props: Record<string, unknown>) =>
+      React.createElement("button", props),
     Attachments: Passthrough,
   };
 });
@@ -187,7 +194,9 @@ function createMinimalElement(ownerDocument: Document, tagName = "div") {
     getAttribute: (name: string) => element.attributes.get(name) ?? null,
     insertBefore: (child: Node, beforeChild?: Node | null) => {
       Object.assign(child, { parentNode: element });
-      const beforeIndex = beforeChild ? element.childNodes.indexOf(beforeChild) : -1;
+      const beforeIndex = beforeChild
+        ? element.childNodes.indexOf(beforeChild)
+        : -1;
       if (beforeIndex >= 0) {
         element.childNodes.splice(beforeIndex, 0, child);
       } else {
@@ -300,7 +309,10 @@ function flushAsyncWork() {
 }
 
 function renderComposerElement(
-  onSendText: (text: string, options?: unknown) => Promise<ConversationComposerSendResult | void>,
+  onSendText: (
+    text: string,
+    options?: unknown,
+  ) => Promise<ConversationComposerSendResult | void>,
   sessionId: string | null,
   telemetryDraftConfig?: {
     mode?: string;
@@ -324,7 +336,9 @@ function renderComposerElement(
     };
   const persistOwnedContent =
     updateComposerContent ??
-    ((content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
+    ((
+      content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
+    ) => {
       ownedDraft = { ...ownedDraft, ...content };
       persistV4ComposerDraft("/workspace", undefined, scopeId, ownedDraft);
     });
@@ -357,7 +371,9 @@ function renderComposerElement(
   );
 }
 
-function findSwarmToggle(node: ReactNode): ReactElement<Record<string, unknown>> | null {
+function findSwarmToggle(
+  node: ReactNode,
+): ReactElement<Record<string, unknown>> | null {
   for (const child of Children.toArray(node)) {
     if (!isValidElement<Record<string, unknown>>(child)) continue;
     if (child.props["data-testid"] === "v4-composer-swarm-toggle") return child;
@@ -368,7 +384,10 @@ function findSwarmToggle(node: ReactNode): ReactElement<Record<string, unknown>>
 }
 
 function renderComposer(
-  onSendText: (text: string, options?: unknown) => Promise<ConversationComposerSendResult | void>,
+  onSendText: (
+    text: string,
+    options?: unknown,
+  ) => Promise<ConversationComposerSendResult | void>,
   telemetryDraftConfig?: {
     mode?: string;
     model?: string;
@@ -399,16 +418,57 @@ afterEach(() => {
   dialogOpenStates.length = 0;
   delete (globalThis as { document?: unknown }).document;
   delete (globalThis as { window?: unknown }).window;
-  delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: unknown }).IS_REACT_ACT_ENVIRONMENT;
+  delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: unknown })
+    .IS_REACT_ACT_ENVIRONMENT;
 });
 
 describe("ConversationComposer prompt history", () => {
+  it("sends an ordinary OpenCode chat directly without a planner request", async () => {
+    const container = installMinimalDom();
+    const root = createRoot(container);
+    const onSendText = vi.fn(async () => {});
+    const draft: V4ComposerDraft = {
+      text: "Раздели работу при необходимости",
+      updatedAt: 1,
+    };
+    act(() =>
+      root.render(
+        renderComposerElement(
+          onSendText,
+          null,
+          { provider: "opencode", model: "opencode/deepseek-v4.1-flash-free" },
+          null,
+          undefined,
+          draft,
+        ),
+      ),
+    );
+
+    const controls = chatPromptEditorProps.at(-1)?.submitControl as ReactNode;
+    expect(findSwarmToggle(controls)?.props["aria-pressed"]).toBe(false);
+    await act(async () => {
+      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)(
+        draft.text,
+      );
+      await flushAsyncWork();
+    });
+
+    expect(onSendText.mock.calls[0]?.[0]).toBe(draft.text);
+    expect(onSendText.mock.calls[0]?.[1]).not.toHaveProperty(
+      "orchestrationMode",
+    );
+    await act(async () => root.unmount());
+  });
+
   it("exposes a draft-scoped swarm toggle and sends its accepted intent", async () => {
     const container = installMinimalDom();
     const root = createRoot(container);
     const onSendText = vi.fn(async () => {});
     const setOrchestrationMode = vi.fn();
-    const selection = { providerId: "provider-a", modelId: "model-a" };
+    const selection = {
+      providerId: "opencode",
+      modelId: "opencode/deepseek-v4.1-flash-free",
+    };
     const draft: V4ComposerDraft = {
       text: "Запустить независимые задачи",
       orchestrationMode: "swarm",
@@ -430,11 +490,15 @@ describe("ConversationComposer prompt history", () => {
       ),
     );
 
-    const toggle = findSwarmToggle(chatPromptEditorProps.at(-1)?.submitControl as ReactNode);
+    const toggle = findSwarmToggle(
+      chatPromptEditorProps.at(-1)?.submitControl as ReactNode,
+    );
     expect(toggle?.props["aria-pressed"]).toBe(true);
     expect(toggle?.props["aria-label"]).toBe("智能体群");
     await act(async () => {
-      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)(draft.text);
+      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)(
+        draft.text,
+      );
       await flushAsyncWork();
     });
 
@@ -464,7 +528,9 @@ describe("ConversationComposer prompt history", () => {
         ),
       ),
     );
-    const toggle = findSwarmToggle(chatPromptEditorProps.at(-1)?.submitControl as ReactNode);
+    const toggle = findSwarmToggle(
+      chatPromptEditorProps.at(-1)?.submitControl as ReactNode,
+    );
     expect(toggle?.props["aria-pressed"]).toBe(false);
     await act(async () => {
       (toggle?.props.onClick as (() => void) | undefined)?.();
@@ -576,9 +642,19 @@ describe("ConversationComposer prompt history", () => {
         }),
     );
     act(() =>
-      root.render(renderComposerElement(onSendText, null, undefined, null, readSubmission)),
+      root.render(
+        renderComposerElement(
+          onSendText,
+          null,
+          undefined,
+          null,
+          readSubmission,
+        ),
+      ),
     );
-    const submit = chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean;
+    const submit = chatPromptEditorProps.at(-1)!.onSubmit as (
+      text: string,
+    ) => boolean;
     await act(async () => {
       submit("冻结本次选择");
       await flushAsyncWork();
@@ -635,7 +711,9 @@ describe("ConversationComposer prompt history", () => {
 
     expect(chatPromptEditorProps.at(-1)?.submitDisabled).toBe(true);
     await act(async () => {
-      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)("等待补全选择");
+      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)(
+        "等待补全选择",
+      );
       await flushAsyncWork();
     });
 
@@ -660,7 +738,9 @@ describe("ConversationComposer prompt history", () => {
     };
     persistV4ComposerDraft("/workspace", undefined, "session-a", draft);
     const updateContent = vi.fn(
-      (content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
+      (
+        content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
+      ) => {
         draft = { ...draft, ...content };
         persistV4ComposerDraft("/workspace", undefined, "session-a", draft);
       },
@@ -679,10 +759,14 @@ describe("ConversationComposer prompt history", () => {
       ),
     );
     await act(async () => {
-      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)("会被发送");
+      (chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean)(
+        "会被发送",
+      );
       await flushAsyncWork();
     });
-    expect(readV4ComposerDraft("/workspace", undefined, "session-a")).toBeNull();
+    expect(
+      readV4ComposerDraft("/workspace", undefined, "session-a"),
+    ).toBeNull();
     expect(draft).toMatchObject({
       text: "",
       mode: "yolo",
@@ -700,8 +784,12 @@ describe("ConversationComposer prompt history", () => {
         }),
     );
     const { root } = renderComposer(onSendText);
-    const submit = chatPromptEditorProps.at(-1)!.onSubmit as (text: string) => boolean;
-    const onChange = chatPromptEditorProps.at(-1)!.onChange as (text: string) => void;
+    const submit = chatPromptEditorProps.at(-1)!.onSubmit as (
+      text: string,
+    ) => boolean;
+    const onChange = chatPromptEditorProps.at(-1)!.onChange as (
+      text: string,
+    ) => void;
     inputClear.mockClear();
     await act(async () => {
       submit("第一条");
@@ -713,7 +801,9 @@ describe("ConversationComposer prompt history", () => {
       await flushAsyncWork();
     });
     expect(inputClear).not.toHaveBeenCalled();
-    expect(readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)?.text).toBe("下一条");
+    expect(
+      readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)?.text,
+    ).toBe("下一条");
     await act(async () => root.unmount());
   });
 
@@ -755,7 +845,10 @@ describe("ConversationComposer prompt history", () => {
       await flushAsyncWork();
     });
 
-    expect(onSendText).toHaveBeenCalledWith("你回答 1", expectedTelemetrySendOptions());
+    expect(onSendText).toHaveBeenCalledWith(
+      "你回答 1",
+      expectedTelemetrySendOptions(),
+    );
     expect(readPromptHistoryEntries("/workspace")).toEqual(["你回答 1"]);
 
     await act(async () => {
@@ -780,7 +873,10 @@ describe("ConversationComposer prompt history", () => {
       await flushAsyncWork();
     });
 
-    expect(onSendText).toHaveBeenCalledWith("失败的消息", expectedTelemetrySendOptions());
+    expect(onSendText).toHaveBeenCalledWith(
+      "失败的消息",
+      expectedTelemetrySendOptions(),
+    );
     expect(readPromptHistoryEntries("/workspace")).toEqual(["上一条"]);
 
     await act(async () => {
@@ -798,13 +894,16 @@ describe("ConversationComposer prompt history", () => {
       await flushAsyncWork();
     });
 
-    expect(onSendText).toHaveBeenCalledWith("/goal 保留这段输入", expectedTelemetrySendOptions());
+    expect(onSendText).toHaveBeenCalledWith(
+      "/goal 保留这段输入",
+      expectedTelemetrySendOptions(),
+    );
     expect(inputClear).not.toHaveBeenCalled();
     expect(attachmentState.adoptSentAttachments).not.toHaveBeenCalled();
     expect(readPromptHistoryEntries("/workspace")).toEqual([]);
-    expect(readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)?.text).toBe(
-      "/goal 保留这段输入",
-    );
+    expect(
+      readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)?.text,
+    ).toBe("/goal 保留这段输入");
 
     await act(async () => {
       root.unmount();
@@ -825,9 +924,9 @@ describe("ConversationComposer prompt history", () => {
     expect(inputClear).not.toHaveBeenCalled();
     expect(attachmentState.adoptSentAttachments).not.toHaveBeenCalled();
     expect(readPromptHistoryEntries("/workspace")).toEqual([]);
-    expect(readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)?.text).toBe(
-      "等待确认的消息",
-    );
+    expect(
+      readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)?.text,
+    ).toBe("等待确认的消息");
 
     await act(async () => root.unmount());
   });
@@ -851,7 +950,11 @@ describe("ConversationComposer prompt history", () => {
       await flushAsyncWork();
     });
 
-    expect(onSendText).toHaveBeenNthCalledWith(2, "重复消息", expectedTelemetrySendOptions());
+    expect(onSendText).toHaveBeenNthCalledWith(
+      2,
+      "重复消息",
+      expectedTelemetrySendOptions(),
+    );
     expect(readPromptHistoryEntries("/workspace")).toEqual(["重复消息"]);
     expect(setItem).not.toHaveBeenCalled();
 
@@ -910,14 +1013,18 @@ describe("ConversationComposer prompt history", () => {
     });
 
     rerenderSession("session-1");
-    expect(readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)).toBeNull();
+    expect(
+      readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT),
+    ).toBeNull();
 
     await act(async () => {
       resolveSend?.();
       await flushAsyncWork();
     });
 
-    expect(readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT)).toBeNull();
+    expect(
+      readV4ComposerDraft("/workspace", undefined, V4_DRAFT_SCOPE_ROOT),
+    ).toBeNull();
 
     await act(async () => {
       root.unmount();
@@ -952,8 +1059,15 @@ function createDraftOwner() {
   const owner = {
     draft: { text: "", updatedAt: 0 } as V4ComposerDraft,
     writes: [] as string[],
-    update(content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) {
-      owner.draft = { ...owner.draft, editorStateJson: undefined, mention: undefined, ...content };
+    update(
+      content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
+    ) {
+      owner.draft = {
+        ...owner.draft,
+        editorStateJson: undefined,
+        mention: undefined,
+        ...content,
+      };
       owner.writes.push(content.text);
     },
   };
@@ -990,7 +1104,9 @@ function makePendingSend() {
     reject = rej;
   });
   const onSendText = vi.fn(async (_text: string, options?: unknown) => {
-    (options as { onCommandCreated?: (id: string) => void }).onCommandCreated?.(REMOUNT_COMMAND_ID);
+    (options as { onCommandCreated?: (id: string) => void }).onCommandCreated?.(
+      REMOUNT_COMMAND_ID,
+    );
     await pending;
   });
   return { onSendText, reject };

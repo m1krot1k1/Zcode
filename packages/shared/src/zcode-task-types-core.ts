@@ -592,7 +592,7 @@ export interface ZCodeToolCall {
     name?: string;
     qualifiedName?: string;
     pluginId?: string;
-    source?: "agents" | "zcode" | "bundled" | "plugin" | "remote";
+    source?: "agents" | "cursor" | "zcode" | "bundled" | "plugin" | "remote";
   };
 }
 export interface ZCodeToolCallUpdate {
@@ -623,7 +623,7 @@ export interface ZCodeToolCallUpdate {
     name?: string;
     qualifiedName?: string;
     pluginId?: string;
-    source?: "agents" | "zcode" | "bundled" | "plugin" | "remote";
+    source?: "agents" | "cursor" | "zcode" | "bundled" | "plugin" | "remote";
   };
 }
 export interface ZCodePlan {

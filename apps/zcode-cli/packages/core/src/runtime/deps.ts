@@ -319,9 +319,6 @@ export type { LocalMicrocompactPolicyConfig } from "../compact/index.js";
 export {
   EXPLORE_AGENT_ALLOWED_TOOLS,
   EXPLORE_AGENT_TYPE,
-  GENERAL_PURPOSE_AGENT_TYPE,
-  DEFAULT_SUBAGENT_TYPE,
-  buildGeneralPurposeSystemPrompt,
   buildExploreAllowedTools,
   buildExploreAgentPrompt,
   buildExploreSystemPrompt,

@@ -57,7 +57,7 @@ describe("runtime subagent source parsing", () => {
 });
 
 describe("subagent initialization source", () => {
-  it.each(["host", "files"] as const)(
+  it.each(["host", "files", "project-files"] as const)(
     "initializes from %s and preserves other storage settings",
     async (source) => {
       const root = await mkdtemp(join(tmpdir(), "subagent-initial-source-"));
@@ -69,6 +69,12 @@ describe("subagent initialization source", () => {
         path: join(workspace, ".zcode", "agents", "invalid.md"),
         source: "project" as const,
         content: "This document intentionally lacks frontmatter",
+      };
+      const projectAgentDocument = {
+        path: join(workspace, ".zcode", "agents", "reviewer.md"),
+        source: "project" as const,
+        content:
+          "---\nname: reviewer\ndescription: Project review\ntools: Read\n---\nPROJECT_PROFILE",
       };
       const readDiagnostics = async () =>
         (
@@ -120,12 +126,15 @@ describe("subagent initialization source", () => {
       try {
         await mkdir(join(storage, "agents"), { recursive: true });
         await mkdir(join(workspace, ".zcode", "agents"), { recursive: true });
+        if (source === "project-files") await writeFile(projectAgentDocument.path, projectAgentDocument.content);
         if (source === "files") await writeFile(invalidDocument.path, invalidDocument.content);
         await writeFile(
           configPath,
           JSON.stringify({ storage: { dir: join(root, "unused-storage") } }),
         );
-        await writeFile(join(storage, "agents", "reviewer.md"), markdown("DISK_PROFILE"));
+        if (source !== "project-files") {
+          await writeFile(join(storage, "agents", "reviewer.md"), markdown("DISK_PROFILE"));
+        }
         creating = createRegistryBackedTestApp({
           loggerFactory: createNodeLoggerFactory({ logDir }),
           env: {
@@ -194,13 +203,17 @@ describe("subagent initialization source", () => {
         expect(readHost).toHaveBeenCalledTimes(source === "host" ? 2 : 0);
         expect(requests).toHaveLength(1);
         expect(JSON.stringify(requests[0])).toContain(
-          source === "host" ? "NEXT_PROFILE" : "DISK_PROFILE",
+          source === "host"
+            ? "NEXT_PROFILE"
+            : source === "project-files"
+              ? "PROJECT_PROFILE"
+              : "DISK_PROFILE",
         );
         expect(pluginLoader).toHaveBeenCalledTimes(1);
         expect((await readdir(join(storage, "cli", "agents"))).length).toBeGreaterThan(0);
         const diagnostics = await readDiagnostics();
         expect(diagnostics).toMatchObject(
-          Array.from({ length: source === "host" ? 0 : 1 }, () => expectedDiagnostic),
+          Array.from({ length: source === "files" ? 1 : 0 }, () => expectedDiagnostic),
         );
         expect(JSON.stringify(diagnostics)).not.toContain(invalidDocument.content);
         // 只替换 subagent 来源；实际 session 数据库仍在环境变量指定的位置。
@@ -253,8 +266,9 @@ describe("subagent initialization source", () => {
       });
       await app.submitPrompt("Fallback turn");
       const first = JSON.stringify(requests[0]);
-      for (const name of ["Explore", "general-purpose", "inline-reviewer"])
+      for (const name of ["start", "orchestrator", "researcher", "inline-reviewer"])
         expect(first).toContain(name);
+      expect(first).not.toContain("Explore");
       expect(first).not.toContain("fixture:worker");
       expect(resolvePlugins).not.toHaveBeenCalled();
       readHost.mockResolvedValue({

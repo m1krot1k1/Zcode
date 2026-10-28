@@ -286,6 +286,10 @@ export const swarmRunRowSchema = z.object({
   outcomeAcceptance: z.enum(["unknown", "verified", "rejected"]).optional(),
   taskCount: z.number().int().nonnegative().optional(),
   childSessionIds: z.array(z.string().min(1)).max(128).optional(),
+  childAgentTypes: z
+    .record(z.string().min(1), z.string().min(1).max(80))
+    .refine((types) => Object.keys(types).length <= 128)
+    .optional(),
   // Keep provider/task output out of the timeline contract; this is a short bounded summary only.
   summary: z.string().max(500).optional(),
 });

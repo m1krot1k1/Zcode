@@ -4,7 +4,6 @@ import { isSubagentColor } from "@/lib/subagentColors.js";
 
 type AgentIntl = ReturnType<typeof useZCodeIntl>["intl"];
 type AgentToolCall = ToolCallBlockRenderContext["toolCallNode"]["toolCall"];
-const DEFAULT_AGENT_TYPE_LABEL = "general-purpose";
 
 export function formatAgentMessage(intl: AgentIntl, id: string, fallback: string) {
   const message = intl.formatMessage({ id });
@@ -157,9 +156,8 @@ export function getAgentKindLabel(
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "agent_type"]) ??
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "subagent_type"]);
 
-  // 流式 input 的半截 JSON 暂时读不到 subagent_type，若一读不到就按“模型省略字段”
-  // 回退 general-purpose，首帧会误报、之后再跳成真实类型。只有 inputPreviewComplete 明确为 true
-  // 才能确认字段确实省略；已投影的 subagentRow 类型则作为 runtime 权威结果优先展示。
+  // 流式 input 的半截 JSON 暂时读不到 subagent_type；只有 inputPreviewComplete 明确为 true
+  // 才能用中性 SubAgent 标签表示字段缺失。不能把缺失的类型误显示为 general-purpose。
   const explicitName =
     (authoritativeAgentType?.trim() || undefined) ??
     readAgentNameFromRecord(outputRecord) ??
@@ -170,7 +168,7 @@ export function getAgentKindLabel(
     return explicitName;
   }
 
-  return rawRecord?.inputPreviewComplete === true ? fallbackLabel || DEFAULT_AGENT_TYPE_LABEL : "";
+  return rawRecord?.inputPreviewComplete === true ? fallbackLabel : "";
 }
 
 export function getAgentColor(toolCall: AgentToolCall) {

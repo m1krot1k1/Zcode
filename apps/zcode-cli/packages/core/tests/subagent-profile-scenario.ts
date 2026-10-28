@@ -54,7 +54,13 @@ export function setup(onChild?: (record: ChildRequest) => Promise<ModelResult>) 
   const load = vi.fn(async () => ({ activeAgents: [profile] }));
   const runtime = createTestAgentRuntime(
     sessionId,
-    { mode: "yolo", compact: { enabled: false }, titleGeneration: { enabled: false } },
+    {
+      mode: "yolo",
+      compact: { enabled: false },
+      titleGeneration: { enabled: false },
+      // Grep must be available to the parent before a child profile may inherit it.
+      toolAllowlist: ["Agent", "Task", "Read", "Grep"],
+    },
     {
       sessionStore: store,
       eventStore: events,

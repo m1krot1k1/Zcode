@@ -1,0 +1,8 @@
+---
+description: Keep changes scoped and follow the product's architecture and interface conventions.
+alwaysApply: true
+---
+
+Prefer the existing public service, contract, component, hook, and test patterns over parallel paths. Keep one owner for mutable state and respect package boundaries. Make the smallest coherent change that satisfies the accepted behavior while preserving unrelated user work.
+
+For UI work, read the product design guidance, use existing components, and check desktop and narrow layouts, keyboard behavior, localization, and accessible status feedback. Do not expose implementation details unless they help the user make a decision.

@@ -7,7 +7,9 @@ import type {
   Model,
   ModelInputMessage,
   ProjectContext,
+  ResolvedHarnessRule,
   ResolvedUserInstructions,
+  ResolvedWorkspaceRule,
   SkillLoadOutcome,
   UserInstructionsOptions,
 } from "@zcode/contracts";
@@ -21,6 +23,8 @@ export type {
   ProjectType,
   ResolvedUserInstructionSource,
   ResolvedUserInstructions,
+  ResolvedHarnessRule,
+  ResolvedWorkspaceRule,
   UserInstructionsOptions,
 } from "@zcode/contracts";
 
@@ -109,6 +113,8 @@ export interface ContextBuilderConfig {
   genUiOutputDirectory?: string;
   currentDate?: string;
   userInstructions?: ResolvedUserInstructions;
+  bundledHarnessRules?: readonly ResolvedHarnessRule[];
+  workspaceRules?: readonly ResolvedWorkspaceRule[];
   projectContext?: ProjectContext;
   memoryRoot?: string;
   memoryIndexContent?: string;

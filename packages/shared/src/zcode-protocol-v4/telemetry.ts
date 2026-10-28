@@ -148,7 +148,7 @@ const toolLifecycleFactSchema = z
     skillPluginId: z.string().min(1).optional(),
     pluginId: z.string().min(1).max(256).optional(),
     pluginComponent: z.enum(["skill", "mcp"]).optional(),
-    skillSource: z.enum(["agents", "zcode", "bundled", "plugin", "remote"]).optional(),
+    skillSource: z.enum(["agents", "cursor", "zcode", "bundled", "plugin", "remote"]).optional(),
     performance: toolPerformanceFactSchema.optional(),
     automationId: z.string().min(1).optional(),
   })

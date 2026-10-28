@@ -5,13 +5,16 @@
 // 先保留集中实现，后续再按“参数解析/构建执行/产物校验”拆分模块。
 
 import { spawn } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import process from "node:process";
 import { dirname, join, posix, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { collectRuntimeModuleClosureEntries } from "./runtime-dependency-closure.mjs";
+import {
+  collectExternalRuntimeModuleNames,
+  collectRuntimeModuleClosureEntries,
+} from "./runtime-dependency-closure.mjs";
 import { resolveDesktopProductIdentity } from "./desktop-product-identity.mjs";
 import {
   findDesktopNativePackageViolations,
@@ -107,6 +110,11 @@ const requiredRuntimeModules = [
   // 如果这里只校验 pngjs/ssh2 依赖，打包链路就会放过“产物能生成但主进程启动即缺 undici”的坏包。
   // 这里把 undici 纳入机械校验，让 bundle 阶段就能把问题拦下来。
   "undici",
+  // Bugfix：yaml 被 main/host 外置；没有进入 app.asar 时应用会在启动期触发 ERR_MODULE_NOT_FOUND。
+  // 与 electron-builder.config.js 的 afterPack 注入名单同步，确保坏包在交付前被拦截。
+  "yaml",
+  // main entry 启动时会加载 ARMS ESM runtime；pnpm hoisted 下 electron-builder 可能漏拷它。
+  "@arms/rum-electron",
   // app 自签 CA 生成用 node-forge，它内部动态 require("crypto") 内联进 ESM main bundle 会崩，
   // 因此作为外部依赖保留；生产包必须显式校验 app.asar 中存在该包，避免漏打导致启动即崩。
   "node-forge",
@@ -432,6 +440,21 @@ function runAndReadStdout(command, args) {
     maxBuffer: commandStdoutMaxBuffer,
     stdio: ["ignore", "pipe", "inherit"],
   });
+}
+
+function collectExternalRuntimeModulesFromBuiltBundles() {
+  const sources = [];
+  const roots = ["main", "host", "scheduler"].map((name) => resolve(desktopRoot, "out", name));
+  const visit = (directory) => {
+    if (!existsSync(directory)) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = resolve(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath);
+      else if (entry.isFile() && entry.name.endsWith(".js")) sources.push(readFileSync(entryPath, "utf8"));
+    }
+  };
+  for (const root of roots) visit(root);
+  return collectExternalRuntimeModuleNames(sources);
 }
 
 // 根因：旧检查仍要求已移除的 OpenCode installer URL/WinGet ID，导致当前 pinned CLI 安装器的正确包被误判。
@@ -768,7 +791,7 @@ export function verifyPackagedRuntimeDependencies(os, arch) {
   }
 
   const runtimeModules = collectRuntimeModuleClosureEntries(
-    requiredRuntimeModules,
+    [...new Set([...requiredRuntimeModules, ...collectExternalRuntimeModulesFromBuiltBundles()])],
     runtimeModuleLookupRoots,
   );
   const resolvableRuntimeModules = runtimeModules.filter((entry) => {

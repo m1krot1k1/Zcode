@@ -38,7 +38,9 @@ const listingMessages = (request: ModelRequest) =>
   request.messages.filter(
     (m) =>
       typeof m.content === "string" &&
-      /(?:Available agent types|New agent types|The following agent types)/u.test(m.content),
+      /(?:Available named agent types|New named agent types|Available agent types|New agent types|The following agent types)/u.test(
+        m.content,
+      ),
   );
 const result = {
   finishReason: "stop" as const,
@@ -282,7 +284,9 @@ describe("runtime agent listing", () => {
     );
     expect(
       ordinary.every(
-        (r) => listingMessages(r).length === 0 && !r.tools?.some((t) => t.name === "Agent"),
+        (r) =>
+          listingMessages(r).length === 0 &&
+          !r.tools?.some((t) => t.name === "Agent" || t.name === "Task"),
       ),
     ).toBe(true);
   });

@@ -25,7 +25,7 @@ import { candidateBaseDirs } from "./bundled-plugins.js";
  * - 开发态 / Electron 桌面：沿官方插件同款候选目录在入口旁找到 `packages/bundled-skills`，原地读取，不拷贝。
  * - SEA 二进制：资产内嵌在 `zcode-bundled-skills/` 前缀下，首启按内容 hash 解压到
  *   `<cli storage>/bundled-skills/<hash>/`；目录名即内容身份，重复启动幂等，并发只会有一个赢家。
- * - 远端主机：prepare-prebuilds 把目录 stage 到远端 zcode.cjs 旁，与桌面同路。
+ * - 远端主机：server remote deployment 把目录 stage 到远端 zcode.cjs 旁，并在激活前验证必需资产。
  */
 
 export const BUNDLED_SKILL_PACK_DIRECTORY_NAME = "bundled-skills";
@@ -38,6 +38,24 @@ export const BUNDLED_SKILL_PACK_REQUIRED_PATHS = [
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/SKILL.md`,
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/patterns.md`,
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/examples.md`,
+  "skills/zcode-swarm/SKILL.md",
+  "skills/zcode-verification/SKILL.md",
+  "skills/zcode-systematic-debugging/SKILL.md",
+  "skills/anti-loop/SKILL.md",
+  "skills/self-improvement/SKILL.md",
+  "skills/code-craft/SKILL.md",
+  "skills/reference-first/SKILL.md",
+  "skills/task-planning/SKILL.md",
+  "skills/execution-patterns/SKILL.md",
+  "skills/reviewer/SKILL.md",
+  "skills/completion-gate/SKILL.md",
+  "rules/00-evidence.mdc",
+  "rules/01-delegation.mdc",
+  "rules/02-verification.mdc",
+  "rules/03-context.mdc",
+  "rules/04-model-identity.mdc",
+  "rules/05-code-and-ui-craft.mdc",
+  "rules/06-progress.mdc",
 ] as const;
 
 /** 与 official-plugin-definitions 的 rootCandidates 同形，覆盖 monorepo src/dist、cli/dist 与桌面 resources/glm 布局。 */

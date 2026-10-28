@@ -12,15 +12,18 @@ import type { RuntimeSubagentConfiguration } from "./contract.js";
 export function parseRuntimeSubagentConfig(configuration: RuntimeSubagentConfiguration) {
   const profiles: AgentProfile[] = [];
   const diagnostics: AgentProfileParseDiagnostic[] = [];
+  const nativeNames = new Set<string>();
   for (const document of configuration.documents) {
     const result = parseAgentProfileFromMarkdown(document);
     if (result.diagnostic) diagnostics.push(result.diagnostic);
     if (!result.profile) continue;
-    profiles.push(
-      document.namespace
-        ? { ...result.profile, name: `${document.namespace}/${result.profile.name}` }
-        : result.profile,
-    );
+    const profile = document.namespace
+      ? { ...result.profile, name: `${document.namespace}/${result.profile.name}` }
+      : result.profile;
+    // 原生 `.zcode` profile 是本产品的显式配置；同名 Cursor 兼容文件不能覆盖它。
+    if (document.format === "cursor" && nativeNames.has(profile.name)) continue;
+    profiles.push(profile);
+    if (document.format !== "cursor") nativeNames.add(profile.name);
   }
   return {
     ...resolveSubagentRuntimeProfiles(profiles, configuration.state),

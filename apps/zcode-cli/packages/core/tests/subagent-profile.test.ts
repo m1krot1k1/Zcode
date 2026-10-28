@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createBuiltInExploreAgentProfile,
-  createBuiltInGeneralPurposeAgentProfile,
+  formatAgentProfileForPrompt,
   formatAgentProfilesForPrompt,
+  getSwarmAgentProfiles,
+  isModelSelectableAgentProfile,
+  SWARM_AGENT_TYPES,
   isBuiltInExploreAgentProfile,
   normalizeAgentProfiles,
   parseAgentProfileFromMarkdown,
@@ -234,7 +237,7 @@ tools:
     expect(result.profile?.tools).toBeUndefined();
   });
 
-  it("formats available profiles for Agent tool descriptions with built-in default agents", () => {
+  it("formats only named built-in roles for model-facing Agent tool descriptions", () => {
     const prompt = formatAgentProfilesForPrompt([
       {
         name: "zcode-reviewer",
@@ -247,22 +250,121 @@ tools:
     ]);
 
     expect(prompt).toContain("Available agent types and the tools they have access to:");
-    expect(prompt).toContain("general-purpose");
-    expect(prompt).toContain("Explore");
+    expect(prompt).not.toContain("general-purpose");
+    expect(prompt).not.toContain("Explore");
+    for (const role of SWARM_AGENT_TYPES) expect(prompt).toContain(`- ${role}:`);
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
+    expect(prompt).toContain("- reviewer:");
+    expect(prompt).toContain("(Tools: Read, Glob, Grep, Task, Skill)");
     expect(prompt).not.toContain("tools: Read");
     expect(prompt).not.toContain("background: true");
     expect(prompt).not.toContain("model:");
   });
 
   it("assigns explicit identity colors to built-in agents", () => {
-    expect(createBuiltInGeneralPurposeAgentProfile().color).toBe("blue");
     expect(createBuiltInExploreAgentProfile().color).toBe("cyan");
   });
 
+  it("limits delegation to ZCode roles and rejects generic profile IDs", () => {
+    const profiles = normalizeAgentProfiles([]);
+    const swarmProfiles = getSwarmAgentProfiles(profiles);
+
+    expect(swarmProfiles.map(({ name }) => name)).toEqual(SWARM_AGENT_TYPES);
+    const customProfiles = [
+      { ...createBuiltInExploreAgentProfile(), source: "user" as const },
+      {
+        name: "research-helper",
+        description: "Workspace research role",
+        source: "project" as const,
+        systemPrompt: "Research role prompt",
+        tools: ["Read"],
+      },
+      {
+        name: "general",
+        description: "Generic workspace role",
+        source: "project" as const,
+        systemPrompt: "Must not enter the ZCode roster",
+        tools: ["Read"],
+      },
+      {
+        name: "general-purpose",
+        description: "Legacy generic role",
+        source: "project" as const,
+        systemPrompt: "Must not enter the ZCode roster",
+        tools: ["Read"],
+      },
+      {
+        name: "reviewer",
+        description: "Workspace attempt to shadow the canonical role",
+        source: "project" as const,
+        systemPrompt: "Untrusted replacement prompt",
+        tools: ["Read"],
+      },
+    ];
+    const mergedProfiles = normalizeAgentProfiles(customProfiles);
+    const swarmWithCustomProfiles = getSwarmAgentProfiles(mergedProfiles);
+    expect(swarmWithCustomProfiles.map(({ name }) => name)).toEqual(SWARM_AGENT_TYPES);
+    expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")).toMatchObject({
+      source: "built-in",
+      description: expect.not.stringContaining("Workspace attempt"),
+      tools: expect.arrayContaining(["Task"]),
+    });
+    const normalAgentPrompt = formatAgentProfilesForPrompt(mergedProfiles) ?? "";
+    expect(normalAgentPrompt).toContain("- research-helper: Workspace research role");
+    expect(normalAgentPrompt).not.toContain("general-purpose");
+    expect(normalAgentPrompt).not.toContain("- general:");
+    expect(normalAgentPrompt).toContain(
+      "- reviewer: Workspace attempt to shadow the canonical role",
+    );
+    const forgedBuiltInReviewer = {
+      name: "reviewer",
+      description: "Forged built-in profile",
+      source: "built-in" as const,
+      systemPrompt: "Forged system prompt",
+      tools: ["Read", "Task", "Write"],
+    };
+    expect(
+      getSwarmAgentProfiles([...mergedProfiles, forgedBuiltInReviewer]).find(
+        ({ name }) => name === "reviewer",
+      ),
+    ).toEqual(swarmProfiles.find(({ name }) => name === "reviewer"));
+    expect(swarmProfiles.every((profile) => profile.injectAgentsMd)).toBe(true);
+    expect(swarmProfiles.every((profile) => profile.tools?.includes("Task"))).toBe(true);
+    expect(swarmProfiles.every((profile) => profile.systemPrompt.includes("下一负责人"))).toBe(
+      true,
+    );
+    const startPrompt = swarmProfiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
+    expect(startPrompt).toContain("пользователем разрешение");
+    expect(startPrompt).toContain("не обещай возобновление после перезапуска");
+    const orchestratorPrompt =
+      swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
+    expect(orchestratorPrompt).toContain("Не размножай одну задачу в дублирующие ветки");
+    expect(orchestratorPrompt).toContain("сопоставь каждый запрос пользователя");
+    expect(orchestratorPrompt).toContain("не предоставляет");
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "zcode-systematic-debugging",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("task-planning");
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "execution-patterns",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain(
+      "zcode-verification",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("reviewer");
+    expect(swarmProfiles.find(({ name }) => name === "evaluator")?.skills).toContain(
+      "completion-gate",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "self-improver")?.skills).toContain(
+      "self-improvement",
+    );
+    for (const profile of swarmProfiles.filter(({ tools }) => tools.includes("Task"))) {
+      expect(profile.skills).toContain("zcode-swarm");
+    }
+  });
+
   it("uses explicit AGENTS.md injection defaults for built-in agents", () => {
-    expect(createBuiltInGeneralPurposeAgentProfile().injectAgentsMd).toBe(true);
-    expect(createBuiltInExploreAgentProfile().injectAgentsMd).toBe(false);
+    expect(createBuiltInExploreAgentProfile().injectAgentsMd).toBe(true);
   });
 
   it("parses explicit AGENTS.md injection while leaving missing custom values unset", () => {
@@ -369,20 +471,11 @@ Review carefully.`,
             modelId: "glm-5.2",
             options: { reasoningLevel: "max" },
           },
-          "general-purpose": {
-            providerId: "custom-openai",
-            modelId: "gpt-5.4",
-            options: { reasoningLevel: "high" },
-          },
         },
       },
     );
 
-    expect(profiles.find((profile) => profile.name === "general-purpose")?.modelSelection).toEqual({
-      providerId: "custom-openai",
-      modelId: "gpt-5.4",
-      options: { reasoningLevel: "high" },
-    });
+    expect(profiles.some((profile) => profile.name === "general-purpose")).toBe(false);
     expect(profiles.find((profile) => profile.name === "Explore")?.modelSelection).toEqual({
       providerId: "custom-openai",
       modelId: "glm-5.2",
@@ -394,14 +487,27 @@ Review carefully.`,
     });
   });
 
-  it("formats built-in Explore tools for the embedded search branch", () => {
+  it("keeps built-in Explore internal while retaining its formatter for compatibility", () => {
     const prompt = formatAgentProfilesForPrompt([], {
       embeddedSearchEnabled: true,
     });
 
-    expect(prompt).toContain("Explore");
-    expect(prompt).toContain("Tools: Read, Bash, WebFetch, WebSearch, TodoWrite");
-    expect(prompt).not.toContain("Glob");
-    expect(prompt).not.toContain("Grep");
+    expect(prompt).not.toContain("Explore");
+    const compatibilityLine = formatAgentProfileForPrompt(createBuiltInExploreAgentProfile(), {
+      embeddedSearchEnabled: true,
+    });
+    expect(compatibilityLine).toContain("Tools: Read, Bash, WebFetch, WebSearch, TodoWrite");
+    expect(compatibilityLine).not.toContain("Glob");
+    expect(compatibilityLine).not.toContain("Grep");
+  });
+
+  it("hides generic compatibility IDs from model-visible agent choices", () => {
+    expect(isModelSelectableAgentProfile({ name: "general-purpose", source: "built-in" })).toBe(
+      false,
+    );
+    expect(isModelSelectableAgentProfile({ name: "general", source: "project" })).toBe(false);
+    expect(isModelSelectableAgentProfile({ name: "Explore", source: "built-in" })).toBe(false);
+    expect(isModelSelectableAgentProfile({ name: "research-helper", source: "project" })).toBe(true);
+    expect(isModelSelectableAgentProfile({ name: "Explore", source: "user" })).toBe(true);
   });
 });

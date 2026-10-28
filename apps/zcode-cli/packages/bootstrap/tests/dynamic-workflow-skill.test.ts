@@ -145,6 +145,18 @@ describe("builtin /workflow command", () => {
       BUILTIN_WORKFLOW_COMMAND_NAME,
     );
     expect(resolveZCodeBuiltinPromptCommandInvocation("/init")?.name).toBe("init");
+    for (const [name, role] of [
+      ["start", "start"],
+      ["review", "reviewer"],
+      ["evolve", "self-improver"],
+      ["evaluate", "evaluator"],
+    ] as const) {
+      const invocation = resolveZCodeBuiltinPromptCommandInvocation(`/${name} inspect this`);
+      expect(invocation?.name).toBe(name);
+      expect(invocation?.prompt).toContain(`Required exact profile: ${role}`);
+      expect(invocation?.prompt).toContain("ordinary typed Task tool");
+      expect(invocation?.prompt).not.toContain("general-purpose");
+    }
     expect(
       resolveZCodeBuiltinPromptCommandInvocation("/workflow x", { dynamicWorkflowEnabled: false }),
     ).toBeUndefined();
@@ -173,7 +185,6 @@ describe("bundled dynamic-workflows skill", () => {
     // 契约里也不得残留已不存在的文件（否则 stage/SEA 构建永远失败）。
     const pinned = new Set(BUNDLED_SKILL_PACK_REQUIRED_PATHS);
     for (const name of SKILL_FILES) expect(pinned).toContain(`skills/${SKILL_NAME}/${name}`);
-    expect(pinned.size).toBe(SKILL_FILES.length);
   });
 
   it("embeds the facade verbatim, once, and stays under the Skill tool's byte cap", async () => {

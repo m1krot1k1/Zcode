@@ -4702,6 +4702,18 @@ export class ProductProjection {
       : existing?.kind === "swarmRun"
         ? existing.childSessionIds
         : undefined;
+    const childAgentTypes = payload.childAgentTypes && childSessionIds
+      ? Object.fromEntries(
+          childSessionIds.flatMap((sessionId) => {
+            const agentType = payload.childAgentTypes?.[sessionId];
+            return typeof agentType === "string" && agentType.trim()
+              ? [[sessionId, agentType.trim().slice(0, 80)]]
+              : [];
+          }),
+        )
+      : existing?.kind === "swarmRun"
+        ? existing.childAgentTypes
+        : undefined;
     const isTerminal = payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled";
     const outcomeAcceptance =
       payload.outcomeAcceptance ??
@@ -4718,6 +4730,7 @@ export class ProductProjection {
       ...(outcomeAcceptance === undefined ? {} : { outcomeAcceptance }),
       ...(payload.taskCount === undefined ? {} : { taskCount: payload.taskCount }),
       ...(childSessionIds === undefined ? {} : { childSessionIds }),
+      ...(childAgentTypes === undefined ? {} : { childAgentTypes }),
       ...(payload.summary === undefined ? {} : { summary: payload.summary.slice(0, 500) }),
     };
     return [{ op: existing ? "row.upserted" : "row.appended", row }];

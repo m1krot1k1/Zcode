@@ -21,6 +21,7 @@ import {
   type ModelResult,
   type ModelSelection,
   type PermissionBrokerRequest,
+  type ContextSourceSnapshot,
   SessionEventType,
   SUBMIT_RESULT_TOOL_NAME,
   type SessionEvent,
@@ -35,6 +36,7 @@ import {
   createWorkflowChildSkillPort,
   type ScriptWorkflowAgentRuntimeDeps,
 } from "../src/app/script-workflow-child-runtime.js";
+import { resolveBundledSkillRoots } from "../src/app/bundled-skills.js";
 import { createProtocolBrowserControlBroker } from "../src/zcode-protocol/browser-control-broker.js";
 import type { ZCodeProtocolAgentServerContext } from "../src/zcode-protocol/server-types.js";
 import {
@@ -163,6 +165,79 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
     expect(stored.length).toBeGreaterThan(1);
     // 会话行也落在共享的 sessionStore 上（v4 冷 hydration 的前提）。
     expect(await sessionStore.getSession(actorSessionId)).toBeDefined();
+  });
+
+  it("workflow child uses the accepted snapshot without resolving a fresh context", async () => {
+    const contextSourcePort = {
+      resolveContextSources: vi.fn(async () => {
+        throw new Error("workflow child must reuse the accepted parent snapshot");
+      }),
+    };
+    const acceptedSnapshot: ContextSourceSnapshot = {
+      workingDirectory: tempRoot,
+      envInfo: {
+        cwd: tempRoot,
+        platform: "test",
+        shell: "test-shell",
+        osVersion: "test",
+        nodeVersion: "test",
+      },
+      currentDate: "2026-10-28",
+      bundledHarnessRules: [{ id: "harness-rule", content: "HARNESS_RULE_ACCEPTED" }],
+      workspaceRules: [
+        {
+          filePath: join(tempRoot, ".zcode", "rules", "accepted.mdc"),
+          fileName: "accepted.mdc",
+          globs: [],
+          alwaysApply: true,
+          appliedBy: "alwaysApply",
+          content: "WORKSPACE_RULE_ACCEPTED",
+          bytesRead: 22,
+          sizeBytes: 22,
+          truncated: false,
+        },
+      ],
+      diagnostics: [],
+    };
+    const requestTexts: string[] = [];
+    const deps = makeDeps();
+    deps.contextSourcePort = contextSourcePort as never;
+    deps.modelFactory = createTestModelFactory({
+      async generateText(request) {
+        requestTexts.push(JSON.stringify(request.messages));
+        return {
+          finishReason: "stop",
+          text: "actor done",
+          usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+        } as ModelResult;
+      },
+    });
+
+    const actorRuntime = createScriptWorkflowAgentRuntime({
+      childSessionId: actorSessionId,
+      deps,
+      initialContextSourceSnapshot: acceptedSnapshot,
+      request: { opts: {} } as never,
+      traceContext: createRootTraceContext({ sessionId: parentSessionId }),
+    });
+
+    await actorRuntime.executeTurn("use inherited context");
+
+    expect(contextSourcePort.resolveContextSources).not.toHaveBeenCalled();
+    const inheritedSnapshot = await actorRuntime.getAcceptedContextSourceSnapshot(
+      createRootTraceContext({ sessionId: actorSessionId }),
+    );
+    expect(inheritedSnapshot).toEqual(acceptedSnapshot);
+    expect(inheritedSnapshot).not.toBe(acceptedSnapshot);
+    expect(inheritedSnapshot.bundledHarnessRules).not.toBe(acceptedSnapshot.bundledHarnessRules);
+    const contextSections = actorRuntime
+      .getContextBuilder()
+      .build()
+      .sections.map((section) => section.content)
+      .join("\n");
+    expect(contextSections).toContain("HARNESS_RULE_ACCEPTED");
+    expect(contextSections).toContain("WORKSPACE_RULE_ACCEPTED");
+    expect(requestTexts.length).toBeGreaterThan(0);
   });
 
   it("转发流从 sequenceNumber 1（SessionTitleUpdated）起，保留 actor 的 sessionId", async () => {
@@ -1047,6 +1122,7 @@ describe("script workflow child runtime — 子代理的 Browser Use", () => {
       modelFactory: browserModelFactory,
       permissionService: new PermissionService(defaultPermissionConfig),
       pluginSkillRoots: [],
+      bundledSkillRoots: [],
       runtime: parentRuntime,
       runtimeConfig: {
         workingDirectory: tempRoot,
@@ -1160,7 +1236,7 @@ describe("script workflow child runtime — 子代理的技能清单", () => {
     await rm(tempRoot, { force: true, recursive: true });
   });
 
-  function skillDeps(input: { pluginSkillRoots: SkillRoot[] }) {
+  function skillDeps(input: { pluginSkillRoots: SkillRoot[]; bundledSkillRoots?: SkillRoot[] }) {
     return {
       appOptions: { env: process.env },
       configResult: {
@@ -1171,6 +1247,7 @@ describe("script workflow child runtime — 子代理的技能清单", () => {
         },
       },
       pluginSkillRoots: input.pluginSkillRoots,
+      bundledSkillRoots: input.bundledSkillRoots ?? [],
     } as unknown as ScriptWorkflowAgentRuntimeDeps;
   }
 
@@ -1184,6 +1261,7 @@ describe("script workflow child runtime — 子代理的技能清单", () => {
     );
     const port = createWorkflowChildSkillPort(
       skillDeps({
+        bundledSkillRoots: resolveBundledSkillRoots({ cliStorageRoot: join(tempRoot, "cli") }),
         pluginSkillRoots: [
           {
             path: join(PACKAGES_ROOT, "browser-use-plugin", "skills"),
@@ -1199,7 +1277,8 @@ describe("script workflow child runtime — 子代理的技能清单", () => {
     const outcome = await port!.discoverSkills({ workingDirectory: tempRoot });
     const names = outcome.skills.map((skill) => skill.name);
     expect(names).toEqual(expect.arrayContaining(["control-browser", "house-style"]));
-    // 捆绑的 dynamic-workflows 技能不给子代理：它不能起工作流。
+    expect(names).toContain("self-improvement");
+    // 其他内置技能可由 profile 按需开放；dynamic-workflows 不给子代理，因为它不能起工作流。
     expect(names).not.toContain("dynamic-workflows");
   });
 

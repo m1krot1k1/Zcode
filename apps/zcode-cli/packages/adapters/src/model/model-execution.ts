@@ -11,10 +11,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type {
   LanguageModelV3CallOptions,
+  LanguageModelV3Prompt,
   LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
 import type { ClientManagerOptions, OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
+import { createOpencodeServer } from "@opencode-ai/sdk/v2/server";
 import {
   compileModelOptionMaps,
   type CompiledModelOptionMaps,
@@ -44,6 +46,12 @@ import {
   withoutModelAuthHeaders,
   withoutModelQuerySourceHeader,
 } from "./model-request-headers.js";
+import {
+  acquireOpenCodeSocksProxyLease,
+  createOpenCodeTaskBridge,
+  findOpenCodeLoopbackPort,
+  type OpenCodeTaskBridge,
+} from "./opencode-session.js";
 
 export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible" | "opencode-sdk";
 type AiSdkModelExecutionKind = AiSdkProviderKind;
@@ -341,25 +349,95 @@ export class AiSdkModelExecution {
             workingDirectory ? { directory: workingDirectory } : undefined,
           );
         };
+        const createInvocation = async (
+          options: LanguageModelV3CallOptions,
+          executeTask: ExecuteOpenCodeTask | undefined,
+          executeSkill: ExecuteOpenCodeSkill | undefined,
+        ) => {
+          if (!executeTask && !executeSkill) {
+            return { model: createModel(), dispose: async () => {} };
+          }
+          const bridge = await createOpenCodeTaskBridge(
+            { executeTask, executeSkill },
+            options.abortSignal,
+          );
+          const invocationProvider = this.opencodeProvider as OpenCodeInvocationProvider;
+          if (!invocationProvider.createInvocationModel) {
+            await bridge.dispose();
+            throw new Error("opencode.task-bridge-unavailable");
+          }
+          try {
+            const invocation = await invocationProvider.createInvocationModel(
+              modelId,
+              getWorkingDirectory() ? { directory: getWorkingDirectory() } : {},
+              bridge,
+            );
+            let disposed = false;
+            return {
+              model: invocation.model,
+              dispose: async () => {
+                if (disposed) return;
+                disposed = true;
+                try {
+                  await bridge.dispose();
+                } finally {
+                  await invocation.dispose();
+                }
+              },
+            };
+          } catch (error) {
+            await bridge.dispose();
+            throw error;
+          }
+        };
+        const invokeOpenCode = (
+          options: LanguageModelV3CallOptions,
+          zcodeTaskEnabled: boolean,
+          zcodeSkillEnabled: boolean,
+        ) => ({
+          ...options,
+          prompt: projectOpenCodePrompt(options.prompt, zcodeTaskEnabled, zcodeSkillEnabled),
+        });
         const initialModel = createModel();
         return {
           ...initialModel,
           doGenerate: async (options: LanguageModelV3CallOptions) => {
             const workingDirectory = getWorkingDirectory();
             await assertOpenCodeWorkspaceDirectory(workingDirectory);
+            let invocation: Awaited<ReturnType<typeof createInvocation>> | undefined;
             try {
-              return await createModel(workingDirectory).doGenerate(options);
+              const executeTask = getOpenCodeTaskExecutor();
+              const executeSkill = getOpenCodeSkillExecutor();
+              invocation = await createInvocation(options, executeTask, executeSkill);
+              return await invocation.model.doGenerate(
+                invokeOpenCode(options, Boolean(executeTask), Boolean(executeSkill)),
+              );
             } catch (error) {
               throw sanitizeOpenCodeEmptyResponseError(error);
+            } finally {
+              await invocation?.dispose();
             }
           },
           doStream: async (options: LanguageModelV3CallOptions) => {
             const workingDirectory = getWorkingDirectory();
             await assertOpenCodeWorkspaceDirectory(workingDirectory);
+            let invocation: Awaited<ReturnType<typeof createInvocation>> | undefined;
             try {
-              const result = await createModel(workingDirectory).doStream(options);
-              return { ...result, stream: sanitizeOpenCodeStreamErrors(result.stream) };
+              const executeTask = getOpenCodeTaskExecutor();
+              const executeSkill = getOpenCodeSkillExecutor();
+              invocation = await createInvocation(options, executeTask, executeSkill);
+              const result = await invocation.model.doStream(
+                invokeOpenCode(options, Boolean(executeTask), Boolean(executeSkill)),
+              );
+              return {
+                ...result,
+                stream: disposeAfterStream(
+                  sanitizeOpenCodeStreamErrors(result.stream),
+                  invocation.dispose,
+                ),
+              };
             } catch (error) {
+              await invocation?.dispose();
               throw sanitizeOpenCodeEmptyResponseError(error);
             }
           },
@@ -467,6 +545,94 @@ export class AiSdkModelExecution {
   }
 }
 
+const OPENCODE_AGENT_LIST_HEADINGS = [
+  "Available named agent types for Agent/Task tools:",
+  "New named agent types are now available for Agent/Task tools:",
+] as const;
+const OPENCODE_AGENT_PROFILE_GUIDANCE = "Available ZCode agent profiles for the zcode_task tool";
+
+/**
+ * OpenCode 执行自己的工具，不能接收 ZCode 的 Agent/Skill 工具协议。
+ * 只投影发送给 OpenCode 的副本，避免把协议不兼容写回 canonical conversation history。
+ */
+export function projectOpenCodePrompt(
+  prompt: LanguageModelV3Prompt,
+  zcodeTaskEnabled = false,
+  zcodeSkillEnabled = false,
+): LanguageModelV3Prompt {
+  return prompt.map((message) => {
+    if (message.role === "system") {
+      return {
+        ...message,
+        content: projectOpenCodePromptText(message.content, zcodeTaskEnabled, zcodeSkillEnabled),
+      };
+    }
+    // 原因：历史 assistant/tool 内容是对话记录，不是协议指令；修复依据：只投影运行时 system 和 user 指令。
+    if (message.role !== "user") return message;
+    let changed = false;
+    const content = message.content.map((part) => {
+      if (part.type !== "text") return part;
+      const projected = projectOpenCodePromptText(part.text, zcodeTaskEnabled, zcodeSkillEnabled);
+      if (projected === part.text) return part;
+      changed = true;
+      return { ...part, text: projected };
+    });
+    return changed ? { ...message, content } : message;
+  });
+}
+
+function projectOpenCodePromptText(
+  value: string,
+  zcodeTaskEnabled: boolean,
+  zcodeSkillEnabled: boolean,
+): string {
+  let text = value;
+  if (zcodeSkillEnabled) {
+    text = text.replace(
+      "The following skills are available for use with the Skill tool:",
+      "The following ZCode skills are available. Load one by calling `zcode_skill` with its exact skill name; do not read skill paths directly.",
+    );
+  } else {
+    text = text.replace(
+      "The following skills are available for use with the Skill tool:",
+      "The following ZCode skills are listed for reference, but this request cannot load them because the ZCode Skill capability is unavailable. Do not read skill paths directly.",
+    );
+  }
+  // Paths are private implementation details of SkillPort; OpenCode must request a skill by name.
+  text = text.replace(/\s+\(file: [^)]+\)/gu, "");
+
+  if (zcodeTaskEnabled) {
+    text = text
+      .replace(/delegate them with Agent\./gu, "delegate them with the `zcode_task` tool.")
+      .replace(
+        /Use only agent types listed in the current Agent system-reminder,/gu,
+        "Use the `zcode_task` tool and set `subagent_type` to an exact active ZCode profile ID from the following roster; preserve its role instructions and do not use OpenCode's native `task` tool for ZCode delegation.",
+      );
+  } else {
+    text = text
+      .replace(
+        /For complex tasks, delegate them with Agent\./gu,
+        "For this request, answer directly because ZCode agent delegation is unavailable.",
+      )
+      .replace(
+        /Use only agent types listed in the current Agent system-reminder,/gu,
+        "ZCode delegation is unavailable for this request; answer directly instead of using OpenCode's native `task` tool.",
+      );
+  }
+
+  for (const heading of OPENCODE_AGENT_LIST_HEADINGS) {
+    if (!text.includes(heading)) continue;
+    text = text.replace(heading, `${OPENCODE_AGENT_PROFILE_GUIDANCE}:`);
+  }
+  if (text.includes("The following agent types are no longer available:")) {
+    text = text.replace(
+      "The following agent types are no longer available:",
+      "The following ZCode agent profiles are no longer available:",
+    );
+  }
+  return text;
+}
+
 function sanitizeOpenCodeEmptyResponseError(error: unknown): unknown {
   if (!(error instanceof Error) || !error.message.includes("OpenCode returned no response data")) {
     return error;
@@ -522,6 +688,44 @@ function sanitizeOpenCodeStreamErrors(
         await reader.cancel(reason);
       } finally {
         reader.releaseLock();
+      }
+    },
+  });
+}
+
+function disposeAfterStream(
+  stream: ReadableStream<LanguageModelV3StreamPart>,
+  dispose: () => Promise<void>,
+): ReadableStream<LanguageModelV3StreamPart> {
+  const reader = stream.getReader();
+  let cleanup: Promise<void> | undefined;
+  const release = () => {
+    cleanup ??= dispose().catch(() => undefined);
+    return cleanup;
+  };
+  return new ReadableStream<LanguageModelV3StreamPart>({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          reader.releaseLock();
+          await release();
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        reader.releaseLock();
+        await release();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        reader.releaseLock();
+        await release();
       }
     },
   });
@@ -1307,6 +1511,30 @@ export interface OpenCodeModelProviderRuntime {
   dispose(): Promise<void>;
 }
 
+interface OpenCodeInvocationProvider extends OpencodeProvider {
+  createInvocationModel?(
+    modelId: string,
+    settings: { directory?: string },
+    bridge: OpenCodeTaskBridge,
+  ): Promise<{ model: ReturnType<OpencodeProvider>; dispose(): Promise<void> }>;
+}
+
+type ExecuteOpenCodeTask = NonNullable<
+  ReturnType<typeof getCurrentModelInvocationContext>
+>["executeOpenCodeTask"];
+
+type ExecuteOpenCodeSkill = NonNullable<
+  ReturnType<typeof getCurrentModelInvocationContext>
+>["executeOpenCodeSkill"];
+
+function getOpenCodeTaskExecutor(): ExecuteOpenCodeTask | undefined {
+  return getCurrentModelInvocationContext()?.executeOpenCodeTask;
+}
+
+function getOpenCodeSkillExecutor(): ExecuteOpenCodeSkill | undefined {
+  return getCurrentModelInvocationContext()?.executeOpenCodeSkill;
+}
+
 type OpenCodeSdk = typeof import("ai-sdk-provider-opencode-sdk");
 type OpenCodeProcessSignal = "SIGINT" | "SIGTERM";
 type OpenCodeSignalListener = NodeJS.SignalsListener;
@@ -1333,6 +1561,7 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
   preferOpenCodeE2ECliOnPath();
   const e2ePortValue = process.env.ZCODE_E2E_OPENCODE_PORT?.trim();
   const e2ePort = e2ePortValue && /^\d+$/.test(e2ePortValue) ? Number(e2ePortValue) : undefined;
+  const configuredProxy = process.env.ZCODE_HTTP_PROXY?.trim();
   const listenersBeforeImport = captureOpenCodeSignalListeners();
   let sdk: OpenCodeSdk;
 
@@ -1341,21 +1570,82 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
   } finally {
     removeNewOpenCodeSignalListeners(listenersBeforeImport);
   }
+  const proxyLease = await acquireOpenCodeSocksProxyLease(configuredProxy);
 
-  const clientManager = sdk!.OpencodeClientManager.createInstance({
-    // В E2E нельзя подключаться к пользовательскому OpenCode на стандартном порту 4096.
-    ...(e2ePort && e2ePort <= 65_535 ? { port: e2ePort } : {}),
-    clientOptions: { fetch: createOpenCodeDiagnosticFetch() },
-  } satisfies ClientManagerOptions);
+  let clientManager: ReturnType<typeof sdk.OpencodeClientManager.createInstance> | undefined;
 
   try {
-    const provider = sdk!.createOpencode({ clientManager });
+    const port = e2ePort && e2ePort <= 65_535
+      ? e2ePort
+      : configuredProxy
+        ? await findOpenCodeLoopbackPort()
+        : undefined;
+    clientManager = sdk.OpencodeClientManager.createInstance({
+      // Не подключаться к уже запущенному пользовательскому OpenCode без прокси ZCode.
+      ...(port ? { port } : {}),
+      clientOptions: { fetch: createOpenCodeDiagnosticFetch() },
+    } satisfies ClientManagerOptions);
+    const provider = sdk!.createOpencode({ clientManager }) as OpenCodeInvocationProvider;
+    provider.createInvocationModel = async (modelId, settings, bridge) => {
+      let invocationServer: Awaited<ReturnType<typeof createOpencodeServer>> | undefined;
+      let invocationManager:
+        | ReturnType<typeof sdk.OpencodeClientManager.createInstance>
+        | undefined;
+      let invocationProvider: OpencodeProvider | undefined;
+      try {
+        // OpenCode rejects port 0 when explicitly passed; select a loopback port and
+        // let the SDK own this invocation's server. The bridge endpoint itself stays
+        // bound to loopback and requires a one-time bearer lease.
+        const invocationPort = await findOpenCodeLoopbackPort();
+        invocationServer = await createOpencodeServer({
+          hostname: "127.0.0.1",
+          port: invocationPort,
+          timeout: 20_000,
+          config: {
+            tools: { task: false },
+            mcp: {
+              zcode: {
+                type: "remote",
+                url: bridge.url,
+                enabled: true,
+                headers: { Authorization: `Bearer ${bridge.bearerToken}` },
+              },
+            },
+          },
+        });
+        invocationManager = sdk.OpencodeClientManager.createInstance({
+          baseUrl: invocationServer.url,
+          autoStartServer: false,
+          clientOptions: { fetch: createOpenCodeDiagnosticFetch() },
+        } satisfies ClientManagerOptions);
+        invocationProvider = sdk.createOpencode({ clientManager: invocationManager });
+        return {
+          model: invocationProvider(modelId, settings),
+          dispose: async () => {
+            try {
+              await invocationProvider?.dispose();
+            } finally {
+              invocationServer?.close();
+            }
+          },
+        };
+      } catch {
+        await invocationProvider?.dispose().catch(() => undefined);
+        await invocationManager?.dispose().catch(() => undefined);
+        invocationServer?.close();
+        throw new Error("opencode.invocation-server-start-failed");
+      }
+    };
     const disposeProvider = provider.dispose.bind(provider);
     let disposed = false;
     const dispose = async () => {
       if (disposed) return;
       disposed = true;
-      await disposeProvider();
+      try {
+        await disposeProvider();
+      } finally {
+        await proxyLease?.dispose();
+      }
     };
     provider.dispose = dispose;
 
@@ -1364,7 +1654,8 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
       dispose,
     };
   } catch (error) {
-    await clientManager.dispose();
+    await clientManager?.dispose();
+    await proxyLease?.dispose();
     throw error;
   }
 }

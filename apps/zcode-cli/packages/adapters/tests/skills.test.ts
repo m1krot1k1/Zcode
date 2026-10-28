@@ -265,6 +265,59 @@ describe("NodeSkillAdapter", () => {
     }
   });
 
+  it("ignores .cursor skills and discovers only native .zcode skills", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-cursor-skills-"));
+    const nativeSkill = join(dir, ".zcode", "skills", "shared-skill");
+    const cursorSkill = join(dir, ".cursor", "skills", "shared-skill");
+    const cursorOnlySkill = join(dir, ".cursor", "skills", "cursor-only");
+    try {
+      await mkdir(nativeSkill, { recursive: true });
+      await mkdir(cursorSkill, { recursive: true });
+      await mkdir(cursorOnlySkill, { recursive: true });
+      await writeSkill(nativeSkill, "shared-skill", "Native ZCode version");
+      await writeSkill(cursorSkill, "shared-skill", "Cursor-compatible version");
+      await writeSkill(cursorOnlySkill, "cursor-only", "No Cursor app required");
+
+      const adapter = createNodeSkillAdapter({ homeDirectory: join(dir, "home") });
+      const outcome = await adapter.discoverSkills({ workingDirectory: dir });
+      const loaded = await adapter.loadSkill({ name: "shared-skill", workingDirectory: dir });
+
+      expect(outcome.skills.map((skill) => skill.name)).toEqual(["shared-skill"]);
+      expect(loaded.metadata.description).toBe("Native ZCode version");
+      expect(outcome.diagnostics).toEqual([]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores .cursor skills in both workspace and user roots", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-cursor-user-scope-"));
+    const homeDirectory = join(dir, "home");
+    const workspaceDirectory = join(dir, "workspace");
+    const homeCursorSkill = join(homeDirectory, ".cursor", "skills", "home-cursor-skill");
+    const workspaceCursorSkill = join(
+      workspaceDirectory,
+      ".cursor",
+      "skills",
+      "workspace-cursor-skill",
+    );
+
+    try {
+      await mkdir(homeCursorSkill, { recursive: true });
+      await mkdir(workspaceCursorSkill, { recursive: true });
+      await writeSkill(homeCursorSkill, "home-cursor-skill", "Not part of project imports");
+      await writeSkill(workspaceCursorSkill, "workspace-cursor-skill", "Workspace import");
+
+      const adapter = createNodeSkillAdapter({ homeDirectory });
+      const outcome = await adapter.discoverSkills({ workingDirectory: workspaceDirectory });
+
+      expect(outcome.skills.map((skill) => skill.name)).not.toContain("workspace-cursor-skill");
+      expect(outcome.skills.map((skill) => skill.name)).not.toContain("home-cursor-skill");
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("loads plugin skills by fully qualified plugin alias", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-skills-"));
     const pluginRoot = join(dir, "superpowers");

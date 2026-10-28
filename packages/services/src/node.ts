@@ -304,7 +304,9 @@ export {
 export { createNodeApiClient, NodeApiClient } from "./providers/api/nodeApiClient.js";
 export {
   createHostApiNetworkTransport,
+  testProxyConnectivity,
   type HostApiNetworkTransport,
+  type ProxyConnectivityResult,
 } from "./providers/api/nodeApiNetwork.js";
 export {
   buildRuntimeProcessEnvPatch,

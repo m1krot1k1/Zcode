@@ -702,6 +702,14 @@ export interface IPlatformService {
   /** 打开系统文件选择框，返回选中文件路径或 null */
   selectFile(): Promise<string | null>;
 
+  /** Desktop-only: проверить указанный proxy endpoint и вернуть наблюдаемый внешний IP. */
+  testProxyConnectivity?(
+    proxyEndpoint: string,
+  ): Promise<
+    | { ok: true; outboundIp: string }
+    | { ok: false; reason: "invalid_proxy" | "connection_failed" | "timeout" | "invalid_response" }
+  >;
+
   /** 打开系统多文件选择框，返回选中的文件路径；取消时返回空数组 */
   selectFiles?(): Promise<string[]>;
 

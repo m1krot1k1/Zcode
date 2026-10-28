@@ -45,12 +45,14 @@ describe("OpenCode CLI в обычном Composer", () => {
       this.timeout(180_000);
       const marker = `E2E_OPENCODE_COMPOSER_${Date.now()}`;
       const artifactDir = join(
-        process.env.ZCODE_E2E_ARTIFACT_DIR ?? join(process.cwd(), ".e2e-artifacts"),
+        process.env.ZCODE_E2E_ARTIFACT_DIR ??
+          join(process.cwd(), ".e2e-artifacts"),
         CASE_NAME,
       );
       // Трасса живёт вне временного E2E-профиля, который удаляется в after-hook.
       const tracePath = join(
-        process.env.ZCODE_E2E_ARTIFACT_DIR ?? join(process.cwd(), ".e2e-artifacts"),
+        process.env.ZCODE_E2E_ARTIFACT_DIR ??
+          join(process.cwd(), ".e2e-artifacts"),
         E2E_OPENCODE_COMPOSER_TRACE_FILE,
       );
 
@@ -61,52 +63,82 @@ describe("OpenCode CLI в обычном Composer", () => {
       await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
       await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15_000 });
       await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "modelProvider"));
-      await clickTestIdByDom(testId(TID_MODEL_PROVIDER_NAV_ITEM, "agent-integration:opencode-cli"));
+      await clickTestIdByDom(
+        testId(TID_MODEL_PROVIDER_NAV_ITEM, "agent-integration:opencode-cli"),
+      );
       const enabledSwitchTestId = "opencode-cli-enabled-switch";
       const enabledSwitch = $(`[data-testid="${enabledSwitchTestId}"]`);
       await enabledSwitch.waitForDisplayed({ timeout: 15_000 });
-      const initialEnabled = (await enabledSwitch.getAttribute("aria-checked")) === "true";
+      const initialEnabled =
+        (await enabledSwitch.getAttribute("aria-checked")) === "true";
       if (initialEnabled) await clickTestIdByWebDriver(enabledSwitchTestId);
       await browser.waitUntil(
-        async () => (await enabledSwitch.getAttribute("aria-checked")) === "false",
-        { timeout: 10_000, timeoutMsg: "OpenCode CLI не выключился в настройках" },
+        async () =>
+          (await enabledSwitch.getAttribute("aria-checked")) === "false",
+        {
+          timeout: 10_000,
+          timeoutMsg: "OpenCode CLI не выключился в настройках",
+        },
       );
       await clickTestIdByWebDriver(enabledSwitchTestId);
       await browser.waitUntil(
-        async () => (await enabledSwitch.getAttribute("aria-checked")) === "true",
-        { timeout: 10_000, timeoutMsg: "OpenCode CLI не включился повторно в настройках" },
+        async () =>
+          (await enabledSwitch.getAttribute("aria-checked")) === "true",
+        {
+          timeout: 10_000,
+          timeoutMsg: "OpenCode CLI не включился повторно в настройках",
+        },
       );
       await clickTestIdByDom(TID_SETTINGS_BACK_BUTTON);
       await browser.waitUntil(
-        async () => browser.execute(() => !document.querySelector('[data-testid="settings-page"]')),
+        async () =>
+          browser.execute(
+            () => !document.querySelector('[data-testid="settings-page"]'),
+          ),
         { timeout: 15_000, timeoutMsg: "Не вернулись из настроек в чат" },
       );
 
       await browser.waitUntil(
         async () =>
           browser.execute(
-            (testId) => Boolean(document.querySelector(`[data-testid="${testId}"]`)),
+            (testId) =>
+              Boolean(document.querySelector(`[data-testid="${testId}"]`)),
             TID_CHAT_MODEL_SELECT_TRIGGER,
           ),
-        { timeout: 30_000, timeoutMsg: "OpenCode CLI не появился в обычном Composer" },
+        {
+          timeout: 30_000,
+          timeoutMsg: "OpenCode CLI не появился в обычном Composer",
+        },
       );
-      await browser.$(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`).click();
+      await browser
+        .$(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`)
+        .click();
       // Composer 默认展示当前 provider 的模型；OpenCode 目录在 provider submenu 里。
       // 点中 provider 后弹层保持打开，并自动选中该目录的第一个模型。
-      const providerTrigger = browser.$('[data-testid="composer-provider-trigger"]');
+      const providerTrigger = browser.$(
+        '[data-testid="composer-provider-trigger"]',
+      );
       await providerTrigger.waitForClickable({
         timeout: 30_000,
         timeoutMsg: "Composer provider trigger не появился",
       });
       await providerTrigger.click();
-      const providerGroup = browser.$('[data-model-provider-key="registry-provider:opencode"]');
+      const providerGroup = browser.$(
+        '[data-model-provider-key="registry-provider:opencode"]',
+      );
       await providerGroup.waitForClickable({
         timeout: 30_000,
         timeoutMsg: "OpenCode CLI provider group не появился в Composer",
       });
       await providerGroup.click();
-      const expectedModelValue = encodeCustomModelValue("opencode", E2E_OPENCODE_MODEL_ID);
-      const modelItemTestId = testId(TID_CHAT_MODEL_SELECT_ITEM, expectedModelValue);
+      const expectedModelValue = encodeCustomModelValue(
+        "opencode",
+        E2E_OPENCODE_MODEL_ID,
+      );
+      const modelItemTestId = testId(
+        TID_CHAT_MODEL_SELECT_ITEM,
+        expectedModelValue,
+      );
       const modelItem = browser.$(`[data-testid="${modelItemTestId}"]`);
       await modelItem.waitForExist({
         timeout: 30_000,
@@ -124,13 +156,114 @@ describe("OpenCode CLI в обычном Composer", () => {
             TID_CHAT_MODEL_SELECT_TRIGGER,
             expectedModelValue,
           ),
-        { timeout: 10_000, timeoutMsg: "Composer не сохранил выбор OpenCode-модели" },
+        {
+          timeout: 10_000,
+          timeoutMsg: "Composer не сохранил выбор OpenCode-модели",
+        },
       );
+      const swarmToggle = browser.$('[data-testid="v4-composer-swarm-toggle"]');
+      await swarmToggle.waitForDisplayed({ timeout: 10_000 });
+      expect(await swarmToggle.getAttribute("aria-pressed")).toBe("false");
       await setV4ComposerText(marker);
-      await waitForV4ComposerText(marker, "Composer не подготовил marker к отправке");
+      await waitForV4ComposerText(
+        marker,
+        "Composer не подготовил marker к отправке",
+      );
       await clickV4Send();
 
       await waitForV4AssistantMessageContaining(E2E_OPENCODE_REPLY, 45_000);
+      const ordinaryTrace = (await readFile(tracePath, "utf8"))
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as { event: string; prompt?: string },
+        );
+      const ordinaryMarkerRequests = ordinaryTrace.filter(
+        (entry) => entry.event === "prompt" && entry.prompt?.includes(marker),
+      );
+      assert.equal(
+        ordinaryMarkerRequests.length,
+        1,
+        "Обычная отправка OpenCode должна сделать один прямой запрос без planner",
+      );
+      assert.equal(
+        ordinaryTrace.some(
+          (entry) =>
+            entry.event === "prompt" &&
+            entry.prompt?.includes(
+              "Decide whether this task needs independent parallel work",
+            ),
+        ),
+        false,
+        "Обычный чат не должен запускать скрытую декомпозицию",
+      );
+
+      const swarmMarker = `E2E_OPENCODE_SWARM_ROOT_${Date.now()}`;
+      await setV4ComposerText(swarmMarker);
+      await waitForV4ComposerText(
+        swarmMarker,
+        "OpenCode swarm marker не появился в Composer",
+      );
+      await swarmToggle.click();
+      await browser.waitUntil(
+        async () => (await swarmToggle.getAttribute("aria-pressed")) === "true",
+        {
+          timeout: 5_000,
+          timeoutMsg: "Явный переключатель OpenCode swarm не включился",
+        },
+      );
+      await clickV4Send();
+      await waitForV4AssistantMessageContaining(
+        "E2E_OPENCODE_SWARM_SYNTHESIS_DONE",
+        90_000,
+      );
+      const swarmEvidence = await browser.waitUntil(
+        async () =>
+          browser.execute(() => {
+            const row = Array.from(
+              document.querySelectorAll<HTMLElement>(
+                '[data-row-kind="swarmRun"]',
+              ),
+            ).find(
+              (candidate) =>
+                candidate.getAttribute("data-status") === "completed" &&
+                candidate.querySelectorAll(
+                  'ul li > button[data-testid^="v4-subagent-open-side-pane-"]',
+                ).length === 2,
+            );
+            if (!row) return null;
+            return {
+              status: row.dataset.status,
+              runId: row.dataset.swarmRunId,
+              childSessionIds: Array.from(
+                row.querySelectorAll<HTMLButtonElement>(
+                  'ul li > button[data-testid^="v4-subagent-open-side-pane-"]',
+                ),
+              )
+                .map((button) =>
+                  button.dataset.testid?.replace(
+                    /^v4-subagent-open-side-pane-/u,
+                    "",
+                  ),
+                )
+                .filter(Boolean),
+            };
+          }),
+        {
+          interval: 150,
+          timeout: 60_000,
+          timeoutMsg:
+            "OpenCode model planner не породил две реальные ZCode child sessions",
+        },
+      );
+      expect(swarmEvidence).toMatchObject({
+        status: "completed",
+        runId: expect.stringMatching(/^swarm_/u),
+      });
+      expect(swarmEvidence?.childSessionIds).toHaveLength(2);
+      expect(new Set(swarmEvidence?.childSessionIds).size).toBe(2);
 
       const traceRaw = await readFile(tracePath, "utf8");
       const trace = traceRaw
@@ -150,7 +283,10 @@ describe("OpenCode CLI в обычном Composer", () => {
       );
       // Раньше canned-ответ мог пройти тест без trace и без запроса к OpenCode.
       assert.ok(promptTrace, "mock OpenCode не получил отправленный marker");
-      const [expectedProviderID, expectedModelID] = E2E_OPENCODE_MODEL_ID.split("/", 2);
+      const [expectedProviderID, expectedModelID] = E2E_OPENCODE_MODEL_ID.split(
+        "/",
+        2,
+      );
       assert.deepEqual(promptTrace.model, {
         providerID: expectedProviderID,
         modelID: expectedModelID,
@@ -158,7 +294,9 @@ describe("OpenCode CLI в обычном Composer", () => {
 
       await mkdir(artifactDir, { recursive: true });
       await writeFile(join(artifactDir, "composer-trace.jsonl"), traceRaw);
-      await browser.saveScreenshot(join(artifactDir, "opencode-composer-reply.png"));
+      await browser.saveScreenshot(
+        join(artifactDir, "opencode-composer-reply.png"),
+      );
     },
   );
 });

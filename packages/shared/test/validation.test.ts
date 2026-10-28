@@ -636,20 +636,24 @@ describe("hostResponseMessageSchema", () => {
   it("accepts explicit HTTP proxy and custom CA settings", () => {
     const parsed = appSettingsSchema.parse({
       httpProxy: "http://127.0.0.1:7890",
+      httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
       httpProxyNoProxy: "localhost,127.0.0.1",
       httpProxyCaCertPath: "/tmp/root-ca.pem",
     });
     const patch = appSettingsPatchSchema.parse({
       httpProxy: "http://127.0.0.1:7890",
+      httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
       httpProxyNoProxy: "localhost,127.0.0.1",
       httpProxyCaCertPath: "/tmp/root-ca.pem",
     });
 
     expect(parsed.httpProxy).toBe("http://127.0.0.1:7890");
+    expect(parsed.httpProxyList).toBe("http://127.0.0.1:7890\nsocks5://127.0.0.1:1080");
     expect(parsed.httpProxyNoProxy).toBe("localhost,127.0.0.1");
     expect(parsed.httpProxyCaCertPath).toBe("/tmp/root-ca.pem");
     expect(patch.httpProxyNoProxy).toBe("localhost,127.0.0.1");
     expect(patch.httpProxyCaCertPath).toBe("/tmp/root-ca.pem");
+    expect(patch.httpProxyList).toBe("http://127.0.0.1:7890\nsocks5://127.0.0.1:1080");
   });
 
   it("defaults the embedded Browser insecure certificate switch to off and accepts patches", () => {

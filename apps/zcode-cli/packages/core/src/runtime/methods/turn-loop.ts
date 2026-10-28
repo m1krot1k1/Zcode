@@ -1,4 +1,3 @@
-import { getTurnTools } from "./turn-tool-visibility.js";
 import { refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 import { appendRuntimeAgentListing } from "../helpers/agent-listing.js";
 import { beginLocalTurnPreparation } from "@zcode/contracts";
@@ -31,6 +30,7 @@ import { persistRuntimeReminderMessage } from "./runtime-reminder-persistence.js
 import { buildProjectionAnchor } from "./projection-anchor.js";
 import {
   evaluateRapidRefill,
+  getTurnTools,
   MAX_CONSECUTIVE_RAPID_REFILLS,
   RAPID_REFILL_TOOL_TURN_THRESHOLD,
   recordCompactHistoryRound,

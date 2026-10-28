@@ -292,9 +292,12 @@ export class ScriptWorkflowRuntime {
       },
       sessionId: childSessionId,
     });
+    const initialContextSourceSnapshot =
+      await this.deps.runtime.getAcceptedContextSourceSnapshot(childTraceContext);
     const childRuntime = createScriptWorkflowAgentRuntime({
       childSessionId,
       deps: this.deps,
+      initialContextSourceSnapshot,
       request: input,
       traceContext: childTraceContext,
     });

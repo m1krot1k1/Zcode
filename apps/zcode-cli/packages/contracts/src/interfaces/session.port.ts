@@ -330,8 +330,8 @@ export interface TurnInputIntentMetadata {
   /** Для legacy-записей отсутствие поля означает обычный маршрут ZCode. */
   executionRoute?: TurnInputExecutionRouteMetadata;
   planEnabled?: boolean;
-  /** Необязательная одноразовая оркестрация; отсутствие сохраняет обычный turn. */
-  orchestrationMode?: "swarm";
+  /** Одноразовая автоматическая декомпозиция или явный рой; отсутствие сохраняет обычный turn. */
+  orchestrationMode?: "auto" | "swarm";
   conversationQuotes?: Array<{
     text: string;
     path?: string;

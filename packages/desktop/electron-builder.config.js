@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Electron Builder config keeps related packaging hooks together so build order stays explicit. */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -11,7 +11,11 @@ import { noticesFileName, stageElectronNotices } from "../../scripts/third-party
 import { resolveMacReleaseBuildSettings } from "../../scripts/macos-release-security.mjs";
 import { resolveNativeSearchReleasePlan } from "../../scripts/native-search-tools-config.mjs";
 import { getBuildMetadata } from "./scripts/build-metadata.mjs";
-import { collectRuntimeModuleClosureEntries } from "./scripts/runtime-dependency-closure.mjs";
+import {
+  collectExternalRuntimeModuleNames,
+  collectRuntimeModuleClosureEntries,
+  copyRuntimeModulePackage,
+} from "./scripts/runtime-dependency-closure.mjs";
 import {
   copyNodePtyRuntimePackage,
   resolvePackagedNodePtyPrebuildPath,
@@ -122,6 +126,13 @@ const REQUIRED_ASAR_RUNTIME_MODULES = [
   // electron-builder 产物又可能漏掉 hoisted 的 undici，最终 mac 安装包启动即报 Cannot find module "undici"。
   // 这里把 undici 和其他兜底依赖一样强制注入 app.asar，避免用户在已安装应用里主进程直接崩溃。
   "undici",
+  // Bugfix：main/host 将 yaml 外置以避免 Electron ESM 动态加载崩溃；声明直接依赖仍不保证
+  // electron-builder 会将其放进 app.asar。缺少 yaml 会让已安装应用启动时触发 ERR_MODULE_NOT_FOUND。
+  // 纳入 afterPack 注入闭包，并与 bundle.mjs 的最终产物校验保持一致。
+  "yaml",
+  // Bugfix：electron-builder 的 pnpm collector 会漏掉 main entry 的 ARMS ESM 依赖，
+  // 导致应用启动时报 Cannot find package '@arms/rum-electron'。显式列入注入根。
+  "@arms/rum-electron",
   // node-forge 一直只写在 bundle.mjs 的校验名单里，靠 electron-builder 自己打进 app.asar；
   // 这与 yauzl 漏 pend 是同一类隐患——校验要求的模块必须有人负责补齐。node-forge 无子依赖，
   // 已在产物里时 afterPack 扫描会跳过它，不改变现有打包结果。
@@ -315,6 +326,21 @@ function normalizeAsarEntry(entry) {
   return entry.trim().replaceAll("\\", "/");
 }
 
+function collectBundledExternalRuntimeModules() {
+  const sources = [];
+  const roots = ["main", "host", "scheduler"].map((name) => resolve(desktopPackageRoot, "out", name));
+  const visit = (directory) => {
+    if (!existsSync(directory)) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = resolve(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath);
+      else if (entry.isFile() && entry.name.endsWith(".js")) sources.push(readFileSync(entryPath, "utf8"));
+    }
+  };
+  for (const root of roots) visit(root);
+  return collectExternalRuntimeModuleNames(sources);
+}
+
 function resolveMissingRuntimeModules(appAsarPath) {
   const asarEntries = runAsarCommandAndReadStdout(["list", appAsarPath])
     .split("\n")
@@ -323,7 +349,7 @@ function resolveMissingRuntimeModules(appAsarPath) {
   const asarEntrySet = new Set(asarEntries);
 
   const runtimeModules = collectRuntimeModuleClosureEntries(
-    REQUIRED_ASAR_RUNTIME_MODULES,
+    [...new Set([...REQUIRED_ASAR_RUNTIME_MODULES, ...collectBundledExternalRuntimeModules()])],
     runtimeModuleLookupRoots,
   );
   const resolvableRuntimeModules = runtimeModules.filter((entry) => {
@@ -420,7 +446,7 @@ async function injectHoistedRuntimeModulesIntoAsar(context) {
             targetPlatformKey: targetPlatform.key,
           });
         } else {
-          cpSync(sourceModulePath, targetModulePath, { recursive: true });
+          copyRuntimeModulePackage(sourceModulePath, targetModulePath);
         }
       }
     });

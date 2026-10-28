@@ -17,6 +17,7 @@ import type { ModelToolContract, SubagentRunOptions } from "@zcode/contracts";
 import type { DrainedPendingInputDiagnostics, ModelExecutionContext } from "../types.js";
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
+import type { AgentRuntimeInternal } from "../internal.js";
 
 export type PendingStreamRecoveryRequest = ModelStreamRecoveryStatus;
 
@@ -36,6 +37,37 @@ export const OFF_PEAK_MUTATION_TOOL_NAMES = OFF_PEAK_EXECUTION_TOOL_DENYLIST;
 // 闲时派发 init 段 traceId 无固定前缀，只有 resume 段是 `${offPeakTaskId}:resume:*`
 // （offpeak- 开头）；前缀只是 resume 兜底信号，主信号必须是显式 offPeakTaskId。
 const OFF_PEAK_QUERY_ID_PREFIX = "offpeak-";
+
+export function getTurnTools(runtime: AgentRuntimeInternal, state: RegularTurnLoopState) {
+  if (state.automationCreateLimitReached) return [];
+  const disallowed = buildTurnDisallowedTools(state);
+  const subagentsDisabled = runtime.config.subagents?.enabled === false;
+  if (!disallowed && !subagentsDisabled) return runtime.getTools(state.model);
+  const effectiveDisallowed = new Set(disallowed ?? []);
+  if (subagentsDisabled) {
+    // 修复依据：禁用子代理时 Agent 隐藏但别名 Task 仍可能进入模型工具集，导致误触发委派与 agent listing。
+    effectiveDisallowed.add("Agent");
+    effectiveDisallowed.add("Task");
+  }
+  const tools = runtime.getTools(state.model);
+  return tools.filter((tool) => !effectiveDisallowed.has(tool.name));
+}
+
+function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
+  const tools = new Set(state.toolDisallowlist ?? []);
+  if (tools.has("Agent") || tools.has("Task")) {
+    // Agent 与 Task 是同一委派能力的两个入口，逐个隐藏会留下绕过禁用项的别名。
+    tools.add("Agent");
+    tools.add("Task");
+  }
+  if (isAutomationMutationRestrictedTurn(state)) {
+    for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) tools.add(toolName);
+  }
+  if (isOffPeakCreateRestrictedTurn(state)) {
+    for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) tools.add(toolName);
+  }
+  return tools.size > 0 ? tools : null;
+}
 
 export interface CompactLoopTracking {
   consecutiveRapidRefills: number;

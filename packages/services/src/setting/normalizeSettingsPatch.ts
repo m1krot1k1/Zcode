@@ -46,6 +46,17 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     normalizedPatch.httpProxy = trimmedHttpProxy.length > 0 ? trimmedHttpProxy : undefined;
   }
 
+  if ("httpProxyList" in normalizedPatch && typeof normalizedPatch.httpProxyList === "string") {
+    // Список хранит один URL на строку; нормализуем пробелы и пустые строки до записи,
+    // не превращая его в routing policy — маршрутизатор по-прежнему читает только httpProxy.
+    const normalizedProxyList = normalizedPatch.httpProxyList
+      .split(/\r?\n/u)
+      .map((proxy) => proxy.trim())
+      .filter(Boolean)
+      .join("\n");
+    normalizedPatch.httpProxyList = normalizedProxyList.length > 0 ? normalizedProxyList : undefined;
+  }
+
   if (
     "httpProxyNoProxy" in normalizedPatch &&
     typeof normalizedPatch.httpProxyNoProxy === "string"

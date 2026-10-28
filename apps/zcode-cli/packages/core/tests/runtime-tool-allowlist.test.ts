@@ -11,6 +11,7 @@ import {
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   RESUME_WORKFLOW_RUN_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
+  TaskInputSchema,
 } from "@zcode/contracts";
 import { createSessionId } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
@@ -23,6 +24,11 @@ import {
 } from "../src/runtime/helpers/tool-allowlist.js";
 import { registerBuiltInTools } from "../src/tool/handlers/index.js";
 import { createToolRegistry } from "../src/tool/registry.js";
+import {
+  buildSubagentChildDisallowRules,
+  filterSubagentChildToolNames,
+  isToolAllowedByParentAllowlist,
+} from "../src/subagent/tool-policy.js";
 import type { AgentRuntimeConfig } from "../src/runtime/types.js";
 
 function config(patch: Partial<AgentRuntimeConfig>): AgentRuntimeConfig {
@@ -250,6 +256,79 @@ describe("registerBuiltInTools：动态工作流灰度门", () => {
       }
     },
   );
+});
+
+describe("Task alias provider visibility", () => {
+  it("exposes the configured Task alias in the root provider schema", () => {
+    const root = createToolRegistry();
+    registerBuiltInTools(root, {
+      includeAgent: true,
+      includeTaskAlias: true,
+      allowedTools: ["Agent", "Task"],
+    });
+    expect(root.toContracts().map((tool) => tool.name)).toContain("Agent");
+    expect(root.toContracts().map((tool) => tool.name)).toContain("Task");
+
+    const child = createToolRegistry();
+    registerBuiltInTools(child, {
+      includeAgent: true,
+      includeTaskAlias: true,
+      allowedTools: ["Read", "Task"],
+    });
+    expect(child.toContracts().map((tool) => tool.name)).toContain("Task");
+    expect(child.toContracts().map((tool) => tool.name)).not.toContain("Agent");
+  });
+
+  it.each([
+    { taskType: undefined, visible: true },
+    { taskType: "interactive" as const, visible: true },
+    { taskType: "fork" as const, visible: true },
+    { taskType: "selection_side_chat" as const, visible: true },
+    { taskType: "subagent_child" as const, visible: true },
+    { taskType: "workflow_child" as const, visible: false },
+    { taskType: "nested_workflow_child" as const, visible: false },
+  ])("runtime taskType $taskType controls Task exposure", ({ taskType, visible }) => {
+    const registry = createToolRegistry();
+    new AgentRuntime(
+      createSessionId(`task-alias-${taskType ?? "default"}`),
+      taskType === undefined ? {} : { taskType },
+      {
+        eventStore: createTestSessionEventStore(),
+        subagentPort: {} as never,
+        toolRegistry: registry,
+      },
+    );
+    expect(registry.toContracts().some((tool) => tool.name === "Task")).toBe(visible);
+  });
+
+  it("requires an exact subagent_type at the Task schema and handler boundary", async () => {
+    const child = createToolRegistry();
+    registerBuiltInTools(child, {
+      includeAgent: true,
+      includeTaskAlias: true,
+      allowedTools: ["Task"],
+    });
+    const entry = child.get("Task");
+    expect((entry!.inputSchema as { required?: string[] }).required).toContain("subagent_type");
+    expect(TaskInputSchema.safeParse({ description: "Inspect", prompt: "Inspect the runtime" }).success).toBe(false);
+    await expect(
+      entry!.handler({ description: "Inspect", prompt: "Inspect the runtime" }, {} as never),
+    ).rejects.toThrow();
+  });
+});
+
+describe("subagent Agent/Task alias policy", () => {
+  it.each(["Agent", "Task"])("a %s disallow closes both dispatch aliases", (denied) => {
+    const rules = buildSubagentChildDisallowRules([denied]);
+    expect(filterSubagentChildToolNames(["Agent", "Task", "Read"], rules)).toEqual(["Read"]);
+  });
+
+  it("intersects explicit child aliases with the parent capability without widening it", () => {
+    expect(isToolAllowedByParentAllowlist("Task", ["Agent", "Read"])).toBe(true);
+    expect(isToolAllowedByParentAllowlist("Agent", ["Task", "Read"])).toBe(true);
+    expect(isToolAllowedByParentAllowlist("Task", ["Read"])).toBe(false);
+    expect(isToolAllowedByParentAllowlist("Bash", ["Agent", "Read"])).toBe(false);
+  });
 });
 
 // 灰度门从 runtimeConfig 走到注册表的这一跳（runtime-tools.ts）：与 off-peak 不同，

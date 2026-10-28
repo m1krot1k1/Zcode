@@ -8,8 +8,9 @@ import {
   BashInputJsonSchema,
   BashOutputJsonSchema,
   CoreErrorType,
+  TaskInputSchema,
 } from "@zcode/contracts";
-import { agentToolEntry } from "../src/tool/handlers/agent.js";
+import { agentToolEntry, taskToolEntry } from "../src/tool/handlers/agent.js";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
 import { globToolEntry } from "../src/tool/handlers/glob.js";
@@ -623,6 +624,7 @@ describe("tool contract declarations", () => {
       {
         description: "scan cache",
         prompt: "scan cache",
+        subagent_type: "researcher",
         run_in_background: true,
       },
       {
@@ -634,6 +636,7 @@ describe("tool contract declarations", () => {
       {
         description: "scan cache",
         prompt: "scan cache",
+        subagent_type: "researcher",
         run_in_background: true,
       },
       {
@@ -644,6 +647,49 @@ describe("tool contract declarations", () => {
 
     expect(launches[0]?.callerCanReadOutputFile).toBe(false);
     expect(launches[1]?.callerCanReadOutputFile).toBe(true);
+  });
+
+  it.each([
+    ["Agent", agentToolEntry],
+    ["Task", taskToolEntry],
+  ] as const)("rejects internal compatibility roles through %s before child admission", async (_name, entry) => {
+    let launchCount = 0;
+    const context = {
+      abortSignal: new AbortController().signal,
+      availableAgentTypes: ["implementer", "reviewer"],
+      sessionId: "sess_parent",
+      toolCallId: "toolu_agent_compat",
+      traceId: "trace_parent",
+      workingDirectory: "/workspace",
+      workspaceRoot: "/workspace",
+      subagentPort: {
+        async launch() {
+          launchCount += 1;
+          return {};
+        },
+      },
+    };
+    await expect(
+      entry.handler(
+        {
+          description: "delegate task",
+          prompt: "do the task",
+          subagent_type: "general-purpose",
+        },
+        context as any,
+      ),
+    ).rejects.toThrow("Choose one exact active role ID: implementer, reviewer");
+    expect(launchCount).toBe(0);
+
+    await entry.handler(
+      {
+        description: "delegate task",
+        prompt: "do the task",
+        subagent_type: "general-purpose",
+      },
+      { ...context, availableAgentTypes: ["general-purpose"] } as any,
+    );
+    expect(launchCount).toBe(1);
   });
 
   it("passes the active Loop Model to an Agent child that has no execution override", async () => {
@@ -660,6 +706,7 @@ describe("tool contract declarations", () => {
       {
         description: "review current loop",
         prompt: "inherit the parent model",
+        subagent_type: "reviewer",
       },
       {
         abortSignal: new AbortController().signal,
@@ -953,8 +1000,16 @@ describe("tool contract declarations", () => {
     expect(agentRegistry.has("Task")).toBe(true);
     expect(agentRegistry.toContracts().map((tool) => tool.name)).toContain("Agent");
     expect(agentRegistry.toContracts().map((tool) => tool.name)).not.toContain("Task");
-    expect(agentRegistry.get("Task")?.handler).toBe(agentRegistry.get("Agent")?.handler);
-    expect(agentRegistry.get("Task")?.inputSchema).toBe(agentRegistry.get("Agent")?.inputSchema);
+    expect(agentRegistry.get("Task")?.handler).not.toBe(agentRegistry.get("Agent")?.handler);
+    expect(agentRegistry.get("Task")?.inputSchema).not.toBe(
+      agentRegistry.get("Agent")?.inputSchema,
+    );
+    expect(getSchemaPath(agentRegistry.get("Task")?.inputSchema, ["required"])).toContain(
+      "subagent_type",
+    );
+    expect(
+      TaskInputSchema.safeParse({ description: "Inspect", prompt: "Inspect the runtime" }).success,
+    ).toBe(false);
     expect(agentRegistry.get("Task")?.permission?.permission).toBe("subagent");
     expect(agentRegistry.get("Agent")?.metadata.concurrentSafe).toBe(true);
     expect(agentRegistry.get("Task")?.metadata.concurrentSafe).toBe(true);
@@ -1122,7 +1177,7 @@ describe("tool contract declarations", () => {
     );
     expect(agentInput.properties.prompt.description).toBe("The task for the agent to perform");
     expect(agentInput.properties.subagent_type.description).toBe(
-      "The type of specialized agent to use for this task",
+      "Required exact ID of an active agent profile listed in the current conversation",
     );
     expect(agentInput.properties.run_in_background.description).toBe(
       "Set to true to run this agent in the background. You will be notified when it completes.",
@@ -1174,10 +1229,24 @@ describe("tool contract declarations", () => {
     });
   });
 
+  it("requires an exact named profile for Agent and Task calls", () => {
+    const request = {
+      description: "Inspect runtime",
+      prompt: "Find the model selection path.",
+    };
+
+    expect(AgentInputSchema.safeParse(request).success).toBe(false);
+    expect(TaskInputSchema.safeParse(request).success).toBe(false);
+    expect(AgentInputSchema.safeParse({ ...request, subagent_type: "researcher" }).success).toBe(
+      true,
+    );
+  });
+
   it("accepts only the bounded PRISM Bash exit-code criterion contract", () => {
     const parsed = AgentInputSchema.parse({
       description: "Run typecheck",
       prompt: "Run the typecheck and report failures.",
+      subagent_type: "test-engineer",
       acceptance_criteria: [
         {
           id: "typecheck",
@@ -1196,6 +1265,7 @@ describe("tool contract declarations", () => {
       AgentInputSchema.parse({
         description: "Run arbitrary evaluator",
         prompt: "Run check.",
+        subagent_type: "test-engineer",
         acceptance_criteria: [
           {
             id: "untrusted",
@@ -1212,11 +1282,13 @@ describe("tool contract declarations", () => {
       id,
       description: `Work on ${id}`,
       prompt: `Complete task ${id}`,
+      subagent_type: "researcher",
       ...(depends_on === undefined ? {} : { depends_on }),
     });
     const validInput = {
       description: "Build independent tasks",
       prompt: "Run the task graph and report the node outcomes.",
+      subagent_type: "orchestrator",
     };
     const parseGraph = (nodes: unknown[], max_parallel?: number) =>
       AgentInputSchema.safeParse({
@@ -1314,6 +1386,7 @@ describe("tool contract declarations", () => {
           id: "typecheck",
           description: "Run typecheck",
           prompt: "Run the typecheck and report failures.",
+          subagent_type: "test-engineer",
           acceptance_criteria: [
             {
               id: "typecheck-exit",
@@ -1331,6 +1404,7 @@ describe("tool contract declarations", () => {
     const input = {
       description: "Run typecheck",
       prompt: "Execute the graph.",
+      subagent_type: "test-engineer",
       task_graph: graph,
     };
 
@@ -1366,9 +1440,15 @@ describe("tool contract declarations", () => {
       {
         description: "Run task graph",
         prompt: "Coordinate the listed work and report each outcome.",
+        subagent_type: "orchestrator",
         task_graph: {
           nodes: [
-            { id: "scan", description: "Scan files", prompt: "Inspect the source." },
+            {
+              id: "scan",
+              description: "Scan files",
+              prompt: "Inspect the source.",
+              subagent_type: "researcher",
+            },
             {
               id: "report",
               description: "Write report",
@@ -1405,11 +1485,16 @@ describe("tool contract declarations", () => {
     expect(calls[0]?.request).toMatchObject({
       sessionId: "sess_parent",
       parentToolCallId: "toolu_agent_dag",
-      agentType: "general-purpose",
+      agentType: "orchestrator",
       description: "Run task graph",
       prompt: "Coordinate the listed work and report each outcome.",
       nodes: [
-        { id: "scan", description: "Scan files", prompt: "Inspect the source." },
+        {
+          id: "scan",
+          description: "Scan files",
+          prompt: "Inspect the source.",
+          subagent_type: "researcher",
+        },
         {
           id: "report",
           depends_on: ["scan"],
@@ -1429,8 +1514,16 @@ describe("tool contract declarations", () => {
         {
           description: "Run task graph",
           prompt: "Coordinate the listed work.",
+          subagent_type: "orchestrator",
           task_graph: {
-            nodes: [{ id: "scan", description: "Scan files", prompt: "Inspect the source." }],
+            nodes: [
+              {
+                id: "scan",
+                description: "Scan files",
+                prompt: "Inspect the source.",
+                subagent_type: "researcher",
+              },
+            ],
           },
         },
         {
@@ -1461,12 +1554,14 @@ describe("tool contract declarations", () => {
         {
           description: "Run task graph",
           prompt: "Coordinate the listed work.",
+          subagent_type: "orchestrator",
           task_graph: {
             nodes: [
               {
                 id: "first",
                 description: "First task",
                 prompt: "Run first.",
+                subagent_type: "researcher",
                 acceptance_criteria: [
                   {
                     id: "duplicate",
@@ -1485,6 +1580,7 @@ describe("tool contract declarations", () => {
                 description: "Second task",
                 prompt: "Run second.",
                 depends_on: ["first"],
+                subagent_type: "reviewer",
               },
             ],
           },

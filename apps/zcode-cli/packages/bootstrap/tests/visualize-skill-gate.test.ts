@@ -6,6 +6,7 @@ import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import type { Logger } from "@zcode/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkflowChildSkillPort } from "../src/app/script-workflow-child-runtime.js";
+import { resolveBundledSkillRoots } from "../src/app/bundled-skills.js";
 import { resolveStartupPlugins } from "../src/app/startup-marks.js";
 import type { ZCodeApp, ZCodeAppOptions } from "../src/app/types.js";
 import { inspectZCodeSkill, listZCodeSkills } from "../src/skills.js";
@@ -75,6 +76,7 @@ describe("visualize protocol-only skill discovery", () => {
         appOptions,
         configResult,
         pluginSkillRoots: plugins.skillRoots,
+        bundledSkillRoots: resolveBundledSkillRoots({ cliStorageRoot: join(root, "storage", "cli") }),
       });
       for (const port of [parentPort, childPort!]) {
         const outcome = await port.discoverSkills({ workingDirectory: root });

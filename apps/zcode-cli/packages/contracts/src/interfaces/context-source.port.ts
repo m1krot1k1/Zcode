@@ -25,6 +25,28 @@ export interface UserInstructionsOptions {
   projectRoot?: string;
   priorityFiles?: string[];
   maxBytes?: number;
+  /** Explicit workspace-relative file targets; vague prompt text is never used for rule matching. */
+  ruleTargetPaths?: readonly string[];
+}
+
+export interface ResolvedWorkspaceRule {
+  filePath: string;
+  fileName: string;
+  description?: string;
+  globs: string[];
+  alwaysApply: boolean;
+  appliedBy: "alwaysApply" | "glob";
+  content: string;
+  bytesRead: number;
+  sizeBytes: number;
+  truncated: boolean;
+}
+
+/** Packaged, always-on guidance that accompanies every runtime context snapshot. */
+export interface ResolvedHarnessRule {
+  id: string;
+  description?: string;
+  content: string;
 }
 
 export type UserInstructionSourceScope = "user" | "workspace";
@@ -65,6 +87,8 @@ export interface ContextSourceRequest {
   effectiveShellDisplayName?: string;
   envInfo?: EnvInfo;
   userInstructions?: UserInstructionsOptions;
+  /** Explicit workspace-relative target paths used to select file-scoped workspace rules. */
+  ruleTargetPaths?: readonly string[];
   projectContext?: ProjectContext;
   trace?: TraceContext;
 }
@@ -80,6 +104,8 @@ export interface ContextSourceSnapshot {
   envInfo: EnvInfo;
   currentDate?: string;
   userInstructions?: ResolvedUserInstructions;
+  bundledHarnessRules?: ResolvedHarnessRule[];
+  workspaceRules?: ResolvedWorkspaceRule[];
   projectContext?: ProjectContext;
   diagnostics: ContextSourceDiagnostic[];
 }

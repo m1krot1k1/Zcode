@@ -5,7 +5,7 @@
   "fixtures": [
     {
       "id": "swarm-composer-root-plan",
-      "description": "Scripted planner splits the accepted Composer swarm intent into two independent child sessions.",
+      "description": "Scripted planner splits the accepted Composer swarm intent into two independent child sessions. The planner calls non-streaming generateText, so this fixture returns an Anthropic JSON message.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -25,14 +25,14 @@
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-swarm-composer-root-plan\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"decision\\\":\\\"split\\\",\\\"graph\\\":{\\\"nodes\\\":[{\\\"id\\\":\\\"alpha\\\",\\\"description\\\":\\\"Alpha report\\\",\\\"prompt\\\":\\\"E2E_SWARM_COMPOSER_ALPHA\\\"},{\\\"id\\\":\\\"beta\\\",\\\"description\\\":\\\"Beta report\\\",\\\"prompt\\\":\\\"E2E_SWARM_COMPOSER_BETA\\\"}],\\\"max_parallel\\\":2}}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":128,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n\n"
+        "body": "{\"id\":\"upstream-e2e-swarm-composer-root-plan\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"split\\\",\\\"graph\\\":{\\\"nodes\\\":[{\\\"id\\\":\\\"alpha\\\",\\\"description\\\":\\\"Alpha report\\\",\\\"prompt\\\":\\\"E2E_SWARM_COMPOSER_ALPHA\\\",\\\"subagent_type\\\":\\\"researcher\\\"},{\\\"id\\\":\\\"beta\\\",\\\"description\\\":\\\"Beta report\\\",\\\"prompt\\\":\\\"E2E_SWARM_COMPOSER_BETA\\\",\\\"subagent_type\\\":\\\"reviewer\\\"}],\\\"max_parallel\\\":2}}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"output_tokens\":40}}"
       }
     },
     {
       "id": "swarm-composer-alpha-plan",
-      "description": "Alpha child planner chooses a leaf so the deterministic child can finish independently.",
+      "description": "Alpha child planner chooses a leaf so the deterministic child can finish independently. The planner calls non-streaming generateText, so this fixture returns an Anthropic JSON message.",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "fast-text",
@@ -43,20 +43,25 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_SWARM_COMPOSER_ALPHA"],
-        "bodyIncludes": ["Decide whether this task needs independent parallel work"]
+        "lastUserMessageIncludes": [
+          "E2E_SWARM_COMPOSER_ALPHA"
+        ],
+        "bodyIncludes": [
+          "Decide whether this task needs independent parallel work"
+        ]
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "upstream-e2e-swarm-composer-alpha-plan",
-          "text": "{\"decision\":\"leaf\",\"reason\":\"One bounded report is sufficient.\"}"
-        }
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-swarm-composer-alpha-plan\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"leaf\\\",\\\"reason\\\":\\\"One bounded report is sufficient.\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"output_tokens\":40}}"
       }
     },
     {
       "id": "swarm-composer-beta-plan",
-      "description": "Beta child planner chooses a leaf so the deterministic child can finish independently.",
+      "description": "Beta child planner chooses a leaf so the deterministic child can finish independently. The planner calls non-streaming generateText, so this fixture returns an Anthropic JSON message.",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "fast-text",
@@ -67,15 +72,20 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_SWARM_COMPOSER_BETA"],
-        "bodyIncludes": ["Decide whether this task needs independent parallel work"]
+        "lastUserMessageIncludes": [
+          "E2E_SWARM_COMPOSER_BETA"
+        ],
+        "bodyIncludes": [
+          "Decide whether this task needs independent parallel work"
+        ]
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "upstream-e2e-swarm-composer-beta-plan",
-          "text": "{\"decision\":\"leaf\",\"reason\":\"One bounded report is sufficient.\"}"
-        }
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-swarm-composer-beta-plan\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"leaf\\\",\\\"reason\\\":\\\"One bounded report is sufficient.\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"output_tokens\":40}}"
       }
     },
     {
@@ -85,14 +95,18 @@
         "kind": "subagent",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "Hold the alpha model response at a local gate until beta is also waiting, proving the two child requests overlap."
+        "syntheticReason": "After both child requests overlap, stream an alpha partial marker and hold the still-running response at a local gate until the E2E releases it."
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_SWARM_COMPOSER_ALPHA"],
-        "bodyExcludes": ["Decide whether this task needs independent parallel work"]
+        "lastUserMessageIncludes": [
+          "E2E_SWARM_COMPOSER_ALPHA"
+        ],
+        "bodyExcludes": [
+          "Decide whether this task needs independent parallel work"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -102,37 +116,37 @@
         "chunks": [
           {
             "offsetMs": 0,
-            "text": "event: message_start\\ndata: {\\\"type\\\":\\\"message_start\\\",\\\"message\\\":{\\\"id\\\":\\\"swarm-alpha-result\\\",\\\"type\\\":\\\"message\\\",\\\"role\\\":\\\"assistant\\\",\\\"model\\\":\\\"e2e-upstream-model\\\",\\\"content\\\":[],\\\"stop_reason\\\":null,\\\"stop_sequence\\\":null,\\\"usage\\\":{\\\"input_tokens\\\":32,\\\"output_tokens\\\":0}}}\\n\\n"
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"swarm-alpha-result\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-upstream-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":0}}}\n\n"
           },
           {
             "offsetMs": 1,
-            "text": "event: content_block_start\\ndata: {\\\"type\\\":\\\"content_block_start\\\",\\\"index\\\":0,\\\"content_block\\\":{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"\\\"}}\\n\\n"
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
           },
           {
             "offsetMs": 2,
-            "text": "event: content_block_delta\\ndata: {\\\"type\\\":\\\"content_block_delta\\\",\\\"index\\\":0,\\\"delta\\\":{\\\"type\\\":\\\"text_delta\\\",\\\"text\\\":\\\"E2E_SWARM_ALPHA_RUNNING\\\"}}\\n\\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SWARM_ALPHA_RUNNING\"}}\n\n"
           },
           {
             "offsetMs": 3,
-            "text": "event: content_block_delta\\ndata: {\\\"type\\\":\\\"content_block_delta\\\",\\\"index\\\":0,\\\"delta\\\":{\\\"type\\\":\\\"text_delta\\\",\\\"text\\\":\\\"_COMPOSER_ALPHA_DONE\\\"}}\\n\\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"_COMPOSER_ALPHA_DONE\"}}\n\n"
           },
           {
             "offsetMs": 4,
-            "text": "event: content_block_stop\\ndata: {\\\"type\\\":\\\"content_block_stop\\\",\\\"index\\\":0}\\n\\n"
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
             "offsetMs": 5,
-            "text": "event: message_delta\\ndata: {\\\"type\\\":\\\"message_delta\\\",\\\"delta\\\":{\\\"stop_reason\\\":\\\"end_turn\\\",\\\"stop_sequence\\\":null},\\\"usage\\\":{\\\"output_tokens\\\":8}}\\n\\n"
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\n"
           },
           {
             "offsetMs": 6,
-            "text": "event: message_stop\\ndata: {\\\"type\\\":\\\"message_stop\\\"}\\n\\n"
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
         ],
         "releaseAfterChunks": 3,
         "text": {
           "id": "upstream-e2e-swarm-composer-alpha-result",
-          "text": "E2E_SWARM_COMPOSER_ALPHA_DONE"
+          "text": "E2E_SWARM_ALPHA_RUNNING_COMPOSER_ALPHA_DONE"
         }
       }
     },
@@ -143,14 +157,18 @@
         "kind": "subagent",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "Hold the beta model response at a local gate until alpha is also waiting, proving the two child requests overlap."
+        "syntheticReason": "After both child requests overlap, stream a beta partial marker and hold the still-running response at a local gate until the E2E releases it."
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_SWARM_COMPOSER_BETA"],
-        "bodyExcludes": ["Decide whether this task needs independent parallel work"]
+        "lastUserMessageIncludes": [
+          "E2E_SWARM_COMPOSER_BETA"
+        ],
+        "bodyExcludes": [
+          "Decide whether this task needs independent parallel work"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -160,37 +178,37 @@
         "chunks": [
           {
             "offsetMs": 0,
-            "text": "event: message_start\\ndata: {\\\"type\\\":\\\"message_start\\\",\\\"message\\\":{\\\"id\\\":\\\"swarm-beta-result\\\",\\\"type\\\":\\\"message\\\",\\\"role\\\":\\\"assistant\\\",\\\"model\\\":\\\"e2e-upstream-model\\\",\\\"content\\\":[],\\\"stop_reason\\\":null,\\\"stop_sequence\\\":null,\\\"usage\\\":{\\\"input_tokens\\\":32,\\\"output_tokens\\\":0}}}\\n\\n"
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"swarm-beta-result\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-upstream-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":0}}}\n\n"
           },
           {
             "offsetMs": 1,
-            "text": "event: content_block_start\\ndata: {\\\"type\\\":\\\"content_block_start\\\",\\\"index\\\":0,\\\"content_block\\\":{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"\\\"}}\\n\\n"
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
           },
           {
             "offsetMs": 2,
-            "text": "event: content_block_delta\\ndata: {\\\"type\\\":\\\"content_block_delta\\\",\\\"index\\\":0,\\\"delta\\\":{\\\"type\\\":\\\"text_delta\\\",\\\"text\\\":\\\"E2E_SWARM_BETA_RUNNING\\\"}}\\n\\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SWARM_BETA_RUNNING\"}}\n\n"
           },
           {
             "offsetMs": 3,
-            "text": "event: content_block_delta\\ndata: {\\\"type\\\":\\\"content_block_delta\\\",\\\"index\\\":0,\\\"delta\\\":{\\\"type\\\":\\\"text_delta\\\",\\\"text\\\":\\\"_COMPOSER_BETA_DONE\\\"}}\\n\\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"_COMPOSER_BETA_DONE\"}}\n\n"
           },
           {
             "offsetMs": 4,
-            "text": "event: content_block_stop\\ndata: {\\\"type\\\":\\\"content_block_stop\\\",\\\"index\\\":0}\\n\\n"
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
             "offsetMs": 5,
-            "text": "event: message_delta\\ndata: {\\\"type\\\":\\\"message_delta\\\",\\\"delta\\\":{\\\"stop_reason\\\":\\\"end_turn\\\",\\\"stop_sequence\\\":null},\\\"usage\\\":{\\\"output_tokens\\\":8}}\\n\\n"
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\n"
           },
           {
             "offsetMs": 6,
-            "text": "event: message_stop\\ndata: {\\\"type\\\":\\\"message_stop\\\"}\\n\\n"
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
         ],
         "releaseAfterChunks": 3,
         "text": {
           "id": "upstream-e2e-swarm-composer-beta-result",
-          "text": "E2E_SWARM_COMPOSER_BETA_DONE"
+          "text": "E2E_SWARM_BETA_RUNNING_COMPOSER_BETA_DONE"
         }
       }
     },
@@ -199,9 +217,9 @@
       "description": "The original session synthesizes both completed child reports into the original chat transcript.",
       "metadata": {
         "kind": "main",
-        "timingPolicy": "fast-text",
+        "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "Fixed final response proves the root resumed after two real child session results."
+        "syntheticReason": "Separate local gate holds root synthesis before any text so the test can assert live child previews while the root remains running."
       },
       "maxMatches": 1,
       "match": {
@@ -209,16 +227,42 @@
         "pathIncludes": "/messages",
         "bodyIncludes": [
           "E2E_SWARM_COMPOSER_02",
-          "E2E_SWARM_COMPOSER_ALPHA_DONE",
-          "E2E_SWARM_COMPOSER_BETA_DONE"
-        ],
-        "bodyExcludes": [
-          "Decide whether this task needs independent parallel work",
-          "Generate a concise title"
+          "E2E_SWARM_ALPHA_RUNNING_COMPOSER_ALPHA_DONE",
+          "E2E_SWARM_BETA_RUNNING_COMPOSER_BETA_DONE"
         ]
       },
       "response": {
         "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-swarm-composer-root-synthesis\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-upstream-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 1,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 2,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SWARM_COMPOSER_02_SYNTHESIS_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 3,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 4,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\n"
+          },
+          {
+            "offsetMs": 5,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 1,
         "text": {
           "id": "upstream-e2e-swarm-composer-root-synthesis",
           "text": "E2E_SWARM_COMPOSER_02_SYNTHESIS_DONE"

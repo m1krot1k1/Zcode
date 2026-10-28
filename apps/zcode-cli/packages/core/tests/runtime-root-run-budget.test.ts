@@ -84,7 +84,7 @@ describe("RootRun resource budget", () => {
     registry.recordRootRunUsage(modelComplete(root, turnId, 10, "request-a"));
 
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
-      usedTokens: 510,
+      usedTokens: 210,
       reservedTokens: 0,
     });
     reservationA();
@@ -101,13 +101,13 @@ describe("RootRun resource budget", () => {
       rootRunId,
       sessionId: root,
       contextWindow: 50,
-      maxTokens: 40,
+      maxTokens: 50,
     });
     const releaseRemaining = registry.reserveRootRunTokens({
       rootRunId,
       sessionId: root,
       contextWindow: 50,
-      maxTokens: 40,
+      maxTokens: 50,
     });
     const providerCall = vi.fn();
     expect(() => {
@@ -115,7 +115,7 @@ describe("RootRun resource budget", () => {
         rootRunId,
         sessionId: root,
         contextWindow: 50,
-        maxTokens: 40,
+        maxTokens: 1,
       });
       providerCall();
     }).toThrow(RootRunBudgetExceededError);
@@ -126,60 +126,118 @@ describe("RootRun resource budget", () => {
     expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(0);
   });
 
-  it("admits an oversized context exclusively up to the remaining cap and debits reported usage", () => {
+  it("does not cancel active concurrent requests when usage plus reservations reaches the cap", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-concurrent-reservations");
+    const turnId = createTurnId("root-budget-concurrent-reservations-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 100 });
+    const reservationA = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 25,
+      maxTokens: 50,
+    });
+    const reservationB = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 25,
+      maxTokens: 50,
+    });
+    reservationA.associateRequestId("concurrent-a");
+    reservationB.associateRequestId("concurrent-b");
+
+    registry.recordRootRunUsage(modelComplete(root, turnId, 50, "concurrent-a"));
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 50,
+      reservedTokens: 50,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(() =>
+      registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 1,
+        maxTokens: 1,
+      }),
+    ).toThrow(RootRunBudgetExceededError);
+
+    registry.recordRootRunUsage(modelComplete(root, turnId, 40, "concurrent-b"));
+    reservationA();
+    reservationB();
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 90,
+      reservedTokens: 0,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    const finalReservation = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 5,
+      maxTokens: 5,
+    });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(5);
+    finalReservation();
+  });
+
+  it("reserves output budget instead of the model's maximum context window", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const root = createSessionId("root-budget-oversized-context");
     const turnId = createTurnId("root-budget-oversized-context-turn");
     const rootRunId = `${root}:${turnId}`;
-    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 100_000 });
     const release = registry.reserveRootRunTokens({
       rootRunId,
       sessionId: root,
-      contextWindow: 1_000_000,
+      contextWindow: 200_000,
       maxTokens: 40_000,
     });
     release.associateRequestId("oversized-success");
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(500_000);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(40_000);
 
-    const providerCall = vi.fn();
-    expect(() => {
-      registry.reserveRootRunTokens({
-        rootRunId,
-        sessionId: root,
-        contextWindow: 1_000_000,
-        maxTokens: 40_000,
-      });
-      providerCall();
-    }).toThrow(RootRunBudgetExceededError);
-    expect(providerCall).not.toHaveBeenCalled();
+    const parallelRelease = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(80_000);
 
     registry.recordRootRunUsage(modelComplete(root, turnId, 5_000, "oversized-success"));
     release();
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
       usedTokens: 5_000,
-      reservedTokens: 0,
+      reservedTokens: 40_000,
     });
     expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
     const nextRelease = registry.reserveRootRunTokens({
       rootRunId,
       sessionId: root,
-      contextWindow: 1_000_000,
+      contextWindow: 200_000,
       maxTokens: 40_000,
     });
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(495_000);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(80_000);
     nextRelease();
+    parallelRelease();
   });
 
-  it("charges the capped reservation and expires the run when oversized request usage is missing", () => {
+  it("charges the bounded request reservation when usage is missing", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const root = createSessionId("root-budget-oversized-unknown");
     const turnId = createTurnId("root-budget-oversized-unknown-turn");
     const rootRunId = `${root}:${turnId}`;
-    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+    });
     const release = registry.reserveRootRunTokens({
       rootRunId,
       sessionId: root,
-      contextWindow: 1_000_000,
+      contextWindow: 200_000,
       maxTokens: 40_000,
     });
     release.associateRequestId("oversized-request");
@@ -192,10 +250,10 @@ describe("RootRun resource budget", () => {
     registry.recordRootRunUsage(unknownUsage);
     release();
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
-      usedTokens: 500_000,
+      usedTokens: 40_000,
       reservedTokens: 0,
     });
-    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(true);
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
   });
 
   it("charges the full reservation when a terminal event has unknown usage, and deduplicates it", () => {
@@ -222,7 +280,7 @@ describe("RootRun resource budget", () => {
     release();
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
       reservedTokens: 0,
-      usedTokens: 100,
+      usedTokens: 30,
     });
   });
 
@@ -261,7 +319,7 @@ describe("RootRun resource budget", () => {
     registry.update("child-terminal", (current) => ({ ...current, status: "failed" }));
 
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
-      usedTokens: 400,
+      usedTokens: 100,
       reservedTokens: 0,
     });
     const releaseSiblingReservation = registry.reserveRootRunTokens({
@@ -270,9 +328,9 @@ describe("RootRun resource budget", () => {
       contextWindow: 500,
       maxTokens: 500,
     });
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(600);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(500);
     releaseChildReservation();
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(600);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(500);
     releaseSiblingReservation();
   });
 
@@ -291,11 +349,12 @@ describe("RootRun resource budget", () => {
         rootSessionId: root,
         turnId,
         deadlineMs: 5,
-        onDeadline: abortRoot,
+        onExhausted: abortRoot,
       });
       registry.registerSubagentTask(task("deadline-child", root, child, turnId), cancellation);
       await vi.advanceTimersByTimeAsync(5);
       expect(abortRoot).toHaveBeenCalledOnce();
+      expect(abortRoot).toHaveBeenCalledWith("deadline");
       expect(cancellation.abort).toHaveBeenCalledOnce();
       expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(true);
       let settled = false;

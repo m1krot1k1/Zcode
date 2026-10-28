@@ -7,8 +7,9 @@ import {
   AgentInputJsonSchema,
   AgentInputSchema,
   AgentOutputSchema,
-  AgentType,
   CoreErrorType,
+  TaskInputJsonSchema,
+  TaskInputSchema,
   createCoreError,
   type AgentInput,
   type AgentOutput,
@@ -108,7 +109,7 @@ function buildAgentProviderDescription(
     "",
     "Available agent types are listed in <system-reminder> messages in the conversation.",
     "",
-    "When using the Agent tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.",
+    "When using the Agent tool, subagent_type is required. Choose one exact active profile ID listed in the current conversation; missing or unknown roles are errors and never fall back to a generic agent.",
     "",
     "## When to use",
     "",
@@ -186,7 +187,27 @@ function formatAgentOutputForModel(output: unknown): string {
 
 const agentHandler: ToolHandler = async (input, context) => {
   const parsed = AgentInputSchema.parse(input) as AgentInput;
-  const agentType = parsed.subagent_type ?? AgentType.GeneralPurpose;
+  const agentType = parsed.subagent_type;
+
+  const availableAgentTypes = context.availableAgentTypes;
+  if (availableAgentTypes && !availableAgentTypes.includes(agentType)) {
+    // Причина: встроенный general-purpose оставался во внутреннем runtime-каталоге и обходил
+    // скрытие из model prompt; проверка по тому же snapshot закрывает Agent и Task до admission.
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      `Agent type '${agentType}' is not available. Choose one exact active role ID: ${availableAgentTypes.join(", ")}`,
+      {
+        context: {
+          code: AgentErrorCode.UNKNOWN_AGENT_TYPE,
+          agentType,
+          availableAgentTypes: [...availableAgentTypes],
+          toolCallId: context.toolCallId,
+          toolName: "Agent",
+        },
+        recoverable: true,
+      },
+    );
+  }
 
   if (!context.subagentPort) {
     throw createCoreError(
@@ -332,25 +353,24 @@ function canReadBackgroundOutputFile(toolNames: readonly string[] | undefined): 
   return names.has("Read") || names.has("Bash");
 }
 
-export const taskToolEntry: ToolEntry = {
-  ...agentToolEntry,
-  capability: "Claude Code-compatible alias for launching a ZCode subagent",
-  metadata: {
-    ...agentToolEntry.metadata,
-    shouldDefer: true,
-    name: TASK_TOOL_NAME,
-    providerVisible: false,
-    description: [
-      "Claude Code-compatible alias for the Agent tool. Use this when plugin instructions ask for the Task tool.",
-      "",
-      agentToolEntry.metadata.description ?? "",
-    ].join("\n"),
-  },
-};
+export const taskToolEntry: ToolEntry = createTaskToolEntryFromAgent(agentToolEntry);
 
 function createTaskToolEntryFromAgent(entry: ToolEntry): ToolEntry {
+  const taskHandler: ToolHandler = async (input, context) => {
+    // 原因：Task 复用 Agent 时会把缺失角色静默映射为 general-purpose；
+    // 修复依据：Task 是显式递归接口，必须在派发前校验调用方选择的活动 profile。
+    const parsed = TaskInputSchema.parse(input);
+    return entry.handler(parsed, context);
+  };
+  const description = (entry.metadata.description ?? "").replace(
+    "When using the Agent tool, subagent_type is required. Choose one exact active profile ID listed in the current conversation; missing or unknown roles are errors and never fall back to a generic agent.",
+    "When using the Task tool, subagent_type is required. Choose one exact active profile ID listed in the current conversation; missing or unknown roles are errors and never fall back to a generic agent.",
+  );
   return {
     ...entry,
+    handler: taskHandler,
+    inputSchema: TaskInputJsonSchema,
+    runtimeInputSchema: TaskInputSchema,
     capability: "Claude Code-compatible alias for launching a ZCode subagent",
     metadata: {
       ...entry.metadata,
@@ -360,7 +380,7 @@ function createTaskToolEntryFromAgent(entry: ToolEntry): ToolEntry {
       description: [
         "Claude Code-compatible alias for the Agent tool. Use this when plugin instructions ask for the Task tool.",
         "",
-        entry.metadata.description ?? "",
+        description,
       ].join("\n"),
     },
   };

@@ -801,9 +801,9 @@ test("includes the bundled skill pack as content-hashed SEA assets", async () =>
       assert.equal(paths.has(requiredPath), true, requiredPath);
       assert.equal(typeof assets[`${seaBundledSkillAssetPrefix}${requiredPath}`], "string");
     }
-    // 资产只来自 skills/：README 之类的包元数据不进二进制。
+    // 资产只来自技能和规则目录：README 等包元数据不进入二进制。
     assert.equal(
-      [...paths].every((path) => path.startsWith("skills/")),
+      [...paths].every((path) => path.startsWith("skills/") || path.startsWith("rules/")),
       true,
     );
     for (const file of manifest.files) {

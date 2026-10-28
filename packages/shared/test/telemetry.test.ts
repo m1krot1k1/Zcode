@@ -5,6 +5,7 @@ import {
   sanitizeTelemetrySkillName,
   sanitizeTelemetryEventDetail,
 } from "../src/telemetry.js";
+import { conversationTelemetryFactSchema } from "../src/zcode-protocol-v4/telemetry.js";
 
 describe("resolveSafeTelemetryHostname", () => {
   it("只从 HTTP(S) URL 提取小写 hostname", () => {
@@ -126,4 +127,21 @@ it("rejects private plugin attribution on existing agent steps", () => {
       status: "success",
     }),
   ).toEqual({ plugin_component: "mcp", status: "success" });
+});
+
+it("accepts Cursor-compatible skill attribution in bounded conversation telemetry", () => {
+  expect(
+    conversationTelemetryFactSchema.safeParse({
+      version: 1,
+      eventId: "event-1",
+      eventSeq: 0,
+      occurredAt: Date.now(),
+      sessionId: "session-1",
+      kind: "tool.lifecycle",
+      phase: "completed",
+      toolCallId: "tool-1",
+      skillName: "project-skill",
+      skillSource: "cursor",
+    }).success,
+  ).toBe(true);
 });

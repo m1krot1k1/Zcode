@@ -13,21 +13,21 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "Deterministic JSON response exercises runtime-owned swarm dispatch without a real model request."
+      "syntheticReason": "Deterministic JSON response exercises runtime-owned swarm dispatch without a real model request. Non-streaming planner calls require the Anthropic JSON message envelope."
     },
     {
       "id": "swarm-composer-alpha-plan",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime."
+      "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime. Non-streaming planner calls require the Anthropic JSON message envelope."
     },
     {
       "id": "swarm-composer-beta-plan",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime."
+      "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime. Non-streaming planner calls require the Anthropic JSON message envelope."
     },
     {
       "id": "swarm-composer-alpha-result",
@@ -47,8 +47,8 @@
       "id": "swarm-composer-root-synthesis",
       "kind": "main",
       "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "Fixed final response proves the root resumed after two real child session results."
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "Separate local gate holds root synthesis before any text so the test can assert live child previews while the root remains running."
     }
   ]
 }

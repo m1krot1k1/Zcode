@@ -178,6 +178,8 @@ interface RegisterBuiltInToolsOptions {
   bashTimeoutPolicy?: BashTimeoutPolicy;
   includeSkill?: boolean;
   includeAgent?: boolean;
+  /** Claude Task alias is model-visible in delegated sessions that explicitly allow recursion. */
+  includeTaskAlias?: boolean;
   includeSendMessage?: boolean;
   includeRespondToCoordinator?: boolean;
   includeSubmitResult?: boolean;
@@ -307,6 +309,9 @@ function resolveBuiltInToolEntryForBranch(
     });
   }
   if (entry.metadata.name === "Task") {
+    if (options.includeTaskAlias === true) {
+      return { ...entry, metadata: { ...entry.metadata, providerVisible: true } };
+    }
     return createTaskToolEntry({
       dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
     });

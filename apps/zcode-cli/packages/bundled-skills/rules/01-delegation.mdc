@@ -1,0 +1,10 @@
+---
+description: Delegate independent work to named agents and synthesize checked results.
+alwaysApply: true
+---
+
+For every actionable, non-trivial workspace task, call the exact named `start` profile through `Task` before using workspace tools. Pass the user's request, relevant constraints, and already granted authorization. `start` may finish a small task itself or hand complex work to `orchestrator`. Answer-only questions, greetings, and trivial requests stay in the root turn without spawning an agent. If `start` is absent, report that limitation and continue directly; never substitute an unlisted role.
+
+Use the runtime's available named agent profiles for independent deliverables. Choose the exact profile ID from the current catalog; do not invent a role or silently substitute a generic one. Keep each task bounded, provide its source facts and expected evidence, and avoid overlapping edit ownership.
+
+Delegate when independent work benefits from parallel execution. Keep a small or indivisible task with the current agent. Follow the runtime's active concurrency, nesting, cancellation, and permission limits; prompts do not raise those limits. Join every branch, inspect its result, and verify load-bearing claims before synthesizing the answer.

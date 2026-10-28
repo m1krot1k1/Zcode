@@ -51,6 +51,42 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
   },
   {
     details: [
+      "Routes a non-trivial workspace task through the exact named start agent using the normal Task tool.",
+      "Answer-only and trivial requests stay in the current turn.",
+    ],
+    name: "start",
+    summary: "Route a task through the named start agent.",
+    usage: "/start <task>",
+  },
+  {
+    details: [
+      "Runs an independent read-only review through the named reviewer agent.",
+      "With no arguments, review the current workspace changes.",
+    ],
+    name: "review",
+    summary: "Review changes with the named reviewer agent.",
+    usage: "/review [scope or review criteria]",
+  },
+  {
+    details: [
+      "Investigates a concrete, observable failure through the named self-improver agent.",
+      "The agent must state evidence, one testable hypothesis, a narrow change, and a rollback condition.",
+    ],
+    name: "evolve",
+    summary: "Investigate a measured system improvement.",
+    usage: "/evolve <observed failure or limitation>",
+  },
+  {
+    details: [
+      "Evaluates explicit acceptance criteria through the named evaluator agent.",
+      "Each criterion is reported as pass, fail, or not run with evidence.",
+    ],
+    name: "evaluate",
+    summary: "Evaluate outcomes against explicit criteria.",
+    usage: "/evaluate <criteria>",
+  },
+  {
+    details: [
       "Starts a durable expert workflow in yolo mode when called with a task.",
       "Use status, resume, or stop to manage the latest or a named workflow run.",
     ],
