@@ -44,3 +44,25 @@ Workspace rename validation accepts both the canonical profile ID and the existi
 - Malformed or path-traversal journal data cannot access files outside the selected ZCode profile root.
 - User and project roots are reconciled independently; a failure in one does not inspect or mutate the other.
 - A case-only rename followed by deletion removes the cached profile even when the filesystem reports the rename as an unlink of the old spelling only.
+- Replacing a prepared scope or disposing its Host waits for both Chokidar and the parent-directory watcher to close before its owner finishes, so repeated workspace preparation does not accumulate native file handles or publish events from a retired scope.
+
+## Watcher ownership and shutdown
+
+```mermaid
+sequenceDiagram
+  participant H as Host config cache
+  participant S as Profile/state scope
+  participant C as Chokidar root watcher
+  participant P as Windows parent compatibility watcher
+  H->>S: prepare or replace scope
+  S->>C: observe direct configuration root
+  opt Windows cannot report an empty directory move from the root watcher
+    S->>P: observe root's parent for directory replacement
+  end
+  H->>S: replace or dispose
+  S->>P: abort and await watcher loop
+  S->>C: close and await watcher
+  S-->>H: disposal settled; safe to create replacement scope
+```
+
+The scope owns the Chokidar root watcher and, only on Windows, a raw parent-directory watcher for the empty-directory rename event that Chokidar may omit there. Other platforms rely on the root watcher and avoid a redundant native handle. Disposal is asynchronous and is not complete until every watcher the scope opened has settled; replacing a user, state, or workspace scope must await that boundary before opening the replacement. This prevents file-handle accumulation across Host re-preparation and gives tests a deterministic teardown contract.

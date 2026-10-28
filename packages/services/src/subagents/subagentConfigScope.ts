@@ -64,6 +64,7 @@ export function createSubagentConfigScope<T>(options: {
     stabilize = false;
   let watcher: FSWatcher | undefined, anchor: string | undefined;
   let parentWatch: AbortController | undefined;
+  let parentWatchTask: Promise<void> | undefined;
   let anchorStats: Awaited<ReturnType<typeof stat>> | undefined;
   let releaseReady: (() => void) | undefined;
   let binding: Promise<void> | undefined;
@@ -161,8 +162,7 @@ export function createSubagentConfigScope<T>(options: {
       // 重建直接 watcher 以清除旧文件名缓存，避免大小写重命名后漏掉新路径的后续删除。
       void checkWatch(true);
       reset = true;
-    }
-    else if (event === "add" || event === "change") pending.set(absolute, "read");
+    } else if (event === "add" || event === "change") pending.set(absolute, "read");
     else return;
     revision++;
     schedule();
@@ -210,9 +210,12 @@ export function createSubagentConfigScope<T>(options: {
         )
           continue;
         const previous = watcher;
+        const previousParentWatchTask = parentWatchTask;
         watcher = undefined;
         parentWatch?.abort();
-        if (previous) await previous.close();
+        parentWatch = undefined;
+        parentWatchTask = undefined;
+        await Promise.all([previous?.close(), previousParentWatchTask]);
         if (disposed) return;
         if (anchor !== undefined && (anchor === root || nextAnchor === root)) {
           revision++;
@@ -252,13 +255,18 @@ export function createSubagentConfigScope<T>(options: {
         });
         // Windows 不报告空目录自身的移动；父目录只订阅原生结构事件，不枚举其内容。
         // 与 Chokidar 的文件索引分离，避免 AGENTS 被误当作逻辑 agents 的删除事件。
-        if (parent !== anchor) {
+        // Windows may omit unlinkDir when an empty config root is moved. On other
+        // platforms Chokidar reports the root transition; a second native watcher
+        // per scope only consumes handles and can make multiple Hosts hit EMFILE.
+        if (parent !== anchor && process.platform === "win32") {
           const controller = new AbortController();
           parentWatch = controller;
-          void (async () => {
+          parentWatchTask = (async () => {
             for await (const _event of watchDirectory(parent, { signal: controller.signal })) {
               if (disposed || watcher !== current) return;
-              await checkWatch();
+              // Не блокируем цикл нативного watcher'а пересозданием scope: новый bind сначала
+              // отменит этот цикл и дождётся его закрытия.
+              void checkWatch();
             }
           })().catch((error) => {
             if (!controller.signal.aborted && !disposed)
@@ -339,7 +347,7 @@ export function createSubagentConfigScope<T>(options: {
         (!initialized || Boolean(binding) || Boolean(draining) || reset || pending.size > 0)
       );
     },
-    dispose() {
+    async dispose() {
       disposed = true;
       loadController?.abort();
       parentWatch?.abort();
@@ -348,12 +356,15 @@ export function createSubagentConfigScope<T>(options: {
       pending.clear();
       const current = watcher;
       watcher = undefined;
-      void current?.close().catch((error) =>
-        logger.warn(undefined, "Subagent 文件监听关闭失败", {
-          path: root,
-          error: String(error),
-        }),
-      );
+      await Promise.all([
+        current?.close().catch((error) =>
+          logger.warn(undefined, "Subagent 文件监听关闭失败", {
+            path: root,
+            error: String(error),
+          }),
+        ),
+        parentWatchTask,
+      ]);
     },
   };
 }

@@ -174,12 +174,12 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       // 新 workspace 复用共享缓存；既有 workspace 的显式重启才重建监听并全量读取。
       const reload = !workspace || workspaces.has(key(workspace));
       if (!user || user.path !== userPath || reload) {
-        user?.scope.dispose();
+        await user?.scope.dispose();
         user = { path: userPath, scope: documentScope(userPath, "user") };
         initializing.push(user.scope);
       }
       if (!state || state.path !== statePath || reload) {
-        state?.scope.dispose();
+        await state?.scope.dispose();
         state = {
           path: statePath,
           scope: createSubagentConfigScope({
@@ -198,7 +198,7 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       }
       if (workspace) {
         const workspaceKey = key(workspace);
-        workspaces.get(workspaceKey)?.dispose();
+        await workspaces.get(workspaceKey)?.dispose();
         const project = documentScope(join(workspace.workspacePath, ".zcode", "agents"), "project");
         workspaces.set(workspaceKey, project);
         initializing.push(project);
@@ -220,11 +220,15 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       if (!snapshot) throw new Error("Subagent runtime configuration is not prepared");
       return structuredClone(snapshot);
     },
-    dispose() {
+    async dispose() {
       disposed = true;
-      user?.scope.dispose();
-      state?.scope.dispose();
-      for (const scope of workspaces.values()) scope.dispose();
+      await Promise.all([
+        user?.scope.dispose(),
+        state?.scope.dispose(),
+        ...[...workspaces.values()].map((scope) => scope.dispose()),
+      ]);
+      user = undefined;
+      state = undefined;
       workspaces.clear();
       snapshots.clear();
     },

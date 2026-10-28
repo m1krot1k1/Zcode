@@ -557,7 +557,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
     workspacePath: string;
     workspaceIdentity?: string;
   }): Promise<SubagentRuntimeConfig>;
-  disposeAll(): void;
+  disposeAll(): Promise<void>;
 } {
   let writeQueue = Promise.resolve();
   let disposed = false;
@@ -597,7 +597,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
     }),
     disposeAll() {
       disposed = true;
-      runtimeConfig.dispose();
+      return runtimeConfig.dispose();
     },
     async prepareRuntimeState(workspace?: { workspacePath: string; workspaceIdentity?: string }) {
       return enqueue(async () => {
