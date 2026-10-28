@@ -23,6 +23,7 @@ import {
   type BackgroundResultOriginMeta,
   type AgentCompletedOutput,
   type AgentOutput,
+  type SwarmNodeAttemptLifecycleFact,
   type Logger,
   type ModelUsage,
   type PrismHostEvidenceReceipt,
@@ -270,7 +271,12 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 ? {}
                 : { acceptanceCriteria: node.acceptance_criteria }),
             },
-            dagRunOptions,
+            {
+              ...dagRunOptions,
+              ...(rawRequest.orchestrationRunId && dagRunOptions.persistSwarmNodeAttempt
+                ? { internalSwarmNodeID: node.id }
+                : {}),
+            },
           ),
         dagRunOptions,
       );
@@ -290,6 +296,30 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       const lifecycle = createSubagentLifecycle(options, request, profile, registry);
       const startedAt = new Date(lifecycle.startedAt);
       const taskAbort = createSubagentTaskAbortController(runOptions?.signal);
+      const swarmNodeID = runOptions?.internalSwarmNodeID;
+      const persistSwarmFact = async (
+        phase: SwarmNodeAttemptLifecycleFact["phase"],
+        detail: { resultText?: string; diagnosticCode?: string } = {},
+      ): Promise<void> => {
+        if (!swarmNodeID || !runOptions?.persistSwarmNodeAttempt) return;
+        await runOptions.persistSwarmNodeAttempt({
+          phase,
+          nodeID: swarmNodeID,
+          attemptID: lifecycle.agentId,
+          attemptNo: 1,
+          childSessionID: lifecycle.childSessionId,
+          ...detail,
+        } as SwarmNodeAttemptLifecycleFact);
+      };
+      if (swarmNodeID && runOptions?.persistSwarmNodeAttempt) {
+        try {
+          await persistSwarmFact("reserved");
+        } catch (error) {
+          taskAbort.dispose();
+          taskAbort.settle(undefined);
+          throw error;
+        }
+      }
       const admission = registerSubagentTask(
         registry,
         createRuntimeTaskSnapshot({
@@ -302,8 +332,12 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         taskAbort,
       );
       if (!admission.accepted) {
-        taskAbort.dispose();
-        taskAbort.settle(registry.get(lifecycle.agentId));
+        try {
+          await persistSwarmFact("failed", { diagnosticCode: "child_admission_rejected" });
+        } finally {
+          taskAbort.dispose();
+          taskAbort.settle(registry.get(lifecycle.agentId));
+        }
         throwOnSubagentAdmissionFailure(admission, request);
       }
       try {
@@ -322,16 +356,21 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           throw taskAbort.signal.reason ?? new Error("Subagent startup aborted");
         }
       } catch (error) {
-        if (taskAbort.signal.aborted) {
-          await finalizeBackgroundStopped(options, request, lifecycle, registry, false);
-        } else {
-          // 修复原因：元数据阶段尚未启动 child runtime；非取消失败需要撤销 admission，
-          // 避免把一个不存在的后台任务留在 registry 或占用 root quota。
-          registry.remove(lifecycle.agentId);
+        try {
+          if (taskAbort.signal.aborted) {
+            await persistSwarmFact("cancelled", { diagnosticCode: "child_startup_cancelled" });
+            await finalizeBackgroundStopped(options, request, lifecycle, registry, false);
+          } else {
+            await persistSwarmFact("failed", { diagnosticCode: "child_startup_failed" });
+            // 修复原因：元数据阶段尚未启动 child runtime；非取消失败需要撤销 admission，
+            // 避免把一个不存在的后台任务留在 registry 或占用 root quota。
+            registry.remove(lifecycle.agentId);
+          }
+        } finally {
+          taskAbort.dispose();
+          registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
+          taskAbort.settle(registry.get(lifecycle.agentId));
         }
-        taskAbort.dispose();
-        registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
-        taskAbort.settle(registry.get(lifecycle.agentId));
         throw error;
       }
 
@@ -376,6 +415,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         },
         {
           onSessionReady: async () => {
+            await persistSwarmFact("running");
             await emitSubagentEvent(
               options,
               SessionEventType.SubagentSpawned,
@@ -542,6 +582,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             lifecycle.runTraceContext,
           ),
         } satisfies AgentCompletedOutput;
+        await persistSwarmFact(
+          "completed",
+          { resultText: completed.output.content.map((block) => block.text).join("\n\n") },
+        );
         autoBackgroundTimer?.cancel();
         activityWatchdog.stop();
         taskAbort.dispose();
@@ -616,6 +660,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       } catch (error) {
         activityWatchdog.stop();
         if (taskAbort.signal.aborted) {
+          await persistSwarmFact("cancelled", { diagnosticCode: "child_cancelled" });
           // guardSubagentPromiseWithAbort быстрее завершает вызывающий tool, чем child runtime;
           // не публикуем stopped до его настоящего settlement.
           runningInBackground = true;
@@ -639,6 +684,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             });
           throw error;
         }
+        await persistSwarmFact("failed", { diagnosticCode: "child_execution_failed" });
         taskAbort.dispose();
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
         const totalDurationMs = Date.now() - lifecycle.startedAt;

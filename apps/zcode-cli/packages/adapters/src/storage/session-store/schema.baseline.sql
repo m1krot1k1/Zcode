@@ -268,6 +268,55 @@ CREATE TABLE session_task_link (
         unique(child_session_id)
       );
 
+CREATE TABLE swarm_node_attempt (
+        schema_version integer not null check(schema_version = 1),
+        run_id text not null references swarm_run(run_id) on delete cascade,
+        node_id text not null,
+        attempt_id text not null,
+        attempt_no integer not null check(attempt_no >= 1),
+        status text not null check(status in (
+          'pending', 'dispatching', 'running', 'completed', 'failed', 'cancelled', 'interrupted', 'blocked'
+        )),
+        child_session_id text not null unique,
+        owner_epoch integer not null check(owner_epoch >= 0),
+        revision integer not null check(revision >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
+        diagnostic_code text,
+        primary key(run_id, node_id, attempt_id),
+        unique(run_id, node_id, attempt_no),
+        check(
+          (status in ('completed', 'failed', 'cancelled', 'interrupted', 'blocked') and time_terminal is not null)
+          or (status in ('pending', 'dispatching', 'running') and time_terminal is null)
+        )
+      );
+
+CREATE TABLE swarm_run (
+        schema_version integer not null check(schema_version = 1),
+        root_session_id text not null references session(id) on delete cascade,
+        source_command_id text not null,
+        run_id text not null primary key,
+        root_turn_id text not null,
+        graph_json text check(graph_json is null or length(cast(graph_json as blob)) <= 120000),
+        status text not null check(status in (
+          'planning', 'running', 'completed', 'failed', 'cancelled', 'interrupted'
+        )),
+        owner_epoch integer not null check(owner_epoch >= 0),
+        revision integer not null check(revision >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        diagnostic_code text,
+        unique(root_session_id, source_command_id),
+        check(
+          (status in ('completed', 'failed', 'cancelled', 'interrupted') and time_terminal is not null)
+          or (status in ('planning', 'running') and time_terminal is null)
+        ),
+        check(status != 'running' or graph_json is not null)
+      );
+
 CREATE TABLE todo (
         session_id text not null references session(id) on delete cascade,
         content text not null,
@@ -521,6 +570,20 @@ CREATE INDEX session_task_type_idx on session(task_type);
 CREATE INDEX session_trace_idx on session(trace_id);
 
 CREATE INDEX session_workspace_idx on session(workspace_id);
+
+CREATE INDEX swarm_node_attempt_recovery_idx
+        on swarm_node_attempt(status, time_updated, run_id)
+        where status in ('pending', 'dispatching', 'running');
+
+CREATE INDEX swarm_node_attempt_run_idx
+        on swarm_node_attempt(run_id, node_id, attempt_no);
+
+CREATE INDEX swarm_run_recovery_idx
+        on swarm_run(status, time_updated, run_id)
+        where status in ('planning', 'running');
+
+CREATE INDEX swarm_run_session_created_idx
+        on swarm_run(root_session_id, time_created, run_id);
 
 CREATE INDEX todo_session_idx on todo(session_id);
 

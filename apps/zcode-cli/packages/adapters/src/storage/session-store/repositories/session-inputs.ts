@@ -11,12 +11,24 @@ import type {
   OpenCodeAgentRunRecord,
   OpenCodeAgentRunStatus,
   OpenCodeAgentRunTransition,
+  AgentTaskGraph,
+  SwarmNodeAttemptRecord,
+  SwarmNodeAttemptReservation,
+  SwarmNodeAttemptStatus,
+  SwarmNodeAttemptTransition,
+  SwarmRunAdmission,
+  SwarmRunGraphCommit,
+  SwarmRunOwnerClaim,
+  SwarmRunRecord,
+  SwarmRunStatus,
+  SwarmRunTransition,
   SessionId,
   SessionInputDelivery,
   SessionInputRecord,
   SessionInputStatus,
   TurnInputIntentMetadata,
 } from "@zcode/contracts";
+import { AgentTaskGraphSchema } from "@zcode/contracts";
 import { encodeJson } from "../json.js";
 import { messages as readMessages, saveMessage, savePart } from "./messages.js";
 import * as sessionEntryRepository from "./session-entries.js";
@@ -61,6 +73,148 @@ interface OpenCodeAgentRunRow {
 interface OpenCodeAgentRunActivity {
   outputText: string;
   tools: Array<{ toolCallId: string; title: string; status: string }>;
+}
+
+interface SwarmRunRow {
+  schema_version: number;
+  root_session_id: string;
+  source_command_id: string;
+  run_id: string;
+  root_turn_id: string;
+  graph_json: string | null;
+  status: string;
+  owner_epoch: number;
+  revision: number;
+  time_created: number;
+  time_updated: number;
+  time_terminal: number | null;
+  diagnostic_code: string | null;
+}
+
+interface SwarmNodeAttemptRow {
+  schema_version: number;
+  run_id: string;
+  node_id: string;
+  attempt_id: string;
+  attempt_no: number;
+  status: string;
+  child_session_id: string;
+  owner_epoch: number;
+  revision: number;
+  time_created: number;
+  time_updated: number;
+  time_terminal: number | null;
+  result_text: string | null;
+  diagnostic_code: string | null;
+}
+
+const SWARM_TERMINAL_RUN_STATUSES = new Set<SwarmRunStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
+const SWARM_TERMINAL_ATTEMPT_STATUSES = new Set<SwarmNodeAttemptStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "blocked",
+]);
+const MAX_SWARM_GRAPH_BYTES = 120_000;
+const MAX_SWARM_RESULT_BYTES = 32 * 1024;
+const MAX_SWARM_DIAGNOSTIC_BYTES = 512;
+const SWARM_RUN_STATUSES: readonly SwarmRunStatus[] = [
+  "planning",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+];
+const SWARM_ATTEMPT_STATUSES: readonly SwarmNodeAttemptStatus[] = [
+  "pending",
+  "dispatching",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "blocked",
+];
+
+function assertSwarmDiagnosticSize(value: string | null | undefined): void {
+  if (value != null && Buffer.byteLength(value, "utf8") > MAX_SWARM_DIAGNOSTIC_BYTES) {
+    throw new Error("Swarm diagnostic code exceeds its bounded snapshot size");
+  }
+}
+
+function validateSwarmGraph(graph: AgentTaskGraph): string {
+  const parsed = AgentTaskGraphSchema.parse(graph);
+  const encoded = JSON.stringify(parsed);
+  if (Buffer.byteLength(encoded, "utf8") > MAX_SWARM_GRAPH_BYTES) {
+    throw new Error("Swarm graph exceeds its bounded snapshot size");
+  }
+  return encoded;
+}
+
+function decodeSwarmRunRow(row: SwarmRunRow): SwarmRunRecord {
+  if (row.schema_version !== 1 || !SWARM_RUN_STATUSES.includes(row.status as SwarmRunStatus)) {
+    throw new Error("Invalid persisted Swarm run record");
+  }
+  const graph = row.graph_json === null ? undefined : AgentTaskGraphSchema.parse(JSON.parse(row.graph_json));
+  if (row.graph_json !== null && Buffer.byteLength(row.graph_json, "utf8") > MAX_SWARM_GRAPH_BYTES) {
+    throw new Error("Persisted Swarm graph exceeds its bounded snapshot size");
+  }
+  assertSwarmDiagnosticSize(row.diagnostic_code);
+  return {
+    schemaVersion: 1,
+    rootSessionID: row.root_session_id as SessionId,
+    sourceCommandID: row.source_command_id,
+    runID: row.run_id,
+    rootTurnID: row.root_turn_id as SwarmRunRecord["rootTurnID"],
+    ...(graph ? { graph } : {}),
+    status: row.status as SwarmRunStatus,
+    ownerEpoch: row.owner_epoch,
+    revision: row.revision,
+    time: {
+      created: row.time_created,
+      updated: row.time_updated,
+      ...(row.time_terminal === null ? {} : { terminal: row.time_terminal }),
+    },
+    ...(row.diagnostic_code === null ? {} : { diagnosticCode: row.diagnostic_code }),
+  };
+}
+
+function decodeSwarmAttemptRow(row: SwarmNodeAttemptRow): SwarmNodeAttemptRecord {
+  if (
+    row.schema_version !== 1 ||
+    !SWARM_ATTEMPT_STATUSES.includes(row.status as SwarmNodeAttemptStatus)
+  ) {
+    throw new Error("Invalid persisted Swarm node attempt");
+  }
+  if (row.result_text !== null && Buffer.byteLength(row.result_text, "utf8") > MAX_SWARM_RESULT_BYTES) {
+    throw new Error("Persisted Swarm node result exceeds its bounded snapshot size");
+  }
+  assertSwarmDiagnosticSize(row.diagnostic_code);
+  return {
+    schemaVersion: 1,
+    runID: row.run_id,
+    nodeID: row.node_id,
+    attemptID: row.attempt_id,
+    attemptNo: row.attempt_no,
+    status: row.status as SwarmNodeAttemptStatus,
+    childSessionID: row.child_session_id as SessionId,
+    ownerEpoch: row.owner_epoch,
+    revision: row.revision,
+    time: {
+      created: row.time_created,
+      updated: row.time_updated,
+      ...(row.time_terminal === null ? {} : { terminal: row.time_terminal }),
+    },
+    ...(row.result_text === null ? {} : { resultText: row.result_text }),
+    ...(row.diagnostic_code === null ? {} : { diagnosticCode: row.diagnostic_code }),
+  };
 }
 
 const OPEN_CODE_RUN_TERMINAL_STATUSES = new Set<OpenCodeAgentRunStatus>([
@@ -874,4 +1028,408 @@ function decodeSessionInputRow(row: SessionInputRow): SessionInputRecord {
     ...(row.status_reason !== null ? { statusReason: row.status_reason } : {}),
     time: { created: row.time_created, updated: row.time_updated },
   };
+}
+
+function readSwarmRun(db: DatabaseSync, rootSessionID: SessionId, runID: string): SwarmRunRecord | null {
+  const row = db
+    .prepare("select * from swarm_run where root_session_id = ? and run_id = ?")
+    .get(rootSessionID, runID) as SwarmRunRow | undefined;
+  return row ? decodeSwarmRunRow(row) : null;
+}
+
+function readSwarmRunBySource(
+  db: DatabaseSync,
+  rootSessionID: SessionId,
+  sourceCommandID: string,
+): SwarmRunRecord | null {
+  const row = db
+    .prepare("select * from swarm_run where root_session_id = ? and source_command_id = ?")
+    .get(rootSessionID, sourceCommandID) as SwarmRunRow | undefined;
+  return row ? decodeSwarmRunRow(row) : null;
+}
+
+/** The composite key is the accepted input identity; runID is only a first-creation candidate. */
+export async function admitSwarmRun(
+  db: DatabaseSync,
+  input: SwarmRunAdmission,
+): Promise<{ run: SwarmRunRecord; created: boolean }> {
+  if (
+    !String(input.rootSessionID).trim() ||
+    !input.sourceCommandID.trim() ||
+    !input.runID.trim() ||
+    !String(input.rootTurnID).trim() ||
+    !Number.isSafeInteger(input.ownerEpoch) ||
+    input.ownerEpoch < 0
+  ) {
+    throw new Error("Invalid Swarm run admission");
+  }
+  const now = input.now ?? Date.now();
+  db.exec("begin immediate");
+  try {
+    const acceptedInput = db
+      .prepare(`
+        select 1 as found
+        from session_input
+        where session_id = ?
+          and status in ('admitted', 'promoted')
+          and coalesce(
+            json_extract(payload, '$.conversationInputIntent.sourceCommandId'),
+            json_extract(payload, '$.intent.sourceCommandId')
+          ) = ?
+        limit 1
+      `)
+      .get(input.rootSessionID, input.sourceCommandID);
+    if (!acceptedInput) throw new Error("Swarm run admission requires a matching accepted session input");
+    const existing = readSwarmRunBySource(db, input.rootSessionID, input.sourceCommandID);
+    if (existing) {
+      db.exec("commit");
+      return { run: existing, created: false };
+    }
+    const runIDCollision = db.prepare("select 1 as found from swarm_run where run_id = ?").get(input.runID);
+    if (runIDCollision) throw new Error("Swarm candidate run ID already belongs to another accepted input");
+    db.prepare(`
+      insert into swarm_run (
+        schema_version, root_session_id, source_command_id, run_id, root_turn_id,
+        status, owner_epoch, revision, time_created, time_updated
+      ) values (1, ?, ?, ?, ?, 'planning', ?, 0, ?, ?)
+    `).run(
+      input.rootSessionID,
+      input.sourceCommandID,
+      input.runID,
+      input.rootTurnID,
+      input.ownerEpoch,
+      now,
+      now,
+    );
+    const run = readSwarmRun(db, input.rootSessionID, input.runID);
+    if (!run) throw new Error("Swarm run admission did not persist its run");
+    db.exec("commit");
+    return { run, created: true };
+  } catch (error) {
+    try {
+      db.exec("rollback");
+    } catch {
+      // Keep the original storage error.
+    }
+    throw error;
+  }
+}
+
+export async function getSwarmRun(
+  db: DatabaseSync,
+  input: { rootSessionID: SessionId; runID: string },
+): Promise<SwarmRunRecord | null> {
+  return readSwarmRun(db, input.rootSessionID, input.runID);
+}
+
+export async function findSwarmRunBySourceCommand(
+  db: DatabaseSync,
+  input: { rootSessionID: SessionId; sourceCommandID: string },
+): Promise<SwarmRunRecord | null> {
+  return readSwarmRunBySource(db, input.rootSessionID, input.sourceCommandID);
+}
+
+function boundedLimit(limit: number | undefined): number {
+  return Math.max(1, Math.min(500, Math.floor(limit ?? 100)));
+}
+
+export async function listSwarmRuns(
+  db: DatabaseSync,
+  input: { rootSessionID: SessionId; statuses?: SwarmRunStatus[]; limit?: number },
+): Promise<SwarmRunRecord[]> {
+  const limit = boundedLimit(input.limit);
+  if (input.statuses && input.statuses.length === 0) return [];
+  const rows = input.statuses
+    ? (db
+        .prepare(
+          `select * from swarm_run where root_session_id = ? and status in (${input.statuses.map(() => "?").join(",")}) order by time_created desc, run_id limit ?`,
+        )
+        .all(input.rootSessionID, ...input.statuses, limit) as unknown as SwarmRunRow[])
+    : (db
+        .prepare(
+          "select * from swarm_run where root_session_id = ? order by time_created desc, run_id limit ?",
+        )
+        .all(input.rootSessionID, limit) as unknown as SwarmRunRow[]);
+  return rows.map(decodeSwarmRunRow);
+}
+
+/** Save the complete validated graph before Core dispatches any node side effects. */
+export async function commitSwarmRunGraph(
+  db: DatabaseSync,
+  input: SwarmRunGraphCommit,
+): Promise<boolean> {
+  const graphJSON = validateSwarmGraph(input.graph);
+  const now = input.now ?? Date.now();
+  const result = db
+    .prepare(`
+      update swarm_run
+      set graph_json = ?, revision = revision + 1, time_updated = ?
+      where root_session_id = ? and run_id = ? and revision = ? and owner_epoch = ?
+        and graph_json is null and status = 'planning' and time_terminal is null
+    `)
+    .run(
+      graphJSON,
+      now,
+      input.rootSessionID,
+      input.runID,
+      input.expectedRevision,
+      input.ownerEpoch,
+    );
+  return result.changes === 1;
+}
+
+export async function transitionSwarmRun(
+  db: DatabaseSync,
+  input: SwarmRunTransition,
+): Promise<boolean> {
+  if (!SWARM_RUN_STATUSES.includes(input.status)) throw new Error("Invalid Swarm run status");
+  assertSwarmDiagnosticSize(input.diagnosticCode);
+  const current = db
+    .prepare("select status from swarm_run where root_session_id = ? and run_id = ? and revision = ? and owner_epoch = ? and time_terminal is null")
+    .get(input.rootSessionID, input.runID, input.expectedRevision, input.ownerEpoch) as { status: string } | undefined;
+  if (!current) return false;
+  const allowed: Record<string, readonly SwarmRunStatus[]> = {
+    planning: ["running", "failed", "cancelled", "interrupted"],
+    running: ["completed", "failed", "cancelled", "interrupted"],
+  };
+  if (!allowed[current.status]?.includes(input.status)) return false;
+  const now = input.now ?? Date.now();
+  const terminal = SWARM_TERMINAL_RUN_STATUSES.has(input.status) ? now : null;
+  const result = db
+    .prepare(`
+      update swarm_run
+      set status = ?, revision = revision + 1, time_updated = ?, time_terminal = ?,
+          diagnostic_code = ?
+      where root_session_id = ? and run_id = ? and revision = ? and owner_epoch = ?
+        and status = ? and time_terminal is null
+    `)
+    .run(
+      input.status,
+      now,
+      terminal,
+      input.diagnosticCode ?? null,
+      input.rootSessionID,
+      input.runID,
+      input.expectedRevision,
+      input.ownerEpoch,
+      current.status,
+    );
+  return result.changes === 1;
+}
+
+export async function claimSwarmRunOwner(
+  db: DatabaseSync,
+  input: SwarmRunOwnerClaim,
+): Promise<boolean> {
+  if (
+    !Number.isSafeInteger(input.ownerEpoch) ||
+    input.ownerEpoch <= input.expectedOwnerEpoch
+  ) {
+    throw new Error("Swarm owner epoch must advance monotonically");
+  }
+  const now = input.now ?? Date.now();
+  db.exec("begin immediate");
+  try {
+    const result = db
+      .prepare(`
+        update swarm_run
+        set owner_epoch = ?, revision = revision + 1, time_updated = ?
+        where root_session_id = ? and run_id = ? and revision = ? and owner_epoch = ?
+          and status in ('planning', 'running') and time_terminal is null
+      `)
+      .run(
+        input.ownerEpoch,
+        now,
+        input.rootSessionID,
+        input.runID,
+        input.expectedRevision,
+        input.expectedOwnerEpoch,
+      );
+    if (result.changes !== 1) {
+      db.exec("commit");
+      return false;
+    }
+    // 修复依据：新 Core owner 接管 run 时，旧 owner 留下的 in-flight attempts 也必须
+    // 先被新 epoch fencing；否则新 owner 无法把不安全任务收口为 interrupted。
+    db.prepare(`
+      update swarm_node_attempt
+      set owner_epoch = ?, revision = revision + 1, time_updated = ?
+      where run_id = ? and status in ('pending', 'dispatching', 'running')
+    `).run(input.ownerEpoch, now, input.runID);
+    db.exec("commit");
+    return true;
+  } catch (error) {
+    try {
+      db.exec("rollback");
+    } catch {
+      // Keep the original storage error.
+    }
+    throw error;
+  }
+}
+
+function readSwarmAttempt(
+  db: DatabaseSync,
+  runID: string,
+  nodeID: string,
+  attemptID: string,
+): SwarmNodeAttemptRecord | null {
+  const row = db
+    .prepare("select * from swarm_node_attempt where run_id = ? and node_id = ? and attempt_id = ?")
+    .get(runID, nodeID, attemptID) as SwarmNodeAttemptRow | undefined;
+  return row ? decodeSwarmAttemptRow(row) : null;
+}
+
+/** Reserve durable child identity before any child model/tool side effects can start. */
+export async function reserveSwarmNodeAttempt(
+  db: DatabaseSync,
+  input: SwarmNodeAttemptReservation,
+): Promise<{ attempt: SwarmNodeAttemptRecord; created: boolean }> {
+  if (
+    !input.runID.trim() ||
+    !input.nodeID.trim() ||
+    !input.attemptID.trim() ||
+    !String(input.childSessionID).trim() ||
+    !Number.isSafeInteger(input.attemptNo) ||
+    input.attemptNo < 1 ||
+    !Number.isSafeInteger(input.ownerEpoch) ||
+    input.ownerEpoch < 0
+  ) {
+    throw new Error("Invalid Swarm node attempt reservation");
+  }
+  const now = input.now ?? Date.now();
+  db.exec("begin immediate");
+  try {
+    const run = db
+      .prepare("select owner_epoch, graph_json, status from swarm_run where run_id = ?")
+      .get(input.runID) as
+      | { owner_epoch: number; graph_json: string | null; status: string }
+      | undefined;
+    if (
+      !run ||
+      run.owner_epoch !== input.ownerEpoch ||
+      !run.graph_json ||
+      run.status !== "running"
+    ) {
+      throw new Error("Swarm attempt reservation requires an active run with a committed graph");
+    }
+    const graph = AgentTaskGraphSchema.parse(JSON.parse(run.graph_json));
+    if (!graph.nodes.some((node) => node.id === input.nodeID)) {
+      throw new Error("Swarm attempt node is missing from the committed graph");
+    }
+    const existing = readSwarmAttempt(db, input.runID, input.nodeID, input.attemptID);
+    if (existing) {
+      if (
+        existing.attemptNo !== input.attemptNo ||
+        existing.childSessionID !== input.childSessionID ||
+        existing.ownerEpoch !== input.ownerEpoch
+      ) {
+        throw new Error("Swarm attempt identity was reused with conflicting reservation data");
+      }
+      db.exec("commit");
+      return { attempt: existing, created: false };
+    }
+    db.prepare(`
+      insert into swarm_node_attempt (
+        schema_version, run_id, node_id, attempt_id, attempt_no, status,
+        child_session_id, owner_epoch, revision, time_created, time_updated
+      ) values (1, ?, ?, ?, ?, 'dispatching', ?, ?, 0, ?, ?)
+    `).run(
+      input.runID,
+      input.nodeID,
+      input.attemptID,
+      input.attemptNo,
+      input.childSessionID,
+      input.ownerEpoch,
+      now,
+      now,
+    );
+    const attempt = readSwarmAttempt(db, input.runID, input.nodeID, input.attemptID);
+    if (!attempt) throw new Error("Swarm node attempt reservation did not persist");
+    db.exec("commit");
+    return { attempt, created: true };
+  } catch (error) {
+    try {
+      db.exec("rollback");
+    } catch {
+      // Keep the original storage error.
+    }
+    throw error;
+  }
+}
+
+export async function transitionSwarmNodeAttempt(
+  db: DatabaseSync,
+  input: SwarmNodeAttemptTransition,
+): Promise<boolean> {
+  if (!SWARM_ATTEMPT_STATUSES.includes(input.status)) throw new Error("Invalid Swarm attempt status");
+  if (
+    input.resultText != null &&
+    Buffer.byteLength(input.resultText, "utf8") > MAX_SWARM_RESULT_BYTES
+  ) {
+    throw new Error("Swarm node result exceeds 32 KiB");
+  }
+  assertSwarmDiagnosticSize(input.diagnosticCode);
+  const existing = readSwarmAttempt(db, input.runID, input.nodeID, input.attemptID);
+  if (!existing || existing.revision !== input.expectedRevision || existing.ownerEpoch !== input.ownerEpoch) {
+    return false;
+  }
+  const allowed: Record<string, readonly SwarmNodeAttemptStatus[]> = {
+    dispatching: ["running", "failed", "cancelled", "interrupted"],
+    running: ["completed", "failed", "cancelled", "interrupted"],
+  };
+  if (!allowed[existing.status]?.includes(input.status)) return false;
+  const resultText = input.resultText === undefined ? existing.resultText ?? null : input.resultText;
+  const terminal = SWARM_TERMINAL_ATTEMPT_STATUSES.has(input.status) ? (input.now ?? Date.now()) : null;
+  const result = db
+    .prepare(`
+      update swarm_node_attempt
+      set status = ?, revision = revision + 1, time_updated = ?, time_terminal = ?,
+          result_text = ?, diagnostic_code = ?
+      where run_id = ? and node_id = ? and attempt_id = ? and revision = ? and owner_epoch = ?
+        and status = ? and time_terminal is null
+        and exists (select 1 from swarm_run where run_id = ? and owner_epoch = ?)
+    `)
+    .run(
+      input.status,
+      input.now ?? Date.now(),
+      terminal,
+      resultText,
+      input.diagnosticCode === undefined ? existing.diagnosticCode ?? null : input.diagnosticCode,
+      input.runID,
+      input.nodeID,
+      input.attemptID,
+      input.expectedRevision,
+      input.ownerEpoch,
+      existing.status,
+      input.runID,
+      input.ownerEpoch,
+    );
+  return result.changes === 1;
+}
+
+export async function listSwarmNodeAttempts(
+  db: DatabaseSync,
+  input: { runID: string },
+): Promise<SwarmNodeAttemptRecord[]> {
+  const rows = db
+    .prepare("select * from swarm_node_attempt where run_id = ? order by node_id, attempt_no")
+    .all(input.runID) as unknown as SwarmNodeAttemptRow[];
+  return rows.map(decodeSwarmAttemptRow);
+}
+
+/** Startup can query active facts; only Core decides whether/how to reconcile them. */
+export async function listRecoverableSwarmRuns(
+  db: DatabaseSync,
+  input?: { limit?: number },
+): Promise<SwarmRunRecord[]> {
+  const rows = db
+    .prepare(`
+      select * from swarm_run
+      where status in ('planning', 'running')
+      order by time_updated, run_id
+      limit ?
+    `)
+    .all(boundedLimit(input?.limit)) as unknown as SwarmRunRow[];
+  return rows.map(decodeSwarmRunRow);
 }

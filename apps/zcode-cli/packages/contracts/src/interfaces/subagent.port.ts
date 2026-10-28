@@ -150,6 +150,10 @@ export interface SubagentRunOptions {
   /** Swarm descendants share the root turn budget; this is core-owned metadata. */
   internalSwarmRootRunId?: string;
   internalSwarmRootTurnId?: TurnId;
+  /** Internal DAG node identity; not sent to a provider or persisted as prompt metadata. */
+  internalSwarmNodeID?: string;
+  /** Core persists each child attempt before spawning and before terminal projection. */
+  persistSwarmNodeAttempt?: (fact: SwarmNodeAttemptLifecycleFact) => Promise<void>;
   /** Один снимок профилей для planner и всех узлов одного swarm DAG. */
   internalAgentProfilesSnapshot?: readonly AgentProfile[];
   /** 未显式选模的 child 从父 Agent Loop 继承的不可变 Model。 */
@@ -215,6 +219,39 @@ export type SubagentTaskStatus =
   | "killed"
   | "stopped"
   | "lost";
+
+/** In-process fact reported by the Core DAG runner for durable child-attempt journaling. */
+export type SwarmNodeAttemptLifecycleFact =
+  | {
+      phase: "reserved";
+      nodeID: string;
+      attemptID: string;
+      attemptNo: number;
+      childSessionID: SessionId;
+    }
+  | {
+      phase: "running";
+      nodeID: string;
+      attemptID: string;
+      attemptNo: number;
+      childSessionID: SessionId;
+    }
+  | {
+      phase: "completed";
+      nodeID: string;
+      attemptID: string;
+      attemptNo: number;
+      childSessionID: SessionId;
+      resultText: string;
+    }
+  | {
+      phase: "failed" | "cancelled";
+      nodeID: string;
+      attemptID: string;
+      attemptNo: number;
+      childSessionID: SessionId;
+      diagnosticCode: string;
+    };
 
 export interface SubagentTaskSnapshot {
   taskId: string;

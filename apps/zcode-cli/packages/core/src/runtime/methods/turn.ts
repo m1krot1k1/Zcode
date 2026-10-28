@@ -3,9 +3,12 @@ import {
   AgentTaskGraphSchema,
   beginLocalTurnPreparation,
   type LocalTtftDetail,
+  type SessionId,
   type SubagentTaskSnapshot,
+  type SwarmNodeAttemptLifecycleFact,
   type SwarmRunUpdatedPayload,
 } from "@zcode/contracts";
+import { createHash } from "node:crypto";
 import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
@@ -1188,16 +1191,49 @@ async function executeSwarmRun(
   task: string,
   policy: { rootRunId: string; rootTurnId: TurnId; showPlanningStatus: boolean },
 ): Promise<boolean> {
-  const swarmRunId = `swarm_${state.turnId}`;
+  let swarmRunId = `swarm_${state.turnId}`;
   let outcomeAcceptance: SwarmRunUpdatedPayload["outcomeAcceptance"] = "unknown";
   let phase: "planning" | "running" = "planning";
+  let journalFailClosed = false;
+  let durableRun: { rootSessionID: SessionId; revision: number; ownerEpoch: number } | undefined;
+  const durableAttemptRevisions = new Map<string, number>();
   const plannerTimeoutSignal = AbortSignal.timeout(SWARM_PLAN_TIMEOUT_MS);
   const plannerAbortSignal = AbortSignal.any([state.turnAbortSignal, plannerTimeoutSignal]);
   const agentProfiles = this.getAgentDefinitions().activeAgents;
   const swarmAgentProfiles = getSwarmAgentProfiles(agentProfiles);
   const agentProfileIds = swarmAgentProfiles.map((profile) => profile.name);
   let planningStatusPublished = false;
+  const journal = this.sessionStore;
+  const rootSessionID = this.runtimeTaskRegistry.getRootSessionIdForSession(this.sessionId);
+  const journalAPIsAvailable = Boolean(
+    journal?.admitSwarmRun &&
+      journal.commitSwarmRunGraph &&
+      journal.transitionSwarmRun &&
+      journal.reserveSwarmNodeAttempt &&
+      journal.transitionSwarmNodeAttempt,
+  );
+  const journalEligible = rootSessionID === this.sessionId && Boolean(state.inputId);
   const publish = async (payload: SwarmRunUpdatedPayload): Promise<void> => {
+    if (durableRun && journal?.transitionSwarmRun) {
+      journalFailClosed = true;
+      const persisted = await journal.transitionSwarmRun({
+        rootSessionID: durableRun.rootSessionID,
+        runID: swarmRunId,
+        expectedRevision: durableRun.revision,
+        ownerEpoch: durableRun.ownerEpoch,
+        status: payload.status,
+        ...(payload.status === "failed" ? { diagnosticCode: "SWARM_RUN_FAILED" } : {}),
+        ...(payload.status === "cancelled" ? { diagnosticCode: "SWARM_RUN_CANCELLED" } : {}),
+      });
+      if (!persisted) {
+        throw createCoreError(CoreErrorType.ToolExecutionFailed, "Swarm journal rejected a stale lifecycle transition.", {
+          context: { code: "SWARM_JOURNAL_CAS_CONFLICT", swarmRunId },
+          recoverable: true,
+        });
+      }
+      durableRun.revision += 1;
+      journalFailClosed = false;
+    }
     const event = this.createEvent(SessionEventType.SwarmRunUpdated, payload, state.turnTraceContext);
     await this.appendEvent(event, state.turnTraceContext);
     state.events.push(event);
@@ -1216,6 +1252,42 @@ async function executeSwarmRun(
     // 修复原因：显式选择「Рой」不表示单纯查询角色/文件清单也要创建编排波次；
     // 仅对完整匹配的 list-only 请求直达已选模型，附带实现工作的请求仍走 planner。
     if (isListOnlyOrchestrationRequest(task)) return false;
+    if (journalEligible && journalAPIsAvailable && journal?.admitSwarmRun) {
+      journalFailClosed = true;
+      const candidateRunID = `swarm_${createHash("sha256")
+        .update(`${rootSessionID}\u0000${state.inputId}`)
+        .digest("hex")
+        .slice(0, 32)}`;
+      const admission = await journal.admitSwarmRun({
+        rootSessionID,
+        sourceCommandID: state.inputId!,
+        runID: candidateRunID,
+        rootTurnID: policy.rootTurnId,
+        ownerEpoch: 0,
+      });
+      if (!admission.created) {
+        // A previous accepted execution may have crossed a child side-effect boundary.
+        // Until Core can reconcile that exact attempt, replay must stop before any dispatch.
+        throw createCoreError(CoreErrorType.ToolExecutionFailed, "Этот запрос роя уже принят ранее и не может быть безопасно запущен повторно.", {
+          context: { code: "SWARM_DUPLICATE_INPUT_JOURNALED", swarmRunId: admission.run.runID },
+          recoverable: true,
+        });
+      }
+      swarmRunId = admission.run.runID;
+      durableRun = {
+        rootSessionID,
+        revision: admission.run.revision,
+        ownerEpoch: admission.run.ownerEpoch,
+      };
+      journalFailClosed = false;
+    } else if (rootSessionID === this.sessionId && (!state.inputId || !journalAPIsAvailable)) {
+      this.logger?.warn("Swarm durable journal is unavailable; executing with in-memory lifecycle only", {
+        event: "swarm.journal.unavailable",
+        module: "core.runtime",
+        swarmRunId,
+        reason: !state.inputId ? "canonical_source_command_id_missing" : "session_store_swarm_journal_api_missing",
+      });
+    }
     // 根任务的子代理会继承 orchestration intent；若重复绕过 planner，每个后代都会新建 D1 图，导致失控递归。
     const recursiveProbe =
       this.runtimeTaskRegistry.getRootSessionIdForSession(this.sessionId) === this.sessionId &&
@@ -1314,6 +1386,25 @@ async function executeSwarmRun(
       throw new Error("В этом runtime недоступен исполнитель задач роя.");
     }
 
+    if (durableRun && journal?.commitSwarmRunGraph) {
+      journalFailClosed = true;
+      const committed = await journal.commitSwarmRunGraph({
+        rootSessionID: durableRun.rootSessionID,
+        runID: swarmRunId,
+        expectedRevision: durableRun.revision,
+        ownerEpoch: durableRun.ownerEpoch,
+        graph,
+      });
+      if (!committed) {
+        throw createCoreError(CoreErrorType.ToolExecutionFailed, "Не удалось сохранить проверенный граф роя в журнале.", {
+          context: { code: "SWARM_GRAPH_COMMIT_CONFLICT", swarmRunId },
+          recoverable: true,
+        });
+      }
+      durableRun.revision += 1;
+      journalFailClosed = false;
+    }
+
     phase = "running";
     await publish({
       swarmRunId,
@@ -1369,6 +1460,63 @@ async function executeSwarmRun(
         model: state.model,
         internalSwarmRootRunId: policy.rootRunId,
         internalSwarmRootTurnId: policy.rootTurnId,
+        ...(durableRun && journal?.reserveSwarmNodeAttempt && journal.transitionSwarmNodeAttempt
+          ? {
+              persistSwarmNodeAttempt: async (fact: SwarmNodeAttemptLifecycleFact): Promise<void> => {
+                journalFailClosed = true;
+                const key = `${fact.nodeID}\u0000${fact.attemptID}`;
+                if (fact.phase === "reserved") {
+                  const reservation = await journal.reserveSwarmNodeAttempt!({
+                    runID: swarmRunId,
+                    nodeID: fact.nodeID,
+                    attemptID: fact.attemptID,
+                    attemptNo: fact.attemptNo,
+                    childSessionID: fact.childSessionID,
+                    ownerEpoch: durableRun!.ownerEpoch,
+                  });
+                  if (!reservation.created) {
+                    throw createCoreError(CoreErrorType.ToolExecutionFailed, "Попытка узла роя уже зарезервирована и не будет запущена повторно.", {
+                      context: { code: "SWARM_ATTEMPT_ALREADY_RESERVED", swarmRunId, nodeID: fact.nodeID },
+                      recoverable: true,
+                    });
+                  }
+                  durableAttemptRevisions.set(key, reservation.attempt.revision);
+                  journalFailClosed = false;
+                  return;
+                }
+                const expectedRevision = durableAttemptRevisions.get(key);
+                if (expectedRevision === undefined) {
+                  throw createCoreError(CoreErrorType.ToolExecutionFailed, "Отсутствует сохраненная резервация узла роя.", {
+                    context: { code: "SWARM_ATTEMPT_RESERVATION_MISSING", swarmRunId, nodeID: fact.nodeID },
+                    recoverable: true,
+                  });
+                }
+                const status = fact.phase === "running" ? "running" : fact.phase;
+                const updated = await journal.transitionSwarmNodeAttempt!({
+                  runID: swarmRunId,
+                  nodeID: fact.nodeID,
+                  attemptID: fact.attemptID,
+                  expectedRevision,
+                  ownerEpoch: durableRun!.ownerEpoch,
+                  status,
+                  ...(fact.phase === "completed"
+                    ? { resultText: truncateUtf8(fact.resultText, 32 * 1024) }
+                    : {}),
+                  ...(fact.phase === "failed" || fact.phase === "cancelled"
+                    ? { diagnosticCode: fact.diagnosticCode }
+                    : {}),
+                });
+                if (!updated) {
+                  throw createCoreError(CoreErrorType.ToolExecutionFailed, "Swarm journal rejected a stale child-attempt transition.", {
+                    context: { code: "SWARM_ATTEMPT_CAS_CONFLICT", swarmRunId, nodeID: fact.nodeID },
+                    recoverable: true,
+                  });
+                }
+                durableAttemptRevisions.set(key, expectedRevision + 1);
+                journalFailClosed = false;
+              },
+            }
+          : {}),
         // Planner и runner обязаны использовать один и тот же canonical roster:
         // полный active snapshot позволял одноимённому project-профилю подменить
         // встроенный prompt/tools уже после проверки плана.
@@ -1408,6 +1556,9 @@ async function executeSwarmRun(
     ]);
     return true;
   } catch (error) {
+    if (journalFailClosed || (error instanceof Error && error.message.includes("SWARM_DUPLICATE_INPUT_JOURNALED"))) {
+      throw error;
+    }
     const plannerTimedOut = plannerTimeoutSignal.aborted && !state.turnAbortSignal.aborted;
     const cancelled =
       state.turnAbortSignal.aborted || (!plannerTimedOut && isTurnCancellationError(error));
@@ -1415,7 +1566,16 @@ async function executeSwarmRun(
     if (phase === "planning" && !cancelled) {
       // Ошибка или отказ planner до запуска агентов не должны превращать отправку
       // сообщения в ошибку чата: задача всё ещё может быть выполнена обычным turn.
-      if (planningStatusPublished) {
+      if (durableRun) {
+        await publish({
+          swarmRunId,
+          status: "failed",
+          outcomeAcceptance: "unknown",
+          taskCount: 0,
+          childSessionIds: [],
+          summary: "Планирование не удалось; сообщение передано обычному выполнению.",
+        });
+      } else if (planningStatusPublished) {
         await publish({
           swarmRunId,
           status: "completed",

@@ -34,6 +34,15 @@ import type {
   OpenCodeAgentRunRecord,
   OpenCodeAgentRunStatus,
   OpenCodeAgentRunTransition,
+  SwarmNodeAttemptRecord,
+  SwarmNodeAttemptReservation,
+  SwarmNodeAttemptTransition,
+  SwarmRunAdmission,
+  SwarmRunGraphCommit,
+  SwarmRunOwnerClaim,
+  SwarmRunRecord,
+  SwarmRunStatus,
+  SwarmRunTransition,
   PartId,
   PermissionRuleset,
   ProjectId,
@@ -789,6 +798,69 @@ export class SqliteSessionStore
   }): Promise<OpenCodeAgentRunRecord[]> {
     this.throwBeforeWrite();
     return sessionInputRepository.recoverOpenCodeAgentRuns(this.db, input);
+  }
+
+  async admitSwarmRun(input: SwarmRunAdmission): Promise<{ run: SwarmRunRecord; created: boolean }> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.admitSwarmRun(this.db, input);
+  }
+
+  async getSwarmRun(input: {
+    rootSessionID: SessionId;
+    runID: string;
+  }): Promise<SwarmRunRecord | null> {
+    return sessionInputRepository.getSwarmRun(this.db, input);
+  }
+
+  async findSwarmRunBySourceCommand(input: {
+    rootSessionID: SessionId;
+    sourceCommandID: string;
+  }): Promise<SwarmRunRecord | null> {
+    return sessionInputRepository.findSwarmRunBySourceCommand(this.db, input);
+  }
+
+  async listSwarmRuns(input: {
+    rootSessionID: SessionId;
+    statuses?: SwarmRunStatus[];
+    limit?: number;
+  }): Promise<SwarmRunRecord[]> {
+    return sessionInputRepository.listSwarmRuns(this.db, input);
+  }
+
+  async commitSwarmRunGraph(input: SwarmRunGraphCommit): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.commitSwarmRunGraph(this.db, input);
+  }
+
+  async transitionSwarmRun(input: SwarmRunTransition): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.transitionSwarmRun(this.db, input);
+  }
+
+  async claimSwarmRunOwner(input: SwarmRunOwnerClaim): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.claimSwarmRunOwner(this.db, input);
+  }
+
+  async reserveSwarmNodeAttempt(input: SwarmNodeAttemptReservation): Promise<{
+    attempt: SwarmNodeAttemptRecord;
+    created: boolean;
+  }> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.reserveSwarmNodeAttempt(this.db, input);
+  }
+
+  async transitionSwarmNodeAttempt(input: SwarmNodeAttemptTransition): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionInputRepository.transitionSwarmNodeAttempt(this.db, input);
+  }
+
+  async listSwarmNodeAttempts(input: { runID: string }): Promise<SwarmNodeAttemptRecord[]> {
+    return sessionInputRepository.listSwarmNodeAttempts(this.db, input);
+  }
+
+  async listRecoverableSwarmRuns(input?: { limit?: number }): Promise<SwarmRunRecord[]> {
+    return sessionInputRepository.listRecoverableSwarmRuns(this.db, input);
   }
 
   async readTodos(input: { sessionID: SessionId }): Promise<TodoItem[]> {

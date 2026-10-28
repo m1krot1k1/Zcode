@@ -31,6 +31,7 @@ import type { PermissionRuleset } from "./permission.port.js";
 import type { CollaborationMode } from "./session.port.js";
 import type { EnvInfo } from "./context-source.port.js";
 import type { SubagentTaskStatus } from "./subagent.port.js";
+import type { AgentTaskGraph } from "../tools/agent.js";
 
 export const SESSION_TASK_TYPES = [
   "interactive",
@@ -981,6 +982,117 @@ export interface OpenCodeAgentRunHostEventTransition extends OpenCodeAgentRunTra
   hostEventSequence: number;
 }
 
+export const SWARM_RUN_STATUSES = [
+  "planning",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+] as const;
+export type SwarmRunStatus = (typeof SWARM_RUN_STATUSES)[number];
+export const SWARM_NODE_ATTEMPT_STATUSES = [
+  "pending",
+  "dispatching",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "blocked",
+] as const;
+export type SwarmNodeAttemptStatus = (typeof SWARM_NODE_ATTEMPT_STATUSES)[number];
+
+/** Durable Swarm facts. The accepted source command, not turn/transcript/queue IDs, owns identity. */
+export interface SwarmRunRecord {
+  schemaVersion: 1;
+  rootSessionID: SessionId;
+  sourceCommandID: string;
+  runID: string;
+  rootTurnID: TurnId;
+  graph?: AgentTaskGraph;
+  status: SwarmRunStatus;
+  ownerEpoch: number;
+  revision: number;
+  time: { created: number; updated: number; terminal?: number };
+  diagnosticCode?: string;
+}
+
+export interface SwarmRunAdmission {
+  rootSessionID: SessionId;
+  sourceCommandID: string;
+  /** Candidate ID is used only when creating; retries return the existing stable run ID. */
+  runID: string;
+  rootTurnID: TurnId;
+  ownerEpoch: number;
+  now?: number;
+}
+
+export interface SwarmRunTransition {
+  rootSessionID: SessionId;
+  runID: string;
+  expectedRevision: number;
+  ownerEpoch: number;
+  status: SwarmRunStatus;
+  now?: number;
+  diagnosticCode?: string | null;
+}
+
+export interface SwarmRunGraphCommit {
+  rootSessionID: SessionId;
+  runID: string;
+  expectedRevision: number;
+  ownerEpoch: number;
+  graph: AgentTaskGraph;
+  now?: number;
+}
+
+export interface SwarmRunOwnerClaim {
+  rootSessionID: SessionId;
+  runID: string;
+  expectedRevision: number;
+  expectedOwnerEpoch: number;
+  ownerEpoch: number;
+  now?: number;
+}
+
+export interface SwarmNodeAttemptRecord {
+  schemaVersion: 1;
+  runID: string;
+  nodeID: string;
+  attemptID: string;
+  attemptNo: number;
+  status: SwarmNodeAttemptStatus;
+  childSessionID: SessionId;
+  ownerEpoch: number;
+  revision: number;
+  time: { created: number; updated: number; terminal?: number };
+  resultText?: string;
+  diagnosticCode?: string;
+}
+
+export interface SwarmNodeAttemptReservation {
+  runID: string;
+  nodeID: string;
+  attemptID: string;
+  attemptNo: number;
+  childSessionID: SessionId;
+  ownerEpoch: number;
+  now?: number;
+}
+
+export interface SwarmNodeAttemptTransition {
+  runID: string;
+  nodeID: string;
+  attemptID: string;
+  expectedRevision: number;
+  ownerEpoch: number;
+  status: SwarmNodeAttemptStatus;
+  now?: number;
+  resultText?: string | null;
+  diagnosticCode?: string | null;
+}
+
 export type UsageQuerySource =
   | "main_turn"
   | "compact"
@@ -1342,6 +1454,36 @@ export interface SessionStorePort {
     now?: number;
     diagnosticCode?: string;
   }): Promise<OpenCodeAgentRunRecord[]>;
+  /** Create once by (rootSessionID, sourceCommandID); retry returns the existing durable run. */
+  admitSwarmRun?(input: SwarmRunAdmission): Promise<{ run: SwarmRunRecord; created: boolean }>;
+  getSwarmRun?(input: {
+    rootSessionID: SessionId;
+    runID: string;
+  }): Promise<SwarmRunRecord | null>;
+  findSwarmRunBySourceCommand?(input: {
+    rootSessionID: SessionId;
+    sourceCommandID: string;
+  }): Promise<SwarmRunRecord | null>;
+  listSwarmRuns?(input: {
+    rootSessionID: SessionId;
+    statuses?: SwarmRunStatus[];
+    limit?: number;
+  }): Promise<SwarmRunRecord[]>;
+  /** Persist a fully validated graph before any node dispatch side effect. */
+  commitSwarmRunGraph?(input: SwarmRunGraphCommit): Promise<boolean>;
+  /** Core-owned lifecycle decision, atomically guarded by revision and owner epoch. */
+  transitionSwarmRun?(input: SwarmRunTransition): Promise<boolean>;
+  /** Fences a restarted Core owner before it reconciles a run. */
+  claimSwarmRunOwner?(input: SwarmRunOwnerClaim): Promise<boolean>;
+  /** Stable attempt + child identity must be committed before execution starts. */
+  reserveSwarmNodeAttempt?(input: SwarmNodeAttemptReservation): Promise<{
+    attempt: SwarmNodeAttemptRecord;
+    created: boolean;
+  }>;
+  transitionSwarmNodeAttempt?(input: SwarmNodeAttemptTransition): Promise<boolean>;
+  listSwarmNodeAttempts?(input: { runID: string }): Promise<SwarmNodeAttemptRecord[]>;
+  /** Returns active facts only; recovery decisions and writes belong to Core. */
+  listRecoverableSwarmRuns?(input?: { limit?: number }): Promise<SwarmRunRecord[]>;
   readTodos(input: { sessionID: SessionId }): Promise<TodoItem[]>;
   updateTodos(input: { sessionID: SessionId; todos: TodoItem[] }): Promise<void>;
   readTarget(input: { sessionID: SessionId }): Promise<SessionGoal | null>;

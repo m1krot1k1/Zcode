@@ -3609,6 +3609,143 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[3]?.childSessionIds).toEqual(["sess_swarm-child-a", "sess_swarm-child-b"]);
   });
 
+  it("journals an accepted root swarm before projection and dispatch, then rejects duplicate input without redispatch", async () => {
+    const sessionId = createSessionId("runtime-swarm-durable-admission");
+    const eventStore = createTestSessionEventStore();
+    const order: string[] = [];
+    const appendEvent = eventStore.append.bind(eventStore);
+    eventStore.append = async (event) => {
+      if (event.type === SessionEventType.SwarmRunUpdated) order.push(`projection:${String((event.payload as { status?: string }).status)}`);
+      return appendEvent(event);
+    };
+    let admitted = false;
+    let runRevision = 0;
+    let attemptRevision = 0;
+    const sessionStore = Object.assign(new RecordingSessionStore(), {
+      async admitSwarmRun(input: { runID: string }) {
+        order.push("admit");
+        const created = !admitted;
+        admitted = true;
+        return {
+          created,
+          run: {
+            runID: input.runID,
+            revision: runRevision,
+            ownerEpoch: 0,
+          },
+        };
+      },
+      async commitSwarmRunGraph() {
+        order.push("graph_saved");
+        runRevision += 1;
+        return true;
+      },
+      async transitionSwarmRun(input: { status: string; expectedRevision: number }) {
+        expect(input.expectedRevision).toBe(runRevision);
+        order.push(`run:${input.status}`);
+        runRevision += 1;
+        return true;
+      },
+      async reserveSwarmNodeAttempt() {
+        order.push("attempt_reserved");
+        return {
+          created: true,
+          attempt: { revision: attemptRevision },
+        };
+      },
+      async transitionSwarmNodeAttempt(input: { status: string; expectedRevision: number }) {
+        expect(input.expectedRevision).toBe(attemptRevision);
+        order.push(`attempt:${input.status}`);
+        attemptRevision += 1;
+        return true;
+      },
+    });
+    let dagDispatchCount = 0;
+    const subagentPort = {
+      async runTaskDag(_request: unknown, options: unknown) {
+        dagDispatchCount += 1;
+        order.push("dag_dispatch");
+        const runOptions = options as {
+          persistSwarmNodeAttempt?: (fact: Record<string, unknown>) => Promise<void>;
+        };
+        for (const nodeID of ["branch-a", "branch-b"]) {
+          const identity = {
+            nodeID,
+            attemptID: `attempt-${nodeID}`,
+            attemptNo: 1,
+            childSessionID: createSessionId(`child-${nodeID}`),
+          };
+          await runOptions.persistSwarmNodeAttempt?.({ phase: "reserved", ...identity });
+          await runOptions.persistSwarmNodeAttempt?.({ phase: "running", ...identity });
+          await runOptions.persistSwarmNodeAttempt?.({ phase: "completed", ...identity, resultText: "done" });
+        }
+        return {
+          status: "completed",
+          agentId: "dag-test",
+          agentType: "task-dag",
+          description: "durable swarm test",
+          prompt: "fixture task",
+          content: [{ type: "text", text: "[completed] branch-a\n[completed] branch-b" }],
+          totalToolUseCount: 0,
+          totalDurationMs: 1,
+        };
+      },
+    };
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", modelSelection: createTestModelSelection("test/swarm-journal") },
+      {
+        eventStore,
+        sessionStore,
+        subagentPort: subagentPort as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            const text = providerMessagesToText(request.messages);
+            if (text.includes("Decide whether this task needs independent parallel work")) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: JSON.stringify({
+                  decision: "split",
+                  graph: {
+                    max_parallel: 2,
+                    nodes: [
+                      { id: "branch-a", description: "A", prompt: "A", subagent_type: "researcher" },
+                      { id: "branch-b", description: "B", prompt: "B", subagent_type: "implementer" },
+                    ],
+                  },
+                }),
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Synthesis",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const options = { inputId: "accepted-command-1", intent: { orchestrationMode: "swarm" as const } };
+    await runtime.executeTurn("Implement this as a swarm", undefined, options);
+    await expect(runtime.executeTurn("Implement this as a swarm", undefined, options)).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        context: expect.objectContaining({ code: "SWARM_DUPLICATE_INPUT_JOURNALED" }),
+      }),
+    });
+
+    expect(dagDispatchCount).toBe(1);
+    expect(order.indexOf("graph_saved")).toBeLessThan(order.indexOf("run:running"));
+    expect(order.indexOf("run:running")).toBeLessThan(order.indexOf("dag_dispatch"));
+    expect(order.indexOf("run:running")).toBeLessThan(order.indexOf("projection:running"));
+    expect(order.indexOf("attempt_reserved")).toBeLessThan(order.indexOf("attempt:running"));
+    expect(order.indexOf("attempt:running")).toBeLessThan(order.indexOf("attempt:completed"));
+    expect(order.filter((entry) => entry === "admit")).toHaveLength(2);
+  });
+
   it("lets OpenCode auto planning choose a normal answer without spawning agents", async () => {
     const sessionId = createSessionId("runtime-swarm-auto-leaf");
     const eventStore = createTestSessionEventStore();
