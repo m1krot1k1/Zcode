@@ -10,7 +10,6 @@ export const exampleSubagentConfiguration: RuntimeSubagentConfiguration = {
     {
       path: "/project/.zcode/agents/researcher.md",
       source: "project",
-      format: "cursor",
       content: "---\nname: researcher\ndescription: Research\n---\nResearch the workspace",
     },
   ],

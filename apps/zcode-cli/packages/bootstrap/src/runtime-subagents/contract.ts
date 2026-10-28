@@ -6,7 +6,6 @@ export interface RuntimeSubagentConfiguration {
     path: string;
     namespace?: string;
     source: "user" | "project";
-    format?: "cursor";
   }[];
   state: SubagentRuntimeState;
 }
