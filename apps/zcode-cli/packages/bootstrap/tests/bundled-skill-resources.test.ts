@@ -10,6 +10,13 @@ const bundledSkillNames = [
   "zcode-swarm",
   "zcode-verification",
   "zcode-systematic-debugging",
+  "research",
+  "domain-modeling",
+  "ui-craft",
+  "merge-conflict-resolution",
+  "handoff",
+  "performance-tuning",
+  "mcp-authoring",
 ] as const;
 
 const bundledSkillHeadings: Record<(typeof bundledSkillNames)[number], string> = {
@@ -20,6 +27,13 @@ const bundledSkillHeadings: Record<(typeof bundledSkillNames)[number], string> =
   "zcode-swarm": "ZCode swarm coordination",
   "zcode-verification": "ZCode verification",
   "zcode-systematic-debugging": "ZCode systematic debugging",
+  research: "Evidence-led research",
+  "domain-modeling": "Domain modeling",
+  "ui-craft": "UI craft",
+  "merge-conflict-resolution": "Merge conflict resolution",
+  handoff: "Handoff",
+  "performance-tuning": "Performance tuning",
+  "mcp-authoring": "MCP authoring in ZCode",
 };
 
 describe("bundled ZCode agent skills", () => {

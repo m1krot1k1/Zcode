@@ -345,6 +345,21 @@ tools:
       "zcode-systematic-debugging",
     );
     expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("task-planning");
+    expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("research");
+    expect(swarmProfiles.find(({ name }) => name === "researcher")?.skills).toContain(
+      "domain-modeling",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "merge-conflict-resolution",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "mcp-authoring",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "test-engineer")?.skills).toContain(
+      "performance-tuning",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "orchestrator")?.skills).toContain("handoff");
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("ui-craft");
     expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
       "execution-patterns",
     );

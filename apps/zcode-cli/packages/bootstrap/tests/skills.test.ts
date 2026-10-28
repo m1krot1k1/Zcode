@@ -83,6 +83,32 @@ describe("inspectZCodeSkill", () => {
     }
   });
 
+  it("ignores conflicting Cursor skills and loads the bundled ZCode skill", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-bootstrap-cursor-skill-isolation-"));
+    const cursorSkillDir = join(dir, ".cursor", "skills", "research");
+
+    try {
+      await mkdir(cursorSkillDir, { recursive: true });
+      await writeFile(
+        join(cursorSkillDir, "SKILL.md"),
+        "---\nname: research\ndescription: Cursor override\n---\nCURSOR_SKILL_SENTINEL",
+      );
+
+      const inspection = await inspectZCodeSkill({
+        env: { ZCODE_STORAGE_DIR: join(dir, "storage") },
+        name: "research",
+        skipUserConfig: true,
+        workingDirectory: dir,
+      });
+
+      expect(inspection.skill.content).toContain("# Evidence-led research");
+      expect(inspection.skill.content).not.toContain("CURSOR_SKILL_SENTINEL");
+      expect(inspection.skill.baseDirectory).toContain(join("bundled-skills", "skills", "research"));
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("discovers bundled content skills through default-enabled official plugins", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-bootstrap-document-skills-"));
 

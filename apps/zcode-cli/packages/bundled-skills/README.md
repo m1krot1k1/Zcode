@@ -23,6 +23,13 @@ or the composer's `$` skill picker. The runtime discovers its `skills/` director
 | `execution-patterns`            | Choosing direct, sequential, or parallel execution   | `docs/specs/cursor-harness-runtime-adaptation.md`  |
 | `reviewer`                      | Independent, evidence-backed code review             | `docs/specs/cursor-harness-runtime-adaptation.md`  |
 | `completion-gate`               | Checking requested outcomes before reporting done    | `docs/specs/cursor-harness-runtime-adaptation.md`  |
+| `research`                      | Traceable, primary-source research and evidence labels | `docs/specs/cursor-harness-runtime-adaptation.md` |
+| `domain-modeling`                | Domain terms, identities, boundaries, and invariants | `docs/specs/cursor-harness-runtime-adaptation.md` |
+| `ui-craft`                       | Accessible, responsive, evidence-reviewed interfaces | `DESIGN.md` and the owning UI specification       |
+| `merge-conflict-resolution`      | Intent-preserving Git conflict resolution            | Repository instructions and the affected spec    |
+| `handoff`                        | Accurate, secret-safe continuation notes             | Repository instructions and current task evidence |
+| `performance-tuning`              | Measured, comparable performance improvements        | Repository instructions and the affected spec     |
+| `mcp-authoring`                   | ZCode-native MCP/plugin capability design and checks | `docs/plugin-creator.md` and MCP contracts       |
 
 ## Always-on harness rules
 

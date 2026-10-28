@@ -56,6 +56,13 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   "bundled-skills/skills/execution-patterns/SKILL.md",
   "bundled-skills/skills/reviewer/SKILL.md",
   "bundled-skills/skills/completion-gate/SKILL.md",
+  "bundled-skills/skills/research/SKILL.md",
+  "bundled-skills/skills/domain-modeling/SKILL.md",
+  "bundled-skills/skills/ui-craft/SKILL.md",
+  "bundled-skills/skills/merge-conflict-resolution/SKILL.md",
+  "bundled-skills/skills/handoff/SKILL.md",
+  "bundled-skills/skills/performance-tuning/SKILL.md",
+  "bundled-skills/skills/mcp-authoring/SKILL.md",
   "bundled-skills/rules/00-evidence.mdc",
   "bundled-skills/rules/01-delegation.mdc",
   "bundled-skills/rules/02-verification.mdc",
@@ -140,7 +147,9 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   "zcode-cua-plugin/skills/computer-use/SKILL.md",
 ] as const;
 
-export function buildRemoteAgentOfficialPluginDir(remoteProviderDir: string): string {
+export function buildRemoteAgentOfficialPluginDir(
+  remoteProviderDir: string,
+): string {
   return posix.join(remoteProviderDir, REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME);
 }
 
@@ -155,9 +164,12 @@ export function buildRemoteAgentOfficialPluginSourceRelativePath(params: {
   );
 }
 
-export function buildRemoteAgentOfficialPluginRequiredPaths(remoteProviderDir: string): string[] {
-  const remoteOfficialPluginDir = buildRemoteAgentOfficialPluginDir(remoteProviderDir);
-  return REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.map((relativePath) =>
-    posix.join(remoteOfficialPluginDir, relativePath),
+export function buildRemoteAgentOfficialPluginRequiredPaths(
+  remoteProviderDir: string,
+): string[] {
+  const remoteOfficialPluginDir =
+    buildRemoteAgentOfficialPluginDir(remoteProviderDir);
+  return REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.map(
+    (relativePath) => posix.join(remoteOfficialPluginDir, relativePath),
   );
 }

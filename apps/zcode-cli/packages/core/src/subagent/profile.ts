@@ -51,7 +51,16 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: ["Read", "Glob", "Grep", "Task"],
-    skills: ["zcode-swarm", "zcode-verification", "anti-loop", "reference-first", "task-planning"],
+    skills: [
+      "zcode-swarm",
+      "zcode-verification",
+      "anti-loop",
+      "reference-first",
+      "task-planning",
+      "research",
+      "domain-modeling",
+      "handoff",
+    ],
   },
   {
     name: "orchestrator",
@@ -76,6 +85,9 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "reference-first",
       "task-planning",
       "execution-patterns",
+      "research",
+      "domain-modeling",
+      "handoff",
     ],
   },
   {
@@ -94,7 +106,13 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     tools: ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task"],
     // Исследователь вправе передавать вложенным ролям проверочные навыки;
     // SkillPort всё равно пересекает этот список с allowlist каждого потомка.
-    skills: ["zcode-verification", "zcode-swarm", "reference-first"],
+    skills: [
+      "zcode-verification",
+      "zcode-swarm",
+      "reference-first",
+      "research",
+      "domain-modeling",
+    ],
   },
   {
     name: "implementer",
@@ -117,6 +135,13 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "code-craft",
       "task-planning",
       "execution-patterns",
+      "domain-modeling",
+      "ui-craft",
+      "merge-conflict-resolution",
+      "handoff",
+      "performance-tuning",
+      "mcp-authoring",
+      "plugin-creator",
     ],
   },
   {
@@ -133,7 +158,15 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: ["Read", "Glob", "Grep", "Task"],
-    skills: ["zcode-verification", "zcode-swarm", "reference-first", "reviewer", "completion-gate"],
+    skills: [
+      "zcode-verification",
+      "zcode-swarm",
+      "reference-first",
+      "reviewer",
+      "completion-gate",
+      "ui-craft",
+      "handoff",
+    ],
   },
   {
     name: "security-reviewer",
@@ -164,7 +197,13 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Task"],
-    skills: ["zcode-verification", "zcode-systematic-debugging", "zcode-swarm", "anti-loop"],
+    skills: [
+      "zcode-verification",
+      "zcode-systematic-debugging",
+      "zcode-swarm",
+      "anti-loop",
+      "performance-tuning",
+    ],
   },
   {
     name: "evaluator",

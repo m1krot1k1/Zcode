@@ -8,11 +8,20 @@
 // bundled-agents/，没有 cli/dist/。于是 dev 一直跑着上一次打包时留下的那份 ——
 // 实测陈旧 3 天，任何 agent CLI 侧改动在 dev 里静默不生效，排查时会把「改动没生效」
 // 误判成「代码没起作用」。两边共用这一份，dev 与打包不可能再各自漂移。
-import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, resolve } from "node:path";
 
-export const AGENT_BUNDLE_SOURCE_RELATIVE = "apps/zcode-cli/packages/cli/dist/zcode.cjs";
-export const BUNDLED_SKILL_PACK_SOURCE_RELATIVE = "apps/zcode-cli/packages/bundled-skills";
+export const AGENT_BUNDLE_SOURCE_RELATIVE =
+  "apps/zcode-cli/packages/cli/dist/zcode.cjs";
+export const BUNDLED_SKILL_PACK_SOURCE_RELATIVE =
+  "apps/zcode-cli/packages/bundled-skills";
 export const BUNDLED_SKILL_PACK_REQUIRED_PATHS = [
   "skills/dynamic-workflows/SKILL.md",
   "skills/dynamic-workflows/patterns.md",
@@ -28,6 +37,13 @@ export const BUNDLED_SKILL_PACK_REQUIRED_PATHS = [
   "skills/execution-patterns/SKILL.md",
   "skills/reviewer/SKILL.md",
   "skills/completion-gate/SKILL.md",
+  "skills/research/SKILL.md",
+  "skills/domain-modeling/SKILL.md",
+  "skills/ui-craft/SKILL.md",
+  "skills/merge-conflict-resolution/SKILL.md",
+  "skills/handoff/SKILL.md",
+  "skills/performance-tuning/SKILL.md",
+  "skills/mcp-authoring/SKILL.md",
   "rules/00-evidence.mdc",
   "rules/01-delegation.mdc",
   "rules/02-verification.mdc",
@@ -49,7 +65,14 @@ function shouldCopyBundledSkillAsset(sourcePath) {
 }
 
 export function resolveAgentBundlePaths({ repoRoot, platformKey }) {
-  const glmDir = resolve(repoRoot, "packages", "desktop", "bundled-agents", platformKey, "glm");
+  const glmDir = resolve(
+    repoRoot,
+    "packages",
+    "desktop",
+    "bundled-agents",
+    platformKey,
+    "glm",
+  );
   return {
     cliBundlePath: resolve(repoRoot, AGENT_BUNDLE_SOURCE_RELATIVE),
     glmDir,
@@ -64,12 +87,15 @@ export function resolveAgentBundlePaths({ repoRoot, platformKey }) {
  * （zcode-agent / zcode-acp 等）和旧 meta 会被一并打进安装包（CI 干净检出不会有，本地会）。
  */
 export function stageAgentBundle({ repoRoot, platformKey, log = console.log }) {
-  const { cliBundlePath, glmDir, stagedBundlePath, stagedMetaPath } = resolveAgentBundlePaths({
-    repoRoot,
-    platformKey,
-  });
+  const { cliBundlePath, glmDir, stagedBundlePath, stagedMetaPath } =
+    resolveAgentBundlePaths({
+      repoRoot,
+      platformKey,
+    });
   if (!existsSync(cliBundlePath)) {
-    throw new Error(`[stage:agent-bundle] agent bundle 源产物不存在：${cliBundlePath}`);
+    throw new Error(
+      `[stage:agent-bundle] agent bundle 源产物不存在：${cliBundlePath}`,
+    );
   }
   rmSync(glmDir, { recursive: true, force: true });
   mkdirSync(glmDir, { recursive: true });
@@ -94,7 +120,9 @@ export function stageBundledSkillPack({ repoRoot, glmDir, log = console.log }) {
   const sourceRoot = resolve(repoRoot, BUNDLED_SKILL_PACK_SOURCE_RELATIVE);
   const targetRoot = resolve(glmDir, "packages", "bundled-skills");
   if (!existsSync(sourceRoot)) {
-    throw new Error(`[stage:agent-bundle] bundled skill pack source does not exist: ${sourceRoot}`);
+    throw new Error(
+      `[stage:agent-bundle] bundled skill pack source does not exist: ${sourceRoot}`,
+    );
   }
 
   mkdirSync(targetRoot, { recursive: true });
@@ -109,7 +137,8 @@ export function stageBundledSkillPack({ repoRoot, glmDir, log = console.log }) {
   }
 
   const missingPaths = BUNDLED_SKILL_PACK_REQUIRED_PATHS.filter(
-    (relativePath) => !existsSync(resolve(targetRoot, ...relativePath.split("/"))),
+    (relativePath) =>
+      !existsSync(resolve(targetRoot, ...relativePath.split("/"))),
   );
   if (missingPaths.length > 0) {
     throw new Error(
