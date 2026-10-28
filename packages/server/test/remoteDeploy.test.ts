@@ -71,6 +71,7 @@ const BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS = [
   "bundled-skills/skills/zcode-swarm/SKILL.md",
   "bundled-skills/skills/zcode-verification/SKILL.md",
   "bundled-skills/skills/zcode-systematic-debugging/SKILL.md",
+  "bundled-skills/skills/zcode-test-driven-development/SKILL.md",
   "bundled-skills/skills/anti-loop/SKILL.md",
   "bundled-skills/skills/self-improvement/SKILL.md",
   "bundled-skills/skills/code-craft/SKILL.md",

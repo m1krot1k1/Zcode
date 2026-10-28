@@ -344,6 +344,12 @@ tools:
     expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
       "zcode-systematic-debugging",
     );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "zcode-test-driven-development",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "test-engineer")?.skills).toContain(
+      "zcode-test-driven-development",
+    );
     expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("task-planning");
     expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("research");
     expect(swarmProfiles.find(({ name }) => name === "researcher")?.skills).toContain(

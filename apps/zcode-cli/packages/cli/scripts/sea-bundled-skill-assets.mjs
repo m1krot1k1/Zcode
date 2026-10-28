@@ -20,6 +20,7 @@ export const bundledSkillPackRequiredPaths = [
   "skills/zcode-swarm/SKILL.md",
   "skills/zcode-verification/SKILL.md",
   "skills/zcode-systematic-debugging/SKILL.md",
+  "skills/zcode-test-driven-development/SKILL.md",
   "skills/anti-loop/SKILL.md",
   "skills/self-improvement/SKILL.md",
   "skills/code-craft/SKILL.md",

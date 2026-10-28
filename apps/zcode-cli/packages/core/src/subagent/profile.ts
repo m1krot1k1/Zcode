@@ -130,6 +130,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Task"],
     skills: [
       "zcode-systematic-debugging",
+      "zcode-test-driven-development",
       "zcode-swarm",
       "anti-loop",
       "code-craft",
@@ -200,6 +201,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     skills: [
       "zcode-verification",
       "zcode-systematic-debugging",
+      "zcode-test-driven-development",
       "zcode-swarm",
       "anti-loop",
       "performance-tuning",
