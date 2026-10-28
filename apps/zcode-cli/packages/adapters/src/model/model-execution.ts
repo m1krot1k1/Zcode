@@ -1540,6 +1540,25 @@ type OpenCodeProcessSignal = "SIGINT" | "SIGTERM";
 type OpenCodeSignalListener = NodeJS.SignalsListener;
 
 const OPENCODE_PROCESS_SIGNALS: readonly OpenCodeProcessSignal[] = ["SIGINT", "SIGTERM"];
+// Nested ZCode tasks can hold one OpenCode MCP call while descendants run. Keep
+// this much longer than the child inactivity watchdog; that watchdog and abort
+// signal own stalled-task cancellation, while the MCP timeout is only a ceiling.
+export const OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS = 12 * 60 * 60 * 1_000;
+
+export function createOpenCodeInvocationConfig(bridge: OpenCodeTaskBridge) {
+  return {
+    tools: { task: false },
+    mcp: {
+      zcode: {
+        type: "remote" as const,
+        url: bridge.url,
+        enabled: true,
+        timeout: OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS,
+        headers: { Authorization: `Bearer ${bridge.bearerToken}` },
+      },
+    },
+  };
+}
 
 /**
  * Lazily creates an isolated OpenCode provider for the owning CLI process.
@@ -1601,17 +1620,7 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
           hostname: "127.0.0.1",
           port: invocationPort,
           timeout: 20_000,
-          config: {
-            tools: { task: false },
-            mcp: {
-              zcode: {
-                type: "remote",
-                url: bridge.url,
-                enabled: true,
-                headers: { Authorization: `Bearer ${bridge.bearerToken}` },
-              },
-            },
-          },
+          config: createOpenCodeInvocationConfig(bridge),
         });
         invocationManager = sdk.OpencodeClientManager.createInstance({
           baseUrl: invocationServer.url,

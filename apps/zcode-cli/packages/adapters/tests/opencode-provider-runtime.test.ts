@@ -3,14 +3,16 @@ import { delimiter } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
-import { AgentErrorCode } from "@zcode/contracts";
+import { AgentErrorCode, DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS } from "@zcode/contracts";
 import {
   acquireOpenCodeSocksProxyLease,
   createOpenCodeTaskBridge,
 } from "../src/model/opencode-session.js";
 import {
   createOpenCodeDiagnosticFetch,
+  createOpenCodeInvocationConfig,
   createOpenCodeModelProvider,
+  OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS,
   preferOpenCodeE2ECliOnPath,
   projectOpenCodePrompt,
 } from "../src/model/model-execution.js";
@@ -577,6 +579,20 @@ async function sendConnect(proxyUrl: string, targetPort: number): Promise<string
 }
 
 describe("createOpenCodeModelProvider", () => {
+  it("gives the ZCode MCP bridge time to return nested tasks while keeping cancellation available", () => {
+    const config = createOpenCodeInvocationConfig({
+      url: "http://127.0.0.1:43210/mcp",
+      bearerToken: "invocation-scoped-test-token",
+      dispose: async () => {},
+    });
+
+    expect(config.mcp.zcode.timeout).toBe(OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS);
+    expect(config.mcp.zcode.timeout).toBeGreaterThan(DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS);
+    expect(config.mcp.zcode.url).toBe("http://127.0.0.1:43210/mcp");
+    expect(config.mcp.zcode.headers.Authorization).toBe("Bearer invocation-scoped-test-token");
+    expect(config.tools.task).toBe(false);
+  });
+
   it("owns an isolated provider and removes only its new signal handlers on dispose", async () => {
     const initialSigintListeners = process.listeners("SIGINT");
     const initialSigtermListeners = process.listeners("SIGTERM");
