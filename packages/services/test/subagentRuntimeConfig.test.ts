@@ -242,9 +242,11 @@ describe("Host incremental subagent snapshots", () => {
     await rename(f.userRoot, `${f.userRoot}-obsolete`);
     await mkdir(f.userRoot);
     await writeFile(path, markdown("aaa", "replacement"));
-    // 快速替换时可能只有原生事件；路径仍存在，也必须关闭旧目录对象的监听。
-    for (const events of parentEvents.get(dirname(f.userRoot)) ?? [])
-      events.emit("change", { eventType: "rename", filename: "user" });
+    // Windows 的空目录移动由兼容父 watcher 补报；其他平台由 Chokidar 报告根目录 unlinkDir。
+    if (process.platform === "win32") {
+      for (const events of parentEvents.get(dirname(f.userRoot)) ?? [])
+        events.emit("change", { eventType: "rename", filename: "user" });
+    } else obsolete.emit("all", "unlinkDir", f.userRoot);
     await until(() =>
       expect((obsolete as unknown as { close: unknown }).close).toHaveBeenCalledOnce(),
     );
