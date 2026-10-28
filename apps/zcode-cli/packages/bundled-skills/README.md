@@ -18,6 +18,8 @@ or the composer's `$` skill picker. The runtime discovers its `skills/` director
 | `anti-loop`                   | Detecting repeated delegation without progress       | `docs/specs/cursor-harness-runtime-adaptation.md`   |
 | `self-improvement`            | Evidence-driven updates to prompts, skills, and gates | `docs/specs/cursor-harness-runtime-adaptation.md`  |
 | `code-craft`                  | Small, reviewable implementation changes            | Repository instructions and the affected spec      |
+| `codebase-design`             | Designing useful module interfaces and dependencies | Repository instructions and public contracts       |
+| `doc-coauthoring`             | Collaborative specifications, proposals, and plans   | The requested audience and document constraints   |
 | `reference-first`              | Reusing existing code and verified references        | `docs/specs/cursor-harness-runtime-adaptation.md`  |
 | `task-planning`                | Turning a request into bounded deliverables          | `docs/specs/cursor-harness-runtime-adaptation.md`  |
 | `execution-patterns`            | Choosing direct, sequential, or parallel execution   | `docs/specs/cursor-harness-runtime-adaptation.md`  |
@@ -28,6 +30,7 @@ or the composer's `$` skill picker. The runtime discovers its `skills/` director
 | `ui-craft`                       | Accessible, responsive, evidence-reviewed interfaces | `DESIGN.md` and the owning UI specification       |
 | `merge-conflict-resolution`      | Intent-preserving Git conflict resolution            | Repository instructions and the affected spec    |
 | `handoff`                        | Accurate, secret-safe continuation notes             | Repository instructions and current task evidence |
+| `image-to-code`                  | Translating supplied visual references into UI       | `DESIGN.md` and the owning UI specification        |
 | `performance-tuning`              | Measured, comparable performance improvements        | Repository instructions and the affected spec     |
 | `mcp-authoring`                   | ZCode-native MCP/plugin capability design and checks | `docs/plugin-creator.md` and MCP contracts       |
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1229,5 +1229,107 @@ tools:
         expect.objectContaining({ name: "safe-reviewer", systemPrompt: "Original prompt" }),
       ]),
     });
+  });
+
+  it("reconciles an interrupted rename on the next service instance without changing enabled state", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: { name: "rename-recovery", description: "before", systemPrompt: "Keep this prompt." },
+    });
+    await service.setEnabled({ agentId: created.agent.id, enabled: false });
+    setFsFaultInjectorForTests(createFsFaultInjector([{
+      id: "profile-rename-publish-interrupted",
+      code: "EIO",
+      operations: ["rename"],
+      pathEndsWith: "/rename-recovery-v2.md",
+    }]));
+
+    await expect(service.updateAgent({
+      agentId: created.agent.id,
+      oldFilePath: created.agent.path,
+      provider: "glm",
+      config: { name: "rename-recovery-v2", description: "after", systemPrompt: "Keep this prompt." },
+    })).rejects.toMatchObject({ zcodeFsFaultId: "profile-rename-publish-interrupted" });
+
+    setFsFaultInjectorForTests(null);
+    const restartedService = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const listed = await restartedService.list({
+      workspacePath: join(home, "workspace"), provider: "glm", mode: "settingsUserOnly",
+    });
+    const renamed = listed.agents.filter((agent) => agent.name.startsWith("rename-recovery"));
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]).toMatchObject({ name: "rename-recovery-v2", enabled: false });
+    await expect(readFile(created.agent.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(renamed[0]!.path, "utf8")).toContain("Keep this prompt.");
+    const rootEntries = await readdir(await resolveUserSubagentRoot({ homeDir: home }));
+    expect(rootEntries.some((entry) => entry.startsWith(".zcode-profile-rename-") || entry.endsWith(".pending"))).toBe(false);
+  });
+
+  it("preserves a source edited after an interrupted rename and disables the preserved copy", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: { name: "edited-source", description: "before", systemPrompt: "Original prompt." },
+    });
+    setFsFaultInjectorForTests(createFsFaultInjector([{
+      id: "profile-rename-publish-interrupted-edited-source",
+      code: "EIO",
+      operations: ["rename"],
+      pathEndsWith: "/edited-source-v2.md",
+    }]));
+    await expect(service.updateAgent({
+      agentId: created.agent.id,
+      oldFilePath: created.agent.path,
+      provider: "glm",
+      config: { name: "edited-source-v2", description: "renamed", systemPrompt: "Renamed prompt." },
+    })).rejects.toMatchObject({ zcodeFsFaultId: "profile-rename-publish-interrupted-edited-source" });
+
+    setFsFaultInjectorForTests(null);
+    const source = await readFile(created.agent.path, "utf8");
+    await writeFile(created.agent.path, source.replace("Original prompt.", "User's concurrent edit."), "utf8");
+    const restartedService = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const listed = await restartedService.list({
+      workspacePath: join(home, "workspace"), provider: "glm", mode: "settingsUserOnly",
+    });
+
+    expect(listed.agents.find((agent) => agent.id === created.agent.id)).toMatchObject({ enabled: false });
+    expect(listed.agents.find((agent) => agent.name === "edited-source-v2")).toMatchObject({ enabled: true });
+    expect(await readFile(created.agent.path, "utf8")).toContain("User's concurrent edit.");
+    const rootEntries = await readdir(await resolveUserSubagentRoot({ homeDir: home }));
+    expect(rootEntries.some((entry) => entry.startsWith(".zcode-profile-rename-") || entry.endsWith(".pending"))).toBe(false);
+  });
+
+  it("finishes an interrupted source cleanup without publishing a second profile", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: { name: "cleanup-recovery", description: "profile", systemPrompt: "One active copy." },
+    });
+    setFsFaultInjectorForTests(createFsFaultInjector([{
+      id: "profile-rename-source-cleanup-interrupted",
+      code: "EIO",
+      operations: ["rm"],
+      pathEndsWith: "/cleanup-recovery.md",
+    }]));
+
+    await expect(service.updateAgent({
+      agentId: created.agent.id,
+      oldFilePath: created.agent.path,
+      provider: "glm",
+      config: { name: "cleanup-recovery-v2", description: "profile", systemPrompt: "One active copy." },
+    })).rejects.toMatchObject({ zcodeFsFaultId: "profile-rename-source-cleanup-interrupted" });
+
+    setFsFaultInjectorForTests(null);
+    const restartedService = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const listed = await restartedService.list({
+      workspacePath: join(home, "workspace"), provider: "glm", mode: "settingsUserOnly",
+    });
+    expect(listed.agents.filter((agent) => agent.name.startsWith("cleanup-recovery"))).toHaveLength(1);
+    expect(listed.agents.find((agent) => agent.name === "cleanup-recovery-v2")?.enabled).toBe(true);
+    await expect(readFile(created.agent.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

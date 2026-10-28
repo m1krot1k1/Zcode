@@ -352,6 +352,18 @@ tools:
     );
     expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("task-planning");
     expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("research");
+    expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain(
+      "doc-coauthoring",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "orchestrator")?.skills).toContain(
+      "codebase-design",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "image-to-code",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "doc-coauthoring",
+    );
     expect(swarmProfiles.find(({ name }) => name === "researcher")?.skills).toContain(
       "domain-modeling",
     );
@@ -366,6 +378,9 @@ tools:
     );
     expect(swarmProfiles.find(({ name }) => name === "orchestrator")?.skills).toContain("handoff");
     expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("ui-craft");
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain(
+      "image-to-code",
+    );
     expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
       "execution-patterns",
     );

@@ -1,5 +1,6 @@
 /* eslint-disable max-lines */
-import { access, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, link, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   createAgentStateId,
@@ -37,6 +38,7 @@ import {
 } from "./subagentStorage.js";
 import type { ISubagentsService } from "./subagents.js";
 import { atomicWriteText } from "#src/fs/atomicFileUtils.js";
+import { maybeThrowInjectedFsFault } from "#src/fs/fsFaultInjection.js";
 import {
   migrateUserSubagentMarkdown,
   migrateSubagentStateFile,
@@ -83,7 +85,24 @@ interface PluginAgentDiscovery {
   runtimeAgents: AgentSummary[];
 }
 
+interface AgentProfileRenameJournal {
+  version: 1;
+  transactionID: string;
+  sourceFileName: string;
+  targetFileName: string;
+  stageFileName: string;
+  previousAgentID: string;
+  nextAgentID: string;
+  sourceHash: string;
+  contentHash: string;
+  content: string;
+  sourceWasDisabled: boolean;
+  targetWasDisabled: boolean;
+}
+
 const BUILT_IN_AGENT_NAMES = new Set(["Explore"]);
+const PROFILE_RENAME_JOURNAL_PREFIX = ".zcode-profile-rename-";
+const MAX_PROFILE_RENAME_CONTENT_BYTES = 1024 * 1024;
 const PLUGIN_MANIFEST_PATHS = [
   join(".zcode-plugin", "plugin.json"),
   join(".claude-plugin", "plugin.json"),
@@ -565,14 +584,24 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       return run();
     });
   }
+  async function recoverProfileRoots(workspacePath?: string): Promise<void> {
+    await recoverAgentProfileRenames(await resolveUserSubagentRoot(storageOptions), "user", storageOptions);
+    if (workspacePath) {
+      await recoverAgentProfileRenames(resolveWorkspaceSubagentRoot(workspacePath), "workspace", storageOptions);
+    }
+  }
   const service = {
-    readRuntimeConfig: runtimeConfig.read,
+    readRuntimeConfig: (workspace: { workspacePath: string; workspaceIdentity?: string }) => enqueue(async () => {
+      await recoverProfileRoots(workspace.workspacePath);
+      return runtimeConfig.read(workspace);
+    }),
     disposeAll() {
       disposed = true;
       runtimeConfig.dispose();
     },
     async prepareRuntimeState(workspace?: { workspacePath: string; workspaceIdentity?: string }) {
       return enqueue(async () => {
+        await recoverProfileRoots(workspace?.workspacePath);
         const markdownMigration = await migrateUserSubagentMarkdown(
           await resolveUserSubagentRoot(storageOptions),
         );
@@ -592,7 +621,25 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       const capability = resolveCapabilities(options);
       const mode = params.mode ?? "allRuntimeScopes";
       const diagnostics: AgentDiagnostic[] = [];
-      if (capability.userScopeAvailable) {
+      let includeUserAgents = capability.userScopeAvailable;
+      let includeWorkspaceAgents = mode === "allRuntimeScopes";
+      if (includeUserAgents) {
+        try {
+          await recoverAgentProfileRenames(await resolveUserSubagentRoot(storageOptions), "user", storageOptions);
+        } catch (error) {
+          includeUserAgents = false;
+          diagnostics.push({ code: "agent_read_failed", message: `Agent profile recovery failed: ${String(error)}` });
+        }
+      }
+      if (includeWorkspaceAgents) {
+        try {
+          await recoverAgentProfileRenames(resolveWorkspaceSubagentRoot(params.workspacePath), "workspace", storageOptions);
+        } catch (error) {
+          includeWorkspaceAgents = false;
+          diagnostics.push({ code: "agent_read_failed", message: `Agent profile recovery failed: ${String(error)}` });
+        }
+      }
+      if (includeUserAgents) {
         const migration = await migrateUserSubagentMarkdown(
           await resolveUserSubagentRoot(storageOptions),
         );
@@ -607,8 +654,8 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       const builtInAgents = createBuiltInAgents(state.builtInModelSelectionOverrides);
       const fileAgents = await discoverFileAgents({
         diagnostics,
-        includeUserAgents: capability.userScopeAvailable,
-        includeWorkspaceAgents: mode === "allRuntimeScopes",
+        includeUserAgents,
+        includeWorkspaceAgents,
         storageOptions,
         workspacePath: params.workspacePath,
       });
@@ -747,6 +794,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           : await resolveUserSubagentRoot(storageOptions);
       const filePath = join(agentDir, `${params.config.name.trim().toLowerCase()}.md`);
       await mkdir(agentDir, { recursive: true });
+      await recoverAgentProfileRenames(agentDir, scope, storageOptions);
 
       if (params.oldFilePath && params.oldFilePath !== filePath && (await exists(filePath))) {
         throw new Error(`Agent file "${basename(filePath)}" already exists`);
@@ -754,15 +802,40 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
 
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
+      if (params.oldFilePath && resolve(params.oldFilePath) !== resolve(filePath)) {
+        if (resolve(dirname(params.oldFilePath)) !== resolve(agentDir)) {
+          throw new Error("Agent profile rename must stay within its current ZCode profile root");
+        }
+        const sourceContent = await readOptionalText(params.oldFilePath);
+        if (sourceContent === undefined) throw new Error("Agent profile changed before rename; reload the profile and retry");
+        const parsedSource = parseSubagentMarkdown({ content: sourceContent, path: params.oldFilePath, scope });
+        if (parsedSource.agent?.id !== params.agentId) {
+          throw new Error("Agent profile identity changed before rename; reload the profile and retry");
+        }
+        const state = await readAgentStateFile(storageOptions);
+        const transactionID = randomUUID();
+        const journal: AgentProfileRenameJournal = {
+          version: 1,
+          transactionID,
+          sourceFileName: basename(params.oldFilePath),
+          targetFileName: basename(filePath),
+          stageFileName: `${basename(filePath)}.${transactionID}.pending`,
+          previousAgentID: params.agentId,
+          nextAgentID: agent.id,
+          sourceHash: sha256(sourceContent),
+          contentHash: sha256(content),
+          content,
+          sourceWasDisabled: state.disabledAgentIds.includes(params.agentId),
+          targetWasDisabled: state.disabledAgentIds.includes(agent.id),
+        };
+        const journalPath = join(agentDir, `${PROFILE_RENAME_JOURNAL_PREFIX}${transactionID}.json`);
+        await atomicWriteText(journalPath, JSON.stringify(journal));
+        await recoverAgentProfileRenames(agentDir, scope, storageOptions);
+        return { agent };
+      }
       // 旧实现直接覆盖 Markdown；进程退出或磁盘失败时 watcher 可能读到半份 profile，
       // 且旧配置无法恢复。先 parse，再同目录临时文件 + rename 原子替换。
       await atomicWriteText(filePath, content);
-      // enabled 状态按 agent id 存储；重命名会生成新 id，必须迁移旧禁用记录，
-      // 否则用户禁用的 agent 改名后会被 runtime 当成新启用 profile 重新加载。
-      await migrateDisabledAgentId(params.agentId, agent.id, storageOptions);
-      if (params.oldFilePath && params.oldFilePath !== filePath) {
-        await rm(params.oldFilePath, { force: true });
-      }
       return { agent };
     },
 
@@ -809,28 +882,175 @@ function assertNotBuiltInName(name: string): void {
   }
 }
 
-async function migrateDisabledAgentId(
-  previousAgentId: string,
-  nextAgentId: string,
-  options?: SubagentStorageOptions,
+function sha256(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function isProfileLeafName(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z0-9-]+\.(?:md|markdown)$/iu.test(value);
+}
+
+async function removeProfileRenameFile(path: string): Promise<void> {
+  maybeThrowInjectedFsFault({ operation: "rm", path });
+  await rm(path, { force: true });
+}
+
+function parseAgentProfileRenameJournal(value: unknown, expectedTransactionID: string): AgentProfileRenameJournal {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Agent profile rename journal is not an object");
+  }
+  const record = value as Partial<AgentProfileRenameJournal>;
+  if (
+    record.version !== 1 ||
+    record.transactionID !== expectedTransactionID ||
+    !isProfileLeafName(record.sourceFileName) ||
+    !isProfileLeafName(record.targetFileName) ||
+    record.sourceFileName === record.targetFileName ||
+    typeof record.stageFileName !== "string" ||
+    record.stageFileName !== `${record.targetFileName}.${expectedTransactionID}.pending` ||
+    typeof record.previousAgentID !== "string" || !record.previousAgentID ||
+    typeof record.nextAgentID !== "string" || !record.nextAgentID ||
+    typeof record.content !== "string" ||
+    Buffer.byteLength(record.content, "utf8") > MAX_PROFILE_RENAME_CONTENT_BYTES ||
+    typeof record.sourceHash !== "string" || !/^[a-f0-9]{64}$/u.test(record.sourceHash) ||
+    typeof record.contentHash !== "string" || !/^[a-f0-9]{64}$/u.test(record.contentHash) ||
+    sha256(record.content) !== record.contentHash ||
+    typeof record.sourceWasDisabled !== "boolean" ||
+    typeof record.targetWasDisabled !== "boolean"
+  ) {
+    throw new Error("Agent profile rename journal failed validation");
+  }
+  return record as AgentProfileRenameJournal;
+}
+
+async function readOptionalText(path: string): Promise<string | undefined> {
+  let info;
+  try {
+    info = await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Expected a regular profile file at ${path}`);
+  return readFile(path, "utf8");
+}
+
+async function rollbackProfileRename(
+  journalPath: string,
+  stagePath: string,
+  targetPath: string,
+  journal: AgentProfileRenameJournal,
+  options: SubagentStorageOptions | undefined,
 ): Promise<void> {
-  if (previousAgentId === nextAgentId) {
-    return;
+  const targetContent = await readOptionalText(targetPath);
+  if (targetContent !== undefined && targetContent !== journal.content) {
+    throw new Error("Cannot roll back profile rename because the destination changed during recovery");
   }
+  if (targetContent !== undefined) await removeProfileRenameFile(targetPath);
+  await removeProfileRenameFile(stagePath);
   const state = await readAgentStateFile(options);
-  const disabledSet = new Set(state.disabledAgentIds);
-  if (!disabledSet.has(previousAgentId)) {
-    return;
+  const disabled = new Set(state.disabledAgentIds);
+  if (journal.targetWasDisabled) disabled.add(journal.nextAgentID);
+  else disabled.delete(journal.nextAgentID);
+  const nextDisabled = [...disabled].sort();
+  if (nextDisabled.length !== state.disabledAgentIds.length ||
+      !nextDisabled.every((id, index) => id === state.disabledAgentIds[index])) {
+    await writeAgentStateFile({ ...state, disabledAgentIds: nextDisabled }, options);
   }
-  disabledSet.delete(previousAgentId);
-  disabledSet.add(nextAgentId);
-  return writeAgentStateFile(
-    {
-      ...state,
-      disabledAgentIds: [...disabledSet].sort(),
-    },
-    options,
+  await removeProfileRenameFile(journalPath);
+}
+
+function isHardLinkUnavailable(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EPERM" || code === "EOPNOTSUPP" || code === "ENOTSUP" || code === "ENOSYS";
+}
+
+async function setRenameDisabledState(
+  journal: AgentProfileRenameJournal,
+  options: SubagentStorageOptions | undefined,
+  phase: "prepare" | "finish",
+  preservedSourceAgentID?: string,
+): Promise<void> {
+  const state = await readAgentStateFile(options);
+  const disabled = new Set(state.disabledAgentIds);
+  if (phase === "prepare") {
+    // 新 ID 在旧文件删除前保持关闭，避免 watcher 短暂加载两个同名 profile。
+    disabled.add(journal.nextAgentID);
+  } else {
+    disabled.delete(journal.previousAgentID);
+    if (journal.sourceWasDisabled || journal.targetWasDisabled) disabled.add(journal.nextAgentID);
+    else disabled.delete(journal.nextAgentID);
+    if (preservedSourceAgentID) disabled.add(preservedSourceAgentID);
+  }
+  const nextDisabled = [...disabled].sort();
+  if (nextDisabled.length === state.disabledAgentIds.length &&
+      nextDisabled.every((id, index) => id === state.disabledAgentIds[index])) return;
+  await writeAgentStateFile({ ...state, disabledAgentIds: nextDisabled }, options);
+}
+
+async function recoverAgentProfileRenames(
+  rootPath: string,
+  scope: "user" | "workspace",
+  options: SubagentStorageOptions | undefined,
+): Promise<void> {
+  const entries = await readdir(rootPath, { withFileTypes: true }).catch(
+    (error: NodeJS.ErrnoException) => error.code === "ENOENT" ? [] : Promise.reject(error),
   );
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.startsWith(PROFILE_RENAME_JOURNAL_PREFIX) || !entry.name.endsWith(".json")) continue;
+    const transactionID = entry.name.slice(PROFILE_RENAME_JOURNAL_PREFIX.length, -".json".length);
+    if (!/^[0-9a-f-]{36}$/iu.test(transactionID)) throw new Error("Invalid profile rename journal filename");
+    const journalPath = join(rootPath, entry.name);
+    let journal: AgentProfileRenameJournal;
+    try {
+      journal = parseAgentProfileRenameJournal(JSON.parse(await readFile(journalPath, "utf8")), transactionID);
+    } catch (error) {
+      throw new Error(`Unable to recover agent profile rename journal ${entry.name}: ${String(error)}`);
+    }
+    const sourcePath = join(rootPath, journal.sourceFileName);
+    const targetPath = join(rootPath, journal.targetFileName);
+    const stagePath = join(rootPath, journal.stageFileName);
+    const targetContent = await readOptionalText(targetPath);
+    if (targetContent !== undefined && targetContent !== journal.content) {
+      throw new Error(`Agent profile rename destination already contains different content: ${journal.targetFileName}`);
+    }
+    const stageContent = await readOptionalText(stagePath);
+    if (stageContent !== undefined && stageContent !== journal.content) {
+      throw new Error(`Agent profile rename staging file contains different content: ${journal.stageFileName}`);
+    }
+    if (targetContent === undefined && stageContent === undefined) await atomicWriteText(stagePath, journal.content);
+    await setRenameDisabledState(journal, options, "prepare");
+    if (targetContent === undefined) {
+      maybeThrowInjectedFsFault({ operation: "rename", path: targetPath });
+      try {
+        // Same-directory link is atomic and fails with EEXIST rather than replacing a concurrent destination.
+        await link(stagePath, targetPath);
+      } catch (error) {
+        if (!isHardLinkUnavailable(error)) throw error;
+        await rollbackProfileRename(journalPath, stagePath, targetPath, journal, options);
+        throw new Error(`This filesystem cannot safely publish an agent profile rename (${String((error as NodeJS.ErrnoException).code)})`);
+      }
+      await removeProfileRenameFile(stagePath);
+    } else if (stageContent !== undefined) {
+      await removeProfileRenameFile(stagePath);
+    }
+    let preservedSourceAgentID: string | undefined;
+    const sourceContent = await readOptionalText(sourcePath);
+    if (sourceContent !== undefined) {
+      if (sha256(sourceContent) === journal.sourceHash) {
+        await removeProfileRenameFile(sourcePath);
+      } else {
+        const parsedSource = parseSubagentMarkdown({ content: sourceContent, path: sourcePath, scope });
+        if (parsedSource.agent?.id === journal.nextAgentID) {
+          await rollbackProfileRename(journalPath, stagePath, targetPath, journal, options);
+          throw new Error("Agent profile source now has the destination identity; resolve this conflict manually");
+        }
+        if (parsedSource.agent?.id) preservedSourceAgentID = parsedSource.agent.id;
+      }
+    }
+    await setRenameDisabledState(journal, options, "finish", preservedSourceAgentID);
+    await removeProfileRenameFile(journalPath);
+  }
 }
 
 function normalizeConfig(config: SubAgentConfig): SubAgentConfig {

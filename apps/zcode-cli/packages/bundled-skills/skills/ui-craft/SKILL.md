@@ -24,6 +24,14 @@ Build interfaces that are clear, accessible, responsive, and consistent with ZCo
 - Provide clear loading, empty, success, and error states. Explain errors in plain language with an actionable next step; make destructive or multi-step actions recoverable where the existing interaction supports it.
 - Render user-provided content through the framework's escaped text paths. Do not inject raw HTML unless an existing, reviewed sanitizer contract requires it.
 
+## Visual direction
+
+- Start from the product's audience, task, brand, and existing design system. Choose a clear visual idea and hierarchy instead of falling back to a generic dashboard, centered hero, or repeated card grid.
+- Give each screen a deliberate composition: vary alignment and density when it improves scanning, keep spacing and shape decisions consistent, and use color or imagery to support the content rather than decorate empty space.
+- Use cards, pills, shadows, and gradients only when they clarify grouping, state, or action. Remove repeated containers and labels that do not help the user understand or act.
+- Let the user's reference and the product's established visual language set the direction. Do not impose fixed palette, layout, image-count, or style-score rules across unrelated products.
+- Make the hierarchy work with real content. Check long labels, localized text, empty/error/loading states, and keyboard focus instead of reviewing only a polished static success state.
+
 ## Verify and review
 
 1. Run the relevant checks declared by the owning package. For a user-visible change, prefer its existing UI or desktop E2E path; use an available browser or running application when the environment provides one.

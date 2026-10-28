@@ -3746,6 +3746,123 @@ describe("AgentRuntime tool loop", () => {
     expect(order.filter((entry) => entry === "admit")).toHaveLength(2);
   });
 
+  it("marks old active Swarm runs interrupted before admission and hydrates an honest terminal row", async () => {
+    const sessionId = createSessionId("runtime-swarm-restart-recovery");
+    const eventStore = createTestSessionEventStore();
+    const calls: string[] = [];
+    const priorRun = {
+      schemaVersion: 1 as const,
+      rootSessionID: sessionId,
+      sourceCommandID: "accepted-before-restart",
+      runID: "swarm_prior_run",
+      rootTurnID: createTurnId("swarm-prior-turn"),
+      graph: {
+        max_parallel: 1,
+        nodes: [
+          {
+            id: "branch-a",
+            description: "Research branch",
+            prompt: "Research the question",
+            subagent_type: "researcher",
+          },
+        ],
+      },
+      status: "running" as const,
+      ownerEpoch: 4,
+      revision: 8,
+      time: { created: 10, updated: 20 },
+    };
+    const priorAttempt = {
+      schemaVersion: 1 as const,
+      runID: priorRun.runID,
+      nodeID: "branch-a",
+      attemptID: "attempt-a1",
+      attemptNo: 1,
+      status: "running" as const,
+      childSessionID: createSessionId("swarm-prior-child"),
+      ownerEpoch: 5,
+      // Owner claim fences active attempts and increments their revisions.
+      revision: 5,
+      time: { created: 12, updated: 15 },
+    };
+    const sessionStore = Object.assign(new RecordingSessionStore(), {
+      async listSwarmRuns(input: { statuses: string[] }) {
+        return input.statuses.includes("running") ? [priorRun] : [];
+      },
+      async claimSwarmRunOwner(input: { expectedRevision: number; expectedOwnerEpoch: number; ownerEpoch: number }) {
+        expect(input).toMatchObject({ expectedRevision: 8, expectedOwnerEpoch: 4, ownerEpoch: 5 });
+        calls.push("claim");
+        return true;
+      },
+      async listSwarmNodeAttempts() {
+        calls.push("list_attempts");
+        return [priorAttempt];
+      },
+      async transitionSwarmNodeAttempt(input: { expectedRevision: number; ownerEpoch: number; status: string }) {
+        expect(input).toMatchObject({ expectedRevision: 5, ownerEpoch: 5, status: "interrupted" });
+        calls.push("attempt_interrupted");
+        return true;
+      },
+      async transitionSwarmRun(input: { expectedRevision: number; ownerEpoch: number; status: string }) {
+        if (input.status === "interrupted") {
+          expect(input).toMatchObject({ expectedRevision: 9, ownerEpoch: 5 });
+          calls.push("run_interrupted");
+        }
+        return true;
+      },
+      async admitSwarmRun(input: { runID: string }) {
+        calls.push("admit");
+        return { created: false, run: { ...priorRun, runID: input.runID } };
+      },
+      async commitSwarmRunGraph() {
+        return true;
+      },
+      async reserveSwarmNodeAttempt() {
+        throw new Error("an existing run must not dispatch a new attempt");
+      },
+    });
+    const generateText = vi.fn(async () => {
+      throw new Error("the planner must not run while an old Swarm is being recovered");
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", modelSelection: createTestModelSelection("test/swarm-recovery") },
+      { eventStore, sessionStore, modelFactory: createTestModelFactory({ generateText }) },
+    );
+
+    await expect(
+      runtime.executeTurn("continue the previous swarm", undefined, {
+        inputId: "accepted-before-restart",
+        intent: { orchestrationMode: "swarm" },
+      }),
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        context: expect.objectContaining({ code: "SWARM_DUPLICATE_INPUT_JOURNALED" }),
+      }),
+    });
+
+    expect(calls).toEqual([
+      "claim",
+      "list_attempts",
+      "attempt_interrupted",
+      "run_interrupted",
+      "list_attempts",
+      "admit",
+    ]);
+    expect(generateText).not.toHaveBeenCalled();
+    const projected = (await eventStore.getEvents(sessionId)).filter(
+      (event) => event.type === SessionEventType.SwarmRunUpdated,
+    );
+    expect(projected).toHaveLength(1);
+    expect(projected[0]?.payload).toMatchObject({
+      swarmRunId: "swarm_prior_run",
+      status: "failed",
+      taskCount: 1,
+      childSessionIds: [String(priorAttempt.childSessionID)],
+      summary: expect.stringContaining("прервано после перезапуска"),
+    });
+  });
+
   it("lets OpenCode auto planning choose a normal answer without spawning agents", async () => {
     const sessionId = createSessionId("runtime-swarm-auto-leaf");
     const eventStore = createTestSessionEventStore();
