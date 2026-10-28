@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createFsFaultInjector, setFsFaultInjectorForTests } from "../src/fs/fsFaultInjection.js";
 
 import {
   parseSubagentMarkdown,
@@ -63,6 +64,7 @@ async function writeOfficialPluginFixture(
 }
 
 afterEach(async () => {
+  setFsFaultInjectorForTests(null);
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root) {
@@ -689,7 +691,7 @@ describe("createSubagentsService", () => {
     ).toBeUndefined();
   });
 
-  it("persists model overrides for built-in subagents without making them editable", async () => {
+  it("retains legacy model overrides without exposing the removed general-purpose role", async () => {
     const home = await makeTempHome();
     const workspacePath = join(home, "workspace");
     const service = createSubagentsService({
@@ -726,19 +728,7 @@ describe("createSubagentsService", () => {
       disabledAgentIds: string[];
     };
 
-    expect(result.agents.find((agent) => agent.name === "general-purpose")).toMatchObject({
-      modelSelection: {
-        providerId: "custom-openai",
-        modelId: "gpt-5.4",
-        options: { reasoningLevel: "high" },
-      },
-      modelSelectionOverride: {
-        providerId: "custom-openai",
-        modelId: "gpt-5.4",
-        options: { reasoningLevel: "high" },
-      },
-      readOnly: true,
-    });
+    expect(result.agents.find((agent) => agent.name === "general-purpose")).toBeUndefined();
     expect(result.agents.find((agent) => agent.name === "Explore")).toMatchObject({
       modelSelection: {
         providerId: "custom-openai",
@@ -840,11 +830,7 @@ describe("createSubagentsService", () => {
       mode: "settingsUserOnly",
     });
 
-    expect(result.agents.map((agent) => agent.name)).toEqual([
-      "general-purpose",
-      "Explore",
-      "code-reviewer",
-    ]);
+    expect(result.agents.map((agent) => agent.name)).toEqual(["Explore", "code-reviewer"]);
     expect(result.agents.every((agent) => agent.scope !== "workspace")).toBe(true);
 
     // Bugfix 回归：workspace profile 曾被 parser 标为 readOnly，于是在设置页既不可编辑
@@ -858,7 +844,7 @@ describe("createSubagentsService", () => {
       source: "user",
       readOnly: false,
     });
-    expect(result.agents.find((agent) => agent.name === "general-purpose")?.readOnly).toBe(true);
+    expect(result.agents.find((agent) => agent.name === "general-purpose")).toBeUndefined();
     expect(result.agents.find((agent) => agent.name === "code-reviewer")?.readOnly).toBe(false);
   });
 
@@ -1189,5 +1175,59 @@ tools:
     });
     expect(state.disabledAgentIds).toContain(renamed.agent.id);
     expect(state.disabledAgentIds).not.toContain(created.agent.id);
+  });
+
+  it("keeps the previous valid profile when atomic update fails before rename", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({
+      homeDir: home,
+      isDesktopRuntime: true,
+    });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: {
+        name: "safe-reviewer",
+        description: "Original description",
+        systemPrompt: "Original prompt",
+      },
+    });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "subagent-update-rename-failure",
+          code: "EACCES",
+          operations: ["rename"],
+          pathEndsWith: "/safe-reviewer.md",
+        },
+      ]),
+    );
+
+    await expect(
+      service.updateAgent({
+        agentId: created.agent.id,
+        oldFilePath: created.agent.path,
+        provider: "glm",
+        config: {
+          name: "safe-reviewer",
+          description: "Updated description",
+          systemPrompt: "Updated prompt",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "EACCES", zcodeFsFaultId: "subagent-update-rename-failure" });
+
+    const markdown = await readFile(created.agent.path, "utf8");
+    expect(markdown).toContain("Original prompt");
+    expect(markdown).not.toContain("Updated prompt");
+    await expect(
+      service.list({
+        workspacePath: join(home, "workspace"),
+        provider: "glm",
+        mode: "settingsUserOnly",
+      }),
+    ).resolves.toMatchObject({
+      agents: expect.arrayContaining([
+        expect.objectContaining({ name: "safe-reviewer", systemPrompt: "Original prompt" }),
+      ]),
+    });
   });
 });

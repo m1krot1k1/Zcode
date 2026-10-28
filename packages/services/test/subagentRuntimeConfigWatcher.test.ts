@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSubagentsService } from "../src/subagents/subagentsService.js";
+import { createFsFaultInjector, setFsFaultInjectorForTests } from "../src/fs/fsFaultInjection.js";
 
 // 仅观察真实补扫的 stat 次数，以实际进入稳定等待作为时序证据。
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -22,6 +23,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
+  setFsFaultInjectorForTests(null);
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
   vi.mocked(stat).mockClear();
 });
@@ -68,6 +70,34 @@ async function sameDirectory(left: string, right: string) {
 }
 
 describe("native subagent Host watchers", () => {
+  it("keeps the last published profile when atomic update fails before rename", async () => {
+    const f = await pair();
+    const { agent } = await f.a.createAgent({ config: config() });
+    await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "subagent-watcher-update-rename-failure",
+          code: "EACCES",
+          operations: ["rename"],
+          pathEndsWith: "/researcher.md",
+        },
+      ]),
+    );
+
+    await expect(
+      f.a.updateAgent({
+        agentId: agent.id,
+        oldFilePath: agent.path,
+        config: config("researcher", "partial update must not publish"),
+      }),
+    ).rejects.toMatchObject({ code: "EACCES", zcodeFsFaultId: "subagent-watcher-update-rename-failure" });
+
+    await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    expect(await readFile(agent.path, "utf8")).toContain("old");
+    expect(await readFile(agent.path, "utf8")).not.toContain("partial update must not publish");
+  });
+
   it("keeps shared recovery in the background while new workspace preparations and queued saves finish", async () => {
     const f = await pair();
     const root = join(f.homeDir, ".zcode", "agents");

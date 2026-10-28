@@ -754,8 +754,9 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
 
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
-      // 更新时同样先 parse 再覆盖旧文件，避免失败保存破坏已有用户 agent。
-      await writeFile(filePath, content, "utf-8");
+      // 旧实现直接覆盖 Markdown；进程退出或磁盘失败时 watcher 可能读到半份 profile，
+      // 且旧配置无法恢复。先 parse，再同目录临时文件 + rename 原子替换。
+      await atomicWriteText(filePath, content);
       // enabled 状态按 agent id 存储；重命名会生成新 id，必须迁移旧禁用记录，
       // 否则用户禁用的 agent 改名后会被 runtime 当成新启用 profile 重新加载。
       await migrateDisabledAgentId(params.agentId, agent.id, storageOptions);
