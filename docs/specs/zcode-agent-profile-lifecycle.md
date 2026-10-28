@@ -32,6 +32,8 @@ Recovery is idempotent across interruption after journal creation, state prepara
 
 The source and destination must remain in one selected ZCode profile root. Destination publication uses a same-directory hard link, which atomically fails if the destination already exists. If the filesystem rejects hard links, recovery removes only its own staged destination, restores the destination's recorded disabled state, removes the journal, retains the source, and reports that safe rename is unsupported. It never falls back to a replacing rename. If the source was edited to use the destination identity during interruption, recovery removes the destination only after matching its journal content, restores the original state, keeps the edited source, and reports the identity conflict.
 
+Workspace rename validation accepts both the canonical profile ID and the existing Host path-scoped compatibility ID. It still validates the profile name from the source file before journaling; casing aliases for the same physical `agents` directory do not change profile identity. Profile recovery treats an absent or non-directory path as an empty root. The runtime watcher exposes no custom profiles while its configured root is unavailable and watches the nearest existing directory. On a direct-child unlink it rebinds the watcher before reloading the full profile set, so the watcher cache follows case-only renames even when the filesystem reports only the old spelling.
+
 ## Acceptance cases
 
 - In-place update failure before atomic replacement leaves the previous valid content and profile identity.
@@ -41,3 +43,4 @@ The source and destination must remain in one selected ZCode profile root. Desti
 - A filesystem that does not support safe no-overwrite publication leaves the source untouched and does not retain an unresolvable journal.
 - Malformed or path-traversal journal data cannot access files outside the selected ZCode profile root.
 - User and project roots are reconciled independently; a failure in one does not inspect or mutate the other.
+- A case-only rename followed by deletion removes the cached profile even when the filesystem reports the rename as an unlink of the old spelling only.

@@ -155,7 +155,13 @@ export function createSubagentConfigScope<T>(options: {
       !(file ? absolute === file : /\.(md|markdown)$/iu.test(absolute))
     )
       return;
-    if (event === "unlink") pending.set(absolute, "remove");
+    if (event === "unlink") {
+      pending.set(absolute, "remove");
+      // 原子重命名是目标新增 + 源文件删除；部分文件系统可能只交付 unlink。
+      // 重建直接 watcher 以清除旧文件名缓存，避免大小写重命名后漏掉新路径的后续删除。
+      void checkWatch(true);
+      reset = true;
+    }
     else if (event === "add" || event === "change") pending.set(absolute, "read");
     else return;
     revision++;
@@ -166,7 +172,9 @@ export function createSubagentConfigScope<T>(options: {
     while (true) {
       try {
         const stats = await stat(path);
-        if (path === root || stats.isDirectory()) return { path, stats };
+        // 监听目标根若被替换成普通文件，必须退回父目录监听；这样 ENOTDIR 会进入加载失败回退，
+        // 并能在目录恢复时重新扫描，不能把非目录节点当成有效 watcher anchor。
+        if (stats.isDirectory()) return { path, stats };
       } catch (error) {
         if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
           throw error;
@@ -229,6 +237,8 @@ export function createSubagentConfigScope<T>(options: {
           ignored: (path, info) => {
             const absolute = resolve(path);
             if (absolute === nextAnchor) return false;
+            // 缺失 root 的浅层 watcher 必须接收 root 本身的 add/unlink（即使它变成普通文件）。
+            if (!direct && absolute === root) return false;
             if (dirname(absolute) !== nextAnchor) return true;
             if (!direct) return info ? !info.isDirectory() && !info.isSymbolicLink() : false;
             return file
@@ -261,6 +271,7 @@ export function createSubagentConfigScope<T>(options: {
         current.on("all", (event, path) => {
           if (disposed || watcher !== current) return;
           if (direct) changed(event, path);
+          else if (resolve(path) === root) void checkWatch(true);
           else if (event === "addDir" || event === "unlinkDir") void checkWatch();
         });
         await new Promise<void>((ready) => {
@@ -289,6 +300,11 @@ export function createSubagentConfigScope<T>(options: {
       })
       .finally(() => {
         binding = undefined;
+        // 事件若在 binding 收尾边界到达，checkWatch 已置位但拿到了旧 Promise；不可丢失目录重绑请求。
+        if (!disposed && checkRequested) {
+          void checkWatch();
+          return;
+        }
         // 无关父目录事件只检查位置，不能反复推迟已经排队的配置更新。
         if (!timer) schedule();
         if (!disposed) options.onSettled();

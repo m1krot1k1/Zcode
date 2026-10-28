@@ -119,7 +119,7 @@ describe("Host incremental subagent snapshots", () => {
         isSymbolicLink: () => false,
       } as Stats),
     ).toBe(true);
-    expect(ignored(root)).toBe(true);
+    expect(ignored(root)).toBe(false);
     expect(ignored(join(root, "reviewer.md"))).toBe(true);
   });
 

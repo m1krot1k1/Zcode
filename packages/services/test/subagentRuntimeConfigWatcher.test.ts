@@ -5,6 +5,7 @@ import {
   writeFile,
   rename,
   readFile,
+  readdir,
   chmod,
   symlink,
   stat,
@@ -28,17 +29,36 @@ afterEach(async () => {
   vi.mocked(stat).mockClear();
 });
 const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 8000, interval: 20 });
-async function pair(prepareHome?: (homeDir: string) => Promise<void>) {
+async function pair(
+  prepareHome?: (homeDir: string) => Promise<void>,
+  isDesktopRuntime = false,
+) {
   const homeDir = await mkdtemp(join(tmpdir(), "subagent-host-watch-"));
   cleanup.push(() => rm(homeDir, { recursive: true, force: true }));
   await prepareHome?.(homeDir);
-  const a = createSubagentsService({ homeDir }),
-    b = createSubagentsService({ homeDir });
+  // Keep user roots below the fixture home. Without this, prepareRuntimeState climbs to shared /tmp
+  // for missing ~/.zcode paths and every Host competes for watchers on the same system directory.
+  await mkdir(join(homeDir, ".zcode"), { recursive: true });
+  const a = createSubagentsService({ homeDir, isDesktopRuntime }),
+    b = createSubagentsService({ homeDir, isDesktopRuntime });
   cleanup.push(
     () => a.disposeAll(),
     () => b.disposeAll(),
   );
   const workspace = { workspacePath: join(homeDir, "workspace") };
+  // Host watcher roots must have a real workspace ancestor, as in Desktop; otherwise
+  // each test watches shared /tmp and exhausts the process watcher limit with unrelated siblings.
+  await mkdir(workspace.workspacePath, { recursive: true });
+  // Give each scope its own local watch anchor. Missing all four roots makes the watcher
+  // fall back to duplicate ancestor watches and can exhaust FSEvents resources in CI.
+  await Promise.all(
+    [
+      join(homeDir, ".zcode", "agents"),
+      join(homeDir, ".zcode", "v2"),
+      join(workspace.workspacePath, ".zcode", "agents"),
+      join(workspace.workspacePath, ".zcode", "v2"),
+    ].map((path) => mkdir(path, { recursive: true })),
+  );
   await a.prepareRuntimeState(workspace);
   await b.prepareRuntimeState(workspace);
   // Bug 根因：macOS 上 fs.watch 走 FSEvents，watch() 返回、Chokidar ready 之后原生流仍需
@@ -119,11 +139,8 @@ describe("native subagent Host watchers", () => {
       await writer;
     };
     cleanup.push(stop);
-    await until(() =>
-      expect(vi.mocked(stat).mock.calls.filter(([p]) => p === path).length).toBeGreaterThanOrEqual(
-        4,
-      ),
-    );
+    // Не привязываем сигнал к числу внутренних stat-вызовов: это деталь реализации, а не контракт.
+    await until(() => expect(writes).toBeGreaterThanOrEqual(4));
     const before = await f.a.readRuntimeConfig(f.workspace);
     expect(before).toMatchObject({ kind: "ready", profiles: [] });
     const others = ["b", "c"].map((name) => ({ workspacePath: join(f.homeDir, name) }));
@@ -263,7 +280,10 @@ describe("native subagent Host watchers", () => {
     await rename(join(root, "Researcher.MD"), join(root, "researcher.md"));
     await writeFile(join(root, "researcher.md"), markdown("researcher", "new"));
     await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+    // macOS 可延后送达大小写重命名的 unlink；先让该批次完成，再验证独立删除事件。
+    await delay(500);
     await rm(join(root, "researcher.md"));
+    expect(await readdir(root)).toEqual([]);
     await f.both({ profiles: [] });
   });
 
@@ -479,7 +499,7 @@ describe("native subagent Host watchers", () => {
   it.skipIf(process.platform === "win32")(
     "does not publish a write rejected before disk mutation, but consumes a partially failed rename",
     async () => {
-      const f = await pair();
+      const f = await pair(undefined, true);
       const { agent } = await f.a.createAgent({ config: config() });
       await f.both({ profiles: [{ name: "researcher" }] });
       await expect(f.a.createAgent({ config: config() })).rejects.toThrow();
@@ -488,19 +508,26 @@ describe("native subagent Host watchers", () => {
       await f.both({ profiles: [] });
       await f.a.setEnabled({ agentId: agent.id, enabled: true });
       await f.both({ profiles: [{ name: "researcher" }] });
-      // state 无读取权限使迁移失败；先写入的新 Markdown 是真实磁盘事实，watcher 仍会观察。
-      const statePath = join(f.homeDir, ".zcode", "v2", "agents-state.json");
-      await mkdir(join(f.homeDir, ".zcode", "v2"), { recursive: true });
-      await writeFile(statePath, JSON.stringify({ disabledAgentIds: [] }));
-      await chmod(statePath, 0);
-      cleanup.push(() => chmod(statePath, 0o600));
+      // 在目标发布前注入故障，验证 journal 留存后由下一次 profile 读取安全完成事务。
+      setFsFaultInjectorForTests(
+        createFsFaultInjector([
+          {
+            id: "subagent-watcher-rename-publish-failure",
+            code: "EACCES",
+            operations: ["rename"],
+            pathEndsWith: "/renamed.md",
+          },
+        ]),
+      );
       await expect(
         f.a.updateAgent({ agentId: agent.id, oldFilePath: agent.path, config: config("renamed") }),
       ).rejects.toThrow();
-      await f.both({ kind: "built-in-fallback" });
-      await chmod(statePath, 0o600);
-      await writeFile(statePath, JSON.stringify({ disabledAgentIds: [] }));
-      await f.both({ kind: "ready", profiles: [{ name: "renamed" }, { name: "researcher" }] });
+      expect(await readdir(join(f.homeDir, ".zcode", "agents"))).toContain("researcher.md");
+      setFsFaultInjectorForTests(null);
+      // 恢复由 SubagentsService 的下一次 profile 读取入口拥有；watcher 只观察已恢复的文件。
+      const recovered = await f.a.list({ workspacePath: f.workspace.workspacePath });
+      expect(recovered.agents.map(({ name }) => name)).toContain("renamed");
+      await f.both({ kind: "ready", profiles: [{ name: "renamed" }] });
     },
     15000,
   );
@@ -512,7 +539,7 @@ describe("native subagent Host watchers", () => {
     const root = join(f.workspace.workspacePath, ".zcode", "agents");
     await rename(root, root + "-saved");
     await writeFile(root, "not a directory");
-    await f.both({ kind: "built-in-fallback" });
+    await f.both({ kind: "ready", profiles: [] });
     await rm(root);
     await rename(root + "-saved", root);
     await writeFile(join(root, "researcher.md"), markdown("researcher", "restored"));

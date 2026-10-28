@@ -806,6 +806,18 @@ modules:
       app: .
     owner: conversation
 
+  # subagents：单一服务拥有 profile 写入、恢复与运行时快照。
+  - id: subagents
+    roots:
+      - packages/services/src/subagents
+    managed: true
+    requires: [services, shared]
+    publicEntrypoints:
+      - packages/services/src/subagents/subagents.ts
+      - packages/services/src/subagents/contract.ts
+    layers: { adapters: . }
+    owner: conversation
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。
@@ -820,6 +832,14 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: subagents-service-existing-facade-size
+    rule: max-file-lines
+    paths: [packages/services/src/subagents/subagentsService.ts]
+    reason: Keep the existing profile service as the sole writer while its persistence and discovery contracts are formalized; extract cohesive helpers in a follow-up boundary refactor rather than moving lifecycle ownership during watcher recovery.
+  - id: subagents-service-existing-lint-disable
+    rule: disable-count
+    paths: [packages/services/src/subagents/subagentsService.ts]
+    reason: Retain the existing max-lines suppression until the same cohesive service extraction is completed; it does not disable type, behavior, or dependency checks.
   - id: side-pane-full-view-shortcut-command-edit
     rule: unmanaged-new-file
     paths: [packages/shared/src/shortcutCommands.ts]

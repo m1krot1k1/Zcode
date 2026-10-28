@@ -30,14 +30,16 @@ type Scope<T> = ReturnType<typeof createSubagentConfigScope<T>>;
 async function listDocuments(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true }).catch(
     (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return [];
+      // Root 可在目录迁移期间短暂成为普通文件；不保留旧快照，也不把它当作自定义 agent。
+      if (["ENOENT", "ENOTDIR"].includes(error.code ?? "")) return [];
       throw error;
     },
   );
   // 自定义 profile 的发现范围与 depth:0 监听一致，避免深层定义只在重扫时变化。
-  return entries
+  const paths = entries
     .filter((entry) => entry.isFile() && /\.(md|markdown)$/iu.test(entry.name))
     .map((entry) => join(root, entry.name));
+  return paths;
 }
 async function loadDocuments(
   root: string,

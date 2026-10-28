@@ -603,10 +603,13 @@ describe("createSubagentsService", () => {
     await mkdir(join(home, ".zcode", "v2"), { recursive: true });
     const original = '{"builtInModelOverrides":';
     await writeFile(path, original);
-    await expect(
-      createSubagentsService({ homeDir: home }).prepareRuntimeState(),
-    ).resolves.toBeUndefined();
-    expect(await readFile(path, "utf8")).toBe(original);
+    const service = createSubagentsService({ homeDir: home });
+    try {
+      await expect(service.prepareRuntimeState()).resolves.toBeUndefined();
+      expect(await readFile(path, "utf8")).toBe(original);
+    } finally {
+      service.disposeAll();
+    }
   });
 
   it("启动准备将旧内置选择落盘，让独立 Agent loader 不必等待用户编辑", async () => {

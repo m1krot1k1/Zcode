@@ -809,7 +809,17 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
         const sourceContent = await readOptionalText(params.oldFilePath);
         if (sourceContent === undefined) throw new Error("Agent profile changed before rename; reload the profile and retry");
         const parsedSource = parseSubagentMarkdown({ content: sourceContent, path: params.oldFilePath, scope });
-        if (parsedSource.agent?.id !== params.agentId) {
+        const workspaceCompatibilityID =
+          scope === "workspace" && params.workspacePath && parsedSource.agent
+            ? `workspace:${params.workspacePath}:${parsedSource.agent.name.trim().toLowerCase()}`
+            : undefined;
+        // 旧 Host 对 workspace profile 暴露的是 path-scoped ID；重命名校验应接受该兼容 ID，
+        // 但必须同时核对文件中的名称，不能因路径大小写或缓存 ID 形式差异误拒绝真实 profile。
+        if (
+          !parsedSource.agent ||
+          (parsedSource.agent.id !== params.agentId &&
+            workspaceCompatibilityID !== params.agentId)
+        ) {
           throw new Error("Agent profile identity changed before rename; reload the profile and retry");
         }
         const state = await readAgentStateFile(storageOptions);
@@ -994,7 +1004,10 @@ async function recoverAgentProfileRenames(
   options: SubagentStorageOptions | undefined,
 ): Promise<void> {
   const entries = await readdir(rootPath, { withFileTypes: true }).catch(
-    (error: NodeJS.ErrnoException) => error.code === "ENOENT" ? [] : Promise.reject(error),
+    (error: NodeJS.ErrnoException) =>
+      // case-insensitive root 在 macOS/Windows 上可能被暂时替换成普通文件；
+      // это тот же отсутствующий профильный каталог, который watcher публикует как пустой.
+      ["ENOENT", "ENOTDIR"].includes(error.code ?? "") ? [] : Promise.reject(error),
   );
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.startsWith(PROFILE_RENAME_JOURNAL_PREFIX) || !entry.name.endsWith(".json")) continue;
