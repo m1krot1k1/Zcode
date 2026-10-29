@@ -2011,11 +2011,11 @@ function buildSwarmChildFailureSummary(snapshots: SubagentTaskSnapshot[]): strin
 
 function isExistingCodebaseTask(task: string): boolean {
   const mentionsExistingCode =
-    /\b(?:repository|repo|codebase|source\s+code|project\s+files|workspace\s+files|git\s+branch|git\s+status|pull\s+request|commit)\b|репозитори|кодовую\s+базу|исходн(?:ый\s+код|ики)|файлы\s+(?:проекта|репозитори)|ветк[ауе]\s+git|коммит/iu.test(
+    /\b(?:repository|repo|codebase|source\s+code|project\s+files|workspace\s+files|git\s+branch|git\s+status|pull\s+request|commit)\b|реп(?:а|ы|у|е|ой|озитори)|кодовую\s+базу|исходн(?:ый\s+код|ики)|файлы\s+(?:проекта|репозитори)|ветк[ауе]\s+git|коммит/iu.test(
       task,
     );
   const requestsInspectionOrChange =
-    /\b(?:review|audit|inspect|analy[sz]e|check|verify|test|debug|fix|refactor|change|update)\b|проверь|проверить|аудит|изучи|проанализируй|исправь|протестируй|провери|посмотри/iu.test(
+    /\b(?:review|audit|inspect|analy[sz]e|check|verify|test|debug|fix|refactor|change|update)\b|анализ(?:а|е|у|ом)?|проверь|проверить|аудит|изучи|проанализируй|исправь|протестируй|провери|посмотри/iu.test(
       task,
     );
   return mentionsExistingCode && requestsInspectionOrChange;

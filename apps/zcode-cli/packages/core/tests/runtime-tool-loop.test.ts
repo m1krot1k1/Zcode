@@ -4501,7 +4501,7 @@ describe("AgentRuntime tool loop", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Проверь этот репозиторий и исправь ошибки", undefined, {
+    const result = await runtime.executeTurn("Анализ репы на ошибки и недоделки", undefined, {
       intent: { orchestrationMode: "swarm" },
     });
 
