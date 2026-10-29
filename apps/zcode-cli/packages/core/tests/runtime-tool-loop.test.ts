@@ -3956,6 +3956,7 @@ describe("AgentRuntime tool loop", () => {
       ownerEpoch: 4,
       revision: 3,
       time: { created: 12, updated: 15 },
+      resultText: undefined as string | undefined,
     };
     const attemptTransitions: string[] = [];
     const reserved: string[] = [];
@@ -3982,6 +3983,24 @@ describe("AgentRuntime tool loop", () => {
         }
         return null;
       },
+      async messages(input: { sessionID: string }) {
+        if (input.sessionID !== childId) return [];
+        return [
+          {
+            info: { role: "user" },
+            parts: [{ type: "text", text: "USER_PROMPT_MARKER" }],
+          },
+          {
+            info: { role: "assistant" },
+            parts: [
+              { type: "text", text: "ALPHA_RESULT_MARKER" },
+              { type: "tool", tool: "bash", text: "TOOL_SECRET_OUTPUT" },
+              { type: "reasoning", text: "REASONING_MARKER" },
+              { type: "text", text: "ignored aside", ignored: true },
+            ],
+          },
+        ];
+      },
       async listSwarmNodeAttempts() {
         return [priorAttempt];
       },
@@ -3989,11 +4008,13 @@ describe("AgentRuntime tool loop", () => {
         nodeID: string;
         status: string;
         expectedRevision: number;
+        resultText?: string;
       }) {
         attemptTransitions.push(`${input.nodeID}:${input.status}:${input.expectedRevision}`);
         if (input.nodeID === "branch-a") {
           priorAttempt.status = input.status as "dispatching";
           priorAttempt.revision = input.expectedRevision + 1;
+          if (input.resultText) priorAttempt.resultText = input.resultText;
         }
         return true;
       },
@@ -4045,6 +4066,11 @@ describe("AgentRuntime tool loop", () => {
             expect(request.nodes.map((node) => node.id)).toEqual(["branch-b"]);
             expect(request.nodes[0]?.depends_on).toBeUndefined();
             expect(request.nodes[0]?.prompt).toContain("не запускать повторно");
+            expect(request.nodes[0]?.prompt).toContain("ALPHA_RESULT_MARKER");
+            expect(request.nodes[0]?.prompt).not.toContain("TOOL_SECRET_OUTPUT");
+            expect(request.nodes[0]?.prompt).not.toContain("USER_PROMPT_MARKER");
+            expect(request.nodes[0]?.prompt).not.toContain("REASONING_MARKER");
+            expect(request.nodes[0]?.prompt).not.toContain("не копировался");
             const identity = {
               nodeID: "branch-b",
               attemptID: "attempt-b1",

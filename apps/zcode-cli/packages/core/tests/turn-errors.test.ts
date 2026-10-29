@@ -3,10 +3,49 @@ import { SessionEventType } from "@zcode/contracts";
 import { appendEvent } from "../src/runtime/methods/events.js";
 import {
   appendTurnOutcomeEvent,
+  childAssistantResultText,
   createExternalTurnFaultError,
   createTurnFailureError,
   projectExecutionErrorPayload,
+  SWARM_RECONCILED_RESULT_MAX_CHARS,
 } from "../src/runtime/helpers/turn-errors.js";
+
+describe("child assistant result text", () => {
+  it("keeps the last assistant reply and drops tool, reasoning, and user text", () => {
+    const text = childAssistantResultText([
+      { info: { role: "user" }, parts: [{ type: "text", text: "USER_PROMPT_MARKER" }] },
+      {
+        info: { role: "assistant" },
+        parts: [
+          { type: "text", text: "first" },
+          { type: "tool", text: "TOOL_SECRET_OUTPUT" },
+          { type: "reasoning", text: "REASONING_MARKER" },
+          { type: "text", text: "ignored aside", ignored: true },
+        ],
+      },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "  final answer  " }] },
+    ]);
+    expect(text).toBe("final answer");
+  });
+
+  it("returns undefined when the child never wrote assistant text", () => {
+    expect(
+      childAssistantResultText([
+        { info: { role: "assistant" }, parts: [{ type: "tool", text: "only a tool" }] },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("caps the copied reply at the journal limit", () => {
+    const text = childAssistantResultText([
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "я".repeat(SWARM_RECONCILED_RESULT_MAX_CHARS + 25) }],
+      },
+    ]);
+    expect(text).toHaveLength(SWARM_RECONCILED_RESULT_MAX_CHARS);
+  });
+});
 
 describe("turn abort outcome", () => {
   it.each([

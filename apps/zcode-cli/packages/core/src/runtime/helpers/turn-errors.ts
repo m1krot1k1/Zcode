@@ -30,6 +30,34 @@ export async function holdSwarmCrashBoundary(): Promise<void> {
 export const SWARM_RECONCILED_COMPLETION_RESULT =
   "Дочерняя сессия уже завершилась до перезапуска. Журнал зафиксировал этот факт по lastOutcome; текст транскрипта в результат узла не копировался.";
 
+export const SWARM_RECONCILED_RESULT_MAX_CHARS = 4_000;
+
+export interface ChildTranscriptMessage {
+  info: { role: string };
+  parts: readonly { type: string; text?: string; ignored?: boolean }[];
+}
+
+/** Последняя assistant-реплика: только text-части. Tool, reasoning и user prompt не входят. */
+export function childAssistantResultText(
+  messages: readonly ChildTranscriptMessage[],
+): string | undefined {
+  let latest = "";
+  for (const message of messages) {
+    if (message.info.role !== "assistant") continue;
+    const chunks: string[] = [];
+    for (const part of message.parts) {
+      if (part.type !== "text" || part.ignored) continue;
+      const text = part.text?.trim();
+      if (text) chunks.push(text);
+    }
+    if (chunks.length > 0) latest = chunks.join("\n\n");
+  }
+  if (!latest) return undefined;
+  return latest.length > SWARM_RECONCILED_RESULT_MAX_CHARS
+    ? latest.slice(0, SWARM_RECONCILED_RESULT_MAX_CHARS)
+    : latest;
+}
+
 export interface SwarmRestartClassification {
   pendingNodeIds: string[];
   completedNodeIds: string[];

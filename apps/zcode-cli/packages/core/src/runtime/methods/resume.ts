@@ -44,6 +44,7 @@ import {
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
 import { restorePrismProjectionEvents } from "./events.js";
 import {
+  childAssistantResultText,
   classifySwarmRestartNodes,
   SWARM_RECONCILED_COMPLETION_RESULT,
 } from "../helpers/turn-errors.js";
@@ -637,8 +638,8 @@ export async function recoverAndHydrateSwarmJournal(
         let attemptConflict = false;
         for (const attempt of attempts) {
           if (attempt.status !== "dispatching" && attempt.status !== "running") continue;
-          // 原因：重启前 child 已写完 lastOutcome，但 journal 仍停在 dispatching/running。
-          // 修复依据：只补记同一 attempt 为 completed；没有证明时打断且不分配新 attempt。
+          // 原因：重启前 child 已写完 lastOutcome，但 journal 的 resultText 仍空，后续节点看不到已完成的回答。
+          // 修复依据：只把最后一条 assistant 的 text parts 写入同一 attempt；工具输出和 user prompt 不复制。没有正文时保留占位说明。
           const child = journal.getSession
             ? await journal.getSession(attempt.childSessionID)
             : null;
@@ -661,6 +662,26 @@ export async function recoverAndHydrateSwarmJournal(
               attempt.status = "running";
               attempt.revision = revision;
             }
+            let copiedText: string | undefined;
+            if (!attempt.resultText?.trim()) {
+              try {
+                copiedText = childAssistantResultText(
+                  await journal.messages({ sessionID: attempt.childSessionID }),
+                );
+              } catch (error) {
+                this.logger?.warn("Swarm child transcript was not readable during recovery", {
+                  ...traceContextToLogContext(options.traceContext),
+                  event: "swarm.recovery.transcript_unreadable",
+                  module: "core.runtime",
+                  sessionId: this.sessionId,
+                  swarmRunId: run.runID,
+                  nodeID: attempt.nodeID,
+                  errorName: error instanceof Error ? error.name : "Error",
+                });
+              }
+            }
+            const resultText =
+              attempt.resultText?.trim() || copiedText || SWARM_RECONCILED_COMPLETION_RESULT;
             const completed = await journal.transitionSwarmNodeAttempt({
               runID: run.runID,
               nodeID: attempt.nodeID,
@@ -668,9 +689,7 @@ export async function recoverAndHydrateSwarmJournal(
               expectedRevision: revision,
               ownerEpoch: nextOwnerEpoch,
               status: "completed",
-              resultText: attempt.resultText?.trim()
-                ? attempt.resultText
-                : SWARM_RECONCILED_COMPLETION_RESULT,
+              resultText,
             });
             if (!completed) {
               attemptConflict = true;
@@ -678,9 +697,7 @@ export async function recoverAndHydrateSwarmJournal(
             }
             attempt.status = "completed";
             attempt.revision = revision + 1;
-            if (!attempt.resultText?.trim()) {
-              attempt.resultText = SWARM_RECONCILED_COMPLETION_RESULT;
-            }
+            attempt.resultText = resultText;
             continue;
           }
           const interrupted = await journal.transitionSwarmNodeAttempt({
