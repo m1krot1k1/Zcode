@@ -1,6 +1,6 @@
 import { restorePermissionGrantMarker } from "../helpers/permission-grant-resume.js";
 import { executionStateSchema, resolveExecutionState } from "@zcode/shared";
-import { SESSION_ENTRY_EXECUTION_STATE } from "@zcode/contracts";
+import { SESSION_ENTRY_EXECUTION_STATE, type SwarmRunUpdatedPayload } from "@zcode/contracts";
 import {
   CoreErrorType,
   HookEventName,
@@ -43,6 +43,10 @@ import {
 } from "./workspace-checkpoint-persistence.js";
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
 import { restorePrismProjectionEvents } from "./events.js";
+
+export type SwarmJournalRecoveryMode = "resume_open" | "before_swarm_admission";
+
+const SWARM_RECOVERY_ACTIVE_RUN_LIMIT = 500;
 
 export function toScheduleState(
   this: AgentRuntimeInternal,
@@ -121,6 +125,13 @@ export async function resumeFromStore(
   );
   // PRISM SessionEntry — durable authority; recover its event projection before resuming.
   await restorePrismProjectionEvents.call(this, traceContext, this.branchGeneration);
+  // 原因：SwarmRunUpdated 只在 process-local event store。重启后打开聊天时没有新的 Swarm input，
+  // 旧行会从时间线消失。修复依据：从 CLI SQLite journal fail-closed 中断活跃 run，并投影终端行；
+  // 不自动重派 pending 节点。
+  await recoverAndHydrateSwarmJournal.call(this, {
+    mode: "resume_open",
+    traceContext,
+  });
   if (messages.length === 0) {
     this.logger?.warn("Session resume loaded zero persisted messages", {
       ...traceContextToLogContext(traceContext),
@@ -494,3 +505,252 @@ export function injectTargetStateIntoMessageHistory(
     ].join("\n"),
   );
 }
+
+/**
+ * Fail-closed takeover of durable Swarm journal rows for the current root session,
+ * then project missing `SwarmRunUpdated` rows into the process-local event store.
+ *
+ * - `before_swarm_admission`: throws on owner conflicts / active-run limit (blocks a new swarm).
+ * - `resume_open`: same interrupt + hydrate path when opening a chat without a new swarm input;
+ *   conflicts and the active-run limit are logged and skipped so resume still succeeds.
+ * Pending nodes are never redispatched.
+ */
+export async function recoverAndHydrateSwarmJournal(
+  this: AgentRuntimeInternal,
+  options: {
+    mode: SwarmJournalRecoveryMode;
+    traceContext: TraceContext;
+    collectEvents?: SessionEvent[];
+  },
+): Promise<void> {
+  const journal = this.sessionStore;
+  if (!journal) return;
+  const rootSessionID = this.runtimeTaskRegistry.getRootSessionIdForSession(this.sessionId);
+  if (rootSessionID !== this.sessionId) return;
+  if (
+    !journal.listSwarmRuns ||
+    !journal.claimSwarmRunOwner ||
+    !journal.listSwarmNodeAttempts ||
+    !journal.transitionSwarmNodeAttempt ||
+    !journal.transitionSwarmRun
+  ) {
+    return;
+  }
+
+  const failClosed = options.mode === "before_swarm_admission";
+  const [activeRuns, terminalRuns] = await Promise.all([
+    journal.listSwarmRuns({
+      rootSessionID,
+      statuses: ["planning", "running"],
+      limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+    }),
+    journal.listSwarmRuns({
+      rootSessionID,
+      statuses: ["completed", "failed", "cancelled", "interrupted"],
+      limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+    }),
+  ]);
+
+  if (activeRuns.length === SWARM_RECOVERY_ACTIVE_RUN_LIMIT) {
+    if (failClosed) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        "В этой сессии слишком много незавершённых записей роя для безопасного восстановления; новый запуск остановлен.",
+        {
+          context: {
+            code: "SWARM_RECOVERY_ACTIVE_RUN_LIMIT",
+            limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+          },
+          recoverable: true,
+        },
+      );
+    }
+    this.logger?.warn(
+      "Swarm journal active-run recovery limit reached during chat open; projecting only the returned rows",
+      {
+        ...traceContextToLogContext(options.traceContext),
+        event: "swarm.recovery.active_run_limit",
+        module: "core.runtime",
+        limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+        sessionId: this.sessionId,
+      },
+    );
+  }
+
+  const runs = [...activeRuns, ...terminalRuns];
+  const eventRows = await this.eventStore.getEvents(rootSessionID);
+  const projected = new Map<string, SwarmRunUpdatedPayload["status"]>();
+  for (const event of eventRows) {
+    if (event.type !== SessionEventType.SwarmRunUpdated) continue;
+    const payload = event.payload as SwarmRunUpdatedPayload;
+    projected.set(payload.swarmRunId, payload.status);
+  }
+
+  for (const candidate of runs) {
+    let run = candidate;
+    if (run.status === "planning" || run.status === "running") {
+      const nextOwnerEpoch = run.ownerEpoch + 1;
+      const claimed = await journal.claimSwarmRunOwner({
+        rootSessionID,
+        runID: run.runID,
+        expectedRevision: run.revision,
+        expectedOwnerEpoch: run.ownerEpoch,
+        ownerEpoch: nextOwnerEpoch,
+      });
+      if (!claimed) {
+        const latest = await journal.getSwarmRun?.({ rootSessionID, runID: run.runID });
+        if (!latest || latest.status === "planning" || latest.status === "running") {
+          if (failClosed) {
+            throw createCoreError(
+              CoreErrorType.ToolExecutionFailed,
+              "Не удалось безопасно согласовать сохранённое выполнение роя; новый запуск остановлен.",
+              {
+                context: { code: "SWARM_RECOVERY_OWNER_CONFLICT", swarmRunId: run.runID },
+                recoverable: true,
+              },
+            );
+          }
+          this.logger?.warn(
+            "Swarm journal owner claim conflict during chat open; skipped run projection",
+            {
+              ...traceContextToLogContext(options.traceContext),
+              event: "swarm.recovery.owner_conflict",
+              module: "core.runtime",
+              sessionId: this.sessionId,
+              swarmRunId: run.runID,
+            },
+          );
+          continue;
+        }
+        run = latest;
+      } else {
+        const attempts = await journal.listSwarmNodeAttempts({ runID: run.runID });
+        let attemptConflict = false;
+        for (const attempt of attempts) {
+          if (attempt.status !== "dispatching" && attempt.status !== "running") continue;
+          const interrupted = await journal.transitionSwarmNodeAttempt({
+            runID: run.runID,
+            nodeID: attempt.nodeID,
+            attemptID: attempt.attemptID,
+            expectedRevision: attempt.revision,
+            ownerEpoch: nextOwnerEpoch,
+            status: "interrupted",
+            diagnosticCode: "swarm.attempt_interrupted_after_process_restart",
+          });
+          if (!interrupted) {
+            if (failClosed) {
+              throw createCoreError(
+                CoreErrorType.ToolExecutionFailed,
+                "Не удалось сохранить прерывание дочерней задачи роя; новый запуск остановлен.",
+                {
+                  context: {
+                    code: "SWARM_RECOVERY_ATTEMPT_CONFLICT",
+                    swarmRunId: run.runID,
+                    nodeID: attempt.nodeID,
+                  },
+                  recoverable: true,
+                },
+              );
+            }
+            attemptConflict = true;
+            this.logger?.warn(
+              "Swarm journal attempt interrupt conflict during chat open; skipped run projection",
+              {
+                ...traceContextToLogContext(options.traceContext),
+                event: "swarm.recovery.attempt_conflict",
+                module: "core.runtime",
+                sessionId: this.sessionId,
+                swarmRunId: run.runID,
+                nodeID: attempt.nodeID,
+              },
+            );
+            break;
+          }
+        }
+        if (attemptConflict) continue;
+
+        const transitioned = await journal.transitionSwarmRun({
+          rootSessionID,
+          runID: run.runID,
+          expectedRevision: run.revision + 1,
+          ownerEpoch: nextOwnerEpoch,
+          status: "interrupted",
+          diagnosticCode: "swarm.run_interrupted_after_process_restart",
+        });
+        if (!transitioned) {
+          if (failClosed) {
+            throw createCoreError(
+              CoreErrorType.ToolExecutionFailed,
+              "Не удалось сохранить прерывание старого роя; новый запуск остановлен.",
+              {
+                context: { code: "SWARM_RECOVERY_RUN_CONFLICT", swarmRunId: run.runID },
+                recoverable: true,
+              },
+            );
+          }
+          this.logger?.warn(
+            "Swarm journal run interrupt conflict during chat open; skipped run projection",
+            {
+              ...traceContextToLogContext(options.traceContext),
+              event: "swarm.recovery.run_conflict",
+              module: "core.runtime",
+              sessionId: this.sessionId,
+              swarmRunId: run.runID,
+            },
+          );
+          continue;
+        }
+        run = {
+          ...run,
+          status: "interrupted",
+          ownerEpoch: nextOwnerEpoch,
+          revision: run.revision + 2,
+          diagnosticCode: "swarm.run_interrupted_after_process_restart",
+        };
+      }
+    }
+
+    const status: SwarmRunUpdatedPayload["status"] =
+      run.status === "interrupted" ? "failed" : run.status;
+    if (projected.get(run.runID) === status) continue;
+
+    const attempts = await journal.listSwarmNodeAttempts({ runID: run.runID });
+    const childSessionIds = [
+      ...new Set(attempts.map((attempt) => String(attempt.childSessionID))),
+    ].slice(0, 128);
+    const graph = run.graph;
+    const childAgentTypes = Object.fromEntries(
+      attempts.flatMap((attempt) => {
+        const profile = graph?.nodes.find((node) => node.id === attempt.nodeID)?.subagent_type;
+        return profile ? [[String(attempt.childSessionID), profile]] : [];
+      }),
+    );
+    const summary =
+      run.status === "interrupted"
+        ? "Выполнение прервано после перезапуска. Автоматический повтор не выполнялся; отправьте новую задачу, чтобы продолжить вручную."
+        : run.status === "completed"
+          ? "Сохранённое выполнение роя завершено."
+          : run.status === "cancelled"
+            ? "Сохранённое выполнение роя отменено."
+            : run.status === "failed"
+              ? "Сохранённое выполнение роя завершилось ошибкой."
+              : "Восстановлено состояние выполнения роя.";
+    const event = this.createEvent(
+      SessionEventType.SwarmRunUpdated,
+      {
+        swarmRunId: run.runID,
+        status,
+        outcomeAcceptance: "unknown",
+        taskCount: graph?.nodes.length ?? 0,
+        childSessionIds,
+        ...(Object.keys(childAgentTypes).length === 0 ? {} : { childAgentTypes }),
+        summary,
+      },
+      options.traceContext,
+    );
+    await this.appendEvent(event, options.traceContext);
+    options.collectEvents?.push(event);
+    projected.set(run.runID, status);
+  }
+}
+

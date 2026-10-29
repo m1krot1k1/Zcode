@@ -103,6 +103,7 @@ import {
   matchExecutionSelectionCreationFallback,
   resolveExecutionFallbackCandidates,
 } from "./turn-execution-fallback.js";
+import { recoverAndHydrateSwarmJournal } from "./resume.js";
 
 const TARGET_RUN_HEARTBEAT_MS = 15_000;
 const MODEL_CREATION_FAILED_MESSAGE = "Model creation failed";
@@ -1218,13 +1219,6 @@ async function executeSwarmRun(
     journal.reserveSwarmNodeAttempt &&
     journal.transitionSwarmNodeAttempt,
   );
-  const journalRecoveryAPIsAvailable = Boolean(
-    journal?.listSwarmRuns &&
-    journal.claimSwarmRunOwner &&
-    journal.listSwarmNodeAttempts &&
-    journal.transitionSwarmNodeAttempt &&
-    journal.transitionSwarmRun,
-  );
   const journalEligible = rootSessionID === this.sessionId && Boolean(state.inputId);
   const publish = async (payload: SwarmRunUpdatedPayload): Promise<void> => {
     // 原因：admitSwarmRun 已把 durable 状态创建为 planning；再次写相同状态会被 SQLite 转移表拒绝。
@@ -1272,165 +1266,20 @@ async function executeSwarmRun(
         snapshot.turnId === state.turnId &&
         snapshot.parentToolCallId === swarmRunId,
     );
-  const recoverAndHydrate = async (): Promise<void> => {
-    if (!journal || !journalRecoveryAPIsAvailable || rootSessionID !== this.sessionId) return;
-    journalFailClosed = true;
-    const [activeRuns, terminalRuns] = await Promise.all([
-      journal.listSwarmRuns!({ rootSessionID, statuses: ["planning", "running"], limit: 500 }),
-      journal.listSwarmRuns!({
-        rootSessionID,
-        statuses: ["completed", "failed", "cancelled", "interrupted"],
-        limit: 500,
-      }),
-    ]);
-    if (activeRuns.length === 500) {
-      throw createCoreError(
-        CoreErrorType.ToolExecutionFailed,
-        "В этой сессии слишком много незавершённых записей роя для безопасного восстановления; новый запуск остановлен.",
-        {
-          context: { code: "SWARM_RECOVERY_ACTIVE_RUN_LIMIT", limit: 500 },
-          recoverable: true,
-        },
-      );
-    }
-    const runs = [...activeRuns, ...terminalRuns];
-    const eventRows = await this.eventStore.getEvents(rootSessionID);
-    const projected = new Map<string, SwarmRunUpdatedPayload["status"]>();
-    for (const event of eventRows) {
-      if (event.type !== SessionEventType.SwarmRunUpdated) continue;
-      const payload = event.payload as SwarmRunUpdatedPayload;
-      projected.set(payload.swarmRunId, payload.status);
-    }
-
-    for (const candidate of runs) {
-      let run = candidate;
-      if (run.status === "planning" || run.status === "running") {
-        const nextOwnerEpoch = run.ownerEpoch + 1;
-        const claimed = await journal.claimSwarmRunOwner!({
-          rootSessionID,
-          runID: run.runID,
-          expectedRevision: run.revision,
-          expectedOwnerEpoch: run.ownerEpoch,
-          ownerEpoch: nextOwnerEpoch,
-        });
-        if (!claimed) {
-          const latest = await journal.getSwarmRun?.({ rootSessionID, runID: run.runID });
-          if (!latest || latest.status === "planning" || latest.status === "running") {
-            throw createCoreError(
-              CoreErrorType.ToolExecutionFailed,
-              "Не удалось безопасно согласовать сохранённое выполнение роя; новый запуск остановлен.",
-              {
-                context: { code: "SWARM_RECOVERY_OWNER_CONFLICT", swarmRunId: run.runID },
-                recoverable: true,
-              },
-            );
-          }
-          run = latest;
-        } else {
-          const attempts = await journal.listSwarmNodeAttempts!({ runID: run.runID });
-          for (const attempt of attempts) {
-            if (attempt.status !== "dispatching" && attempt.status !== "running") continue;
-            const interrupted = await journal.transitionSwarmNodeAttempt!({
-              runID: run.runID,
-              nodeID: attempt.nodeID,
-              attemptID: attempt.attemptID,
-              expectedRevision: attempt.revision,
-              ownerEpoch: nextOwnerEpoch,
-              status: "interrupted",
-              diagnosticCode: "swarm.attempt_interrupted_after_process_restart",
-            });
-            if (!interrupted) {
-              throw createCoreError(
-                CoreErrorType.ToolExecutionFailed,
-                "Не удалось сохранить прерывание дочерней задачи роя; новый запуск остановлен.",
-                {
-                  context: {
-                    code: "SWARM_RECOVERY_ATTEMPT_CONFLICT",
-                    swarmRunId: run.runID,
-                    nodeID: attempt.nodeID,
-                  },
-                  recoverable: true,
-                },
-              );
-            }
-          }
-          const transitioned = await journal.transitionSwarmRun!({
-            rootSessionID,
-            runID: run.runID,
-            expectedRevision: run.revision + 1,
-            ownerEpoch: nextOwnerEpoch,
-            status: "interrupted",
-            diagnosticCode: "swarm.run_interrupted_after_process_restart",
-          });
-          if (!transitioned) {
-            throw createCoreError(
-              CoreErrorType.ToolExecutionFailed,
-              "Не удалось сохранить прерывание старого роя; новый запуск остановлен.",
-              {
-                context: { code: "SWARM_RECOVERY_RUN_CONFLICT", swarmRunId: run.runID },
-                recoverable: true,
-              },
-            );
-          }
-          run = {
-            ...run,
-            status: "interrupted",
-            ownerEpoch: nextOwnerEpoch,
-            revision: run.revision + 2,
-            diagnosticCode: "swarm.run_interrupted_after_process_restart",
-          };
-        }
-      }
-
-      const status: SwarmRunUpdatedPayload["status"] =
-        run.status === "interrupted" ? "failed" : run.status;
-      if (projected.get(run.runID) === status) continue;
-      const attempts = await journal.listSwarmNodeAttempts!({ runID: run.runID });
-      const childSessionIds = [
-        ...new Set(attempts.map((attempt) => String(attempt.childSessionID))),
-      ].slice(0, 128);
-      const graph = run.graph;
-      const childAgentTypes = Object.fromEntries(
-        attempts.flatMap((attempt) => {
-          const profile = graph?.nodes.find((node) => node.id === attempt.nodeID)?.subagent_type;
-          return profile ? [[String(attempt.childSessionID), profile]] : [];
-        }),
-      );
-      const summary =
-        run.status === "interrupted"
-          ? "Выполнение прервано после перезапуска. Автоматический повтор не выполнялся; отправьте новую задачу, чтобы продолжить вручную."
-          : run.status === "completed"
-            ? "Сохранённое выполнение роя завершено."
-            : run.status === "cancelled"
-              ? "Сохранённое выполнение роя отменено."
-              : run.status === "failed"
-                ? "Сохранённое выполнение роя завершилось ошибкой."
-                : "Восстановлено состояние выполнения роя.";
-      const event = this.createEvent(
-        SessionEventType.SwarmRunUpdated,
-        {
-          swarmRunId: run.runID,
-          status,
-          outcomeAcceptance: "unknown",
-          taskCount: graph?.nodes.length ?? 0,
-          childSessionIds,
-          ...(Object.keys(childAgentTypes).length === 0 ? {} : { childAgentTypes }),
-          summary,
-        },
-        state.turnTraceContext,
-      );
-      await this.appendEvent(event, state.turnTraceContext);
-      state.events.push(event);
-      projected.set(run.runID, status);
-    }
-    journalFailClosed = false;
-  };
   try {
     throwIfTurnAborted(state.turnAbortSignal);
     // 修复原因：显式选择「Рой」不表示单纯查询角色/文件清单也要创建编排波次；
     // 仅对完整匹配的 list-only 请求直达已选模型，附带实现工作的请求仍走 planner。
     if (isListOnlyOrchestrationRequest(task)) return false;
-    if (journalEligible && journalRecoveryAPIsAvailable) await recoverAndHydrate();
+    if (journalEligible) {
+      journalFailClosed = true;
+      await recoverAndHydrateSwarmJournal.call(this, {
+        mode: "before_swarm_admission",
+        traceContext: state.turnTraceContext,
+        collectEvents: state.events,
+      });
+      journalFailClosed = false;
+    }
     if (journalEligible && journalAPIsAvailable && journal?.admitSwarmRun) {
       journalFailClosed = true;
       const candidateRunID = `swarm_${createHash("sha256")
