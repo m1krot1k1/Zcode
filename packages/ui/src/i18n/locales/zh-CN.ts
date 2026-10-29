@@ -3602,6 +3602,8 @@ const zhCN: Record<string, string> = {
   "settings.openCode.modelsUnavailable": "无法读取 OpenCode 模型列表。",
   "settings.openCode.checking": "正在检查 OpenCode CLI…",
   "settings.openCode.available": "已检测到 OpenCode CLI（{version}）",
+  "settings.openCode.networkRoute": "OpenCode 模型网络线路：{route}",
+  "settings.openCode.networkRouteDirect": "直接连接",
   "settings.openCode.missing": "未安装 OpenCode CLI",
   "settings.openCode.cli-missing":
     "OpenCode CLI 已不可用，无法启动。请安装它或重新选择可执行文件，然后重试。",

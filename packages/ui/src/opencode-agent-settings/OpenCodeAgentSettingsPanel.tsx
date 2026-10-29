@@ -65,9 +65,11 @@ function installDiagnosticMessageId(code: string) {
 
 export function OpenCodeAgentSettingsPanel({
   enabled,
+  activeProxy,
   onEnabledChange,
 }: {
   enabled: boolean;
+  activeProxy?: string;
   onEnabledChange: (enabled: boolean) => void | Promise<void>;
 }) {
   const { intl } = useZCodeIntl();
@@ -182,6 +184,18 @@ export function OpenCodeAgentSettingsPanel({
           </h2>
           <p aria-live="polite" className="text-ui-base text-foreground-subtle">
             {statusMessage(cliStatus, intl)}
+          </p>
+          <p
+            className="text-ui-sm text-foreground-subtle"
+            data-testid="opencode-active-network-route"
+          >
+            {intl.formatMessage(
+              { id: "settings.openCode.networkRoute" },
+              {
+                route:
+                  activeProxy ?? intl.formatMessage({ id: "settings.openCode.networkRouteDirect" }),
+              },
+            )}
           </p>
         </div>
         <Switch

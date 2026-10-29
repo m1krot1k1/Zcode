@@ -22,7 +22,7 @@ patchedDependencies:
     hash: 4b7b3781f603e111bb33aef9c4b1694ac9bacd3dff47692606de9876d4631164
     path: patches/@radix-ui__react-collapsible@1.1.12.patch
   ai-sdk-provider-opencode-sdk@3.0.6:
-    hash: f3f58d5a0747c5caa0f4f9b8a9287a4c30e4e97cc86916a509733f609f97aca8
+    hash: 39e8d9af835c746ca1f5a7d92fc8d418254acc2eb90c90ee297384a7e03b8e62
     path: patches/ai-sdk-provider-opencode-sdk@3.0.6.patch
   vitest@4.1.7:
     hash: 11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0

@@ -40,20 +40,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.js";
 import { Check, Plus, Trash2 } from "lucide-react";
-import {
-  SettingsBadge,
-  SettingsGroupCard,
-  SettingsRow,
-} from "@/settings/SettingsPageParts.js";
+import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { DataBaseDirControl } from "@/settings/DataBaseDirControl.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { ProactiveSuggestionsSetting } from "@/settings/ProactiveSuggestionsSetting.js";
 import { DynamicWorkflowModeSetting } from "@/settings/DynamicWorkflowModeSetting.js";
-import {
-  normalizeInterfaceMode,
-  type InterfaceMode,
-} from "@/lib/interfaceMode.js";
+import { normalizeInterfaceMode, type InterfaceMode } from "@/lib/interfaceMode.js";
 import {
   createSettingsPageConfig,
   resolveSettingsSectionForPlatform,
@@ -69,9 +62,25 @@ export { createSettingsPageConfig, resolveSettingsSectionForPlatform };
 export { SETTINGS_SECTION_GROUPS, SETTINGS_SECTIONS };
 export { isSettingsSectionAvailable };
 
+/** UI route labels reveal only scheme and endpoint, never proxy credentials or URL extras. */
+export function sanitizeProxyRouteForDisplay(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const url = new URL(trimmed.includes("://") ? trimmed : `http://${trimmed}`);
+    if (!["http:", "https:", "socks:", "socks5:", "socks5h:"].includes(url.protocol)) {
+      return undefined;
+    }
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    // Never fall back to showing the original string: legacy proxy formats can contain secrets.
+    return undefined;
+  }
+}
+
 const TASK_AUTO_ARCHIVE_DAY_OPTIONS = [3, 7, 14, 30] as const;
-const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] =
-  ["queue", "guide"];
+const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] = ["queue", "guide"];
 
 /**
  * 归档偏好与归档列表集中展示，设置值和保存动作继续由 SettingsPage 持有。
@@ -266,9 +275,7 @@ export function GeneralSectionContent({
   onSelectDataBaseDir: () => Promise<string | null>;
   onTerminalInheritSystemProfileChange: (enabled: boolean) => Promise<void>;
   onTerminalFontFamilyChange: (fontFamily: string) => Promise<void>;
-  onIntegratedTerminalShellChange?: (
-    selection: IntegratedTerminalShellSelection,
-  ) => Promise<void>;
+  onIntegratedTerminalShellChange?: (selection: IntegratedTerminalShellSelection) => Promise<void>;
   onNativeSearchEnhancementsEnabledChange: (enabled: boolean) => Promise<void>;
   onHttpProxyChange?: (httpProxy: string) => Promise<void>;
   onHttpProxyListChange?: (proxyList: string) => Promise<void>;
@@ -276,9 +283,7 @@ export function GeneralSectionContent({
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
   onCloseToTrayOnWindowsChange: (enabled: boolean) => Promise<void>;
   onKeepAwakeWhileRunningChange?: (enabled: boolean) => Promise<void>;
-  onDesktopChromiumHardwareAccelerationChange?: (
-    enabled: boolean,
-  ) => Promise<void>;
+  onDesktopChromiumHardwareAccelerationChange?: (enabled: boolean) => Promise<void>;
   onReceivePreviewUpdatesChange: (enabled: boolean) => Promise<void>;
   onAutoDownloadAndInstallUpdatesChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowReasoningChange: (enabled: boolean) => Promise<void>;
@@ -286,12 +291,8 @@ export function GeneralSectionContent({
   onToolGroupingExploreEnabledChange: (enabled: boolean) => Promise<void>;
   onToolGroupingTerminalEnabledChange: (enabled: boolean) => Promise<void>;
   onToolGroupingChangesEnabledChange: (enabled: boolean) => Promise<void>;
-  onZCodeInteractionBehaviorChange: (
-    behavior: ZCodeInteractionBehavior,
-  ) => Promise<void>;
-  onAskUserQuestionAutoResolutionEnabledChange?: (
-    enabled: boolean,
-  ) => Promise<void>;
+  onZCodeInteractionBehaviorChange: (behavior: ZCodeInteractionBehavior) => Promise<void>;
+  onAskUserQuestionAutoResolutionEnabledChange?: (enabled: boolean) => Promise<void>;
   onModelIoFullRetentionEnabledChange?: (enabled: boolean) => Promise<void>;
   onOpenOnboardingDialog: () => void;
 }) {
@@ -299,20 +300,16 @@ export function GeneralSectionContent({
   const hasServices = Boolean(useOptionalServices());
   // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
   // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
-  const [localTerminalFontFamily, setLocalTerminalFontFamily] =
-    useState(terminalFontFamily);
+  const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
 
   useEffect(() => {
     setLocalTerminalFontFamily(terminalFontFamily);
   }, [terminalFontFamily]);
 
   const normalizedTerminalFontFamily = localTerminalFontFamily.trim();
-  const isTerminalFontFamilyDirty =
-    normalizedTerminalFontFamily !== terminalFontFamily;
+  const isTerminalFontFamilyDirty = normalizedTerminalFontFamily !== terminalFontFamily;
   const integratedTerminalShellValue =
-    integratedTerminalShell.mode === "shell"
-      ? integratedTerminalShell.id
-      : "auto";
+    integratedTerminalShell.mode === "shell" ? integratedTerminalShell.id : "auto";
   const selectedIntegratedTerminalShellOption =
     integratedTerminalShell.mode === "shell"
       ? (integratedTerminalShellOptions.find(
@@ -325,15 +322,14 @@ export function GeneralSectionContent({
           source: "system" as const,
         })
       : undefined;
-  const visibleIntegratedTerminalShellOptions =
-    selectedIntegratedTerminalShellOption
-      ? [
-          selectedIntegratedTerminalShellOption,
-          ...integratedTerminalShellOptions.filter(
-            (option) => option.id !== selectedIntegratedTerminalShellOption.id,
-          ),
-        ]
-      : integratedTerminalShellOptions;
+  const visibleIntegratedTerminalShellOptions = selectedIntegratedTerminalShellOption
+    ? [
+        selectedIntegratedTerminalShellOption,
+        ...integratedTerminalShellOptions.filter(
+          (option) => option.id !== selectedIntegratedTerminalShellOption.id,
+        ),
+      ]
+    : integratedTerminalShellOptions;
 
   const handleTerminalFontFamilySave = useCallback(async () => {
     await onTerminalFontFamilyChange(normalizedTerminalFontFamily);
@@ -364,9 +360,7 @@ export function GeneralSectionContent({
 
   const proxyListEntries = Array.from(
     new Set(
-      [...httpProxyList.split(/\r?\n/u), httpProxy]
-        .map((proxy) => proxy.trim())
-        .filter(Boolean),
+      [...httpProxyList.split(/\r?\n/u), httpProxy].map((proxy) => proxy.trim()).filter(Boolean),
     ),
   );
   const [proxyDialogOpen, setProxyDialogOpen] = useState(false);
@@ -378,11 +372,7 @@ export function GeneralSectionContent({
       | { state: "ok"; ip: string }
       | {
           state: "error";
-          reason:
-            | "invalid_proxy"
-            | "connection_failed"
-            | "timeout"
-            | "invalid_response";
+          reason: "invalid_proxy" | "connection_failed" | "timeout" | "invalid_response";
         }
     >
   >({});
@@ -412,11 +402,7 @@ export function GeneralSectionContent({
     if (!entries.length) return;
 
     const runId = ++proxyTestRunRef.current;
-    setProxyChecks(
-      Object.fromEntries(
-        entries.map(({ index }) => [index, { state: "checking" }]),
-      ),
-    );
+    setProxyChecks(Object.fromEntries(entries.map(({ index }) => [index, { state: "checking" }])));
     const results = await Promise.all(
       entries.map(async ({ index, endpoint }) => {
         const result = await testProxy(endpoint).catch(() => ({
@@ -437,9 +423,9 @@ export function GeneralSectionContent({
 
   const handleProxyListSave = async () => {
     proxyTestRunRef.current += 1;
-    const normalized = Array.from(
-      new Set(proxyRows.map(normalizeProxyRow).filter(Boolean)),
-    ).join("\n");
+    const normalized = Array.from(new Set(proxyRows.map(normalizeProxyRow).filter(Boolean))).join(
+      "\n",
+    );
     await onHttpProxyListChange(normalized);
     setProxyRows(normalized ? normalized.split("\n") : []);
     setProxyChecks({});
@@ -453,8 +439,7 @@ export function GeneralSectionContent({
     }
   };
 
-  const [localHttpProxyNoProxy, setLocalHttpProxyNoProxy] =
-    useState(httpProxyNoProxy);
+  const [localHttpProxyNoProxy, setLocalHttpProxyNoProxy] = useState(httpProxyNoProxy);
 
   useEffect(() => {
     setLocalHttpProxyNoProxy(httpProxyNoProxy);
@@ -465,23 +450,20 @@ export function GeneralSectionContent({
     .map((token) => token.trim())
     .filter(Boolean)
     .join(",");
-  const isHttpProxyNoProxyDirty =
-    normalizedHttpProxyNoProxy !== httpProxyNoProxy;
+  const isHttpProxyNoProxyDirty = normalizedHttpProxyNoProxy !== httpProxyNoProxy;
 
   const handleHttpProxyNoProxySave = useCallback(async () => {
     await onHttpProxyNoProxyChange(normalizedHttpProxyNoProxy);
   }, [normalizedHttpProxyNoProxy, onHttpProxyNoProxyChange]);
 
-  const [localHttpProxyCaCertPath, setLocalHttpProxyCaCertPath] =
-    useState(httpProxyCaCertPath);
+  const [localHttpProxyCaCertPath, setLocalHttpProxyCaCertPath] = useState(httpProxyCaCertPath);
 
   useEffect(() => {
     setLocalHttpProxyCaCertPath(httpProxyCaCertPath);
   }, [httpProxyCaCertPath]);
 
   const normalizedHttpProxyCaCertPath = localHttpProxyCaCertPath.trim();
-  const isHttpProxyCaCertPathDirty =
-    normalizedHttpProxyCaCertPath !== httpProxyCaCertPath;
+  const isHttpProxyCaCertPathDirty = normalizedHttpProxyCaCertPath !== httpProxyCaCertPath;
 
   const handleHttpProxyCaCertPathSave = useCallback(async () => {
     await onHttpProxyCaCertPathChange(normalizedHttpProxyCaCertPath);
@@ -496,9 +478,7 @@ export function GeneralSectionContent({
           control={
             <Select
               value={localePreference}
-              onValueChange={(value) =>
-                setLocalePreference(value as LocalePreference)
-              }
+              onValueChange={(value) => setLocalePreference(value as LocalePreference)}
             >
               <SelectTrigger
                 size="lg"
@@ -510,10 +490,7 @@ export function GeneralSectionContent({
               <SelectContent>
                 <SelectItem
                   value="system"
-                  data-testid={testId(
-                    TID_SETTINGS_LOCALE_SELECT_ITEM,
-                    "system",
-                  )}
+                  data-testid={testId(TID_SETTINGS_LOCALE_SELECT_ITEM, "system")}
                 >
                   {intl.formatMessage({ id: "settings.locale.system" })}
                 </SelectItem>
@@ -545,9 +522,7 @@ export function GeneralSectionContent({
           control={
             <Select
               value={interfaceMode}
-              onValueChange={(value) =>
-                setInterfaceMode(normalizeInterfaceMode(value))
-              }
+              onValueChange={(value) => setInterfaceMode(normalizeInterfaceMode(value))}
             >
               <SelectTrigger
                 size="lg"
@@ -639,10 +614,7 @@ export function GeneralSectionContent({
                   void handleIntegratedTerminalShellChange(value);
                 }}
               >
-                <SelectTrigger
-                  size="lg"
-                  className="w-[260px] min-w-0 justify-between"
-                >
+                <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -677,9 +649,7 @@ export function GeneralSectionContent({
             <Select
               value={toolSearchMode}
               onValueChange={(value) => {
-                void onToolSearchModeChange(
-                  appToolSearchModeSchema.parse(value),
-                );
+                void onToolSearchModeChange(appToolSearchModeSchema.parse(value));
               }}
             >
               <SelectTrigger
@@ -750,7 +720,7 @@ export function GeneralSectionContent({
           detail={
             <div className="text-ui-sm text-foreground-subtle">
               {intl.formatMessage({ id: "settings.httpProxyActive" })}:{" "}
-              {httpProxy ||
+              {sanitizeProxyRouteForDisplay(httpProxy) ||
                 intl.formatMessage({ id: "settings.httpProxyDirect" })}
             </div>
           }
@@ -758,9 +728,7 @@ export function GeneralSectionContent({
         <Dialog open={proxyDialogOpen} onOpenChange={setProxyDialogOpen}>
           <DialogContent className="max-h-[min(85vh,760px)] max-w-3xl grid-rows-[auto_1fr_auto] gap-0 overflow-hidden p-0">
             <DialogHeader className="border-b border-popover-border px-5 py-4 pr-12">
-              <DialogTitle>
-                {intl.formatMessage({ id: "settings.httpProxyManage" })}
-              </DialogTitle>
+              <DialogTitle>{intl.formatMessage({ id: "settings.httpProxyManage" })}</DialogTitle>
               <DialogDescription>
                 {intl.formatMessage({
                   id: "settings.httpProxyDialogDescription",
@@ -799,14 +767,9 @@ export function GeneralSectionContent({
                     </div>
                     <Button
                       type="button"
-                      variant={
-                        httpProxy === normalizeProxyRow(proxy)
-                          ? "secondary"
-                          : "outline"
-                      }
+                      variant={httpProxy === normalizeProxyRow(proxy) ? "secondary" : "outline"}
                       disabled={
-                        !proxy.trim() ||
-                        !proxyListEntries.includes(normalizeProxyRow(proxy))
+                        !proxy.trim() || !proxyListEntries.includes(normalizeProxyRow(proxy))
                       }
                       data-testid={`settings-proxy-use-${index}`}
                       onClick={() => void handleProxyUse(index)}
@@ -827,9 +790,7 @@ export function GeneralSectionContent({
                       onClick={() => {
                         proxyTestRunRef.current += 1;
                         setProxyRows((current) =>
-                          current.filter(
-                            (_row, rowIndex) => rowIndex !== index,
-                          ),
+                          current.filter((_row, rowIndex) => rowIndex !== index),
                         );
                         setProxyChecks({});
                       }}
@@ -845,10 +806,7 @@ export function GeneralSectionContent({
                           className="size-2 shrink-0 rounded-full bg-success"
                           aria-hidden="true"
                         />
-                        {intl.formatMessage(
-                          { id: "settings.httpProxyWorking" },
-                          { ip: check.ip },
-                        )}
+                        {intl.formatMessage({ id: "settings.httpProxyWorking" }, { ip: check.ip })}
                       </div>
                     ) : check?.state === "error" ? (
                       <div
@@ -878,7 +836,7 @@ export function GeneralSectionContent({
             <DialogFooter className="border-t border-popover-border px-5 py-4 sm:justify-between">
               <div className="text-ui-sm text-foreground-subtle">
                 {intl.formatMessage({ id: "settings.httpProxyCurrent" })}:{" "}
-                {httpProxy ||
+                {sanitizeProxyRouteForDisplay(httpProxy) ||
                   intl.formatMessage({ id: "settings.httpProxyDirect" })}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -896,17 +854,13 @@ export function GeneralSectionContent({
                   data-testid="settings-proxy-test-all"
                   disabled={
                     !proxyRows.some((proxy) => normalizeProxyRow(proxy)) ||
-                    Object.values(proxyChecks).some(
-                      (check) => check.state === "checking",
-                    ) ||
+                    Object.values(proxyChecks).some((check) => check.state === "checking") ||
                     !platform?.testProxyConnectivity
                   }
                   onClick={() => void handleProxyTestsAll()}
                 >
                   {intl.formatMessage({
-                    id: Object.values(proxyChecks).some(
-                      (check) => check.state === "checking",
-                    )
+                    id: Object.values(proxyChecks).some((check) => check.state === "checking")
                       ? "settings.httpProxyTestingAll"
                       : "settings.httpProxyTestAll",
                   })}
@@ -915,10 +869,7 @@ export function GeneralSectionContent({
                   type="button"
                   data-testid="settings-proxy-save"
                   disabled={
-                    proxyRows
-                      .map(normalizeProxyRow)
-                      .filter(Boolean)
-                      .join("\n") === httpProxyList
+                    proxyRows.map(normalizeProxyRow).filter(Boolean).join("\n") === httpProxyList
                   }
                   onClick={() => void handleProxyListSave()}
                 >
@@ -1068,10 +1019,7 @@ export function GeneralSectionContent({
             id: "settings.notificationDescription",
           })}
           control={
-            <Switch
-              checked={notificationEnabled}
-              onCheckedChange={setNotificationEnabled}
-            />
+            <Switch checked={notificationEnabled} onCheckedChange={setNotificationEnabled} />
           }
         />
         <SettingsRow
@@ -1147,15 +1095,10 @@ export function GeneralSectionContent({
             <Select
               value={zcodeInteractionBehavior}
               onValueChange={(value) => {
-                void onZCodeInteractionBehaviorChange(
-                  value as ZCodeInteractionBehavior,
-                );
+                void onZCodeInteractionBehaviorChange(value as ZCodeInteractionBehavior);
               }}
             >
-              <SelectTrigger
-                size="lg"
-                className="w-[260px] min-w-0 justify-between"
-              >
+              <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1183,9 +1126,7 @@ export function GeneralSectionContent({
                 id: "settings.askUserQuestionAutoResolution",
               })}
               checked={askUserQuestionAutoResolutionEnabled}
-              data-testid={
-                TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH
-              }
+              data-testid={TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH}
               onCheckedChange={(checked) => {
                 void onAskUserQuestionAutoResolutionEnabledChange(checked);
               }}
@@ -1324,12 +1265,7 @@ export function GeneralSectionContent({
             id: "settings.onboardingDescription",
           })}
           control={
-            <Button
-              type="button"
-              size="lg"
-              variant="outline"
-              onClick={onOpenOnboardingDialog}
-            >
+            <Button type="button" size="lg" variant="outline" onClick={onOpenOnboardingDialog}>
               {intl.formatMessage({ id: "settings.onboardingOpen" })}
             </Button>
           }
@@ -1339,11 +1275,7 @@ export function GeneralSectionContent({
   );
 }
 
-export function GeneralSectionHeader({
-  localePreference,
-}: {
-  localePreference: LocalePreference;
-}) {
+export function GeneralSectionHeader({ localePreference }: { localePreference: LocalePreference }) {
   const { intl } = useZCodeIntl();
 
   return (

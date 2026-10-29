@@ -3854,6 +3854,8 @@ const enUS: Record<string, string> = {
   "settings.openCode.modelsUnavailable": "Could not read the OpenCode model list.",
   "settings.openCode.checking": "Checking the OpenCode CLI…",
   "settings.openCode.available": "OpenCode CLI detected ({version})",
+  "settings.openCode.networkRoute": "OpenCode model route: {route}",
+  "settings.openCode.networkRouteDirect": "Direct connection",
   "settings.openCode.missing": "OpenCode CLI is not installed",
   "settings.openCode.cli-missing":
     "OpenCode CLI could not be started because it is no longer available. Install it or select its executable, then retry.",

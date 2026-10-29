@@ -59,6 +59,7 @@ import {
   useCodingPlanEntitlements,
 } from "./model-provider-section/useCodingPlanEntitlements.js";
 import { sortModelProvidersForDisplay } from "@/lib/modelProviderOrdering.js";
+import { sanitizeProxyRouteForDisplay } from "@/settingsPageHelpers.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { resolveLogoutProviderFamilyDomain } from "@/lib/providerFamilyDomainSettings.js";
 import {
@@ -1151,6 +1152,7 @@ export function ModelProviderSection({
       ) : selectedNavItem?.type === "agentIntegration" ? (
         <OpenCodeAgentSettingsPanel
           enabled={sharedSettings?.openCodeCliEnabled === true}
+          activeProxy={sanitizeProxyRouteForDisplay(sharedSettings?.httpProxy)}
           onEnabledChange={async (enabled) => {
             try {
               await updateSharedSettings({ openCodeCliEnabled: enabled });

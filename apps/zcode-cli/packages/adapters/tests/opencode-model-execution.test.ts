@@ -311,7 +311,10 @@ describe("OpenCode SDK model execution", () => {
     }
   });
 
-  it("fails a streaming chat immediately when OpenCode emits the free-usage session error", async () => {
+  // Bugfix: SDK 会先按会话过滤 SSE；必须接纳 properties/data 两种错误信封，避免把限额错误等到超时后丢失。
+  it.each(["properties", "data"] as const)(
+    "fails a streaming chat immediately when OpenCode emits the free-usage session error in %s",
+    async (payloadField) => {
     const requests: string[] = [];
     let promptStarted = false;
     const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {
@@ -329,19 +332,20 @@ describe("OpenCode SDK model execution", () => {
         });
       }
       if (request.method === "GET" && pathname.endsWith("/event")) {
-        const quotaEvent = {
-          type: "session.error",
-          properties: {
-            sessionID: "ses_quota_event",
-            error: {
-              name: "APIError",
-              data: {
-                message:
-                  "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
-                isRetryable: false,
-              },
+        const quotaPayload = {
+          sessionID: "ses_quota_event",
+          error: {
+            name: "APIError",
+            data: {
+              message:
+                "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
+              isRetryable: false,
             },
           },
+        };
+        const quotaEvent = {
+          type: "session.error",
+          [payloadField]: quotaPayload,
         };
         const body = new ReadableStream({
           start(controller) {
@@ -405,7 +409,8 @@ describe("OpenCode SDK model execution", () => {
       await registry.dispose();
     }
     expect(promptStarted).toBe(true);
-  });
+    },
+  );
 
   it("sanitizes empty-response errors raised after OpenCode streaming starts", async () => {
     const sdkFailure = createEmptyResponseDataError(

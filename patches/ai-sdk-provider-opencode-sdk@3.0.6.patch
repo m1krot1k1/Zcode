@@ -19,7 +19,15 @@ index c26b98c34089657b030010fd8652f868fd42d2e1..ca875050e0e4d3d3d0a7c38551e78402
  function isEventForSession(event, sessionId) {
    if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
      const props = event.properties;
-@@ -2103,6 +2113,11 @@ var OpencodeLanguageModel = class {
+@@ -802,4 +812,7 @@ function isEventForSession(event, sessionId) {
+ function isEventForSession(event, sessionId) {
++  if (event.type === "session.error" && event.data && typeof event.data === "object") {
++    return event.data.sessionID === sessionId;
++  }
+   if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
+     const props = event.properties;
+     if ("part" in props && typeof props.part === "object" && props.part !== null) {
+@@ -2103,6 +2116,11 @@ var OpencodeLanguageModel = class {
                if (!isEventForSession(event, sessionId)) {
                  continue;
                }
@@ -52,7 +60,15 @@ index 23ba43b5c63824ffaa36aaf8b6c209b62028fd04..adf7199af5a388b25ac28b77d1a63fee
  function isEventForSession(event, sessionId) {
    if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
      const props = event.properties;
-@@ -2101,6 +2111,11 @@ var OpencodeLanguageModel = class {
+@@ -800,4 +810,7 @@ function isEventForSession(event, sessionId) {
+ function isEventForSession(event, sessionId) {
++  if (event.type === "session.error" && event.data && typeof event.data === "object") {
++    return event.data.sessionID === sessionId;
++  }
+   if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
+     const props = event.properties;
+     if ("part" in props && typeof props.part === "object" && props.part !== null) {
+@@ -2101,6 +2114,11 @@ var OpencodeLanguageModel = class {
                if (!isEventForSession(event, sessionId)) {
                  continue;
                }
