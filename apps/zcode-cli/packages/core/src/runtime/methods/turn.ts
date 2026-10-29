@@ -896,10 +896,12 @@ export async function executeTurnCommand(
         openGoalStateChangeReminderDeferral(activeTurn);
         phaseStartedAt = startTurnPhase("regular_turn_loop");
         try {
+          // 原因：internalSwarmRootRunId 只用于共享 root budget。把它当作再次规划的条件后，
+          // 已分配的子任务会再开 planner 并继续拆分，短任务把共享 token budget 耗尽。
+          // 修复依据：继续拆分只走角色允许的 Task/Agent，root 的 swarm/auto intent 才打开 planner。
           if (
             options?.intent?.orchestrationMode === "swarm" ||
-            options?.intent?.orchestrationMode === "auto" ||
-            options?.internalSwarmRootRunId
+            options?.intent?.orchestrationMode === "auto"
           ) {
             await executeSwarmRun.call(this, loopState, input, {
               rootRunId,

@@ -245,8 +245,6 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
     const synthesisReceived = deferred<string>();
     const requestCountBySession = new Map<SessionId, number>();
     const regularRequestCountBySession = new Map<SessionId, number>();
-    const descendantPlannerSessions = new Set<SessionId>();
-    const splitPlannerSessions = new Set<SessionId>();
     const plannerWorkingDirectories: Array<string | undefined> = [];
     const plannerReasoningLevels: Array<string | undefined> = [];
 
@@ -377,48 +375,9 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
               sessionId !== rootSessionId &&
               requestText.includes("Decide whether this task needs independent parallel work")
             ) {
-              descendantPlannerSessions.add(sessionId);
-              const isGrandchild = requestText.includes("Grandchild alpha");
-              const shouldSplit = nodeForPrompt(requestText, markers.alpha) && !isGrandchild;
-              if (shouldSplit) {
-                splitPlannerSessions.add(sessionId);
-                return {
-                  finishReason: "stop",
-                  providerMetadata: undefined,
-                  text: JSON.stringify({
-                    decision: "split",
-                    graph: {
-                      max_parallel: 2,
-                      nodes: [
-                        {
-                          id: "grandchild-alpha-one",
-                          description: "Grandchild alpha one",
-                          prompt: `Grandchild alpha one: read ${fixturePath} and report ${markers.alpha}.`,
-                          subagent_type: "orchestrator",
-                        },
-                        {
-                          id: "grandchild-alpha-two",
-                          description: "Grandchild alpha two",
-                          prompt: `Grandchild alpha two: read ${fixturePath} and report ${markers.alpha}.`,
-                          subagent_type: "orchestrator",
-                        },
-                      ],
-                    },
-                  }),
-                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-                };
-              }
-              return {
-                finishReason: "stop",
-                providerMetadata: undefined,
-                text: JSON.stringify({
-                  decision: "leaf",
-                  reason: isGrandchild
-                    ? "The fixture read is a single focused task."
-                    : "The beta fixture read is a single focused task.",
-                }),
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
+              throw new Error(
+                "Assigned swarm child opened another planner; internalSwarmRootRunId must only share the root budget",
+              );
             }
 
             if (sessionId === rootSessionId) {
@@ -456,11 +415,37 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                 if (childStarted.size >= 2) bothChildrenStarted.resolve();
                 await bothChildrenStarted.promise;
               }
-              if (splitPlannerSessions.has(sessionId)) {
+              if (childDescriptionBySession.get(sessionId) === "Read alpha marker") {
+                const availableTools = (request.tools ?? []).map((tool) => tool.name);
+                if (!availableTools.includes("Task")) {
+                  throw new Error(
+                    `Assigned swarm child cannot delegate further; tools=${availableTools.join(",")}`,
+                  );
+                }
                 return {
-                  finishReason: "stop",
+                  finishReason: "tool-calls",
                   providerMetadata: undefined,
-                  text: `Alpha child synthesized nested reports containing ${markers.alpha}.`,
+                  text: "",
+                  toolCalls: [
+                    {
+                      id: "call_task_grandchild_alpha_one",
+                      name: "Task",
+                      input: {
+                        description: "Grandchild alpha one",
+                        prompt: `Grandchild alpha one: read ${fixturePath} and report ${markers.alpha}.`,
+                        subagent_type: "orchestrator",
+                      },
+                    },
+                    {
+                      id: "call_task_grandchild_alpha_two",
+                      name: "Task",
+                      input: {
+                        description: "Grandchild alpha two",
+                        prompt: `Grandchild alpha two: read ${fixturePath} and report ${markers.alpha}.`,
+                        subagent_type: "orchestrator",
+                      },
+                    },
+                  ],
                   usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
                 };
               }
@@ -525,6 +510,18 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                 finishReason: "stop",
                 providerMetadata: undefined,
                 text: `Level-four specialist used the verification skill and received ${markers.alpha}.`,
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            if (
+              regularCallCount >= 2 &&
+              childDescriptionBySession.get(sessionId) === "Read alpha marker"
+            ) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: `Alpha child synthesized nested reports containing ${markers.alpha}.`,
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
@@ -644,9 +641,8 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       const synthesizedInput = await synthesisReceived.promise;
 
       expect(childStarted.size).toBe(2);
-      expect(descendantPlannerSessions.size).toBe(4);
-      expect(plannerWorkingDirectories).toEqual(Array(5).fill(workspace));
-      expect(plannerReasoningLevels).toEqual(Array(5).fill("high"));
+      expect(plannerWorkingDirectories).toEqual([workspace]);
+      expect(plannerReasoningLevels).toEqual(["high"]);
       expect(childSessionIds).toHaveLength(5);
       expect(levelFourCallCounts).toEqual([1, 2]);
       expect(nestedRoleRequests).toHaveLength(3);
@@ -659,8 +655,8 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       expect(new Set(childSessionIds).size).toBe(5);
       expect(directChildSessions.size).toBe(2);
       expect(childEvents).toHaveLength(5);
-      // Только реально разбитая child задача создаёт swarm lifecycle; leaf-продолжения не засоряют историю.
-      expect(descendantSwarmTerminals).toHaveLength(1);
+      // Назначенный узел больше не открывает свой planner, поэтому у потомков нет swarm lifecycle.
+      expect(descendantSwarmTerminals).toHaveLength(0);
       for (const events of childEvents.filter((events) =>
         events.some((event) => event.type === SessionEventType.ToolCallScheduled),
       )) {
@@ -717,10 +713,10 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       );
       expect(
         toolEvents.filter((event) => event.type === SessionEventType.ToolCallScheduled),
-      ).toHaveLength(4);
+      ).toHaveLength(6);
       expect(
         toolEvents.filter((event) => event.type === SessionEventType.ToolCallResult),
-      ).toHaveLength(4);
+      ).toHaveLength(6);
       expect(loadedSkillNames).toEqual(["zcode-verification"]);
       expect(new Set(taskSnapshots.map((snapshot) => snapshot.rootRunId)).size).toBe(1);
       expect(taskSnapshots.every((snapshot) => typeof snapshot.rootRunId === "string")).toBe(true);
@@ -1189,7 +1185,3 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
     60_000,
   );
 });
-
-function nodeForPrompt(prompt: string, marker: string): boolean {
-  return prompt.includes(marker);
-}
