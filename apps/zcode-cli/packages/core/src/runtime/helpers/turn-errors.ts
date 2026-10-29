@@ -15,6 +15,48 @@ import {
 } from "../../errors/error-payload.js";
 import { isModelContextExceededError } from "./model-errors.js";
 
+export const SWARM_RECONCILED_COMPLETION_RESULT =
+  "Дочерняя сессия уже завершилась до перезапуска. Журнал зафиксировал этот факт по lastOutcome; текст транскрипта в результат узла не копировался.";
+
+export interface SwarmRestartClassification {
+  pendingNodeIds: string[];
+  completedNodeIds: string[];
+}
+
+/** Узел без попытки считается pending только когда каждая зависимость уже completed или тоже pending. */
+export function classifySwarmRestartNodes(
+  nodes: readonly { id: string; depends_on?: readonly string[] }[] | undefined,
+  attempts: readonly { nodeID: string; attemptNo: number; status: string }[],
+): SwarmRestartClassification {
+  const latest = new Map<string, { attemptNo: number; status: string }>();
+  for (const attempt of attempts) {
+    const current = latest.get(attempt.nodeID);
+    if (!current || attempt.attemptNo >= current.attemptNo) latest.set(attempt.nodeID, attempt);
+  }
+  const completed = new Set<string>();
+  for (const [nodeID, attempt] of latest) {
+    if (attempt.status === "completed") completed.add(nodeID);
+  }
+  const pending = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of nodes ?? []) {
+      if (latest.has(node.id) || pending.has(node.id)) continue;
+      const ready = (node.depends_on ?? []).every(
+        (dependencyId) => completed.has(dependencyId) || pending.has(dependencyId),
+      );
+      if (!ready) continue;
+      pending.add(node.id);
+      changed = true;
+    }
+  }
+  return {
+    pendingNodeIds: (nodes ?? []).flatMap((node) => (pending.has(node.id) ? [node.id] : [])),
+    completedNodeIds: [...completed],
+  };
+}
+
 export { projectExecutionErrorPayload } from "../../errors/error-payload.js";
 
 interface TurnAbortScope {

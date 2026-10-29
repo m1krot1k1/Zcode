@@ -1,5 +1,6 @@
 import { withoutAgentListingMessages } from "./test-agent-listing.js";
 import { describe, expect, it, vi } from "vitest";
+import { classifySwarmRestartNodes } from "../src/runtime/helpers/turn-errors.js";
 import { createTestModelSelection } from "./test-model-selection.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 import {
@@ -3771,6 +3772,294 @@ describe("AgentRuntime tool loop", () => {
     expect(order.filter((entry) => entry === "admit")).toHaveLength(2);
   });
 
+  it("classifies never-started nodes as pending only after completed dependencies", () => {
+    expect(
+      classifySwarmRestartNodes(
+        [
+          { id: "done" },
+          { id: "next", depends_on: ["done"] },
+          { id: "blocked", depends_on: ["lost"] },
+          { id: "lost" },
+        ],
+        [
+          { nodeID: "done", attemptNo: 1, status: "completed" },
+          { nodeID: "lost", attemptNo: 1, status: "interrupted" },
+        ],
+      ),
+    ).toEqual({
+      pendingNodeIds: ["next"],
+      completedNodeIds: ["done"],
+    });
+  });
+
+  it("keeps a resumable Swarm run on chat open and does not call the model", async () => {
+    const sessionId = createSessionId("runtime-swarm-open-pending");
+    const eventStore = createTestSessionEventStore();
+    const priorRun = {
+      schemaVersion: 1 as const,
+      rootSessionID: sessionId,
+      sourceCommandID: "accepted-before-restart",
+      runID: "swarm_open_pending",
+      rootTurnID: createTurnId("swarm-open-pending-turn"),
+      graph: {
+        max_parallel: 1,
+        nodes: [
+          {
+            id: "branch-a",
+            description: "Research branch",
+            prompt: "Research the question",
+            subagent_type: "researcher",
+          },
+          {
+            id: "branch-b",
+            description: "Implement branch",
+            prompt: "Implement the change",
+            depends_on: ["branch-a"],
+            subagent_type: "implementer",
+          },
+        ],
+      },
+      status: "running" as const,
+      ownerEpoch: 2,
+      revision: 4,
+      time: { created: 10, updated: 20 },
+    };
+    const priorAttempt = {
+      schemaVersion: 1 as const,
+      runID: priorRun.runID,
+      nodeID: "branch-a",
+      attemptID: "attempt-open-a1",
+      attemptNo: 1,
+      status: "completed" as const,
+      childSessionID: createSessionId("swarm-open-pending-child"),
+      ownerEpoch: 2,
+      revision: 3,
+      time: { created: 12, updated: 15 },
+      resultText: "alpha done",
+    };
+    const sessionStore = Object.assign(new RecordingSessionStore(), {
+      async listSwarmRuns(input: { statuses?: string[] }) {
+        return input.statuses?.includes("running") ? [priorRun] : [];
+      },
+      async claimSwarmRunOwner() {
+        return true;
+      },
+      async listSwarmNodeAttempts() {
+        return [priorAttempt];
+      },
+      async transitionSwarmNodeAttempt() {
+        throw new Error("a completed attempt must stay completed");
+      },
+      async transitionSwarmRun() {
+        throw new Error("a run with a never-started ready node must stay resumable");
+      },
+    });
+    await sessionStore.createSession({
+      id: sessionId,
+      projectID: "test-project" as ProjectId,
+      slug: "swarm-open-pending",
+      directory: "/tmp/runtime-swarm-open-pending",
+      title: "swarm open pending",
+      version: "test",
+    });
+    const generateText = vi.fn(async () => {
+      throw new Error("opening a chat must not call the model");
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", modelSelection: createTestModelSelection("test/swarm-open-pending") },
+      { eventStore, sessionStore, modelFactory: createTestModelFactory({ generateText }) },
+    );
+
+    await runtime.resumeFromStore();
+
+    expect(generateText).not.toHaveBeenCalled();
+    const projected = (await eventStore.getEvents(sessionId)).filter(
+      (event) => event.type === SessionEventType.SwarmRunUpdated,
+    );
+    expect(projected).toHaveLength(1);
+    expect(projected[0]?.payload).toMatchObject({
+      swarmRunId: "swarm_open_pending",
+      status: "running",
+      taskCount: 2,
+      summary: expect.stringContaining("ещё не начиналась"),
+    });
+  });
+
+  it("continues only never-started Swarm nodes when the same accepted input is delivered again", async () => {
+    const sessionId = createSessionId("runtime-swarm-pending-resume");
+    const eventStore = createTestSessionEventStore();
+    const childId = createSessionId("swarm-pending-child-a");
+    const priorRun = {
+      schemaVersion: 1 as const,
+      rootSessionID: sessionId,
+      sourceCommandID: "accepted-before-restart",
+      runID: "swarm_pending_resume",
+      rootTurnID: createTurnId("swarm-pending-turn"),
+      graph: {
+        max_parallel: 1,
+        nodes: [
+          {
+            id: "branch-a",
+            description: "Research branch",
+            prompt: "Research the question",
+            subagent_type: "researcher",
+          },
+          {
+            id: "branch-b",
+            description: "Implement branch",
+            prompt: "Implement the change",
+            depends_on: ["branch-a"],
+            subagent_type: "implementer",
+          },
+        ],
+      },
+      status: "running" as const,
+      ownerEpoch: 4,
+      revision: 8,
+      time: { created: 10, updated: 20 },
+    };
+    const priorAttempt = {
+      schemaVersion: 1 as const,
+      runID: priorRun.runID,
+      nodeID: "branch-a",
+      attemptID: "attempt-a1",
+      attemptNo: 1,
+      status: "dispatching" as const,
+      childSessionID: childId,
+      ownerEpoch: 4,
+      revision: 3,
+      time: { created: 12, updated: 15 },
+    };
+    const attemptTransitions: string[] = [];
+    const reserved: string[] = [];
+    const sessionStore = Object.assign(new RecordingSessionStore(), {
+      async listSwarmRuns(input: { statuses?: string[] }) {
+        return input.statuses?.includes("running") ? [priorRun] : [];
+      },
+      async claimSwarmRunOwner() {
+        return true;
+      },
+      async getSession(sessionID: string) {
+        if (sessionID === childId) {
+          return {
+            id: childId,
+            lastOutcome: "completed",
+            projectID: "test-project",
+            slug: "child",
+            directory: "/tmp",
+            title: "child",
+            version: "test",
+            taskType: "subagent",
+            time: { created: 1, updated: 2 },
+          };
+        }
+        return null;
+      },
+      async listSwarmNodeAttempts() {
+        return [priorAttempt];
+      },
+      async transitionSwarmNodeAttempt(input: {
+        nodeID: string;
+        status: string;
+        expectedRevision: number;
+      }) {
+        attemptTransitions.push(`${input.nodeID}:${input.status}:${input.expectedRevision}`);
+        if (input.nodeID === "branch-a") {
+          priorAttempt.status = input.status as "dispatching";
+          priorAttempt.revision = input.expectedRevision + 1;
+        }
+        return true;
+      },
+      async transitionSwarmRun(input: { status: string }) {
+        if (input.status === "interrupted") {
+          throw new Error("resumable run must not be interrupted");
+        }
+        return true;
+      },
+      async commitSwarmRunGraph() {
+        return true;
+      },
+      async admitSwarmRun() {
+        return {
+          created: false,
+          run: { ...priorRun, ownerEpoch: 5, revision: 9, status: "running" as const },
+        };
+      },
+      async reserveSwarmNodeAttempt(input: { nodeID: string }) {
+        reserved.push(input.nodeID);
+        return { created: true, attempt: { revision: 0 } };
+      },
+    });
+    const dispatched: string[][] = [];
+    const generateText = vi.fn(async (request: { messages: unknown }) => {
+      const text = providerMessagesToText(request.messages as never);
+      if (text.includes("Decide whether this task needs independent parallel work")) {
+        throw new Error("pending resume must not call the planner");
+      }
+      return {
+        finishReason: "stop" as const,
+        providerMetadata: undefined,
+        text: "synthesized",
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", modelSelection: createTestModelSelection("test/swarm-pending-resume") },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({ generateText }),
+        subagentPort: {
+          async runTaskDag(request: { nodes: { id: string; prompt: string; depends_on?: string[] }[] }, options: {
+            persistSwarmNodeAttempt?: (fact: Record<string, unknown>) => Promise<void>;
+          }) {
+            dispatched.push(request.nodes.map((node) => node.id));
+            expect(request.nodes.map((node) => node.id)).toEqual(["branch-b"]);
+            expect(request.nodes[0]?.depends_on).toBeUndefined();
+            expect(request.nodes[0]?.prompt).toContain("не запускать повторно");
+            const identity = {
+              nodeID: "branch-b",
+              attemptID: "attempt-b1",
+              attemptNo: 1,
+              childSessionID: createSessionId("swarm-pending-child-b"),
+            };
+            await options.persistSwarmNodeAttempt?.({ phase: "reserved", ...identity });
+            await options.persistSwarmNodeAttempt?.({ phase: "running", ...identity });
+            await options.persistSwarmNodeAttempt?.({
+              phase: "completed",
+              resultText: "b done",
+              ...identity,
+            });
+            return {
+              status: "completed",
+              agentId: "dag-resume",
+              agentType: "task-dag",
+              description: "resume",
+              prompt: "fixture",
+              content: [{ type: "text", text: "[completed] branch-b" }],
+              totalToolUseCount: 0,
+              totalDurationMs: 1,
+            };
+          },
+        } as never,
+      },
+    );
+
+    await runtime.executeTurn("continue the same swarm", undefined, {
+      inputId: "accepted-before-restart",
+      intent: { orchestrationMode: "swarm" },
+    });
+
+    expect(attemptTransitions.slice(0, 2)).toEqual([
+      "branch-a:running:3",
+      "branch-a:completed:4",
+    ]);
+    expect(reserved).toEqual(["branch-b"]);
+    expect(dispatched).toEqual([["branch-b"]]);
+  });
+
   it("hydrates an interrupted Swarm row on chat open without a new Swarm input", async () => {
     const sessionId = createSessionId("runtime-swarm-open-hydrate");
     const eventStore = createTestSessionEventStore();
@@ -3998,6 +4287,7 @@ describe("AgentRuntime tool loop", () => {
       "run_interrupted",
       "list_attempts",
       "admit",
+      "list_attempts",
     ]);
     expect(generateText).not.toHaveBeenCalled();
     const projected = (await eventStore.getEvents(sessionId)).filter(

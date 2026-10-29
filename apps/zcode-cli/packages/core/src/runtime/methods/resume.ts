@@ -43,6 +43,10 @@ import {
 } from "./workspace-checkpoint-persistence.js";
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
 import { restorePrismProjectionEvents } from "./events.js";
+import {
+  classifySwarmRestartNodes,
+  SWARM_RECONCILED_COMPLETION_RESULT,
+} from "../helpers/turn-errors.js";
 
 export type SwarmJournalRecoveryMode = "resume_open" | "before_swarm_admission";
 
@@ -511,9 +515,13 @@ export function injectTargetStateIntoMessageHistory(
  * then project missing `SwarmRunUpdated` rows into the process-local event store.
  *
  * - `before_swarm_admission`: throws on owner conflicts / active-run limit (blocks a new swarm).
- * - `resume_open`: same interrupt + hydrate path when opening a chat without a new swarm input;
+ * - `resume_open`: same reconcile + hydrate path when opening a chat without a new swarm input;
  *   conflicts and the active-run limit are logged and skipped so resume still succeeds.
- * Pending nodes are never redispatched.
+ *   Proven-pending nodes are not dispatched here.
+ * - In-flight attempts are completed only when the child session `lastOutcome` is `completed`.
+ *   Otherwise they become `interrupted` and must not be redispatched.
+ * - A run stays non-terminal only when a never-started node has completed dependencies and this
+ *   pass is a chat open or a replay of that run's `sourceCommandId`.
  */
 export async function recoverAndHydrateSwarmJournal(
   this: AgentRuntimeInternal,
@@ -521,6 +529,7 @@ export async function recoverAndHydrateSwarmJournal(
     mode: SwarmJournalRecoveryMode;
     traceContext: TraceContext;
     collectEvents?: SessionEvent[];
+    sourceCommandID?: string;
   },
 ): Promise<void> {
   const journal = this.sessionStore;
@@ -628,6 +637,52 @@ export async function recoverAndHydrateSwarmJournal(
         let attemptConflict = false;
         for (const attempt of attempts) {
           if (attempt.status !== "dispatching" && attempt.status !== "running") continue;
+          // 原因：重启前 child 已写完 lastOutcome，但 journal 仍停在 dispatching/running。
+          // 修复依据：只补记同一 attempt 为 completed；没有证明时打断且不分配新 attempt。
+          const child = journal.getSession
+            ? await journal.getSession(attempt.childSessionID)
+            : null;
+          if (child?.lastOutcome === "completed") {
+            let revision = attempt.revision;
+            if (attempt.status === "dispatching") {
+              const running = await journal.transitionSwarmNodeAttempt({
+                runID: run.runID,
+                nodeID: attempt.nodeID,
+                attemptID: attempt.attemptID,
+                expectedRevision: revision,
+                ownerEpoch: nextOwnerEpoch,
+                status: "running",
+              });
+              if (!running) {
+                attemptConflict = true;
+                break;
+              }
+              revision += 1;
+              attempt.status = "running";
+              attempt.revision = revision;
+            }
+            const completed = await journal.transitionSwarmNodeAttempt({
+              runID: run.runID,
+              nodeID: attempt.nodeID,
+              attemptID: attempt.attemptID,
+              expectedRevision: revision,
+              ownerEpoch: nextOwnerEpoch,
+              status: "completed",
+              resultText: attempt.resultText?.trim()
+                ? attempt.resultText
+                : SWARM_RECONCILED_COMPLETION_RESULT,
+            });
+            if (!completed) {
+              attemptConflict = true;
+              break;
+            }
+            attempt.status = "completed";
+            attempt.revision = revision + 1;
+            if (!attempt.resultText?.trim()) {
+              attempt.resultText = SWARM_RECONCILED_COMPLETION_RESULT;
+            }
+            continue;
+          }
           const interrupted = await journal.transitionSwarmNodeAttempt({
             runID: run.runID,
             nodeID: attempt.nodeID,
@@ -667,46 +722,76 @@ export async function recoverAndHydrateSwarmJournal(
             break;
           }
         }
-        if (attemptConflict) continue;
-
-        const transitioned = await journal.transitionSwarmRun({
-          rootSessionID,
-          runID: run.runID,
-          expectedRevision: run.revision + 1,
-          ownerEpoch: nextOwnerEpoch,
-          status: "interrupted",
-          diagnosticCode: "swarm.run_interrupted_after_process_restart",
-        });
-        if (!transitioned) {
+        if (attemptConflict) {
           if (failClosed) {
             throw createCoreError(
               CoreErrorType.ToolExecutionFailed,
-              "Не удалось сохранить прерывание старого роя; новый запуск остановлен.",
+              "Не удалось сохранить сверку дочерней задачи роя; новый запуск остановлен.",
               {
-                context: { code: "SWARM_RECOVERY_RUN_CONFLICT", swarmRunId: run.runID },
+                context: { code: "SWARM_RECOVERY_ATTEMPT_CONFLICT", swarmRunId: run.runID },
                 recoverable: true,
               },
             );
           }
-          this.logger?.warn(
-            "Swarm journal run interrupt conflict during chat open; skipped run projection",
-            {
-              ...traceContextToLogContext(options.traceContext),
-              event: "swarm.recovery.run_conflict",
-              module: "core.runtime",
-              sessionId: this.sessionId,
-              swarmRunId: run.runID,
-            },
-          );
           continue;
         }
-        run = {
-          ...run,
-          status: "interrupted",
-          ownerEpoch: nextOwnerEpoch,
-          revision: run.revision + 2,
-          diagnosticCode: "swarm.run_interrupted_after_process_restart",
-        };
+
+        const sameAcceptedInput =
+          options.mode === "resume_open" ||
+          (options.sourceCommandID !== undefined &&
+            options.sourceCommandID === run.sourceCommandID);
+        const pendingNodeIds = classifySwarmRestartNodes(
+          run.graph?.nodes,
+          attempts,
+        ).pendingNodeIds;
+        const keepPending =
+          run.status === "running" && pendingNodeIds.length > 0 && sameAcceptedInput;
+        if (!keepPending) {
+          const transitioned = await journal.transitionSwarmRun({
+            rootSessionID,
+            runID: run.runID,
+            expectedRevision: run.revision + 1,
+            ownerEpoch: nextOwnerEpoch,
+            status: "interrupted",
+            diagnosticCode: "swarm.run_interrupted_after_process_restart",
+          });
+          if (!transitioned) {
+            if (failClosed) {
+              throw createCoreError(
+                CoreErrorType.ToolExecutionFailed,
+                "Не удалось сохранить прерывание старого роя; новый запуск остановлен.",
+                {
+                  context: { code: "SWARM_RECOVERY_RUN_CONFLICT", swarmRunId: run.runID },
+                  recoverable: true,
+                },
+              );
+            }
+            this.logger?.warn(
+              "Swarm journal run interrupt conflict during chat open; skipped run projection",
+              {
+                ...traceContextToLogContext(options.traceContext),
+                event: "swarm.recovery.run_conflict",
+                module: "core.runtime",
+                sessionId: this.sessionId,
+                swarmRunId: run.runID,
+              },
+            );
+            continue;
+          }
+          run = {
+            ...run,
+            status: "interrupted",
+            ownerEpoch: nextOwnerEpoch,
+            revision: run.revision + 2,
+            diagnosticCode: "swarm.run_interrupted_after_process_restart",
+          };
+        } else {
+          run = {
+            ...run,
+            ownerEpoch: nextOwnerEpoch,
+            revision: run.revision + 1,
+          };
+        }
       }
     }
 
@@ -734,7 +819,9 @@ export async function recoverAndHydrateSwarmJournal(
             ? "Сохранённое выполнение роя отменено."
             : run.status === "failed"
               ? "Сохранённое выполнение роя завершилось ошибкой."
-              : "Восстановлено состояние выполнения роя.";
+              : run.status === "running"
+                ? "После перезапуска часть узлов ещё не начиналась. Они продолжатся только при повторной доставке того же принятого запроса; уже начатые задачи повторно не запускаются."
+                : "Восстановлено состояние выполнения роя.";
     const event = this.createEvent(
       SessionEventType.SwarmRunUpdated,
       {
