@@ -1,0 +1,66 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index c26b98c34089657b030010fd8652f868fd42d2e1..ca875050e0e4d3d3d0a7c38551e784021a5a5819 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs	
+@@ -792,6 +792,16 @@ function flushPendingApproval(callID, state, parts) {
+     }
+   });
+ }
++function readSessionErrorEvent(event, sessionId) {
++  if (!event || event.type !== "session.error") {
++    return void 0;
++  }
++  const payload = event.properties && typeof event.properties === "object" ? event.properties : event.data && typeof event.data === "object" ? event.data : void 0;
++  if (!payload || payload.sessionID !== sessionId) {
++    return void 0;
++  }
++  return payload.error ?? new Error("OpenCode session failed.");
++}
+ function isEventForSession(event, sessionId) {
+   if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
+     const props = event.properties;
+@@ -2103,6 +2113,11 @@ var OpencodeLanguageModel = class {
+               if (!isEventForSession(event, sessionId)) {
+                 continue;
+               }
++              const sessionError = readSessionErrorEvent(event, sessionId);
++              if (sessionError !== void 0 && !requestAbortController.signal.aborted) {
++                handlePromptFailure(sessionError);
++                continue;
++              }
+               const streamParts = convertEventToStreamParts(
+                 event,
+                 state,
+diff --git a/dist/index.js b/dist/index.js
+index 23ba43b5c63824ffaa36aaf8b6c209b62028fd04..adf7199af5a388b25ac28b77d1a63feeb824116d 100644
+--- a/dist/index.js
++++ b/dist/index.js	
+@@ -790,6 +790,16 @@ function flushPendingApproval(callID, state, parts) {
+     }
+   });
+ }
++function readSessionErrorEvent(event, sessionId) {
++  if (!event || event.type !== "session.error") {
++    return void 0;
++  }
++  const payload = event.properties && typeof event.properties === "object" ? event.properties : event.data && typeof event.data === "object" ? event.data : void 0;
++  if (!payload || payload.sessionID !== sessionId) {
++    return void 0;
++  }
++  return payload.error ?? new Error("OpenCode session failed.");
++}
+ function isEventForSession(event, sessionId) {
+   if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
+     const props = event.properties;
+@@ -2101,6 +2111,11 @@ var OpencodeLanguageModel = class {
+               if (!isEventForSession(event, sessionId)) {
+                 continue;
+               }
++              const sessionError = readSessionErrorEvent(event, sessionId);
++              if (sessionError !== void 0 && !requestAbortController.signal.aborted) {
++                handlePromptFailure(sessionError);
++                continue;
++              }
+               const streamParts = convertEventToStreamParts(
+                 event,
+                 state,

@@ -380,7 +380,11 @@ function isExactFetchFailedMessage(message: string): boolean {
   return TRANSPORT_FETCH_FAILED_MESSAGES.has(message.trim().toLowerCase());
 }
 
-function readOriginalErrorTail(message: string | undefined): string | undefined {
+export function isOpenCodeFreeUsageLimitMessage(message: string | undefined): boolean {
+  return Boolean(message && /free usage limit reached|free models work in opencode/i.test(message));
+}
+
+export function readOriginalErrorTail(message: string | undefined): string | undefined {
   if (!message) {
     return undefined;
   }

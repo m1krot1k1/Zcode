@@ -266,6 +266,147 @@ describe("OpenCode SDK model execution", () => {
     }
   });
 
+  it("keeps a free-usage limit inside the SDK empty-response wrapper terminal after sanitizing", async () => {
+    const sdkFailure = createEmptyResponseDataError(
+      new Error(
+        "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
+      ),
+      { sessionId: "ses_test", modelId: "opencode/deepseek-v4.1-flash-free" },
+    );
+    const provider = createFakeOpenCodeProvider({
+      model: () =>
+        ({
+          doStream: async () => ({
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              start(controller) {
+                controller.error(sdkFailure);
+              },
+            }),
+          }),
+        }) as unknown as LanguageModelV3,
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model;
+      const output = await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doStream!(createCallOptions()),
+      );
+      let failure: unknown;
+      try {
+        await output.stream.getReader().read();
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(String(failure)).not.toMatch(/invalid model|model id.*invalid/i);
+      expect(String(failure)).toContain("Free usage limit reached");
+      expect(classifyModelFailure(failure)).toMatchObject({
+        code: "model_rate_limited",
+        reason: "rate_limited",
+        retryable: false,
+      });
+    } finally {
+      await registry.dispose();
+    }
+  });
+
+  it("fails a streaming chat immediately when OpenCode emits the free-usage session error", async () => {
+    const requests: string[] = [];
+    let promptStarted = false;
+    const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const pathname = new URL(request.url).pathname;
+      requests.push(`${request.method} ${pathname}`);
+      if (request.method === "POST" && pathname === "/session") {
+        return Response.json({
+          id: "ses_quota_event",
+          projectID: "global",
+          directory: process.cwd(),
+          title: "test",
+          version: "1.19.3",
+          time: { created: 1, updated: 1 },
+        });
+      }
+      if (request.method === "GET" && pathname.endsWith("/event")) {
+        const quotaEvent = {
+          type: "session.error",
+          properties: {
+            sessionID: "ses_quota_event",
+            error: {
+              name: "APIError",
+              data: {
+                message:
+                  "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
+                isRetryable: false,
+              },
+            },
+          },
+        };
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(`data: ${JSON.stringify(quotaEvent)}\n\n`),
+            );
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      if (request.method === "POST" && pathname === "/session/ses_quota_event/message") {
+        promptStarted = true;
+        return new Promise<Response>((_resolve, reject) => {
+          const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+          if (request.signal.aborted) {
+            abort();
+            return;
+          }
+          request.signal.addEventListener("abort", abort, { once: true });
+        });
+      }
+      return Response.json({ name: "NotFound", data: { message: "not found" } }, { status: 404 });
+    });
+    const client = createOpencodeClient({ baseUrl: "http://opencode.test", fetch });
+    const provider = createOpencode({
+      clientManager: OpencodeClientManager.createInstance({ client }),
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const model = registry.resolve("opencode/deepseek-v4.1-flash-free").model;
+      const output = await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        model.doStream!(createCallOptions()),
+      );
+      const reader = output.stream.getReader();
+      let failure: unknown;
+      const deadline = new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("session.error did not fail the stream")), 5_000);
+      });
+      while (!failure) {
+        const part = await Promise.race([reader.read(), deadline]);
+        if (part.done) break;
+        if (part.value.type === "error") failure = part.value.error;
+      }
+
+      expect(requests.some((request) => request.startsWith("GET ") && request.endsWith("/event"))).toBe(
+        true,
+      );
+      expect(failure).toBeDefined();
+      expect(classifyModelFailure(failure)).toMatchObject({
+        code: "model_rate_limited",
+        reason: "rate_limited",
+        retryable: false,
+        message:
+          "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+      });
+    } finally {
+      await registry.dispose();
+    }
+    expect(promptStarted).toBe(true);
+  });
+
   it("sanitizes empty-response errors raised after OpenCode streaming starts", async () => {
     const sdkFailure = createEmptyResponseDataError(
       new Error(

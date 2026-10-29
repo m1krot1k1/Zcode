@@ -494,6 +494,32 @@ describe("classifyModelFailure provider business codes", () => {
     });
   });
 
+  it("classifies an OpenCode free-usage sentence inside the empty-response wrapper as terminal", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage(
+          "opencode/deepseek-v4.1-flash-free",
+          "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
+        ),
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "model_rate_limited",
+      message:
+        "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+      reason: "rate_limited",
+      retryable: false,
+    });
+  });
+
   it("classifies an OpenCode empty response caused by fetch failed as a retryable network error", () => {
     const failure = classifyModelFailure(
       new APICallError({

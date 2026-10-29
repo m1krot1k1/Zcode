@@ -40,7 +40,11 @@ import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-o
 import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
 import { createProviderEndpointRoutingFetch } from "./provider-endpoint-routing-fetch.js";
 import { normalizeModelTlsFailure } from "./failure-tls.js";
-import { readOpenCodeRequestDiagnostic } from "./failure-inspection.js";
+import {
+  isOpenCodeFreeUsageLimitMessage,
+  readOpenCodeRequestDiagnostic,
+  readOriginalErrorTail,
+} from "./failure-inspection.js";
 import {
   mergeModelRequestHeaders,
   withoutModelAuthHeaders,
@@ -668,8 +672,18 @@ function sanitizeOpenCodeEmptyResponseError(error: unknown): unknown {
   }
 
   const diagnostic = readOpenCodeRequestDiagnostic(error);
-  const diagnosticSuffix = diagnostic
-    ? ` OpenCode request diagnostic: ${JSON.stringify(diagnostic)}`
+  const originalTail = readOriginalErrorTail(error.message);
+  // 原因：SDK 把 “Free usage limit reached” 只拼在 Original error 尾部。
+  // 整段替换后分类器看不到限额，UI 就显示空响应。只保留这句限额或精确的 fetch failed。
+  const quotaMessage =
+    diagnostic?.message === undefined &&
+    originalTail &&
+    isOpenCodeFreeUsageLimitMessage(originalTail)
+      ? originalTail.slice(0, 280)
+      : undefined;
+  const retainedDiagnostic = diagnostic ?? (quotaMessage ? { message: quotaMessage } : undefined);
+  const diagnosticSuffix = retainedDiagnostic
+    ? ` OpenCode request diagnostic: ${JSON.stringify(retainedDiagnostic)}`
     : "";
   // 根因：SDK 的空响应文案会把通用服务器错误猜成无效模型 ID，随后原样出现在 UI 详情中。
   // 修复依据：只保留诊断 fetch 已脱敏的状态/错误字段；不保留原始 SDK Error 或 cause。
@@ -683,6 +697,10 @@ function sanitizeOpenCodeEmptyResponseError(error: unknown): unknown {
   safeError.name = "OpenCodeEmptyResponseError";
   safeError.code = "OPENCODE_EMPTY_RESPONSE";
   if (diagnostic?.statusCode !== undefined) safeError.statusCode = diagnostic.statusCode;
+  const transportTail = originalTail?.trim().toLowerCase();
+  if (transportTail === "fetch failed" || transportTail === "failed to fetch") {
+    safeError.cause = new TypeError(transportTail);
+  }
   safeError.isRetryable = false;
   return safeError;
 }

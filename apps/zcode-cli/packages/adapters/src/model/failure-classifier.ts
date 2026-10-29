@@ -19,6 +19,7 @@ import {
   isProxyFailure,
   isTimeoutFailure,
   parseRetryAfterMs,
+  isOpenCodeFreeUsageLimitMessage,
   readOpenCodeRequestDiagnostic,
   readOpenCodeSessionDiagnostic,
   unwrapRetryError,
@@ -107,7 +108,13 @@ export function classifyModelFailure(
     (openCodeProviderFailure?.providerId === "opencode"
       ? providerBusinessMessage(openCodeProviderFailure)
       : undefined);
-  if (isOpenCodeFreeUsageLimitMessage(openCodeProviderMessage)) {
+  const rawMessage = unwrapped instanceof Error ? unwrapped.message : undefined;
+  // session.error 和 SDK 空响应的 Original error 尾部都带同一句限额文案。
+  // 只认这句，避免把通用 5xx 当成配额，也不把配额当成可重试的网络错误。
+  if (
+    isOpenCodeFreeUsageLimitMessage(openCodeProviderMessage) ||
+    isOpenCodeFreeUsageLimitMessage(rawMessage)
+  ) {
     return {
       code: ModelErrorCode.ModelRateLimited,
       message:
@@ -394,10 +401,6 @@ export function classifyModelFailure(
     retryAfterMs,
     statusCode,
   };
-}
-
-function isOpenCodeFreeUsageLimitMessage(message: string | undefined): boolean {
-  return Boolean(message && /free usage limit reached|free models work in opencode/i.test(message));
 }
 
 export function isRetryableFailure(failure: ClassifiedModelFailure): boolean {
