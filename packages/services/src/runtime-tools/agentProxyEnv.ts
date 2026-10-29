@@ -1,8 +1,10 @@
 import {
   ZCODE_AGENT_CA_CERT_ENV_KEY,
   ZCODE_HTTP_PROXY_ENV_KEY,
+  ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
   ZCODE_WORKSPACE_IDENTITY_ENV,
+  readZCodeProxyList,
 } from "@zcode/shared";
 
 // 把设置页的 HTTP 代理、No Proxy 和自定义 CA 翻译成 agent 子进程的环境变量补丁。
@@ -68,12 +70,17 @@ export function buildAgentNoProxyEnv(noProxy: string | undefined): Record<string
  */
 export function buildAgentRuntimeEnv(input: {
   httpProxy: string | undefined;
+  httpProxyList?: string | undefined;
   noProxy?: string | undefined;
   caCertPath?: string | undefined;
 }): Record<string, string> {
   const proxyEnv = buildAgentProxyEnv(input.httpProxy);
+  const proxyList = readZCodeProxyList(input.httpProxyList);
   return {
     ...proxyEnv,
+    ...(proxyList.length > 0
+      ? { [ZCODE_HTTP_PROXY_LIST_ENV_KEY]: proxyList.join("\n") }
+      : {}),
     ...buildAgentNoProxyEnv(input.noProxy),
     ...buildAgentCaCertEnv(input.caCertPath),
   };

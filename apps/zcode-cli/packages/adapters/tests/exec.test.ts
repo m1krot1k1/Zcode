@@ -55,7 +55,11 @@ import {
   type ExecutionRunOptions,
   windowsPathToGitBashPath,
 } from "@zcode/contracts";
-import { ZCODE_NO_PROXY_ENV_KEY, ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY } from "@zcode/shared";
+import {
+  ZCODE_HTTP_PROXY_LIST_ENV_KEY,
+  ZCODE_NO_PROXY_ENV_KEY,
+  ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY,
+} from "@zcode/shared";
 
 const POSIX_BASH_PATH =
   process.platform === "win32"
@@ -2536,6 +2540,20 @@ describe("NodeExecutionAdapter", () => {
     expect(env.REQUESTS_CA_BUNDLE).toBe("/tmp/zcode-ca.pem");
     expect(env.CURL_CA_BUNDLE).toBe("/tmp/zcode-ca.pem");
     expect(env.GIT_SSL_CAINFO).toBe("/tmp/zcode-ca.pem");
+  });
+
+  it("keeps command tools on the selected proxy and drops the model proxy ring", () => {
+    const env = buildExecutionEnv(undefined, {
+      platform: "linux",
+      processEnv: {
+        PATH: "/usr/bin",
+        ZCODE_HTTP_PROXY: "http://127.0.0.1:7890",
+        [ZCODE_HTTP_PROXY_LIST_ENV_KEY]: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+      },
+    });
+
+    expect(env[ZCODE_HTTP_PROXY_LIST_ENV_KEY]).toBeUndefined();
+    expect(env.HTTP_PROXY).toBe("http://127.0.0.1:7890");
   });
 
   it("lets per-command env overlays override injected network env", () => {

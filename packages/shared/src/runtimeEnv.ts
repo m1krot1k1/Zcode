@@ -1,5 +1,7 @@
 export const ZCODE_RUNTIME_ENV_KEY = "ZCODE_RUNTIME_ENV";
 export const ZCODE_HTTP_PROXY_ENV_KEY = "ZCODE_HTTP_PROXY";
+/** Ordered model-provider proxy ring. One normalized endpoint per line. */
+export const ZCODE_HTTP_PROXY_LIST_ENV_KEY = "ZCODE_HTTP_PROXY_LIST";
 export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
 /** Desktop Host 只向 desktop-attached remote server 传递一次的网络配置。 */
 export const ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY =
@@ -312,4 +314,32 @@ function stringifyZCodeToolEnvPassthroughEnv(
   return {
     [ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY]: JSON.stringify(Object.fromEntries(entries)),
   };
+}
+
+const PROXY_LIST_SHORTHAND = /^([^:/\s]+):(\d+):([^:]*):(.*)$/u;
+
+/** One saved proxy line. `ip:port:login:pass` becomes SOCKS5; `socks://` is the SOCKS5 alias. */
+export function normalizeZCodeProxyEndpoint(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const shorthand = trimmed.match(PROXY_LIST_SHORTHAND);
+  if (shorthand) {
+    return `socks5://${encodeURIComponent(shorthand[3] ?? "")}:${encodeURIComponent(shorthand[4] ?? "")}@${shorthand[1]}:${shorthand[2]}`;
+  }
+  if (/^socks:\/\//iu.test(trimmed)) return `socks5://${trimmed.slice("socks://".length)}`;
+  return trimmed;
+}
+
+/** Ordered, de-duplicated proxy ring. Blank lines are dropped. */
+export function readZCodeProxyList(value: string | undefined): string[] {
+  if (!value) return [];
+  const endpoints: string[] = [];
+  const seen = new Set<string>();
+  for (const line of value.split(/\r?\n/u)) {
+    const endpoint = normalizeZCodeProxyEndpoint(line);
+    if (!endpoint || seen.has(endpoint)) continue;
+    seen.add(endpoint);
+    endpoints.push(endpoint);
+  }
+  return endpoints;
 }

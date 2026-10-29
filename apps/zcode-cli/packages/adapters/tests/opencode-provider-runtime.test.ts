@@ -776,6 +776,52 @@ describe("OpenCode SOCKS proxy bridge", () => {
     await close(socksServer);
     await close(targetServer);
   });
+
+  it("retries an OpenCode rate limit once through the next SOCKS proxy", async () => {
+    const previousList = process.env.ZCODE_HTTP_PROXY_LIST;
+    const previousProxy = process.env.ZCODE_HTTP_PROXY;
+    const first = "socks5://127.0.0.1:1";
+    const second = "socks5://127.0.0.1:2";
+    process.env.ZCODE_HTTP_PROXY_LIST = `${first}\n${second}`;
+    process.env.ZCODE_HTTP_PROXY = first;
+    const lease = await acquireOpenCodeSocksProxyLease(first, {});
+    let calls = 0;
+    try {
+      const fetch = createOpenCodeDiagnosticFetch(async (input, init) => {
+        calls += 1;
+        const request = new Request(input, init);
+        expect(await request.text()).toBe("same-body");
+        if (calls === 1) {
+          return new Response(JSON.stringify({ code: "RATE_LIMITED", message: "slow down" }), {
+            status: 429,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+
+      const response = await fetch(
+        new Request("http://127.0.0.1:9/session/ses_test/message", {
+          method: "POST",
+          body: "same-body",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      expect(calls).toBe(2);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    } finally {
+      await lease?.dispose();
+      if (previousList === undefined) delete process.env.ZCODE_HTTP_PROXY_LIST;
+      else process.env.ZCODE_HTTP_PROXY_LIST = previousList;
+      if (previousProxy === undefined) delete process.env.ZCODE_HTTP_PROXY;
+      else process.env.ZCODE_HTTP_PROXY = previousProxy;
+    }
+  });
 });
 
 async function handleSocksFixture(socket: Socket, targetPort: number): Promise<void> {

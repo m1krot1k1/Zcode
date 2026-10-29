@@ -8,6 +8,11 @@ import {
 import { createConnection, createServer, isIP, type Server, type Socket } from "node:net";
 import { domainToASCII } from "node:url";
 import { AgentErrorCode, type Logger } from "@zcode/contracts";
+import {
+  commitConfiguredProxyCursor,
+  nextConfiguredProxyCandidate,
+  readConfiguredProxyEndpoints,
+} from "../network/proxy-fetch.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -389,6 +394,7 @@ interface SharedProxyLeaseState {
   localProxyUrl: string;
   originalValues: Map<(typeof PROXY_ENV_KEYS)[number], string | undefined>;
   references: number;
+  retarget: (proxy: SocksProxyAddress) => void;
   sourceUrl: string;
 }
 
@@ -437,6 +443,7 @@ export async function acquireOpenCodeSocksProxyLease(
     localProxyUrl: bridge.proxyUrl,
     originalValues: new Map(PROXY_ENV_KEYS.map((key) => [key, environment[key]])),
     references: 1,
+    retarget: bridge.retarget,
     sourceUrl: proxyUrl,
   };
   for (const key of PROXY_ENV_KEYS) environment[key] = bridge.proxyUrl;
@@ -512,14 +519,37 @@ function parseSocksProxyAddress(value: string | undefined): SocksProxyAddress | 
   };
 }
 
+/**
+ * Переключает уже поднятый SOCKS-мост на следующий прокси из списка.
+ * Локальный адрес моста не меняется, поэтому дочерний OpenCode не перезапускается.
+ * HTTP-прокси здесь не трогаем: OpenCode и так читает его из окружения процесса.
+ */
+export function advanceOpenCodeSocksProxy(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const proxies = readConfiguredProxyEndpoints(env);
+  const next = nextConfiguredProxyCandidate(proxies, env.ZCODE_HTTP_PROXY);
+  const address = next ? parseSocksProxyAddress(next) : undefined;
+  if (!address || !sharedProxyLease || !next) return false;
+  sharedProxyLease.retarget(address);
+  sharedProxyLease.sourceUrl = next;
+  commitConfiguredProxyCursor(proxies, next);
+  return true;
+}
+
 async function startSocksHttpProxyBridge(
   proxy: SocksProxyAddress,
-): Promise<{ dispose: () => Promise<void>; proxyUrl: string }> {
+): Promise<{
+  dispose: () => Promise<void>;
+  proxyUrl: string;
+  retarget: (next: SocksProxyAddress) => void;
+}> {
+  const upstream = { current: proxy };
   const activeSockets = new Set<Socket>();
   const server = createServer((client) => {
     activeSockets.add(client);
     client.once("close", () => activeSockets.delete(client));
-    void handleHttpProxyClient(client, proxy);
+    void handleHttpProxyClient(client, upstream.current);
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -532,6 +562,11 @@ async function startSocksHttpProxyBridge(
   }
   return {
     proxyUrl: `http://127.0.0.1:${address.port}`,
+    retarget: (next) => {
+      upstream.current = next;
+      // 原因：旧 CONNECT 还连着被限流的出口。不拆掉的话下一次请求会复用这条隧道。
+      for (const socket of activeSockets) socket.destroy();
+    },
     dispose: async () => {
       for (const socket of activeSockets) socket.destroy();
       await closeServer(server);

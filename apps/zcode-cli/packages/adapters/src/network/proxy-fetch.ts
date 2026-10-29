@@ -2,7 +2,13 @@ import http from "node:http";
 import https from "node:https";
 import { ProxyAgent } from "proxy-agent";
 import {
+  ZCODE_HTTP_PROXY_LIST_ENV_KEY,
+  normalizeZCodeProxyEndpoint,
+  readZCodeProxyList,
+} from "@zcode/shared";
+import {
   loadTlsCaCertificates,
+  resolveProxyForRequest,
   resolveProxyUrlForRequest,
   resolveTlsCaCertFile,
 } from "./http-config.js";
@@ -15,8 +21,14 @@ interface NetworkProxyFetchOptions {
   env?: Record<string, string | undefined>;
   fetch?: NetworkFetch;
   httpProxy?: string;
+  httpProxyList?: readonly string[];
   noProxy?: string;
 }
+
+// Процессное кольцо: следующий модельный запрос начинается с прокси, который
+// пережил прошлый ответ. Идентичность списка сбрасывает курсор на выбранный вход.
+let proxyRingIdentity = "";
+let proxyRingCursor = 0;
 
 interface NormalizedFetchRequest {
   body?: Buffer;
@@ -49,18 +61,94 @@ export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): Netw
       return directFetch(input, init);
     }
 
-    const proxyUrl = resolveProxyUrlForRequest(requestUrl, options);
+    const proxies = configuredProxyRing(options);
     const caCertFile = resolveTlsCaCertFile(options);
-    if (!proxyUrl && !caCertFile) {
+    if (proxies.length === 0) {
+      const proxyUrl = resolveProxyUrlForRequest(requestUrl, options);
+      if (!proxyUrl && !caCertFile) {
+        return directFetch(input, init);
+      }
+      const request = await normalizeFetchRequest(input, init);
+      return fetchWithAgent(request, {
+        ca: caCertFile ? getTlsCaCertificates() : undefined,
+        proxyUrl,
+      });
+    }
+
+    // noProxy остаётся исключением: локальный адрес не обходит кольцо через прямое соединение
+    // только когда правило само просит обойти прокси.
+    if (resolveProxyForRequest(requestUrl, { ...options, httpProxy: proxies[0] }).noProxyMatched) {
       return directFetch(input, init);
     }
 
     const request = await normalizeFetchRequest(input, init);
-    return fetchWithAgent(request, {
-      ca: caCertFile ? getTlsCaCertificates() : undefined,
-      proxyUrl,
-    });
+    const start = syncProxyRingCursor(proxies, options.httpProxy);
+    const ca = caCertFile ? getTlsCaCertificates() : undefined;
+    for (let attempt = 0; attempt < proxies.length; attempt += 1) {
+      if (request.signal?.aborted) {
+        throw abortReason(request.signal);
+      }
+      const index = (start + attempt) % proxies.length;
+      const proxyUrl = resolveProxyUrlForRequest(request.url, {
+        ...options,
+        httpProxy: proxies[index],
+      });
+      const response = await fetchWithAgent(request, { ca, proxyUrl });
+      const rateLimited = response.status === 429;
+      if (!rateLimited || attempt === proxies.length - 1) {
+        // 原因：429 只说明这条出口被限流。下一次请求要从下一条开始，成功则留在当前。
+        rememberProxyRingCursor(proxies, rateLimited ? (index + 1) % proxies.length : index);
+        return response;
+      }
+      await response.body?.cancel().catch(() => undefined);
+    }
+    throw new Error("proxy-ring-exhausted");
   };
+}
+
+export function readConfiguredProxyEndpoints(
+  env: Record<string, string | undefined> | undefined,
+): string[] {
+  return readZCodeProxyList(env?.[ZCODE_HTTP_PROXY_LIST_ENV_KEY]);
+}
+
+function configuredProxyRing(options: NetworkProxyFetchOptions): string[] {
+  if (options.httpProxyList) return readZCodeProxyList(options.httpProxyList.join("\n"));
+  return [];
+}
+
+function syncProxyRingCursor(proxies: readonly string[], preferred: string | undefined): number {
+  const identity = proxies.join("\n");
+  if (identity !== proxyRingIdentity) {
+    proxyRingIdentity = identity;
+    const preferredEndpoint = normalizeZCodeProxyEndpoint(preferred);
+    const preferredIndex = preferredEndpoint ? proxies.indexOf(preferredEndpoint) : -1;
+    proxyRingCursor = preferredIndex >= 0 ? preferredIndex : 0;
+  }
+  return proxyRingCursor;
+}
+
+function rememberProxyRingCursor(proxies: readonly string[], index: number): void {
+  proxyRingIdentity = proxies.join("\n");
+  proxyRingCursor = index;
+}
+
+/** Следующий вход кольца без сдвига. Сдвиг делает {@link commitConfiguredProxyCursor}. */
+export function nextConfiguredProxyCandidate(
+  proxies: readonly string[],
+  preferred: string | undefined,
+): string | undefined {
+  if (proxies.length < 2) return undefined;
+  const current = syncProxyRingCursor(proxies, preferred);
+  return proxies[(current + 1) % proxies.length];
+}
+
+export function commitConfiguredProxyCursor(
+  proxies: readonly string[],
+  endpoint: string,
+): void {
+  const index = proxies.indexOf(endpoint);
+  if (index >= 0) rememberProxyRingCursor(proxies, index);
 }
 
 function hasNetworkFetchPolicy(options: NetworkProxyFetchOptions): boolean {
@@ -68,6 +156,7 @@ function hasNetworkFetchPolicy(options: NetworkProxyFetchOptions): boolean {
     options.caCertFile ||
       options.env ||
       options.httpProxy ||
+      options.httpProxyList?.some((entry) => entry.trim()) ||
       options.noProxy,
   );
 }

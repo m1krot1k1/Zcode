@@ -1244,6 +1244,7 @@ export function createLocalServices(options: {
   /** desktop-attached remote server 从 Desktop Host 收到的一次性 Agent 网络配置。 */
   remoteAgentNetwork?: {
     httpProxy?: string;
+    httpProxyList?: string;
     noProxy?: string;
   };
   /** 所属 Environment 的 ZCode Built-in Provider Config 物理路径。 */
@@ -2363,6 +2364,7 @@ export function createLocalServices(options: {
           ? options.remoteAgentNetwork
           : {
               httpProxy: settings.httpProxy,
+              httpProxyList: settings.httpProxyList,
               noProxy: settings.httpProxyNoProxy,
             };
       const cuaPluginEnabled = isCuaEnabledForContext(context);
@@ -2405,6 +2407,7 @@ export function createLocalServices(options: {
       return {
         ...buildAgentRuntimeEnv({
           httpProxy: agentNetwork.httpProxy,
+          httpProxyList: agentNetwork.httpProxyList,
           noProxy: agentNetwork.noProxy,
           caCertPath: settings.httpProxyCaCertPath,
         }),

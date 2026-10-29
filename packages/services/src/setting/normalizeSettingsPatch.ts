@@ -47,8 +47,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   }
 
   if ("httpProxyList" in normalizedPatch && typeof normalizedPatch.httpProxyList === "string") {
-    // Список хранит один URL на строку; нормализуем пробелы и пустые строки до записи,
-    // не превращая его в routing policy — маршрутизатор по-прежнему читает только httpProxy.
+    // Список хранит один URL на строку. Модельные запросы читают его как кольцо,
+    // а выбранный httpProxy остаётся стартовой точкой и маршрутом renderer/MCP.
     const normalizedProxyList = normalizedPatch.httpProxyList
       .split(/\r?\n/u)
       .map((proxy) => proxy.trim())

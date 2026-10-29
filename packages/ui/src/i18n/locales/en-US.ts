@@ -3198,10 +3198,10 @@ const enUS: Record<string, string> = {
   "settings.memory.viewer.noSelection": "Select a memory file to preview it.",
   "settings.httpProxy": "HTTP Proxy",
   "settings.httpProxyDescription":
-    "Choose the active proxy for model, MCP, command-tool, and app renderer traffic. Leave direct selected to connect without a proxy. Rate limits do not switch proxies automatically. Restart the app to take effect.",
+    "Choose the active proxy for model, MCP, command-tool, and app renderer traffic. A saved proxy list is used for model requests. A provider rate limit switches to the next proxy and, after the last one, returns to the first. Restart the app after editing the list.",
   "settings.httpProxyList": "Proxy list",
   "settings.httpProxyListDescription":
-    "Manage saved proxies, test their outbound IP, and choose the active route. Rate limits do not trigger automatic switching.",
+    "Manage saved proxies and test their outbound IP. Model requests use this list. A provider rate limit switches to the next proxy, wrapping from the last back to the first.",
   "settings.httpProxyListPlaceholder": "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
   "settings.httpProxyManage": "Add / manage proxies",
   "settings.httpProxyActive": "Active proxy",

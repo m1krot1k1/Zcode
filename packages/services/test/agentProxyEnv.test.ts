@@ -98,6 +98,31 @@ describe("buildAgentRuntimeEnv", () => {
     });
   });
 
+  it("passes the proxy list without replacing the selected route", () => {
+    expect(
+      buildAgentRuntimeEnv({
+        httpProxy: "http://127.0.0.1:7890",
+        httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+      }),
+    ).toMatchObject({
+      HTTP_PROXY: "http://127.0.0.1:7890",
+      ZCODE_HTTP_PROXY: "http://127.0.0.1:7890",
+      ZCODE_HTTP_PROXY_LIST: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+    });
+  });
+
+  it("normalizes a shorthand proxy line into the list and keeps direct routing", () => {
+    expect(
+      buildAgentRuntimeEnv({
+        httpProxy: undefined,
+        httpProxyList: " 10.0.0.8:1080:user:secret \n\n socks://127.0.0.1:1081 ",
+      }),
+    ).toEqual({
+      ZCODE_HTTP_PROXY_LIST:
+        "socks5://user:secret@10.0.0.8:1080\nsocks5://127.0.0.1:1081",
+    });
+  });
+
   it("injects the configured CA even without a proxy", () => {
     expect(
       buildAgentRuntimeEnv({ httpProxy: undefined, caCertPath: " /tmp/root-ca.pem " }),

@@ -1,6 +1,7 @@
 import {
   ZCODE_AGENT_CA_CERT_ENV_KEY,
   ZCODE_HTTP_PROXY_ENV_KEY,
+  ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
   ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY,
   readZCodeToolEnvPassthroughEnv,
@@ -48,6 +49,8 @@ export function applyNetworkEgressEnv(
   const network = options.network ?? {};
 
   deleteEnvKey(env, ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY, platform);
+  // 原因：代理环含全部出口凭据，只给模型请求。命令和 MCP 仍走单个选中代理。
+  deleteEnvKey(env, ZCODE_HTTP_PROXY_LIST_ENV_KEY, platform);
   if (options.toolEnvPassthrough !== false) {
     applyToolEnvPassthroughEnv(env, sourceEnv, platform);
   }

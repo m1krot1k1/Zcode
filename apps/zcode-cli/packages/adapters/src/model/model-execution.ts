@@ -37,7 +37,7 @@ import { createModelRequestSecurityState } from "./request-security-edition/inde
 import type { ModelRequestSecurityState, ModelRequestSecurityPort } from "./request-security.js";
 import { createOpenAIResponsesJsonCompatFetch } from "./openai-responses-json-compat.js";
 import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-option-map-fetch.js";
-import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
+import { createNetworkProxyFetch, readConfiguredProxyEndpoints } from "../network/proxy-fetch.js";
 import { createProviderEndpointRoutingFetch } from "./provider-endpoint-routing-fetch.js";
 import { normalizeModelTlsFailure } from "./failure-tls.js";
 import {
@@ -52,6 +52,7 @@ import {
 } from "./model-request-headers.js";
 import {
   acquireOpenCodeSocksProxyLease,
+  advanceOpenCodeSocksProxy,
   createOpenCodeTaskBridge,
   findOpenCodeLoopbackPort,
   type OpenCodeTaskBridge,
@@ -990,8 +991,12 @@ interface ProviderProxyFetchOptions {
 
 function createProviderProxyFetch(options: ProviderProxyFetchOptions): ProviderFetch {
   // Node 的 global fetch 不会自动读取 HTTP_PROXY/http_proxy。
-  // 模型 provider 和 MCP HTTP transport 都复用同一层 proxy-aware fetch，避免多套出口规则漂移。
-  return createNetworkProxyFetch(options);
+  // 模型 provider 走代理环；MCP 仍只用单个 httpProxy，避免工具流量跟着 429 换出口。
+  const httpProxyList = readConfiguredProxyEndpoints(options.env);
+  return createNetworkProxyFetch({
+    ...options,
+    ...(httpProxyList.length > 0 ? { httpProxyList } : {}),
+  });
 }
 
 async function detectProviderBusinessError(
@@ -1632,7 +1637,12 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
   preferOpenCodeE2ECliOnPath();
   const e2ePortValue = process.env.ZCODE_E2E_OPENCODE_PORT?.trim();
   const e2ePort = e2ePortValue && /^\d+$/.test(e2ePortValue) ? Number(e2ePortValue) : undefined;
-  const configuredProxy = process.env.ZCODE_HTTP_PROXY?.trim();
+  const configuredProxies = readConfiguredProxyEndpoints(process.env);
+  const selectedProxy = process.env.ZCODE_HTTP_PROXY?.trim();
+  const configuredProxy =
+    selectedProxy && configuredProxies.includes(selectedProxy)
+      ? selectedProxy
+      : (configuredProxies[0] ?? selectedProxy);
   const listenersBeforeImport = captureOpenCodeSignalListeners();
   let sdk: OpenCodeSdk;
 
@@ -1744,22 +1754,39 @@ export function createOpenCodeDiagnosticFetch(
     }
     const isOpenCodeModelRequest = isSessionCreate || isSessionPrompt;
 
+    const proxyAttempts = Math.max(1, readConfiguredProxyEndpoints(process.env).length);
+    let attempt = 0;
     try {
-      const response = await fetchImpl(input, init);
-      if (!isOpenCodeModelRequest) return response;
+      while (attempt < proxyAttempts) {
+        attempt += 1;
+        // Request 的 body 只能读一次。重试前克隆，否则第二次本地请求没有正文。
+        const attemptInput =
+          input instanceof Request && proxyAttempts > 1 ? input.clone() : input;
+        const response = await fetchImpl(attemptInput, init);
+        if (!isOpenCodeModelRequest) return response;
 
-      if (!response.ok) {
-        const fields = await readOpenCodeDiagnosticFields(response);
-        return createOpenCodeDiagnosticResponse(response.status, fields, isSessionPrompt);
+        if (!response.ok) {
+          const fields = await readOpenCodeDiagnosticFields(response);
+          // 原因：OpenCode 的 429 发生在子进程上游。只有 SOCKS 桥能换出口时才重放这一次本地请求。
+          if (
+            isOpenCodeProxyRateLimit(response.status, fields) &&
+            attempt < proxyAttempts &&
+            advanceOpenCodeSocksProxy()
+          ) {
+            continue;
+          }
+          return createOpenCodeDiagnosticResponse(response.status, fields, isSessionPrompt);
+        }
+        if (isSessionCreate && response.status === 204) {
+          return createOpenCodeDiagnosticResponse(
+            204,
+            { message: "OpenCode returned an empty session creation response." },
+            false,
+          );
+        }
+        return response;
       }
-      if (isSessionCreate && response.status === 204) {
-        return createOpenCodeDiagnosticResponse(
-          204,
-          { message: "OpenCode returned an empty session creation response." },
-          false,
-        );
-      }
-      return response;
+      throw new Error("opencode.proxy-ring-exhausted");
     } catch (cause) {
       if (!isOpenCodeModelRequest || isOpenCodeAbortError(cause)) throw cause;
       const causeRecord = asRecord(cause);
@@ -1902,6 +1929,18 @@ function createOpenCodeDiagnosticResponse(
     }),
     { status: responseStatus, headers: { "content-type": "application/json" } },
   );
+}
+
+function isOpenCodeProxyRateLimit(
+  status: number,
+  fields: { code?: string; message?: string },
+): boolean {
+  if (status === 429) return true;
+  const code = fields.code?.toLowerCase();
+  if (code === "rate_limited" || code === "model_rate_limited" || code === "rate_limit") {
+    return true;
+  }
+  return isOpenCodeFreeUsageLimitMessage(fields.message);
 }
 
 function isOpenCodeAbortError(error: unknown): boolean {

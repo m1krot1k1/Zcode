@@ -2994,10 +2994,10 @@ const zhCN: Record<string, string> = {
   "settings.memory.viewer.noSelection": "选择一个记忆文件以查看内容。",
   "settings.httpProxy": "HTTP 代理",
   "settings.httpProxyDescription":
-    "选择模型、MCP、命令工具和应用渲染层当前使用的代理。选择直连即可不经过代理。达到速率限制时不会自动切换代理。修改后需重启应用生效。",
+    "选择模型、MCP、命令工具和应用渲染层当前使用的代理。保存代理列表后，模型请求会走这些代理。提供商限流时自动切换到下一个代理，最后一个之后回到第一个。修改列表后需重启应用。",
   "settings.httpProxyList": "代理列表",
   "settings.httpProxyListDescription":
-    "管理代理、测试出口 IP 并选择当前线路。达到速率限制时不会自动切换代理。",
+    "管理代理并测试出口 IP。模型请求使用此列表。出现限流时切换到下一个代理，最后一个之后回到第一个。",
   "settings.httpProxyListPlaceholder": "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
   "settings.httpProxyManage": "添加 / 管理代理",
   "settings.httpProxyActive": "当前代理",
