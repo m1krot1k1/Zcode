@@ -10,7 +10,11 @@ import {
   resolvePersistentAgentMemoryRoot,
   sanitizePersistentAgentMemoryKey,
 } from "../src/subagent/persistent-memory.js";
-import { formatAgentProfilesForPrompt, type AgentProfile } from "../src/subagent/profile.js";
+import {
+  formatAgentProfilesForPrompt,
+  getSwarmAgentProfiles,
+  type AgentProfile,
+} from "../src/subagent/profile.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 
 const fixture = readFileSync(
@@ -50,6 +54,35 @@ describe("persistent custom-agent memory", () => {
       ).toBe(expected);
     },
   );
+
+  it("projects Write/Edit for built-in knowledge-curator project memory (AGENT-12)", async () => {
+    const curator = getSwarmAgentProfiles([]).find((profile) => profile.name === "knowledge-curator");
+    expect(curator?.memory).toBe("project");
+    expect(curator?.tools).toEqual(["Read", "Glob", "Grep", "Task"]);
+
+    const memory = { enabled: true, storageRoot: "/storage", use: true };
+    const projected = projectPersistentAgentMemoryTools(
+      { activeAgents: [curator!] },
+      memory,
+    ).activeAgents[0];
+    expect(projected?.tools).toEqual(["Read", "Glob", "Grep", "Task", "Write", "Edit"]);
+    expect(resolvePersistentAgentMemoryRoot({
+      agentName: curator!.name,
+      scope: "project",
+      storageRoot: "/storage",
+      workspaceRoot: "/workspace/app",
+    })).toBe("/workspace/app/.zcode/agent-memory/knowledge-curator");
+
+    const fs = new MemoryFileSystem();
+    const loaded = await loadPersistentAgentMemory({
+      fileSystemPort: fs,
+      memory,
+      profile: curator!,
+      workspaceRoot: "/workspace/app",
+    });
+    expect(loaded?.rootDir).toBe("/workspace/app/.zcode/agent-memory/knowledge-curator");
+    expect(loaded?.prompt).toContain("# Persistent Agent Memory");
+  });
 
   it("loads non-empty MEMORY.md and applies the exact 200-line truncation warning", () => {
     const index = Array.from({ length: 201 }, (_, index) => `- memory ${index + 1}`).join("\n");

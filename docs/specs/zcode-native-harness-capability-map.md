@@ -28,7 +28,7 @@ All profiles are owned by the ZCode runtime catalog and are adapted to ZCode's t
 | `test-engineer.md` | adapt | `apps/zcode-cli/packages/core/src/subagent/profile.ts`; `apps/zcode-cli/packages/bundled-skills/skills/zcode-verification/SKILL.md` | Verification names actual project commands and reports unrun checks as unverified. |
 | `evaluator.md` | adapt | `apps/zcode-cli/packages/core/src/subagent/profile.ts`; `apps/zcode-cli/packages/bundled-skills/skills/completion-gate/SKILL.md` | Evaluates delivered outcomes and observed evidence; no implicit pass from missing evidence. |
 | `self-improver.md` | adapt | `apps/zcode-cli/packages/core/src/subagent/profile.ts`; `apps/zcode-cli/packages/bundled-skills/skills/self-improvement/SKILL.md` | Evidence-first, reversible harness proposals; no claim of automatic durable improvement. |
-| `knowledge-curator.md` | adapt | `apps/zcode-cli/packages/core/src/subagent/profile.ts`; `apps/zcode-cli/packages/core/src/subagent/persistent-memory.ts` | Uses ZCode memory ownership; automatic cross-session lesson capture remains a separately listed gap. |
+| `knowledge-curator.md` | adapt | `apps/zcode-cli/packages/core/src/subagent/profile.ts`; `apps/zcode-cli/packages/core/src/subagent/persistent-memory.ts` | Built-in profile uses project `MEMORY.md` via persistent-memory Write/Edit when the feature is enabled; automatic post-task lesson capture remains a separately listed gap. |
 | `subagent-factory.md` | adapt | `apps/zcode-cli/packages/core/src/subagent/profile.ts`; `apps/zcode-cli/packages/core/src/subagent/profile.ts` | Can reason about profiles; does not imply that user-facing profile authoring, validation, and atomic persistence are complete. |
 
 ## Rules — 16 source rules
