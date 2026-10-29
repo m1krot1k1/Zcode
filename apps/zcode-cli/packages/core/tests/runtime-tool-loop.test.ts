@@ -4465,6 +4465,65 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[1]?.payload).toMatchObject({ childSessionIds: [] });
   });
 
+  it("does not plan repo work from an empty draft workspace", async () => {
+    const sessionId = createSessionId("runtime-swarm-empty-repo-workspace");
+    const eventStore = createTestSessionEventStore();
+    const listDirectory = vi.fn(async (request: { path: string }) => ({
+      durationMs: 0,
+      entries: [],
+      numEntries: 0,
+      path: request.path,
+    }));
+    const runTaskDag = vi.fn();
+    const requestedPrompts: string[] = [];
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", modelSelection: createTestModelSelection("provider-test/swarm-empty") },
+      {
+        eventStore,
+        fileSystemPort: { listDirectory } as never,
+        subagentPort: { runTaskDag } as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            const requestText = providerMessagesToText(request.messages);
+            requestedPrompts.push(requestText);
+            if (requestText.includes("Decide whether this task needs independent parallel work")) {
+              throw new Error("empty repo workspace must skip the planner");
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Откройте папку проекта, чтобы я проверил репозиторий.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Проверь этот репозиторий и исправь ошибки", undefined, {
+      intent: { orchestrationMode: "swarm" },
+    });
+
+    expect(result.response).toContain("Откройте папку проекта");
+    expect(listDirectory).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "." }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(requestedPrompts).toHaveLength(1);
+    expect(runTaskDag).not.toHaveBeenCalled();
+    const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
+      (event) => event.type === SessionEventType.SwarmRunUpdated,
+    );
+    expect(swarmEvents).toHaveLength(1);
+    expect(swarmEvents[0]?.payload).toMatchObject({
+      status: "failed",
+      taskCount: 0,
+      childSessionIds: [],
+      summary: expect.stringContaining("текущая папка пуста"),
+    });
+  });
+
   it("continues an explicit swarm leaf when the durable journal closes planning as completed", async () => {
     const sessionId = createSessionId("runtime-swarm-journal-leaf");
     const eventStore = createTestSessionEventStore();

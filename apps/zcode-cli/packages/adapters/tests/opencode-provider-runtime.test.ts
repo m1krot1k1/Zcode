@@ -777,6 +777,47 @@ describe("OpenCode SOCKS proxy bridge", () => {
     await close(targetServer);
   });
 
+  it("contains an upstream reset after CONNECT instead of emitting an uncaught socket error", async () => {
+    const targetSockets = new Set<Socket>();
+    const targetServer = createServer((socket) => {
+      targetSockets.add(socket);
+      socket.once("close", () => targetSockets.delete(socket));
+    });
+    await listen(targetServer);
+    const targetAddress = targetServer.address();
+    if (!targetAddress || typeof targetAddress === "string") throw new Error("missing target port");
+
+    const socksServer = createServer((socket) => {
+      void handleSocksFixture(socket, targetAddress.port);
+    });
+    await listen(socksServer);
+    const socksAddress = socksServer.address();
+    if (!socksAddress || typeof socksAddress === "string") throw new Error("missing SOCKS port");
+
+    const lease = await acquireOpenCodeSocksProxyLease(
+      `socks5://test-user:test-password@127.0.0.1:${socksAddress.port}`,
+      {},
+    );
+    const uncaughtErrors: Error[] = [];
+    const onUncaughtException = (error: Error): void => uncaughtErrors.push(error);
+    process.on("uncaughtException", onUncaughtException);
+    let tunnel: Socket | undefined;
+    try {
+      tunnel = (await sendConnect(lease!.localProxyUrl, targetAddress.port, true)) as Socket;
+      for (const socket of targetSockets) socket.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(uncaughtErrors).toEqual([]);
+      expect(tunnel.destroyed).toBe(true);
+    } finally {
+      process.off("uncaughtException", onUncaughtException);
+      tunnel?.destroy();
+      for (const socket of targetSockets) socket.destroy();
+      await lease?.dispose();
+      await close(socksServer);
+      await close(targetServer);
+    }
+  });
+
   it("retries an OpenCode rate limit once through the next SOCKS proxy", async () => {
     const previousList = process.env.ZCODE_HTTP_PROXY_LIST;
     const previousProxy = process.env.ZCODE_HTTP_PROXY;
@@ -898,7 +939,11 @@ async function close(server: ReturnType<typeof createServer>): Promise<void> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
 
-async function sendConnect(proxyUrl: string, targetPort: number): Promise<string> {
+async function sendConnect(
+  proxyUrl: string,
+  targetPort: number,
+  keepOpen = false,
+): Promise<string | Socket> {
   const proxy = new URL(proxyUrl);
   const socket = createConnection({ host: proxy.hostname, port: Number(proxy.port) });
   await new Promise<void>((resolve, reject) => {
@@ -914,12 +959,16 @@ async function sendConnect(proxyUrl: string, targetPort: number): Promise<string
       if (boundary < 0) return;
       socket.off("data", onData);
       const response = data.subarray(0, boundary).toString();
-      socket.destroy();
       if (!response.includes("200 Connection Established")) {
+        socket.destroy();
         reject(new Error("OpenCode SOCKS bridge did not establish CONNECT"));
         return;
       }
-      resolve("connected-through-socks");
+      if (keepOpen) resolve(socket);
+      else {
+        socket.destroy();
+        resolve("connected-through-socks");
+      }
     };
     socket.on("data", onData);
     socket.once("error", reject);

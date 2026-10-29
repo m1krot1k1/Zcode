@@ -1449,6 +1449,22 @@ async function executeSwarmRun(
     // 修复原因：显式选择「Рой」不表示单纯查询角色/文件清单也要创建编排波次；
     // 仅对完整匹配的 list-only 请求直达已选模型，附带实现工作的请求仍走 planner。
     if (isListOnlyOrchestrationRequest(task)) return false;
+    if (
+      isExistingCodebaseTask(task) &&
+      (await isWorkingDirectoryEmpty(this.fileSystemPort, this.workingDirectory, state))
+    ) {
+      // 原因：默认 draft workspace 可能完全为空；planner 仍会分配代码审查角色，导致 пустые ветки.
+      // 修复依据：только подтверждённо пустой cwd блокирует repo-задачу; ошибки FS проверки fail-open.
+      await publish({
+        swarmRunId,
+        status: "failed",
+        outcomeAcceptance: "unknown",
+        taskCount: 0,
+        childSessionIds: [],
+        summary: "Рой не запущен: текущая папка пуста. Выберите проект с файлами и отправьте задачу снова.",
+      });
+      return false;
+    }
     if (journalEligible) {
       journalFailClosed = true;
       await recoverAndHydrateSwarmJournal.call(this, {
@@ -1991,6 +2007,36 @@ function buildSwarmChildFailureSummary(snapshots: SubagentTaskSnapshot[]): strin
     `Сбой дочерних задач: ${lines.join("; ")}${remaining > 0 ? `; ещё ${remaining}` : ""}`,
     420,
   );
+}
+
+function isExistingCodebaseTask(task: string): boolean {
+  const mentionsExistingCode =
+    /\b(?:repository|repo|codebase|source\s+code|project\s+files|workspace\s+files|git\s+branch|git\s+status|pull\s+request|commit)\b|репозитори|кодовую\s+базу|исходн(?:ый\s+код|ики)|файлы\s+(?:проекта|репозитори)|ветк[ауе]\s+git|коммит/iu.test(
+      task,
+    );
+  const requestsInspectionOrChange =
+    /\b(?:review|audit|inspect|analy[sz]e|check|verify|test|debug|fix|refactor|change|update)\b|проверь|проверить|аудит|изучи|проанализируй|исправь|протестируй|провери|посмотри/iu.test(
+      task,
+    );
+  return mentionsExistingCode && requestsInspectionOrChange;
+}
+
+async function isWorkingDirectoryEmpty(
+  fileSystemPort: AgentRuntimeInternal["fileSystemPort"],
+  workingDirectory: string,
+  state: RegularTurnLoopState,
+): Promise<boolean> {
+  if (!fileSystemPort) return false;
+  try {
+    const directory = await fileSystemPort.listDirectory(
+      { path: workingDirectory, trace: state.turnTraceContext },
+      { signal: state.turnAbortSignal },
+    );
+    return directory.entries.every((entry) => entry.name === ".DS_Store");
+  } catch {
+    // Не превращаем сбой доступа к каталогу в ложное утверждение, что он пустой.
+    return false;
+  }
 }
 
 function buildSwarmPlannerPrompt(

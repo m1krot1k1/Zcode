@@ -617,8 +617,29 @@ async function handleHttpProxyClient(client: Socket, proxy: SocksProxyAddress): 
 }
 
 function closeSocketPair(client: Socket, upstream: Socket): void {
-  client.once("close", () => upstream.destroy());
-  upstream.once("close", () => client.destroy());
+  const onClientError = (): void => {
+    upstream.destroy();
+  };
+  const onUpstreamError = (): void => {
+    client.destroy();
+  };
+  const detach = (): void => {
+    client.off("error", onClientError);
+    upstream.off("error", onUpstreamError);
+  };
+  // 原因：SOCKS CONNECT 成功后移除了连接期的 error listener；ECONNRESET на прокси-сокете
+  // тогда становился uncaughtException и завершал весь workspace Agent со всеми ветками роя.
+  // 修复依据：оба сокета принадлежат одной паре; ошибка одного закрывает второй и остаётся ошибкой запроса.
+  client.once("error", onClientError);
+  upstream.once("error", onUpstreamError);
+  client.once("close", () => {
+    upstream.destroy();
+    detach();
+  });
+  upstream.once("close", () => {
+    client.destroy();
+    detach();
+  });
 }
 
 function parseAuthority(value: string): { hostname: string; port: number } {
