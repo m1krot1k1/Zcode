@@ -4465,6 +4465,94 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[1]?.payload).toMatchObject({ childSessionIds: [] });
   });
 
+  it("continues an explicit swarm leaf when the durable journal closes planning as completed", async () => {
+    const sessionId = createSessionId("runtime-swarm-journal-leaf");
+    const eventStore = createTestSessionEventStore();
+    const runTaskDag = vi.fn();
+    let status = "planning";
+    let revision = 0;
+    const transitions: string[] = [];
+    const sessionStore = Object.assign(new RecordingSessionStore(), {
+      async admitSwarmRun(input: { runID: string }) {
+        return {
+          created: true,
+          run: {
+            runID: input.runID,
+            revision,
+            ownerEpoch: 0,
+            status: "planning" as const,
+          },
+        };
+      },
+      async commitSwarmRunGraph() {
+        return false;
+      },
+      async transitionSwarmRun(input: { status: string; expectedRevision: number }) {
+        transitions.push(input.status);
+        const allowed =
+          status === "planning"
+            ? ["running", "failed", "cancelled", "interrupted", "completed"]
+            : status === "running"
+              ? ["completed", "failed", "cancelled", "interrupted"]
+              : [];
+        if (input.expectedRevision !== revision || !allowed.includes(input.status)) return false;
+        status = input.status;
+        revision += 1;
+        return true;
+      },
+      async reserveSwarmNodeAttempt() {
+        return { created: true, attempt: { revision: 0 } };
+      },
+      async transitionSwarmNodeAttempt() {
+        return true;
+      },
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", modelSelection: createTestModelSelection("provider-test/swarm") },
+      {
+        eventStore,
+        sessionStore,
+        subagentPort: { runTaskDag } as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            if (
+              providerMessagesToText(request.messages).includes(
+                "Decide whether this task needs independent parallel work",
+              )
+            ) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: JSON.stringify({
+                  decision: "leaf",
+                  reason: "A short greeting needs no delegation.",
+                }),
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "ordinary answer after the journal handoff",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Ку", undefined, {
+      inputId: "accepted-leaf-command",
+      intent: { orchestrationMode: "swarm" },
+    });
+
+    expect(result.response).toBe("ordinary answer after the journal handoff");
+    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(transitions).toEqual(["completed"]);
+    expect(status).toBe("completed");
+  });
+
   it("sends ordinary OpenCode chat directly to the selected model without a planner request", async () => {
     const sessionId = createSessionId("runtime-ordinary-chat-no-planner");
     const eventStore = createTestSessionEventStore();

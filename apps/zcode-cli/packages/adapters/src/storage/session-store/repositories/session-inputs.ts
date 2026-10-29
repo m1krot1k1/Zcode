@@ -1185,14 +1185,21 @@ export async function transitionSwarmRun(
   if (!SWARM_RUN_STATUSES.includes(input.status)) throw new Error("Invalid Swarm run status");
   assertSwarmDiagnosticSize(input.diagnosticCode);
   const current = db
-    .prepare("select status from swarm_run where root_session_id = ? and run_id = ? and revision = ? and owner_epoch = ? and time_terminal is null")
-    .get(input.rootSessionID, input.runID, input.expectedRevision, input.ownerEpoch) as { status: string } | undefined;
+    .prepare("select status, graph_json from swarm_run where root_session_id = ? and run_id = ? and revision = ? and owner_epoch = ? and time_terminal is null")
+    .get(input.rootSessionID, input.runID, input.expectedRevision, input.ownerEpoch) as
+    | { status: string; graph_json: string | null }
+    | undefined;
   if (!current) return false;
   const allowed: Record<string, readonly SwarmRunStatus[]> = {
-    planning: ["running", "failed", "cancelled", "interrupted"],
+    // 原因：显式「Рой」对不可拆分请求会把 planning 直接记为 completed，再交给普通 model turn。
+    // 修复依据：无 graph 的 planning→completed 是 leaf/pre-spawn handoff；已提交图仍必须先进入 running。
+    planning: ["running", "failed", "cancelled", "interrupted", "completed"],
     running: ["completed", "failed", "cancelled", "interrupted"],
   };
   if (!allowed[current.status]?.includes(input.status)) return false;
+  if (current.status === "planning" && input.status === "completed" && current.graph_json != null) {
+    return false;
+  }
   const now = input.now ?? Date.now();
   const terminal = SWARM_TERMINAL_RUN_STATUSES.has(input.status) ? now : null;
   const result = db

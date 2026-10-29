@@ -3921,6 +3921,63 @@ describe("ZCode Swarm durable journal", () => {
     }
   });
 
+  it("completes a planning run without a graph and rejects that jump after the graph is stored", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("leaf-handoff");
+    try {
+      const leaf = await admitAcceptedInput(store, admission(sessionID, "leaf-command"));
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: leaf.run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          status: "completed",
+          now: 150,
+        }),
+      ).toBe(true);
+      await expect(
+        store.getSwarmRun!({ rootSessionID: sessionID, runID: leaf.run.runID }),
+      ).resolves.toMatchObject({ status: "completed", revision: 1 });
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: leaf.run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          status: "completed",
+        }),
+      ).toBe(false);
+
+      const planned = await admitAcceptedInput(store, admission(sessionID, "planned-command"));
+      expect(
+        await store.commitSwarmRunGraph!({
+          rootSessionID: sessionID,
+          runID: planned.run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          graph,
+          now: 160,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: planned.run.runID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          status: "completed",
+          now: 170,
+        }),
+      ).toBe(false);
+      await expect(
+        store.getSwarmRun!({ rootSessionID: sessionID, runID: planned.run.runID }),
+      ).resolves.toMatchObject({ status: "planning", revision: 1 });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
   it("persists a validated graph and fences transitions with revision and owner epoch", async () => {
     const { tempRoot, store, sessionID } = await seedStore("graph-cas");
     const { run } = await admitAcceptedInput(store, admission(sessionID));
