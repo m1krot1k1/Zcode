@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ZCodePluginInfo } from "@zcode/shared";
+import type { SkillSummary, ZCodePluginInfo } from "@zcode/shared";
 import { storeItemMatches, type StorePluginItem } from "../src/settings/pluginStoreListing.js";
 import { filterPluginsByQuery } from "../src/settings/pluginCapabilityProjection.js";
+import { groupSkillsByPlugin } from "../src/settings/pluginManagedResourceGroups.js";
 
 describe("plugin name pinyin search", () => {
   const plugin = { id: "lark@official", name: "lark", marketplace: "official" } as ZCodePluginInfo;
@@ -43,5 +44,61 @@ describe("plugin name pinyin search", () => {
     expect(
       storeItemMatches({ ...item, name: "文档助手", listing: undefined }, "wdzs", "en-US"),
     ).toBe(true);
+  });
+});
+
+describe("skill search and install acceptance", () => {
+  const skill: SkillSummary = {
+    body: "",
+    description: "check the release notes",
+    enabled: true,
+    id: "skill-release-checklist",
+    name: "release-checklist",
+    path: "/home/.zcode/cli/plugins/cache/toolbox/skills/release-checklist/SKILL.md",
+    pluginName: "toolbox",
+    scope: "plugin",
+  };
+  const plugin = {
+    id: "toolbox@official",
+    name: "toolbox",
+    marketplace: "official",
+    components: [
+      {
+        kind: "skill",
+        items: [{ name: "release-checklist", description: "check the release notes" }],
+      },
+    ],
+  } as ZCodePluginInfo;
+  const installed: StorePluginItem = {
+    id: plugin.id,
+    name: plugin.name,
+    marketplace: plugin.marketplace,
+    installed: true,
+    restorable: false,
+    orphaned: false,
+    info: plugin,
+  };
+  const notInstalled: StorePluginItem = {
+    id: "toolbox@official",
+    name: "toolbox",
+    marketplace: "official",
+    installed: false,
+    restorable: false,
+    orphaned: false,
+  };
+
+  it("finds a materialized skill in the store and the skills list", () => {
+    expect(storeItemMatches(installed, "release-checklist", "en-US")).toBe(true);
+    expect(storeItemMatches(installed, "release notes", "en-US")).toBe(true);
+    expect(filterPluginsByQuery([plugin], "release-checklist")).toEqual([plugin]);
+    expect(groupSkillsByPlugin([skill], "release notes").plugin.map((item) => item.name)).toEqual([
+      "release-checklist",
+    ]);
+  });
+
+  it("does not invent a skill name for a plugin that has no component list", () => {
+    expect(storeItemMatches(notInstalled, "release-checklist", "en-US")).toBe(false);
+    expect(storeItemMatches(installed, "unrelated", "en-US")).toBe(false);
+    expect(groupSkillsByPlugin([skill], "unrelated").plugin).toEqual([]);
   });
 });

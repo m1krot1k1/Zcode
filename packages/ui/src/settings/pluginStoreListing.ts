@@ -389,6 +389,23 @@ export function groupItemsByCategory(
   return [...groups.entries()].map(([category, items]) => ({ category, items }));
 }
 
+export function skillComponentSearchText(
+  components:
+    | readonly { items: readonly { description?: string; name: string }[]; kind: string }[]
+    | undefined,
+): string[] {
+  if (!components) return [];
+  const texts: string[] = [];
+  for (const group of components) {
+    if (group.kind !== "skill") continue;
+    for (const item of group.items) {
+      texts.push(item.name);
+      if (item.description) texts.push(item.description);
+    }
+  }
+  return texts;
+}
+
 export function storeItemMatches(item: StorePluginItem, keyword: string, locale: string): boolean {
   return pluginSearchMatches(
     keyword,
@@ -400,6 +417,8 @@ export function storeItemMatches(item: StorePluginItem, keyword: string, locale:
       resolveItemDescription(item, locale) ?? "",
       item.listing?.category ?? "",
       item.listing?.author ?? "",
+      // 原因：技能名只在已物化的组件清单里。只搜插件名会让已安装技能在商店里搜不到。
+      ...skillComponentSearchText(item.info?.components),
     ],
     [item.name, item.listing?.displayName, ...Object.values(item.listing?.displayNameI18n ?? {})],
   );

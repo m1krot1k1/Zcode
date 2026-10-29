@@ -1,5 +1,6 @@
 import {
   resolveManagedPluginDisplay,
+  skillComponentSearchText,
   type StorePluginItem,
 } from "@/settings/pluginStoreListing.js";
 import type {
@@ -66,7 +67,14 @@ export function filterPluginsByQuery(
     const display = resolveManagedPluginDisplay(plugin, item, locale);
     return pluginSearchMatches(
       normalizedQuery,
-      [plugin.name, plugin.id, plugin.marketplace, display.name, display.description],
+      [
+        plugin.name,
+        plugin.id,
+        plugin.marketplace,
+        display.name,
+        display.description,
+        ...skillComponentSearchText(plugin.components ?? item?.info?.components),
+      ],
       [
         plugin.name,
         item?.listing?.displayName,
