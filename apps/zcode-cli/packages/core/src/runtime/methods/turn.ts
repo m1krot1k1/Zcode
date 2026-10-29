@@ -905,9 +905,11 @@ export async function executeTurnCommand(
           // 原因：internalSwarmRootRunId 只用于共享 root budget。把它当作再次规划的条件后，
           // 已分配的子任务会再开 planner 并继续拆分，短任务把共享 token budget 耗尽。
           // 修复依据：继续拆分只走角色允许的 Task/Agent，root 的 swarm/auto intent 才打开 planner。
+          // 原因：子代理可能继承 root 的 orchestration intent；修复依据：只有创建 root-run budget 的 turn 拥有 planner，后代仅能显式调用 Task/Agent 继续委派。
           if (
-            options?.intent?.orchestrationMode === "swarm" ||
-            options?.intent?.orchestrationMode === "auto"
+            ownsRootRunBudget &&
+            (options?.intent?.orchestrationMode === "swarm" ||
+              options?.intent?.orchestrationMode === "auto")
           ) {
             await executeSwarmRun.call(this, loopState, input, {
               rootRunId,
