@@ -67,16 +67,19 @@ describe("OpenCode Core task bridge dispatcher", () => {
     });
 
     await expect(
-      dispatch({
-        description: "Inspect task",
-        prompt: "Check the module",
-        subagent_type: "researcher",
-      }),
+      dispatch(
+        {
+          description: "Inspect task",
+          prompt: "Check the module",
+          subagent_type: "researcher",
+        },
+        { correlationId: "opencode-0123456789abcdef-0123456789abcdef" },
+      ),
     ).resolves.toBe("child result");
     expect(execute).toHaveBeenCalledTimes(1);
     const [call, options] = execute.mock.calls[0]!;
     expect(call).toMatchObject({ name: "Task", input: { subagent_type: "researcher" } });
-    expect(call.id).toMatch(/^opencode-/u);
+    expect(call.id).toBe("opencode-0123456789abcdef-0123456789abcdef");
     expect(options).toEqual({ model, signal, traceContext });
   });
 
@@ -103,16 +106,20 @@ describe("OpenCode Core task bridge dispatcher", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("marks only the Core unknown-agent validation so OpenCode can select an active profile", async () => {
-    const execute = vi.fn(async () => ({
-      success: false,
-      error: {
-        type: "tool_execution_failed",
-        message: "Agent type 'general-purpose' is not available. Choose one exact active role ID: researcher, implementer, reviewer",
-      },
-    }) as never);
+  it("marks only Core profile validation errors for safe OpenCode feedback", async () => {
+    const execute = vi.fn(
+      async () =>
+        ({
+          success: false,
+          error: {
+            type: "tool_execution_failed",
+            message:
+              "Agent type 'stale-role' is not available. Choose one exact active role ID: researcher, implementer, reviewer",
+          },
+        }) as never,
+    );
     const runtime = {
-      registry: { get: vi.fn((name: string) => name === "Task" ? {} : undefined) },
+      registry: { get: vi.fn((name: string) => (name === "Task" ? {} : undefined)) },
       getToolExecutor: () => ({ execute }),
     };
     const dispatch = createOpenCodeTaskDispatcher(runtime as never, {
@@ -123,11 +130,13 @@ describe("OpenCode Core task bridge dispatcher", () => {
       traceContext: {} as never,
     });
 
-    await expect(dispatch({
-      description: "Delegate",
-      prompt: "Inspect the repository",
-      subagent_type: "general-purpose",
-    })).rejects.toMatchObject({
+    await expect(
+      dispatch({
+        description: "Delegate",
+        prompt: "Inspect the repository",
+        subagent_type: "stale-role",
+      }),
+    ).rejects.toMatchObject({
       code: "agent_unknown_type",
       message: expect.stringContaining("Choose one exact active role ID"),
     });
@@ -157,6 +166,51 @@ describe("OpenCode Core task bridge dispatcher", () => {
       }),
     ).rejects.toThrow("Turn was cancelled.");
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("combines per-request MCP cancellation with the parent model signal", async () => {
+    const parentSignal = new AbortController().signal;
+    const requestController = new AbortController();
+    let finishExecution!: (value: unknown) => void;
+    let executionSignal: AbortSignal | undefined;
+    const execute = vi.fn((_call: unknown, options: { signal?: AbortSignal }) => {
+      executionSignal = options.signal;
+      return new Promise<unknown>((resolve) => {
+        finishExecution = resolve;
+      });
+    });
+    const runtime = {
+      registry: { get: vi.fn((name: string) => (name === "Task" ? {} : undefined)) },
+      getToolExecutor: () => ({ execute }),
+    };
+    const dispatch = createOpenCodeTaskDispatcher(runtime as never, {
+      allowedToolNames: ["Task"],
+      model: createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+      signal: parentSignal,
+      traceContext: {} as never,
+    });
+    const call = dispatch(
+      {
+        description: "Nested task",
+        prompt: "Continue the child chain",
+        subagent_type: "orchestrator",
+      },
+      {
+        correlationId: "opencode-0123456789abcdef-0123456789abcdef",
+        signal: requestController.signal,
+      },
+    );
+    await vi.waitFor(() => expect(executionSignal).toBeDefined());
+    requestController.abort();
+    expect(executionSignal?.aborted).toBe(true);
+    finishExecution({
+      success: true,
+      output: "settled",
+      serialization: { content: "settled" },
+    });
+    await expect(call).resolves.toBe("settled");
   });
 });
 
@@ -529,13 +583,13 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     );
     const model = createRuntimeModel(runtime as never, { selection: modelSelection });
     await expect(
-        runWithModelInvocationContext(
-          {
-            traceContext: { sessionId: childSessionId, turnId: childTurnId } as never,
-          },
-          () => model.generateText({ messages: [{ role: "user", content: "child" }] }),
-        ),
-      ).rejects.toThrow(rootRunId);
+      runWithModelInvocationContext(
+        {
+          traceContext: { sessionId: childSessionId, turnId: childTurnId } as never,
+        },
+        () => model.generateText({ messages: [{ role: "user", content: "child" }] }),
+      ),
+    ).rejects.toThrow(rootRunId);
     expect(providerCall).not.toHaveBeenCalled();
   });
 });

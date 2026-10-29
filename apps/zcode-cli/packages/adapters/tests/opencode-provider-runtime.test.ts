@@ -3,7 +3,11 @@ import { delimiter } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
-import { AgentErrorCode, DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS } from "@zcode/contracts";
+import {
+  AgentErrorCode,
+  DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS,
+  type Logger,
+} from "@zcode/contracts";
 import {
   acquireOpenCodeSocksProxyLease,
   createOpenCodeTaskBridge,
@@ -33,7 +37,7 @@ describe("projectOpenCodePrompt", () => {
             text: [
               "Available named agent types for Agent/Task tools:",
               "- start: ZCode entry role",
-              "- reviewer: Reviews code",
+              "- reviewer: Reviews code (Tools: Read, Agent, Task)",
               "- test-specialist: Runs tests (Tools: Bash)",
               "The following skills are available for use with the Skill tool:",
               "- review: Review code (file: /workspace/.zcode/skills/review/SKILL.md)",
@@ -72,6 +76,8 @@ describe("projectOpenCodePrompt", () => {
     expect(systemText).toContain("do not use OpenCode's native `task` tool");
     expect(contextText).toContain("start: ZCode entry role");
     expect(contextText).toContain("reviewer: Reviews code");
+    expect(contextText).toContain("(Tools: Read, zcode_task)");
+    expect(contextText).not.toContain("Tools: Read, Agent, Task");
     expect(contextText).not.toContain("general-purpose");
     expect(contextText).not.toContain("Explore");
     expect(contextText).toContain("test-specialist: Runs tests");
@@ -105,6 +111,34 @@ describe("projectOpenCodePrompt", () => {
     }
   });
 
+  it("does not advertise Core delegation aliases when the invocation has no bridge", () => {
+    const prompt = [
+      {
+        role: "user" as const,
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              "Available named agent types for Agent/Task tools:",
+              "- reviewer: Reviews code (Tools: Read, Agent, Task)",
+            ].join("\n"),
+          },
+        ],
+      },
+    ];
+
+    const projected = projectOpenCodePrompt(prompt, false);
+    expect(projected[0].role).toBe("user");
+    if (projected[0].role === "user") {
+      const text = projected[0].content[0];
+      expect(text.type).toBe("text");
+      if (text.type === "text") {
+        expect(text.text).not.toContain("Tools: Read, Agent, Task");
+        expect(text.text).toContain("(Tools: Read)");
+      }
+    }
+  });
+
   it("does not expose skill paths or claim load access when Core withheld Skill", () => {
     const prompt = [
       {
@@ -131,18 +165,39 @@ describe("projectOpenCodePrompt", () => {
 });
 
 describe("OpenCode ZCode task bridge", () => {
+  it("fails closed rather than exposing a generic role when Core supplies no roster", async () => {
+    await expect(
+      createOpenCodeTaskBridge({ executeTask: async () => "should not dispatch" }),
+    ).rejects.toThrow("opencode.agent-roster-unavailable");
+  });
+
   it("exposes authenticated invocation-scoped ZCode task and skill MCP tools", async () => {
     const received: unknown[] = [];
-    const bridge = await createOpenCodeTaskBridge({
-      executeTask: async (input) => {
-        received.push(input);
-        return "actual ZCode child transcript";
+    let taskCorrelationId: string | undefined;
+    const logs: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    const logger: Logger = {
+      debug: (message, context) => logs.push({ message, context }),
+      info: (message, context) => logs.push({ message, context }),
+      warn: (message, context) => logs.push({ message, context }),
+      error: (message, _error, context) => logs.push({ message, context }),
+      child: () => logger,
+    };
+    const bridge = await createOpenCodeTaskBridge(
+      {
+        allowedAgentTypes: ["test-specialist", "orchestrator"],
+        executeTask: async (input, context) => {
+          received.push(input);
+          taskCorrelationId = context.correlationId;
+          return "actual ZCode child transcript";
+        },
+        executeSkill: async (input) => {
+          received.push(input);
+          return "UNIQUE_ZCODE_SKILL_BODY_MARKER";
+        },
       },
-      executeSkill: async (input) => {
-        received.push(input);
-        return "UNIQUE_ZCODE_SKILL_BODY_MARKER";
-      },
-    });
+      undefined,
+      logger,
+    );
     const otherBridge = await createOpenCodeTaskBridge({
       executeSkill: async () => "other invocation",
     });
@@ -160,12 +215,16 @@ describe("OpenCode ZCode task bridge", () => {
       expect(unauthorized.status).toBe(401);
       await client.connect(transport);
       const result = await client.callTool({
-        name: "zcode_task",
+        name: "task",
         arguments: {
           description: "Inspect the runtime",
           prompt: "Return the branch name",
           subagent_type: "test-specialist",
         },
+      });
+      const tool = (await client.listTools()).tools.find((entry) => entry.name === "task");
+      expect(tool?.inputSchema.properties?.subagent_type).toMatchObject({
+        enum: ["test-specialist", "orchestrator"],
       });
       expect(result).toMatchObject({
         content: [{ type: "text", text: "actual ZCode child transcript" }],
@@ -175,8 +234,25 @@ describe("OpenCode ZCode task bridge", () => {
         prompt: "Return the branch name",
         subagent_type: "test-specialist",
       });
+      await expect(
+        client.callTool({
+          name: "task",
+          arguments: {
+            description: "Invalid generic role",
+            prompt: "Must fail before Core dispatch",
+            subagent_type: "general-purpose",
+          },
+        }),
+      ).resolves.toMatchObject({ isError: true });
+      expect(received).toHaveLength(1);
+      const taskLogs = logs.filter((entry) => entry.context?.event === "opencode.zcode_task");
+      expect(taskLogs.map((entry) => entry.context?.status)).toEqual(["started", "completed"]);
+      expect(taskLogs[0]?.context?.correlationId).toBe(taskCorrelationId);
+      expect(taskCorrelationId).toMatch(/^opencode-[a-f0-9]{16}-[a-f0-9]{16}$/u);
+      expect(JSON.stringify(taskLogs)).not.toContain("Return the branch name");
+      expect(JSON.stringify(taskLogs)).not.toContain("Inspect the runtime");
       const skillResult = await client.callTool({
-        name: "zcode_skill",
+        name: "skill",
         arguments: { skill: "review" },
       });
       expect(skillResult).toMatchObject({
@@ -185,7 +261,7 @@ describe("OpenCode ZCode task bridge", () => {
       expect(received[1]).toEqual({ skill: "review" });
       await otherClient.connect(otherTransport);
       await expect(otherClient.listTools()).resolves.toMatchObject({
-        tools: [{ name: "zcode_skill" }],
+        tools: [{ name: "skill" }],
       });
     } finally {
       await Promise.all([client.close(), otherClient.close()]);
@@ -199,6 +275,53 @@ describe("OpenCode ZCode task bridge", () => {
     ).rejects.toThrow();
   });
 
+  it("registers the semantic MCP name so OpenCode server prefix yields zcode_task", async () => {
+    const seenLevels: number[] = [];
+    const runLevel = async (level: number): Promise<string> => {
+      const bridge = await createOpenCodeTaskBridge({
+        allowedAgentTypes: ["orchestrator"],
+        executeTask: async (input) => {
+          expect(input.subagent_type).toBe("orchestrator");
+          expect(input.description).toBe(`Nested level ${level + 1}`);
+          return runLevel(level + 1);
+        },
+      });
+      const invocationConfig = createOpenCodeInvocationConfig(bridge);
+      const client = new Client({ name: `nested-bridge-${level}`, version: "1.0.0" });
+      const transport = new StreamableHTTPClientTransport(new URL(bridge.url), {
+        requestInit: { headers: { Authorization: `Bearer ${bridge.bearerToken}` } },
+      });
+
+      try {
+        await client.connect(transport);
+        const catalog = await client.listTools();
+        expect(catalog.tools.map((tool) => tool.name)).toEqual(["task"]);
+        // 修复依据：OpenCode 暴露工具时会添加 MCP 服务器名前缀。
+        expect(
+          catalog.tools.map((tool) => `${Object.keys(invocationConfig.mcp)[0]}_${tool.name}`),
+        ).toEqual(["zcode_task"]);
+        seenLevels.push(level);
+        if (level === 4) return "D4_RESULT";
+        const childResult = await client.callTool({
+          name: "task",
+          arguments: {
+            description: `Nested level ${level + 1}`,
+            prompt: `Continue at level ${level + 1}`,
+            subagent_type: "orchestrator",
+          },
+        });
+        const text = childResult.content.find((part) => part.type === "text");
+        return text?.type === "text" ? text.text : "missing child result";
+      } finally {
+        await client.close();
+        await bridge.dispose();
+      }
+    };
+
+    await expect(runLevel(1)).resolves.toBe("D4_RESULT");
+    expect(seenLevels).toEqual([1, 2, 3, 4]);
+  }, 20_000);
+
   it("stops admitting calls on cancellation and waits for an active child before disposing", async () => {
     const controller = new AbortController();
     let finishTask!: (result: string) => void;
@@ -208,6 +331,7 @@ describe("OpenCode ZCode task bridge", () => {
     });
     const bridge = await createOpenCodeTaskBridge(
       {
+        allowedAgentTypes: ["orchestrator"],
         executeTask: () =>
           new Promise<string>((resolve) => {
             finishTask = resolve;
@@ -221,10 +345,10 @@ describe("OpenCode ZCode task bridge", () => {
       requestInit: { headers: { Authorization: `Bearer ${bridge.bearerToken}` } },
     });
     await client.connect(transport);
-    await expect(client.listTools()).resolves.toMatchObject({ tools: [{ name: "zcode_task" }] });
+    await expect(client.listTools()).resolves.toMatchObject({ tools: [{ name: "task" }] });
     const call = client.callTool({
-      name: "zcode_task",
-      arguments: { description: "Wait", prompt: "Wait", subagent_type: "general-purpose" },
+      name: "task",
+      arguments: { description: "Wait", prompt: "Wait", subagent_type: "orchestrator" },
     });
     await started;
     controller.abort();
@@ -243,18 +367,192 @@ describe("OpenCode ZCode task bridge", () => {
     await client.close();
   }, 10_000);
 
+  it("forwards per-request MCP cancellation to the Core task callback", async () => {
+    const requestController = new AbortController();
+    let childSignal: AbortSignal | undefined;
+    let finishTask!: (result: string) => void;
+    let taskStarted!: () => void;
+    const lifecycleStatuses: unknown[] = [];
+    const started = new Promise<void>((resolve) => {
+      taskStarted = resolve;
+    });
+    const logger: Logger = {
+      debug: (_message, context) => lifecycleStatuses.push(context?.status),
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+      child: () => logger,
+    };
+    const bridge = await createOpenCodeTaskBridge(
+      {
+        allowedAgentTypes: ["orchestrator"],
+        executeTask: (_input, context) => {
+          childSignal = context.signal;
+          taskStarted();
+          return new Promise<string>((resolve) => {
+            finishTask = resolve;
+          });
+        },
+      },
+      undefined,
+      logger,
+    );
+    const client = new Client({ name: "bridge-request-cancel-test", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(bridge.url), {
+      requestInit: { headers: { Authorization: `Bearer ${bridge.bearerToken}` } },
+    });
+    await client.connect(transport);
+    const call = client.callTool(
+      {
+        name: "task",
+        arguments: { description: "Wait", prompt: "Wait", subagent_type: "orchestrator" },
+      },
+      undefined,
+      { signal: requestController.signal },
+    );
+    const callResult = call.then(
+      () => ({ rejected: false as const }),
+      () => ({ rejected: true as const }),
+    );
+    const waitForStage = async <T>(promise: Promise<T>, stage: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(new Error(`Timed out: ${stage}; lifecycle=${lifecycleStatuses.join(",")}`)),
+              1_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    try {
+      await waitForStage(started, "MCP handler start");
+      requestController.abort();
+      const signalAborted = new Promise<void>((resolve, reject) => {
+        if (!childSignal) {
+          reject(new Error("MCP task did not receive its request signal"));
+          return;
+        }
+        if (childSignal.aborted) {
+          resolve();
+          return;
+        }
+        childSignal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      await waitForStage(signalAborted, "MCP cancellation signal propagation");
+      expect(childSignal?.aborted).toBe(true);
+      finishTask("child settled after cancellation");
+      await expect(waitForStage(callResult, "cancelled client request")).resolves.toEqual({
+        rejected: true,
+      });
+    } finally {
+      finishTask?.("child settled during cleanup");
+      await waitForStage(client.close(), "client close");
+      await waitForStage(bridge.dispose(), "bridge dispose");
+    }
+  }, 10_000);
+
+  it("cancels only its own MCP response while a parallel task returns normally", async () => {
+    const cancelledController = new AbortController();
+    const finishers = new Map<string, (result: string) => void>();
+    let cancelledStarted!: () => void;
+    let siblingStarted!: () => void;
+    const started = {
+      cancelled: new Promise<void>((resolve) => {
+        cancelledStarted = resolve;
+      }),
+      sibling: new Promise<void>((resolve) => {
+        siblingStarted = resolve;
+      }),
+    };
+    const bridge = await createOpenCodeTaskBridge({
+      allowedAgentTypes: ["orchestrator"],
+      executeTask: (input) =>
+        new Promise<string>((resolve) => {
+          finishers.set(input.description, resolve);
+          if (input.description === "cancelled request") cancelledStarted();
+          if (input.description === "parallel sibling") siblingStarted();
+        }),
+    });
+    const client = new Client({ name: "bridge-parallel-cancel-test", version: "1.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(bridge.url), {
+      requestInit: { headers: { Authorization: `Bearer ${bridge.bearerToken}` } },
+    });
+    await client.connect(transport);
+    const cancelledCall = client.callTool(
+      {
+        name: "task",
+        arguments: {
+          description: "cancelled request",
+          prompt: "Wait for cancellation",
+          subagent_type: "orchestrator",
+        },
+      },
+      undefined,
+      { signal: cancelledController.signal },
+    );
+    const cancelledResult = cancelledCall.then(
+      () => ({ rejected: false as const }),
+      () => ({ rejected: true as const }),
+    );
+    const siblingCall = client.callTool({
+      name: "task",
+      arguments: {
+        description: "parallel sibling",
+        prompt: "Return the successful result",
+        subagent_type: "orchestrator",
+      },
+    });
+    try {
+      await Promise.all([started.cancelled, started.sibling]);
+      cancelledController.abort();
+      finishers.get("cancelled request")?.("cancelled child settled");
+      await expect(cancelledResult).resolves.toEqual({ rejected: true });
+      const disposal = bridge.dispose();
+      finishers.get("parallel sibling")?.("parallel sibling result");
+      await expect(siblingCall).resolves.toMatchObject({
+        content: [{ type: "text", text: "parallel sibling result" }],
+      });
+      await disposal;
+    } finally {
+      finishers.get("cancelled request")?.("cleanup");
+      finishers.get("parallel sibling")?.("cleanup");
+      await client.close();
+      await bridge.dispose();
+    }
+  }, 10_000);
+
   it("returns only the active profile roster for a known role error and redacts every other task error", async () => {
+    const logs: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    const logger: Logger = {
+      debug: (message, context) => logs.push({ message, context }),
+      info: (message, context) => logs.push({ message, context }),
+      warn: (message, context) => logs.push({ message, context }),
+      error: (message, _error, context) => logs.push({ message, context }),
+      child: () => logger,
+    };
     const roleError = Object.assign(
       new Error(
-        "Agent type 'general-purpose' is not available. Choose one exact active role ID: researcher, implementer, reviewer",
+        "Agent type 'stale-role' is not available. Choose one exact active role ID: researcher, implementer, reviewer",
       ),
       { code: AgentErrorCode.UNKNOWN_AGENT_TYPE },
     );
-    const bridge = await createOpenCodeTaskBridge({
-      executeTask: async () => {
-        throw roleError;
+    const bridge = await createOpenCodeTaskBridge(
+      {
+        allowedAgentTypes: ["stale-role"],
+        executeTask: async () => {
+          throw roleError;
+        },
       },
-    });
+      undefined,
+      logger,
+    );
     const client = new Client({ name: "bridge-safe-error-test", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(bridge.url), {
       requestInit: { headers: { Authorization: `Bearer ${bridge.bearerToken}` } },
@@ -262,9 +560,12 @@ describe("OpenCode ZCode task bridge", () => {
     try {
       await client.connect(transport);
       const result = await client.callTool({
-        name: "zcode_task",
-        arguments: { description: "Test", prompt: "Test", subagent_type: "general-purpose" },
+        name: "task",
+        arguments: { description: "Test", prompt: "Test", subagent_type: "stale-role" },
       });
+      const taskLogs = logs.filter((entry) => entry.context?.event === "opencode.zcode_task");
+      expect(taskLogs.map((entry) => entry.context?.status)).toEqual(["started", "failed"]);
+      expect(JSON.stringify(taskLogs)).not.toContain(roleError.message);
       expect(result).toMatchObject({
         isError: true,
         content: [
@@ -277,6 +578,7 @@ describe("OpenCode ZCode task bridge", () => {
       expect(JSON.stringify(result)).not.toContain("general-purpose");
 
       const genericBridge = await createOpenCodeTaskBridge({
+        allowedAgentTypes: ["reviewer"],
         executeTask: async () => {
           throw Object.assign(
             new Error(
@@ -293,7 +595,7 @@ describe("OpenCode ZCode task bridge", () => {
       try {
         await genericClient.connect(genericTransport);
         const genericResult = await genericClient.callTool({
-          name: "zcode_task",
+          name: "task",
           arguments: { description: "Test", prompt: "Test", subagent_type: "reviewer" },
         });
         expect(genericResult).toMatchObject({
@@ -588,6 +890,8 @@ describe("createOpenCodeModelProvider", () => {
 
     expect(config.mcp.zcode.timeout).toBe(OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS);
     expect(config.mcp.zcode.timeout).toBeGreaterThan(DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS);
+    expect(config.experimental.mcp_timeout).toBe(OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS);
+    expect(config.experimental.mcp_timeout).toBeGreaterThan(DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS);
     expect(config.mcp.zcode.url).toBe("http://127.0.0.1:43210/mcp");
     expect(config.mcp.zcode.headers.Authorization).toBe("Bearer invocation-scoped-test-token");
     expect(config.tools.task).toBe(false);

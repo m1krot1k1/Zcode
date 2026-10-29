@@ -888,294 +888,306 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
     }
   }, 30_000);
 
-  it("executes an explicit SWARM D1-D5 probe without a planner and returns the leaf result to root", async () => {
-    const rootSessionId = createSessionId("runtime-swarm-depth-five-chain");
-    const eventStore = createTestSessionEventStore();
-    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
-    const sessionStore = (
-      await import("./subagent-test-store.js")
-    ).createRecordingSubagentSessionStore();
-    const workspace = await mkdtemp(join(tmpdir(), "zcode-swarm-depth-five-chain-"));
-    const leafMarker = "SWARM_DEPTH_FIVE_LEAF_MARKER_85c1";
-    const childDescriptionBySession = new Map<SessionId, string>();
-    const sessionByDescription = new Map<string, SessionId>();
-    const taskCallDescriptions: string[] = [];
-    const taskCallCountsBySession = new Map<SessionId, number>();
-    const modelInvocationTrace: string[] = [];
-    const observedContextRequests: string[] = [];
-    const observedAgentRequests: string[] = [];
-    const plannerInvocationSessions: SessionId[] = [];
-    let contextSourceResolveCount = 0;
-    const bundledRuleMarker = "BUNDLED_HARNESS_RULE_REACHES_D1_D5_76ab";
-    const workspaceRuleMarker = "WORKSPACE_RULE_REACHES_D1_D5_93ef";
-    let rootSawLeafMarker = false;
+  it.each([
+    {
+      targetDepth: 5,
+      request: "Проверь только рекурсивную вложенность Task на глубине D1-D5.",
+    },
+    {
+      targetDepth: 100,
+      request: "Verify recursive Task delegation. Nesting chain depth 100.",
+    },
+  ])(
+    "executes a serial SWARM capability probe through D$targetDepth without a planner",
+    async ({ targetDepth, request }) => {
+      const depthSuffix = targetDepth === 100 ? "one-hundred" : "five";
+      const rootSessionId = createSessionId(`runtime-swarm-depth-${depthSuffix}-chain`);
+      const eventStore = createTestSessionEventStore();
+      const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+      const sessionStore = (
+        await import("./subagent-test-store.js")
+      ).createRecordingSubagentSessionStore();
+      const workspace = await mkdtemp(join(tmpdir(), `zcode-swarm-depth-${depthSuffix}-chain-`));
+      const leafMarker = `SWARM_DEPTH_${targetDepth}_LEAF_MARKER_85c1`;
+      const childDescriptionBySession = new Map<SessionId, string>();
+      const sessionByDescription = new Map<string, SessionId>();
+      const taskCallDescriptions: string[] = [];
+      const taskCallCountsBySession = new Map<SessionId, number>();
+      const modelInvocationTrace: string[] = [];
+      const observedContextRequests: string[] = [];
+      const observedAgentRequests: string[] = [];
+      const plannerInvocationSessions: SessionId[] = [];
+      let contextSourceResolveCount = 0;
+      const bundledRuleMarker = `BUNDLED_HARNESS_RULE_REACHES_D1_D${targetDepth}_76ab`;
+      const workspaceRuleMarker = `WORKSPACE_RULE_REACHES_D1_D${targetDepth}_93ef`;
+      let rootSawLeafMarker = false;
 
-    const runtime = createTestAgentRuntime(
-      rootSessionId,
-      {
-        mode: "build",
-        modelSelection: {
-          providerId: createModelProviderId("provider-swarm-depth-five-test"),
-          modelId: createModelId("swarm-depth-five-test-model"),
-        },
-        workingDirectory: workspace,
-      },
-      {
-        eventStore,
-        sessionStore,
-        runtimeTaskRegistry,
-        contextSourcePort: {
-          async resolveContextSources(request) {
-            contextSourceResolveCount += 1;
-            return {
-              workingDirectory: request.workingDirectory,
-              currentDate: request.currentDate,
-              envInfo: request.envInfo ?? {
-                cwd: request.workingDirectory,
-                platform: "test",
-                shell: "test",
-                osVersion: "test",
-                nodeVersion: "test",
-              },
-              diagnostics: [],
-              bundledHarnessRules: [
-                {
-                  id: "00-evidence",
-                  description: "Keep claims tied to runtime evidence.",
-                  content: bundledRuleMarker,
-                },
-              ],
-              workspaceRules: [
-                {
-                  filePath: join(workspace, ".zcode", "rules", "depth-probe.mdc"),
-                  fileName: "depth-probe.mdc",
-                  globs: [],
-                  alwaysApply: true,
-                  appliedBy: "alwaysApply",
-                  content: workspaceRuleMarker,
-                  bytesRead: workspaceRuleMarker.length,
-                  sizeBytes: workspaceRuleMarker.length,
-                  truncated: false,
-                },
-              ],
-            };
+      const runtime = createTestAgentRuntime(
+        rootSessionId,
+        {
+          mode: "build",
+          modelSelection: {
+            providerId: createModelProviderId("provider-swarm-depth-five-test"),
+            modelId: createModelId("swarm-depth-five-test-model"),
           },
+          workingDirectory: workspace,
         },
-        loadAgentDefinitions: async () => ({
-          activeAgents: normalizeAgentProfiles([
-            {
-              name: "recursive-probe",
-              description: "Agent profile for a bounded recursive Task regression.",
-              source: "project",
-              systemPrompt: "Follow the requested serial Task chain exactly.",
-              tools: ["Task"],
-              skills: [],
-            },
-          ]),
-        }),
-        eventSink: {
-          onSessionEvent(event) {
-            if (event.type !== SessionEventType.SubagentSpawned) return;
-            const payload = event.payload as {
-              childSessionId?: SessionId;
-              description?: string;
-              parentSessionId?: SessionId;
-            };
-            if (!payload.childSessionId || !payload.description) return;
-            childDescriptionBySession.set(payload.childSessionId, payload.description);
-            sessionByDescription.set(payload.description, payload.childSessionId);
-          },
-        },
-        modelFactory: createTestModelFactory({
-          async generateText(request, observation) {
-            const sessionId = observation.invocationContext?.traceContext?.sessionId;
-            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
-            const requestText = request.messages
-              .map((message) =>
-                typeof message.content === "string"
-                  ? message.content
-                  : JSON.stringify(message.content),
-              )
-              .join("\n");
-            observedContextRequests.push(requestText);
-            if (requestText.includes("Decide whether this task needs independent parallel work")) {
-              plannerInvocationSessions.push(sessionId);
-            } else {
-              observedAgentRequests.push(requestText);
-            }
-            const description = childDescriptionBySession.get(sessionId);
-            modelInvocationTrace.push(`${sessionId}:${description ?? "root"}`);
-            const promptDepth = requestText.match(/serial capability probe at D(\d)/)?.[1];
-            const depth = description ? Number(description.slice(1)) : Number(promptDepth ?? 0);
-            const nextDescription = `D${depth + 1}`;
-
-            if (sessionId === rootSessionId) {
-              rootSawLeafMarker = requestText.includes(leafMarker);
+        {
+          eventStore,
+          sessionStore,
+          runtimeTaskRegistry,
+          contextSourcePort: {
+            async resolveContextSources(request) {
+              contextSourceResolveCount += 1;
               return {
-                finishReason: "stop",
-                providerMetadata: undefined,
-                text: rootSawLeafMarker
-                  ? `Root received ${leafMarker}.`
-                  : "Root did not receive the leaf result.",
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-
-            if (depth === 5) {
-              return {
-                finishReason: "stop",
-                providerMetadata: undefined,
-                text: leafMarker,
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-
-            if (taskCallCountsBySession.has(sessionId)) {
-              return {
-                finishReason: "stop",
-                providerMetadata: undefined,
-                text: requestText.includes(leafMarker)
-                  ? `${description} returned ${leafMarker}.`
-                  : `${description} completed its child task.`,
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-
-            const availableTools = (request.tools ?? []).map((tool) => String(tool.name));
-            if (sessionId === rootSessionId) {
-              throw new Error(
-                `Unexpected root tool request during probe synthesis; tools=${availableTools.join(",")}`,
-              );
-            }
-            if (!availableTools.includes("Task")) {
-              throw new Error(
-                `${description ?? "Root"} cannot continue the recursive probe; tools=${availableTools.join(",")}`,
-              );
-            }
-            taskCallCountsBySession.set(
-              sessionId,
-              (taskCallCountsBySession.get(sessionId) ?? 0) + 1,
-            );
-            taskCallDescriptions.push(nextDescription);
-            return {
-              finishReason: "tool-calls",
-              providerMetadata: undefined,
-              text: "",
-              toolCalls: [
-                {
-                  id: `call_task_depth_${depth + 1}`,
-                  name: "Task",
-                  input: {
-                    description: nextDescription,
-                    prompt: `Continue the serial capability probe at ${nextDescription}.`,
-                    subagent_type: "orchestrator",
+                workingDirectory: request.workingDirectory,
+                currentDate: request.currentDate,
+                envInfo: request.envInfo ?? {
+                  cwd: request.workingDirectory,
+                  platform: "test",
+                  shell: "test",
+                  osVersion: "test",
+                  nodeVersion: "test",
+                },
+                diagnostics: [],
+                bundledHarnessRules: [
+                  {
+                    id: "00-evidence",
+                    description: "Keep claims tied to runtime evidence.",
+                    content: bundledRuleMarker,
                   },
-                },
-              ],
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            };
+                ],
+                workspaceRules: [
+                  {
+                    filePath: join(workspace, ".zcode", "rules", "depth-probe.mdc"),
+                    fileName: "depth-probe.mdc",
+                    globs: [],
+                    alwaysApply: true,
+                    appliedBy: "alwaysApply",
+                    content: workspaceRuleMarker,
+                    bytesRead: workspaceRuleMarker.length,
+                    sizeBytes: workspaceRuleMarker.length,
+                    truncated: false,
+                  },
+                ],
+              };
+            },
           },
-        }),
-      },
-    );
+          loadAgentDefinitions: async () => ({
+            activeAgents: normalizeAgentProfiles([
+              {
+                name: "recursive-probe",
+                description: "Agent profile for a bounded recursive Task regression.",
+                source: "project",
+                systemPrompt: "Follow the requested serial Task chain exactly.",
+                tools: ["Task"],
+                skills: [],
+              },
+            ]),
+          }),
+          eventSink: {
+            onSessionEvent(event) {
+              if (event.type !== SessionEventType.SubagentSpawned) return;
+              const payload = event.payload as {
+                childSessionId?: SessionId;
+                description?: string;
+                parentSessionId?: SessionId;
+              };
+              if (!payload.childSessionId || !payload.description) return;
+              childDescriptionBySession.set(payload.childSessionId, payload.description);
+              sessionByDescription.set(payload.description, payload.childSessionId);
+            },
+          },
+          modelFactory: createTestModelFactory({
+            async generateText(request, observation) {
+              const sessionId = observation.invocationContext?.traceContext?.sessionId;
+              if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+              const requestText = request.messages
+                .map((message) =>
+                  typeof message.content === "string"
+                    ? message.content
+                    : JSON.stringify(message.content),
+                )
+                .join("\n");
+              observedContextRequests.push(requestText);
+              if (
+                requestText.includes("Decide whether this task needs independent parallel work")
+              ) {
+                plannerInvocationSessions.push(sessionId);
+              } else {
+                observedAgentRequests.push(requestText);
+              }
+              const description = childDescriptionBySession.get(sessionId);
+              modelInvocationTrace.push(`${sessionId}:${description ?? "root"}`);
+              const promptDepth = requestText.match(/serial capability probe at D(\d+)/)?.[1];
+              const depth = description ? Number(description.slice(1)) : Number(promptDepth ?? 0);
+              const nextDescription = `D${depth + 1}`;
 
-    try {
-      let diagnosticTimer: ReturnType<typeof setTimeout> | undefined;
-      const result = await Promise.race([
-        runtime.executeTurn(
-          "Проверь только рекурсивную вложенность Task на глубине D1-D5.",
-          undefined,
-          { intent: { orchestrationMode: "swarm" } },
-        ),
-        new Promise<never>((_, reject) => {
-          diagnosticTimer = setTimeout(() => {
-            const firstChild = sessionByDescription.get("D1");
-            void (firstChild ? eventStore.getEvents(firstChild) : Promise.resolve([])).then(
-              (events) =>
-                reject(
-                  new Error(
-                    `Recursive probe did not finish; invocations=${JSON.stringify(modelInvocationTrace.slice(0, 12))}; children=${JSON.stringify([...sessionByDescription])}; contextResolves=${contextSourceResolveCount}; taskCount=${Object.keys(runtimeTaskRegistry.all()).length}; childEvents=${JSON.stringify(events.map(({ type }) => type))}`,
+              if (sessionId === rootSessionId) {
+                rootSawLeafMarker = requestText.includes(leafMarker);
+                return {
+                  finishReason: "stop",
+                  providerMetadata: undefined,
+                  text: rootSawLeafMarker
+                    ? `Root received ${leafMarker}.`
+                    : "Root did not receive the leaf result.",
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+
+              if (depth === targetDepth) {
+                return {
+                  finishReason: "stop",
+                  providerMetadata: undefined,
+                  text: leafMarker,
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+
+              if (taskCallCountsBySession.has(sessionId)) {
+                return {
+                  finishReason: "stop",
+                  providerMetadata: undefined,
+                  text: requestText.includes(leafMarker)
+                    ? `${description} returned ${leafMarker}.`
+                    : `${description} completed its child task.`,
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+
+              const availableTools = (request.tools ?? []).map((tool) => String(tool.name));
+              if (sessionId === rootSessionId) {
+                throw new Error(
+                  `Unexpected root tool request during probe synthesis; tools=${availableTools.join(",")}`,
+                );
+              }
+              if (!availableTools.includes("Task")) {
+                throw new Error(
+                  `${description ?? "Root"} cannot continue the recursive probe; tools=${availableTools.join(",")}`,
+                );
+              }
+              taskCallCountsBySession.set(
+                sessionId,
+                (taskCallCountsBySession.get(sessionId) ?? 0) + 1,
+              );
+              taskCallDescriptions.push(nextDescription);
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: `call_task_depth_${depth + 1}`,
+                    name: "Task",
+                    input: {
+                      description: nextDescription,
+                      prompt: `Continue the serial capability probe at ${nextDescription}.`,
+                      subagent_type: "orchestrator",
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          }),
+        },
+      );
+
+      try {
+        let diagnosticTimer: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          runtime.executeTurn(request, undefined, { intent: { orchestrationMode: "swarm" } }),
+          new Promise<never>((_, reject) => {
+            diagnosticTimer = setTimeout(() => {
+              const firstChild = sessionByDescription.get("D1");
+              void (firstChild ? eventStore.getEvents(firstChild) : Promise.resolve([])).then(
+                (events) =>
+                  reject(
+                    new Error(
+                      `Recursive probe did not finish; invocations=${JSON.stringify(modelInvocationTrace.slice(0, 12))}; children=${JSON.stringify([...sessionByDescription])}; contextResolves=${contextSourceResolveCount}; taskCount=${Object.keys(runtimeTaskRegistry.all()).length}; childEvents=${JSON.stringify(events.map(({ type }) => type))}`,
+                    ),
                   ),
-                ),
-            );
-          }, 5_000);
-        }),
-      ]).finally(() => {
-        if (diagnosticTimer) clearTimeout(diagnosticTimer);
-      });
-      const taskSnapshots = Object.values(runtimeTaskRegistry.all()).filter(
-        (snapshot) =>
-          snapshot.type === "local_agent" &&
-          childDescriptionBySession.has(snapshot.childSessionId!),
-      );
-      const childEvents = await Promise.all(
-        [...sessionByDescription.values()].map((sessionId) => eventStore.getEvents(sessionId)),
-      );
-      const allTaskEvents = [await eventStore.getEvents(rootSessionId), ...childEvents]
-        .flat()
-        .filter(
-          (event) =>
-            event.type === SessionEventType.ToolCallScheduled ||
-            event.type === SessionEventType.ToolCallResult,
+              );
+            }, 20_000);
+          }),
+        ]).finally(() => {
+          if (diagnosticTimer) clearTimeout(diagnosticTimer);
+        });
+        const taskSnapshots = Object.values(runtimeTaskRegistry.all()).filter(
+          (snapshot) =>
+            snapshot.type === "local_agent" &&
+            childDescriptionBySession.has(snapshot.childSessionId!),
         );
+        const childEvents = await Promise.all(
+          [...sessionByDescription.values()].map((sessionId) => eventStore.getEvents(sessionId)),
+        );
+        const allTaskEvents = [await eventStore.getEvents(rootSessionId), ...childEvents]
+          .flat()
+          .filter(
+            (event) =>
+              event.type === SessionEventType.ToolCallScheduled ||
+              event.type === SessionEventType.ToolCallResult,
+          );
 
-      expect(taskCallDescriptions).toEqual(["D2", "D3", "D4", "D5"]);
-      expect(sessionByDescription.size).toBe(5);
-      expect([...sessionByDescription.keys()]).toEqual(["D1", "D2", "D3", "D4", "D5"]);
-      expect(taskSnapshots).toHaveLength(5);
-      expect(taskSnapshots.map((snapshot) => snapshot.description)).toEqual([
-        "D1",
-        "D2",
-        "D3",
-        "D4",
-        "D5",
-      ]);
-      expect(taskSnapshots[0]?.parentSessionId).toBe(rootSessionId);
-      for (let index = 1; index < 5; index += 1) {
-        expect(taskSnapshots[index]?.parentSessionId).toBe(
-          taskSnapshots[index - 1]?.childSessionId,
+        const expectedDescriptions = Array.from(
+          { length: targetDepth },
+          (_, index) => `D${index + 1}`,
         );
-      }
-      expect(new Set(taskSnapshots.map((snapshot) => snapshot.rootRunId)).size).toBe(1);
-      expect(taskSnapshots.every((snapshot) => snapshot.status === "completed")).toBe(true);
-      for (let index = 0; index < taskSnapshots.length; index += 1) {
+        expect(taskCallDescriptions).toEqual(expectedDescriptions.slice(1));
+        expect(sessionByDescription.size).toBe(targetDepth);
+        expect([...sessionByDescription.keys()]).toEqual(expectedDescriptions);
+        expect(taskSnapshots).toHaveLength(targetDepth);
+        expect(taskSnapshots.map((snapshot) => snapshot.description)).toEqual(expectedDescriptions);
+        expect(taskSnapshots[0]?.parentSessionId).toBe(rootSessionId);
+        for (let index = 1; index < targetDepth; index += 1) {
+          expect(taskSnapshots[index]?.parentSessionId).toBe(
+            taskSnapshots[index - 1]?.childSessionId,
+          );
+        }
+        expect(new Set(taskSnapshots.map((snapshot) => snapshot.rootRunId)).size).toBe(1);
+        expect(taskSnapshots.every((snapshot) => snapshot.status === "completed")).toBe(true);
+        for (let index = 0; index < taskSnapshots.length; index += 1) {
+          expect(
+            taskSnapshots.filter(
+              (snapshot) => snapshot.parentSessionId === taskSnapshots[index]?.parentSessionId,
+            ),
+          ).toHaveLength(1);
+        }
+        expect(plannerInvocationSessions).not.toContain(rootSessionId);
+        for (const description of expectedDescriptions.slice(0, -1)) {
+          expect(taskCallCountsBySession.get(sessionByDescription.get(description)!)).toBe(1);
+        }
+        expect(taskCallCountsBySession.has(sessionByDescription.get(`D${targetDepth}`)!)).toBe(
+          false,
+        );
+        expect(childEvents).toHaveLength(targetDepth);
         expect(
-          taskSnapshots.filter(
-            (snapshot) => snapshot.parentSessionId === taskSnapshots[index]?.parentSessionId,
-          ),
-        ).toHaveLength(1);
+          allTaskEvents.filter((event) => event.type === SessionEventType.ToolCallScheduled),
+        ).toHaveLength(targetDepth - 1);
+        expect(
+          allTaskEvents.filter((event) => event.type === SessionEventType.ToolCallResult),
+        ).toHaveLength(targetDepth - 1);
+        const scheduledToolNames = allTaskEvents
+          .filter((event) => event.type === SessionEventType.ToolCallScheduled)
+          .map((event) => (event.payload as { toolName: string }).toolName);
+        expect(scheduledToolNames.filter((name) => name === "Task")).toHaveLength(targetDepth - 1);
+        expect(scheduledToolNames.filter((name) => name === "Agent")).toHaveLength(0);
+        expect(rootSawLeafMarker).toBe(true);
+        expect(result.response).toContain(leafMarker);
+        expect(contextSourceResolveCount).toBe(1);
+        expect(observedContextRequests.length).toBeGreaterThanOrEqual(6);
+        expect(observedAgentRequests.every((request) => request.includes(bundledRuleMarker))).toBe(
+          true,
+        );
+        expect(
+          observedAgentRequests.every((request) => request.includes(workspaceRuleMarker)),
+        ).toBe(true);
+      } finally {
+        await runtime.closeBrowserSession();
       }
-      expect(plannerInvocationSessions).not.toContain(rootSessionId);
-      for (const description of ["D1", "D2", "D3", "D4"]) {
-        expect(taskCallCountsBySession.get(sessionByDescription.get(description)!)).toBe(1);
-      }
-      expect(taskCallCountsBySession.has(sessionByDescription.get("D5")!)).toBe(false);
-      expect(childEvents).toHaveLength(5);
-      expect(
-        allTaskEvents.filter((event) => event.type === SessionEventType.ToolCallScheduled),
-      ).toHaveLength(4);
-      expect(
-        allTaskEvents.filter((event) => event.type === SessionEventType.ToolCallResult),
-      ).toHaveLength(4);
-      const scheduledToolNames = allTaskEvents
-        .filter((event) => event.type === SessionEventType.ToolCallScheduled)
-        .map((event) => (event.payload as { toolName: string }).toolName);
-      expect(scheduledToolNames.filter((name) => name === "Task")).toHaveLength(4);
-      expect(scheduledToolNames.filter((name) => name === "Agent")).toHaveLength(0);
-      expect(rootSawLeafMarker).toBe(true);
-      expect(result.response).toContain(leafMarker);
-      expect(contextSourceResolveCount).toBe(1);
-      expect(observedContextRequests.length).toBeGreaterThanOrEqual(6);
-      expect(observedAgentRequests.every((request) => request.includes(bundledRuleMarker))).toBe(
-        true,
-      );
-      expect(observedAgentRequests.every((request) => request.includes(workspaceRuleMarker))).toBe(
-        true,
-      );
-    } finally {
-      await runtime.closeBrowserSession();
-    }
-  }, 30_000);
+    },
+    60_000,
+  );
 });
 
 function nodeForPrompt(prompt: string, marker: string): boolean {

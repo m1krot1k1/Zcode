@@ -1184,7 +1184,7 @@ describe("AgentRuntime tool loop", () => {
 
     const subagentPort = (parentRuntime as any).subagentPort;
     const output = await subagentPort.run({
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "child starts background bash",
       parentToolCallId: "call_default_child_seal",
       prompt: "start a background bash and finish",
@@ -3615,7 +3615,8 @@ describe("AgentRuntime tool loop", () => {
     const order: string[] = [];
     const appendEvent = eventStore.append.bind(eventStore);
     eventStore.append = async (event) => {
-      if (event.type === SessionEventType.SwarmRunUpdated) order.push(`projection:${String((event.payload as { status?: string }).status)}`);
+      if (event.type === SessionEventType.SwarmRunUpdated)
+        order.push(`projection:${String((event.payload as { status?: string }).status)}`);
       return appendEvent(event);
     };
     let admitted = false;
@@ -3632,6 +3633,7 @@ describe("AgentRuntime tool loop", () => {
             runID: input.runID,
             revision: runRevision,
             ownerEpoch: 0,
+            status: "planning" as const,
           },
         };
       },
@@ -3677,7 +3679,11 @@ describe("AgentRuntime tool loop", () => {
           };
           await runOptions.persistSwarmNodeAttempt?.({ phase: "reserved", ...identity });
           await runOptions.persistSwarmNodeAttempt?.({ phase: "running", ...identity });
-          await runOptions.persistSwarmNodeAttempt?.({ phase: "completed", ...identity, resultText: "done" });
+          await runOptions.persistSwarmNodeAttempt?.({
+            phase: "completed",
+            ...identity,
+            resultText: "done",
+          });
         }
         return {
           status: "completed",
@@ -3710,8 +3716,18 @@ describe("AgentRuntime tool loop", () => {
                   graph: {
                     max_parallel: 2,
                     nodes: [
-                      { id: "branch-a", description: "A", prompt: "A", subagent_type: "researcher" },
-                      { id: "branch-b", description: "B", prompt: "B", subagent_type: "implementer" },
+                      {
+                        id: "branch-a",
+                        description: "A",
+                        prompt: "A",
+                        subagent_type: "researcher",
+                      },
+                      {
+                        id: "branch-b",
+                        description: "B",
+                        prompt: "B",
+                        subagent_type: "implementer",
+                      },
                     ],
                   },
                 }),
@@ -3729,15 +3745,24 @@ describe("AgentRuntime tool loop", () => {
       },
     );
 
-    const options = { inputId: "accepted-command-1", intent: { orchestrationMode: "swarm" as const } };
+    const options = {
+      inputId: "accepted-command-1",
+      intent: { orchestrationMode: "swarm" as const },
+    };
     await runtime.executeTurn("Implement this as a swarm", undefined, options);
-    await expect(runtime.executeTurn("Implement this as a swarm", undefined, options)).rejects.toMatchObject({
+    await expect(
+      runtime.executeTurn("Implement this as a swarm", undefined, options),
+    ).rejects.toMatchObject({
       cause: expect.objectContaining({
         context: expect.objectContaining({ code: "SWARM_DUPLICATE_INPUT_JOURNALED" }),
       }),
     });
 
     expect(dagDispatchCount).toBe(1);
+    expect(order).toContain("projection:planning");
+    expect(order).not.toContain("run:planning");
+    expect(order.indexOf("admit")).toBeLessThan(order.indexOf("projection:planning"));
+    expect(order.indexOf("projection:planning")).toBeLessThan(order.indexOf("graph_saved"));
     expect(order.indexOf("graph_saved")).toBeLessThan(order.indexOf("run:running"));
     expect(order.indexOf("run:running")).toBeLessThan(order.indexOf("dag_dispatch"));
     expect(order.indexOf("run:running")).toBeLessThan(order.indexOf("projection:running"));
@@ -3789,7 +3814,11 @@ describe("AgentRuntime tool loop", () => {
       async listSwarmRuns(input: { statuses: string[] }) {
         return input.statuses.includes("running") ? [priorRun] : [];
       },
-      async claimSwarmRunOwner(input: { expectedRevision: number; expectedOwnerEpoch: number; ownerEpoch: number }) {
+      async claimSwarmRunOwner(input: {
+        expectedRevision: number;
+        expectedOwnerEpoch: number;
+        ownerEpoch: number;
+      }) {
         expect(input).toMatchObject({ expectedRevision: 8, expectedOwnerEpoch: 4, ownerEpoch: 5 });
         calls.push("claim");
         return true;
@@ -3798,12 +3827,20 @@ describe("AgentRuntime tool loop", () => {
         calls.push("list_attempts");
         return [priorAttempt];
       },
-      async transitionSwarmNodeAttempt(input: { expectedRevision: number; ownerEpoch: number; status: string }) {
+      async transitionSwarmNodeAttempt(input: {
+        expectedRevision: number;
+        ownerEpoch: number;
+        status: string;
+      }) {
         expect(input).toMatchObject({ expectedRevision: 5, ownerEpoch: 5, status: "interrupted" });
         calls.push("attempt_interrupted");
         return true;
       },
-      async transitionSwarmRun(input: { expectedRevision: number; ownerEpoch: number; status: string }) {
+      async transitionSwarmRun(input: {
+        expectedRevision: number;
+        ownerEpoch: number;
+        status: string;
+      }) {
         if (input.status === "interrupted") {
           expect(input).toMatchObject({ expectedRevision: 9, ownerEpoch: 5 });
           calls.push("run_interrupted");
@@ -4025,7 +4062,10 @@ describe("AgentRuntime tool loop", () => {
     const requests: string[] = [];
     const runtime = createTestAgentRuntime(
       sessionId,
-      { mode: "build", modelSelection: createTestModelSelection("opencode/deepseek-v4.1-flash-free") },
+      {
+        mode: "build",
+        modelSelection: createTestModelSelection("opencode/deepseek-v4.1-flash-free"),
+      },
       {
         eventStore,
         subagentPort: { runTaskDag } as never,
@@ -4080,7 +4120,10 @@ describe("AgentRuntime tool loop", () => {
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
-                text: JSON.stringify({ decision: "leaf", reason: "The implementation is one task." }),
+                text: JSON.stringify({
+                  decision: "leaf",
+                  reason: "The implementation is one task.",
+                }),
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
@@ -4209,7 +4252,7 @@ describe("AgentRuntime tool loop", () => {
       "Verify recursive agent nesting D1-D5, each level spawning A/B/C/D",
       undefined,
       {
-      intent: { orchestrationMode: "swarm" },
+        intent: { orchestrationMode: "swarm" },
       },
     );
 

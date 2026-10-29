@@ -1,8 +1,13 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { createServer as createHttpServer, type IncomingMessage } from "node:http";
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { createConnection, createServer, isIP, type Server, type Socket } from "node:net";
 import { domainToASCII } from "node:url";
-import { AgentErrorCode } from "@zcode/contracts";
+import { AgentErrorCode, type Logger } from "@zcode/contracts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -44,11 +49,17 @@ export interface OpenCodeSkillInput {
 }
 
 export interface OpenCodeTaskBridgeExecutors {
-  executeTask?: (input: OpenCodeTaskInput) => Promise<string>;
+  /** Immutable Core role catalog for the owning model request. */
+  allowedAgentTypes?: readonly string[];
+  executeTask?: (
+    input: OpenCodeTaskInput,
+    context: { correlationId: string; signal?: AbortSignal },
+  ) => Promise<string>;
   executeSkill?: (input: OpenCodeSkillInput) => Promise<string>;
 }
 
 export interface OpenCodeTaskBridge {
+  readonly bridgeId: string;
   readonly url: string;
   readonly bearerToken: string;
   dispose(): Promise<void>;
@@ -61,7 +72,10 @@ const SAFE_AGENT_PROFILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 function getSafeUnknownAgentRoleMessage(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const candidate = error as { code?: unknown; message?: unknown };
-  if (candidate.code !== AgentErrorCode.UNKNOWN_AGENT_TYPE || typeof candidate.message !== "string") {
+  if (
+    candidate.code !== AgentErrorCode.UNKNOWN_AGENT_TYPE ||
+    typeof candidate.message !== "string"
+  ) {
     return undefined;
   }
   const match = UNKNOWN_AGENT_ROLE_MESSAGE.exec(candidate.message);
@@ -81,13 +95,30 @@ function getSafeUnknownAgentRoleMessage(error: unknown): string | undefined {
 export async function createOpenCodeTaskBridge(
   executors: OpenCodeTaskBridgeExecutors,
   signal?: AbortSignal,
+  logger?: Logger,
 ): Promise<OpenCodeTaskBridge> {
   if (!executors.executeTask && !executors.executeSkill) {
     throw new Error("opencode.runtime-bridge-without-capabilities");
   }
+  const allowedAgentTypes = executors.executeTask
+    ? [...new Set(executors.allowedAgentTypes ?? [])]
+    : [];
+  if (
+    executors.executeTask &&
+    (allowedAgentTypes.length === 0 ||
+      allowedAgentTypes.some((profile) => profile.trim().length === 0))
+  ) {
+    throw new Error("opencode.agent-roster-unavailable");
+  }
+  const agentTypeSchema = allowedAgentTypes.length
+    ? z.enum(allowedAgentTypes as [string, ...string[]])
+    : undefined;
   const bearerToken = randomBytes(32).toString("base64url");
+  const bridgeId = randomBytes(8).toString("hex");
   const pendingCalls = new Set<Promise<unknown>>();
-  const activePosts = new Set<Promise<void>>();
+  const activePosts = new Map<Promise<void>, ServerResponse>();
+  const cancelledResponses = new Set<ServerResponse>();
+  const requestResponseStorage = new AsyncLocalStorage<ServerResponse>();
   const mcpServer = new McpServer({ name: "zcode-runtime", version: "1.0.0" });
   const transport = new StreamableHTTPServerTransport({
     // OpenCode sends initialize, initialized, list and tool calls as separate HTTP requests.
@@ -104,79 +135,129 @@ export async function createOpenCodeTaskBridge(
   signal?.addEventListener("abort", onAbort, { once: true });
   if (signal?.aborted) acceptingTools = false;
 
-  if (executors.executeTask) mcpServer.registerTool(
-    "zcode_task",
-    {
-      title: "Delegate to a ZCode agent",
-      description:
-        "Run a task using a named ZCode agent profile. The task executes in the current ZCode session and returns its actual result.",
-      inputSchema: {
-        description: z.string().min(1).max(500),
-        prompt: z.string().min(1).max(20_000),
-        subagent_type: z.string().min(1).max(128),
+  if (executors.executeTask)
+    mcpServer.registerTool(
+      // 修复依据：OpenCode 会在远程 MCP 工具名前添加服务器名 `zcode_`；若此处再注册 `zcode_task`，模型会看到 `zcode_zcode_task`，与系统提示不一致。
+      // 因此只注册语义名 `task`，由 OpenCode 生成系统提示约定的 `zcode_task`。
+      "task",
+      {
+        title: "Delegate to a ZCode agent",
+        description:
+          "Run a task using a named ZCode agent profile. The task executes in the current ZCode session and returns its actual result.",
+        inputSchema: {
+          description: z.string().min(1).max(500),
+          prompt: z.string().min(1).max(20_000),
+          subagent_type: agentTypeSchema!,
+        },
       },
-    },
-    async (input) => {
-      if (!acceptingTools || signal?.aborted) {
-        return {
-          content: [{ type: "text", text: "The ZCode task bridge is no longer active." }],
-          isError: true,
-        };
-      }
-      const call = executors.executeTask!(input as OpenCodeTaskInput);
-      pendingCalls.add(call);
-      try {
-        const result = await call;
-        return { content: [{ type: "text", text: result }] };
-      } catch (error) {
-        // Never return arbitrary Core/provider error text: it may contain credentials or paths.
-        const safeRoleFeedback = getSafeUnknownAgentRoleMessage(error);
-        return {
-          content: [{
-            type: "text",
-            text: safeRoleFeedback ?? "The ZCode agent task failed. See the ZCode conversation for details.",
-          }],
-          isError: true,
-        };
-      } finally {
-        pendingCalls.delete(call);
-      }
-    },
-  );
+      async (input, extra) => {
+        if (!acceptingTools || signal?.aborted) {
+          return {
+            content: [{ type: "text", text: "The ZCode task bridge is no longer active." }],
+            isError: true,
+          };
+        }
+        const startedAt = Date.now();
+        const callId = randomBytes(8).toString("hex");
+        const correlationId = `opencode-${bridgeId}-${callId}`;
+        const taskSignal = extra.signal;
+        const requestResponse = requestResponseStorage.getStore();
+        logger?.debug("OpenCode ZCode task MCP call started", {
+          correlationId,
+          event: "opencode.zcode_task",
+          status: "started",
+        });
+        const call = Promise.resolve().then(() =>
+          executors.executeTask!(input as OpenCodeTaskInput, { correlationId, signal: taskSignal }),
+        );
+        pendingCalls.add(call);
+        try {
+          const result = await call;
+          logger?.debug("OpenCode ZCode task MCP call completed", {
+            correlationId,
+            durationMs: Date.now() - startedAt,
+            event: "opencode.zcode_task",
+            status: "completed",
+          });
+          return { content: [{ type: "text", text: result }] };
+        } catch (error) {
+          // 原因：MCP 超时过去看不到请求是否到达 Core、执行耗时或是否取消；只记录安全元数据。
+          // prompt、描述和原始错误可能包含凭据或本地数据，禁止进入日志。
+          logger?.warn("OpenCode ZCode task MCP call failed", {
+            correlationId,
+            durationMs: Date.now() - startedAt,
+            errorName:
+              error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(error.name)
+                ? error.name
+                : "unknown",
+            event: "opencode.zcode_task",
+            rootSignalAborted: signal?.aborted ?? false,
+            status: "failed",
+          });
+          // Never return arbitrary Core/provider error text: it may contain credentials or paths.
+          const safeRoleFeedback = getSafeUnknownAgentRoleMessage(error);
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  safeRoleFeedback ??
+                  "The ZCode agent task failed. See the ZCode conversation for details.",
+              },
+            ],
+            isError: true,
+          };
+        } finally {
+          pendingCalls.delete(call);
+          // 取消关闭对应 JSON-RPC response，其他并行 MCP 调用保持不变。
+          if (taskSignal?.aborted && requestResponse && !requestResponse.writableEnded) {
+            cancelledResponses.add(requestResponse);
+            requestResponse.destroy();
+          }
+        }
+      },
+    );
 
-  if (executors.executeSkill) mcpServer.registerTool(
-    "zcode_skill",
-    {
-      title: "Load a ZCode skill",
-      description:
-        "Load the full instructions for one skill listed in the current ZCode context. Use its exact skill name; never read a skill file path directly.",
-      inputSchema: {
-        skill: z.string().min(1).max(256),
-        args: z.string().max(20_000).optional(),
+  if (executors.executeSkill)
+    mcpServer.registerTool(
+      // Keep the OpenCode-visible alias aligned with the prompt projection (`zcode_skill`).
+      "skill",
+      {
+        title: "Load a ZCode skill",
+        description:
+          "Load the full instructions for one skill listed in the current ZCode context. Use its exact skill name; never read a skill file path directly.",
+        inputSchema: {
+          skill: z.string().min(1).max(256),
+          args: z.string().max(20_000).optional(),
+        },
       },
-    },
-    async (input) => {
-      if (!acceptingTools || signal?.aborted) {
-        return {
-          content: [{ type: "text", text: "The ZCode skill bridge is no longer active." }],
-          isError: true,
-        };
-      }
-      const call = executors.executeSkill!(input as OpenCodeSkillInput);
-      pendingCalls.add(call);
-      try {
-        return { content: [{ type: "text", text: await call }] };
-      } catch {
-        // SkillPort errors can contain local paths; expose only a fixed provider-safe message.
-        return {
-          content: [{ type: "text", text: "The ZCode skill could not be loaded. See the ZCode conversation for details." }],
-          isError: true,
-        };
-      } finally {
-        pendingCalls.delete(call);
-      }
-    },
-  );
+      async (input) => {
+        if (!acceptingTools || signal?.aborted) {
+          return {
+            content: [{ type: "text", text: "The ZCode skill bridge is no longer active." }],
+            isError: true,
+          };
+        }
+        const call = executors.executeSkill!(input as OpenCodeSkillInput);
+        pendingCalls.add(call);
+        try {
+          return { content: [{ type: "text", text: await call }] };
+        } catch {
+          // SkillPort errors can contain local paths; expose only a fixed provider-safe message.
+          return {
+            content: [
+              {
+                type: "text",
+                text: "The ZCode skill could not be loaded. See the ZCode conversation for details.",
+              },
+            ],
+            isError: true,
+          };
+        } finally {
+          pendingCalls.delete(call);
+        }
+      },
+    );
 
   await mcpServer.connect(transport);
   const httpServer = createHttpServer((request, response) => {
@@ -195,12 +276,28 @@ export async function createOpenCodeTaskBridge(
       response.end();
       return;
     }
-    const requestHandler = transport.handleRequest(request, response).catch(() => {
-      if (!response.headersSent) response.writeHead(500);
-      response.end();
-    });
+    const requestStartedAt = Date.now();
+    const requestHandler = requestResponseStorage
+      .run(response, () => transport.handleRequest(request, response))
+      .catch((error: unknown) => {
+        const errorName =
+          error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(error.name)
+            ? error.name
+            : "unknown";
+        logger?.warn("OpenCode MCP transport request failed", {
+          bridgeId,
+          durationMs: Date.now() - requestStartedAt,
+          errorName,
+          event: "opencode.mcp.transport.failed",
+          method: request.method ?? "unknown",
+          responseHeadersSent: response.headersSent,
+          responseStatus: response.statusCode,
+        });
+        if (!response.headersSent) response.writeHead(500);
+        if (!response.writableEnded) response.end();
+      });
     if (request.method === "POST") {
-      activePosts.add(requestHandler);
+      activePosts.set(requestHandler, response);
       void requestHandler.finally(() => activePosts.delete(requestHandler));
     }
   });
@@ -222,18 +319,56 @@ export async function createOpenCodeTaskBridge(
   }
 
   return {
+    bridgeId,
     url: `http://127.0.0.1:${address.port}/mcp`,
     bearerToken,
     dispose: () => {
       if (disposePromise) return disposePromise;
       acceptingTools = false;
       disposePromise = (async () => {
+        logger?.debug("OpenCode ZCode MCP bridge disposal started", {
+          activePostCount: activePosts.size,
+          bridgeId,
+          event: "opencode.mcp.dispose",
+          pendingCallCount: pendingCalls.size,
+          status: "started",
+        });
         signal?.removeEventListener("abort", onAbort);
         await Promise.allSettled(pendingCalls);
-        await Promise.allSettled(activePosts);
+        logger?.debug("OpenCode ZCode MCP bridge task calls settled", {
+          bridgeId,
+          event: "opencode.mcp.dispose",
+          phase: "tasks_settled",
+        });
         acceptingRequests = false;
+        const postsToDrain = [...activePosts].filter(
+          ([, response]) => !cancelledResponses.has(response),
+        );
+        const cancelledPosts = [...activePosts].filter(([, response]) =>
+          cancelledResponses.has(response),
+        );
+        await Promise.allSettled(postsToDrain.map(([post]) => post));
         await mcpServer.close().catch(() => undefined);
         await closeServer(httpServer);
+        if (cancelledPosts.length > 0) {
+          logger?.warn("OpenCode MCP bridge detached cancelled HTTP requests", {
+            bridgeId,
+            event: "opencode.mcp.dispose",
+            phase: "cancelled_posts_detached",
+            requestCount: cancelledPosts.length,
+          });
+          void Promise.allSettled(cancelledPosts.map(([post]) => post));
+        }
+        logger?.debug("OpenCode ZCode MCP bridge transport closed", {
+          bridgeId,
+          event: "opencode.mcp.dispose",
+          phase: "transport_closed",
+        });
+        logger?.debug("OpenCode ZCode MCP bridge disposal completed", {
+          bridgeId,
+          event: "opencode.mcp.dispose",
+          status: "completed",
+        });
       })();
       return disposePromise;
     },
@@ -494,7 +629,8 @@ async function connectSocks5(
   try {
     const username = Buffer.from(proxy.username ?? "", "utf8");
     const password = Buffer.from(proxy.password ?? "", "utf8");
-    if (username.length > 255 || password.length > 255) throw new Error("invalid-proxy-credentials");
+    if (username.length > 255 || password.length > 255)
+      throw new Error("invalid-proxy-credentials");
     const useAuthentication = username.length > 0 || password.length > 0;
     socket.write(useAuthentication ? Buffer.from([5, 2, 0, 2]) : Buffer.from([5, 1, 0]));
     const [version, method] = await readSocketExactly(socket, 2);
@@ -502,7 +638,14 @@ async function connectSocks5(
       throw new Error("socks-authentication-rejected");
     }
     if (method === 2) {
-      socket.write(Buffer.concat([Buffer.from([1, username.length]), username, Buffer.from([password.length]), password]));
+      socket.write(
+        Buffer.concat([
+          Buffer.from([1, username.length]),
+          username,
+          Buffer.from([password.length]),
+          password,
+        ]),
+      );
       const [authVersion, authStatus] = await readSocketExactly(socket, 2);
       if (authVersion !== 1 || authStatus !== 0) throw new Error("socks-authentication-rejected");
     } else if (method !== 0) {
@@ -510,10 +653,19 @@ async function connectSocks5(
     }
 
     const destination = encodeSocksAddress(hostname);
-    socket.write(Buffer.concat([Buffer.from([5, 1, 0]), destination, Buffer.from([port >> 8, port & 255])]));
+    socket.write(
+      Buffer.concat([Buffer.from([5, 1, 0]), destination, Buffer.from([port >> 8, port & 255])]),
+    );
     const response = await readSocketExactly(socket, 4);
     if (response[0] !== 5 || response[1] !== 0) throw new Error("socks-connect-rejected");
-    const addressLength = response[3] === 1 ? 4 : response[3] === 4 ? 16 : response[3] === 3 ? (await readSocketExactly(socket, 1))[0] : 0;
+    const addressLength =
+      response[3] === 1
+        ? 4
+        : response[3] === 4
+          ? 16
+          : response[3] === 3
+            ? (await readSocketExactly(socket, 1))[0]
+            : 0;
     if (addressLength === 0) throw new Error("socks-address-type-unsupported");
     await readSocketExactly(socket, addressLength + 2);
     socket.setTimeout(0);
@@ -546,7 +698,12 @@ function expandIpv6(hostname: string): number[] {
   const normalized = hostname.toLowerCase();
   const [leftText, rightText = ""] = normalized.split("::");
   const parseGroups = (text: string): number[] =>
-    text ? text.split(":").filter(Boolean).map((part) => Number.parseInt(part, 16)) : [];
+    text
+      ? text
+          .split(":")
+          .filter(Boolean)
+          .map((part) => Number.parseInt(part, 16))
+      : [];
   const left = parseGroups(leftText);
   const right = parseGroups(rightText);
   const zeros = 8 - left.length - right.length;

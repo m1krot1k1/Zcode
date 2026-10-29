@@ -26,6 +26,7 @@ import { createModelStreamingEventQueue } from "./model-streaming-event-queue.js
 import { getOrCreateReasoningBlock } from "./reasoning-stream.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { isOutputTokenLimitFinishReason } from "./turn-output-token-continuation.js";
+import { isModelSelectableAgentProfile } from "../../subagent/profile.js";
 
 const TOOL_INPUT_STREAM_DELTA_FALLBACK_FLUSH_CHARS = 4096;
 
@@ -79,11 +80,18 @@ export async function runModelTextRequest(
   });
   // 正常请求传递模型级 effective 预算，Compact 传递 min(effective, 20K) 的 summary
   // 任务预算；adapter 只做 provider 兼容映射，不再施加独立 global cap。
+  const taskToolName = resolveOpenCodeTaskToolName(projectedOptions.tools);
+  const openCodeAgentTypes = taskToolName
+    ? this.getAgentDefinitions().activeAgents
+        .filter(isModelSelectableAgentProfile)
+        .map((profile) => profile.name)
+    : undefined;
   const modelInvocationContext = {
     // Локальный OpenCode SDK должен работать в каталоге этой сессии, а не в cwd процесса.
     workingDirectory: this.workingDirectory,
-    ...(resolveOpenCodeTaskToolName(projectedOptions.tools)
+    ...(taskToolName && openCodeAgentTypes?.length
       ? {
+          openCodeAgentTypes,
           executeOpenCodeTask: createOpenCodeTaskDispatcher(this, {
             allowedToolNames: projectedOptions.tools.map((tool) => tool.name),
             model,
@@ -574,20 +582,29 @@ export function createOpenCodeTaskDispatcher(
   },
 ): NonNullable<ModelInvocationContext["executeOpenCodeTask"]> {
   const toolName = resolveOpenCodeTaskToolName(options.allowedToolNames.map((name) => ({ name })));
-  return async (input) => {
+  return async (input, context) => {
     if (!toolName || !runtime.registry.get(toolName)) {
       throw new Error("OpenCode ZCode task capability is unavailable for this model request");
     }
-    throwIfTurnAborted(options.signal);
+    const signal = context?.signal
+      ? options.signal
+        ? AbortSignal.any([options.signal, context.signal])
+        : context.signal
+      : options.signal;
+    throwIfTurnAborted(signal);
+    const toolCallId =
+      context?.correlationId && /^opencode-[a-f0-9]{16}-[a-f0-9]{16}$/u.test(context.correlationId)
+        ? context.correlationId
+        : `opencode-${randomUUID()}`;
     const result = await runtime.getToolExecutor().execute(
       {
-        id: `opencode-${randomUUID()}`,
+        id: toolCallId,
         name: toolName,
         input,
       },
       {
         model: options.model,
-        signal: options.signal,
+        signal,
         traceContext: options.traceContext,
       },
     );
@@ -597,7 +614,11 @@ export function createOpenCodeTaskDispatcher(
       // Причина: MCP-мост скрывает произвольные ошибки Core, поэтому OpenCode не видел
       // допустимые роли и зацикливался на general/general-purpose. Помечаем только точный
       // ответ штатного Agent handler; мост отдельно проверяет и очищает его перед выдачей.
-      if (/^Agent type '[^'\r\n]{1,128}' is not available\. Choose one exact active role ID: /u.test(message)) {
+      if (
+        /^Agent type '[^'\r\n]{1,128}' is not available\. Choose one exact active role ID: /u.test(
+          message,
+        )
+      ) {
         Object.assign(error, { code: AgentErrorCode.UNKNOWN_AGENT_TYPE });
       }
       throw error;

@@ -354,13 +354,27 @@ export class AiSdkModelExecution {
           executeTask: ExecuteOpenCodeTask | undefined,
           executeSkill: ExecuteOpenCodeSkill | undefined,
         ) => {
+          const openCodeAgentTypes = getCurrentModelInvocationContext()?.openCodeAgentTypes;
+          // Роли берём из Core snapshot, который Core повторно проверяет перед запуском Task.
+          // При пустом каталоге делегирование закрывается, без generic fallback.
+          if (executeTask && (!openCodeAgentTypes || openCodeAgentTypes.length === 0)) {
+            executeTask = undefined;
+          }
           if (!executeTask && !executeSkill) {
             return { model: createModel(), dispose: async () => {} };
           }
           const bridge = await createOpenCodeTaskBridge(
-            { executeTask, executeSkill },
+            { executeTask, executeSkill, allowedAgentTypes: openCodeAgentTypes },
             options.abortSignal,
+            this.logger,
           );
+          this.logger?.debug("OpenCode invocation MCP configuration prepared", {
+            bridgeId: bridge.bridgeId,
+            event: "opencode.mcp.invocation",
+            mcpName: "zcode",
+            mcpTimeoutMs: OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS,
+            status: "started",
+          });
           const invocationProvider = this.opencodeProvider as OpenCodeInvocationProvider;
           if (!invocationProvider.createInvocationModel) {
             await bridge.dispose();
@@ -630,6 +644,21 @@ function projectOpenCodePromptText(
       "The following ZCode agent profiles are no longer available:",
     );
   }
+  // Причина: профильный roster сериализуется Core с capability Agent/Task, но OpenCode видит только
+  // invocation-local zcode_task. Если оставить исходные имена, модель выбирает несуществующий tool.
+  // Основание: сохранить одну роль и один owner Core, показывая provider-specific alias только в prompt-копии.
+  text = text.replace(/\s+\(Tools: ([^\n)]*)\)/gu, (_match, rawTools: string) => {
+    const projectedTools = rawTools
+      .split(",")
+      .map((tool) => tool.trim())
+      .filter((tool) => tool.length > 0)
+      .flatMap((tool) => {
+        if (tool !== "Agent" && tool !== "Task") return [tool];
+        return zcodeTaskEnabled ? ["zcode_task"] : [];
+      });
+    const uniqueTools = [...new Set(projectedTools)];
+    return uniqueTools.length > 0 ? ` (Tools: ${uniqueTools.join(", ")})` : "";
+  });
   return text;
 }
 
@@ -644,7 +673,9 @@ function sanitizeOpenCodeEmptyResponseError(error: unknown): unknown {
     : "";
   // 根因：SDK 的空响应文案会把通用服务器错误猜成无效模型 ID，随后原样出现在 UI 详情中。
   // 修复依据：只保留诊断 fetch 已脱敏的状态/错误字段；不保留原始 SDK Error 或 cause。
-  const safeError = new Error(`OpenCode returned an empty response.${diagnosticSuffix}`) as Error & {
+  const safeError = new Error(
+    `OpenCode returned an empty response.${diagnosticSuffix}`,
+  ) as Error & {
     code: string;
     statusCode?: number;
     isRetryable: false;
@@ -1548,6 +1579,9 @@ export const OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS = 12 * 60 * 60 * 1_000;
 export function createOpenCodeInvocationConfig(bridge: OpenCodeTaskBridge) {
   return {
     tools: { task: false },
+    // OpenCode 1.x falls back to experimental.mcp_timeout for tool execution;
+    // the per-server timeout is not consistently applied to long-running calls.
+    experimental: { mcp_timeout: OPENCODE_ZCODE_MCP_EXECUTION_TIMEOUT_MS },
     mcp: {
       zcode: {
         type: "remote" as const,
@@ -1594,11 +1628,12 @@ export async function createOpenCodeModelProvider(): Promise<OpenCodeModelProvid
   let clientManager: ReturnType<typeof sdk.OpencodeClientManager.createInstance> | undefined;
 
   try {
-    const port = e2ePort && e2ePort <= 65_535
-      ? e2ePort
-      : configuredProxy
-        ? await findOpenCodeLoopbackPort()
-        : undefined;
+    const port =
+      e2ePort && e2ePort <= 65_535
+        ? e2ePort
+        : configuredProxy
+          ? await findOpenCodeLoopbackPort()
+          : undefined;
     clientManager = sdk.OpencodeClientManager.createInstance({
       // Не подключаться к уже запущенному пользовательскому OpenCode без прокси ZCode.
       ...(port ? { port } : {}),

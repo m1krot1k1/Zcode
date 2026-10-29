@@ -25,11 +25,16 @@ export interface ModelInvocationContext {
    * already includes Agent or Task. OpenCode's MCP bridge delegates through the same
    * Core ToolExecutor rather than invoking a provider-owned subagent runtime.
    */
-  executeOpenCodeTask?: (input: {
-    description: string;
-    prompt: string;
-    subagent_type: string;
-  }) => Promise<string>;
+  executeOpenCodeTask?: (
+    input: {
+      description: string;
+      prompt: string;
+      subagent_type: string;
+    },
+    context?: { correlationId: string; signal?: AbortSignal },
+  ) => Promise<string>;
+  /** Exact selectable ZCode role IDs captured for this model request; never generic OpenCode roles. */
+  openCodeAgentTypes?: readonly string[];
   /** Invocation-scoped capability exposed only when Core registered Skill for this request. */
   executeOpenCodeSkill?: (input: { skill: string; args?: string }) => Promise<string>;
   metadata?: Record<string, unknown>;
