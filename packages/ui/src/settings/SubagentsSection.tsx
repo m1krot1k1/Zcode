@@ -153,7 +153,7 @@ function isBuiltInAgent(agent: AgentSummary): boolean {
 }
 
 /**
- * 内置 Explore 与插件 agent 都是只读 profile，配置入口统一为行内
+ * 内置 general-purpose、Explore 与插件 agent 都是只读 profile，配置入口统一为行内
  * model / effort 覆盖控件；插件 md 属于插件安装目录，升级会覆写，所以不能像 user agent 那样改文件。
  */
 function supportsModelOverride(agent: AgentSummary): boolean {
@@ -164,7 +164,8 @@ function getBuiltInSubagentName(agent: AgentSummary): BuiltInSubagentName | null
   if (!isBuiltInAgent(agent)) {
     return null;
   }
-  return agent.name === "Explore" ? agent.name : null;
+  // 原因：设置页合同仍包含 general-purpose 和 Explore。只认 Explore 时 general-purpose 没有模型选择器。
+  return agent.name === "general-purpose" || agent.name === "Explore" ? agent.name : null;
 }
 
 function getKnownTools(values: readonly string[] | undefined): string[] {
