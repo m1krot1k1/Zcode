@@ -21,8 +21,12 @@ import {
 import {
   MCP_IMAGE_INLINE_BASE64_BYTES,
   MCP_IMAGE_INLINE_RAW_BYTES,
+  MCP_RESULT_PAGE_FIELD,
+  MCP_RESULT_PAGE_TOOL_CALL_FIELD,
   registerMcpTools,
+  resetStoredMcpResultPagesForTests,
 } from "../src/mcp/index.js";
+import { PermissionService } from "../src/permission/service.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ToolEntry, ToolExecutionContext } from "../src/tool/types.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
@@ -90,6 +94,7 @@ function seedCapturedBrokerCredentials(): void {
 describe("MCP tool bridge", () => {
   afterEach(() => {
     resetCapturedZCodeCuaBrokerCredentialsForTest();
+    resetStoredMcpResultPagesForTests();
   });
 
   it("marks only authority-verified official CUA entries with the project capability group", () => {
@@ -1512,6 +1517,103 @@ describe("MCP tool bridge", () => {
     expect(modelContent).toContain("No artifact store is configured");
     expect(JSON.stringify(modelContent)).not.toContain(largeBase64);
   });
+
+  it("pages a large generic MCP text result without calling the server again", async () => {
+    const registry = createToolRegistry();
+    const callTool = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "A".repeat(90_000) }],
+    }));
+    registerMcpTools(registry, createMockMcpPort({ callTool }), [
+      {
+        description: "Say a lot",
+        inputSchema: { type: "object", properties: { name: { type: "string" } } },
+        serverName: "local server",
+        toolName: "say-hi",
+      },
+    ]);
+    const entry = registry.get("mcp__local_server__say-hi");
+    const context = createToolContext();
+    const first = await entry?.handler({ name: "Ada" }, context);
+    const firstText = textOf(first);
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool.mock.calls[0]?.[0]).toMatchObject({ arguments: { name: "Ada" } });
+    expect(firstText.startsWith("A".repeat(40_000))).toBe(true);
+    expect(firstText).toContain("[MCP result page 1/3 toolCallId=tool-test.");
+    expect(firstText).toContain(`${MCP_RESULT_PAGE_FIELD}=2`);
+    expect(entry?.inputSchema).toMatchObject({
+      properties: {
+        [MCP_RESULT_PAGE_FIELD]: { type: "integer", minimum: 1 },
+        [MCP_RESULT_PAGE_TOOL_CALL_FIELD]: { type: "string" },
+      },
+    });
+    expect(entry?.inputSchema.required ?? []).not.toContain(MCP_RESULT_PAGE_FIELD);
+
+    const second = await entry?.handler(
+      { [MCP_RESULT_PAGE_FIELD]: 2, [MCP_RESULT_PAGE_TOOL_CALL_FIELD]: "tool-test" },
+      context,
+    );
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(textOf(second).startsWith("A".repeat(40_000))).toBe(true);
+    expect(textOf(second)).toContain("[MCP result page 2/3 toolCallId=tool-test.");
+
+    const otherSession = await entry?.handler(
+      { [MCP_RESULT_PAGE_FIELD]: 2, [MCP_RESULT_PAGE_TOOL_CALL_FIELD]: "tool-test" },
+      createToolContext({ sessionId: createSessionId("other-session") }),
+    );
+    expect(textOf(otherSession)).toContain("not available in this session");
+    expect(textOf(otherSession)).not.toContain("A".repeat(100));
+    expect(callTool).toHaveBeenCalledTimes(1);
+
+    const capability = { ...entry!.metadata, permission: entry!.permission };
+    const service = new PermissionService();
+    const pageInput = {
+      [MCP_RESULT_PAGE_FIELD]: 2,
+      [MCP_RESULT_PAGE_TOOL_CALL_FIELD]: "tool-test",
+    };
+    expect(
+      service.checkPermission(
+        { input: pageInput, mode: "build", riskLevel: "medium", toolName: entry!.metadata.name },
+        capability,
+      ).decision,
+    ).toBe("allow");
+    expect(
+      service.checkPermission(
+        {
+          input: { ...pageInput, name: "Ada" },
+          mode: "build",
+          riskLevel: "medium",
+          toolName: entry!.metadata.name,
+        },
+        capability,
+      ).decision,
+    ).toBe("ask");
+    expect(
+      service.checkPermission(
+        { input: pageInput, mode: "build", riskLevel: "medium", toolName: entry!.metadata.name },
+        capability,
+        { deny: [{ toolName: entry!.metadata.name }], version: 1 },
+      ).decision,
+    ).toBe("deny");
+  });
+
+  it("keeps the host node_repl result on its artifact budget instead of paging it", async () => {
+    const registry = createToolRegistry();
+    const callTool = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "B".repeat(90_000) }],
+    }));
+    registerMcpTools(registry, createMockMcpPort({ callTool }), [
+      {
+        inputSchema: { type: "object" },
+        serverName: "node_repl",
+        toolName: "js",
+      },
+    ]);
+    const entry = registry.get("mcp__node_repl__js");
+    expect(entry?.inputSchema.properties).not.toHaveProperty(MCP_RESULT_PAGE_FIELD);
+    const output = await entry?.handler({ code: "1" }, createToolContext());
+    expect(textOf(output)).toBe("B".repeat(90_000));
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
 });
 
 function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
@@ -1531,9 +1633,17 @@ function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
     ...overrides,
   };
 }
+function textOf(output: unknown): string {
+  const content = (output as { content?: Array<{ text?: string }> } | undefined)?.content;
+  return content?.map((block) => block.text ?? "").join("\n") ?? "";
+}
+
 function createToolContext(
   overrides: Partial<
-    Pick<ToolExecutionContext, "artifactStore" | "imageProcessorPort" | "runtimeScope">
+    Pick<
+      ToolExecutionContext,
+      "artifactStore" | "imageProcessorPort" | "runtimeScope" | "sessionId" | "toolCallId"
+    >
   > = {},
 ): ToolExecutionContext {
   return {

@@ -46,6 +46,43 @@ export {
 } from "./image-normalization.js";
 
 const MCP_TOOL_TIMEOUT_MS = 30_000;
+export const MCP_RESULT_PAGE_FIELD = "__zcode_result_page";
+export const MCP_RESULT_PAGE_TOOL_CALL_FIELD = "__zcode_result_tool_call_id";
+const MCP_RESULT_PAGE_TEXT_BYTES = 40_000;
+const MCP_RESULT_STORED_TEXT_BYTES = 1_000_000;
+const MAX_STORED_MCP_RESULTS = 32;
+
+interface StoredMcpResult {
+  createdAt: number;
+  originalBytes: number;
+  pages: string[];
+  sessionId: string;
+}
+
+const storedMcpResults = new Map<string, StoredMcpResult>();
+
+export function isStoredMcpResultPageRequest(input: unknown): boolean {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const record = input as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length !== 2) return false;
+  if (!keys.includes(MCP_RESULT_PAGE_FIELD) || !keys.includes(MCP_RESULT_PAGE_TOOL_CALL_FIELD)) {
+    return false;
+  }
+  const page = record[MCP_RESULT_PAGE_FIELD];
+  const toolCallId = record[MCP_RESULT_PAGE_TOOL_CALL_FIELD];
+  return (
+    Number.isInteger(page) &&
+    (page as number) >= 1 &&
+    typeof toolCallId === "string" &&
+    toolCallId.length > 0 &&
+    toolCallId.length <= 200
+  );
+}
+
+export function resetStoredMcpResultPagesForTests(): void {
+  storedMcpResults.clear();
+}
 const OFFICIAL_CUA_PERMISSION_CAPABILITY_GROUP = "official_cua" satisfies PermissionCapabilityGroup;
 const CUA_USER_TITLE_SCHEMA = {
   type: "string",
@@ -188,7 +225,10 @@ export function createMcpToolEntry(
           modelContentProtection: OFFICIAL_CUA_FRAME_MODEL_CONTENT_PROTECTION,
         }
       : {}),
-    inputSchema: createModelFacingMcpInputSchema(descriptor, isCuaAppObservation),
+    inputSchema: withMcpResultPageSchema(
+      createModelFacingMcpInputSchema(descriptor, isCuaAppObservation),
+      officialCuaAuthorityVerified || isHostNodeReplExecution,
+    ),
     outputSchema: McpToolOutputJsonSchema,
     metadata: {
       shouldDefer: true,
@@ -242,6 +282,14 @@ export function createMcpToolEntry(
       recordOutput: "summary",
     },
     handler: async (input, context) => {
+      if (isStoredMcpResultPageRequest(input)) {
+        const record = input as Record<string, unknown>;
+        return readStoredMcpResultPage({
+          page: record[MCP_RESULT_PAGE_FIELD] as number,
+          sessionId: context.sessionId,
+          toolCallId: record[MCP_RESULT_PAGE_TOOL_CALL_FIELD] as string,
+        });
+      }
       const startedAt = Date.now();
       const result = await mcpPort.callTool(
         {
@@ -283,6 +331,16 @@ export function createMcpToolEntry(
             : {}),
         },
       );
+      // 原因：普通 MCP 文本超过一页时不能只丢掉尾巴。后续页留在本进程会话里，
+      // 只带页码的再次调用不再打到 MCP 服务器。官方 CUA 和 node_repl 保持原预算。
+      if (!officialCuaAuthorityVerified && !isHostNodeReplExecution) {
+        const paged = storeOversizedMcpTextResult({
+          result,
+          sessionId: context.sessionId,
+          toolCallId: context.toolCallId,
+        });
+        if (paged) return paged;
+      }
       // MCP server 会返回大 base64 图片；resultBudget 只看到图片占位文本，
       // 必须在 handler 阶段保存副本并替换模型可见内容，避免 provider 请求体被打爆。
       return normalizeMcpToolResultForModel({
@@ -526,12 +584,163 @@ function toMcpRuntimeArguments(
   input: unknown,
   stripCuaUserTitle: boolean,
 ): Record<string, unknown> {
-  const argumentsRecord = toRecordInput(input);
+  const argumentsRecord = { ...toRecordInput(input) };
+  delete argumentsRecord[MCP_RESULT_PAGE_FIELD];
+  delete argumentsRecord[MCP_RESULT_PAGE_TOOL_CALL_FIELD];
   if (!stripCuaUserTitle || !("title" in argumentsRecord)) return argumentsRecord;
 
   const runtimeArguments = { ...argumentsRecord };
   delete runtimeArguments.title;
   return runtimeArguments;
+}
+
+function withMcpResultPageSchema(schema: JsonSchema, unchanged: boolean): JsonSchema {
+  if (unchanged) return schema;
+  const properties =
+    schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+      ? schema.properties
+      : {};
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      [MCP_RESULT_PAGE_FIELD]: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Read a stored page of an earlier MCP text result. Send this only together with the tool-call id and no other arguments.",
+      },
+      [MCP_RESULT_PAGE_TOOL_CALL_FIELD]: {
+        type: "string",
+        minLength: 1,
+        maxLength: 200,
+        description: "toolCallId of the stored MCP result page to read.",
+      },
+    },
+  };
+}
+
+function mcpResultStorageKey(sessionId: string, toolCallId: string): string {
+  return `${sessionId}\0${toolCallId}`;
+}
+
+function storeOversizedMcpTextResult(input: {
+  result: McpToolCallResult;
+  sessionId: string;
+  toolCallId: string;
+}): McpToolCallResult | undefined {
+  if (!input.toolCallId) return undefined;
+  const formatted = formatMcpToolResult(input.result);
+  if (typeof formatted !== "string") return undefined;
+  const originalBytes = Buffer.byteLength(formatted, "utf8");
+  if (originalBytes <= MCP_RESULT_PAGE_TEXT_BYTES) return undefined;
+
+  const retained = sliceUtf8(formatted, MCP_RESULT_STORED_TEXT_BYTES);
+  const pages = splitUtf8Pages(retained, MCP_RESULT_PAGE_TEXT_BYTES);
+  if (pages.length <= 1) return undefined;
+  rememberMcpResult({
+    createdAt: Date.now(),
+    originalBytes,
+    pages,
+    sessionId: input.sessionId,
+    toolCallId: input.toolCallId,
+  });
+  return pageResult({
+    originalBytes,
+    page: 1,
+    pages,
+    retainedBytes: Buffer.byteLength(retained, "utf8"),
+    toolCallId: input.toolCallId,
+  });
+}
+
+function rememberMcpResult(input: StoredMcpResult & { toolCallId: string }): void {
+  storedMcpResults.set(mcpResultStorageKey(input.sessionId, input.toolCallId), {
+    createdAt: input.createdAt,
+    originalBytes: input.originalBytes,
+    pages: input.pages,
+    sessionId: input.sessionId,
+  });
+  while (storedMcpResults.size > MAX_STORED_MCP_RESULTS) {
+    const oldest = storedMcpResults.keys().next().value;
+    if (oldest === undefined) break;
+    storedMcpResults.delete(oldest);
+  }
+}
+
+function readStoredMcpResultPage(input: {
+  page: number;
+  sessionId: string;
+  toolCallId: string;
+}): McpToolCallResult {
+  const stored = storedMcpResults.get(mcpResultStorageKey(input.sessionId, input.toolCallId));
+  if (!stored || stored.sessionId !== input.sessionId) {
+    return mcpTextResult("MCP result page is not available in this session.", true);
+  }
+  if (input.page > stored.pages.length) {
+    return mcpTextResult(
+      `MCP result page ${input.page} is outside 1-${stored.pages.length}.`,
+      true,
+    );
+  }
+  return pageResult({
+    originalBytes: stored.originalBytes,
+    page: input.page,
+    pages: stored.pages,
+    retainedBytes: Buffer.byteLength(stored.pages.join(""), "utf8"),
+    toolCallId: input.toolCallId,
+  });
+}
+
+function pageResult(input: {
+  originalBytes: number;
+  page: number;
+  pages: string[];
+  retainedBytes: number;
+  toolCallId: string;
+}): McpToolCallResult {
+  const body = input.pages[input.page - 1] ?? "";
+  const retained =
+    input.retainedBytes < input.originalBytes
+      ? ` retainedBytes=${input.retainedBytes} originalBytes=${input.originalBytes}`
+      : "";
+  const next =
+    input.page < input.pages.length
+      ? `Next page uses only ${MCP_RESULT_PAGE_FIELD}=${input.page + 1} and ${MCP_RESULT_PAGE_TOOL_CALL_FIELD}=${input.toolCallId}.`
+      : "No further pages.";
+  return mcpTextResult(
+    `${body}\n\n[MCP result page ${input.page}/${input.pages.length} toolCallId=${input.toolCallId}${retained}. ${next} That read does not call the MCP server.]`,
+  );
+}
+
+function mcpTextResult(text: string, isError = false): McpToolCallResult {
+  return isError
+    ? { content: [{ type: "text", text }], isError: true }
+    : { content: [{ type: "text", text }] };
+}
+
+function splitUtf8Pages(text: string, pageBytes: number): string[] {
+  const pages: string[] = [];
+  let rest = text;
+  while (rest.length > 0) {
+    const page = sliceUtf8(rest, pageBytes);
+    if (page.length === 0) break;
+    pages.push(page);
+    rest = rest.slice(page.length);
+  }
+  return pages;
+}
+
+function sliceUtf8(text: string, maxBytes: number): string {
+  const buffer = Buffer.from(text);
+  if (buffer.length <= maxBytes) return text;
+  let end = maxBytes;
+  while (end > 0 && isUtf8Continuation(buffer[end] ?? 0)) end -= 1;
+  return buffer.subarray(0, end).toString("utf8");
+}
+
+function isUtf8Continuation(byte: number): boolean {
+  return byte >= 0x80 && byte < 0xc0;
 }
 
 function stringify(value: unknown): string {

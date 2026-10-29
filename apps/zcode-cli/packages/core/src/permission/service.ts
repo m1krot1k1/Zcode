@@ -23,6 +23,7 @@ import { webFetchRuleSubjects, wildcardToRegExp } from "./rule-matching.js";
 import { isPreapprovedWorkflowDraftWrite } from "./workflow-draft-path.js";
 import { applyPermissionUpdates } from "../tool/executor/permission-rules.js";
 import { isWebFetchPreapprovedUrl } from "../tool/webfetch-preapproved.js";
+import { isStoredMcpResultPageRequest } from "../mcp/index.js";
 import type { ToolPermissionRulePolicy } from "../tool/types.js";
 
 // -----------------------------------------------
@@ -218,6 +219,15 @@ export class PermissionService {
         capability,
         "rule.project.allow",
         `Tool ${context.toolName} is allowed by project permission rules`,
+      );
+    }
+
+    if (capability.permissionName === "mcp" && isStoredMcpResultPageRequest(context.input)) {
+      return this.allow(
+        context,
+        capability,
+        "tool.mcp.resultPage",
+        "Stored MCP result page does not call the server",
       );
     }
 
