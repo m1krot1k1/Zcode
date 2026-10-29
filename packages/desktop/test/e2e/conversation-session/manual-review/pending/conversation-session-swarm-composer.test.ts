@@ -355,24 +355,6 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
         },
       },
       {
-        fixtureId: "swarm-composer-alpha-plan",
-        query: {
-          includes: [
-            "Decide whether this task needs independent parallel work",
-            "E2E_SWARM_COMPOSER_ALPHA",
-          ],
-        },
-      },
-      {
-        fixtureId: "swarm-composer-beta-plan",
-        query: {
-          includes: [
-            "Decide whether this task needs independent parallel work",
-            "E2E_SWARM_COMPOSER_BETA",
-          ],
-        },
-      },
-      {
         fixtureId: "swarm-composer-alpha-result",
         query: {
           includes: ["E2E_SWARM_COMPOSER_ALPHA"],
@@ -406,6 +388,14 @@ describe("SWARM-02: явный рой из обычного Composer", () => {
     for (const { fixtureId, records } of capturedFixtures) {
       expect(records.some((record) => record.fixtureId === fixtureId)).toBe(true);
     }
+    expect(capturedFixtures.map(({ fixtureId }) => fixtureId).sort()).toEqual(
+      [
+        "swarm-composer-alpha-result",
+        "swarm-composer-beta-result",
+        "swarm-composer-root-plan",
+        "swarm-composer-root-synthesis",
+      ].sort(),
+    );
     const synthesis = capturedFixtures
       .find((entry) => entry.fixtureId === "swarm-composer-root-synthesis")
       ?.records.find((record) => record.fixtureId === "swarm-composer-root-synthesis");

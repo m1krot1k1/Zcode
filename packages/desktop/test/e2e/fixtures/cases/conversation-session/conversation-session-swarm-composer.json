@@ -16,20 +16,6 @@
       "syntheticReason": "Deterministic JSON response exercises runtime-owned swarm dispatch without a real model request. Non-streaming planner calls require the Anthropic JSON message envelope."
     },
     {
-      "id": "swarm-composer-alpha-plan",
-      "kind": "subagent",
-      "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime. Non-streaming planner calls require the Anthropic JSON message envelope."
-    },
-    {
-      "id": "swarm-composer-beta-plan",
-      "kind": "subagent",
-      "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime. Non-streaming planner calls require the Anthropic JSON message envelope."
-    },
-    {
       "id": "swarm-composer-alpha-result",
       "kind": "subagent",
       "source": "synthetic",

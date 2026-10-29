@@ -31,64 +31,6 @@
       }
     },
     {
-      "id": "swarm-composer-alpha-plan",
-      "description": "Alpha child planner chooses a leaf so the deterministic child can finish independently. The planner calls non-streaming generateText, so this fixture returns an Anthropic JSON message.",
-      "metadata": {
-        "kind": "subagent",
-        "timingPolicy": "fast-text",
-        "source": "synthetic",
-        "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime."
-      },
-      "maxMatches": 1,
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SWARM_COMPOSER_ALPHA"
-        ],
-        "bodyIncludes": [
-          "Decide whether this task needs independent parallel work"
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "statusMessage": "OK",
-        "headers": {
-          "content-type": "application/json; charset=utf-8"
-        },
-        "body": "{\"id\":\"upstream-e2e-swarm-composer-alpha-plan\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"leaf\\\",\\\"reason\\\":\\\"One bounded report is sufficient.\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"output_tokens\":40}}"
-      }
-    },
-    {
-      "id": "swarm-composer-beta-plan",
-      "description": "Beta child planner chooses a leaf so the deterministic child can finish independently. The planner calls non-streaming generateText, so this fixture returns an Anthropic JSON message.",
-      "metadata": {
-        "kind": "subagent",
-        "timingPolicy": "fast-text",
-        "source": "synthetic",
-        "syntheticReason": "Deterministic leaf response avoids extra child fanout while preserving the real child runtime."
-      },
-      "maxMatches": 1,
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SWARM_COMPOSER_BETA"
-        ],
-        "bodyIncludes": [
-          "Decide whether this task needs independent parallel work"
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "statusMessage": "OK",
-        "headers": {
-          "content-type": "application/json; charset=utf-8"
-        },
-        "body": "{\"id\":\"upstream-e2e-swarm-composer-beta-plan\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"decision\\\":\\\"leaf\\\",\\\"reason\\\":\\\"One bounded report is sufficient.\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"output_tokens\":40}}"
-      }
-    },
-    {
       "id": "swarm-composer-alpha-result",
       "description": "Alpha child returns a distinct scripted result through its real session runtime.",
       "metadata": {
