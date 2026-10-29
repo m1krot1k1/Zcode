@@ -90,6 +90,7 @@ import {
 } from "../helpers/project-memory-recall.js";
 import { ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH } from "../../memory/project-memory-retrieval-branch.js";
 import { scheduleProjectMemoryExtraction } from "../helpers/project-memory-extraction.js";
+import { captureEvidenceGatedLesson } from "../../subagent/persistent-memory.js";
 import { formatAgentProfileForPrompt, getSwarmAgentProfiles } from "../../subagent/profile.js";
 import { filterSubagentChildToolNames } from "../../subagent/tool-policy.js";
 import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
@@ -1000,10 +1001,20 @@ export async function executeTurnCommand(
           toolCallCount: loopState.toolCallCount,
         });
         // 单轮执行策略只抑制本次成功 Turn 的后台提取，不修改 Session Memory 配置。
-        if (options?.modelExecution?.memoryExtraction !== "skip") {
+        if (options?.modelExecution?.memoryExtraction !== "skip" && !this.shuttingDown) {
           scheduleProjectMemoryExtraction(this, {
             model: loopState.model,
             traceContext: turnTraceContext,
+          });
+          // 原因：只记录本回合已发生的「同一工具先失败后成功」，写失败不能打断已完成的回合。
+          await captureEvidenceGatedLesson({
+            events,
+            fileSystemPort: this.fileSystemPort,
+            memory: this.config.memory,
+            remoteWorkspace: this.isRemoteWorkspace(),
+            sessionId: this.sessionId,
+            turnId,
+            workspaceRoot: this.workspaceRoot,
           });
         }
 

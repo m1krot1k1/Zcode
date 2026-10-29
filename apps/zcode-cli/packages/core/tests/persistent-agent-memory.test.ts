@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { SessionEventType, type SessionEvent } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 
 import { buildPersistentAgentMemoryPrompt } from "../src/subagent/persistent-memory-prompt.js";
 import {
+  captureEvidenceGatedLesson,
   loadPersistentAgentMemory,
   projectPersistentAgentMemoryTools,
   resolvePersistentAgentMemoryRoot,
@@ -202,7 +204,122 @@ describe("persistent custom-agent memory", () => {
     expect(loaded?.rootDir).toBe("/storage/agent-memory/reviewer-a-b");
     expect(loaded?.prompt).toContain("# Persistent Agent Memory");
   });
+
+  it("records one evidence-gated lesson after the same tool fails and later succeeds", async () => {
+    const secret = "sk-live-secret-should-not-be-stored";
+    const fs = new MemoryFileSystem({});
+    const events = [
+      toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-1", toolName: "Bash" }),
+      toolEvent(SessionEventType.ToolCallError, {
+        error: { code: "exit_1", message: secret, type: "ToolExecutionFailed" },
+        toolCallId: "call-1",
+      }),
+      toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-2", toolName: "Bash" }),
+      toolEvent(SessionEventType.ToolCallResult, { result: { content: secret }, toolCallId: "call-2" }),
+    ];
+
+    const first = await captureEvidenceGatedLesson(lessonInput(fs, events));
+    const second = await captureEvidenceGatedLesson(lessonInput(fs, events));
+
+    expect(first).toEqual({ written: true });
+    expect(second).toEqual({ written: false });
+    const root = "/workspace/app/.zcode/agent-memory/knowledge-curator";
+    const lesson = fs.files[`${root}/lessons/Bash-ToolExecutionFailed-exit_1.md`];
+    const index = fs.files[`${root}/MEMORY.md`];
+    expect(lesson).toContain("Evidence: session session-1 turn turn-1");
+    expect(lesson).not.toContain(secret);
+    expect(index).toBe(
+      "- [Bash recovered](lessons/Bash-ToolExecutionFailed-exit_1.md) — ToolExecutionFailed/exit_1\n",
+    );
+    expect(index).not.toContain(secret);
+    expect(index.match(/Bash recovered/g)).toHaveLength(1);
+
+    const secretCode = new MemoryFileSystem({});
+    const coded = await captureEvidenceGatedLesson(
+      lessonInput(secretCode, [
+        toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-1", toolName: "Bash" }),
+        toolEvent(SessionEventType.ToolCallError, {
+          error: { code: "sk-live-secret", message: secret, type: "ToolExecutionFailed" },
+          toolCallId: "call-1",
+        }),
+        toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-2", toolName: "Bash" }),
+        toolEvent(SessionEventType.ToolCallResult, { toolCallId: "call-2" }),
+      ]),
+    );
+    expect(coded.written).toBe(true);
+    const stored = Object.values(secretCode.files).join("\n");
+    expect(stored).not.toContain("sk-live-secret");
+    expect(stored).toContain("Bash-ToolExecutionFailed-none.md");
+  });
+
+  it("does not record a lesson without a recovered tool, disabled memory, or a remote workspace", async () => {
+    const fs = new MemoryFileSystem({});
+    const onlyFailure = [
+      toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-1", toolName: "Bash" }),
+      toolEvent(SessionEventType.ToolCallError, {
+        error: { message: "failed", type: "ToolExecutionFailed" },
+        toolCallId: "call-1",
+      }),
+    ];
+    const onlySuccess = [
+      toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-2", toolName: "Bash" }),
+      toolEvent(SessionEventType.ToolCallResult, { toolCallId: "call-2" }),
+    ];
+
+    expect((await captureEvidenceGatedLesson(lessonInput(fs, onlyFailure))).written).toBe(false);
+    expect((await captureEvidenceGatedLesson(lessonInput(fs, onlySuccess))).written).toBe(false);
+    expect(
+      (
+        await captureEvidenceGatedLesson({
+          ...lessonInput(fs, recoveredBash()),
+          memory: { enabled: false, storageRoot: "/storage", use: true },
+        })
+      ).written,
+    ).toBe(false);
+    expect(
+      (await captureEvidenceGatedLesson({ ...lessonInput(fs, recoveredBash()), remoteWorkspace: true }))
+        .written,
+    ).toBe(false);
+    expect(Object.keys(fs.files)).toEqual([]);
+  });
 });
+
+function lessonInput(fs: MemoryFileSystem, events: SessionEvent[]) {
+  return {
+    events,
+    fileSystemPort: fs,
+    memory: { enabled: true, storageRoot: "/storage", use: true as const },
+    remoteWorkspace: false,
+    sessionId: "session-1",
+    turnId: "turn-1",
+    workspaceRoot: "/workspace/app",
+  };
+}
+
+function recoveredBash(): SessionEvent[] {
+  return [
+    toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-1", toolName: "Bash" }),
+    toolEvent(SessionEventType.ToolCallError, {
+      error: { message: "failed", type: "ToolExecutionFailed" },
+      toolCallId: "call-1",
+    }),
+    toolEvent(SessionEventType.ToolCallScheduled, { toolCallId: "call-2", toolName: "Bash" }),
+    toolEvent(SessionEventType.ToolCallResult, { toolCallId: "call-2" }),
+  ];
+}
+
+function toolEvent(type: SessionEvent["type"], payload: unknown): SessionEvent {
+  return {
+    id: `event-${type}-${JSON.stringify(payload)}` as SessionEvent["id"],
+    payload,
+    sequenceNumber: 1,
+    sessionId: "session-1" as SessionEvent["sessionId"],
+    timestamp: new Date("2026-10-29T00:00:00.000Z"),
+    traceId: "trace-1" as SessionEvent["traceId"],
+    turnId: "turn-1" as SessionEvent["turnId"],
+    type,
+  };
+}
 
 function root(scope: "user" | "project" | "local"): string {
   return resolvePersistentAgentMemoryRoot({

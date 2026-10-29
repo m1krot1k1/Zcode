@@ -1,6 +1,12 @@
 import { join, resolve } from "node:path";
 
-import type { FileSystemPort, Logger, TraceContext } from "@zcode/contracts";
+import {
+  SessionEventType,
+  type FileSystemPort,
+  type Logger,
+  type SessionEvent,
+  type TraceContext,
+} from "@zcode/contracts";
 
 import { ensureMemoryDirectoryExists } from "../memory/directory.js";
 import type { MemoryRuntimeConfig } from "../runtime/types.js";
@@ -107,4 +113,151 @@ export async function loadPersistentAgentMemory(input: {
       scope: input.profile.memory,
     }),
   };
+}
+
+const LESSON_TOKEN = /^[A-Za-z][A-Za-z0-9_.:-]{0,80}$/;
+const LESSON_CODE = /^[A-Za-z0-9_.:-]{1,40}$/;
+const SECRET_TOKEN = /sk-|bearer|token|password|api[_-]?key/i;
+const MAX_LESSON_INDEX_LINES = 200;
+
+interface EvidenceGatedLesson {
+  errorCode?: string;
+  errorType: string;
+  toolName: string;
+}
+
+/**
+ * 原因：只承认同一回合里同一工具先失败、后一次调用成功。
+ * 不复制错误正文和工具输出，避免把密钥或猜测写进记忆。
+ */
+export function selectEvidenceGatedLesson(
+  events: readonly SessionEvent[],
+): EvidenceGatedLesson | undefined {
+  const toolNames = new Map<string, string>();
+  const failures = new Map<string, EvidenceGatedLesson & { toolCallId: string }>();
+  for (const event of events) {
+    if (
+      event.type === SessionEventType.ToolCallScheduled ||
+      event.type === SessionEventType.ToolCallStarted
+    ) {
+      const payload = event.payload as { toolCallId?: string; toolName?: string };
+      if (
+        typeof payload?.toolCallId === "string" &&
+        typeof payload.toolName === "string" &&
+        LESSON_TOKEN.test(payload.toolName)
+      ) {
+        toolNames.set(payload.toolCallId, payload.toolName);
+      }
+      continue;
+    }
+    if (event.type === SessionEventType.ToolCallError) {
+      const payload = event.payload as {
+        error?: { code?: string; type?: string };
+        toolCallId?: string;
+      };
+      const toolCallId = payload?.toolCallId;
+      const toolName = toolCallId ? toolNames.get(toolCallId) : undefined;
+      const errorType = payload?.error?.type;
+      if (
+        !toolCallId ||
+        !toolName ||
+        !errorType ||
+        !LESSON_CODE.test(errorType) ||
+        SECRET_TOKEN.test(errorType)
+      ) {
+        continue;
+      }
+      if (failures.has(toolName)) continue;
+      const errorCode =
+        payload.error?.code &&
+        LESSON_CODE.test(payload.error.code) &&
+        !SECRET_TOKEN.test(payload.error.code)
+          ? payload.error.code
+          : undefined;
+      failures.set(toolName, { errorCode, errorType, toolCallId, toolName });
+      continue;
+    }
+    if (event.type !== SessionEventType.ToolCallResult) continue;
+    const payload = event.payload as { toolCallId?: string };
+    const toolCallId = payload?.toolCallId;
+    const toolName = toolCallId ? toolNames.get(toolCallId) : undefined;
+    if (!toolName || !toolCallId) continue;
+    const failure = failures.get(toolName);
+    if (failure && failure.toolCallId !== toolCallId) {
+      return { errorCode: failure.errorCode, errorType: failure.errorType, toolName };
+    }
+  }
+  return undefined;
+}
+
+function lessonFileName(lesson: EvidenceGatedLesson): string {
+  return `${[lesson.toolName, lesson.errorType, lesson.errorCode ?? "none"].join("-").replace(/:/g, "_")}.md`;
+}
+
+function evidenceId(value: string): string {
+  const trimmed = value.trim().slice(0, 80);
+  return LESSON_CODE.test(trimmed) ? trimmed : "redacted";
+}
+
+export async function captureEvidenceGatedLesson(input: {
+  events: readonly SessionEvent[];
+  fileSystemPort: FileSystemPort | undefined;
+  memory: MemoryRuntimeConfig | undefined;
+  remoteWorkspace: boolean;
+  sessionId: string;
+  turnId: string;
+  workspaceRoot: string;
+}): Promise<{ written: boolean }> {
+  const memory = input.memory;
+  if (input.remoteWorkspace || !input.fileSystemPort || !isPersistentAgentMemoryEnabled(memory)) {
+    return { written: false };
+  }
+  const lesson = selectEvidenceGatedLesson(input.events);
+  if (!lesson) return { written: false };
+
+  const rootDir = resolvePersistentAgentMemoryRoot({
+    agentName: "knowledge-curator",
+    scope: "project",
+    storageRoot: memory.storageRoot,
+    workspaceRoot: input.workspaceRoot,
+  });
+  const fileName = lessonFileName(lesson);
+  const marker = `(lessons/${fileName})`;
+  const indexPath = join(rootDir, "MEMORY.md");
+  const lessonPath = join(rootDir, "lessons", fileName);
+  try {
+    await ensureMemoryDirectoryExists(input.fileSystemPort, join(rootDir, "lessons"));
+    let index = "";
+    try {
+      index = (await input.fileSystemPort.readTextFile({ path: indexPath })).content;
+    } catch {
+      index = "";
+    }
+    if (index.includes(marker)) return { written: false };
+    const occupied = index.split("\n").filter((line) => line.trim().length > 0).length;
+    if (occupied >= MAX_LESSON_INDEX_LINES) return { written: false };
+
+    const hook = lesson.errorCode ? `${lesson.errorType}/${lesson.errorCode}` : lesson.errorType;
+    const body = [
+      `# ${lesson.toolName} recovered after ${lesson.errorType}`,
+      "",
+      `Evidence: session ${evidenceId(input.sessionId)} turn ${evidenceId(input.turnId)}`,
+      "The same tool failed and a later call in that turn succeeded.",
+      "Tool output and error messages are not stored.",
+      "",
+    ].join("\n");
+    await input.fileSystemPort.writeTextFile({ content: body, path: lessonPath });
+    let line = `- [${lesson.toolName} recovered](lessons/${fileName}) — ${hook}`;
+    if (line.length > 150) line = `${line.slice(0, 147)}...`;
+    const next =
+      index.length === 0
+        ? `${line}\n`
+        : index.endsWith("\n")
+          ? `${index}${line}\n`
+          : `${index}\n${line}\n`;
+    await input.fileSystemPort.writeTextFile({ content: next, path: indexPath });
+    return { written: true };
+  } catch {
+    return { written: false };
+  }
 }
