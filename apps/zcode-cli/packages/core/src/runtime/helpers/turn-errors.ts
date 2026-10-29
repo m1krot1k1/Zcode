@@ -15,6 +15,18 @@ import {
 } from "../../errors/error-payload.js";
 import { isModelContextExceededError } from "./model-errors.js";
 
+const SWARM_CRASH_BOUNDARY_ENV = "ZCODE_E2E_SWARM_CRASH_BOUNDARY";
+const SWARM_CRASH_BOUNDARY_HOLD_MS = 1_500;
+
+/**
+ * Окно для crash-injection Desktop E2E. Без env сразу возвращает управление:
+ * commit графа и резервирование child остаются соседними транзакциями.
+ */
+export async function holdSwarmCrashBoundary(): Promise<void> {
+  if (process.env[SWARM_CRASH_BOUNDARY_ENV] !== "1") return;
+  await new Promise((resolve) => setTimeout(resolve, SWARM_CRASH_BOUNDARY_HOLD_MS));
+}
+
 export const SWARM_RECONCILED_COMPLETION_RESULT =
   "Дочерняя сессия уже завершилась до перезапуска. Журнал зафиксировал этот факт по lastOutcome; текст транскрипта в результат узла не копировался.";
 

@@ -3,6 +3,7 @@
 // Subagent Runner
 // ============================================================
 
+import { holdSwarmCrashBoundary } from "../runtime/helpers/turn-errors.js";
 import type { GetAgentDefinitions } from "./definitions.js";
 import {
   AgentErrorCode,
@@ -314,6 +315,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (swarmNodeID && runOptions?.persistSwarmNodeAttempt) {
         try {
           await persistSwarmFact("reserved");
+          // 原因：预约写入后马上启动 child，外部进程看不到稳定的 dispatching。
+          // 修复依据：crash E2E 用 ZCODE_E2E_SWARM_CRASH_BOUNDARY 把窗口留到可 SIGKILL。
+          await holdSwarmCrashBoundary();
         } catch (error) {
           taskAbort.dispose();
           taskAbort.settle(undefined);

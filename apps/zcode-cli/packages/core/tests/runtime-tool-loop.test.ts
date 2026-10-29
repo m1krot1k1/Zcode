@@ -1,6 +1,9 @@
 import { withoutAgentListingMessages } from "./test-agent-listing.js";
 import { describe, expect, it, vi } from "vitest";
-import { classifySwarmRestartNodes } from "../src/runtime/helpers/turn-errors.js";
+import {
+  classifySwarmRestartNodes,
+  holdSwarmCrashBoundary,
+} from "../src/runtime/helpers/turn-errors.js";
 import { createTestModelSelection } from "./test-model-selection.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 import {
@@ -3770,6 +3773,29 @@ describe("AgentRuntime tool loop", () => {
     expect(order.indexOf("attempt_reserved")).toBeLessThan(order.indexOf("attempt:running"));
     expect(order.indexOf("attempt:running")).toBeLessThan(order.indexOf("attempt:completed"));
     expect(order.filter((entry) => entry === "admit")).toHaveLength(2);
+  });
+
+  it("holds a swarm crash boundary only when the desktop crash spec asks for it", async () => {
+    vi.useFakeTimers();
+    try {
+      const immediate = holdSwarmCrashBoundary();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await immediate;
+
+      vi.stubEnv("ZCODE_E2E_SWARM_CRASH_BOUNDARY", "1");
+      let settled = false;
+      const held = holdSwarmCrashBoundary().then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(1_499);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await held;
+      expect(settled).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    }
   });
 
   it("classifies never-started nodes as pending only after completed dependencies", () => {

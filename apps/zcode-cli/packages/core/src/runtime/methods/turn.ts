@@ -107,7 +107,7 @@ import {
   matchExecutionSelectionCreationFallback,
   resolveExecutionFallbackCandidates,
 } from "./turn-execution-fallback.js";
-import { classifySwarmRestartNodes } from "../helpers/turn-errors.js";
+import { classifySwarmRestartNodes, holdSwarmCrashBoundary } from "../helpers/turn-errors.js";
 import { recoverAndHydrateSwarmJournal } from "./resume.js";
 
 const TARGET_RUN_HEARTBEAT_MS = 15_000;
@@ -1633,6 +1633,9 @@ async function executeSwarmRun(
       }
       durableRun.revision += 1;
       journalFailClosed = false;
+      // 原因：图提交和 running 转移是连续两笔事务，外部几乎看不到中间态。
+      // 修复依据：只有 crash E2E 设置 ZCODE_E2E_SWARM_CRASH_BOUNDARY 时才留出 SIGKILL 窗口。
+      await holdSwarmCrashBoundary();
     }
 
     phase = "running";

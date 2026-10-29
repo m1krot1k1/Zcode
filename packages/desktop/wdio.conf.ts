@@ -940,6 +940,16 @@ function applyUpstreamE2EHttpModeForWorker(specs: string[]) {
   process.env.E2E_PROVIDER_HTTP_MODE = upstreamE2EHttpMode;
 }
 
+function applySwarmCrashBoundaryEnvForWorker(specs: string[]) {
+  if (specs.some((spec) => spec.includes("conversation-session-swarm-crash.test.ts"))) {
+    // Агент наследует env worker до spawn. Пауза после commit графа и резервирования
+    // есть только у этого spec; остальные worker её не получают.
+    process.env.ZCODE_E2E_SWARM_CRASH_BOUNDARY = "1";
+    return;
+  }
+  delete process.env.ZCODE_E2E_SWARM_CRASH_BOUNDARY;
+}
+
 function applyAskUserQuestionClockScaleForWorker(specs: string[]) {
   const scale = resolveAskUserQuestionClockScaleForWorker({
     requestedScale: requestedAskUserQuestionClockScale,
@@ -4926,6 +4936,7 @@ export const config: WebdriverIO.Config = {
     currentE2EWorkerSessionSpecs = specs;
     applyUpstreamE2EHttpModeForWorker(specs);
     applyAskUserQuestionClockScaleForWorker(specs);
+    applySwarmCrashBoundaryEnvForWorker(specs);
     applyE2EProviderEnv(specs);
     configureHighspeedE2EMock(specs);
     currentE2EBeforeSessionError = null;
