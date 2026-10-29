@@ -27,6 +27,8 @@ const PROXY_ENV_KEYS = [
   "https_proxy",
   "all_proxy",
 ] as const;
+const NO_PROXY_ENV_KEYS = ["NO_PROXY", "no_proxy"] as const;
+type ManagedProxyEnvKey = (typeof PROXY_ENV_KEYS)[number] | (typeof NO_PROXY_ENV_KEYS)[number];
 const PROXY_HEADER_LIMIT = 16 * 1024;
 const SOCKS_HANDSHAKE_TIMEOUT_MS = 15_000;
 
@@ -392,7 +394,8 @@ interface SharedProxyLeaseState {
   disposeBridge: () => Promise<void>;
   environment: NodeJS.ProcessEnv;
   localProxyUrl: string;
-  originalValues: Map<(typeof PROXY_ENV_KEYS)[number], string | undefined>;
+  originalValues: Map<ManagedProxyEnvKey, string | undefined>;
+  injectedValues: Map<ManagedProxyEnvKey, string>;
   references: number;
   retarget: (proxy: SocksProxyAddress) => void;
   sourceUrl: string;
@@ -441,12 +444,26 @@ export async function acquireOpenCodeSocksProxyLease(
     disposeBridge: bridge.dispose,
     environment,
     localProxyUrl: bridge.proxyUrl,
-    originalValues: new Map(PROXY_ENV_KEYS.map((key) => [key, environment[key]])),
+    originalValues: new Map(
+      [...PROXY_ENV_KEYS, ...NO_PROXY_ENV_KEYS].map((key) => [key, environment[key]]),
+    ),
+    injectedValues: new Map(),
     references: 1,
     retarget: bridge.retarget,
     sourceUrl: proxyUrl,
   };
-  for (const key of PROXY_ENV_KEYS) environment[key] = bridge.proxyUrl;
+  for (const key of PROXY_ENV_KEYS) {
+    environment[key] = bridge.proxyUrl;
+    state.injectedValues.set(key, bridge.proxyUrl);
+  }
+  // 修复原因：子进程继承 SOCKS 代理后，本机 MCP 控制请求也可能走上游；日志同时记录了 zcode 不可用和未处理的外部目录授权。这里只绕过 loopback，模型流量仍走代理。
+  for (const key of NO_PROXY_ENV_KEYS) {
+    const entries = new Set((environment[key] ?? "").split(",").map((entry) => entry.trim()).filter(Boolean));
+    if (!entries.has("*")) ["127.0.0.1", "localhost"].forEach((host) => entries.add(host));
+    const value = [...entries].join(",");
+    environment[key] = value;
+    state.injectedValues.set(key, value);
+  }
   sharedProxyLease = state;
   return createProxyLease(state);
 }
@@ -479,12 +496,11 @@ function createProxyLease(state: SharedProxyLeaseState): OpenCodeProxyLease {
       if (state.references > 0) return;
 
       if (sharedProxyLease === state) sharedProxyLease = undefined;
-      for (const key of PROXY_ENV_KEYS) {
-        if (state.environment[key] === state.localProxyUrl) {
-          const originalValue = state.originalValues.get(key);
-          if (originalValue === undefined) delete state.environment[key];
-          else state.environment[key] = originalValue;
-        }
+      for (const key of [...PROXY_ENV_KEYS, ...NO_PROXY_ENV_KEYS]) {
+        if (state.environment[key] !== state.injectedValues.get(key)) continue;
+        const originalValue = state.originalValues.get(key);
+        if (originalValue === undefined) delete state.environment[key];
+        else state.environment[key] = originalValue;
       }
       await state.disposeBridge();
     },

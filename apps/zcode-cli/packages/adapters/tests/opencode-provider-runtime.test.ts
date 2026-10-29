@@ -761,18 +761,34 @@ describe("OpenCode SOCKS proxy bridge", () => {
     const socksAddress = socksServer.address();
     if (!socksAddress || typeof socksAddress === "string") throw new Error("missing SOCKS port");
 
-    const environment: NodeJS.ProcessEnv = { HTTPS_PROXY: "https://original.invalid" };
+    const environment: NodeJS.ProcessEnv = {
+      HTTPS_PROXY: "https://original.invalid",
+      NO_PROXY: "example.test",
+      no_proxy: "legacy.test",
+    };
     const lease = await acquireOpenCodeSocksProxyLease(
       `socks5://test-user:test-password@127.0.0.1:${socksAddress.port}`,
       environment,
     );
     expect(lease).toBeDefined();
     expect(environment.HTTPS_PROXY).toBe(lease?.localProxyUrl);
+    expect(environment.NO_PROXY?.split(",")).toEqual([
+      "example.test",
+      "127.0.0.1",
+      "localhost",
+    ]);
+    expect(environment.no_proxy?.split(",")).toEqual([
+      "legacy.test",
+      "127.0.0.1",
+      "localhost",
+    ]);
     const response = await sendConnect(lease!.localProxyUrl, targetAddress.port);
     expect(response).toBe("connected-through-socks");
 
     await lease?.dispose();
     expect(environment.HTTPS_PROXY).toBe("https://original.invalid");
+    expect(environment.NO_PROXY).toBe("example.test");
+    expect(environment.no_proxy).toBe("legacy.test");
     await close(socksServer);
     await close(targetServer);
   });
