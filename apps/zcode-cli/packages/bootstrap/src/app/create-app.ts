@@ -102,7 +102,10 @@ import {
 } from "./node-repl-browser-broker.js";
 import { resolveBuiltInNodeReplMcpServers } from "./built-in-node-repl.js";
 import { resolveZCodeCustomCommandPrompt } from "../custom-command-prompt.js";
-import { resolveZCodeBuiltinPromptCommandInvocation } from "../builtin-prompt-command.js";
+import {
+  loadEvaluationCatalogForEvaluate,
+  resolveZCodeBuiltinPromptCommandInvocation,
+} from "../builtin-prompt-command.js";
 import { BUILTIN_WORKFLOW_COMMAND_NAME } from "../builtin-workflow-command.js";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
 import {
@@ -938,6 +941,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           // 剔除，但用户仍可手打命令名，两条路径必须给出同一个结论。独立 CLI 的 TUI 与 headless
           // 按 --workflow-mode 显式取值；缺席（进程内嵌入方）不设门禁，见 runtimeConfig 字段注释。
           dynamicWorkflowEnabled: runtimeConfig.dynamicWorkflowEnabled,
+          evaluationCatalog: await loadEvaluationCatalogForEvaluate(text, workingDirectory),
           workingDirectory,
         });
         if (builtin !== undefined) {

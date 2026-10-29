@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative } from "node:path";
 import {
   BUILTIN_WORKFLOW_COMMAND_NAME,
   expandBuiltinWorkflowCommandPrompt,
@@ -41,7 +42,95 @@ export interface ResolveZCodeBuiltinPromptCommandOptions {
    * 普通 prompt 交给模型，与目录侧剔除它的结论一致（DWG-03）。
    */
   dynamicWorkflowEnabled?: boolean;
+  evaluationCatalog?: SharedEvaluationCatalog;
   workingDirectory?: string;
+}
+
+const SHARED_EVALUATION_CASE_LIMIT = 50;
+const SHARED_EVALUATION_TEXT_LIMIT = 240;
+const SHARED_EVALUATION_ID = /^[A-Z][A-Z0-9-]{1,40}$/;
+const SHARED_EVALUATION_SECRET = /sk-|bearer|token|password|api[_-]?key/i;
+
+export interface SharedEvaluationCase {
+  criterion: string;
+  evidence?: string;
+  id: string;
+}
+
+export type SharedEvaluationCatalog =
+  | { cases: SharedEvaluationCase[]; status: "ready" }
+  | { reason: string; status: "invalid" }
+  | { status: "absent" };
+
+export function sharedEvaluationCatalogPath(workingDirectory: string): string {
+  return join(workingDirectory, ".zcode", "evaluation-cases.json");
+}
+
+export function parseSharedEvaluationCatalog(raw: string): SharedEvaluationCatalog {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return { reason: "not-json", status: "invalid" };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { reason: "shape", status: "invalid" };
+  }
+  const document = parsed as Record<string, unknown>;
+  if (document.version !== 1) return { reason: "version", status: "invalid" };
+  if (!Array.isArray(document.cases)) return { reason: "cases", status: "invalid" };
+  if (document.cases.length > SHARED_EVALUATION_CASE_LIMIT) {
+    return { reason: "cases", status: "invalid" };
+  }
+  const cases: SharedEvaluationCase[] = [];
+  const seen = new Set<string>();
+  for (const item of document.cases) {
+    const parsedCase = parseSharedEvaluationCase(item);
+    if (parsedCase.status === "invalid") return parsedCase;
+    if (seen.has(parsedCase.case.id)) return { reason: "duplicate", status: "invalid" };
+    seen.add(parsedCase.case.id);
+    cases.push(parsedCase.case);
+  }
+  return { cases, status: "ready" };
+}
+
+export async function loadEvaluationCatalogForEvaluate(
+  text: string,
+  workingDirectory: string,
+): Promise<SharedEvaluationCatalog | undefined> {
+  const name = text.trim().split(/\s+/u, 1)[0]?.toLowerCase();
+  if (name !== "/evaluate") return undefined;
+  return loadSharedEvaluationCatalog(workingDirectory);
+}
+
+export async function loadSharedEvaluationCatalog(
+  workingDirectory: string,
+): Promise<SharedEvaluationCatalog> {
+  let workspaceRoot: string;
+  try {
+    workspaceRoot = await realpath(workingDirectory);
+  } catch {
+    return { reason: "unreadable", status: "invalid" };
+  }
+  const catalogPath = sharedEvaluationCatalogPath(workspaceRoot);
+  let filePath: string;
+  try {
+    filePath = await realpath(catalogPath);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { status: "absent" }
+      : { reason: "unreadable", status: "invalid" };
+  }
+  const fromWorkspace = relative(workspaceRoot, filePath);
+  // 原因：目录必须留在工作区内。指向工作区外的符号链接不能成为评测集。
+  if (fromWorkspace.startsWith("..") || isAbsolute(fromWorkspace)) {
+    return { reason: "path", status: "invalid" };
+  }
+  try {
+    return parseSharedEvaluationCatalog(await readFile(filePath, "utf8"));
+  } catch {
+    return { reason: "unreadable", status: "invalid" };
+  }
 }
 
 export interface ResolvedZCodeBuiltinPromptCommand {
@@ -92,20 +181,98 @@ export function resolveZCodeBuiltinPromptCommandInvocation(
     ZCODE_NATIVE_AGENT_COMMANDS[invocation.name as keyof typeof ZCODE_NATIVE_AGENT_COMMANDS];
   if (nativeAgentCommand) {
     const task = invocation.args || nativeAgentCommand.defaultTask;
+    const lines = [
+      `You are handling the built-in /${invocation.name} command in ZCode.`,
+      `The user's task is: ${task}`,
+      "Use the ordinary typed Task tool to dispatch exactly the named profile below. Do not substitute a generic role, and do not claim the agent ran unless the tool result confirms it.",
+      `Required exact profile: ${nativeAgentCommand.role}`,
+      nativeAgentCommand.instruction,
+      "Return the agent's evidence-backed result to the user. Preserve normal tool permissions, cancellation, and session behavior.",
+    ];
+    if (invocation.name === "evaluate") {
+      lines.push(...sharedEvaluationPromptLines(options.evaluationCatalog ?? { status: "absent" }));
+    }
     return {
       name: invocation.name,
-      prompt: [
-        `You are handling the built-in /${invocation.name} command in ZCode.`,
-        `The user's task is: ${task}`,
-        "Use the ordinary typed Task tool to dispatch exactly the named profile below. Do not substitute a generic role, and do not claim the agent ran unless the tool result confirms it.",
-        `Required exact profile: ${nativeAgentCommand.role}`,
-        nativeAgentCommand.instruction,
-        "Return the agent's evidence-backed result to the user. Preserve normal tool permissions, cancellation, and session behavior.",
-      ].join("\n\n"),
+      prompt: lines.join("\n\n"),
     };
   }
 
   return undefined;
+}
+
+function parseSharedEvaluationCase(
+  item: unknown,
+): { case: SharedEvaluationCase; status: "ready" } | { reason: string; status: "invalid" } {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return { reason: "shape", status: "invalid" };
+  }
+  const record = item as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "id" && key !== "criterion" && key !== "evidence") {
+      return { reason: "shape", status: "invalid" };
+    }
+  }
+  if (typeof record.id !== "string" || !SHARED_EVALUATION_ID.test(record.id)) {
+    return { reason: "id", status: "invalid" };
+  }
+  if (!isSharedEvaluationText(record.criterion)) return { reason: "criterion", status: "invalid" };
+  if (record.evidence !== undefined && !isSharedEvaluationText(record.evidence)) {
+    return { reason: "evidence", status: "invalid" };
+  }
+  const criterion = record.criterion.trim();
+  const evidence = typeof record.evidence === "string" ? record.evidence.trim() : undefined;
+  if (
+    SHARED_EVALUATION_SECRET.test(record.id) ||
+    SHARED_EVALUATION_SECRET.test(criterion) ||
+    (evidence !== undefined && SHARED_EVALUATION_SECRET.test(evidence))
+  ) {
+    return { reason: "secret", status: "invalid" };
+  }
+  return {
+    case: { criterion, id: record.id, ...(evidence ? { evidence } : {}) },
+    status: "ready",
+  };
+}
+
+function isSharedEvaluationText(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.trim().length <= SHARED_EVALUATION_TEXT_LIMIT &&
+    !value.includes("\n")
+  );
+}
+
+function sharedEvaluationPromptLines(catalog: SharedEvaluationCatalog): string[] {
+  const owner =
+    "Shared evaluation cases have one owner: .zcode/evaluation-cases.json. Individual test files are not the suite.";
+  if (catalog.status === "absent") {
+    return [
+      owner,
+      "No shared catalog file is present. Report that the shared suite was not run. Judge only criteria the user stated in this command, each as pass, fail, or not run.",
+    ];
+  }
+  if (catalog.status === "invalid") {
+    return [
+      owner,
+      `The shared catalog is invalid (${catalog.reason}). Do not mark any shared case pass. Report the suite as not run.`,
+    ];
+  }
+  if (catalog.cases.length === 0) {
+    return [
+      owner,
+      "The shared catalog has no cases. Report that the shared suite has nothing to run.",
+    ];
+  }
+  return [
+    owner,
+    "Report every shared case below. A case is pass only when its evidence was observed in this run. Otherwise mark it fail or not run. Do not add unnamed cases to the suite.",
+    ...catalog.cases.map(
+      (item) =>
+        `- ${item.id}: ${item.criterion}${item.evidence ? ` Evidence hint: ${item.evidence}` : ""}`,
+    ),
+  ];
 }
 
 function parseBuiltinPromptCommandInvocation(input: string): { args: string; name: string } | null {
@@ -125,13 +292,9 @@ function buildInitAgentsPrompt(params: {
   workingDirectory: string;
 }): string {
   const additionalInstructions = params.args
-    ? [
-        "",
-        "Additional user instructions supplied with /init:",
-        "```text",
-        params.args,
-        "```",
-      ].join("\n")
+    ? ["", "Additional user instructions supplied with /init:", "```text", params.args, "```"].join(
+        "\n",
+      )
     : "";
 
   return [

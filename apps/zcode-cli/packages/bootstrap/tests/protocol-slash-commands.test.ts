@@ -1,9 +1,14 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecutionPort, ExecutionResult, SessionId } from "@zcode/contracts";
-import { resolveZCodeBuiltinPromptCommand } from "../src/builtin-prompt-command.js";
+import {
+  loadEvaluationCatalogForEvaluate,
+  loadSharedEvaluationCatalog,
+  parseSharedEvaluationCatalog,
+  resolveZCodeBuiltinPromptCommand,
+} from "../src/builtin-prompt-command.js";
 import { resolveZCodeCustomCommandPrompt } from "../src/custom-command-prompt.js";
 import { listProtocolSlashCommands } from "../src/zcode-protocol/slash-commands.js";
 
@@ -174,9 +179,9 @@ describe("protocol slash command surface", () => {
       expect(prompt).toContain("they already have an instructions file");
       expect(prompt).not.toContain("Do not create CLAUDE.md or AGNENTS.md");
       expect(prompt).toContain("include pnpm scripts");
-      expect(resolveZCodeBuiltinPromptCommand("/review", { workingDirectory: workspace })).toContain(
-        "Required exact profile: reviewer",
-      );
+      expect(
+        resolveZCodeBuiltinPromptCommand("/review", { workingDirectory: workspace }),
+      ).toContain("Required exact profile: reviewer");
       expect(
         resolveZCodeBuiltinPromptCommand("please /init", { workingDirectory: workspace }),
       ).toBe(undefined);
@@ -306,6 +311,103 @@ describe("protocol slash command surface", () => {
         "Custom command /session-context variable requires a runtime session context: CLAUDE_SESSION_ID",
       );
       expect(executionCalled).toBe(false);
+    } finally {
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("shared evaluation catalog", () => {
+  const catalog = {
+    version: 1,
+    cases: [
+      {
+        id: "EVAL-01",
+        criterion: "The draft is saved",
+        evidence: "draft.test.ts asserts the text",
+      },
+      { id: "EVAL-02", criterion: "The empty state stays visible" },
+    ],
+  };
+
+  it("accepts named cases and rejects a catalog that cannot be judged", () => {
+    expect(parseSharedEvaluationCatalog(JSON.stringify(catalog))).toEqual({
+      status: "ready",
+      cases: catalog.cases,
+    });
+    expect(
+      parseSharedEvaluationCatalog(
+        JSON.stringify({
+          version: 1,
+          cases: [catalog.cases[0], { ...catalog.cases[0] }],
+        }),
+      ),
+    ).toEqual({ status: "invalid", reason: "duplicate" });
+    const secret = parseSharedEvaluationCatalog(
+      JSON.stringify({
+        version: 1,
+        cases: [{ id: "EVAL-03", criterion: "keep sk-live-secret out of the suite" }],
+      }),
+    );
+    expect(secret).toEqual({ status: "invalid", reason: "secret" });
+    expect(JSON.stringify(secret)).not.toContain("sk-live-secret");
+  });
+
+  it("lists accepted cases in /evaluate and does not treat a missing catalog as a pass", () => {
+    const ready = parseSharedEvaluationCatalog(JSON.stringify(catalog));
+    const prompt = resolveZCodeBuiltinPromptCommand("/evaluate the draft", {
+      evaluationCatalog: ready,
+    });
+
+    expect(prompt).toContain("Required exact profile: evaluator");
+    expect(prompt).toContain("- EVAL-01: The draft is saved");
+    expect(prompt).toContain("A case is pass only when its evidence was observed");
+    expect(prompt).not.toContain("sk-live-secret");
+
+    const absent = resolveZCodeBuiltinPromptCommand("/evaluate the draft");
+    expect(absent).toContain("No shared catalog file is present");
+    expect(absent).toContain("shared suite was not run");
+
+    const invalid = resolveZCodeBuiltinPromptCommand("/evaluate the draft", {
+      evaluationCatalog: { status: "invalid", reason: "secret" },
+    });
+    expect(invalid).toContain("Do not mark any shared case pass");
+    expect(invalid).not.toContain("sk-live-secret");
+  });
+
+  it("loads a workspace catalog and refuses a link that leaves the workspace", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "zcode-eval-catalog-"));
+    const workspace = join(tempRoot, "workspace");
+    const outside = join(tempRoot, "outside.json");
+
+    try {
+      await mkdir(join(workspace, ".zcode"), { recursive: true });
+      expect(
+        await loadEvaluationCatalogForEvaluate("/review the draft", workspace),
+      ).toBeUndefined();
+      expect(await loadSharedEvaluationCatalog(workspace)).toEqual({ status: "absent" });
+
+      await writeFile(join(workspace, ".zcode", "evaluation-cases.json"), JSON.stringify(catalog));
+      const loaded = await loadSharedEvaluationCatalog(workspace);
+      const prompt = resolveZCodeBuiltinPromptCommand("/evaluate the draft", {
+        evaluationCatalog: loaded,
+      });
+      expect(prompt).toContain("- EVAL-02: The empty state stays visible");
+
+      await writeFile(
+        outside,
+        JSON.stringify({
+          version: 1,
+          cases: [{ id: "EVAL-OUT", criterion: "Outside criterion must stay out" }],
+        }),
+      );
+      await rm(join(workspace, ".zcode", "evaluation-cases.json"));
+      await symlink(outside, join(workspace, ".zcode", "evaluation-cases.json"));
+      const escaped = await loadSharedEvaluationCatalog(workspace);
+      expect(escaped).toEqual({ status: "invalid", reason: "path" });
+      expect(
+        resolveZCodeBuiltinPromptCommand("/evaluate the draft", { evaluationCatalog: escaped }),
+      ).not.toContain("Outside criterion must stay out");
     } finally {
       await rm(tempRoot, { force: true, recursive: true });
     }
