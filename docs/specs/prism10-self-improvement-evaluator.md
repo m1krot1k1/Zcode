@@ -64,7 +64,7 @@ Gate повторяет направления исходного алгорит
 
 ### Текущее состояние candidate CI (2026-10-22)
 
-Проверенный локальный `dev` не содержит активных GitHub Actions workflows. CI постоянно выполняется локально на Mac: `pnpm verify:pre-push`, а для сборки/релиза добавляются typecheck и соответствующие локальные build/release gates согласно `docs/specs/prism10-candidate-ci.md`. `git push` не запускает hosted runner; CI не использует GitHub Actions tokens или runner minutes. Ранее наблюдавшийся workflow `pull_request_target` и run `39692710606` относятся к историческому состоянию и не описывают текущий checkout.
+Локальный CI постоянно выполняется на Mac: `pnpm verify:pre-push`, а для сборки/релиза добавляются typecheck и локальные build/release gates согласно `docs/specs/prism10-candidate-ci.md`. Обычные `git push` и PR не запускают hosted runner. Отдельный version-tag workflow существует только для пользовательского кроссплатформенного Preview-релиза и расходует runner minutes при создании такого релиза. Ранее наблюдавшийся workflow `pull_request_target` и run `39692710606` относятся к историческому состоянию и не описывают текущий checkout.
 
 Локальный CI не заменяет внешний protected gate для `--apply`. Этот gate не подключён, поэтому `--apply` остаётся заблокированным до `git fetch`, branch creation, commit, push или GitHub CLI вызовов. Отсутствующий, неуспешный или неприменимый внешний gate не может быть заменён локальным receipt, env-переменной либо зелёным pre-push.
 
