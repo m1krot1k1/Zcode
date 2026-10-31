@@ -3453,7 +3453,19 @@ describe("AgentRuntime tool loop", () => {
         const dagRequest = request as {
           turnId: string;
           orchestrationRunId: string;
+          nodes: Array<{
+            id: string;
+            depends_on?: string[];
+            acceptance_criteria?: unknown[];
+          }>;
         };
+        expect(dagRequest.nodes).toHaveLength(3);
+        expect(dagRequest.nodes.filter((node) => !node.depends_on)).toHaveLength(2);
+        expect(dagRequest.nodes.find((node) => node.id === "branch-review")?.depends_on).toEqual([
+          "branch-a",
+          "branch-b",
+        ]);
+        expect(dagRequest.nodes.every((node) => node.acceptance_criteria === undefined)).toBe(true);
         for (const [index, childSessionId] of ["swarm-child-a", "swarm-child-b"].entries()) {
           runtimeTaskRegistry.register({
             type: "local_agent",
@@ -3532,17 +3544,20 @@ describe("AgentRuntime tool loop", () => {
                         description: "Inspect A",
                         prompt: "Inspect A",
                         subagent_type: "researcher",
+                        acceptance_criteria: ["The repository metadata was inspected."],
                       },
                       {
                         id: "branch-b",
                         description: "Inspect B",
                         prompt: "Inspect B",
                         subagent_type: "implementer",
+                        acceptance_criteria: ["The first document heading was read."],
                       },
                       {
                         id: "branch-review",
                         description: "Check the implementation",
                         prompt: "Review the implementation",
+                        depends_on: ["branch-a", "branch-b"],
                         subagent_type: "reviewer",
                       },
                     ],
@@ -3576,6 +3591,8 @@ describe("AgentRuntime tool loop", () => {
     expect(plannerRequestOptions[0]?.maxOutputTokens).toBe(80);
     expect(plannerRequestOptions[0]?.prompt).toContain('"researcher"');
     expect(plannerRequestOptions[0]?.prompt).toContain('"implementer"');
+    expect(plannerRequestOptions[0]?.prompt).toContain('"kind":"bash_exit_code"');
+    expect(plannerRequestOptions[0]?.prompt).toContain("array of these objects, never strings");
     expect(plannerRequestOptions[0]?.prompt).toContain("reviewer: Независимо ищет ошибки");
     expect(plannerRequestOptions[0]?.prompt).not.toContain("Workspace attempt to shadow");
     expect(plannerRequestOptions[0]?.prompt).not.toContain('"general-purpose"');
@@ -5280,11 +5297,13 @@ describe("AgentRuntime tool loop", () => {
     expect(callCount).toBe(2);
     expect(runTaskDag).not.toHaveBeenCalled();
     const events = await eventStore.getEvents(sessionId);
-    expect(
-      events
-        .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
-        .map((event) => (event.payload as { status: string }).status),
-    ).toEqual(["planning", "failed"]);
+    const swarmEvents = events.filter((event) => event.type === SessionEventType.SwarmRunUpdated);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
+    expect(swarmEvents[1]?.payload).toMatchObject({
+      taskCount: 0,
+      summary: expect.stringContaining("План роя отклонён"),
+    });
+    expect(swarmEvents[1]?.payload.summary).toContain("две независимые задачи");
   });
 
   it("plain executeTurn does not run post-turn active target loop without opt-in", async () => {

@@ -1207,6 +1207,13 @@ const SWARM_PLAN_TIMEOUT_MS = 60_000;
 const SWARM_CHILD_RESULT_MAX_BYTES = 48 * 1024;
 const MAX_RECURSIVE_TASK_CAPABILITY_PROBE_DEPTH = 100;
 
+class SwarmPlanValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SwarmPlanValidationError";
+  }
+}
+
 async function executeSwarmRun(
   this: AgentRuntimeInternal,
   state: RegularTurnLoopState,
@@ -1596,6 +1603,14 @@ async function executeSwarmRun(
       );
       throwIfTurnAborted(state.turnAbortSignal);
       plan = parseSwarmPlan(planResult.text, agentProfileIds);
+      if ((plan.discardedProseAcceptanceCriteria ?? 0) > 0) {
+        this.logger?.warn("Swarm planner returned non-verifiable prose criteria; ignored", {
+          event: "swarm.planning.prose_criteria_ignored",
+          module: "core.runtime",
+          swarmRunId,
+          count: plan.discardedProseAcceptanceCriteria ?? 0,
+        });
+      }
     }
     if (plan.decision === "leaf") {
       // Leaf означает, что задачу лучше выполнить одним ответом; это не ошибка отправки,
@@ -1844,6 +1859,10 @@ async function executeSwarmRun(
       state.turnAbortSignal.aborted || (!plannerTimedOut && isTurnCancellationError(error));
     const message = error instanceof Error ? error.message : String(error);
     if (phase === "planning" && !cancelled) {
+      const invalidPlan = error instanceof SwarmPlanValidationError;
+      const fallbackSummary = invalidPlan
+        ? `План роя отклонён: ${truncateUtf8(message, 180)}. Рой не запущен; сообщение продолжено обычным ответом.`
+        : "Планирование не удалось; сообщение передано обычному выполнению.";
       // Ошибка или отказ planner до запуска агентов не должны превращать отправку
       // сообщения в ошибку чата: задача всё ещё может быть выполнена обычным turn.
       if (durableRun) {
@@ -1853,7 +1872,7 @@ async function executeSwarmRun(
           outcomeAcceptance: "unknown",
           taskCount: 0,
           childSessionIds: [],
-          summary: "Планирование не удалось; сообщение передано обычному выполнению.",
+          summary: fallbackSummary,
         });
       } else if (planningStatusPublished) {
         // 根因：无 durable journal 的规划失败被错误记为 completed，尽管没有执行任何 swarm 节点。
@@ -1864,7 +1883,7 @@ async function executeSwarmRun(
           outcomeAcceptance: "unknown",
           taskCount: 0,
           childSessionIds: [],
-          summary: "Планирование не удалось; сообщение передано обычному выполнению.",
+          summary: fallbackSummary,
         }).catch((publishError: unknown) => {
           this.logger?.warn("Swarm fallback lifecycle event could not be persisted", {
             event: "swarm.lifecycle.persist_failed",
@@ -1878,7 +1897,11 @@ async function executeSwarmRun(
         event: "swarm.planning.fallback",
         module: "core.runtime",
         swarmRunId,
-        reason: plannerTimedOut ? "planner_timeout" : "planner_request_failed",
+        reason: plannerTimedOut
+          ? "planner_timeout"
+          : invalidPlan
+            ? "planner_invalid_plan"
+            : "planner_request_failed",
       });
       return false;
     }
@@ -2052,6 +2075,7 @@ function buildSwarmPlannerPrompt(
     "Decide whether this task needs independent parallel work. Return only JSON in one of these shapes:",
     '{"decision":"leaf","reason":"..."}',
     `{"decision":"split","graph":{"nodes":[{"id":"short-id","description":"...","prompt":"...","depends_on":["prior-id"],"subagent_type":${JSON.stringify(exampleProfileId)}}],"max_parallel":8}}`,
+    'If and only if a node has a safe, reproducible host check, its acceptance_criteria must use this exact object shape: {"id":"check-id","description":"what the check proves","check":{"kind":"bash_exit_code","command":"a concrete safe command","expectedExitCode":0}}. acceptance_criteria is an array of these objects, never strings. Omit acceptance_criteria when no such command is justified; never invent a command to fill it.',
     `Use only these exact active agent type IDs: ${JSON.stringify(availableProfileIds)}. Never invent or normalize an ID.`,
     "Each node must select one exact role ID. Never omit subagent_type and never use a generic/default role.",
     ...(availableProfiles.length
@@ -2069,8 +2093,12 @@ function parseSwarmPlan(
   text: string,
   availableProfileIds: readonly string[],
 ):
-  | { decision: "leaf"; reason: string }
-  | { decision: "split"; graph: ReturnType<typeof AgentTaskGraphSchema.parse> } {
+  | { decision: "leaf"; reason: string; discardedProseAcceptanceCriteria: 0 }
+  | {
+      decision: "split";
+      graph: ReturnType<typeof AgentTaskGraphSchema.parse>;
+      discardedProseAcceptanceCriteria?: number;
+    } {
   const trimmed = text.trim();
   const jsonText = trimmed.startsWith("```")
     ? trimmed.replace(/^```(?:json)?\s*/iu, "").replace(/\s*```$/u, "")
@@ -2079,24 +2107,31 @@ function parseSwarmPlan(
   try {
     value = JSON.parse(jsonText);
   } catch (error) {
-    throw new Error(
+    throw new SwarmPlanValidationError(
       `Планировщик вернул невалидный JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("План роя должен быть JSON-объектом.");
+    throw new SwarmPlanValidationError("План роя должен быть JSON-объектом.");
   }
   const record = value as Record<string, unknown>;
   if (record.decision === "leaf") {
     if (typeof record.reason !== "string" || !record.reason.trim()) {
-      throw new Error("Для решения leaf нужна краткая причина.");
+      throw new SwarmPlanValidationError("Для решения leaf нужна краткая причина.");
     }
-    return { decision: "leaf", reason: record.reason.trim() };
+    return {
+      decision: "leaf",
+      reason: record.reason.trim(),
+      discardedProseAcceptanceCriteria: 0,
+    };
   }
-  if (record.decision !== "split") throw new Error("Решение плана должно быть split или leaf.");
-  const parsed = AgentTaskGraphSchema.safeParse(record.graph);
+  if (record.decision !== "split") {
+    throw new SwarmPlanValidationError("Решение плана должно быть split или leaf.");
+  }
+  const normalized = discardProseSwarmAcceptanceCriteria(record.graph);
+  const parsed = AgentTaskGraphSchema.safeParse(normalized.graph);
   if (!parsed.success) {
-    throw new Error(
+    throw new SwarmPlanValidationError(
       `План роя не прошёл проверку схемы: ${parsed.error.issues[0]?.message ?? "invalid task graph"}`,
     );
   }
@@ -2105,12 +2140,12 @@ function parseSwarmPlan(
     (node) => !node.subagent_type || !availableProfiles.has(node.subagent_type),
   )?.subagent_type;
   if (!parsed.data.nodes.every((node) => node.subagent_type)) {
-    throw new Error(
+    throw new SwarmPlanValidationError(
       "Каждая задача роя должна явно указать subagent_type из активного списка ролей.",
     );
   }
   if (unknownProfile) {
-    throw new Error(
+    throw new SwarmPlanValidationError(
       `План роя запросил неизвестный профиль «${unknownProfile}». Доступны: ${availableProfileIds.join(", ") || "нет активных профилей"}.`,
     );
   }
@@ -2118,8 +2153,45 @@ function parseSwarmPlan(
     (node) => (node.depends_on?.length ?? 0) === 0,
   ).length;
   if (independentRootCount < 2)
-    throw new Error("Для решения split нужны минимум две независимые задачи.");
-  return { decision: "split", graph: parsed.data };
+    throw new SwarmPlanValidationError("Для решения split нужны минимум две независимые задачи.");
+  return {
+    decision: "split",
+    graph: parsed.data,
+    discardedProseAcceptanceCriteria: normalized.discardedCount,
+  };
+}
+
+function discardProseSwarmAcceptanceCriteria(graph: unknown): {
+  graph: unknown;
+  discardedCount: number;
+} {
+  if (!graph || typeof graph !== "object" || Array.isArray(graph)) {
+    return { graph, discardedCount: 0 };
+  }
+  const source = graph as Record<string, unknown>;
+  if (!Array.isArray(source.nodes)) return { graph, discardedCount: 0 };
+
+  let discardedCount = 0;
+  const nodes = source.nodes.map((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return candidate;
+    }
+    const node = candidate as Record<string, unknown>;
+    if (!Array.isArray(node.acceptance_criteria)) return candidate;
+    const checks = node.acceptance_criteria.filter((criterion) => typeof criterion !== "string");
+    const proseCount = node.acceptance_criteria.length - checks.length;
+    if (proseCount === 0) return candidate;
+
+    // 原因：模型常把不可执行的验收描述写成字符串；不能将其伪装成已验证命令。
+    // 修复依据：criteria schema 只允许 Host 可执行的 Bash exit-code 检查，空值语义为 unknown。
+    discardedCount += proseCount;
+    const normalizedNode = { ...node };
+    if (checks.length === 0) delete normalizedNode.acceptance_criteria;
+    else normalizedNode.acceptance_criteria = checks;
+    return normalizedNode;
+  });
+
+  return { graph: { ...source, nodes }, discardedCount };
 }
 
 function buildSwarmResumeNodes(
