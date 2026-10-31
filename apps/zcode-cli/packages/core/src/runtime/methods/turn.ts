@@ -1856,13 +1856,15 @@ async function executeSwarmRun(
           summary: "Планирование не удалось; сообщение передано обычному выполнению.",
         });
       } else if (planningStatusPublished) {
+        // 根因：无 durable journal 的规划失败被错误记为 completed，尽管没有执行任何 swarm 节点。
+        // 修复依据：显式 Swarm 只在有效计划节点完成后才能显示 completed；普通 turn 的结果单独呈现。
         await publish({
           swarmRunId,
-          status: "completed",
+          status: "failed",
           outcomeAcceptance: "unknown",
           taskCount: 0,
           childSessionIds: [],
-          summary: "Планирование не удалось; передаю сообщение выбранной модели напрямую.",
+          summary: "Планирование не удалось; сообщение передано обычному выполнению.",
         }).catch((publishError: unknown) => {
           this.logger?.warn("Swarm fallback lifecycle event could not be persisted", {
             event: "swarm.lifecycle.persist_failed",

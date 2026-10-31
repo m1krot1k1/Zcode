@@ -4865,7 +4865,7 @@ describe("AgentRuntime tool loop", () => {
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
     expect(swarmEvents[1]?.payload).toMatchObject({
       taskCount: 0,
       childSessionIds: [],
@@ -4920,7 +4920,7 @@ describe("AgentRuntime tool loop", () => {
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
   });
 
   it("continues an explicit OpenCode swarm when the planner throws the self-referential probe error", async () => {
@@ -4972,11 +4972,57 @@ describe("AgentRuntime tool loop", () => {
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
     expect(swarmEvents[1]?.payload).toMatchObject({
       taskCount: 0,
       childSessionIds: [],
       summary: expect.stringContaining("Планирование не удалось"),
+    });
+  });
+
+  it("keeps an unjournaled swarm failed when its ordinary OpenCode fallback also fails", async () => {
+    const sessionId = createSessionId("runtime-opencode-swarm-fallback-empty-response");
+    const eventStore = createTestSessionEventStore();
+    const runTaskDag = vi.fn();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        modelSelection: createTestModelSelection("opencode/deepseek-v4.1-flash-free"),
+      },
+      {
+        eventStore,
+        subagentPort: { runTaskDag } as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            if (
+              providerMessagesToText(request.messages).includes(
+                "Decide whether this task needs independent parallel work",
+              )
+            ) {
+              throw new Error("temporary planner transport failure");
+            }
+            throw new Error("OpenCode returned an empty response.");
+          },
+        } as never),
+      },
+    );
+
+    await expect(
+      runtime.executeTurn("Проведи анализ репозитория", undefined, {
+        intent: { orchestrationMode: "swarm" },
+      }),
+    ).rejects.toThrow();
+
+    expect(runTaskDag).not.toHaveBeenCalled();
+    const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
+      (event) => event.type === SessionEventType.SwarmRunUpdated,
+    );
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
+    expect(swarmEvents[1]?.payload).toMatchObject({
+      taskCount: 0,
+      childSessionIds: [],
+      summary: "Планирование не удалось; сообщение передано обычному выполнению.",
     });
   });
 
@@ -5042,7 +5088,7 @@ describe("AgentRuntime tool loop", () => {
       const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
         (event) => event.type === SessionEventType.SwarmRunUpdated,
       );
-      expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+      expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
       expect(swarmEvents[1]?.payload).toMatchObject({
         taskCount: 0,
         childSessionIds: [],
@@ -5115,7 +5161,7 @@ describe("AgentRuntime tool loop", () => {
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
   });
 
   it("continues a swarm request when the planner omits a specialized role", async () => {
@@ -5173,7 +5219,7 @@ describe("AgentRuntime tool loop", () => {
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
   });
 
   it("continues a swarm request when the planner returns an invalid split", async () => {
@@ -5238,7 +5284,7 @@ describe("AgentRuntime tool loop", () => {
       events
         .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
         .map((event) => (event.payload as { status: string }).status),
-    ).toEqual(["planning", "completed"]);
+    ).toEqual(["planning", "failed"]);
   });
 
   it("plain executeTurn does not run post-turn active target loop without opt-in", async () => {
