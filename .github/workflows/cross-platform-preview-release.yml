@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to build and attach platform assets to
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
 
 permissions:
   contents: read
@@ -39,6 +48,7 @@ jobs:
       - name: Checkout tagged source
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref }}
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -51,7 +61,7 @@ jobs:
       - name: Verify tag matches package version
         shell: bash
         run: |
-          node -e 'const p=require("./package.json"); const tag=process.env.GITHUB_REF_NAME; if (`v${p.version}` !== tag) { console.error(`Tag ${tag} does not match package version ${p.version}`); process.exit(1); }'
+          node -e 'const p=require("./package.json"); const tag=process.env.RELEASE_TAG; if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag) || `v${p.version}` !== tag) { console.error(`Release tag ${tag} does not match package version ${p.version}`); process.exit(1); }'
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
       - name: Build offline Preview Desktop
@@ -76,7 +86,7 @@ jobs:
       - name: Stage versioned Desktop artifacts
         shell: bash
         run: |
-          node -e 'const fs=require("node:fs"); const path=require("node:path"); const version=process.env.GITHUB_REF_NAME.slice(1); const dir="packages/desktop/dist"; const files=fs.readdirSync(dir).filter((f)=>/\.(dmg|zip|exe|AppImage|deb|rpm|pkg\.tar\.zst)$/i.test(f)); if(!files.length) throw new Error(`No Desktop artifacts in ${dir}`); const out=`release-assets/desktop-${process.env.TARGET}`; fs.mkdirSync(out,{recursive:true}); for(const f of files) fs.copyFileSync(path.join(dir,f),path.join(out,`ZCode-Preview-${version}-${process.env.TARGET}-${f}`)); console.log(files.join("\n"));'
+          node -e 'const fs=require("node:fs"); const path=require("node:path"); const version=process.env.RELEASE_TAG.slice(1); const dir="packages/desktop/dist"; const files=fs.readdirSync(dir).filter((f)=>/\.(dmg|zip|exe|AppImage|deb|rpm|pkg\.tar\.zst)$/i.test(f)); if(!files.length) throw new Error(`No Desktop artifacts in ${dir}`); const out=`release-assets/desktop-${process.env.TARGET}`; fs.mkdirSync(out,{recursive:true}); for(const f of files) fs.copyFileSync(path.join(dir,f),path.join(out,`ZCode-Preview-${version}-${process.env.TARGET}-${f}`)); console.log(files.join("\n"));'
         env:
           TARGET: ${{ matrix.artifact }}
       - name: Upload Desktop artifacts
@@ -112,6 +122,7 @@ jobs:
       - name: Checkout tagged source
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref }}
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -124,7 +135,7 @@ jobs:
       - name: Verify tag matches package version
         shell: bash
         run: |
-          node -e 'const p=require("./package.json"); const tag=process.env.GITHUB_REF_NAME; if (`v${p.version}` !== tag) { console.error(`Tag ${tag} does not match package version ${p.version}`); process.exit(1); }'
+          node -e 'const p=require("./package.json"); const tag=process.env.RELEASE_TAG; if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag) || `v${p.version}` !== tag) { console.error(`Release tag ${tag} does not match package version ${p.version}`); process.exit(1); }'
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
       - name: Build and smoke-test standalone CLI
@@ -133,7 +144,7 @@ jobs:
           pnpm --dir apps/zcode-cli exec turbo --skip-infer --cwd apps/zcode-cli run build --filter=!@zcode/cli --force
           pnpm --filter @zcode/cli build
           pnpm --filter @zcode/cli exec node scripts/build-sea.mjs --target "${{ matrix.target }}"
-          node --input-type=module -e 'import { access, chmod, copyFile, mkdir } from "node:fs/promises"; import { spawnSync } from "node:child_process"; import path from "node:path"; const src=path.resolve("apps/zcode-cli/packages/cli/dist",process.env.CLI_FILE); await access(src); if(process.platform !== "win32") await chmod(src,0o755); const probe=spawnSync(src,["--version"],{encoding:"utf8",timeout:30000}); if(probe.status!==0) throw new Error(`CLI smoke test failed: ${probe.stderr||probe.stdout||probe.error}`); const out=path.resolve("release-assets",`cli-${process.env.TARGET}`); await mkdir(out,{recursive:true}); await copyFile(src,path.join(out,`${process.env.CLI_FILE.replace(/\.exe$/i,"")}-${process.env.GITHUB_REF_NAME.slice(1)}${process.env.CLI_FILE.endsWith(".exe")?".exe":""}`)); console.log(probe.stdout.trim());'
+          node --input-type=module -e 'import { access, chmod, copyFile, mkdir } from "node:fs/promises"; import { spawnSync } from "node:child_process"; import path from "node:path"; const src=path.resolve("apps/zcode-cli/packages/cli/dist",process.env.CLI_FILE); await access(src); if(process.platform !== "win32") await chmod(src,0o755); const probe=spawnSync(src,["--version"],{encoding:"utf8",timeout:30000}); if(probe.status!==0) throw new Error(`CLI smoke test failed: ${probe.stderr||probe.stdout||probe.error}`); const out=path.resolve("release-assets",`cli-${process.env.TARGET}`); await mkdir(out,{recursive:true}); await copyFile(src,path.join(out,`${process.env.CLI_FILE.replace(/\.exe$/i,"")}-${process.env.RELEASE_TAG.slice(1)}${process.env.CLI_FILE.endsWith(".exe")?".exe":""}`)); console.log(probe.stdout.trim());'
         env:
           CLI_FILE: ${{ matrix.file }}
           TARGET: ${{ matrix.artifact }}
@@ -157,6 +168,15 @@ jobs:
           path: release-assets
           pattern: "*"
           merge-multiple: true
+      - name: Checkout tagged source for release verification
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref }}
+          persist-credentials: false
+      - name: Verify release tag matches package version
+        shell: bash
+        run: |
+          node -e 'const p=require("./package.json"); const tag=process.env.RELEASE_TAG; if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag) || `v${p.version}` !== tag) { console.error(`Release tag ${tag} does not match package version ${p.version}`); process.exit(1); }'
       - name: Validate complete release asset set
         shell: bash
         run: |
@@ -165,14 +185,25 @@ jobs:
             test -n "$(find release-assets -type f -iname "*${target}*" -print -quit)" || { echo "Missing release files for ${target}" >&2; exit 1; }
           done
           test "$(find release-assets -type f | wc -l | tr -d ' ')" -ge 10
-      - name: Create prerelease
+      - name: Create or update Preview prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" release-assets/*/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "ZCode Preview ${GITHUB_REF_NAME#v} для macOS, Windows и Linux" \
-            --prerelease \
-            --notes "Кроссплатформенная Preview-сборка ZCode. Desktop включает macOS Apple Silicon, Windows x64 и Linux AMD64; CLI включает те же три платформы. ZCode backend/account, телеметрия и автообновления отключены. Внешние провайдеры и OpenCode CLI работают отдельно. macOS-пакет не подписан и не notarized; при первом запуске macOS может потребовать подтверждение. Это Preview, не production-релиз."
+          target_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          title="ZCode Preview ${RELEASE_TAG#v} для macOS, Windows и Linux"
+          notes="Кроссплатформенная Preview-сборка ZCode. Desktop включает macOS Apple Silicon, Windows x64 и Linux AMD64; CLI включает те же три платформы. ZCode backend/account, телеметрия и автообновления отключены. Внешние провайдеры и OpenCode CLI работают отдельно. macOS-пакет не подписан и не notarized; при первом запуске macOS может потребовать подтверждение. Это Preview, не production-релиз."
+          existing_release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease,targetCommitish 2>/dev/null || true)"
+          if [ -n "$existing_release" ]; then
+            RELEASE_JSON="$existing_release" TARGET_SHA="$target_sha" node -e 'const r=JSON.parse(process.env.RELEASE_JSON); if(r.tagName!==process.env.RELEASE_TAG) throw new Error("Existing release tag mismatch"); if(!r.isPrerelease) throw new Error("Refusing to modify a stable release"); if(r.targetCommitish!==process.env.TARGET_SHA) throw new Error("Existing prerelease points to another commit");'
+            gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes" --prerelease --verify-tag
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$target_sha" \
+              --title "$title" \
+              --prerelease \
+              --notes "$notes" \
+              --verify-tag
+          fi
