@@ -656,12 +656,32 @@ async function seedLegacyAcpSessionId(
 }
 
 describe("ZCode legacy task compat task index", () => {
-  it("各夹具的迟到写入保持在自己的数据库中", async () => {
+  it("迟到写入保持在自己的数据库中，空预留行不参与会话对账", async () => {
     const first = createService();
     await first.taskIndexRepo.ensureReady();
     const second = createService();
     await second.taskIndexRepo.ensureReady();
     await seedIndexedTask(first.taskIndexRepo, { taskId: "late-first", provider: "zcode" });
+    const database = (
+      first.taskIndexRepo as unknown as {
+        getDatabase(): {
+          prepare(sql: string): { run(...args: unknown[]): unknown };
+        };
+      }
+    ).getDatabase();
+    database
+      .prepare(
+        `INSERT INTO tasks (workspace_key, workspace_path, task_id, created_at, updated_at, meta_json)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        resolveWorkspaceKey({ workspacePath: "/repo" }),
+        "/repo",
+        "session_reserved",
+        1,
+        1,
+        "{}",
+      );
     expect(await second.taskIndexRepo.listReconciliationRows({ workspacePath: "/repo" })).toEqual(
       [],
     );

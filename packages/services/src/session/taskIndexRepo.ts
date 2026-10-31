@@ -121,6 +121,20 @@ function resolveTaskIndexRowWorkspaceIdentity(row: TaskIndexRow): string | undef
   return undefined;
 }
 
+function isUncommittedSessionReservation(row: TaskIndexRow): boolean {
+  try {
+    const meta: unknown = JSON.parse(row.meta_json);
+    return (
+      meta !== null &&
+      typeof meta === "object" &&
+      !Array.isArray(meta) &&
+      Object.keys(meta).length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
   const meta = readPresentation(row);
   return {
@@ -895,7 +909,11 @@ export class TaskIndexRepo {
     const rows = this.getDatabase()
       .prepare("SELECT * FROM tasks WHERE workspace_key=?")
       .all(workspaceKey(target)) as unknown as TaskIndexRow[];
-    return rows.map((row) => ({ meta: rowToMeta(row), handoffPending: row.handoff_pending ?? 0 }));
+    return rows.flatMap((row) => {
+      // Bugfix: 创建会话前的空 meta 预留行不是 CLI 事实，不能投影为任务或记录非法 meta 警告。
+      if (isUncommittedSessionReservation(row)) return [];
+      return [{ meta: rowToMeta(row), handoffPending: row.handoff_pending ?? 0 }];
+    });
   }
 
   /** CLI 确认 child 后移除旧版本误建的派生行，不修改会话正文或 CLI deleted。 */
