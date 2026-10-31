@@ -15,6 +15,12 @@ test("hosted runners are used only for explicitly tagged cross-platform releases
   const workflow = YAML.parse(
     await readFile(new URL("../../.github/workflows/cross-platform-preview-release.yml", import.meta.url), "utf8"),
   );
-  assert.deepEqual(workflow.on, { push: { tags: ["v[0-9]+.[0-9]+.[0-9]+"] } });
+  assert.deepEqual(workflow.on.push, { tags: ["v[0-9]+.[0-9]+.[0-9]+"] });
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.release_tag, {
+    description: "Existing version tag to build and attach platform assets to",
+    required: true,
+    type: "string",
+  });
+  assert.deepEqual(Object.keys(workflow.on).sort(), ["push", "workflow_dispatch"]);
   assert.equal(workflow.jobs.publish.permissions.contents, "write");
 });
