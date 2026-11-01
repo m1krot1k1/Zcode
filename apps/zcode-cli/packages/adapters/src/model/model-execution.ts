@@ -349,9 +349,17 @@ export class AiSdkModelExecution {
           return context?.workingDirectory;
         };
         const createModel = (workingDirectory = getWorkingDirectory()) => {
+          const reasoningVariant = optionValues?.reasoningLevel;
+          // Причина: OpenCode variants задают thinking модели; option map `{}` сам их в SDK не передаёт.
+          const settings = {
+            ...(workingDirectory ? { directory: workingDirectory } : {}),
+            ...(reasoningVariant && reasoningVariant !== "disabled"
+              ? { variant: reasoningVariant }
+              : {}),
+          };
           return this.opencodeProvider!(
             modelId,
-            workingDirectory ? { directory: workingDirectory } : undefined,
+            Object.keys(settings).length > 0 ? settings : undefined,
           );
         };
         const createInvocation = async (
@@ -1935,12 +1943,14 @@ function isOpenCodeProxyRateLimit(
   status: number,
   fields: { code?: string; message?: string },
 ): boolean {
+  // 根因：OpenCode 的免费用量上限是账号配额，不是 SOCKS 出口限流；换代理不能恢复额度，只会掩盖原始错误。
+  if (isOpenCodeFreeUsageLimitMessage(fields.message)) return false;
   if (status === 429) return true;
   const code = fields.code?.toLowerCase();
   if (code === "rate_limited" || code === "model_rate_limited" || code === "rate_limit") {
     return true;
   }
-  return isOpenCodeFreeUsageLimitMessage(fields.message);
+  return false;
 }
 
 function isOpenCodeAbortError(error: unknown): boolean {

@@ -546,6 +546,43 @@ describe("OpenCode SDK model execution", () => {
     }
   });
 
+  it("passes the selected OpenCode thinking variant to the SDK model", async () => {
+    const calls: Array<{ modelId: string; variant?: string }> = [];
+    const provider = createFakeOpenCodeProvider({
+      model: (modelId, settings) => {
+        calls.push({ modelId, variant: settings?.variant });
+        return {
+          doGenerate: async () => ({
+            content: [{ type: "text", text: "ok" }],
+            finishReason: { unified: "stop", raw: undefined },
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+            },
+            warnings: [],
+          }),
+        } as unknown as LanguageModelV3;
+      },
+    });
+    const registry = createRegistry(provider);
+
+    try {
+      const resolved = registry.resolve("opencode/deepseek-v4.1-flash-free", {
+        maxOutputTokens: 32_000,
+        reasoningLevel: "high",
+      });
+      await runWithModelInvocationContext({ workingDirectory: process.cwd() }, () =>
+        resolved.model.doGenerate!(createCallOptions()),
+      );
+      expect(calls.at(-1)).toEqual({
+        modelId: "deepseek-v4.1-flash-free",
+        variant: "high",
+      });
+    } finally {
+      await registry.dispose();
+    }
+  });
+
   it("passes a foreign provider/model id to the OpenCode SDK unchanged", async () => {
     const calls: string[] = [];
     const provider = createFakeOpenCodeProvider({
@@ -703,10 +740,10 @@ function createRegistry(provider: OpencodeProvider) {
 }
 
 function createFakeOpenCodeProvider(options: {
-  model: (modelId: string, settings?: { directory?: string }) => LanguageModelV3;
+  model: (modelId: string, settings?: { directory?: string; variant?: string }) => LanguageModelV3;
   dispose?: () => Promise<void>;
 }): OpencodeProvider {
-  const create = ((modelId: string, settings?: { directory?: string }) =>
+  const create = ((modelId: string, settings?: { directory?: string; variant?: string }) =>
     options.model(modelId, settings)) as OpencodeProvider;
   Object.assign(create, {
     provider: "opencode",

@@ -86,7 +86,7 @@ export class OpenCodeCliProviderCatalogSource implements ProviderSource<RuntimeP
     const provider = createOpenCodeProvider(models);
     return Object.freeze({
       revision: `opencode:${status.version}:${status.executablePath}:${models
-        .map((model) => model.modelId)
+        .map((model) => `${model.modelId}:${model.reasoningVariants?.join(",") ?? ""}`)
         .join("\n")}`,
       providers: Object.freeze([provider]),
       cliExecutablePath: status.executablePath,
@@ -148,7 +148,12 @@ function createOpenCodeProvider(catalogModels: readonly OpenCodeCliModelDescript
           supportsMidConversationSystem: false,
         }),
         optionSpecs: new ModelOptionSpecsConfig({
-          reasoningLevel: { values: ["disabled"], map: "{}" },
+          // Причина: OpenCode CLI сообщает effort как model variants; фиксированный disabled скрывал настройку.
+          // Передаём только проверенные варианты каталога, а не придумываем уровни для модели.
+          reasoningLevel: {
+            values: model.reasoningVariants?.length ? model.reasoningVariants : ["disabled"],
+            map: "{}",
+          },
           maxOutputTokens: { max: model.maxOutputTokens, map: "{}" },
         }),
       }),

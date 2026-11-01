@@ -70,6 +70,7 @@ describe("ProviderRuntime", () => {
               name: "DeepSeek V4.1 Flash Free",
               contextWindow: 200_000,
               maxOutputTokens: 32_000,
+              reasoningVariants: ["low", "high", "max"],
               inputFormat: {
                 supportsText: true,
                 supportsImage: true,
@@ -98,7 +99,7 @@ describe("ProviderRuntime", () => {
             supportsToolCall: true,
           },
           optionSpecs: {
-            reasoningLevel: { values: ["disabled"] },
+            reasoningLevel: { values: ["low", "high", "max"] },
             maxOutputTokens: { max: 32_000 },
           },
         },

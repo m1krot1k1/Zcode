@@ -379,6 +379,35 @@ if (process.argv[2] === "models" && process.argv[3] === "--verbose") process.std
     ]);
   });
 
+  it("projects only catalog variants with supported reasoning effort", () => {
+    const catalog = parseOpenCodeVerboseModelCatalog(
+      `opencode/model\n${JSON.stringify(
+        {
+          id: "model",
+          providerID: "opencode",
+          name: "Thinking model",
+          limit: { context: 128_000, output: 16_000 },
+          capabilities: {
+            reasoning: true,
+            input: { text: true, image: false, video: false, audio: false, pdf: false },
+            output: { text: true },
+          },
+          variants: {
+            low: { reasoningEffort: "low" },
+            high: { reasoningEffort: "high" },
+            max: { reasoningEffort: "max" },
+            unverified: {},
+            invalid: { reasoningEffort: "prompt" },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    expect(catalog[0]?.reasoningVariants).toEqual(["low", "high", "max"]);
+  });
+
   it("normalizes ACP auth-required on session creation and can start a fresh session after cleanup", async () => {
     const directory = await makeTempDir();
     const fakeAgentPath = join(directory, "fake-acp-auth-required-session.mjs");

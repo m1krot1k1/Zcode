@@ -879,6 +879,42 @@ describe("OpenCode SOCKS proxy bridge", () => {
       else process.env.ZCODE_HTTP_PROXY = previousProxy;
     }
   });
+
+  it.each([429, 500])(
+    "does not rotate proxies for an exhausted OpenCode free-model quota (HTTP %s)",
+    async (status) => {
+    const previousList = process.env.ZCODE_HTTP_PROXY_LIST;
+    const previousProxy = process.env.ZCODE_HTTP_PROXY;
+    const first = "socks5://127.0.0.1:1";
+    const second = "socks5://127.0.0.1:2";
+    process.env.ZCODE_HTTP_PROXY_LIST = `${first}\n${second}`;
+    process.env.ZCODE_HTTP_PROXY = first;
+    const lease = await acquireOpenCodeSocksProxyLease(first, {});
+    let calls = 0;
+    try {
+      const fetch = createOpenCodeDiagnosticFetch(async () => {
+        calls += 1;
+        return Response.json(
+          { code: "RATE_LIMITED", message: "Free usage limit reached. OpenCode Go is required." },
+          { status },
+        );
+      });
+      const response = await fetch(
+        new Request("http://127.0.0.1:9/session/ses_quota/message", { method: "POST" }),
+      );
+
+      expect(calls).toBe(1);
+      expect(response.status).toBe(status);
+      expect(await response.text()).toContain("Free usage limit reached. OpenCode Go is required.");
+    } finally {
+      await lease?.dispose();
+      if (previousList === undefined) delete process.env.ZCODE_HTTP_PROXY_LIST;
+      else process.env.ZCODE_HTTP_PROXY_LIST = previousList;
+      if (previousProxy === undefined) delete process.env.ZCODE_HTTP_PROXY;
+      else process.env.ZCODE_HTTP_PROXY = previousProxy;
+    }
+    },
+  );
 });
 
 async function handleSocksFixture(socket: Socket, targetPort: number): Promise<void> {

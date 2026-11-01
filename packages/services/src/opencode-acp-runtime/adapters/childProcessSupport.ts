@@ -27,6 +27,16 @@ const MAX_VERSION_OUTPUT_CHARS = 512;
 const MODEL_CATALOG_TIMEOUT_MS = 15_000;
 const MAX_MODEL_CATALOG_OUTPUT_CHARS = 256 * 1024;
 const MAX_MODEL_CATALOG_SIZE = 2_000;
+const OPEN_CODE_REASONING_EFFORTS = new Set([
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+]);
+const SAFE_OPEN_CODE_VARIANT_ID = /^[A-Za-z0-9._:-]{1,80}$/u;
 
 export function detectHostLinuxLibc(
   platform: NodeJS.Platform = process.platform,
@@ -328,9 +338,11 @@ function projectOpenCodeModel(listedId: string, raw: unknown): OpenCodeCliModelD
     name?: unknown;
     limit?: { context?: unknown; output?: unknown };
     capabilities?: {
+      reasoning?: unknown;
       input?: Record<string, unknown>;
       output?: Record<string, unknown>;
     };
+    variants?: unknown;
   };
   const modelId = `${String(value.providerID ?? "")}/${String(value.id ?? "")}`;
   const contextWindow = value.limit?.context;
@@ -340,6 +352,9 @@ function projectOpenCodeModel(listedId: string, raw: unknown): OpenCodeCliModelD
   const isPositiveInteger = (candidate: unknown): candidate is number =>
     typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0;
   const isBoolean = (candidate: unknown): candidate is boolean => typeof candidate === "boolean";
+  const reasoningVariants = projectReasoningVariants(
+    value.capabilities?.reasoning === true ? value.variants : undefined,
+  );
   if (
     modelId !== listedId ||
     typeof value.name !== "string" ||
@@ -365,6 +380,7 @@ function projectOpenCodeModel(listedId: string, raw: unknown): OpenCodeCliModelD
     name: value.name,
     contextWindow,
     maxOutputTokens,
+    ...(reasoningVariants.length > 0 ? { reasoningVariants } : {}),
     inputFormat: Object.freeze({
       supportsText: input.text,
       supportsImage: input.image,
@@ -374,6 +390,25 @@ function projectOpenCodeModel(listedId: string, raw: unknown): OpenCodeCliModelD
     }),
     outputSupportsText: output.text,
   });
+}
+
+function projectReasoningVariants(value: unknown): readonly string[] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.freeze(
+    Object.entries(value).flatMap(([variantId, metadata]) => {
+      if (
+        !SAFE_OPEN_CODE_VARIANT_ID.test(variantId) ||
+        metadata === null ||
+        typeof metadata !== "object"
+      ) {
+        return [];
+      }
+      const effort = (metadata as { reasoningEffort?: unknown }).reasoningEffort;
+      return typeof effort === "string" && OPEN_CODE_REASONING_EFFORTS.has(effort.toLowerCase())
+        ? [variantId]
+        : [];
+    }),
+  );
 }
 
 function stripControlCharacters(value: string): string {

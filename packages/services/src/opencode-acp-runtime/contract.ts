@@ -59,6 +59,8 @@ export interface OpenCodeCliModelDescriptor {
   readonly name: string;
   readonly contextWindow: number;
   readonly maxOutputTokens: number;
+  /** Exact OpenCode variant IDs with validated reasoning-effort metadata, in CLI order. */
+  readonly reasoningVariants?: readonly string[];
   readonly inputFormat: {
     readonly supportsText: boolean;
     readonly supportsImage: boolean;
