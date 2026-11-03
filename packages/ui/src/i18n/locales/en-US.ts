@@ -3218,6 +3218,10 @@ const enUS: Record<string, string> = {
   "settings.httpProxyFailedInvalid": "Invalid proxy address",
   "settings.httpProxyFailedConnection": "Could not connect through this proxy",
   "settings.httpProxyFailedTimeout": "Proxy connection timed out",
+  "settings.httpProxyFallbackNext":
+    "Could not connect through proxy {proxy}. Switched to the next proxy.",
+  "settings.httpProxyFallbackDirect":
+    "Could not connect through any configured proxy ({proxies}). Using a direct connection.",
   "settings.httpProxyFailedResponse": "IP check returned an invalid response",
   "settings.httpProxyUse": "Use",
   "settings.httpProxyUseDirect": "Use direct",

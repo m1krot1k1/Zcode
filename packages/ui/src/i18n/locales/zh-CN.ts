@@ -3014,6 +3014,8 @@ const zhCN: Record<string, string> = {
   "settings.httpProxyFailedInvalid": "代理地址无效",
   "settings.httpProxyFailedConnection": "无法通过此代理连接",
   "settings.httpProxyFailedTimeout": "代理连接超时",
+  "settings.httpProxyFallbackNext": "无法通过代理 {proxy} 连接，已切换到下一个代理。",
+  "settings.httpProxyFallbackDirect": "无法通过任何已配置的代理连接（{proxies}），已改用直连。",
   "settings.httpProxyFailedResponse": "IP 检查服务返回了无效结果",
   "settings.httpProxyUse": "使用",
   "settings.httpProxyUseDirect": "改为直连",

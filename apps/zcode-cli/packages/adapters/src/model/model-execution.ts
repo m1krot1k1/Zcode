@@ -37,7 +37,12 @@ import { createModelRequestSecurityState } from "./request-security-edition/inde
 import type { ModelRequestSecurityState, ModelRequestSecurityPort } from "./request-security.js";
 import { createOpenAIResponsesJsonCompatFetch } from "./openai-responses-json-compat.js";
 import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-option-map-fetch.js";
-import { createNetworkProxyFetch, readConfiguredProxyEndpoints } from "../network/proxy-fetch.js";
+import {
+  createNetworkProxyFetch,
+  formatProxyFallbackWarning,
+  readConfiguredProxyEndpoints,
+  type ProxyFallbackNotice,
+} from "../network/proxy-fetch.js";
 import { createProviderEndpointRoutingFetch } from "./provider-endpoint-routing-fetch.js";
 import { normalizeModelTlsFailure } from "./failure-tls.js";
 import {
@@ -128,6 +133,8 @@ export interface ProviderBusinessErrorFetchOptions {
   fetch?: ProviderFetch;
   httpProxy?: string;
   noProxy?: string;
+  /** Нефатальный варнинг о падении прокси: пишет владелец процесса, слой сети только сообщает. */
+  onProxyFallback?: (notice: ProxyFallbackNotice) => void;
 }
 
 export interface ProviderBusinessErrorOptions {
@@ -566,6 +573,14 @@ export class AiSdkModelExecution {
       fetch: this.baseTransport,
       httpProxy: this.network.httpProxy,
       noProxy: this.network.noProxy,
+      // 原因：прокси-кольцо может уйти напрямую без ошибки модели. Варнинг нефатальный,
+      // но пользователь должен видеть, какой вход умер: только host:port, без креденшелов.
+      onProxyFallback: (notice) => {
+        this.logger?.warn(formatProxyFallbackWarning(notice), {
+          proxy: notice.proxy,
+          proxyFallback: notice.direct ? "direct" : "next-proxy",
+        });
+      },
     });
     this.providerTransports.set(providerId, networkTransport);
     return networkTransport;
@@ -995,6 +1010,7 @@ interface ProviderProxyFetchOptions {
   fetch?: ProviderFetch;
   httpProxy?: string;
   noProxy?: string;
+  onProxyFallback?: (notice: ProxyFallbackNotice) => void;
 }
 
 function createProviderProxyFetch(options: ProviderProxyFetchOptions): ProviderFetch {
