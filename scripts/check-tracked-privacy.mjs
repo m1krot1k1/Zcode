@@ -52,12 +52,46 @@ const HOME_PATH_RES = [
  */
 const SYNTHETIC_USERS = new Set(
   [
-    "dev", "me", "demo", "user", "username", "test", "you", "foo", "bar",
-    "example", "alice", "bob", "carol", "dave", "erin", "frank", "tester",
-    "somebody", "fake_user", "ubuntu", "shared", "linuxbrew", "u", "a", "name",
-    "temp", "local", "remote", "project", "private", "secret", "fallback",
-    "another", "default", "developer", ".zcode", "dev.zcode", "developer.zcode",
-    "e2e", "ai",
+    "dev",
+    "me",
+    "demo",
+    "user",
+    "username",
+    "test",
+    "you",
+    "foo",
+    "bar",
+    "example",
+    "alice",
+    "bob",
+    "carol",
+    "dave",
+    "erin",
+    "frank",
+    "tester",
+    "somebody",
+    "fake_user",
+    "ubuntu",
+    "shared",
+    "linuxbrew",
+    "u",
+    "a",
+    "name",
+    "temp",
+    "local",
+    "remote",
+    "project",
+    "private",
+    "secret",
+    "fallback",
+    "another",
+    "default",
+    "developer",
+    ".zcode",
+    "dev.zcode",
+    "developer.zcode",
+    "e2e",
+    "ai",
   ].map((name) => name.toLowerCase()),
 );
 
@@ -76,11 +110,58 @@ const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 
 /** 常见顶级域；没有它，`pkg@1.2.3.patch` 这类文件名会被当成邮箱。 */
 const EMAIL_TLDS = new Set([
-  "com", "org", "net", "edu", "gov", "mil", "int", "io", "dev", "ai", "app",
-  "co", "me", "cn", "ru", "de", "fr", "uk", "jp", "kr", "us", "eu", "ca", "au",
-  "info", "biz", "name", "pro", "xyz", "tech", "cloud", "site", "online", "page",
-  "space", "website", "store", "blog", "design", "digital", "media", "news",
-  "email", "social", "team", "tools", "works", "world", "zone", "sh", "so", "gg",
+  "com",
+  "org",
+  "net",
+  "edu",
+  "gov",
+  "mil",
+  "int",
+  "io",
+  "dev",
+  "ai",
+  "app",
+  "co",
+  "me",
+  "cn",
+  "ru",
+  "de",
+  "fr",
+  "uk",
+  "jp",
+  "kr",
+  "us",
+  "eu",
+  "ca",
+  "au",
+  "info",
+  "biz",
+  "name",
+  "pro",
+  "xyz",
+  "tech",
+  "cloud",
+  "site",
+  "online",
+  "page",
+  "space",
+  "website",
+  "store",
+  "blog",
+  "design",
+  "digital",
+  "media",
+  "news",
+  "email",
+  "social",
+  "team",
+  "tools",
+  "works",
+  "world",
+  "zone",
+  "sh",
+  "so",
+  "gg",
 ]);
 
 /** 保留域名、代码托管与项目官方域名：出现邮箱不是个人信息泄漏。 */
@@ -100,6 +181,12 @@ const ALLOWED_EMAIL_DOMAINS = new Set([
  * 样本必须存在，不属于泄漏。新增条目必须写明理由。
  */
 const EXEMPT_FINDINGS = new Map([
+  // 本闸门自身的测试夹具：home 路径、个人邮箱与令牌样本必须存在，
+  // 否则无法验证识别逻辑，也验证不了「输出不回显命中值」。
+  [
+    "scripts/check-tracked-privacy.test.mjs",
+    new Set(["home-path", "email", "token"]),
+  ],
   ["packages/shared/test/feedbackPrivacy.test.ts", new Set(["token"])],
   ["packages/shared/test/telemetryPrivacy.test.ts", new Set(["token"])],
   ["packages/shared/test/telemetryRedaction.test.ts", new Set(["token"])],
@@ -190,11 +277,11 @@ function gitRoot() {
 }
 
 function listTrackedFiles(root) {
-  const stdout = execFileSync(
-    "git",
-    ["-c", "core.quotepath=false", "ls-files", "-z"],
-    { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-  );
+  const stdout = execFileSync("git", ["-c", "core.quotepath=false", "ls-files", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
   return stdout.split("\0").filter(Boolean);
 }
 
@@ -236,9 +323,7 @@ function main() {
     for (const item of findings) {
       counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
     }
-    const summary = [...counts]
-      .map(([type, count]) => `${type}=${count}`)
-      .join(", ");
+    const summary = [...counts].map(([type, count]) => `${type}=${count}`).join(", ");
     console.error(
       `[tracked-privacy] 发现 ${findings.length} 处（${summary}），具体值已省略；扫描 ${files.length} 个跟踪文件`,
     );
@@ -246,9 +331,7 @@ function main() {
     return;
   }
 
-  console.log(
-    `[tracked-privacy] OK：${files.length} 个跟踪文件未发现 home 路径、邮箱或令牌特征`,
-  );
+  console.log(`[tracked-privacy] OK：${files.length} 个跟踪文件未发现 home 路径、邮箱或令牌特征`);
 }
 
 const invokedDirectly =
