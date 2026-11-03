@@ -569,7 +569,8 @@ Review carefully.`,
       for (const tool of ["Read", "Glob", "Grep", "Task"]) expect(prompt).toContain(tool);
       for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
       expect(prompt).toContain("Bash тебе не выдан");
-      expect(prompt).toContain("Глубже L4 не ныряй");
+      expect(prompt).toContain("L4 — достаточная глубина для проверки вложенности");
+      expect(prompt).toContain("Номер уровня — только запись, а не стоп-условие");
       expect(prompt).toContain("Каждый уровень подтверждается только собственным вызовом Task");
     });
 
