@@ -3,6 +3,20 @@ import { traceContextToLogContext } from "../deps.js";
 import type { TraceContext } from "../deps.js";
 
 const DEFAULT_NORMAL_REQUEST_MAX_OUTPUT_TOKENS = 32_000;
+// 根因：deepseek-v4.1-flash-1017 声明 maxOutputTokens=384k，而 root-run 预算只有 500k，
+// 单个 in-flight 请求就占 77%，第二个子 Agent 的 admission 直接被拒。
+// 修复依据：admission 预留只需要覆盖单次请求合理的输出上限，真实花费仍按 provider usage 结算。
+const DEFAULT_ROOT_RUN_RESERVATION_MAX_OUTPUT_TOKENS = 64_000;
+
+export function resolveRootRunReservationMaxOutputTokens(input: {
+  requestedMaxOutputTokens: number | undefined;
+}): number {
+  return Math.min(
+    positiveFlooredTokens(input.requestedMaxOutputTokens) ??
+      DEFAULT_NORMAL_REQUEST_MAX_OUTPUT_TOKENS,
+    DEFAULT_ROOT_RUN_RESERVATION_MAX_OUTPUT_TOKENS,
+  );
+}
 
 export function resolveNormalRequestMaxOutputTokens(input: {
   modelMaxOutputTokens: number | undefined;

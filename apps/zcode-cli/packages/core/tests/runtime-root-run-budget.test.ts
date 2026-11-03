@@ -12,6 +12,7 @@ import {
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
+import { resolveRootRunReservationMaxOutputTokens } from "../src/runtime/methods/model-token-limits.js";
 
 describe("RootRun resource budget", () => {
   it("counts each raw root and nested-child usage event once by event identity", () => {
@@ -629,6 +630,202 @@ describe("RootRun resource budget", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("не списывает 384k за запрос, отклонённый на admission", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-admission-reject");
+    const turnId = createTurnId("root-budget-admission-reject-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+      onExhausted,
+    });
+    // 真实请求：admission 预留 384k，provider 实际只花 381_859。
+    const spent = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 384_000,
+    });
+    spent.associateRequestId("real-request");
+    registry.recordRootRunUsage(modelComplete(root, turnId, 381_859, "real-request"));
+    spent();
+    // 第二个请求占满剩余 118_141，第三个请求在 admission 被拒（remaining <= 0，请求从未发出）。
+    const inflight = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 384_000,
+    });
+    inflight.associateRequestId("inflight-request");
+    expect(() =>
+      registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 200_000,
+        maxTokens: 384_000,
+      }),
+    ).toThrow(RootRunBudgetExceededError);
+    // 被拒请求的终态事件既没有 usage 也没有 reservation：旧实现按最大单次预留 384k 凭空扣账。
+    registry.recordRootRunUsage(
+      createSessionEvent(SessionEventType.ModelNetworkStatus, root, { type: "model_request_failed" }, {
+        turnId,
+      }),
+    );
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.usedTokens).toBe(381_859);
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+    inflight();
+  });
+
+  it("реальный расход 381 859 плюс отклонённый запрос не валит турн", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-reject-survives");
+    const turnId = createTurnId("root-budget-reject-survives-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+      onExhausted,
+    });
+    const spent = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 384_000,
+    });
+    spent.associateRequestId("real-request");
+    registry.recordRootRunUsage(modelComplete(root, turnId, 381_859, "real-request"));
+    spent();
+    const inflight = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 384_000,
+    });
+    inflight.associateRequestId("inflight-request");
+    expect(() =>
+      registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 200_000,
+        maxTokens: 384_000,
+      }),
+    ).toThrow(RootRunBudgetExceededError);
+    registry.recordRootRunUsage(
+      createSessionEvent(SessionEventType.ModelNetworkStatus, root, { type: "model_request_failed" }, {
+        turnId,
+      }),
+    );
+    inflight();
+
+    // 被拒请求不产生费用：剩余 118_141 仍可继续 admission，turn 不会被取消。
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 381_859,
+      reservedTokens: 0,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+    const next = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 118_141,
+    });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(118_141);
+    next();
+  });
+
+  it("резерв на попытку не больше 64k", () => {
+    // 384k 的模型输出上限不能原样变成 admission 预留，否则单个 in-flight 就占 500k 预算的 77%。
+    expect(resolveRootRunReservationMaxOutputTokens({ requestedMaxOutputTokens: 384_000 })).toBe(
+      64_000,
+    );
+    expect(resolveRootRunReservationMaxOutputTokens({ requestedMaxOutputTokens: 20_000 })).toBe(
+      20_000,
+    );
+    expect(
+      resolveRootRunReservationMaxOutputTokens({ requestedMaxOutputTokens: undefined }),
+    ).toBe(32_000);
+  });
+
+  it("настраиваемый tokenLimit отклоняет и пропускает резерв по конфигу", () => {
+    const tight = new InMemoryRuntimeTaskRegistry();
+    const tightRoot = createSessionId("root-budget-limit-tight");
+    const tightTurnId = createTurnId("root-budget-limit-tight-turn");
+    const tightRunId = `${tightRoot}:${tightTurnId}`;
+    tight.beginRootRunBudget({
+      rootRunId: tightRunId,
+      rootSessionId: tightRoot,
+      turnId: tightTurnId,
+      tokenLimit: 100_000,
+    });
+    const tightSpent = tight.reserveRootRunTokens({
+      rootRunId: tightRunId,
+      sessionId: tightRoot,
+      contextWindow: 200_000,
+      maxTokens: 90_000,
+    });
+    tightSpent.associateRequestId("tight-spent");
+    tight.recordRootRunUsage(modelComplete(tightRoot, tightTurnId, 90_000, "tight-spent"));
+    tightSpent();
+    // 剩余 10k 被下一个请求占满后，后续 admission 被拒。
+    const tightRemainder = tight.reserveRootRunTokens({
+      rootRunId: tightRunId,
+      sessionId: tightRoot,
+      contextWindow: 200_000,
+      maxTokens: 10_000,
+    });
+    expect(tight.getRootRunBudgetSnapshot(tightRunId)?.tokenLimit).toBe(100_000);
+    expect(() =>
+      tight.reserveRootRunTokens({
+        rootRunId: tightRunId,
+        sessionId: tightRoot,
+        contextWindow: 200_000,
+        maxTokens: 1,
+      }),
+    ).toThrow(RootRunBudgetExceededError);
+    tightRemainder();
+
+    const loose = new InMemoryRuntimeTaskRegistry();
+    const looseRoot = createSessionId("root-budget-limit-loose");
+    const looseTurnId = createTurnId("root-budget-limit-loose-turn");
+    const looseRunId = `${looseRoot}:${looseTurnId}`;
+    loose.beginRootRunBudget({
+      rootRunId: looseRunId,
+      rootSessionId: looseRoot,
+      turnId: looseTurnId,
+      tokenLimit: 1_000_000,
+    });
+    const looseSpent = loose.reserveRootRunTokens({
+      rootRunId: looseRunId,
+      sessionId: looseRoot,
+      contextWindow: 200_000,
+      maxTokens: 90_000,
+    });
+    looseSpent.associateRequestId("loose-spent");
+    loose.recordRootRunUsage(modelComplete(looseRoot, looseTurnId, 90_000, "loose-spent"));
+    looseSpent();
+    const looseNext = loose.reserveRootRunTokens({
+      rootRunId: looseRunId,
+      sessionId: looseRoot,
+      contextWindow: 200_000,
+      maxTokens: 384_000,
+    });
+    expect(loose.getRootRunBudgetSnapshot(looseRunId)).toMatchObject({
+      tokenLimit: 1_000_000,
+      reservedTokens: 384_000,
+    });
+    looseNext();
   });
 });
 

@@ -19,7 +19,7 @@ import {
 } from "./model-request-session-type.js";
 import { getOffPeakModelBinding } from "../off-peak/model-binding.js";
 import { DEFAULT_COMPACT_CONTEXT_WINDOW } from "../../compact/policy.js";
-import { resolveNormalRequestMaxOutputTokens } from "./model-token-limits.js";
+import { resolveRootRunReservationMaxOutputTokens } from "./model-token-limits.js";
 
 export function createRuntimeModel(
   runtime: AgentRuntimeInternal,
@@ -110,11 +110,11 @@ function withRuntimeInvocationLayer(
       model.properties.contextWindow === undefined
         ? DEFAULT_COMPACT_CONTEXT_WINDOW
         : model.properties.contextWindow;
-    const configuredMaxTokens = request.options?.maxOutputTokens ?? model.options.maxOutputTokens;
-    const maxTokens =
-      configuredMaxTokens === undefined
-        ? resolveNormalRequestMaxOutputTokens({ modelMaxOutputTokens: undefined })
-        : configuredMaxTokens;
+    // 根因与修复依据见 resolveRootRunReservationMaxOutputTokens：384k 的模型输出上限
+    // 不能原样变成 admission 预留，否则一个 in-flight 请求就吃掉 500k root-run 预算的 77%。
+    const maxTokens = resolveRootRunReservationMaxOutputTokens({
+      requestedMaxOutputTokens: request.options?.maxOutputTokens ?? model.options.maxOutputTokens,
+    });
     if (!rootRunId) {
       return layer;
     }

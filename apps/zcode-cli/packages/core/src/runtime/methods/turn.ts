@@ -215,6 +215,7 @@ export async function executeTurnCommand(
       rootSessionId: this.sessionId,
       turnId,
       startedAt: turnStartedAtMs,
+      tokenLimit: this.config.rootRunTokenLimit,
       onExhausted: (reason) =>
         turnAbortScope.abort(
           new Error(

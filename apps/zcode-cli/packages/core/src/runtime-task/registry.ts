@@ -1319,11 +1319,6 @@ interface RootRunBudgetState {
   tokenLimit: number;
   usedTokens: number;
   reservedTokens: number;
-  /**
-   * 本 root run 发放过的最大单次预留。没有匹配 reservation 的终态事件按此值扣账：
-   * 它是「一个请求最多能花多少」的真实上界，而不是整个预算。
-   */
-  maxReservationTokens: number;
   activeReservationsBySession: Map<SessionId, RootRunReservation[]>;
   seenUsageEvents: Set<string>;
   turnFinished: boolean;
@@ -1413,7 +1408,6 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       tokenLimit: input.tokenLimit ?? 500_000,
       usedTokens: 0,
       reservedTokens: 0,
-      maxReservationTokens: 0,
       activeReservationsBySession: new Map(),
       seenUsageEvents: new Set(),
       turnFinished: false,
@@ -1458,9 +1452,6 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // Если остаток меньше разрешённого output budget, request получает только доступный резерв.
     const reservation = Math.min(requestedReservation, remaining);
     state.reservedTokens += reservation;
-    // 记录本 run 发放过的最大单次预留：没有匹配 reservation 的终态事件按它扣账，
-    // 这样「未知成本」不会被当成「花光整个预算」。
-    state.maxReservationTokens = Math.max(state.maxReservationTokens, reservation);
     const reservations = state.activeReservationsBySession.get(input.sessionId) ?? [];
     const entry: RootRunReservation = { reservedTokens: reservation, consumed: false };
     reservations.push(entry);
@@ -1562,14 +1553,14 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 只取 requestId === undefined 的条目：已关联 requestId 的预留属于别的 in-flight 请求，
     // 借用它会把用量记到别人的账上，并让那个请求的终态事件失去预留。
     const reservation = this.settleRootRunReservation(state, event.sessionId, requestId, true);
-    // 缺少 usage 的终态事件代表 provider 成本未知，按该 attempt 的完整 reservation 扣账；
-    // 找不到 reservation 时只能用本 run 已发放过的最大单次预留作为上界，
-    // 不能退化成整个 tokenLimit：那会把「未知」当成「花光预算」。
-    // maxReservationTokens 为 0 表示本 run 还没发放过任何预留（事件先于 admission 到达）：
-    // 此时按 0 记账是刻意的 fail-open —— 未知成本不应凭空打满预算。
-    // 这是设计选择而非缺陷，回归用例 "treats an unattributable event without any reservation as zero cost" 覆盖。
-    const debitedTokens =
-      usage?.totalTokens ?? reservation?.reservedTokens ?? state.maxReservationTokens;
+    // 缺少 usage 的终态事件代表 provider 成本未知，按该 attempt 的完整 reservation 扣账。
+    // 根因：admission 在 remaining <= 0 时直接 throw（见上方 remaining 分支），该请求从未发给 provider，
+    // 随后到达的 model_request_failed 既没有 usage 也没有 reservation；旧实现退到「本 run 发放过的
+    // 最大单次预留」（deepseek-v4.1-flash-1017 为 384k），凭空记一笔从未发生的费用，
+    // 一次 admission 拒绝就能把 500k 预算推到耗尽并取消整轮。
+    // 修复依据：找不到 reservation 的终态事件按 0 记账 —— 未知成本不能凭空打满预算。
+    // 回归用例 "treats an unattributable event without any reservation as zero cost" 覆盖。
+    const debitedTokens = usage?.totalTokens ?? reservation?.reservedTokens ?? 0;
     state.usedTokens += debitedTokens;
     // Резервации активных запросов ограничивают новый admission, но не являются расходом.
     // Иначе параллельные дочерние ветки отменяли весь рой при полном, но ещё не потраченном резерве.
