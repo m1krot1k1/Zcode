@@ -70,6 +70,10 @@ export interface RuntimeTaskMessageSink {
 }
 
 export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
+  /** Host 为准的 spawn 配额：本任务还能再开多少个子任务；模型声明值只能在此之下收紧。 */
+  spawnGrant?: number;
+  /** 嵌套层级；仅记录，不参与准入判定（预算已限制树规模）。 */
+  level?: number;
   /** UI may subscribe only after the child runtime has opened its session. */
   childSessionReady?: boolean;
   /** Immutable acceptance declaration owned by this admitted task attempt. */
@@ -252,6 +256,7 @@ export type RuntimeTaskAdmissionResult =
       reason:
         | "active_limit"
         | "root_run_budget_exceeded"
+        | "spawn_budget_exhausted"
         | "lineage_conflict"
         | "owner_closed"
         | "parent_stopped"
@@ -1319,6 +1324,12 @@ interface RootRunBudgetState {
   rootSessionId: SessionId;
   turnId: TurnId;
   tokenLimit: number;
+  /** 本次 root run 的 spawn 总配额；0 表示禁止任何子任务。 */
+  spawnBudget: number;
+  /** 已准入的子任务数量（无论后续成败）。 */
+  spawnsUsed: number;
+  /** 每个 session 当前可继续 spawn 的次数；缺省回落到 spawnBudget。 */
+  remainingSpawnsBySession: Map<SessionId, number>;
   usedTokens: number;
   reservedTokens: number;
   activeReservationsBySession: Map<SessionId, RootRunReservation[]>;
@@ -1369,6 +1380,12 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
  * 死循环/失控 Agent 的熔断器 —— 不要改成 Infinity，也不要用超时替代它。
  */
 export const DEFAULT_ROOT_RUN_TOKEN_LIMIT = 1_000_000;
+/**
+ * 每棵子 Agent 树默认允许的 spawn 次数。
+ * 32 足以覆盖常见的分层探索，同时把「模型递归开 Agent」的扇出从指数压到可控范围：
+ * 每次准入至少消耗 1 个配额，配额耗尽即拒绝，不需要额外的硬深度上限。
+ */
+export const DEFAULT_SPAWN_BUDGET = 32;
 
 export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   private offPeakExecutionId: string | undefined;
@@ -1421,6 +1438,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       rootSessionId: input.rootSessionId,
       turnId: input.turnId,
       tokenLimit: input.tokenLimit ?? DEFAULT_ROOT_RUN_TOKEN_LIMIT,
+      spawnBudget: input.spawnBudget ?? DEFAULT_SPAWN_BUDGET,
+      spawnsUsed: 0,
+      remainingSpawnsBySession: new Map(),
       usedTokens: 0,
       reservedTokens: 0,
       activeReservationsBySession: new Map(),
@@ -1779,6 +1799,27 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       return { accepted: false, reason: "root_run_budget_exceeded" };
     }
 
+    // spawn 预算门禁：必须在 active-limit 与任何写入之前拒绝，保证被拒请求不留副作用。
+    // 没有 root-run 状态时（直接调用 registry 的旧路径）不做门禁，保持向后兼容。
+    const rootBudget = this.rootRunBudgets.get(rootRunId);
+    let parentRemainingSpawns: number | undefined;
+    let childSpawnGrant: number | undefined;
+    if (rootBudget) {
+      const remaining =
+        rootBudget.remainingSpawnsBySession.get(parentSessionId) ?? rootBudget.spawnBudget;
+      if (remaining <= 0) {
+        return { accepted: false, reason: "spawn_budget_exhausted" };
+      }
+      parentRemainingSpawns = remaining;
+      // 子级预算严格小于父级；模型声明的 remaining_spawns 只能收紧，不能抬高 hostGrant。
+      const hostGrant = remaining - 1;
+      const requestedGrant = task.spawnGrant;
+      childSpawnGrant =
+        requestedGrant === undefined
+          ? hostGrant
+          : Math.min(Math.max(0, Math.floor(requestedGrant)), hostGrant);
+    }
+
     const activeWorkItems = this.getActiveSubagentWorkItems(rootSessionId);
     const foregroundParentTransfersSlot =
       task.isBackgrounded !== true &&
@@ -1801,7 +1842,15 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       rootSessionId,
       // 每次重新准入都生成新 attempt，防止旧 verifier receipt 命中相同 taskId 的新生命期。
       attemptId: randomUUID(),
+      ...(childSpawnGrant === undefined ? {} : { spawnGrant: childSpawnGrant }),
     };
+    if (rootBudget && parentRemainingSpawns !== undefined) {
+      rootBudget.remainingSpawnsBySession.set(parentSessionId, parentRemainingSpawns - 1);
+      if (task.childSessionId) {
+        rootBudget.remainingSpawnsBySession.set(task.childSessionId, childSpawnGrant ?? 0);
+      }
+      rootBudget.spawnsUsed += 1;
+    }
     this.setTaskSnapshot(stamped);
     this.cancellationHandles.set(stamped.taskId, cancellation);
     // 终态清理结束后才允许同一 task id 开启新生命期、唤醒 terminal waiter。

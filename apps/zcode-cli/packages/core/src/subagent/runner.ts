@@ -73,6 +73,7 @@ import {
   withErrorPayloadRole,
 } from "../errors/error-payload.js";
 import {
+  DEFAULT_SPAWN_BUDGET,
   InMemoryRuntimeTaskRegistry,
   isTerminalRuntimeTask,
   runtimeTaskOutputFile,
@@ -107,6 +108,10 @@ export interface ExploreSubagentRuntimeRequest {
   reportActivity?: () => void;
   resumeFromStore?: boolean;
   systemPrompt?: string;
+  /** Host 签发的 spawn 配额；仅用于 system prompt envelope，准入仍由 registry 决定。 */
+  spawnGrant?: number;
+  /** 本 child 的嵌套层级；仅记录，不设硬上限。 */
+  level?: number;
   workingDirectory: string;
   workspaceRoot: string;
   traceContext: TraceContext;
@@ -253,7 +258,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           nodes: graph.nodes,
           maxParallel,
         },
-        (node, prompt) =>
+        (node, prompt, spawnGrant) =>
           port.run(
             {
               sessionId: rawRequest.sessionId,
@@ -276,6 +281,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             },
             {
               ...dagRunOptions,
+              // DAG 节点预算来自父级的均分结果，节点自身不能再抬价。
+              ...(spawnGrant === undefined ? {} : { internalSpawnGrant: spawnGrant }),
+              level: (dagRunOptions.level ?? 0) + 1,
               ...(rawRequest.orchestrationRunId && dagRunOptions.persistSwarmNodeAttempt
                 ? { internalSwarmNodeID: node.id }
                 : {}),
@@ -334,6 +342,11 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           request,
           startedAt,
           status: "running",
+          // Host 依据父级剩余配额推导子级 grant；模型 remaining_spawns 只能收紧。
+          // 没有 root-run 状态时 spawnGrant 仅记录，registry 不做门禁（向后兼容）。
+          spawnGrant: resolveSpawnGrant(request, runOptions, options),
+          // level 只记录层级；预算本身已从数学上限制树规模，不设硬深度上限。
+          level: (runOptions?.level ?? 0) + 1,
         }),
         taskAbort,
       );
@@ -504,6 +517,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         event: "subagent.spawned",
         module: "core.subagent",
         parentToolCallId: request.parentToolCallId,
+        remainingSpawns: registry.get(lifecycle.agentId)?.spawnGrant,
         status: "started",
       });
       const guardedCompletionPromise = guardSubagentPromiseWithAbort(
@@ -969,11 +983,23 @@ const SUBAGENT_DAG_DEPENDENCY_OUTPUT_MAX_BYTES = 4 * 1024;
 /** Runs a validated DAG while leaving each child lifecycle in the shared RuntimeTaskRegistry. */
 export async function executeSubagentTaskDag(
   request: SubagentTaskDagRequest,
-  runNode: (node: SubagentTaskDagRequest["nodes"][number], prompt: string) => Promise<AgentOutput>,
+  runNode: (
+    node: SubagentTaskDagRequest["nodes"][number],
+    prompt: string,
+    spawnGrant?: number,
+  ) => Promise<AgentOutput>,
   options?: SubagentRunOptions,
 ): Promise<AgentCompletedOutput> {
   const startedAt = Date.now();
   const maxParallel = request.maxParallel ?? 8;
+  // Cursor 公式：父级保留 keep 个配额自用，其余 pool 均分给本批 n 个节点，余数留给父级。
+  // 由此保证每个 child 的配额严格小于父级，且本批 child 配额总和不超过父级预算。
+  const parentSpawnBudget =
+    options?.internalSpawnGrant ?? options?.spawnBudget ?? DEFAULT_SPAWN_BUDGET;
+  const keep = Math.min(maxParallel, Math.max(1, Math.floor(parentSpawnBudget / 4)));
+  const nodeCount = Math.max(1, request.nodes.length);
+  const pool = Math.max(0, parentSpawnBudget - keep);
+  const nodeSpawnGrant = Math.floor(pool / nodeCount);
   const states = new Map<string, SubagentDagNodeResult>(
     request.nodes.map((node) => [node.id, { status: "pending" }]),
   );
@@ -1017,7 +1043,7 @@ export async function executeSubagentTaskDag(
       const prompt = buildSubagentDagNodePrompt(request, node, states);
       states.set(node.id, { status: "running" });
       const task = Promise.resolve()
-        .then(() => runNode(node, prompt))
+        .then(() => runNode(node, prompt, nodeSpawnGrant))
         .then(
           (output) => ({ nodeId: node.id, output }) satisfies SettledSubagentDagNode,
           (error: unknown) => ({ nodeId: node.id, error }) satisfies SettledSubagentDagNode,
@@ -1558,11 +1584,14 @@ function throwOnSubagentAdmissionFailure(
   request: SubagentRunRequest,
 ): never {
   const isQuota = admission.reason === "active_limit";
+  const isSpawnBudget = admission.reason === "spawn_budget_exhausted";
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
-    isQuota
-      ? "Subagent root-session active task quota reached."
-      : "The parent runtime no longer accepts subagent work.",
+    isSpawnBudget
+      ? "Spawn budget exhausted: this run cannot start more subagents. Finish the current tasks or continue in this session without spawning."
+      : isQuota
+        ? "Subagent root-session active task quota reached."
+        : "The parent runtime no longer accepts subagent work.",
     {
       context: {
         code: "agent_subagent_admission_rejected",
@@ -2191,6 +2220,12 @@ async function runAgentToCompletion(
       reportActivity: monitorOptions.reportActivity,
       resumeFromStore: executionOptions.resumeFromStore,
       systemPrompt: lifecycle.profile.systemPrompt,
+      ...(registry.get(lifecycle.agentId)?.spawnGrant === undefined
+        ? {}
+        : { spawnGrant: registry.get(lifecycle.agentId)?.spawnGrant }),
+      ...(registry.get(lifecycle.agentId)?.level === undefined
+        ? {}
+        : { level: registry.get(lifecycle.agentId)?.level }),
       workingDirectory: request.workingDirectory,
       workspaceRoot: request.workspaceRoot,
       traceContext: lifecycle.childTraceContext,
@@ -2514,6 +2549,24 @@ async function flushPendingMessages(
   }
 }
 
+/**
+ * 子级 grant 必须严格小于父级：父预算优先取 Host 签发的 internalSpawnGrant，
+ * 其次父级自身记录值，最后回落到端口根预算。
+ * 模型可在 hostGrant 之下收紧，但不能抬高；无父预算时不签发 grant（旧路径不做门禁）。
+ */
+function resolveSpawnGrant(
+  request: SubagentRunRequest,
+  runOptions: SubagentRunOptions | undefined,
+  options: ExploreSubagentPortOptions,
+): number | undefined {
+  const parentBudget =
+    runOptions?.internalSpawnGrant ?? runOptions?.spawnBudget ?? options.spawnBudget;
+  if (parentBudget === undefined) return undefined;
+  const hostGrant = Math.max(0, Math.floor(parentBudget) - 1);
+  if (request.spawnBudget === undefined) return hostGrant;
+  return Math.min(Math.max(0, Math.floor(request.spawnBudget)), hostGrant);
+}
+
 function createRuntimeTaskSnapshot(input: {
   isBackgrounded: boolean;
   lifecycle: SubagentLifecycle;
@@ -2521,6 +2574,10 @@ function createRuntimeTaskSnapshot(input: {
   pendingMessages?: RuntimeTaskPendingMessage[];
   startedAt: Date;
   status: RuntimeTaskSnapshot["status"];
+  /** Host 为本任务签发的 spawn 配额；模型声明值只能收紧。 */
+  spawnGrant?: number;
+  /** 本任务的嵌套层级；仅记录。 */
+  level?: number;
 }): RuntimeTaskSnapshot {
   return {
     taskId: input.lifecycle.agentId,
@@ -2541,6 +2598,8 @@ function createRuntimeTaskSnapshot(input: {
     traceContext: input.lifecycle.runTraceContext,
     type: "local_agent",
     turnId: input.request.turnId,
+    ...(input.spawnGrant === undefined ? {} : { spawnGrant: input.spawnGrant }),
+    ...(input.level === undefined ? {} : { level: input.level }),
   };
 }
 

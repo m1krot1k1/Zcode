@@ -209,9 +209,21 @@ export function createDefaultSubagentPort(
           traceContext: request.traceContext,
           workspaceRoot: request.workspaceRoot,
         });
+        // Host 在 child 的 system prompt 中显式声明本层 spawn 约定：Level+1 已由 runner 记录，
+        // remaining_spawns 是 Host 签发的 grant，模型申请更多也只能被 hostGrant 压回。
+        // max_parallel 与 DAG 默认并发一致（executeSubagentTaskDag 的 8）。
+        const spawnEnvelope =
+          request.spawnGrant === undefined
+            ? undefined
+            : [
+                "<zcode-spawn-envelope",
+                `level="${request.level ?? 1}"`,
+                `remaining_spawns="${request.spawnGrant}"`,
+                `max_parallel="8" />`,
+              ].join(" ");
         // 空 agent prompt 不是一个语义段；先硬拼 `\n\n` 会把缺失段的边界
         // 泄漏到 persistent Memory 开头。这里只组合非空正文，block 左边界由 builder 统一添加。
-        const agentPrompt = [baseAgentPrompt, persistentMemory?.prompt]
+        const agentPrompt = [spawnEnvelope, baseAgentPrompt, persistentMemory?.prompt]
           .filter((part): part is string => typeof part === "string" && part.length > 0)
           .join("\n\n");
         const childRuntimeEnvInfo = {
@@ -376,6 +388,9 @@ export function createDefaultSubagentPort(
             agentName: `zcode-${request.agentType}`,
             maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
             parentSessionId: this.sessionId,
+            // 子 runtime 的 spawn 预算必须等于 Host 签发的 grant，否则每层都会回落到根预算 32，
+            // 导致嵌套层级越深反而预算越大；无 grant 时沿用父配置（兼容旧调用）。
+            spawnBudget: request.spawnGrant ?? this.config.spawnBudget,
             taskType: "subagent_child",
             // 动态工作流灰度门必须结构性继承：
             // 父会话关着而子代理开着，等于 Agent 工具变成绕过灰度的后门。默认路径（child 继承

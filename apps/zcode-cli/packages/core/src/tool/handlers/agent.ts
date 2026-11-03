@@ -267,6 +267,10 @@ const agentHandler: ToolHandler = async (input, context) => {
         description: parsed.description,
         prompt: parsed.prompt,
         nodes: parsed.task_graph.nodes,
+        ...(parsed.remaining_spawns === undefined
+          ? {}
+          : { spawnBudget: parsed.remaining_spawns }),
+        ...(parsed.level === undefined ? {} : { level: parsed.level }),
         ...(parsed.task_graph.max_parallel === undefined
           ? {}
           : { maxParallel: parsed.task_graph.max_parallel }),
@@ -284,6 +288,10 @@ const agentHandler: ToolHandler = async (input, context) => {
       ...(parsed.acceptance_criteria === undefined
         ? {}
         : { acceptanceCriteria: parsed.acceptance_criteria }),
+      ...(parsed.remaining_spawns === undefined
+        ? {}
+        : { spawnBudget: parsed.remaining_spawns }),
+      ...(parsed.level === undefined ? {} : { level: parsed.level }),
       runInBackground: parsed.run_in_background === true,
     },
     options,
