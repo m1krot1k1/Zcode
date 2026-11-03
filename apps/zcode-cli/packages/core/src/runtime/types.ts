@@ -145,6 +145,11 @@ export interface AgentRuntimeConfig {
    * 只限制 admission 预留的总量，不改变 provider 实际 usage 的结算。
    */
   rootRunTokenLimit?: number;
+  /**
+   * 整棵子 Agent 树的 spawn 次数上限，缺省 DEFAULT_SPAWN_BUDGET（32）。
+   * 只限制 admission 次数，不改变 active task 上限或嵌套深度（level 仅记录）。
+   */
+  spawnBudget?: number;
   permissionTimeoutMs?: number;
   compact?: AutoCompactPolicyConfig;
   targetCompletionVerification?: { enabled?: boolean };

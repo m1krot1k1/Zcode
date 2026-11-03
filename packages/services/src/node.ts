@@ -2415,8 +2415,8 @@ export function createLocalServices(options: {
         // 把 host 解析出的权威 origin（含 settings 覆盖）下发给 agent，否则 agent 侧只按
         // env 推导，test env + 自定义端点时两侧信任判定的输入分叉、官方 MCP 整体 fail closed。
         ...buildAgentEndpointOriginEnv(await resolveCurrentZCodeEndpointOrigin()),
-        // root-run token 预算同样走 spawn env：设置里有值就下发，没值不写，agent 用内置默认上限。
-        ...buildAgentRootRunBudgetEnv(settings.rootRunTokenLimit),
+        // root-run token 预算与 spawn 预算同样走 spawn env：有值就下发，没值用 agent 内置默认。
+        ...buildAgentRootRunBudgetEnv(settings.rootRunTokenLimit, settings.spawnBudget),
         // broker 凭据（socket/token）注入 agent spawn env，让内置 zcode-cua plugin 的
         // computer-use MCP server 经 __zcode-plugin-host 恢复 token 后连上 broker。
         ...cuaProductHelperEnv,

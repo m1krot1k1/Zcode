@@ -1298,6 +1298,7 @@ export interface RuntimeTaskRegistry {
     startedAt?: number;
     deadlineMs?: number;
     tokenLimit?: number;
+    spawnBudget?: number;
     onExhausted?: (reason: RootRunBudgetExhaustionReason) => void;
   }): void;
   reserveRootRunTokens(input: {
@@ -1409,6 +1410,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     startedAt?: number;
     deadlineMs?: number;
     tokenLimit?: number;
+    spawnBudget?: number;
     onExhausted?: (reason: RootRunBudgetExhaustionReason) => void;
   }): void {
     if (this.rootRunBudgets.has(input.rootRunId)) return;

@@ -4,7 +4,9 @@ import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import {
   ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY,
+  ZCODE_SPAWN_BUDGET_ENV_KEY,
   readRootRunTokenLimit,
+  readSpawnBudget,
   type BuiltInSubagentModelSelectionOverrides,
 } from "@zcode/shared";
 import {
@@ -131,6 +133,10 @@ export function resolveAppRuntimeConfig(input: {
     rootRunTokenLimit:
       options.runtimeConfig?.rootRunTokenLimit ??
       readRootRunTokenLimit((options.env ?? process.env)[ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY]),
+    // spawn 预算与 token 预算同源：设置页显式值优先，否则读 Host spawn env，最后 core 默认 32。
+    spawnBudget:
+      options.runtimeConfig?.spawnBudget ??
+      readSpawnBudget((options.env ?? process.env)[ZCODE_SPAWN_BUDGET_ENV_KEY]),
     mode: options.runtimeConfig?.mode ?? persistedMode ?? configResult.config.permission.mode,
     modelSelection: initialModelSelection,
     // 仅接受显式传入的会话级工具面（ZCode Protocol session/create 或 CLI

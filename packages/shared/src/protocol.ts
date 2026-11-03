@@ -286,6 +286,11 @@ export interface AppSettings {
    */
   rootRunTokenLimit?: number;
   /**
+   * 整棵子 Agent 树的 spawn 次数上限；Host 每次 spawn 扣减，用尽后拒绝新任务。
+   * 0 表示禁止 spawn；缺省为 32。改动后下次启动 agent 生效。
+   */
+  spawnBudget?: number;
+  /**
    * 内置浏览器忽略 HTTPS 证书校验错误（自签名、过期、域名不匹配等），用于访问内网测试站点。
    * 只影响内置浏览器出口，不影响 ZCode 自身对后端与模型 API 的请求。默认关闭，重启后生效。
    */

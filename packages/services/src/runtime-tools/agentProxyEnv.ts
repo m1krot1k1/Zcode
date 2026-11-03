@@ -4,6 +4,7 @@ import {
   ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
   ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY,
+  ZCODE_SPAWN_BUDGET_ENV_KEY,
   ZCODE_WORKSPACE_IDENTITY_ENV,
   readZCodeProxyList,
 } from "@zcode/shared";
@@ -133,14 +134,23 @@ export function buildAgentWorkspaceIdentityEnv(
  * 与代理/CA 一样是 spawn 时快照：未配置时不写这个键，agent 侧读不到就用 core 的默认上限，
  * 因此「留空」等于「用默认值」，不会退化成无上限。
  */
-export function buildAgentRootRunBudgetEnv(rootRunTokenLimit: number | undefined): Record<string, string> {
-  if (rootRunTokenLimit === undefined) {
-    return {};
+export function buildAgentRootRunBudgetEnv(
+  rootRunTokenLimit: number | undefined,
+  spawnBudget?: number,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (
+    rootRunTokenLimit !== undefined &&
+    Number.isSafeInteger(rootRunTokenLimit) &&
+    rootRunTokenLimit > 0
+  ) {
+    env[ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY] = String(rootRunTokenLimit);
   }
-  if (!Number.isSafeInteger(rootRunTokenLimit) || rootRunTokenLimit <= 0) {
-    return {};
+  // 0 是合法配额（禁止 spawn），只过滤非法值；缺省不写，由 agent 用默认 32。
+  if (spawnBudget !== undefined && Number.isSafeInteger(spawnBudget) && spawnBudget >= 0) {
+    env[ZCODE_SPAWN_BUDGET_ENV_KEY] = String(spawnBudget);
   }
-  return { [ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY]: String(rootRunTokenLimit) };
+  return env;
 }
 
 function normalizeProxyValue(value: string | undefined): string | undefined {

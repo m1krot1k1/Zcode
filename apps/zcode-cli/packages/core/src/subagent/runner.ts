@@ -154,6 +154,8 @@ export interface ExploreSubagentPortOptions {
     Record<"general-purpose" | "Explore", import("@zcode/shared").ModelSelection>
   >;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
+  /** 根 spawn 预算；runner 据此推导每个子任务的 grant，端口本身不扣减。 */
+  spawnBudget?: number;
   persistTerminalTaskCatalog?: (task: RuntimeTaskSnapshot) => Promise<boolean>;
   resolveTerminalTaskCatalog?: (taskId: string) => Promise<RuntimeTaskSnapshot | undefined>;
   createAgentId?: () => string;

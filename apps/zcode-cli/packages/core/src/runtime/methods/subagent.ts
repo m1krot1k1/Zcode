@@ -84,6 +84,8 @@ export function createDefaultSubagentPort(
   }
   return createExploreSubagentPort({
     logger: this.logger,
+    // 根预算从这里进入端口；子任务由 runner 按 grant 推导后向下传递。
+    spawnBudget: this.config.spawnBudget,
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
     outputRootDir: this.config.subagents?.outputRootDir,

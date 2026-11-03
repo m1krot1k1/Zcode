@@ -216,6 +216,7 @@ export async function executeTurnCommand(
       turnId,
       startedAt: turnStartedAtMs,
       tokenLimit: this.config.rootRunTokenLimit,
+      spawnBudget: this.config.spawnBudget,
       onExhausted: (reason) =>
         turnAbortScope.abort(
           new Error(

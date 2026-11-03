@@ -8,6 +8,11 @@ export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
  * 唯一来源是 AppSettings.rootRunTokenLimit；未配置时 Host 不写该变量，Agent 侧按默认值兜底。
  */
 export const ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY = "ZCODE_ROOT_RUN_TOKEN_LIMIT";
+/**
+ * Host 下发给 Agent 的 spawn 预算（整棵子 Agent 树可创建的任务数）。
+ * 唯一来源是 AppSettings.spawnBudget；0 是合法值（禁止 spawn），未配置时按默认 32。
+ */
+export const ZCODE_SPAWN_BUDGET_ENV_KEY = "ZCODE_SPAWN_BUDGET";
 /** Desktop Host 只向 desktop-attached remote server 传递一次的网络配置。 */
 export const ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY =
   "ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY";
@@ -359,5 +364,18 @@ export function readRootRunTokenLimit(value: string | undefined): number | undef
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
+
+/**
+ * 读取 Host 注入的 spawn 预算。
+ * 非法值（非数字、负数、超出安全整数范围）返回 undefined，让 Agent 回落到默认 32；
+ * 0 是合法值，表示禁止任何 spawn，不能被当成「未配置」。
+ */
+export function readSpawnBudget(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return undefined;
   return parsed;
 }
