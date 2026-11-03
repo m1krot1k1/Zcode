@@ -597,6 +597,140 @@ describe("RootRun resource budget", () => {
     expect(onExhausted).not.toHaveBeenCalled();
   });
 
+  it("charges the reservation when the request reached the network but the provider returned no usage", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-sent-no-usage");
+    const child = createSessionId("root-budget-sent-no-usage-child");
+    const turnId = createTurnId("root-budget-sent-no-usage-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    registry.registerSubagentTask(task("sent-no-usage", root, child, turnId), settled());
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: child,
+      contextWindow: 400,
+      maxTokens: 300,
+    });
+    release.associateRequestId("sent-no-usage-request");
+    registry.recordRootRunUsage(modelRequestStarted(child, turnId, "sent-no-usage-request"));
+
+    // adapter 在 attempt 结束时先 release，终态事件随后才落库。
+    release();
+    registry.update("sent-no-usage", (current) => ({ ...current, status: "completed" }));
+
+    // provider 不返回 usage 时按预留上界扣账，而不是相信 0。
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 300,
+      reservedTokens: 0,
+    });
+  });
+
+  it("keeps zero cost when a released reservation never reached the network", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-unsent-no-usage");
+    const child = createSessionId("root-budget-unsent-no-usage-child");
+    const turnId = createTurnId("root-budget-unsent-no-usage-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    registry.registerSubagentTask(task("unsent-no-usage", root, child, turnId), settled());
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: child,
+      contextWindow: 400,
+      maxTokens: 300,
+    });
+    release.associateRequestId("unsent-no-usage-request");
+
+    // 没有 model_request_started：请求从未越过网络边界，不产生费用。
+    release();
+    registry.update("unsent-no-usage", (current) => ({ ...current, status: "completed" }));
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 0,
+      reservedTokens: 0,
+    });
+  });
+
+  it("две отправленные попытки без usage не обходят лимит", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-two-sent");
+    const firstChild = createSessionId("root-budget-two-sent-child-1");
+    const secondChild = createSessionId("root-budget-two-sent-child-2");
+    const turnId = createTurnId("root-budget-two-sent-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 10_000,
+      onExhausted,
+    });
+    registry.registerSubagentTask(task("two-sent-1", root, firstChild, turnId), settled());
+    registry.registerSubagentTask(task("two-sent-2", root, secondChild, turnId), settled());
+    const runUnmetered = (taskId: string, sessionId: SessionId, requestId: string) => {
+      const release = registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId,
+        contextWindow: 200_000,
+        maxTokens: 6_000,
+      });
+      release.associateRequestId(requestId);
+      registry.recordRootRunUsage(modelRequestStarted(sessionId, turnId, requestId));
+      release();
+      registry.update(taskId, (current) => ({ ...current, status: "completed" }));
+    };
+
+    runUnmetered("two-sent-1", firstChild, "two-sent-request-1");
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({ usedTokens: 6_000 });
+
+    // 第二次只剩 4 000 可预留：仍被放行，但结算后预算必须真正见底。
+    runUnmetered("two-sent-2", secondChild, "two-sent-request-2");
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 10_000,
+      reservedTokens: 0,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(true);
+    expect(onExhausted).toHaveBeenCalledWith("token_limit");
+    expect(() =>
+      registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 200_000,
+        maxTokens: 1,
+      }),
+    ).toThrow(RootRunBudgetExceededError);
+  });
+
+  it("drops an unsent released reservation when the root turn closes", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-unsent-orphan");
+    const child = createSessionId("root-budget-unsent-orphan-child");
+    const turnId = createTurnId("root-budget-unsent-orphan-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    registry.registerSubagentTask(task("unsent-orphan-child", root, child, turnId), settled());
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    release.associateRequestId("unsent-never-sent");
+    release();
+
+    registry.finishRootRunTurn(rootRunId);
+
+    // 从未发出的 reservation 不能留在 map 里，也不能被迟到的匿名终态事件扣账。
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 0,
+      reservedTokens: 0,
+    });
+    registry.update("unsent-orphan-child", (current) => ({ ...current, status: "completed" }));
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toBeUndefined();
+  });
+
   it("deadline aborts the root and waits through the existing child cancellation handle", async () => {
     vi.useFakeTimers();
     try {
@@ -972,6 +1106,19 @@ function task(
     turnId,
     type: "local_agent",
   };
+}
+
+function modelRequestStarted(
+  sessionId: SessionId,
+  turnId: ReturnType<typeof createTurnId>,
+  requestId?: string,
+) {
+  return createSessionEvent(
+    SessionEventType.ModelNetworkStatus,
+    sessionId,
+    { type: "model_request_started", ...(requestId ? { requestId } : {}) },
+    { turnId },
+  );
 }
 
 function modelComplete(

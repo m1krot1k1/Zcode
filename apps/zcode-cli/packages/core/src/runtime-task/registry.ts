@@ -1345,6 +1345,11 @@ interface RootRunReservation {
   reservedTokens: number;
   consumed: boolean;
   requestId?: string;
+  /**
+   * 该预留对应的请求已越过 provider 网络边界（观察到 adapter 发出的 model_request_started）。
+   * provider 并不保证返回 usage，这个事实是「请求可能已真实计费」的唯一凭据。
+   */
+  sentToNetwork?: boolean;
   /** release() 已归还 admission 额度；entry 仍留到终态事件结算，结算时不再重复扣减。 */
   released?: boolean;
 }
@@ -1499,8 +1504,13 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       // 根因：adapter 在 attempt 结束（含重试退避）时调用 release，而终态事件是异步持久化的，
       // 落库时可能晚于 release。旧实现无条件把 entry 从列表里删掉，事件到达后便匹配不到预留，
       // 退化成按整个 tokenLimit 扣账 —— 一次 502 就耗尽预算、取消整轮（UI 显示 Stopped）。
-      // 修复依据：已关联 requestId 且未被消费的预留必须留到终态事件结算；无 requestId 的永远匹配不到，直接删。
-      if (entry.consumed || !entry.requestId) {
+      // 修复依据：已关联 requestId 且未被消费的预留必须留到终态事件结算。
+      // 补充根因：provider 可能完全不返回 usage。请求已越过网络边界（记录过 model_request_started）
+      // 但尚未关联 requestId 时，旧实现同样在这里删除 entry，随后到达的无 usage 终态事件找不到预留，
+      // 按 0 记账 —— 等于「不返回 usage 的 provider 免费」，root-run 预算可被 provider 绕过。
+      // 修复依据：已发出的预留一律留到终态事件结算，缺 usage 时按 reservedTokens 保守扣账（上界）；
+      // 只有从未发出的预留（admission 被拒、发送前取消）才在这里删除，避免被匿名终态事件误扣。
+      if (entry.consumed || (!entry.requestId && !entry.sentToNetwork)) {
         const index = current.indexOf(entry);
         if (index >= 0) current.splice(index, 1);
       }
@@ -1516,6 +1526,32 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       if (requestId.trim()) entry.requestId = requestId;
     };
     return release;
+  }
+
+  /**
+   * 标记该预留对应的请求确实发往了 provider。
+   * 根因：provider 不保证返回 usage。终态事件到达时若预留已随 adapter release 被删除，
+   * 结算层找不到任何预留就按 0 记账 —— 等于「不返回 usage 的 provider 免费」，root-run 预算被彻底绕过。
+   * 修复依据：model_request_started 是请求越过网络边界的事实来源；带该事实的预留必须留到终态事件结算，
+   * 缺 usage 时按 reservedTokens 保守扣账（上界），而不是相信 0。
+   */
+  private markRootRunReservationSent(
+    state: RootRunBudgetState,
+    sessionId: SessionId,
+    requestId: string | undefined,
+  ): void {
+    const pending = state.activeReservationsBySession.get(sessionId);
+    if (!pending?.length) return;
+    const byRequestId = requestId
+      ? pending.find((item) => !item.consumed && item.requestId === requestId)
+      : undefined;
+    if (byRequestId) {
+      byRequestId.sentToNetwork = true;
+      return;
+    }
+    // 并发下多份未关联预留无法判定归属，只有恰好一条时才兜底标记，宁可少标也不误扣别人的账。
+    const unassociated = pending.filter((item) => !item.consumed && item.requestId === undefined);
+    if (unassociated.length === 1) unassociated[0].sentToNetwork = true;
   }
 
   /**
@@ -1553,6 +1589,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   recordRootRunUsage(event: SessionEvent): void {
     const state = this.findRootRunBudgetForEvent(event);
     if (!state) return;
+    if (isRootRunRequestStarted(event)) {
+      this.markRootRunReservationSent(state, event.sessionId, getRootRunUsageRequestId(event));
+      return;
+    }
     const key = JSON.stringify([state.rootRunId, event.sessionId, event.id]);
     if (state.seenUsageEvents.has(key)) return;
     const usage = extractProviderUsage(event);
@@ -1573,9 +1613,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       }
       state.seenUsageEvents.add(key);
       state.usedTokens += usage.totalTokens;
-      if (state.usedTokens >= state.tokenLimit) {
-        this.expireRootRunBudget(state, "token_limit");
-      }
+      this.expireRootRunBudgetOnTokenLimit(state);
       this.changed();
       return;
     }
@@ -1594,14 +1632,14 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 最大单次预留」（deepseek-v4.1-flash-1017 为 384k），凭空记一笔从未发生的费用，
     // 一次 admission 拒绝就能把 500k 预算推到耗尽并取消整轮。
     // 修复依据：找不到 reservation 的终态事件按 0 记账 —— 未知成本不能凭空打满预算。
+    // 该分支现在只覆盖「从未有过预留」的请求：已发出的预留由 release 保留（sentToNetwork），
+    // 从未发出的预留（admission 被拒或发送前取消）在 release 时删除，不会被匿名终态事件误扣。
     // 回归用例 "treats an unattributable event without any reservation as zero cost" 覆盖。
     const debitedTokens = usage?.totalTokens ?? reservation?.reservedTokens ?? 0;
     state.usedTokens += debitedTokens;
     // Резервации активных запросов ограничивают новый admission, но не являются расходом.
     // Иначе параллельные дочерние ветки отменяли весь рой при полном, но ещё не потраченном резерве.
-    if (state.usedTokens >= state.tokenLimit) {
-      this.expireRootRunBudget(state, "token_limit");
-    }
+    this.expireRootRunBudgetOnTokenLimit(state);
     this.changed();
   }
 
@@ -1631,8 +1669,13 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       reservation.released = true;
       returnedTokens += reservation.reservedTokens;
     }
-    state.activeReservationsBySession.delete(sessionId);
     state.reservedTokens = Math.max(0, state.reservedTokens - returnedTokens);
+    // 根因：turn 结束会清空 root 会话的 entry；请求已越过网络边界但终态 usage 尚未落库时，
+    // 事件到达后找不到预留，只能按 0 结账 —— provider 不返回 usage 就等于免费。
+    // 修复依据：已发出的 entry 保留（额度已归还，released=true）到终态事件结算；从未发出的直接丢弃。
+    const retained = reservations.filter((item) => !item.consumed && item.sentToNetwork);
+    if (retained.length === 0) state.activeReservationsBySession.delete(sessionId);
+    else state.activeReservationsBySession.set(sessionId, retained);
   }
 
   async cancelRootRunChildren(rootRunId: string, reason?: unknown): Promise<void> {
@@ -1735,6 +1778,19 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       state.rootRunId,
       new RootRunBudgetExceededError(state.rootRunId),
     );
+  }
+
+  /**
+   * 根因：turn 的 finally 已 finishRootRunTurn 并 dispose abort scope，此时迟到的 usage/子任务结算
+   * 仍可能把 usedTokens 推过限额。旧实现直接 expire，onExhausted 会 abort 一个已完成的 turn，
+   * 并把还在收尾的兄弟子任务当作超限取消 —— 用户看到已完成的回合被翻成 Stopped。
+   * 修复依据：turnFinished 之后只记账、不判超限；预算消耗仍由 admission 闸门约束
+   * （reserveRootRunTokens 在 remaining <= 0 时拒绝），不会放行新请求。
+   */
+  private expireRootRunBudgetOnTokenLimit(state: RootRunBudgetState): void {
+    if (state.turnFinished) return;
+    if (state.usedTokens < state.tokenLimit) return;
+    this.expireRootRunBudget(state, "token_limit");
   }
 
   register(task: RuntimeTaskSnapshot): void {
@@ -2122,18 +2178,25 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
     // 根因：子进程/流可能在写入终态 usage 前退出，遗留 reservation 会永久占住兄弟任务预算。
     // 修复依据：子任务 terminal 是该 session 不会再完成此请求的生命周期边界；未知成本按 reservation 保守扣账。
-    let debitedTokens = 0;
+    // 补充根因：adapter 在 attempt 结束时就 release 归还了 admission 额度，旧实现只处理未 release 的条目，
+    // 于是「请求已越过网络边界、provider 不返回 usage」的正常时序会走到 released 分支被直接丢弃，
+    // 结算成 0 —— 不返回 usage 的 provider 等于免费，root-run 预算可被绕过。
+    // 修复依据：已发出（记录过 model_request_started）的条目即使 released 也要按 reservedTokens 保守扣账（上界）；
+    // released 条目的额度已归还，这里只记 used，不再重复减 reserved，避免重复归还。
+    let chargedTokens = 0;
+    let stillReservedTokens = 0;
     for (const reservation of reservations) {
-      if (reservation.consumed || reservation.released) continue;
+      if (reservation.consumed) continue;
       reservation.consumed = true;
-      debitedTokens += reservation.reservedTokens;
+      if (reservation.sentToNetwork || !reservation.released) {
+        chargedTokens += reservation.reservedTokens;
+      }
+      if (!reservation.released) stillReservedTokens += reservation.reservedTokens;
     }
     state.activeReservationsBySession.delete(sessionId);
-    state.reservedTokens = Math.max(0, state.reservedTokens - debitedTokens);
-    state.usedTokens += debitedTokens;
-    if (state.usedTokens >= state.tokenLimit) {
-      this.expireRootRunBudget(state, "token_limit");
-    }
+    state.reservedTokens = Math.max(0, state.reservedTokens - stillReservedTokens);
+    state.usedTokens += chargedTokens;
+    this.expireRootRunBudgetOnTokenLimit(state);
   }
 
   private removeTaskIndexes(task: RuntimeTaskSnapshot): void {
@@ -2473,6 +2536,13 @@ function getRootRunUsageRequestId(event: SessionEvent): string | undefined {
       : undefined;
   }
   return undefined;
+}
+
+/** 请求已越过 provider 网络边界：adapter 在真正发出请求前 publish；这是「可能已计费」的唯一事实来源。 */
+function isRootRunRequestStarted(event: SessionEvent): boolean {
+  if (event.type !== SessionEventType.ModelNetworkStatus) return false;
+  const payload = event.payload as { type?: string };
+  return payload.type === "model_request_started";
 }
 
 function isRootRunUsageEvent(event: SessionEvent): boolean {
