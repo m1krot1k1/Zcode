@@ -61,5 +61,5 @@ Status: done
 - 本地 Electron RPN E2E PASS：`desktop-e2e-20260927163345863-p2314-13cd15bfd21db756`，覆盖分组、时间线、置顶、归档的离线占位、设备详情及凭据等待入口。
 - 真实 SSH E2E PASS：`r3-server-rdux08-visual-20260928-04`，覆盖原空白页路径、草稿保留且不提交、凭据完整原地重连、设置页连接后的“稍后选择”；桌面 1400/480px 深浅主题截图检查通过。
 - 手机真实 relay + SSH E2E PASS：`r3-server-rdux08-mobile-20260928-11`。覆盖手机网络断开时桌面持续运行、手机 replay 恢复、双端 FIFO 无丢失重复、不增加 Host/SSH/Agent，以及 SSH Source 断开后的手机横幅、草稿禁发送、手机原地重连和 390px 深浅主题。
-- SSH 参数由仓库 [harness](../../../harness/remote/README.md) 创建隔离容器、生成并注入临时凭据。首次绕过该入口导致缺少环境变量，不代表需要用户补配置。测试账号通过既有账号 mock 隔离线上营销弹窗，并通过正常 UI 完成首次引导的偏好初始化。测试环境为 macOS Desktop → 本机隔离 Linux Docker 容器，手机为 Chrome mobile viewport + 真实 test relay；未覆盖实体手机或跨机 WAN。
+- SSH 参数由仓库 `../../../harness/remote/README.md`（已删除） 创建隔离容器、生成并注入临时凭据。首次绕过该入口导致缺少环境变量，不代表需要用户补配置。测试账号通过既有账号 mock 隔离线上营销弹窗，并通过正常 UI 完成首次引导的偏好初始化。测试环境为 macOS Desktop → 本机隔离 Linux Docker 容器，手机为 Chrome mobile viewport + 真实 test relay；未覆盖实体手机或跨机 WAN。
 - 候选 E2E 保留 pending；未做人工转正或 Docker CI 准入。必要检查、失败回归复测及 diff 自检完成，按实施约定本地提交，不推送。

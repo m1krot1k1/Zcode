@@ -149,7 +149,7 @@ Team scope 和凭据状态。Personal 继续是最后一层 Overlay，但不因�
 当前未发布实现把这两个 `account:*` Provider 也做成了手动输入 API Key，并将 Key 保存到 Personal
 Config。这是本 Todo 需要直接替换的中间态，不是目标产品契约。
 
-实现修正见 [`Bugfix 09：Account API Key 所有权漂移清理`](./bugfix-09-account-api-key-ownership-drift.md)：
+实现修正见 `./bugfix-09-account-api-key-ownership-drift.md`（已删除）：
 Account API 设置页、Family mode 恢复逻辑和 Welcome 手填 Key 入口不再把账号 Provider 当成普通 API Key
 Provider，写边界同时机械拒绝固定 Account Provider 的 Personal `access`。
 

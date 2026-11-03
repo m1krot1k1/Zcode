@@ -13,7 +13,7 @@
 - `.gitlab/ci/50-release.yml`：人工 approve、发布元数据生成、OSS 上传、CDN 预热、正式发布和发布成功通知。
 - `.gitlab/ci/preview-child.yml`：MR 中 `build:preview` 手动命令触发的内部测试包子流水线；只复用 workflow、scripts、build 和 notify，不加载 test/release。
 
-Desktop CI 不承载远控静态资源部署；测试与生产手机页面均通过独立 OSS 多版本流水线发布，见 [Remote v4 静态部署](./web-remote-control/remote-v4-static-deployment.md)。
+Desktop CI 不承载远控静态资源部署；测试与生产手机页面均通过独立 OSS 多版本流水线发布，见 `./web-remote-control/remote-v4-static-deployment.md`（已删除）。
 
 ## 流水线阶段
 

@@ -16,10 +16,10 @@ Status: fixed; real SSH E2E verified (2026-09-26)
 - Source 已真实删除指定 Provider；Desktop 产品 SSH 回包被代理扣留 11772 字节，模型回放隧道与控制探针使用独立直连。
 - Main 的同步结果数在提交前后均为 7，尚未收到本次结果；原 remoteSessionId 仍绑定。
 - 打开设备管理后等待 30 秒未找到已保存设备的「断开」入口，测试失败。
-- [失败前约 20 秒的视频帧](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/provisioning-management-stalled.png)显示设备区域为空。该帧位于清理动作之前，不是 `clearAppData` 后的空状态。
-- [原始视频](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/provisioning-failure-smoke-01.webm)和 [受控注入事实](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/provisioning-failure-smoke-01-facts.json)保留了失败过程。
+- `失败前约 20 秒的视频帧`（未入库）显示设备区域为空。该帧位于清理动作之前，不是 `clearAppData` 后的空状态。
+- `原始视频`（未入库）和 `受控注入事实`（未入库）保留了失败过程。
 - 独立批次 `r3-server-20260924181553216-617c6a`（测试清单 `dd76d5be828b2dc4014c4fafc7b4c44630a963ecb1ad7b02ffeb7068d634964b`）先证明健康链路下已有设备和断开按钮可用。之后扣留 17200 字节，Main 结果数保持 18；31.247 秒后再次失败。失败现场确认本机 Source 记录仍存在，而页面只剩连接偏好与新建连接。
-- [健康链路页面](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/provisioning-management-before-hold.png)与 [停滞后的页面](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/provisioning-management-pending-failure.png)均由用例在清理前直接采集；[完整事实](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/provisioning-failure-smoke-03-facts.json)还证明 PRV-12 写入失败只告警、本机成功反馈、连接保持和恢复后的再次保存均已完成。
+- `健康链路页面`（未入库）与 `停滞后的页面`（未入库）均由用例在清理前直接采集；`完整事实`（未入库）还证明 PRV-12 写入失败只告警、本机成功反馈、连接保持和恢复后的再次保存均已完成。
 
 ## 代码定位
 

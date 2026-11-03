@@ -14,9 +14,9 @@ Desktop 经正式 SSH 连接在 Source 上生成 `report.html`，文件包含测
   `POST /api/v1/shares/preparations/<id>/confirm` 返回 **HTTP 503**，响应类型为 JSON。
   请求 ID：`20260924094737fb81e1d45bbdf211785c`，响应观测时间 `2026-09-24 09:48:07.717 UTC`。
 
-HTTP 证据见 [安全字段记录](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/share-http-observation2.jsonl)；
-两次独立失败的阶段见 [第一次](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/share-final-1.json)、
-[第二次](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/share-final-2.json)。
+HTTP 证据见 `安全字段记录`（未入库）；
+两次独立失败的阶段见 `第一次`（未入库）、
+`第二次`（未入库）。
 观察未修改请求或响应、未保存鉴权头和正文；观察进程随用例容器回收。
 
 ## 边界与剩余调查

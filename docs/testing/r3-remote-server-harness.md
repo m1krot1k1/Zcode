@@ -3,7 +3,7 @@
 编排代码在 `harness/remote/`；本文是它的事实说明。目标：**全部远程连接 e2e case 都能在一台
 Linux 服务器上跑**，远端用同机 Docker 容器模拟，不追求跨机验证。
 
-当前命令、构建环境、源码验真、调度和清理规则统一见 [harness README](../../harness/remote/README.md)。
+当前命令、构建环境、源码验真、调度和清理规则统一见 `../../harness/remote/README.md`（已删除）。
 本文保留拓扑、真实/模拟边界、case 档位和历史归因；不同日期的结果不能拼成当前全量 PASS。
 10 月 SSH 范围结果见[指南回归](desktop-ssh-guide-regression.md)。
 

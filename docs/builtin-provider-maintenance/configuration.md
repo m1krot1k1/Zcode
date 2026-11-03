@@ -35,7 +35,7 @@ flowchart TD
 | ----------------------------------------------------------------------------- | ------------------------------------------------- |
 | [正式 JSON](../../config/provider/zcode-builtin.json)                         | 唯一手工编辑源，包含模板、固定 Provider、模型规则 |
 | [测试 JSON](../../config/provider/zcode-builtin.test.json)                    | 从正式配置生成的完整 Release，不独立编辑模型      |
-| [生成脚本](../../scripts/sync-test-builtin-provider-config.mjs)               | 测试端点映射和相应 Site 规则派生                  |
+| `../../scripts/sync-test-builtin-provider-config.mjs`（已删除）               | 测试端点映射和相应 Site 规则派生                  |
 | [规则 Schema](../../packages/provider/src/config/rule-data-schema.ts)         | 每层字段、匹配格式和来源写权限                    |
 | [Provider Schema](../../packages/provider/src/config/provider-data-schema.ts) | API、Access、模板元数据                           |
 | [Model Schema](../../packages/shared/src/model-config.ts)                     | 能力、选项与完整性                                |

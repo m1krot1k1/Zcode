@@ -28,7 +28,7 @@ Status: needs-triage
 - 两份 `mobile-pairing-1.json` 都记录 `testIds: ["onboarding-page"]`，正文为「工作方向 / UI 模式 / 助手偏好」，资源加载错误数组为空。
 - 独立批次 `r3-server-20260924054830817-45203b` 的 `soakdual` 也出现同一页面，199 秒后失败；尚未进入 10 分钟观测，不能据此宣称稳定性已验证。
 - 当前分支 Web 构建由测试宿主 loopback 托管，HTML 和 JavaScript 实际返回 200；真实 test relay 与产品配对流程保持不变。
-- 本地证据：[mobile](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/mobile-pairing-recheck07.json)、[mobileperm](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/mobileperm-pairing-recheck07.json)。完整产物保留在服务器 `.e2e-artifacts/<batch>-<case>/`，不含公开配对凭据。
+- 本地证据：`mobile`（未入库）、`mobileperm`（未入库）。完整产物保留在服务器 `.e2e-artifacts/<batch>-<case>/`，不含公开配对凭据。
 
 ## 代码定位
 
@@ -44,4 +44,4 @@ Status: needs-triage
 修复应保留手机首页的只读空服务边界，不能为了初始化首页创建独立 Host/Agent 或强制连接工作区。
 随后验证 fresh context、再次配对及断开工作区首页均能进入任务列表，并继续完成原 mobile/mobileperm/soakdual 断言。
 
-另一个独立环境问题是已发布测试站点 `/remote/v4?app_version=3.12.2` 的脚本 404，见 [harness 记录](../../../harness/remote/README.md)。该 404 与本 Issue 的同版资源引导覆盖不能混为一谈。
+另一个独立环境问题是已发布测试站点 `/remote/v4?app_version=3.12.2` 的脚本 404，见 `../../../harness/remote/README.md`（已删除）。该 404 与本 Issue 的同版资源引导覆盖不能混为一谈。

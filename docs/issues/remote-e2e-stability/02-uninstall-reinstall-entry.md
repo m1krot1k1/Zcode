@@ -10,7 +10,7 @@ Status: done
 
 业务基线 `54ece08f23f79ae54aea1f51e0d941497d627392`，服务器批次
 `r3-server-20260924033117390-ff1bf4` 的 `uninstall` 曾报告 PASS，但其
-[运行事实](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/uninstall-full05.json)记录了另一条路径：
+`运行事实`（未入库）记录了另一条路径：
 
 1. 经正式向导首装，再通过 CLI 双次 DELETE 卸载；运行文件删除，config 与用户数据哨兵保留。
 2. 再次连接提示需确认身份换代，符合[Source 安装身份边界](../../architecture/r3-source-server-remote-architecture.md)。
@@ -28,13 +28,13 @@ Status: done
 进一步核对代码发现：设置页调用的是不带 Profile 的 `onCreateConnection`，只打开向导；真正提交连接的是
 向导设备卡的 `onSelectProfile(preferred)`。该轮遗漏了选择保存线路，不能把这次超时直接定性为业务缺陷。
 现已补齐该动作。第 11 轮 `r3-server-20260924070140735-f6bd8f` 的
-[运行事实](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/uninstall-recheck11.json)
+`运行事实`（未入库）
 确认设置入口和保存线路均已点击，随后在建立链路阶段再次提示“请在连接管理中确认身份换代”。
 远端 `current.json` 与新 installationId 已存在，config 和用户数据哨兵仍保留；失败点是恢复连接，
 不能描述为完全没有执行安装。
 
 补充取证批次 `r3-server-20260924091134245-eb60d2` 在再次收到身份错误后，实际关闭向导并返回连接管理。
-[运行事实](../../../packages/desktop/.e2e-artifacts/remote-stability-20260924/uninstall-coverage-next.json)
+`运行事实`（未入库）
 显示页面仍标记“远端已卸载”，可见操作只有“重新安装并连接”和“移除全部连接”，没有身份换代确认入口。
 这与源码中确认按钮位于 Profile 线路列表、而 `installState === "uninstalled"` 时隐藏该列表一致。
 恢复流程要求确认身份，但指定页面没有可用入口；已获得运行证据，未修改产品实现。

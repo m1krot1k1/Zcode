@@ -64,7 +64,7 @@ Anthropic 时，才选择该入口实际支持且验证最充分的其他 Schema
 ## 维护范围与完备性边界
 
 维护范围只用一张简短的 Builtin Provider 入口库存表表达，不在设计文档中重复抄写完整 Provider Config。具体清单见
-[`Builtin Provider 维护清单`](../../design-v2/builtin-provider-inventory.md)。表格格式为：
+[`Builtin Provider 维护清单`](../design-v2/builtin-provider-inventory.md)。表格格式为：
 
 ```text
 供应商 | 类型 | templateId / providerId | Base URL | 产品维护模型

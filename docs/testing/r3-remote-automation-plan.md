@@ -3,7 +3,7 @@
 导出边界：`harness/remote/**` 是内部远程测试部署设施，不进入开源树；直接依赖它的 `r3RemoteMobileSite`、`r3RemoteProcess`、`r3RemoteProfiles`、`r3RemoteScheduler`、`r3RemoteSource`、`r3RemoteSpecInventory`、`r3RemoteVpn` 单测同步排除。公共远程实现与独立 E2E 保留，排除合同见 `opensource/README.md`。
 
 当前范围与验收标准。2026-09-07 确认的完整验收目标继续保留；早期分支名、环境准备过程和执行缺口属于历史记录，不能作为当前运行结果。
-执行命令、环境准入和资源隔离由 [harness README](../../harness/remote/README.md)维护；
+执行命令、环境准入和资源隔离由 `../../harness/remote/README.md`（已删除）维护；
 用例定义见[矩阵](r3-remote-automation-case-matrix.md)，阶段结果见[桌面 SSH 指南回归](desktop-ssh-guide-regression.md)和各日期报告。
 
 完整验收要求 50 次恢复循环、2 小时长稳；当前 harness 的 soak-reconnect 为 10 轮、soak-dual 为 10 分钟。

@@ -16,7 +16,7 @@
 
 - 每个任务前 `node scripts/check-workspace-freshness.mjs` 通过、`git status --short` 干净再开工；保留他人改动。
 - 必要验证：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、受影响单测（根 `pnpm test:unit:affected` 不替代 CLI 测试与 desktop E2E）。
-- 提交遵守 [Conventional Commits 约定](../../docs/git/ai-agent-commit-message-guidelines.md)（Why/What/Risk 正文），**绝不使用 `--no-verify`**。
+- 提交遵守 [Conventional Commits 约定](../../git/ai-agent-commit-message-guidelines.md)（Why/What/Risk 正文），**绝不使用 `--no-verify`**。
 - 新增代码不写注释（用户明确要求；必要的根因说明仅写在 commit message 与 spec）。
 - 跨 worktree 一律 `git -C <path>`，绝不 `cd`。
 - 禁止整文件跑 oxfmt（`fmt:check` 基线本身红；只格式化自己新增的行）。
@@ -865,14 +865,14 @@ EOF
 ZCODE_CUA_DEV_MODE=1 pnpm run dev:desktop
 ```
 
-按 [本地跑 CUA Helper](../../docs/cua-permission-broker/local-dev-helper-runbook.md) 验证：
+按 [本地跑 CUA Helper](../../cua-permission-broker/local-dev-helper-runbook.md) 验证：
 1. app 启动后 Activity Monitor 无 "ZCode Computer Use" 进程（懒启动未被触发）。
 2. 新开对话让模型调 computer-use → Helper 进程出现、调用成功（MC-2）。
 3. 在设置页完成一次权限授权流后再 spawn 新 agent → 新 agent env 里 `ZCODE_CUA_BROKER_SOCKET` 为稳定路径而非随机（MC-3；可用 dev 日志核对）。
 
 - [ ] **Step 2: desktop E2E 评估**
 
-按 [.agents/skills/e2e-case-lifecycle/SKILL.md](../../.agents/skills/e2e-case-lifecycle/SKILL.md) 评估
+按 [.agents/skills/e2e-case-lifecycle/SKILL.md](../../../.agents/skills/e2e-case-lifecycle/SKILL.md) 评估
 `docs/testing/cua-e2e-case-catalog.md` 是否需要新增/修订 case（spawn 时序断言无法在 E2E 层观测的如实标注；Windows 路径全部标注「待 Windows 实机」）。
 
 - [ ] **Step 3: 汇总未验证项**

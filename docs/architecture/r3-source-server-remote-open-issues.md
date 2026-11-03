@@ -79,9 +79,9 @@
 - 现象：新构建链只生成 `source-server-release.json` 和四个 `zcode-server-*.tar.gz`，正式 `release:validate` 仍要求 `manifest-*.json` 与 `components/**`。
 - 影响：干净发布目录会稳定失败；脏目录可能用旧产物通过校验，却没有验证本轮真正发布的 Source Server archive。
 - 证据：
-  - [`.gitlab/ci/30-build.yml`](../../.gitlab/ci/30-build.yml) 的 `build:remote:assets` 只收集 descriptor 和四个 archive；
-  - [`.gitlab/ci/50-release.yml`](../../.gitlab/ci/50-release.yml) 的上传合同只包含新产物；
-  - [`scripts/validate-release-artifacts.mjs`](../../scripts/validate-release-artifacts.mjs) 的 `validateRemoteAssets()` 仍只认识 legacy manifest/components；
+  - `.gitlab/ci/30-build.yml`（已删除） 的 `build:remote:assets` 只收集 descriptor 和四个 archive；
+  - `.gitlab/ci/50-release.yml`（已删除） 的上传合同只包含新产物；
+  - `scripts/validate-release-artifacts.mjs`（已删除） 的 `validateRemoteAssets()` 仍只认识 legacy manifest/components；
   - `gitlabCiBuildGraph.test.ts` 与 `validateReleaseArtifacts.test.ts` 分别验证两套互斥合同，缺少端到端对接测试。
 - 关闭条件：validator 严格校验 descriptor 的版本、四个 target、文件名、size、SHA-256、URL 和真实 archive；构建输出能够直接通过正式发布校验；旧残留不会影响结果。
 
@@ -299,7 +299,7 @@
 - 修复：六类 handler 改为强类型必填，在 `useRemoteWorkspaceHistory` 内按 Source/attachment/persistence owner 完整装配单一 controller，并通过 Root provider 供 UI 使用；普通 Profile 连接统一携带 `open-conversation` completion intent。项目选择、设备断开、workspace 重连和 user-close 均先 dispatch，再进入既有 owner helper。
 - 验证：controller 全 intent/错误传播、Root production wiring、Settings disconnect 和 Sidebar 禁止直接 `disconnectSource` 的 focused tests 通过；全量 unit（1500 passed，1 skipped）、`pnpm typecheck` 与 `pnpm lint` 通过。`pnpm bootstrap:with-remote` 构建成功，`VITE_ZCODE_E2E_STORE_BRIDGE=1 pnpm dev:desktop` 启动成功并监听 CDP 9229。
 - 真实 SSH/CDP（2026-08-28）：使用 SSH alias `linux-amd64-dev`（`dev@localhost:2222`，密码由测试环境注入）连接真实设备，远端 `~/.zcode/server/current.json` 为 `3.9.1`，设备 `4fedce9b49f0`，Source Server 为 `32a10b89-141c-469b-aa97-850f41ab7deb`。设置页普通连接完成后自动打开 `/home/dev/.zcode/workspace/default` 的 `conversation` tab，`workspaceIdentity=remote:server:<sourceServerId>:/home/dev/.zcode/workspace/default`；断开后卡片由“已连接”变为“未连接”，远程 attachment/session 被释放；再次连接生成新的 `remoteSessionId` 并重新打开 conversation。随后从 conversation 选择 `/home/dev` 打开 project，project 与 conversation 使用不同 `remoteSessionId`；通过真实 tab close 触发 user-close 后 project 被移除且 conversation 保留。
-- 自动化 SSH E2E：`E2E_SSH_REMOTE_PROJECT_CONVERSATION_SCOPE` 1 项通过，报告 [`desktop-e2e-20260828-153721-524`](../../packages/desktop/.e2e-artifacts/desktop-e2e-20260828-153721-524/summary.md)。同轮执行的 pending-cancel 手工复核因代理 socket 在 30 秒断言窗口后约 1.5 秒才关闭而失败（`desktop-e2e-20260828-153846-870`）；该失败路径不涉及本 issue 的 controller 写入口变更，未将其计入 R3-ISSUE-015 关闭条件。
+- 自动化 SSH E2E：`E2E_SSH_REMOTE_PROJECT_CONVERSATION_SCOPE` 1 项通过，报告 `desktop-e2e-20260828-153721-524`（未入库）。同轮执行的 pending-cancel 手工复核因代理 socket 在 30 秒断言窗口后约 1.5 秒才关闭而失败（`desktop-e2e-20260828-153846-870`）；该失败路径不涉及本 issue 的 controller 写入口变更，未将其计入 R3-ISSUE-015 关闭条件。
 
 ### R3-ISSUE-016：RemoteWorkspaceProjection 未完全接线且会误投影本地 tab
 
