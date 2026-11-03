@@ -6853,6 +6853,9 @@ const zhCN: Record<string, string> = {
   "chat.error.remoteNoAvailableModel":
     "此远程设备尚无可用模型，请先在本机配置模型，保存后会自动同步到远程设备",
   "chat.error.sendFailed": "发送失败，请稍后重试。",
+  "chat.error.runBudgetResourceExhausted": "已停止：运行资源预算耗尽",
+  "chat.error.runBudgetTokenExhausted": "已停止：token 预算耗尽",
+  "chat.error.runBudgetTimeExhausted": "已停止：运行时间用尽",
   "chat.error.modelSettings": "模型设置",
   "chat.error.setModels": "配置",
 

@@ -33,6 +33,7 @@ import { toast } from "./components/ui/toast.js";
 import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import { getProviderBusinessErrorMessageId } from "@/lib/providerBusinessError.js";
 import { buildErrorFeedbackDescription } from "@/lib/errorFeedbackDraft.js";
+import { sanitizeErrorDetailForUser } from "@/lib/sanitizeErrorDetail.js";
 import {
   isSuspiciousEmptyModelResultMessage,
   resolveOffPeakTicketExpiredBusinessCode,
@@ -94,6 +95,27 @@ function parseClaudeUnknownCommandMessage(message: string): {
  */
 export type ChatErrorBannerModelConfigTarget = "local" | "remote";
 
+const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|token|time) budget (is )?exhausted/i;
+
+type RunBudgetKind = "resource" | "token" | "time";
+
+/**
+ * 预算耗尽的错误来自 runtime，原始 message 是英文技术文案（还可能带内部 id）。
+ * 这里只按结构化 attribution.reason 或稳定文案识别，命中后交给 UI 本地化。
+ */
+function resolveRunBudgetExhaustedKind(error: ZCodeUiError): RunBudgetKind | null {
+  const text = [error.message, error.detail].filter(Boolean).join("\n");
+  const match = text.match(RUN_BUDGET_EXHAUSTED_PATTERN);
+  const textKind = match?.[1]?.toLowerCase() as RunBudgetKind | undefined;
+  if (textKind) {
+    return textKind;
+  }
+
+  // attribution.reason 已结构化确定是预算耗尽，但文案可能被上游改写；
+  // 此时按最常见的资源预算兜底，避免把内部原文暴露给用户。
+  return error.attribution?.reason === "run_budget_exhausted" ? "resource" : null;
+}
+
 export function resolveChatErrorBannerDisplayMessage(
   error: ZCodeUiError,
   intl: IntlInstance,
@@ -112,6 +134,18 @@ export function resolveChatErrorBannerDisplayMessage(
         modelConfigTarget === "remote"
           ? "chat.error.remoteNoAvailableModel"
           : "chat.error.noAvailableModel",
+    });
+  }
+
+  const runBudgetKind = resolveRunBudgetExhaustedKind(error);
+  if (runBudgetKind) {
+    return intl.formatMessage({
+      id:
+        runBudgetKind === "token"
+          ? "chat.error.runBudgetTokenExhausted"
+          : runBudgetKind === "time"
+            ? "chat.error.runBudgetTimeExhausted"
+            : "chat.error.runBudgetResourceExhausted",
     });
   }
 
@@ -218,7 +252,8 @@ export function ChatErrorBanner({
       includeLogs: true,
       description: buildErrorFeedbackDescription({
         message: localizedErrorMessage,
-        detail: error.detail,
+        // 反馈正文会发给外部，先去掉 session/turn 与 UUID 等内部标识。
+        detail: sanitizeErrorDetailForUser(error.detail),
         traceId: error.traceId,
         formatMessage: (id: string, values?: Record<string, string>) =>
           intl.formatMessage({ id }, values),
@@ -242,7 +277,7 @@ export function ChatErrorBanner({
       await navigator.clipboard.writeText(
         buildErrorCopyText({
           message: localizedErrorMessage,
-          detail: error.detail,
+          detail: sanitizeErrorDetailForUser(error.detail),
           traceId: error.traceId,
           formatMessage: (id: string, values?: Record<string, string>) =>
             intl.formatMessage({ id }, values),
@@ -342,7 +377,7 @@ export function ChatErrorBanner({
                   </DialogDescription>
                 </DialogHeader>
                 <pre className="max-h-[60vh] overflow-auto rounded-xl border border-border bg-surface px-3 py-2 text-ui-base whitespace-pre-wrap text-foreground-subtle">
-                  {error.detail}
+                  {sanitizeErrorDetailForUser(error.detail)}
                 </pre>
               </DialogContent>
             </Dialog>

@@ -7207,6 +7207,9 @@ const enUS: Record<string, string> = {
   "chat.error.remoteNoAvailableModel":
     "This remote device has no available model yet. Configure models on this computer first; they will sync to the remote device automatically after you save.",
   "chat.error.sendFailed": "Failed to send. Try again later.",
+  "chat.error.runBudgetResourceExhausted": "Run stopped: run resource budget exhausted",
+  "chat.error.runBudgetTokenExhausted": "Run stopped: token budget exhausted",
+  "chat.error.runBudgetTimeExhausted": "Run stopped: time budget exhausted",
   "chat.error.modelSettings": "Model settings",
   "chat.error.setModels": "Set",
 
