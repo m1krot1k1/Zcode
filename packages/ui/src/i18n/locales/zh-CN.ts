@@ -5557,6 +5557,7 @@ const zhCN: Record<string, string> = {
   "chat.history.stopped": "已停止",
   "chat.history.stopped.byError": "因错误中断",
   "chat.history.stopped.byBudget": "已停止：token 预算耗尽",
+  "chat.history.stopped.byResourceBudget": "已停止：运行资源预算耗尽",
   "chat.history.stopped.byPreempted": "已停止：会话已接管",
   "chat.history.duration.day": "天",
   "chat.history.duration.hour": "时",

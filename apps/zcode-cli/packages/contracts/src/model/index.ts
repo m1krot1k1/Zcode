@@ -149,6 +149,8 @@ export const ModelFailureReason = {
   InvalidRequest: "invalid_request",
   ProviderNotConfigured: "provider_not_configured",
   ProxyError: "proxy_error",
+  /** Root run（会话主 run）资源/时间/token 预算耗尽：不是 provider 故障，必须与 cancelled 区分。 */
+  RunBudgetExhausted: "run_budget_exhausted",
   TlsError: "tls_error",
   Unknown: "unknown",
 } as const;

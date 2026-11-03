@@ -663,7 +663,10 @@ function AssistantHistoryStatus({
       ? intl.formatMessage({
           id: topicInterrupted
             ? "chat.history.topicInterrupted"
-            : resolveInterruptedStatusMessageId(segment.workStatus.interruptReason),
+            : resolveInterruptedStatusMessageId(
+                segment.workStatus.interruptReason,
+                segment.workStatus.interruptDetail,
+              ),
         })
       : segment.workStatus?.state === "running"
         ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: durationLabel ?? "" })

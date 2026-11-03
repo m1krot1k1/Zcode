@@ -30,15 +30,20 @@ export interface ConversationTurnWorkStatus {
 /**
  * 中断原因 → 文案 key 的纯映射。
  * undefined / user 保持旧键 chat.history.stopped：老数据与用户主动停止的行为完全不变。
+ * detail 只用于区分 budget 的两种来源：token 预算耗尽（用户可理解的上下文成本）与
+ * 运行资源预算耗尽（admission 预留账本问题，不是用户上下文用尽），混用会让用户误以为要精简上下文。
  */
 export function resolveInterruptedStatusMessageId(
   reason: ConversationTurnWorkStatus["interruptReason"] | undefined,
+  detail?: string,
 ): string {
   switch (reason) {
     case "error":
       return "chat.history.stopped.byError";
     case "budget":
-      return "chat.history.stopped.byBudget";
+      return detail === "resource budget"
+        ? "chat.history.stopped.byResourceBudget"
+        : "chat.history.stopped.byBudget";
     case "preempted":
       return "chat.history.stopped.byPreempted";
     default:

@@ -40,6 +40,9 @@ import { isModelStreamIdleTimeoutError } from "./stream-idle-timeout.js";
 
 const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
 
+// registry.ts 的 admission 拒绝与 turn.ts 的预算中止共用同一句文案，只有预算维度不同。
+const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|token|time) budget (is )?exhausted/i;
+
 export interface ClassifiedModelFailure {
   code: ModelErrorCodeType;
   message: string;
@@ -156,6 +159,22 @@ export function classifyModelFailure(
       message:
         unwrapped instanceof Error ? unwrapped.message : "Model request configuration is invalid.",
       reason: ModelFailureReasonValue.InvalidRequest,
+      retryReason: ModelRetryReasonValue.NetworkError,
+      retryable: false,
+      statusCode,
+    };
+  }
+
+  // Bug 原因：root run 预算耗尽由 registry/turn 以普通 Error 抛出，既没有 error.code 也没有
+  // HTTP 状态；预算中止会同时 abort 该 run，因此错误里带 AbortSignal 语义。
+  // 若先走 isAbortFailure，这里只会得到 cancelled，掩盖真实的预算原因。
+  // 因此预算判定必须放在 abort 检查之前。
+  const runBudgetMessage = readRunBudgetExhaustedMessage(unwrapped, error);
+  if (runBudgetMessage) {
+    return {
+      code: ModelErrorCode.ModelRequestFailed,
+      message: runBudgetMessage,
+      reason: ModelFailureReasonValue.RunBudgetExhausted,
       retryReason: ModelRetryReasonValue.NetworkError,
       retryable: false,
       statusCode,
@@ -405,6 +424,37 @@ export function classifyModelFailure(
 
 export function isRetryableFailure(failure: ClassifiedModelFailure): boolean {
   return failure.retryable && failure.reason !== ModelFailureReasonValue.Cancelled;
+}
+
+// 预算错误可能是 Error、被包装的 Error，或（异常路径下）纯字符串，
+// 这里逐一安全取值，避免对非 Error 值做 instanceof 之外的操作。
+function readRunBudgetExhaustedMessage(...candidates: unknown[]): string | undefined {
+  for (const candidate of candidates) {
+    for (const text of readFailureTexts(candidate)) {
+      if (RUN_BUDGET_EXHAUSTED_PATTERN.test(text)) {
+        return text;
+      }
+    }
+  }
+  return undefined;
+}
+
+function readFailureTexts(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (!(value instanceof Error)) {
+    return [];
+  }
+
+  const texts = [value.message];
+  const cause = (value as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    texts.push(cause.message);
+  } else if (typeof cause === "string") {
+    texts.push(cause);
+  }
+  return texts;
 }
 
 function classifyProviderBusinessFailureFromApiCallBody(

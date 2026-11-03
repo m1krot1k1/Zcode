@@ -5948,6 +5948,7 @@ const enUS: Record<string, string> = {
   "chat.history.stopped": "Stopped",
   "chat.history.stopped.byError": "Interrupted by error",
   "chat.history.stopped.byBudget": "Stop: token budget exhausted",
+  "chat.history.stopped.byResourceBudget": "Stop: run resource budget exhausted",
   "chat.history.stopped.byPreempted": "Stop: session taken over",
   "chat.history.duration.day": "d",
   "chat.history.duration.hour": "h",

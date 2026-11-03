@@ -34,6 +34,10 @@ describe("classifyTurnInterruptReason", () => {
   it.each([
     ["Root run token budget exhausted", "token budget"],
     ["Root run time budget exhausted", "time budget"],
+    // admission 拒绝预留时的真实原文带 rootRunId（session:turn）后缀，必须整句归类为 budget，
+    // 否则会落到 error 分支并把 session/turn id 透给 UI。
+    ["Root run resource budget is exhausted: session_1:turn_1", "resource budget"],
+    ["root run resource budget exhausted", "resource budget"],
   ])("预算耗尽 %j → budget", (abortReason, detail) => {
     expect(classifyTurnInterruptReason({ resultType: "cancelled", abortReason })).toEqual({
       interruptReason: "budget",

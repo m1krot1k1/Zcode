@@ -1277,6 +1277,50 @@ describe("classifyModelFailure provider business codes", () => {
   });
 });
 
+describe("classifyModelFailure root run budget exhaustion", () => {
+  it.each([
+    ["resource", "Root run resource budget is exhausted: session_1:turn_1"],
+    ["token", "Root run token budget exhausted"],
+    ["time", "Root run time budget exhausted"],
+  ])("maps the %s budget message to run_budget_exhausted", (_dimension, message) => {
+    expect(classifyModelFailure(new Error(message))).toMatchObject({
+      code: "model_request_failed",
+      message,
+      reason: "run_budget_exhausted",
+      retryable: false,
+    });
+  });
+
+  it("keeps the budget reason instead of cancelled when the run is already aborted", () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(
+      classifyModelFailure(new Error("Root run time budget exhausted"), controller.signal),
+    ).toMatchObject({
+      reason: "run_budget_exhausted",
+      retryable: false,
+    });
+  });
+
+  it("reads the budget message from the error cause", () => {
+    const error = new Error("Turn execution failed", {
+      cause: new Error("Root run token budget exhausted"),
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      reason: "run_budget_exhausted",
+      retryable: false,
+    });
+  });
+
+  it("does not classify ordinary text or non-Error values as budget exhaustion", () => {
+    expect(classifyModelFailure(new Error("Model request failed.")).reason).toBe("unknown");
+    expect(classifyModelFailure(undefined).reason).toBe("unknown");
+    expect(classifyModelFailure(null).reason).toBe("unknown");
+  });
+});
+
 function providerBusinessError(input: {
   providerCode: string;
   providerMessage: string;

@@ -770,7 +770,10 @@ function ReadonlyHistoryStatus({
   const label =
     segment.workStatus?.state === "interrupted"
       ? intl.formatMessage({
-          id: resolveInterruptedStatusMessageId(segment.workStatus.interruptReason),
+          id: resolveInterruptedStatusMessageId(
+            segment.workStatus.interruptReason,
+            segment.workStatus.interruptDetail,
+          ),
         })
       : segment.workStatus?.state === "running"
         ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: duration ?? "" })

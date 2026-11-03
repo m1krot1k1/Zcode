@@ -145,6 +145,12 @@ export function classifyTurnInterruptReason(input: {
   if (normalized.includes("root run time budget exhausted")) {
     return { interruptReason: "budget", interruptDetail: "time budget" };
   }
+  // Bugfix：admission 拒绝预留时抛的是 “Root run resource budget is exhausted: <session>:<turn>”，
+  // 与 token/time 预算的原文不同；旧实现只 includes 那两句，资源预算会落到 error 分支，
+  // 把带 session/turn id 的英文原文原样透给 UI。放在 token/time 之后，保持既有 detail 优先级。
+  if (/root run resource budget (is )?exhausted/iu.test(normalized)) {
+    return { interruptReason: "budget", interruptDetail: "resource budget" };
+  }
   if (
     normalized.includes("owner disconnected") ||
     normalized.includes("preempts active turn") ||
