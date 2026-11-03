@@ -546,4 +546,47 @@ Review carefully.`,
     expect(isModelSelectableAgentProfile({ name: "research-helper", source: "project" })).toBe(true);
     expect(isModelSelectableAgentProfile({ name: "Explore", source: "user" })).toBe(true);
   });
+
+  describe("built-in start gateway contract", () => {
+    // 回归依据：实测 start 以「Grep/Glob/Bash 不在我的工具集里」为由拒绝执行 L1–L4 自检，
+    // 且把该自检当成「小任务」直接口述；这里锁定工具清单、层级语义和禁止自我复用的约束。
+    const startProfile = () =>
+      getSwarmAgentProfiles(normalizeAgentProfiles([])).find(({ name }) => name === "start");
+    const startPrompt = () => startProfile()?.systemPrompt ?? "";
+
+    it("declares the real read-only dispatch toolset without shell access", () => {
+      const tools = startProfile()?.tools ?? [];
+
+      expect(tools).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task"]));
+      expect(tools).not.toContain("Write");
+      expect(tools).not.toContain("Edit");
+      expect(tools).not.toContain("Bash");
+    });
+
+    it("states the available tools and the L1-L4 nesting chain in the system prompt", () => {
+      const prompt = startPrompt();
+
+      for (const tool of ["Read", "Glob", "Grep", "Task"]) expect(prompt).toContain(tool);
+      for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
+      expect(prompt).toContain("Bash тебе не выдан");
+      expect(prompt).toContain("Глубже L4 не ныряй");
+      expect(prompt).toContain("Каждый уровень подтверждается только собственным вызовом Task");
+    });
+
+    it("forbids reopening start or orchestrator without a narrower envelope", () => {
+      const prompt = startPrompt();
+
+      expect(prompt).toContain("Никогда не вызывай Task(start)");
+      expect(prompt).toContain("Task(orchestrator)");
+      expect(prompt).toContain("без нового, более узкого конверта");
+    });
+
+    it("does not excuse verification requests as trivial chatter", () => {
+      const prompt = startPrompt();
+
+      expect(prompt).not.toContain("Небольшой самостоятельный запрос обработай кратко");
+      expect(prompt).toContain("Тривиальна только светская реплика без задачи");
+      expect(prompt).toContain("Любая просьба что-то проверить, прогнать, найти, собрать или изменить");
+    });
+  });
 });
