@@ -987,3 +987,7 @@ exceptions:
       - apps/zcode-cli/packages/core/src/runtime/helpers/agent-listing.ts
       - apps/zcode-cli/packages/core/src/subagent/listing.ts
     reason: Existing upstream files are edited within their current bootstrap/core owners to keep ZCode roles, rules, and bundled skills native to its runtime; no new files or dependency edges are introduced, and adopting broad legacy CLI directories is outside this change.
+  - id: sanitize-error-detail-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [packages/ui/src/lib/sanitizeErrorDetail.ts]
+    reason: 聊天错误横幅与复制/反馈文本共用的纯脱敏函数，只把 session_x:turn_y 与 UUID 替换为占位符；packages/ui/src 整体仍是受管状态为 false 的 ui 模块，lib 目录也没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 ui 需要单独的边界梳理。
