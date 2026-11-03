@@ -1308,6 +1308,7 @@ export interface RuntimeTaskRegistry {
   }): RootRunReservationRelease;
   recordRootRunUsage(event: SessionEvent): void;
   finishRootRunTurn(rootRunId: string): void;
+  shouldEnforceRootRunBudget(rootRunId: string, sessionId: SessionId): boolean;
   waitForRootRunCancellation(rootRunId: string): Promise<void>;
 }
 
@@ -1633,6 +1634,19 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   isRootRunBudgetExpired(rootRunId: string): boolean {
     const state = this.rootRunBudgets.get(rootRunId);
     return state !== undefined && (state.expired || Date.now() >= state.deadlineAt);
+  }
+
+  /**
+   * 根因：turn 结束后 finishRootRunTurn 会删除 root-run 预算；而 session_title、project_memory_extract
+   * 等 post-turn sidecar 仍用已过期的 traceContext.turnId 合成同一个 rootRunId，reserveRootRunTokens
+   * 对已删除的状态抛 RootRunBudgetExceededError，看起来像"预算耗尽"，实际是预算已被释放。
+   * 修复依据：预算不存在 = 该 turn 已正常收尾并归还，不是超限，不进入闸门；
+   * 只要预算还在，root 会话的本轮请求（含超限后）与全部 child 会话都必须继续受闸门约束。
+   */
+  shouldEnforceRootRunBudget(rootRunId: string, sessionId: SessionId): boolean {
+    const state = this.rootRunBudgets.get(rootRunId);
+    if (!state) return false;
+    return !(state.turnFinished && state.rootSessionId === sessionId);
   }
 
   getRootRunBudgetSnapshot(rootRunId: string): {

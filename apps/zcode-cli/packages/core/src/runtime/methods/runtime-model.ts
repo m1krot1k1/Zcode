@@ -115,7 +115,12 @@ function withRuntimeInvocationLayer(
     const maxTokens = resolveRootRunReservationMaxOutputTokens({
       requestedMaxOutputTokens: request.options?.maxOutputTokens ?? model.options.maxOutputTokens,
     });
-    if (!rootRunId) {
+    // 预算被 finishRootRunTurn 删除后，post-turn sidecar（标题、Memory Extraction）仍会合成同一个
+    // rootRunId；已删除不等于已耗尽，此时不能进入 admission，否则每个 sidecar 都会抛预算超限。
+    if (
+      !rootRunId ||
+      !runtime.runtimeTaskRegistry.shouldEnforceRootRunBudget(rootRunId, invocationSessionId)
+    ) {
       return layer;
     }
     return {

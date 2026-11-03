@@ -162,6 +162,13 @@ async function executeProjectMemoryExtraction(
         telemetry.finishCancelled("abort_signal");
         return "aborted" as const;
       }
+      // 修复原因：extraction 在 post-turn 后台运行，失败只体现在 telemetry；没有日志时
+      // 预算/模型侧的错误（例如 root-run 已被释放）完全不可观测，排障只能靠猜。
+      runtime.logger?.warn("Project memory extraction failed", {
+        event: "project_memory_extraction.failed",
+        reason: "execute",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       telemetry.finishFailed("execute", "internal", error);
       return "error" as const;
     }
