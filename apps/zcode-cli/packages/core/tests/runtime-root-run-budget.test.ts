@@ -357,13 +357,57 @@ describe("RootRun resource budget", () => {
 
     registry.recordRootRunUsage(retryableFailure(root, turnId, "retryable-502"));
 
+    // 修复：可重试失败的 attempt 不会再有终态事件，它的预留必须当场归还。
+    // 旧行为把 40_000 一直挂在 reservedTokens 上，每次重试再占一份，最终把 root-run 预算占满。
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
       usedTokens: 0,
-      reservedTokens: 40_000,
+      reservedTokens: 0,
     });
     expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
     expect(onExhausted).not.toHaveBeenCalled();
+
+    // 重试 attempt 能重新拿到完整预留，而不是被上一次失败的预留挤掉。
+    const retryRelease = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    retryRelease.associateRequestId("retryable-502-retry");
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(40_000);
+    retryRelease();
     release();
+  });
+
+  it("keeps retrying after repeated retryable failures instead of exhausting the budget on leaked reservations", () => {
+    // 事故复现：deepseek-v4.1-flash-1017 的 maxOutputTokens 是 384_000，root-run 预算是 500_000。
+    // 两次 502 之后第三次 admission 抛 Root run resource budget is exhausted，请求根本没发出去。
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-retry-leak");
+    const turnId = createTurnId("root-budget-retry-leak-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+
+    for (const attempt of ["attempt-1", "attempt-2"]) {
+      const release = registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 200_000,
+        maxTokens: 384_000,
+      });
+      release.associateRequestId(attempt);
+      registry.recordRootRunUsage(retryableFailure(root, turnId, attempt));
+      expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(0);
+    }
+
+    const third = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 384_000,
+    });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(384_000);
+    third();
   });
 
   it("debits reported usage from a retryable failure instead of dropping or overcharging it", () => {
@@ -390,9 +434,10 @@ describe("RootRun resource budget", () => {
     registry.recordRootRunUsage(retryableFailure(root, turnId, "retryable-partial", 1_234));
 
     // 部分用量是事实：必须按 1_234 记账，而不是 0（漏记）或 500_000（tokenLimit 兜底）。
+    // 预留同时归还：失败 attempt 不会再有终态事件，留着它只会让下一次 admission 无额度可用。
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
       usedTokens: 1_234,
-      reservedTokens: 40_000,
+      reservedTokens: 0,
     });
     expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
     expect(onExhausted).not.toHaveBeenCalled();
