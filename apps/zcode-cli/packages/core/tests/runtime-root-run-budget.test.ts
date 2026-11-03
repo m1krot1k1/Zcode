@@ -8,10 +8,12 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   InMemoryRuntimeTaskRegistry,
+  DEFAULT_ROOT_RUN_TOKEN_LIMIT,
   RootRunBudgetExceededError,
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
+import { readRootRunTokenLimit } from "@zcode/shared";
 import { resolveRootRunReservationMaxOutputTokens } from "../src/runtime/methods/model-token-limits.js";
 
 describe("RootRun resource budget", () => {
@@ -826,6 +828,129 @@ describe("RootRun resource budget", () => {
       reservedTokens: 384_000,
     });
     looseNext();
+  });
+
+  it("дефолтный лимит — миллион, а не прежние 500k", () => {
+    // 3.17.57: роевой турн честно потратил 515 621 token, и прежний дефолт 500k гарантированно валил его.
+    expect(DEFAULT_ROOT_RUN_TOKEN_LIMIT).toBe(1_000_000);
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-default-limit");
+    const turnId = createTurnId("root-budget-default-limit-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.tokenLimit).toBe(1_000_000);
+  });
+
+  it("настройка меняет лимит: при 250 000 следующий резерв отклоняется", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-configured-limit");
+    const turnId = createTurnId("root-budget-configured-limit-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 250_000 });
+    const spent = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 400_000,
+      maxTokens: 250_000,
+    });
+    spent.associateRequestId("configured-limit");
+    registry.recordRootRunUsage(modelComplete(root, turnId, 250_000, "configured-limit"));
+    spent();
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      tokenLimit: 250_000,
+      usedTokens: 250_000,
+      reservedTokens: 0,
+    });
+    expect(() =>
+      registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 400_000,
+        maxTokens: 1,
+      }),
+    ).toThrow(RootRunBudgetExceededError);
+  });
+
+  it("живой роевой турн на 515 621 токен не падает при дефолте", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-swarm-survives");
+    const turnId = createTurnId("root-budget-swarm-survives-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, onExhausted });
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 550_000,
+      maxTokens: 64_000,
+    });
+    release.associateRequestId("swarm-root");
+    // 实机用量：input 507_730 + output 7_891 = 515_621（cache_read 不计入预算）。
+    registry.recordRootRunUsage(
+      createSessionEvent(
+        SessionEventType.ModelComplete,
+        root,
+        {
+          content: "",
+          stopReason: "stop",
+          usage: { inputTokens: 507_730, outputTokens: 7_891 },
+          requestId: "swarm-root",
+        },
+        { turnId },
+      ),
+    );
+    release();
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 515_621,
+      reservedTokens: 0,
+      tokenLimit: 1_000_000,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+    // Турн жив: следующий запрос роя по-прежнему проходит admission.
+    const next = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 550_000,
+      maxTokens: 64_000,
+    });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(64_000);
+    next();
+  });
+
+  it("предохранитель жив: расход 120 000 при лимите 100 000 валит турн", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-fuse");
+    const turnId = createTurnId("root-budget-fuse-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 100_000, onExhausted });
+    registry.recordRootRunUsage(modelComplete(root, turnId, 120_000));
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      tokenLimit: 100_000,
+      usedTokens: 120_000,
+    });
+    expect(onExhausted).toHaveBeenCalledOnce();
+    expect(onExhausted).toHaveBeenCalledWith("token_limit");
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(true);
+  });
+});
+
+describe("readRootRunTokenLimit", () => {
+  it("принимает положительное целое и отбрасывает мусор", () => {
+    expect(readRootRunTokenLimit("250000")).toBe(250_000);
+    expect(readRootRunTokenLimit(" 1500000 ")).toBe(1_500_000);
+    expect(readRootRunTokenLimit(undefined)).toBeUndefined();
+    expect(readRootRunTokenLimit("")).toBeUndefined();
+    expect(readRootRunTokenLimit("abc")).toBeUndefined();
+    expect(readRootRunTokenLimit("NaN")).toBeUndefined();
+    expect(readRootRunTokenLimit("0")).toBeUndefined();
+    expect(readRootRunTokenLimit("-5000")).toBeUndefined();
+    expect(readRootRunTokenLimit("1.5")).toBeUndefined();
+    expect(readRootRunTokenLimit("Infinity")).toBeUndefined();
   });
 });
 
