@@ -122,6 +122,7 @@ import {
   TaskAutoArchiveSettings,
   isSettingsSectionAvailable,
   resolveSettingsSectionForPlatform,
+  type RunLimitSaveResult,
 } from "@/settingsPageHelpers.js";
 import { SourceServerManagementPanel } from "@/settings/SourceServerManagementPanel.js";
 import { useSourceServerManagementSnapshot } from "@/hooks/useSourceServerManagementSnapshot.js";
@@ -136,6 +137,18 @@ import {
   type UserActionTrigger,
 } from "@/lib/userActionTelemetry.js";
 import type { SettingsUserActionFeatureId } from "@/lib/userActionTraceCatalog.js";
+
+type ParsedRunLimit = number | "empty" | "invalid";
+
+/** 只接受十进制整数；空串表示“沿用默认值”，不写回设置。 */
+function parseRunLimitInput(raw: string, minimum: number): ParsedRunLimit {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return "empty";
+  if (!/^\d+$/u.test(trimmed)) return "invalid";
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum) return "invalid";
+  return parsed;
+}
 
 function runSettingsActionAsync<T>(options: {
   featureId: SettingsUserActionFeatureId;
@@ -800,6 +813,8 @@ export function SettingsPage({
   const [httpProxyList, setHttpProxyList] = useState("");
   const [httpProxyNoProxy, setHttpProxyNoProxy] = useState("");
   const [httpProxyCaCertPath, setHttpProxyCaCertPath] = useState("");
+  const [rootRunTokenLimit, setRootRunTokenLimit] = useState<number | undefined>(undefined);
+  const [spawnBudget, setSpawnBudget] = useState<number | undefined>(undefined);
   const [embeddedBrowserAllowInsecureCertificates, setEmbeddedBrowserAllowInsecureCertificates] =
     useState(false);
   const [taskAutoArchiveEnabled, setTaskAutoArchiveEnabled] = useState(false);
@@ -935,6 +950,8 @@ export function SettingsPage({
         if (!active) return;
         setTerminalInheritSystemProfile(settings.terminalInheritSystemProfile ?? true);
         setTerminalFontFamily(settings.terminalFontFamily ?? "");
+        setRootRunTokenLimit(settings.rootRunTokenLimit);
+        setSpawnBudget(settings.spawnBudget);
         setTaskAutoArchiveEnabled(settings.taskAutoArchiveEnabled ?? false);
         setTaskAutoArchiveOlderThanDays(settings.taskAutoArchiveOlderThanDays ?? 30);
       })
@@ -985,6 +1002,46 @@ export function SettingsPage({
         completed: { resultSource: "setting_service", configured: normalizedFontFamily.length > 0 },
       });
       setTerminalFontFamily(normalizedFontFamily);
+    },
+    [services.settingService],
+  );
+  const handleRootRunTokenLimitChange = useCallback(
+    async (raw: string): Promise<RunLimitSaveResult> => {
+      const parsed = parseRunLimitInput(raw, 1);
+      if (parsed === "empty" || parsed === "invalid") return parsed;
+      await runSettingsActionAsync({
+        featureId: "settings.run_limits",
+        action: "save_root_run_token_limit",
+        trigger: "button",
+        operation: () => services.settingService.update({ rootRunTokenLimit: parsed }),
+        completed: {
+          resultSource: "setting_service",
+          configured: true,
+          valueAfter: String(parsed),
+        },
+      });
+      setRootRunTokenLimit(parsed);
+      return "saved";
+    },
+    [services.settingService],
+  );
+  const handleSpawnBudgetChange = useCallback(
+    async (raw: string): Promise<RunLimitSaveResult> => {
+      const parsed = parseRunLimitInput(raw, 0);
+      if (parsed === "empty" || parsed === "invalid") return parsed;
+      await runSettingsActionAsync({
+        featureId: "settings.run_limits",
+        action: "save_spawn_budget",
+        trigger: "button",
+        operation: () => services.settingService.update({ spawnBudget: parsed }),
+        completed: {
+          resultSource: "setting_service",
+          configured: true,
+          valueAfter: String(parsed),
+        },
+      });
+      setSpawnBudget(parsed);
+      return "saved";
     },
     [services.settingService],
   );
@@ -1868,6 +1925,8 @@ export function SettingsPage({
                               dataBaseDir={dataBaseDir}
                               terminalInheritSystemProfile={terminalInheritSystemProfile}
                               terminalFontFamily={terminalFontFamily}
+                              rootRunTokenLimit={rootRunTokenLimit}
+                              spawnBudget={spawnBudget}
                               integratedTerminalShell={integratedTerminalShell}
                               integratedTerminalShellOptions={integratedTerminalShellOptions}
                               toolSearchMode={toolSearchMode}
@@ -1937,6 +1996,8 @@ export function SettingsPage({
                               onHttpProxyListChange={handleHttpProxyListChange}
                               onHttpProxyNoProxyChange={handleHttpProxyNoProxyChange}
                               onHttpProxyCaCertPathChange={handleHttpProxyCaCertPathChange}
+                              onRootRunTokenLimitChange={handleRootRunTokenLimitChange}
+                              onSpawnBudgetChange={handleSpawnBudgetChange}
                               onCloseToTrayOnWindowsChange={handleCloseToTrayOnWindowsChange}
                               onKeepAwakeWhileRunningChange={handleKeepAwakeWhileRunningChange}
                               onDesktopChromiumHardwareAccelerationChange={

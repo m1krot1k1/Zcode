@@ -3034,6 +3034,16 @@ const zhCN: Record<string, string> = {
     "可选。填写 PEM 根证书路径后，会作为 NODE_EXTRA_CA_CERTS 注入模型、MCP 与命令工具，并用于渲染层证书校验。修改后需重启应用生效。",
   "settings.httpProxyCaCertPathPlaceholder": "例如 /Users/name/certs/root-ca.pem",
   "settings.httpProxySavedHint": "网络代理设置已保存，重启应用后生效",
+  "settings.runLimitRootTokenLimit": "根回合 Token 上限",
+  "settings.runLimitRootTokenLimitDescription":
+    "单个根回合最多可消耗的 Token 数。留空则使用默认值 1,000,000。",
+  "settings.runLimitRootTokenLimitInvalid": "请填写不小于 1 的整数，或留空以使用默认值。",
+  "settings.runLimitSpawnBudget": "子代理派生预算",
+  "settings.runLimitSpawnBudgetDescription":
+    "单次运行最多可派生多少个子代理。留空则使用默认值 32；填 0 表示禁止派生。",
+  "settings.runLimitSpawnBudgetInvalid":
+    "请填写不小于 0 的整数（0 表示禁止派生），或留空以使用默认值。",
+  "settings.runLimitPlaceholder": "默认值",
   "settings.desktopChromiumHardwareAcceleration": "Chrome 硬件加速",
   "settings.desktopChromiumHardwareAccelerationDescription":
     "关闭后可规避部分显卡或驱动导致的白屏、闪退、渲染异常。修改后需重启应用生效。",

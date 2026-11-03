@@ -156,6 +156,91 @@ export function TaskAutoArchiveSettings({
   );
 }
 
+/** 单次保存结果：empty/invalid 都不写 settings，保证“留空 = 用默认值”。 */
+export type RunLimitSaveResult = "saved" | "empty" | "invalid";
+
+function RunLimitSettingRow({
+  labelId,
+  descriptionId,
+  invalidId,
+  placeholder,
+  testId: fieldTestId,
+  value,
+  onSave,
+}: {
+  labelId: string;
+  descriptionId: string;
+  invalidId: string;
+  placeholder: string;
+  testId: string;
+  value?: number;
+  onSave: (raw: string) => Promise<RunLimitSaveResult>;
+}) {
+  const { intl } = useZCodeIntl();
+  const [draft, setDraft] = useState(value === undefined ? "" : String(value));
+  const [invalid, setInvalid] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setDraft(value === undefined ? "" : String(value));
+    setInvalid(false);
+  }, [value]);
+  const saved = value === undefined ? "" : String(value);
+  const dirty = draft.trim() !== saved;
+  const handleSave = async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    try {
+      const result = await onSave(draft);
+      setInvalid(result === "invalid");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <SettingsRow
+      label={intl.formatMessage({ id: labelId })}
+      description={intl.formatMessage({ id: descriptionId })}
+      detail={
+        <div className="space-y-2">
+          <Input
+            size="lg"
+            inputMode="numeric"
+            className="max-w-[240px] font-mono"
+            value={draft}
+            placeholder={placeholder}
+            aria-label={intl.formatMessage({ id: labelId })}
+            aria-invalid={invalid}
+            data-testid={fieldTestId}
+            onChange={(event) => {
+              setDraft(event.currentTarget.value);
+              setInvalid(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void handleSave();
+            }}
+          />
+          {invalid ? (
+            <p className="text-ui-sm text-destructive" role="alert">
+              {intl.formatMessage({ id: invalidId })}
+            </p>
+          ) : null}
+        </div>
+      }
+      control={
+        <Button
+          type="button"
+          size="lg"
+          disabled={!dirty || saving}
+          data-testid={`${fieldTestId}-save`}
+          onClick={() => void handleSave()}
+        >
+          {intl.formatMessage({ id: "settings.dataBaseDirSave" })}
+        </Button>
+      }
+    />
+  );
+}
+
 export function GeneralSectionContent({
   localePreference,
   interfaceMode = "coding",
@@ -179,6 +264,8 @@ export function GeneralSectionContent({
   httpProxyList = "",
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
+  rootRunTokenLimit,
+  spawnBudget,
   defaultHomeDir,
   isDesktop,
   platform,
@@ -207,6 +294,8 @@ export function GeneralSectionContent({
   onHttpProxyListChange = async () => {},
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
+  onRootRunTokenLimitChange = async (): Promise<RunLimitSaveResult> => "saved",
+  onSpawnBudgetChange = async (): Promise<RunLimitSaveResult> => "saved",
   onCloseToTrayOnWindowsChange,
   onKeepAwakeWhileRunningChange = async () => {},
   onDesktopChromiumHardwareAccelerationChange = async () => {},
@@ -244,6 +333,10 @@ export function GeneralSectionContent({
   httpProxyList?: string;
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
+  /** 单次运行的 root token 上限；undefined 表示沿用默认值 */
+  rootRunTokenLimit?: number;
+  /** 单次 spawn 预算；undefined 表示沿用默认值 */
+  spawnBudget?: number;
   defaultHomeDir: string;
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
@@ -281,6 +374,8 @@ export function GeneralSectionContent({
   onHttpProxyListChange?: (proxyList: string) => Promise<void>;
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
+  onRootRunTokenLimitChange?: (raw: string) => Promise<RunLimitSaveResult>;
+  onSpawnBudgetChange?: (raw: string) => Promise<RunLimitSaveResult>;
   onCloseToTrayOnWindowsChange: (enabled: boolean) => Promise<void>;
   onKeepAwakeWhileRunningChange?: (enabled: boolean) => Promise<void>;
   onDesktopChromiumHardwareAccelerationChange?: (enabled: boolean) => Promise<void>;
@@ -948,6 +1043,28 @@ export function GeneralSectionContent({
               className="max-w-[520px] font-mono"
             />
           }
+        />
+      </SettingsGroupCard>
+
+      {/* 运行预算由目标 Environment 的 settingService 持有；留空保持默认值，不回写设置。 */}
+      <SettingsGroupCard>
+        <RunLimitSettingRow
+          labelId="settings.runLimitRootTokenLimit"
+          descriptionId="settings.runLimitRootTokenLimitDescription"
+          invalidId="settings.runLimitRootTokenLimitInvalid"
+          placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
+          testId="settings-root-run-token-limit"
+          value={rootRunTokenLimit}
+          onSave={onRootRunTokenLimitChange}
+        />
+        <RunLimitSettingRow
+          labelId="settings.runLimitSpawnBudget"
+          descriptionId="settings.runLimitSpawnBudgetDescription"
+          invalidId="settings.runLimitSpawnBudgetInvalid"
+          placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
+          testId="settings-spawn-budget"
+          value={spawnBudget}
+          onSave={onSpawnBudgetChange}
         />
       </SettingsGroupCard>
 
