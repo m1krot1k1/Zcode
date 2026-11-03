@@ -1676,6 +1676,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     reservedTokens: number;
     tokenLimit: number;
     usedTokens: number;
+    spawnBudget: number;
+    spawnsUsed: number;
+    remainingSpawnsBySession: ReadonlyMap<SessionId, number>;
   } | undefined {
     const state = this.rootRunBudgets.get(rootRunId);
     return state
@@ -1684,6 +1687,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
           reservedTokens: state.reservedTokens,
           tokenLimit: state.tokenLimit,
           usedTokens: state.usedTokens,
+          spawnBudget: state.spawnBudget,
+          spawnsUsed: state.spawnsUsed,
+          remainingSpawnsBySession: state.remainingSpawnsBySession,
         }
       : undefined;
   }

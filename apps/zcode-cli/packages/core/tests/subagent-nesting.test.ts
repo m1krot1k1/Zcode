@@ -25,6 +25,14 @@ describe("subagent root admission and ownership", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-unbounded-depth-root");
     const turnId = createTurnId("subagent-unbounded-depth-turn");
+    // 深度本身不设上限，但 spawn 预算仍需足够大；这里显式给 4096，
+    // 以免默认预算 32 把“无累积节点上限”的断言误变成预算断言。
+    registry.beginRootRunBudget({
+      rootRunId: `${rootSessionId}:${turnId}`,
+      rootSessionId,
+      turnId,
+      spawnBudget: 4096,
+    });
     const depth = 512;
     let parentSessionId = rootSessionId;
 

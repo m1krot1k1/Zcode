@@ -2554,7 +2554,7 @@ async function flushPendingMessages(
  * 其次父级自身记录值，最后回落到端口根预算。
  * 模型可在 hostGrant 之下收紧，但不能抬高；无父预算时不签发 grant（旧路径不做门禁）。
  */
-function resolveSpawnGrant(
+export function resolveSpawnGrant(
   request: SubagentRunRequest,
   runOptions: SubagentRunOptions | undefined,
   options: ExploreSubagentPortOptions,
