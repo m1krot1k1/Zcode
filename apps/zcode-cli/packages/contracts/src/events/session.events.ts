@@ -650,6 +650,12 @@ export interface TurnCompletePayload {
   workflowResultConsumed?: boolean;
   /** 内部抢占（如 sendQueuedNow）只终止当前 turn，不等价于用户手动 Stop 队列。 */
   preserveQueueAutoDrainOnCancel?: boolean;
+  /**
+   * 中断原因原文（stopActiveForegroundExecution 的 reason / abort(reason) 的 message）。
+   * 仅 cancelled 结果写入，供投影分类成人可读的 interruptReason；不直接展示给用户。
+   * optional：旧 CLI 不写、旧桌面忽略。
+   */
+  abortReason?: string;
 }
 
 export interface TurnErrorPayload {

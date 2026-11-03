@@ -26,6 +26,7 @@ import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { ConversationTurnGroup } from "@/v4/ConversationTurnGroup.js";
+import { resolveInterruptedStatusMessageId } from "@/v4/conversationTurnWorkSegments.js";
 import {
   completeHighspeedTurn,
   markHighspeedTurnMetricsPersisted,
@@ -2952,5 +2953,17 @@ describe("topic preparation flow membership", () => {
       expect(html).toContain('data-v4-user-input-collapsible-content="true"');
       expect(html).toContain('aria-label="正在准备材料"');
     }
+  });
+});
+
+describe("中断原因 → 状态文案", () => {
+  it.each([
+    [undefined, "chat.history.stopped"],
+    ["user", "chat.history.stopped"],
+    ["error", "chat.history.stopped.byError"],
+    ["budget", "chat.history.stopped.byBudget"],
+    ["preempted", "chat.history.stopped.byPreempted"],
+  ] as const)("reason %j 映射为 %s", (reason, expected) => {
+    expect(resolveInterruptedStatusMessageId(reason)).toBe(expected);
   });
 });

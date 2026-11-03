@@ -21,6 +21,29 @@ import type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversati
 export interface ConversationTurnWorkStatus {
   state: "running" | "completed" | "interrupted";
   durationMs?: number;
+  /** 中断原因闭集（row 可选字段；旧数据缺省时 UI 回落到 “Stopped”）。 */
+  interruptReason?: "user" | "error" | "budget" | "preempted";
+  /** 中断细节摘要（仅 error 使用，已在投影侧截断）。 */
+  interruptDetail?: string;
+}
+
+/**
+ * 中断原因 → 文案 key 的纯映射。
+ * undefined / user 保持旧键 chat.history.stopped：老数据与用户主动停止的行为完全不变。
+ */
+export function resolveInterruptedStatusMessageId(
+  reason: ConversationTurnWorkStatus["interruptReason"] | undefined,
+): string {
+  switch (reason) {
+    case "error":
+      return "chat.history.stopped.byError";
+    case "budget":
+      return "chat.history.stopped.byBudget";
+    case "preempted":
+      return "chat.history.stopped.byPreempted";
+    default:
+      return "chat.history.stopped";
+  }
 }
 
 export interface ConversationTurnWorkSegment {
@@ -50,6 +73,10 @@ export function resolveConversationTurnWorkStatus(
   return {
     state: isRunning ? "running" : isInterrupted ? "interrupted" : "completed",
     ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(header?.interruptReason !== undefined
+      ? { interruptReason: header.interruptReason }
+      : {}),
+    ...(header?.interruptDetail !== undefined ? { interruptDetail: header.interruptDetail } : {}),
   };
 }
 

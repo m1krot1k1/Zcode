@@ -223,6 +223,18 @@ export function createTurnCancelledError(error: unknown) {
   });
 }
 
+const ABORT_REASON_MAX_LENGTH = 240;
+
+// abort(reason) 可能是 Error、字符串或任意值；协议只接受一行人类可读摘要。
+// 这里只取 message（绝不带 stack），压平空白并截断，避免把对象序列化进事件。
+export function readAbortReasonText(reason: unknown): string | undefined {
+  const raw =
+    typeof reason === "string" ? reason : reason instanceof Error ? reason.message : undefined;
+  const text = raw?.replace(/\s+/gu, " ").trim().slice(0, ABORT_REASON_MAX_LENGTH);
+  if (!text) return undefined;
+  return text;
+}
+
 // 用户主动中断（TurnCancelled）属于正常结束，不应记为错误。turn/compact/rewind 三处 catch
 // 之前都无条件 emit TurnError，会被 reducer/UI/桌面统一映射成 turn.failed（status:error、追加错误消息）。
 // 这里统一收口：取消时改发 TurnComplete(resultType:"cancelled") 让状态干净回到 idle，真实错误才发 TurnError。
@@ -242,6 +254,9 @@ export async function appendTurnOutcomeEvent(
     logEvent: string;
     logLabel: string;
     preserveQueueAutoDrainOnCancel?: boolean;
+    // 中断原因原文（stopActiveForegroundExecution 的 reason）：投影据此区分
+    // 用户停止 / 预算耗尽 / 会话抢占 / 真实错误，避免 UI 只显示裸 “Stopped”。
+    abortReason?: string;
     backgroundSubagentResultConsumed?: boolean;
     workflowResultConsumed?: boolean;
     historyRoundCount?: number;
@@ -271,6 +286,7 @@ export async function appendTurnOutcomeEvent(
           ...(params.preserveQueueAutoDrainOnCancel
             ? { preserveQueueAutoDrainOnCancel: true }
             : {}),
+          ...(params.abortReason ? { abortReason: params.abortReason } : {}),
         },
         traceContext,
       )

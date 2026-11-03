@@ -153,6 +153,7 @@ import {
 import {
   buildToolOutput,
   buildTurnHeaderRow,
+  classifyTurnInterruptReason,
   mapCompactMarkerOrigin,
   mapCompactMarkerStatus,
   mapGoalStatus,
@@ -5675,6 +5676,21 @@ export class ProductProjection {
   ): ConversationDelta[] {
     const row = this.turnHeaderForEvent(event);
     if (!row) return [];
+    // 只有 TurnComplete(cancelled) 会带原因；TurnError 缺 resultType/abortReason，
+    // 分类器返回空对象，row 形状与旧版本一致（老桌面按闭集 parse 不受影响）。
+    const completion = event.payload as Partial<TurnCompletePayload>;
+    const interrupt =
+      state === "completedInterrupted"
+        ? classifyTurnInterruptReason({
+            resultType: completion.resultType ?? "",
+            ...(completion.abortReason !== undefined
+              ? { abortReason: completion.abortReason }
+              : {}),
+            ...(completion.preserveQueueAutoDrainOnCancel !== undefined
+              ? { preserveQueueAutoDrainOnCancel: completion.preserveQueueAutoDrainOnCancel }
+              : {}),
+          })
+        : {};
     const endedAt = this.ms(event);
     return [
       {
@@ -5686,6 +5702,12 @@ export class ProductProjection {
           ...(activeMs !== undefined ? { activeMs } : {}),
           ...highspeedTiming,
           ...(historyRoundCount !== undefined ? { historyRoundCount } : {}),
+          ...(interrupt.interruptReason !== undefined
+            ? { interruptReason: interrupt.interruptReason }
+            : {}),
+          ...(interrupt.interruptDetail !== undefined
+            ? { interruptDetail: interrupt.interruptDetail }
+            : {}),
           ...(row.workSegments
             ? {
                 workSegments: this.completeWorkSegments(row.workSegments, endedAt),

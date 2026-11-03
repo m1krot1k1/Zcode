@@ -82,6 +82,12 @@ export const turnHeaderRowSchema = z.object({
   sourceCommandId: z.string().optional(),
   historyRoundCount: z.number().int().nonnegative().optional(),
   state: z.enum(["running", "completedSuccess", "completedInterrupted", "failed"]),
+  // 中断原因：只解释 completedInterrupted，不新增 state 枚举值。
+  // 必须 optional：旧桌面按闭集 parse，新增枚举值会让整行被丢弃（见上方 origin 注释）；
+  // optional 字段在旧桌面被忽略，旧数据缺该字段时 UI 回落到 chat.history.stopped。
+  interruptReason: z.enum(["user", "error", "budget", "preempted"]).optional(),
+  // 中断细节（错误摘要，已截断且不含堆栈/凭据）；仅 interruptReason === "error" 时展示。
+  interruptDetail: z.string().max(240).optional(),
   startedAt: timestampSchema,
   endedAt: timestampSchema.optional(),
   // 权威工时：排除权限等待/用户输入等待/verifier 等待。
