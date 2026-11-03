@@ -1,9 +1,14 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "ignorePatterns": [
+    ".agents/skills/ai-elements/**",
+    ".agents/skills/react-best-practices/**",
     ".gitlab/**/*.yml",
     "apps/zcode-cli/tests/gb2312.js",
-    "docs/electron/docs/fiddles/**/*.html",
+    "docs/electron/docs/**",
+    "docs/knip/docs/**",
+    "docs/vendor/**",
+    "docs/webdriverio/docs/**",
     "packages/zcode-cua/**",
     "packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js",
     "apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/**",
@@ -11,8 +16,6 @@
     "third-party/inventory.json",
     "third-party/upstream/**",
     "third-party/native-search/licenses/**",
-    "third-party/runtime/*.txt",
-    "docs/knip/docs/LICENSE",
-    "docs/knip/docs/licenses/**"
+    "third-party/runtime/*.txt"
   ]
 }
