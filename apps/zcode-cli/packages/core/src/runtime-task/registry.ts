@@ -1319,6 +1319,11 @@ interface RootRunBudgetState {
   tokenLimit: number;
   usedTokens: number;
   reservedTokens: number;
+  /**
+   * 本 root run 发放过的最大单次预留。没有匹配 reservation 的终态事件按此值扣账：
+   * 它是「一个请求最多能花多少」的真实上界，而不是整个预算。
+   */
+  maxReservationTokens: number;
   activeReservationsBySession: Map<SessionId, RootRunReservation[]>;
   seenUsageEvents: Set<string>;
   turnFinished: boolean;
@@ -1332,6 +1337,8 @@ interface RootRunReservation {
   reservedTokens: number;
   consumed: boolean;
   requestId?: string;
+  /** release() 已归还 admission 额度；entry 仍留到终态事件结算，结算时不再重复扣减。 */
+  released?: boolean;
 }
 
 export type RootRunReservationRelease = (() => void) & {
@@ -1406,6 +1413,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       tokenLimit: input.tokenLimit ?? 500_000,
       usedTokens: 0,
       reservedTokens: 0,
+      maxReservationTokens: 0,
       activeReservationsBySession: new Map(),
       seenUsageEvents: new Set(),
       turnFinished: false,
@@ -1450,6 +1458,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // Если остаток меньше разрешённого output budget, request получает только доступный резерв.
     const reservation = Math.min(requestedReservation, remaining);
     state.reservedTokens += reservation;
+    // 记录本 run 发放过的最大单次预留：没有匹配 reservation 的终态事件按它扣账，
+    // 这样「未知成本」不会被当成「花光整个预算」。
+    state.maxReservationTokens = Math.max(state.maxReservationTokens, reservation);
     const reservations = state.activeReservationsBySession.get(input.sessionId) ?? [];
     const entry: RootRunReservation = { reservedTokens: reservation, consumed: false };
     reservations.push(entry);
@@ -1459,11 +1470,21 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       if (released) return;
       released = true;
       const current = state.activeReservationsBySession.get(input.sessionId) ?? [];
-      const index = current.indexOf(entry);
-      if (index >= 0) current.splice(index, 1);
+      // 根因：adapter 在 attempt 结束（含重试退避）时调用 release，而终态事件是异步持久化的，
+      // 落库时可能晚于 release。旧实现无条件把 entry 从列表里删掉，事件到达后便匹配不到预留，
+      // 退化成按整个 tokenLimit 扣账 —— 一次 502 就耗尽预算、取消整轮（UI 显示 Stopped）。
+      // 修复依据：已关联 requestId 且未被消费的预留必须留到终态事件结算；无 requestId 的永远匹配不到，直接删。
+      if (entry.consumed || !entry.requestId) {
+        const index = current.indexOf(entry);
+        if (index >= 0) current.splice(index, 1);
+      }
       if (current.length === 0) state.activeReservationsBySession.delete(input.sessionId);
       else state.activeReservationsBySession.set(input.sessionId, current);
-      if (!entry.consumed) state.reservedTokens = Math.max(0, state.reservedTokens - reservation);
+      if (!entry.consumed) {
+        // 释放后不占用 admission 额度，但要记住已释放，避免结算时重复扣减 reservedTokens。
+        entry.released = true;
+        state.reservedTokens = Math.max(0, state.reservedTokens - reservation);
+      }
     }) as RootRunReservationRelease;
     release.associateRequestId = (requestId: string) => {
       if (requestId.trim()) entry.requestId = requestId;
@@ -1476,25 +1497,54 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     if (!state) return;
     const key = JSON.stringify([state.rootRunId, event.sessionId, event.id]);
     if (state.seenUsageEvents.has(key)) return;
-    if (!isRootRunUsageEvent(event)) return;
     const usage = extractProviderUsage(event);
+    if (!isRootRunUsageEvent(event)) {
+      // 可重试失败不是请求终点，因此不结算 reservation（否则重试 attempt 找不到预留）。
+      // 但 provider 已经报告的部分用量是事实，必须记账：旧实现直接 return，
+      // 重试期间的真实花费被整段漏记（fail-open 少记），预算反而永远打不满。
+      if (!isRootRunRetryableFailure(event) || !usage || usage.totalTokens <= 0) return;
+      state.seenUsageEvents.add(key);
+      state.usedTokens += usage.totalTokens;
+      if (state.usedTokens >= state.tokenLimit) {
+        this.expireRootRunBudget(state, "token_limit");
+      }
+      this.changed();
+      return;
+    }
     state.seenUsageEvents.add(key);
     const requestId = getRootRunUsageRequestId(event);
     const pending = state.activeReservationsBySession.get(event.sessionId);
-    const reservation = requestId
+    let reservation = requestId
       ? pending?.find((item) => !item.consumed && item.requestId === requestId)
       : undefined;
+    // 根因：失败 attempt 的终态事件可能早于 requestId 关联（provider 在 connect 阶段就失败，
+    // 或 admission 票据尚未 publish 任何带 requestId 的事件）。这类事件此前找不到 reservation，
+    // 直接按整个 tokenLimit 扣账 —— 一次 502 就能耗尽 500k 预算并取消整轮，表现为 Stopped 且无回复。
+    // 修复依据：同一 session 内未关联 requestId 的 reservation 就是这次 attempt 的预留，按它结算。
+    // 只取 requestId === undefined 的条目：已关联 requestId 的预留属于别的 in-flight 请求，
+    // 借用它会把用量记到别人的账上，并让那个请求的终态事件失去预留。
+    if (!reservation) {
+      reservation = pending?.find((item) => !item.consumed && item.requestId === undefined);
+    }
     if (reservation) {
       reservation.consumed = true;
-      state.reservedTokens = Math.max(0, state.reservedTokens - reservation.reservedTokens);
+      // 已 released 的预留早前已归还额度，这里只结算用量，避免重复扣减。
+      if (!reservation.released) {
+        state.reservedTokens = Math.max(0, state.reservedTokens - reservation.reservedTokens);
+      }
       const reservations = pending ?? [];
       const index = reservations.indexOf(reservation);
       if (index >= 0) reservations.splice(index, 1);
       if (reservations.length === 0) state.activeReservationsBySession.delete(event.sessionId);
     }
     // 缺少 usage 的终态事件代表 provider 成本未知，按该 attempt 的完整 reservation 扣账；
-    // 没有对应 reservation 时 fail closed，避免未知请求被误当作零成本。
-    const debitedTokens = usage?.totalTokens ?? reservation?.reservedTokens ?? state.tokenLimit;
+    // 找不到 reservation 时只能用本 run 已发放过的最大单次预留作为上界，
+    // 不能退化成整个 tokenLimit：那会把「未知」当成「花光预算」。
+    // maxReservationTokens 为 0 表示本 run 还没发放过任何预留（事件先于 admission 到达）：
+    // 此时按 0 记账是刻意的 fail-open —— 未知成本不应凭空打满预算。
+    // 这是设计选择而非缺陷，回归用例 "treats an unattributable event without any reservation as zero cost" 覆盖。
+    const debitedTokens =
+      usage?.totalTokens ?? reservation?.reservedTokens ?? state.maxReservationTokens;
     state.usedTokens += debitedTokens;
     // Резервации активных запросов ограничивают новый admission, но не являются расходом.
     // Иначе параллельные дочерние ветки отменяли весь рой при полном, но ещё не потраченном резерве.
@@ -1508,7 +1558,30 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const state = this.rootRunBudgets.get(rootRunId);
     if (!state) return;
     state.turnFinished = true;
+    // 根因：root 会话的 reservation 只由终态事件结算，而 settleRootRunSessionReservations 只覆盖子任务；
+    // abort/断流时终态事件可能永远不来，带 requestId 的 entry 会一直留在 activeReservationsBySession 里，
+    // 直到进程结束（root 会话没有别的清理路径）。
+    // 修复依据：turn 结束即该 root 会话不再发起新请求，残留 entry 已无结算对象，直接释放；
+    // 子会话的 entry 保留，仍由子任务 terminal 结算，不影响防重复扣账。
+    this.releaseRootRunSessionReservations(state, state.rootSessionId);
     if (!this.hasActiveRootRunChildren(rootRunId)) this.deleteRootRunBudget(rootRunId);
+  }
+
+  /** 交还某个会话在 root-run 上残留的全部 admission 预留（已 release 的条目额度已归还，不重复扣）。 */
+  private releaseRootRunSessionReservations(state: RootRunBudgetState, sessionId: SessionId): void {
+    const reservations = state.activeReservationsBySession.get(sessionId);
+    if (!reservations?.length) {
+      state.activeReservationsBySession.delete(sessionId);
+      return;
+    }
+    let returnedTokens = 0;
+    for (const reservation of reservations) {
+      if (reservation.consumed || reservation.released) continue;
+      reservation.released = true;
+      returnedTokens += reservation.reservedTokens;
+    }
+    state.activeReservationsBySession.delete(sessionId);
+    state.reservedTokens = Math.max(0, state.reservedTokens - returnedTokens);
   }
 
   async cancelRootRunChildren(rootRunId: string, reason?: unknown): Promise<void> {
@@ -1952,7 +2025,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 修复依据：子任务 terminal 是该 session 不会再完成此请求的生命周期边界；未知成本按 reservation 保守扣账。
     let debitedTokens = 0;
     for (const reservation of reservations) {
-      if (reservation.consumed) continue;
+      if (reservation.consumed || reservation.released) continue;
       reservation.consumed = true;
       debitedTokens += reservation.reservedTokens;
     }
@@ -2306,7 +2379,19 @@ function getRootRunUsageRequestId(event: SessionEvent): string | undefined {
 function isRootRunUsageEvent(event: SessionEvent): boolean {
   if (event.type === SessionEventType.ModelComplete) return true;
   if (event.type !== SessionEventType.ModelNetworkStatus) return false;
-  return (event.payload as { type?: string }).type === "model_request_failed";
+  const payload = event.payload as { type?: string };
+  if (payload.type !== "model_request_failed") return false;
+  // 根因：可重试失败（如 502）之后 adapter 会退避重发，它不是请求终点。
+  // 旧实现把每次都当终态结算，先消耗掉 reservation，重试 attempt 的终态事件便再也找不到预留，
+  // 落到 tokenLimit 兜底而取消整轮。修复依据：只有不可重试的失败才是该请求的终态。
+  return !isRootRunRetryableFailure(event);
+}
+
+/** 可重试的 model_request_failed：不是请求终点，只用于记账 provider 已报告的部分用量。 */
+function isRootRunRetryableFailure(event: SessionEvent): boolean {
+  if (event.type !== SessionEventType.ModelNetworkStatus) return false;
+  const payload = event.payload as { type?: string; retryable?: boolean };
+  return payload.type === "model_request_failed" && payload.retryable === true;
 }
 
 function compactTerminalSubagentSnapshot(task: RuntimeTaskSnapshot): RuntimeTaskSnapshot {

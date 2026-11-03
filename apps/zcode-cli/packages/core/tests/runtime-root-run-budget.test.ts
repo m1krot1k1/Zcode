@@ -334,6 +334,221 @@ describe("RootRun resource budget", () => {
     releaseSiblingReservation();
   });
 
+  it("does not debit or exhaust the budget for a retryable failure without usage", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-retryable-no-usage");
+    const turnId = createTurnId("root-budget-retryable-no-usage-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+      onExhausted,
+    });
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    release.associateRequestId("retryable-502");
+
+    registry.recordRootRunUsage(retryableFailure(root, turnId, "retryable-502"));
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 0,
+      reservedTokens: 40_000,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+    release();
+  });
+
+  it("debits reported usage from a retryable failure instead of dropping or overcharging it", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-retryable-usage");
+    const turnId = createTurnId("root-budget-retryable-usage-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+      onExhausted,
+    });
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    release.associateRequestId("retryable-partial");
+
+    registry.recordRootRunUsage(retryableFailure(root, turnId, "retryable-partial", 1_234));
+
+    // 部分用量是事实：必须按 1_234 记账，而不是 0（漏记）或 500_000（tokenLimit 兜底）。
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 1_234,
+      reservedTokens: 40_000,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+
+    // 重试成功后按真实 usage 收尾，reservation 不应被失败 attempt 提前吃掉。
+    registry.recordRootRunUsage(modelComplete(root, turnId, 766, "retryable-partial"));
+    release();
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 2_000,
+      reservedTokens: 0,
+    });
+  });
+
+  it("debits the reservation instead of the token limit when the terminal event lands after release", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-released-late-event");
+    const turnId = createTurnId("root-budget-released-late-event-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+      onExhausted,
+    });
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 3_000,
+    });
+    release.associateRequestId("late-event");
+    // adapter 先 release（admission 额度归还），终态事件异步落库，之后才到达。
+    release();
+
+    // 终态事件（不可重试的失败）在 release 之后才到达：entry 已被 release 删除，
+    // 只能退到 maxReservationTokens，绝不能退到 tokenLimit。
+    registry.recordRootRunUsage(
+      createSessionEvent(
+        SessionEventType.ModelNetworkStatus,
+        root,
+        { type: "model_request_failed", requestId: "late-event" },
+        { turnId },
+      ),
+    );
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 3_000,
+      reservedTokens: 0,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+  });
+
+  it("debits the provider usage of a successful response", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-success-usage");
+    const turnId = createTurnId("root-budget-success-usage-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    release.associateRequestId("success-usage");
+
+    registry.recordRootRunUsage(modelComplete(root, turnId, 4_321, "success-usage"));
+    release();
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 4_321,
+      reservedTokens: 0,
+    });
+  });
+
+  it("releases orphaned root-session reservations when the root turn closes", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-orphan-cleanup");
+    const child = createSessionId("root-budget-orphan-cleanup-child");
+    const turnId = createTurnId("root-budget-orphan-cleanup-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    registry.registerSubagentTask(task("orphan-child", root, child, turnId), settled());
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    release.associateRequestId("orphan-never-settled");
+
+    registry.finishRootRunTurn(rootRunId);
+
+    // 终态事件永远不来的 reservation 不能一直占住 admission 额度并留在 map 里。
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 0,
+      reservedTokens: 0,
+    });
+    registry.update("orphan-child", (current) => ({ ...current, status: "completed" }));
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toBeUndefined();
+  });
+
+  it("never attributes an anonymous terminal event to a reservation that already has a requestId", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-anonymous-fallback");
+    const turnId = createTurnId("root-budget-anonymous-fallback-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 500_000 });
+    const owned = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 40_000,
+    });
+    owned.associateRequestId("owned-request");
+
+    registry.recordRootRunUsage(
+      createSessionEvent(SessionEventType.ModelNetworkStatus, root, { type: "model_request_failed" }, {
+        turnId,
+      }),
+    );
+
+    // 已关联 requestId 的预留属于别的 in-flight 请求，不能被匿名事件吃掉。
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.reservedTokens).toBe(40_000);
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    owned();
+  });
+
+  it("treats an unattributable event without any reservation as zero cost", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-no-reservation");
+    const turnId = createTurnId("root-budget-no-reservation-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 500_000,
+      onExhausted,
+    });
+
+    registry.recordRootRunUsage(
+      createSessionEvent(SessionEventType.ModelNetworkStatus, root, { type: "model_request_failed" }, {
+        turnId,
+      }),
+    );
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.usedTokens).toBe(0);
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
+  });
+
   it("deadline aborts the root and waits through the existing child cancellation handle", async () => {
     vi.useFakeTimers();
     try {
@@ -402,6 +617,25 @@ function modelComplete(
     SessionEventType.ModelComplete,
     sessionId,
     { content: "", stopReason: "stop", usage: { totalTokens }, ...(requestId ? { requestId } : {}) },
+    { turnId },
+  );
+}
+
+function retryableFailure(
+  sessionId: SessionId,
+  turnId: ReturnType<typeof createTurnId>,
+  requestId: string,
+  totalTokens?: number,
+) {
+  return createSessionEvent(
+    SessionEventType.ModelNetworkStatus,
+    sessionId,
+    {
+      type: "model_request_failed",
+      retryable: true,
+      ...(requestId ? { requestId } : {}),
+      ...(totalTokens === undefined ? {} : { usage: { totalTokens } }),
+    },
     { turnId },
   );
 }
