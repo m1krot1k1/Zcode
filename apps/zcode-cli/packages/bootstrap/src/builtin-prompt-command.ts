@@ -49,7 +49,9 @@ export interface ResolveZCodeBuiltinPromptCommandOptions {
 const SHARED_EVALUATION_CASE_LIMIT = 50;
 const SHARED_EVALUATION_TEXT_LIMIT = 240;
 const SHARED_EVALUATION_ID = /^[A-Z][A-Z0-9-]{1,40}$/;
-const SHARED_EVALUATION_SECRET = /sk-|bearer|token|password|api[_-]?key/i;
+// 修复原因：原模式把裸词 token/bearer 当作密钥，合法用例 id（E-TOKEN-BUDGET）会让整个目录失效。
+// 依据：只有赋值形态的凭据片段才算密钥，纯度量名词不应拦截。
+const SHARED_EVALUATION_SECRET = /sk-|(?:bearer|token|password|api[_-]?key)\s*[:=]\s*\S+/i;
 
 export interface SharedEvaluationCase {
   criterion: string;
@@ -191,6 +193,9 @@ export function resolveZCodeBuiltinPromptCommandInvocation(
     ];
     if (invocation.name === "evaluate") {
       lines.push(...sharedEvaluationPromptLines(options.evaluationCatalog ?? { status: "absent" }));
+      lines.push(
+        "Persist each judged shared case by appending one JSON object per line to .zcode/eval-results.jsonl with exactly these fields: case_id, revision (the current git HEAD), result (pass, fail, or not_run), and evidence. Do not write percentages, rates, or scores.",
+      );
     }
     return {
       name: invocation.name,

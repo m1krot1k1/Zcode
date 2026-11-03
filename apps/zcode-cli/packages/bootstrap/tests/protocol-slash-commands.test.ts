@@ -351,6 +351,35 @@ describe("shared evaluation catalog", () => {
     );
     expect(secret).toEqual({ status: "invalid", reason: "secret" });
     expect(JSON.stringify(secret)).not.toContain("sk-live-secret");
+    expect(
+      parseSharedEvaluationCatalog(
+        JSON.stringify({
+          version: 1,
+          cases: [
+            {
+              id: "E-TOKEN-BUDGET",
+              criterion: "Token budget rejects only real overruns",
+            },
+          ],
+        }),
+      ),
+    ).toEqual({
+      status: "ready",
+      cases: [
+        {
+          id: "E-TOKEN-BUDGET",
+          criterion: "Token budget rejects only real overruns",
+        },
+      ],
+    });
+    expect(
+      parseSharedEvaluationCatalog(
+        JSON.stringify({
+          version: 1,
+          cases: [{ id: "EVAL-04", criterion: "keep api_key=abc123 out of the suite" }],
+        }),
+      ),
+    ).toEqual({ status: "invalid", reason: "secret" });
   });
 
   it("lists accepted cases in /evaluate and does not treat a missing catalog as a pass", () => {
@@ -362,6 +391,8 @@ describe("shared evaluation catalog", () => {
     expect(prompt).toContain("Required exact profile: evaluator");
     expect(prompt).toContain("- EVAL-01: The draft is saved");
     expect(prompt).toContain("A case is pass only when its evidence was observed");
+    expect(prompt).toContain(".zcode/eval-results.jsonl");
+    expect(prompt).toContain("case_id, revision");
     expect(prompt).not.toContain("sk-live-secret");
 
     const absent = resolveZCodeBuiltinPromptCommand("/evaluate the draft");
