@@ -140,7 +140,8 @@ export interface AgentRuntimeConfig {
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
   maxTurns?: number;
   /**
-   * 单次 root-run（一轮用户请求及其整棵子 Agent 树）的 token 总预算，缺省 500_000。
+   * 单次 root-run（一轮用户请求及其整棵子 Agent 树）的 token 总预算，缺省
+   * DEFAULT_ROOT_RUN_TOKEN_LIMIT（1_000_000，取值依据见 runtime-task/registry.ts）。
    * 只限制 admission 预留的总量，不改变 provider 实际 usage 的结算。
    */
   rootRunTokenLimit?: number;

@@ -2,7 +2,11 @@ import type { ConfigResult } from "@zcode/adapters/config";
 import { GEN_UI_OUTPUT_ROOT_ENV } from "@zcode/shared/node";
 import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode/provider";
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
-import { type BuiltInSubagentModelSelectionOverrides } from "@zcode/shared";
+import {
+  ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY,
+  readRootRunTokenLimit,
+  type BuiltInSubagentModelSelectionOverrides,
+} from "@zcode/shared";
 import {
   type CollaborationMode,
   type HookConfigSource,
@@ -122,6 +126,11 @@ export function resolveAppRuntimeConfig(input: {
     bashTimeoutPolicy:
       options.runtimeConfig?.bashTimeoutPolicy ??
       resolveBashTimeoutPolicy(options.env ?? process.env),
+    // root-run token 预算只由 Host 经 spawn env 下发（settings.rootRunTokenLimit 的唯一出口）。
+    // 显式 runtimeConfig 优先；两者都没有时保持 undefined，由 core 的默认上限兜底（不是无限）。
+    rootRunTokenLimit:
+      options.runtimeConfig?.rootRunTokenLimit ??
+      readRootRunTokenLimit((options.env ?? process.env)[ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY]),
     mode: options.runtimeConfig?.mode ?? persistedMode ?? configResult.config.permission.mode,
     modelSelection: initialModelSelection,
     // 仅接受显式传入的会话级工具面（ZCode Protocol session/create 或 CLI

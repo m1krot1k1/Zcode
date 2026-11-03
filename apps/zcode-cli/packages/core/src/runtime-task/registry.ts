@@ -1356,6 +1356,18 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
   "lost",
 ]);
 
+/**
+ * 缺省 root-run token 预算（一轮用户请求 + 它派生的整棵子 Agent 树）。
+ *
+ * 依据：3.17.57 实机复现中，单次 `/start` 的 swarm 轮次诚实消耗了 515_621 token
+ * （input 507_730 + output 7_891；cache_read 不计入预算），旧缺省 500_000 因此必然在
+ * 轮次中途诚实耗尽并 TURN_CANCELLED，看起来像“未完成的请求被误杀”。
+ *
+ * 提到 1_000_000 是为了容纳一次完整的 root + 子 Agent 树的正常用量；同时保留硬上限作为
+ * 死循环/失控 Agent 的熔断器 —— 不要改成 Infinity，也不要用超时替代它。
+ */
+export const DEFAULT_ROOT_RUN_TOKEN_LIMIT = 1_000_000;
+
 export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   private offPeakExecutionId: string | undefined;
   private readonly listeners = new Set<() => void>();
@@ -1405,7 +1417,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       deadlineAt,
       rootSessionId: input.rootSessionId,
       turnId: input.turnId,
-      tokenLimit: input.tokenLimit ?? 500_000,
+      tokenLimit: input.tokenLimit ?? DEFAULT_ROOT_RUN_TOKEN_LIMIT,
       usedTokens: 0,
       reservedTokens: 0,
       activeReservationsBySession: new Map(),

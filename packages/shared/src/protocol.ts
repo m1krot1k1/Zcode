@@ -280,6 +280,12 @@ export interface AppSettings {
   /** 自定义 PEM 根证书路径；下次启动 app/agent 时用于 renderer 校验与 agent NODE_EXTRA_CA_CERTS。 */
   httpProxyCaCertPath?: string;
   /**
+   * root-run token 预算：一轮用户请求及其整棵子 Agent 树的 input+output 总上限。
+   * Host 在 spawn 时经 ZCODE_ROOT_RUN_TOKEN_LIMIT 注入 agent；留空时 agent 用内置默认值，
+   * 不会变成无限（默认值仍是硬上限）。改动后下次启动 agent 生效。
+   */
+  rootRunTokenLimit?: number;
+  /**
    * 内置浏览器忽略 HTTPS 证书校验错误（自签名、过期、域名不匹配等），用于访问内网测试站点。
    * 只影响内置浏览器出口，不影响 ZCode 自身对后端与模型 API 的请求。默认关闭，重启后生效。
    */

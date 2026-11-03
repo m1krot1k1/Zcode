@@ -3,6 +3,7 @@ import {
   ZCODE_HTTP_PROXY_ENV_KEY,
   ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
+  ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY,
   ZCODE_WORKSPACE_IDENTITY_ENV,
   readZCodeProxyList,
 } from "@zcode/shared";
@@ -125,6 +126,21 @@ export function buildAgentWorkspaceIdentityEnv(
 ): Record<string, string> {
   const trimmed = workspaceIdentity?.trim();
   return trimmed ? { [ZCODE_WORKSPACE_IDENTITY_ENV]: trimmed } : {};
+}
+
+/**
+ * 把设置里的 root-run token 预算注入 agent 子进程。
+ * 与代理/CA 一样是 spawn 时快照：未配置时不写这个键，agent 侧读不到就用 core 的默认上限，
+ * 因此「留空」等于「用默认值」，不会退化成无上限。
+ */
+export function buildAgentRootRunBudgetEnv(rootRunTokenLimit: number | undefined): Record<string, string> {
+  if (rootRunTokenLimit === undefined) {
+    return {};
+  }
+  if (!Number.isSafeInteger(rootRunTokenLimit) || rootRunTokenLimit <= 0) {
+    return {};
+  }
+  return { [ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY]: String(rootRunTokenLimit) };
 }
 
 function normalizeProxyValue(value: string | undefined): string | undefined {
