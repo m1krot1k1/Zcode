@@ -99,15 +99,19 @@ describe("proxy-aware fetch", () => {
     expect(hits).toEqual({ first: 2, second: 2 });
   });
 
-  it("does not rotate a single proxy or a non-429 failure", async () => {
+  it("does not rotate a single proxy or a non-429 server response", async () => {
     let limited = 0;
-    let broken = 0;
+    let refused = 0;
+    let serverErrors = 0;
     let healthy = 0;
     const only = await countingProxy(429, () => {
       limited += 1;
     });
     const down = await refusingProxy(() => {
-      broken += 1;
+      refused += 1;
+    });
+    const unhealthy = await countingProxy(500, () => {
+      serverErrors += 1;
     });
     const good = await countingProxy(200, () => {
       healthy += 1;
@@ -117,10 +121,17 @@ describe("proxy-aware fetch", () => {
     expect((await single("http://api.example/v1/messages")).status).toBe(429);
     expect(limited).toBe(1);
 
+    // 入口拒绝隧道 → 不是模型错误：кольцо уходит на следующий прокси (NPS-11).
     const ring = createNetworkProxyFetch({ httpProxyList: [down, good] });
-    await expect(ring("http://api.example/v1/messages")).rejects.toThrow();
-    expect(broken).toBe(1);
-    expect(healthy).toBe(0);
+    expect((await ring("http://api.example/v1/messages")).status).toBe(200);
+    expect(refused).toBe(1);
+    expect(healthy).toBe(1);
+
+    // А вот НЕ-429 ответ сервера ротацию не крутит: 500 отдаётся как есть (NPS-13).
+    const serverError = createNetworkProxyFetch({ httpProxyList: [unhealthy, good] });
+    expect((await serverError("http://api.example/v1/messages")).status).toBe(500);
+    expect(serverErrors).toBe(1);
+    expect(healthy).toBe(1);
   });
 
   it("fails only this request when the status cannot be a Response", async () => {

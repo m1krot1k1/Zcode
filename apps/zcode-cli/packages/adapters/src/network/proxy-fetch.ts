@@ -35,6 +35,8 @@ interface NetworkProxyFetchOptions {
   noProxy?: string;
   /** Пробрасывает нефатальное предупреждение наверх; текст строит {@link formatProxyFallbackWarning}. */
   onProxyFallback?: (notice: ProxyFallbackNotice) => void;
+  /** Точка инъекции низкоуровневого транспорта: тесты кольца не открывают реальные сокеты. */
+  transport?: NetworkProxyTransport;
 }
 
 // Процессное кольцо: следующий модельный запрос начинается с прокси, который
@@ -63,7 +65,7 @@ let proxyHealthIdentity = "";
 const proxyUnavailableUntil = new Map<string, number>();
 const announcedProxyFailures = new Set<string>();
 
-interface NormalizedFetchRequest {
+export interface NormalizedFetchRequest {
   body?: Buffer;
   headers: Headers;
   method: string;
@@ -71,8 +73,18 @@ interface NormalizedFetchRequest {
   url: URL;
 }
 
+/**
+ * Низкоуровневый запрос кольца. По умолчанию — реальный `http`/`https` агент;
+ * тесты подменяют его, чтобы проверять фоллбек без сети.
+ */
+export type NetworkProxyTransport = (
+  request: NormalizedFetchRequest,
+  options: { ca?: Buffer; proxyUrl?: string },
+) => Promise<Response>;
+
 export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): NetworkFetch {
   const directFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
+  const send: NetworkProxyTransport = options.transport ?? fetchWithAgent;
   if (!hasNetworkFetchPolicy(options)) {
     return directFetch;
   }
@@ -103,7 +115,7 @@ export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): Netw
         return directFetch(input, init);
       }
       const request = await normalizeFetchRequest(input, init);
-      return fetchWithAgent(request, {
+      return send(request, {
         ca: caCertFile ? getTlsCaCertificates() : undefined,
         proxyUrl,
       });
@@ -141,7 +153,7 @@ export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): Netw
       });
       let response: Response;
       try {
-        response = await fetchWithAgent(request, { ca, proxyUrl });
+        response = await send(request, { ca, proxyUrl });
       } catch (error) {
         // 原因：прокси мог умереть между запросами (инцидент ECONNREFUSED 149.248.50.68:1034)
         // — это не ответ модели. Такой вход помечаем мёртвым и идём к следующему.
@@ -169,7 +181,7 @@ export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): Netw
     if (live.length > 0 || failures.length > 0) {
       announceProxyFallback(failures, true, options);
     }
-    return fetchWithAgent(request, { ca, proxyUrl: undefined });
+    return send(request, { ca, proxyUrl: undefined });
   };
 }
 
@@ -188,10 +200,13 @@ function orderProxyCandidates(
   proxies: readonly string[],
   start: number,
 ): Array<{ index: number; proxy: string }> {
-  return proxies.map((proxy, offset) => ({
-    index: (start + offset) % proxies.length,
-    proxy,
-  }));
+  // 原因：旧实现只旋转 index，却按未旋转的 offset 取 proxy。游标停在第 2 个入口时
+  // 仍先请求第 1 个，成功后又把 index=1 记成当前位置，游标与实际上游永久错位。
+  // 修复依据：proxy 必须与旋转后的 index 取自同一位置。
+  return proxies.map((_, offset) => {
+    const index = (start + offset) % proxies.length;
+    return { index, proxy: proxies[index] };
+  });
 }
 
 /** `host:port` без userinfo — единственная форма, которую можно писать в лог и UI. */
