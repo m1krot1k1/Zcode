@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/services";
-import { buildRegistryModelSelectGroups } from "../src/lib/modelSelectionGroups.js";
+import { buildRegistryModelSelectGroups, formatContextWindowLabel } from "../src/lib/modelSelectionGroups.js";
 
 describe("model selection groups", () => {
   it.each([
@@ -212,5 +212,40 @@ describe("model selection groups", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("formatContextWindowLabel", () => {
+  it.each([
+    [1_000_000, "1M"],
+    [1_048_576, "1M"],
+    [200_000, "200K"],
+    [128_000, "128K"],
+    [undefined, ""],
+    [0, ""],
+  ])("把 %s 格式化为 %j", (contextWindow, expected) => {
+    expect(formatContextWindowLabel(contextWindow)).toBe(expected);
+  });
+});
+
+describe("registry 模型上下文徽标", () => {
+  it("有 contextWindow 的模型带 badgeLabel，缺失时不渲染徽标", () => {
+    const view: ModelSelectionView = {
+      revision: 3,
+      providers: [
+        {
+          providerId: "fixture",
+          config: { access: { type: "api-key", apiKey: "sk-test" }, api: { type: "anthropic-messages" } },
+          models: [
+            { modelId: "with-context", config: { properties: { contextWindow: 128_000 } } },
+            { modelId: "without-context", config: {} },
+          ],
+        },
+      ],
+    };
+
+    const items = buildRegistryModelSelectGroups("glm", view)[0]!.items;
+    expect(items[0]!.badgeLabel).toBe("128K");
+    expect(items[1]!.badgeLabel).toBeUndefined();
   });
 });
