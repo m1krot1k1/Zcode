@@ -1,6 +1,12 @@
 import type { AiSdkModelAdapter } from "@zcode/adapters/model";
 import type { Model } from "@zcode/contracts";
-import type { AgentRuntimeDeps } from "@zcode/core";
+import {
+  createProviderQuotaFallbackModel,
+  selectProviderFallbackCandidates,
+  type AgentRuntimeDeps,
+  type ProviderFallbackEvent,
+  type ProviderModelClassFacts,
+} from "@zcode/core";
 import {
   type ModelSelection,
   type ModelSelectionValidation,
@@ -25,6 +31,8 @@ type ApiProviderModelAdapter = Pick<AiSdkModelAdapter, "createModel">;
 interface ApiProviderModelRuntimeOptions {
   readonly registry: ProviderRegistryModelSource;
   readonly modelAdapter: ApiProviderModelAdapter;
+  /** 配额耗尽切换 Provider 时回调，用于日志/遥测；事件本身也会带在 status 上。 */
+  readonly onProviderFallback?: (event: ProviderFallbackEvent) => void;
 }
 
 /**
@@ -33,11 +41,13 @@ interface ApiProviderModelRuntimeOptions {
 export class ApiProviderModelRuntime {
   readonly #registry: ProviderRegistryModelSource;
   readonly #modelAdapter: ApiProviderModelAdapter;
+  readonly #onProviderFallback?: (event: ProviderFallbackEvent) => void;
   #started = false;
 
   constructor(options: ApiProviderModelRuntimeOptions) {
     this.#registry = options.registry;
     this.#modelAdapter = options.modelAdapter;
+    this.#onProviderFallback = options.onProviderFallback;
   }
 
   readonly modelFactory: RuntimeModelFactory = (target): Model => {
@@ -50,8 +60,90 @@ export class ApiProviderModelRuntime {
     if (!provider) throw new Error("Registry Selection 校验与 Provider 索引结果不一致");
     const registryModel = this.#registry.getModel(providerId, modelId);
     if (!registryModel) throw new Error("Registry Selection 校验与 Model 索引结果不一致");
-    return this.#createRegistryModel(provider, registryModel, target);
+    return this.#createFallbackModel(provider, registryModel, target);
   };
+
+  /**
+   * 配额耗尽时按 Registry 顺序找同类模型；用户显式「只用这个 Provider」时不切换。
+   * 候选最多 3 个（含当前），且只创建已通过可执行性校验的模型。
+   */
+  #createFallbackModel(
+    provider: Provider,
+    registryModel: ProviderModel,
+    target: Parameters<RuntimeModelFactory>[0],
+  ): Model {
+    const primary: Model = this.#createRegistryModel(provider, registryModel, target);
+    const options = target.selection.options;
+    if (options?.providerFallback === "disabled") return primary;
+    const facts = this.#collectProviderFacts();
+    const source = facts.find(
+      (fact) => fact.providerId === provider.providerId && fact.modelId === registryModel.modelId,
+    );
+    if (!source) return primary;
+    const providerCount = new Set(facts.map((fact) => fact.providerId)).size;
+    const candidates = selectProviderFallbackCandidates({
+      source,
+      providers: facts,
+      ...(options?.reasoningLevel === undefined
+        ? {}
+        : { reasoningLevel: options.reasoningLevel }),
+      maxAttempts: Math.min(providerCount, 3),
+    });
+    const fallbacks = candidates.flatMap((candidate) => {
+      const candidateProvider = this.#registry.getProvider(candidate.providerId);
+      const candidateModel = this.#registry.getModel(candidate.providerId, candidate.modelId);
+      if (!candidateProvider || !candidateModel) return [];
+      return [
+        {
+          providerId: candidate.providerId,
+          modelId: candidate.modelId,
+          model: this.#createRegistryModel(candidateProvider, candidateModel, {
+            ...target,
+            selection: {
+              ...target.selection,
+              providerId: candidate.providerId,
+              modelId: candidate.modelId,
+            },
+          }),
+        },
+      ];
+    });
+    return createProviderQuotaFallbackModel({
+      primary: {
+        providerId: provider.providerId,
+        modelId: registryModel.modelId,
+        model: primary,
+      },
+      fallbacks,
+      maxAttempts: Math.min(providerCount, 3),
+      ...(this.#onProviderFallback ? { onFallback: this.#onProviderFallback } : {}),
+    });
+  }
+
+  #collectProviderFacts(): ProviderModelClassFacts[] {
+    return this.#registry.getView().providers.flatMap((provider) =>
+      provider.models.map((model) => ({
+        providerId: provider.providerId,
+        modelId: model.modelId,
+        hidden: provider.config.visibility === "hidden",
+        ...(model.config.properties?.contextWindow === undefined
+          ? {}
+          : { contextWindow: model.config.properties.contextWindow }),
+        ...(model.config.properties?.supportsToolCall === undefined
+          ? {}
+          : { supportsToolCall: model.config.properties.supportsToolCall }),
+        ...(model.config.properties?.supportsJsonSchemaOutput === undefined
+          ? {}
+          : { supportsJsonSchemaOutput: model.config.properties.supportsJsonSchemaOutput }),
+        ...(model.config.properties?.inputFormat == null
+          ? {}
+          : { inputFormat: model.config.properties.inputFormat }),
+        ...(model.config.optionSpecs?.reasoningLevel?.values == null
+          ? {}
+          : { reasoningLevels: model.config.optionSpecs.reasoningLevel.values }),
+      })),
+    );
+  }
 
   start(): void {
     if (this.#started) return;

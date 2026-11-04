@@ -223,10 +223,21 @@ function TurnChatLoadingSlot({
   // 而不是回退到 ChatLoading。
   const visibleRetryStatus =
     retryStatus && retryStatus.attempt >= MIN_VISIBLE_API_RETRY_ATTEMPT ? retryStatus : null;
-  if (!visibleRetryStatus && !eligible) return null;
+  const providerFallback = apiRetry?.providerFallback;
+  if (!visibleRetryStatus && !eligible && !providerFallback) return null;
   return (
     <div data-zcode-chat-loading-slot="true" className="min-h-5">
-      {visibleRetryStatus ? (
+      {providerFallback ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <ChatLoading loading data-testid={TID_CHAT_LOADING} size="sm" />
+          <span>
+            {intl.formatMessage(
+              { id: "chat.providerFallback.notice" },
+              { from: providerFallback.from, to: providerFallback.to },
+            )}
+          </span>
+        </div>
+      ) : visibleRetryStatus ? (
         <ChatApiRetryStatus apiRetry={visibleRetryStatus} intl={intl} locale={locale} />
       ) : (
         // running 是 ChatLoading 的权威事实；额外静默计时会让 projection

@@ -617,6 +617,13 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     providerModelRuntime = new ApiProviderModelRuntime({
       registry: options.providerRegistry,
       modelAdapter,
+      onProviderFallback: (event) => {
+        modelLogger.info("Provider fallback after quota exhaustion", {
+          from: event.from,
+          to: event.to,
+          reason: event.reason,
+        });
+      },
     });
     providerModelRuntime.start();
     // model factory 提前到三条 workflow child 装配线之前构造：script workflow bridge、dwf actor

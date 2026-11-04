@@ -200,6 +200,10 @@ export function resolveChatErrorBannerDisplayMessage(
         );
   }
 
+  if (error.code === "PROVIDER_QUOTA_FALLBACK_EXHAUSTED") {
+    return intl.formatMessage({ id: "chat.error.providerQuotaFallbackExhausted" });
+  }
+
   const reasonText = collectErrorReasonText(error);
   const providerBusinessCode =
     resolveRequestVerificationBusinessCode(error.code, reasonText) ??

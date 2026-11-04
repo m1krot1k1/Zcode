@@ -185,6 +185,21 @@ export { color, formatJson, supportsColor } from "./output.js";
 export { getRuntimeInfo } from "./environment.js";
 export type { RuntimeInfo } from "./environment.js";
 
+// Provider quota fallback
+export {
+  PROVIDER_QUOTA_FALLBACK_EXHAUSTED_CODE,
+  createProviderQuotaFallbackModel,
+  isProviderQuotaExhaustedFailure,
+  resolveProviderQuotaReason,
+  selectProviderFallbackCandidates,
+} from "./runtime/methods/provider-quota-fallback.js";
+export type {
+  ProviderFallbackAttempt,
+  ProviderFallbackEvent,
+  ProviderFallbackModelInput,
+  ProviderModelClassFacts,
+} from "./runtime/methods/provider-quota-fallback.js";
+
 export type {
   Logger,
   LoggerFactory,

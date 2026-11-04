@@ -418,6 +418,21 @@ function positiveInteger(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
+function readProviderFallback(
+  value: unknown,
+): { from: string; to: string; reason: string } | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.from !== "string" ||
+    typeof record.to !== "string" ||
+    typeof record.reason !== "string"
+  ) {
+    return undefined;
+  }
+  return { from: record.from, to: record.to, reason: record.reason };
+}
+
 function nonNegativeInteger(value: number, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
 }
@@ -2527,6 +2542,18 @@ export class ProductProjection {
             ),
           );
         }
+        // 配额耗尽切换 Provider：适配器在新 Provider 的首个请求上带 providerFallback，
+        // 用它作为一条轻量提示，而不是错误横幅。
+        const fallback = readProviderFallback(payload.providerFallback);
+        if (fallback) {
+          return this.setApiRetry({
+            attempt: positiveInteger(payload.attempt, 1),
+            maxAttempts: positiveInteger(payload.attempt, 1),
+            nextRetryAt: this.ms(event),
+            reasonCode: "provider_fallback",
+            providerFallback: fallback,
+          });
+        }
         // adapter attempt=2+ 只说明重试请求已发出，不代表连接恢复；
         // 保持当前状态，等首个有效 text/reasoning/tool 进展再清理，避免标签闪退。
         return positiveInteger(payload.attempt, 1) <= 1 ? this.setApiRetry(null) : [];
@@ -2613,7 +2640,9 @@ export class ProductProjection {
         current.attempt === apiRetry.attempt &&
         current.maxAttempts === apiRetry.maxAttempts &&
         current.nextRetryAt === apiRetry.nextRetryAt &&
-        current.reasonCode === apiRetry.reasonCode)
+        current.reasonCode === apiRetry.reasonCode &&
+        current.providerFallback?.from === apiRetry.providerFallback?.from &&
+        current.providerFallback?.to === apiRetry.providerFallback?.to)
     ) {
       return [];
     }

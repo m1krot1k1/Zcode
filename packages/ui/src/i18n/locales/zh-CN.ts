@@ -6858,6 +6858,9 @@ const zhCN: Record<string, string> = {
   "chat.error.feedback": "反馈问题",
   "chat.error.feedbackOpened": "已打开反馈，并自动带上报错现场",
   "chat.error.noAvailableModel": "当前没有可用模型。请开通编程套餐或配置自定义模型。",
+  "chat.error.providerQuotaFallbackExhausted":
+    "所有模型提供商的额度均已用尽。请检查余额，或选择其他模型。",
+  "chat.providerFallback.notice": "提供商 {from} 不可用，已由 {to} 回答。",
   "chat.error.remoteNoAvailableModel":
     "此远程设备尚无可用模型，请先在本机配置模型，保存后会自动同步到远程设备",
   "chat.error.sendFailed": "发送失败，请稍后重试。",

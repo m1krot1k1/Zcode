@@ -36,6 +36,7 @@ import {
 } from "./model-execution.js";
 import {
   getProviderBusinessCodeMapping,
+  isProviderQuotaBusinessCode,
   isRetryableProviderBusinessNetworkFailure,
   isRetryableProviderBusinessTimeoutFailure,
 } from "./failure-provider-business-codes.js";
@@ -65,6 +66,8 @@ export interface ClassifiedModelFailure {
   /** 与 retryAfterMs 同源，便于日志/UI 直接展示等待秒数。 */
   retryAfterSeconds?: number;
   statusCode?: number;
+  /** 配额耗尽（402、超长 Retry-After 的 429、FreeUsageLimitError）：不应重试，交给上层切换 Provider。 */
+  providerQuotaExhausted?: boolean;
 }
 
 export interface ProviderFailureDetails {
@@ -146,6 +149,7 @@ export function classifyModelFailure(
       reason: ModelFailureReasonValue.RateLimited,
       retryReason: ModelRetryReasonValue.RateLimited,
       retryable: false,
+      providerQuotaExhausted: true,
       retryAfterMs,
       retryAfterSeconds: retryAfterMs === undefined ? undefined : Math.round(retryAfterMs / 1000),
       statusCode: statusCode ?? 429,
@@ -286,13 +290,29 @@ export function classifyModelFailure(
     };
   }
 
+  if (statusCode === 402) {
+    return {
+      code: ModelErrorCode.ModelRateLimited,
+      message: "Provider quota is exhausted.",
+      reason: ModelFailureReasonValue.RateLimited,
+      retryReason: ModelRetryReasonValue.RateLimited,
+      retryable: false,
+      providerQuotaExhausted: true,
+      retryAfterMs,
+      statusCode,
+    };
+  }
+
   if (statusCode === 429) {
+    // Retry-After 超过 10 分钟说明不是短时限流；继续重试只会让用户空等，
+    // 标记为配额耗尽后由上层立即切换 Provider。
     return {
       code: ModelErrorCode.ModelRateLimited,
       message: "Provider rate limited the model request.",
       reason: ModelFailureReasonValue.RateLimited,
       retryReason: ModelRetryReasonValue.RateLimited,
       retryable: !isLongRetryAfter(retryAfterMs),
+      ...(isLongRetryAfter(retryAfterMs) ? { providerQuotaExhausted: true } : {}),
       retryAfterMs,
       retryAfterSeconds: retryAfterMs === undefined ? undefined : Math.round(retryAfterMs / 1000),
       statusCode,
@@ -542,6 +562,7 @@ function classifyProviderBusinessFailure(
       reason: mappedFailure.reason,
       retryReason: mappedFailure.retryReason,
       retryable: mappedFailure.retryable,
+      ...(isProviderQuotaBusinessCode(providerCode) ? { providerQuotaExhausted: true } : {}),
       retryAfterMs,
       statusCode: effectiveStatusCode,
     };
@@ -613,13 +634,28 @@ function classifyProviderBusinessFailure(
     };
   }
 
+  if (effectiveStatusCode === 402) {
+    return {
+      code: ModelErrorCode.ModelRateLimited,
+      message,
+      reason: ModelFailureReasonValue.RateLimited,
+      retryReason: ModelRetryReasonValue.RateLimited,
+      retryable: false,
+      providerQuotaExhausted: true,
+      retryAfterMs,
+      statusCode: effectiveStatusCode,
+    };
+  }
+
   if (effectiveStatusCode === 429) {
+    // 与通用 429 分支一致：Retry-After 超过 10 分钟视为配额耗尽，交给上层切换 Provider。
     return {
       code: ModelErrorCode.ModelRateLimited,
       message,
       reason: ModelFailureReasonValue.RateLimited,
       retryReason: ModelRetryReasonValue.RateLimited,
       retryable: !isLongRetryAfter(retryAfterMs),
+      ...(isLongRetryAfter(retryAfterMs) ? { providerQuotaExhausted: true } : {}),
       retryAfterMs,
       retryAfterSeconds: retryAfterMs === undefined ? undefined : Math.round(retryAfterMs / 1000),
       statusCode: effectiveStatusCode,

@@ -7214,6 +7214,9 @@ const enUS: Record<string, string> = {
   "chat.error.feedback": "Report issue",
   "chat.error.feedbackOpened": "Feedback opened with the error context attached",
   "chat.error.noAvailableModel": "No model available. Upgrade or set a custom model.",
+  "chat.error.providerQuotaFallbackExhausted":
+    "All providers have exhausted their quota. Check your balance or choose another model.",
+  "chat.providerFallback.notice": "Provider {from} is unavailable; answering with {to}.",
   "chat.error.remoteNoAvailableModel":
     "This remote device has no available model yet. Configure models on this computer first; they will sync to the remote device automatically after you save.",
   "chat.error.sendFailed": "Failed to send. Try again later.",

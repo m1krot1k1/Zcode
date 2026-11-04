@@ -184,6 +184,8 @@ interface ModelNetworkStatusBase {
    * 消费方渲染「第 n/N 次」或推导 maxRetries 时必须特判 0。
    */
   maxAttempts: number;
+  /** 配额耗尽后自动切换 Provider 的事实；additive 可选字段，不新增事件类型。 */
+  providerFallback?: { from: string; to: string; reason: string };
   streamRecovery?: ModelStreamRecoveryStatus;
   requestHeaders?: Record<string, string>;
   responseHeaders?: Record<string, string>;

@@ -294,7 +294,9 @@ const PROVIDER_BUSINESS_CODE_MAPPINGS = new Map<string, ProviderBusinessCodeMapp
 // 这些 code 均来自 provider 官方文档，且语义需要用户充值、调整套餐或等待长期额度重置。
 // 只消费 AI SDK / 既有 ProviderBusinessError 已暴露的 code，不在这里解析厂商原始 response 字段。
 // insufficient_quota 曾落入通用 429 重试；其终止语义不能再依赖 Retry-After 时长。
-for (const code of [
+// 该集合同时供上层判定「配额耗尽 → 切换 Provider」，与是否已配置 Retry-After 无关。
+const PROVIDER_QUOTA_BUSINESS_CODES = new Set([
+  "insufficient_balance",
   "insufficient_quota",
   "credit_balance_exhausted",
   "organization_spend_limit_exceeded",
@@ -309,8 +311,13 @@ for (const code of [
   "1319",
   "1320",
   "1321",
-]) {
+]);
+for (const code of PROVIDER_QUOTA_BUSINESS_CODES) {
   PROVIDER_BUSINESS_CODE_MAPPINGS.set(code, TERMINAL_RATE_LIMIT_MAPPING);
+}
+
+export function isProviderQuotaBusinessCode(providerCode: string | undefined): boolean {
+  return providerCode !== undefined && PROVIDER_QUOTA_BUSINESS_CODES.has(providerCode);
 }
 
 for (const code of ["1008", "1314", "1315"]) {
