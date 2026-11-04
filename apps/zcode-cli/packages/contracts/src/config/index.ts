@@ -11,6 +11,7 @@ import type { PluginConfig, PluginOptionValues } from "../plugins/index.js";
 
 export const ConfigKey = {
   ModelStreamIdleTimeout: "modelStream.idleTimeoutMs",
+  ModelStreamFirstTokenTimeout: "modelStream.firstTokenTimeoutMs",
 
   // Permission
   PermissionMode: "permission.mode",
@@ -85,7 +86,9 @@ export type ConfigKey = (typeof ConfigKey)[keyof typeof ConfigKey];
 // Config Value Types
 // ============================================================
 
-export type ConfigValue<K extends ConfigKey> = K extends "modelStream.idleTimeoutMs"
+export type ConfigValue<K extends ConfigKey> = K extends
+  | "modelStream.idleTimeoutMs"
+  | "modelStream.firstTokenTimeoutMs"
   ? number
   : K extends "permission.mode"
     ? CollaborationMode
@@ -282,14 +285,19 @@ export type UiThemeMode = "dark" | "light";
 export type UiThemePreference = UiThemeMode | "auto";
 
 export const DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS = 600_000;
+// 首 token 看门狗：只约束 model.request.started 到首个 content/reasoning 增量的静默窗口，
+// 与 mid-stream 的 idle 超时相互独立；<=0 关闭看门狗。
+export const DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS = 90_000;
 
 export interface ModelStreamConfig {
   idleTimeoutMs: number;
+  firstTokenTimeoutMs?: number;
 }
 
 export const DefaultRuntimeConfig: RuntimeConfig = {
   modelStream: {
     idleTimeoutMs: DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS,
+    firstTokenTimeoutMs: DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS,
   },
   permission: {
     mode: "build",

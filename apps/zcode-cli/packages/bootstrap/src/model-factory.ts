@@ -15,6 +15,8 @@ interface CreateModelAdapterBaseOptions {
   modelIoDir?: string;
   modelIoFullRetentionEnabled?: boolean;
   streamIdleTimeoutMs?: number;
+  /** 首 token 看门狗窗口（ms）；<=0 关闭。与 streamIdleTimeoutMs 相互独立。 */
+  firstTokenTimeoutMs?: number;
   statusSink?: ModelStatusSink;
 }
 
@@ -38,6 +40,7 @@ export function createModelAdapter(options: CreateModelAdapterOptions): AiSdkMod
     logger: options.logger,
     modelIoFullRetentionEnabled: options.modelIoFullRetentionEnabled,
     streamIdleTimeoutMs: options.streamIdleTimeoutMs,
+    firstTokenTimeoutMs: options.firstTokenTimeoutMs,
     statusSink: options.statusSink,
     ...(options.opencodeProvider ? { opencodeProvider: options.opencodeProvider } : {}),
   });

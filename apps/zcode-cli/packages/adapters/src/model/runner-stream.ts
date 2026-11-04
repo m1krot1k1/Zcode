@@ -1,6 +1,7 @@
 import type { TextStreamPart, ToolSet } from "ai";
 import type { Logger, ModelStatusSink, ModelStreamEvent } from "@zcode/contracts";
 import {
+  DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS,
   ModelErrorCode,
   ModelFailureReason as ModelFailureReasonValue,
   ModelProtocolError,
@@ -22,6 +23,11 @@ import {
   unwrapRetryError,
 } from "./failure-inspection.js";
 import { offPeakTicketExpiredMessage, resolveOffPeakFailureDecision } from "./offpeak-retry.js";
+import {
+  createFirstTokenWatchdog,
+  isFirstTokenOutputPart,
+  type FirstTokenWatchdog,
+} from "./first-token-watchdog.js";
 import { isRetrySafePreludeStreamEvent } from "./stream-retry-boundary.js";
 import {
   createLinkedAbortController,
@@ -106,6 +112,8 @@ export async function* runStreamText(input: {
   runtime: AiSdkModelRuntime;
   statusSink?: ModelStatusSink;
   streamIdleTimeoutMs: number;
+  /** 首 token 看门狗窗口（ms）；<=0 关闭。与 idle 超时互不影响。 */
+  firstTokenTimeoutMs?: number;
   modelIoFullRetentionEnabled: boolean;
 }): AsyncGenerator<ModelStreamEvent> {
   // 重试预算档位：只放宽瞬态失败的放弃条件；
@@ -181,6 +189,7 @@ export async function* runStreamText(input: {
     let streamMaxIdleMs = 0;
     let streamStallCount = 0;
     let streamOutputCommitted = false;
+    let firstTokenWatchdog: FirstTokenWatchdog | undefined;
     const repairThinkingSignatureRejection = (error: unknown): boolean => {
       if (signatureRepairAttempted || resolved.providerKind !== "anthropic") {
         return false;
@@ -311,6 +320,13 @@ export async function* runStreamText(input: {
         },
         statusPublishOptions(input, admission),
       );
+      // 首 token 看门狗：窗口从 model_request_started 起算，而不是从 streamText() 调用起算，
+      // 否则 provider 建连耗时会被重复计入。触发时只 abort 本次 attempt 的 controller，
+      // 重试次数与最终错误码仍由既有 retry 逻辑和 failure classifier 决定。
+      firstTokenWatchdog = createFirstTokenWatchdog({
+        controller: attemptAbortController.controller,
+        timeoutMs: input.firstTokenTimeoutMs ?? DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS,
+      });
       const streamResult = input.runtime.streamText(options);
       result = streamResult;
       streamIterator = streamResult.fullStream[Symbol.asyncIterator]();
@@ -338,6 +354,11 @@ export async function* runStreamText(input: {
           },
           timeoutMs: streamIdleTimeoutMs,
         });
+        // 任何 provider 输出（首个增量、工具调用或终止块）都证明连接是活的：
+        // 立即停表，避免 90s 计时器在后续重试/清理阶段误中止本 attempt。
+        if (next.done || isFirstTokenOutputPart(next.value)) {
+          firstTokenWatchdog?.cancel();
+        }
         if (next.done) {
           streamReachedNaturalEnd = true;
           break;
@@ -918,6 +939,9 @@ export async function* runStreamText(input: {
         attempt -= 1;
       }
     } finally {
+      // 无论 attempt 以何种方式结束（成功、失败、消费者提前关闭）都必须停表；
+      // cancel 幂等，首 token 已到时是无操作。
+      firstTokenWatchdog?.cancel();
       if (
         !streamReachedNaturalEnd &&
         (attemptFailed || input.request.preserveProviderStreamBoundaries === true)

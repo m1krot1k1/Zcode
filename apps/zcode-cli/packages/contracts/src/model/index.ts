@@ -110,6 +110,8 @@ export const ModelErrorCode = {
   ModelRequestAuthMissing: "model_request_auth_missing",
   ModelRequestCancelled: "model_request_cancelled",
   ModelRequestTimeout: "model_request_timeout",
+  /** 请求已发出但首个 content/reasoning 增量迟迟未到，已中止本次 attempt。 */
+  FirstTokenTimeout: "first_token_timeout",
   ModelRateLimited: "model_rate_limited",
   ModelContextExceeded: "model_context_exceeded",
 } as const;

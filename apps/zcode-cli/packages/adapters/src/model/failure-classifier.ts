@@ -36,6 +36,7 @@ import {
   isRetryableProviderBusinessNetworkFailure,
   isRetryableProviderBusinessTimeoutFailure,
 } from "./failure-provider-business-codes.js";
+import { isModelFirstTokenTimeoutError } from "./first-token-watchdog.js";
 import { isModelStreamIdleTimeoutError } from "./stream-idle-timeout.js";
 
 const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
@@ -177,6 +178,20 @@ export function classifyModelFailure(
       reason: ModelFailureReasonValue.RunBudgetExhausted,
       retryReason: ModelRetryReasonValue.NetworkError,
       retryable: false,
+      statusCode,
+    };
+  }
+
+  // 首 token 看门狗以 signal.reason 的形式抛出（DOM 规范：abort(reason) 后 throwIfAborted
+  // 抛的就是 reason）。必须放在 isAbortFailure 之前：abort 语义会把这类失败降级成
+  // cancelled，既隐藏了「provider 没回第一个 token」的真实原因，也会让自动重试失效。
+  if (isModelFirstTokenTimeoutError(unwrapped)) {
+    return {
+      code: ModelErrorCode.FirstTokenTimeout,
+      message: unwrapped.message,
+      reason: ModelFailureReasonValue.Timeout,
+      retryReason: ModelRetryReasonValue.Timeout,
+      retryable: true,
       statusCode,
     };
   }

@@ -8,6 +8,8 @@ const positiveNumberSchema = z.number().finite().positive();
 const positiveIntegerSchema = z.number().int().positive();
 const modelStreamSchema = z.object({
   idleTimeoutMs: positiveNumberSchema.optional(),
+  // <=0 关闭首 token 看门狗；负数没有意义但保留给“显式关闭”的用例。
+  firstTokenTimeoutMs: z.number().optional(),
 });
 
 const permissionSchema = z.object({

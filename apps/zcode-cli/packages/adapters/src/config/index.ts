@@ -77,6 +77,9 @@ class ConfigStore {
     if (config.modelStream?.idleTimeoutMs !== undefined) {
       this.set(ConfigKey.ModelStreamIdleTimeout, config.modelStream.idleTimeoutMs, scope);
     }
+    if (config.modelStream?.firstTokenTimeoutMs !== undefined) {
+      this.set(ConfigKey.ModelStreamFirstTokenTimeout, config.modelStream.firstTokenTimeoutMs, scope);
+    }
     if (config.permission) {
       if (config.permission.mode) this.set(ConfigKey.PermissionMode, config.permission.mode, scope);
       if (config.permission.allowedTools)
@@ -261,6 +264,9 @@ export class ConfigPortImpl implements ConfigPort {
         idleTimeoutMs:
           this.store.get(ConfigKey.ModelStreamIdleTimeout) ??
           DefaultConfig.modelStream.idleTimeoutMs,
+        firstTokenTimeoutMs:
+          this.store.get(ConfigKey.ModelStreamFirstTokenTimeout) ??
+          DefaultConfig.modelStream.firstTokenTimeoutMs,
       },
       permission: {
         mode: this.get(ConfigKey.PermissionMode),
@@ -371,6 +377,8 @@ function getDefaultValue(key: ConfigKey): unknown {
   switch (key) {
     case ConfigKey.ModelStreamIdleTimeout:
       return defaults.modelStream.idleTimeoutMs;
+    case ConfigKey.ModelStreamFirstTokenTimeout:
+      return defaults.modelStream.firstTokenTimeoutMs;
     case ConfigKey.PermissionMode:
       return defaults.permission.mode;
     case ConfigKey.PermissionAllowedTools:

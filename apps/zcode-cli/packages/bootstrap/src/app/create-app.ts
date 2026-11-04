@@ -600,6 +600,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         executionConfig: modelExecutionConfig,
         statusSink: modelTelemetry.statusSink,
         streamIdleTimeoutMs: configResult.config.modelStream.idleTimeoutMs,
+        firstTokenTimeoutMs: configResult.config.modelStream.firstTokenTimeoutMs,
         opencodeProvider: ownedOpenCodeModelRuntime.provider,
       });
     }
