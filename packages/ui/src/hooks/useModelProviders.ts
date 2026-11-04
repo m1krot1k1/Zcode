@@ -12,7 +12,7 @@ import {
 } from "@/lib/providerSettingsFormProjection.js";
 import { persistProviderDisplayOrder } from "@/lib/providerDisplayOrderPersistence.js";
 import { persistPersonalProviderDeletion } from "@/lib/providerPersonalPersistence.js";
-import { persistPersonalProvider } from "@/lib/providerPersonalSave.js";
+import { persistPersonalProvider, hasProviderConnectionChange } from "@/lib/providerPersonalSave.js";
 import type { ProviderOrderView } from "@/lib/modelProviderOrdering.js";
 
 export function useModelProviders(target: {
@@ -76,13 +76,24 @@ export function useModelProviders(target: {
 
   const saveProvider = useCallback(
     async (provider: ProviderSettingsFormProvider) => {
+      // 连接变更会改变可用模型集合；改名、启停等普通保存不应触发网络请求。
+      const previousProvider = effectiveModelProviders.find(
+        (candidate) => candidate.providerId === provider.providerId,
+      );
+      const connectionChanged = hasProviderConnectionChange(previousProvider, provider);
       // 新建 Provider 尚未进入 Registry，自然也不会出现在当前 Settings View。
       // 保存边界允许缺少继承层，并直接从新建表单构造完整配置。
       const savedView = await persistPersonalProvider({ provider, providerSettingsService });
       commitProviderSettingsView(savedView);
+      if (connectionChanged) {
+        // 自动发现是保存后的增量动作：不阻塞保存，也不让发现失败回滚已保存的连接配置。
+        void providerSettingsService.importDiscoveredModels(provider.providerId).catch((err) => {
+          logger.warn("[useModelProviders] 自动导入发现模型失败", err);
+        });
+      }
       return projectProviderSettingsViewToFormProviders(savedView);
     },
-    [commitProviderSettingsView, providerSettingsService],
+    [commitProviderSettingsView, effectiveModelProviders, providerSettingsService],
   );
 
   const createPersonalProvider = useCallback(
