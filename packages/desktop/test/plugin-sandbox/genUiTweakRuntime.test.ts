@@ -33,7 +33,10 @@ async function setup(send: (name: string, message: any) => Promise<unknown>) {
     },
     send,
   };
-  const source = await readFile(new URL("./genUiTweakRuntime.js", import.meta.url), "utf8");
+  const source = await readFile(
+    new URL("../../src/renderer/src/plugin-sandbox/genUiTweakRuntime.js", import.meta.url),
+    "utf8",
+  );
   runInNewContext(
     source.replace("export function", "function") + "\ninstallGenUiTweakRuntime(send);",
     context,

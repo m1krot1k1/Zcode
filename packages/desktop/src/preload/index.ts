@@ -261,7 +261,7 @@ window.addEventListener("DOMContentLoaded", updateRendererProcessTitle, {
  * 凭据管理已迁移到 host process 的 ICredentialService，
  * 通过 MessagePort RPC 访问，不再经过此 bridge。
  */
-contextBridge.exposeInMainWorld("zcode", {
+const zcodeApi = {
   connectRemote: (
     options: RemoteTarget,
     requestId?: string,
@@ -927,7 +927,11 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.SetTitleBarTheme, theme),
   /** 获取桌面端设备标识符（deviceMid） */
   getDeviceId: () => ipcRenderer.invoke(PlatformChannels.GetDeviceId),
-});
+};
+
+export type ZCodePreloadApi = typeof zcodeApi;
+
+contextBridge.exposeInMainWorld("zcode", zcodeApi);
 
 installPluginSandboxHostBridge();
 

@@ -248,6 +248,8 @@ export type {
   UpdateCheckResultPayload,
   UpdateStatePayload,
   WSLDistro,
+  DesktopZoomState,
+  WindowControlsOverlayMetrics,
   WindowControlsOverlayReadyPayload,
   ZCodeStdioTapDevState,
 } from "./platform.js";

@@ -39,11 +39,21 @@ async function main() {
       // 沿用各包解析出的 oxlint 版本、cwd 和原参数；包级配置仍由 oxlint 自己读取。
       const pnpm = process.env.npm_execpath;
       if (!pnpm) throw new Error("请通过 pnpm lint 运行 CLI lint");
+      // npm_execpath 可能是 JS 入口（需要 node 启动），也可能是 standalone pnpm 的原生可执行文件。
+      // 之前一律用 node 启动，后者会被当成 JS 源码解析并以二进制乱码崩溃。
+      const pnpmIsScript = /\.[cm]?js$/i.test(pnpm);
+      const command = pnpmIsScript ? process.execPath : pnpm;
+      const commandArgs = pnpmIsScript
+        ? [pnpm, "exec", "oxlint", ...args]
+        : ["exec", "oxlint", ...args];
       let result;
       try {
-        result = await exec(process.execPath, [pnpm, "exec", "oxlint", ...args], {
+        result = await exec(command, commandArgs, {
           cwd,
           maxBuffer: 16 * 1024 * 1024,
+          ...(process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command)
+            ? { shell: true }
+            : {}),
         });
       } catch (error) {
         if (error.code !== 1 || !error.stdout) throw error;

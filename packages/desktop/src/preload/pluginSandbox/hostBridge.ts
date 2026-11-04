@@ -3,6 +3,15 @@ import { InternalChannels, PlatformChannels } from "@zcode/shared";
 import type { PluginSandboxCaptureRequest } from "@zcode/shared/mcp-apps";
 import { enableSandboxRetainedMoves } from "./retainedMoves.js";
 
+export interface PluginSandboxHostBridgeApi {
+  supportsRetainedMove: boolean;
+  setExecutionActive(sandboxId: string, initId: number, active: boolean): Promise<void>;
+  copyImage(input: PluginSandboxCaptureRequest): Promise<void>;
+  getOwnerWebContentsId(): Promise<number>;
+  disposeSandbox(sandboxId: string, initId?: number): Promise<void>;
+  consumeUserGesture(sandboxId: string): Promise<boolean>;
+}
+
 export function installPluginSandboxHostBridge(): void {
   const supportsRetainedMove =
     contextBridge.executeInMainWorld({ func: enableSandboxRetainedMoves }) === true;
@@ -10,7 +19,7 @@ export function installPluginSandboxHostBridge(): void {
    * 插件 UI 沙箱：独立命名空间，不进 window.zcode。只暴露明确的沙箱操作；
    * 端口不能过 contextBridge，走下面的 window.postMessage transfer。
    */
-  contextBridge.exposeInMainWorld("zcodePluginSandbox", {
+  const pluginSandboxApi: PluginSandboxHostBridgeApi = {
     supportsRetainedMove,
     setExecutionActive: (sandboxId: string, initId: number, active: boolean) =>
       ipcRenderer.invoke(
@@ -30,7 +39,8 @@ export function installPluginSandboxHostBridge(): void {
         PlatformChannels.PluginSandboxConsumeUserGesture,
         sandboxId,
       ) as Promise<boolean>,
-  });
+  };
+  contextBridge.exposeInMainWorld("zcodePluginSandbox", pluginSandboxApi);
 
   ipcRenderer.on(
     InternalChannels.PluginSandboxPorts,

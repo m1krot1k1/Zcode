@@ -255,7 +255,8 @@ tools:
     for (const role of SWARM_AGENT_TYPES) expect(prompt).toContain(`- ${role}:`);
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
     expect(prompt).toContain("- reviewer:");
-    expect(prompt).toContain("(Tools: Read, Glob, Grep, Task, Skill)");
+    expect(prompt).toContain("(Tools: Read, Glob, Grep, Write, Edit, Bash");
+    expect(prompt).toContain("Task, Skill");
     expect(prompt).not.toContain("tools: Read");
     expect(prompt).not.toContain("background: true");
     expect(prompt).not.toContain("model:");
@@ -554,21 +555,23 @@ Review carefully.`,
       getSwarmAgentProfiles(normalizeAgentProfiles([])).find(({ name }) => name === "start");
     const startPrompt = () => startProfile()?.systemPrompt ?? "";
 
-    it("declares the real read-only dispatch toolset without shell access", () => {
-      const tools = startProfile()?.tools ?? [];
+    it("grants every built-in role the full toolset, including shell and write access", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+      const required = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebFetch", "WebSearch", "Task"];
 
-      expect(tools).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task"]));
-      expect(tools).not.toContain("Write");
-      expect(tools).not.toContain("Edit");
-      expect(tools).not.toContain("Bash");
+      for (const profile of profiles) {
+        expect(profile.tools).toEqual(expect.arrayContaining(required));
+        expect(profile.tools).toContain("Skill");
+      }
     });
 
     it("states the available tools and the L1-L4 nesting chain in the system prompt", () => {
       const prompt = startPrompt();
 
-      for (const tool of ["Read", "Glob", "Grep", "Task"]) expect(prompt).toContain(tool);
+      for (const tool of ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Task", "Skill"]) {
+        expect(prompt).toContain(tool);
+      }
       for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
-      expect(prompt).toContain("Bash тебе не выдан");
       expect(prompt).toContain("L4 — достаточная глубина для проверки вложенности");
       expect(prompt).toContain("Номер уровня — только запись, а не стоп-условие");
       expect(prompt).toContain("Каждый уровень подтверждается только собственным вызовом Task");

@@ -186,7 +186,7 @@ function createServerInfo(options: HttpServerOptions): ServerRemoteInfo {
       : {}),
     version: ZCODE_VERSION,
     protocolVersion: SERVER_REMOTE_PROTOCOL_VERSION,
-    authRequired: options.authRequired ?? Boolean(readTrimmedEnv("ZCODE_SERVER_TOKEN")),
+    authRequired: options.authRequired ?? Boolean(options.authToken?.trim()),
     workspaces: resolveServerWorkspaces(options),
     compatibility: ZCODE_COMPATIBILITY_MANIFEST,
     migration: { failedPathCount: options.migrationFailedPathCount ?? 0 },
@@ -339,6 +339,16 @@ function staticContentType(filePath: string): string {
   return staticMimeTypes[extname(filePath).toLowerCase()] ?? "application/octet-stream";
 }
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "[::1]" ||
+    normalized === "localhost"
+  );
+}
+
 export function createHttpServer(
   services: ServiceCollection,
   port = 3030,
@@ -348,7 +358,15 @@ export function createHttpServer(
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
   const hostCapabilities = createHostCapabilityStore();
 
+  const host = options.host?.trim() || "127.0.0.1";
   const authToken = options.authToken?.trim();
+  // 非回环监听会把 file/terminal/git 等全部已注册服务暴露到网络；没有 token 时必须拒绝启动，
+  // 不能依赖调用方记得设置 ZCODE_SERVER_AUTH_TOKEN。
+  if (!isLoopbackHost(host) && !authToken) {
+    throw new Error(
+      `Non-loopback host ${host} requires authentication; set ZCODE_SERVER_AUTH_TOKEN or pass authToken`,
+    );
+  }
   if (authToken) {
     app.use("*", async (c, next) => {
       const pathname = new URL(c.req.url).pathname;
@@ -467,11 +485,10 @@ export function createHttpServer(
     });
   }
 
-  const server = serve({ fetch: app.fetch, hostname: options.host, port }, () => {
+  const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
     const address = server.address();
     const listenPort = typeof address === "object" && address ? address.port : port;
-    const listenHost = options.host?.trim() || "localhost";
-    log(`http://${listenHost}:${listenPort}`);
+    log(`http://${host}:${listenPort}`);
   });
 
   injectWebSocket(server);

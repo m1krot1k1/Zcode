@@ -30,6 +30,26 @@
         "src/runtime/methods/steering.ts",
         "src/runtime/methods/turn.ts",
         "src/runtime/methods/turn-model-step.ts",
+        // CLI 存量实现：上游快照后被本地修改，职责仍完整；先以告警跟踪行数，不做机械拆分。
+        "**/apps/zcode-cli/packages/adapters/src/model/runner-stream.ts",
+        "**/apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/session-inputs.ts",
+        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/cold-event-merge.ts",
+        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/transcript-hydration.ts",
+        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/conversation-topic-publisher.ts",
+        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts",
+        "**/apps/zcode-cli/packages/contracts/src/model/index.ts",
+        "**/apps/zcode-cli/packages/core/src/runtime/methods/events.ts",
+        "**/apps/zcode-cli/packages/core/src/runtime-task/registry.ts",
+        // 包级 lint 以包目录为 cwd，补充同一组文件的相对路径匹配。
+        "src/model/runner-stream.ts",
+        "src/storage/session-store/repositories/session-inputs.ts",
+        "src/zcode-protocol-v4/cold-event-merge.ts",
+        "src/zcode-protocol-v4/transcript-hydration.ts",
+        "src/zcode-protocol-v4/conversation-topic-publisher.ts",
+        "src/zcode-protocol-v4/product-projection.ts",
+        "src/model/index.ts",
+        "src/runtime/methods/events.ts",
+        "src/runtime-task/registry.ts",
         "**/packages/ui/src/remote-connection-flow/index.ts"
       ],
       "rules": {

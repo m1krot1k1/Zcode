@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "out/shared",
+    "rootDir": "src/shared",
+    "lib": ["es2025", "dom"]
+  },
+  "include": ["src/shared"],
+  "references": [{ "path": "../shared" }]
+}

@@ -6,7 +6,11 @@ import type {
   RemoteTargetSnapshot,
   RemoteWorkspaceSessionEntry,
 } from "@zcode/shared";
-import { buildServerRemoteWorkspaceIdentity, parseRemoteWorkspaceIdentity } from "@zcode/shared";
+import {
+  buildRemoteWorkspaceIdentity as buildSharedRemoteWorkspaceIdentity,
+  buildServerRemoteWorkspaceIdentity,
+  parseRemoteWorkspaceIdentity,
+} from "@zcode/shared";
 import type { WindowTabState } from "@/store/tabStore.js";
 import { isWorkspaceTab } from "@/store/tabStore.js";
 
@@ -148,60 +152,13 @@ export function formatRemoteWorkspaceDisplayLabel(
   return label;
 }
 
-function normalizeWorkspacePathForIdentity(path: string): string {
-  // 远程目录可能出现符号链接别名（例如 /dev 与 /home/dev）。
-  // 身份计算前统一做分隔符归一化与收尾斜杠清理，避免同一路径文本噪声导致身份漂移。
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized.length > 0 ? normalized : "/";
-}
-
-function getRemoteWorkspaceAuthorityKey(target: RemoteTarget | RemoteTargetSnapshot): string {
-  switch (target.kind) {
-    case "ssh": {
-      const normalizedHost = target.host.trim().toLowerCase();
-      const normalizedUsername = target.username.trim();
-      const normalizedPort = target.port ?? 22;
-      return ["ssh", normalizedHost, normalizedPort, normalizedUsername].join(":");
-    }
-    case "wsl": {
-      // WSL 默认用户与 root/其他显式用户的文件权限边界不同，
-      // workspace identity 必须区分显式 user，避免 session、缓存和队列串用。
-      const user = getWslRemoteTargetUser(target);
-      const base = ["wsl", target.distro ?? "default"];
-      return user ? [...base, user].join(":") : base.join(":");
-    }
-    case "docker":
-      return ["docker", target.container].join(":");
-    case "server": {
-      const identity = buildServerRemoteWorkspaceIdentity({
-        serverId: getServerRemoteTargetIdentityId(target),
-        workspacePath: "/",
-      });
-      return identity.slice("remote:".length, -":/".length);
-    }
-  }
-}
-
 export function buildRemoteWorkspaceIdentity(
   workspacePath: string,
   target: RemoteTarget | RemoteTargetSnapshot,
 ): string {
-  if (target.kind === "server") {
-    return buildServerRemoteWorkspaceIdentity({
-      serverId: getServerRemoteTargetIdentityId(target),
-      workspacePath,
-    });
-  }
-
-  const authority = getRemoteWorkspaceAuthorityKey(target);
-  const normalizedPath = normalizeWorkspacePathForIdentity(workspacePath);
-  return `remote:${authority}:${normalizedPath}`;
-}
-
-function getServerRemoteTargetIdentityId(
-  target: Extract<RemoteTarget | RemoteTargetSnapshot, { kind: "server" }>,
-): string {
-  return target.serverId?.trim() || target.name?.trim() || formatServerRemoteTargetHost(target);
+  // UI 不再自行拼接 authority：shared builder 统一处理 //、首尾斜杠、WSL 默认 distro
+  // 和 serverId 归一化，避免历史记录、凭据键和 tab 使用不同身份。
+  return buildSharedRemoteWorkspaceIdentity(workspacePath, target);
 }
 
 export function resolveRemoteWorkspaceSessionIdentity(
