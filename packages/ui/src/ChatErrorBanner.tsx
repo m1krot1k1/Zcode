@@ -63,6 +63,9 @@ const LOCALIZED_ERROR_CODES = new Set([
   "TURN_CANCELLED",
   // runtime core error 使用 snake_case（CoreErrorType.TurnCancelled）。
   "turn_cancelled",
+  // 首 token 看门狗：模型已接受请求但迟迟没有输出，必须显示真实原因，
+  // 否则用户只看到底层英文 message 或无限等待。
+  "first_token_timeout",
 ]);
 
 const MODEL_CONFIG_MISSING_CODES = new Set([
@@ -208,8 +211,14 @@ export function resolveChatErrorBannerDisplayMessage(
   }
 
   if (error.code && LOCALIZED_ERROR_CODES.has(error.code)) {
-    // runtime core error 使用 snake_case（turn_cancelled），本地化键统一按大写稳定码命名。
-    const codeKey = error.code === "turn_cancelled" ? "TURN_CANCELLED" : error.code;
+    // runtime core error 使用 snake_case，本地化键统一按大写稳定码命名。
+    // 新增 snake_case 错误码时必须在这里登记映射，否则会去找不存在的小写 key。
+    const codeKey =
+      error.code === "turn_cancelled"
+        ? "TURN_CANCELLED"
+        : error.code === "first_token_timeout"
+          ? "FIRST_TOKEN_TIMEOUT"
+          : error.code;
     return intl.formatMessage({ id: `zcode.error.${codeKey}` });
   }
 

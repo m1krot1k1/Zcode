@@ -7437,6 +7437,8 @@ const enUS: Record<string, string> = {
   "zcode.error.NO_ACTIVE_TASK_OWNER": "No active task owner is available for this action.",
   "zcode.error.OWNER_COMMAND_FAILED": "The task owner could not complete this action.",
   "zcode.error.TURN_CANCELLED": "Turn cancelled",
+  "zcode.error.FIRST_TOKEN_TIMEOUT":
+    "The model did not start responding in time. Check the network or model configuration and try again.",
   "zcode.error.MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE":
     "Current attachments are too large for one request. Remove or compress attachments and try again.",
   "zcode.error.MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE":
