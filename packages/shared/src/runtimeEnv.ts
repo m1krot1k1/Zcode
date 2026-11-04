@@ -4,11 +4,6 @@ export const ZCODE_HTTP_PROXY_ENV_KEY = "ZCODE_HTTP_PROXY";
 export const ZCODE_HTTP_PROXY_LIST_ENV_KEY = "ZCODE_HTTP_PROXY_LIST";
 export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
 /**
- * Host 下发给 Agent 的 root-run token 预算（一轮用户请求及其整棵子 Agent 树）。
- * 唯一来源是 AppSettings.rootRunTokenLimit；未配置时 Host 不写该变量，Agent 侧按默认值兜底。
- */
-export const ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY = "ZCODE_ROOT_RUN_TOKEN_LIMIT";
-/**
  * Host 下发给 Agent 的 spawn 预算（整棵子 Agent 树可创建的任务数）。
  * 唯一来源是 AppSettings.spawnBudget；0 是合法值（禁止 spawn），未配置时按默认 32。
  */
@@ -352,18 +347,6 @@ export function readZCodeProxyList(value: string | undefined): string[] {
     endpoints.push(endpoint);
   }
   return endpoints;
-}
-
-/**
- * 读取 Host 注入的 root-run token 预算。
- * 非法值（非数字、非正整数、超出安全整数范围）一律返回 undefined，表示不启用 token 上限。
- */
-export function readRootRunTokenLimit(value: string | undefined): number | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) return undefined;
-  const parsed = Number(trimmed);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) return undefined;
-  return parsed;
 }
 
 /**

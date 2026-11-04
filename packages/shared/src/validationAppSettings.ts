@@ -514,7 +514,6 @@ const appSettingsObjectSchema = z.object({
   httpProxyList: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
-  rootRunTokenLimit: z.number().int().positive().safe().optional(),
   // spawnBudget 允许 0（明确禁止 spawn），不能沿用 positive()。
   spawnBudget: z.number().int().min(0).safe().optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().default(false),
@@ -621,7 +620,6 @@ export const appSettingsPatchSchema = z.object({
   httpProxyList: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
-  rootRunTokenLimit: z.number().int().positive().safe().optional(),
   // spawnBudget 允许 0（明确禁止 spawn），不能沿用 positive()。
   spawnBudget: z.number().int().min(0).safe().optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().optional(),

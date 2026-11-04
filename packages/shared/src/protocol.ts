@@ -280,12 +280,6 @@ export interface AppSettings {
   /** 自定义 PEM 根证书路径；下次启动 app/agent 时用于 renderer 校验与 agent NODE_EXTRA_CA_CERTS。 */
   httpProxyCaCertPath?: string;
   /**
-   * root-run token 预算：一轮用户请求及其整棵子 Agent 树的 input+output 总上限。
-   * Host 在 spawn 时经 ZCODE_ROOT_RUN_TOKEN_LIMIT 注入 agent；留空时不启用 token 上限，
-   * 不会自动套用 1M 缺省值。改动后下次启动 agent 生效。
-   */
-  rootRunTokenLimit?: number;
-  /**
    * 整棵子 Agent 树的 spawn 次数上限；Host 每次 spawn 扣减，用尽后拒绝新任务。
    * 0 表示禁止 spawn；缺省为 32。改动后下次启动 agent 生效。
    */

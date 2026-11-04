@@ -3,9 +3,7 @@ import { GEN_UI_OUTPUT_ROOT_ENV } from "@zcode/shared/node";
 import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode/provider";
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import {
-  ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY,
   ZCODE_SPAWN_BUDGET_ENV_KEY,
-  readRootRunTokenLimit,
   readSpawnBudget,
   type BuiltInSubagentModelSelectionOverrides,
 } from "@zcode/shared";
@@ -128,12 +126,7 @@ export function resolveAppRuntimeConfig(input: {
     bashTimeoutPolicy:
       options.runtimeConfig?.bashTimeoutPolicy ??
       resolveBashTimeoutPolicy(options.env ?? process.env),
-    // root-run token 预算只由 Host 经 spawn env 下发（settings.rootRunTokenLimit 的唯一出口）。
-    // 显式 runtimeConfig 优先；两者都没有时保持 undefined —— 不启用 token 上限（不是 1M 兜底）。
-    rootRunTokenLimit:
-      options.runtimeConfig?.rootRunTokenLimit ??
-      readRootRunTokenLimit((options.env ?? process.env)[ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY]),
-    // spawn 预算与 token 预算同源：设置页显式值优先，否则读 Host spawn env，最后 core 默认 32。
+    // spawn 预算：设置页显式值优先，否则读 Host spawn env，最后 core 默认 32。
     spawnBudget:
       options.runtimeConfig?.spawnBudget ??
       readSpawnBudget((options.env ?? process.env)[ZCODE_SPAWN_BUDGET_ENV_KEY]),

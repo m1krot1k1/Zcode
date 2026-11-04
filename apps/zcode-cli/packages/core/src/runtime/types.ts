@@ -140,12 +140,6 @@ export interface AgentRuntimeConfig {
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
   maxTurns?: number;
   /**
-   * 单次 root-run（一轮用户请求及其整棵子 Agent 树）的 token 总预算。
-   * 仅在显式传入正整数时启用；缺省或 0 表示不做 token admission 限制（deadline 与
-   * spawn 配额仍生效）。只限制 admission 预留的总量，不改变 provider 实际 usage 的结算。
-   */
-  rootRunTokenLimit?: number;
-  /**
    * 整棵子 Agent 树的 spawn 次数上限，缺省 DEFAULT_SPAWN_BUDGET（32）。
    * 只限制 admission 次数，不改变 active task 上限或嵌套深度（level 仅记录）。
    */
