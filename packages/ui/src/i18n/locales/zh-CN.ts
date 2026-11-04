@@ -3036,8 +3036,8 @@ const zhCN: Record<string, string> = {
   "settings.httpProxySavedHint": "网络代理设置已保存，重启应用后生效",
   "settings.runLimitRootTokenLimit": "根回合 Token 上限",
   "settings.runLimitRootTokenLimitDescription":
-    "单个根回合最多可消耗的 Token 数。留空则使用默认值 1,000,000。",
-  "settings.runLimitRootTokenLimitInvalid": "请填写不小于 1 的整数，或留空以使用默认值。",
+    "单个根回合最多可消耗的 Token 数。留空则不启用上限（不限）。",
+  "settings.runLimitRootTokenLimitInvalid": "请填写不小于 1 的整数，或留空以不启用上限。",
   "settings.runLimitSpawnBudget": "子代理派生预算",
   "settings.runLimitSpawnBudgetDescription":
     "单次运行最多可派生多少个子代理。留空则使用默认值 32；填 0 表示禁止派生。",

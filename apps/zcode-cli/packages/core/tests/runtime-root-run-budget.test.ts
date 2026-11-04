@@ -8,7 +8,6 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   InMemoryRuntimeTaskRegistry,
-  DEFAULT_ROOT_RUN_TOKEN_LIMIT,
   RootRunBudgetExceededError,
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
@@ -964,15 +963,43 @@ describe("RootRun resource budget", () => {
     looseNext();
   });
 
-  it("дефолтный лимит — миллион, а не прежние 500k", () => {
-    // 3.17.57: роевой турн честно потратил 515 621 token, и прежний дефолт 500k гарантированно валил его.
-    expect(DEFAULT_ROOT_RUN_TOKEN_LIMIT).toBe(1_000_000);
+  it("без явной настройки token-бюджет не применяется даже при 10 000 000 токенов", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
-    const root = createSessionId("root-budget-default-limit");
-    const turnId = createTurnId("root-budget-default-limit-turn");
+    const root = createSessionId("root-budget-default-off");
+    const turnId = createTurnId("root-budget-default-off-turn");
     const rootRunId = `${root}:${turnId}`;
-    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId });
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.tokenLimit).toBe(1_000_000);
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, onExhausted });
+
+    const consumeTenMillionAndAdmitNext = () => {
+      const release = registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 10_000_000,
+        maxTokens: 10_000_000,
+      });
+      release.associateRequestId("no-limit");
+      registry.recordRootRunUsage(modelComplete(root, turnId, 10_000_000, "no-limit"));
+      release();
+      // 没有 token 上限时后续 admission 仍然放行（不预留）。
+      const next = registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 550_000,
+        maxTokens: 64_000,
+      });
+      next();
+    };
+    expect(consumeTenMillionAndAdmitNext).not.toThrow();
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      tokenLimitEnabled: false,
+      tokenLimit: 0,
+      usedTokens: 10_000_000,
+      reservedTokens: 0,
+    });
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(onExhausted).not.toHaveBeenCalled();
   });
 
   it("настройка меняет лимит: при 250 000 следующий резерв отклоняется", () => {
@@ -1006,13 +1033,19 @@ describe("RootRun resource budget", () => {
     ).toThrow(RootRunBudgetExceededError);
   });
 
-  it("живой роевой турн на 515 621 токен не падает при дефолте", () => {
+  it("живой роевой турн на 515 621 токен не падает при явном лимите 1 000 000", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const root = createSessionId("root-budget-swarm-survives");
     const turnId = createTurnId("root-budget-swarm-survives-turn");
     const rootRunId = `${root}:${turnId}`;
     const onExhausted = vi.fn();
-    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, onExhausted });
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      tokenLimit: 1_000_000,
+      onExhausted,
+    });
     const release = registry.reserveRootRunTokens({
       rootRunId,
       sessionId: root,
@@ -1039,6 +1072,7 @@ describe("RootRun resource budget", () => {
     expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
       usedTokens: 515_621,
       reservedTokens: 0,
+      tokenLimitEnabled: true,
       tokenLimit: 1_000_000,
     });
     expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
@@ -1070,6 +1104,45 @@ describe("RootRun resource budget", () => {
     expect(onExhausted).toHaveBeenCalledOnce();
     expect(onExhausted).toHaveBeenCalledWith("token_limit");
     expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(true);
+  });
+
+  it("tokenLimit: 0 означает отсутствие лимита", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("root-budget-zero-limit");
+    const turnId = createTurnId("root-budget-zero-limit-turn");
+    const rootRunId = `${root}:${turnId}`;
+    const onExhausted = vi.fn();
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, tokenLimit: 0, onExhausted });
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      tokenLimitEnabled: false,
+      tokenLimit: 0,
+    });
+
+    const release = registry.reserveRootRunTokens({
+      rootRunId,
+      sessionId: root,
+      contextWindow: 200_000,
+      maxTokens: 64_000,
+    });
+    release.associateRequestId("zero-limit");
+    registry.recordRootRunUsage(modelComplete(root, turnId, 120_000, "zero-limit"));
+    release();
+
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toMatchObject({
+      usedTokens: 120_000,
+      reservedTokens: 0,
+      tokenLimitEnabled: false,
+    });
+    expect(onExhausted).not.toHaveBeenCalled();
+    expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    expect(() =>
+      registry.reserveRootRunTokens({
+        rootRunId,
+        sessionId: root,
+        contextWindow: 200_000,
+        maxTokens: 1,
+      }),
+    ).not.toThrow();
   });
 });
 

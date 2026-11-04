@@ -356,8 +356,7 @@ export function readZCodeProxyList(value: string | undefined): string[] {
 
 /**
  * 读取 Host 注入的 root-run token 预算。
- * 非法值（非数字、非正整数、超出安全整数范围）一律返回 undefined，让 Agent 回落到默认值，
- * 而不是把 NaN/负数带进预算计算导致整轮误判。
+ * 非法值（非数字、非正整数、超出安全整数范围）一律返回 undefined，表示不启用 token 上限。
  */
 export function readRootRunTokenLimit(value: string | undefined): number | undefined {
   const trimmed = value?.trim();

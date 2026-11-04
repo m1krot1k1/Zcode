@@ -1323,6 +1323,9 @@ interface RootRunBudgetState {
   deadlineAt: number;
   rootSessionId: SessionId;
   turnId: TurnId;
+  /** 是否启用了 token 上限；只有显式配置 rootRunTokenLimit 时才为 true。 */
+  tokenLimitEnabled: boolean;
+  /** 启用时的 token 上限；未启用时为 0，仅作记录，不参与 admission。 */
   tokenLimit: number;
   /** 本次 root run 的 spawn 总配额；0 表示禁止任何子任务。 */
   spawnBudget: number;
@@ -1358,6 +1361,11 @@ export type RootRunReservationRelease = (() => void) & {
   associateRequestId(requestId: string): void;
 };
 
+/** token 预算未启用时的空预留：既不占用 admission，也不产生结算负担。 */
+function createNoopRootRunReservationRelease(): RootRunReservationRelease {
+  return Object.assign(() => undefined, { associateRequestId: () => undefined });
+}
+
 interface RuntimeTaskWaiter {
   onAbort?: () => void;
   reject: (error: unknown) => void;
@@ -1374,17 +1382,6 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
   "lost",
 ]);
 
-/**
- * 缺省 root-run token 预算（一轮用户请求 + 它派生的整棵子 Agent 树）。
- *
- * 依据：3.17.57 实机复现中，单次 `/start` 的 swarm 轮次诚实消耗了 515_621 token
- * （input 507_730 + output 7_891；cache_read 不计入预算），旧缺省 500_000 因此必然在
- * 轮次中途诚实耗尽并 TURN_CANCELLED，看起来像“未完成的请求被误杀”。
- *
- * 提到 1_000_000 是为了容纳一次完整的 root + 子 Agent 树的正常用量；同时保留硬上限作为
- * 死循环/失控 Agent 的熔断器 —— 不要改成 Infinity，也不要用超时替代它。
- */
-export const DEFAULT_ROOT_RUN_TOKEN_LIMIT = 1_000_000;
 /**
  * 每棵子 Agent 树默认允许的 spawn 次数。
  * 32 足以覆盖常见的分层探索，同时把「模型递归开 Agent」的扇出从指数压到可控范围：
@@ -1437,12 +1434,23 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }): void {
     if (this.rootRunBudgets.has(input.rootRunId)) return;
     const deadlineAt = (input.startedAt ?? Date.now()) + (input.deadlineMs ?? 2 * 60 * 60 * 1000);
+    // 根因：缺省 token 上限会中断真实的 swarm 任务（3.17.57 实机轮次诚实消耗 515_621 token），
+    // 且旧用量统计把 cache_read 也算作消耗，正常任务会提前撞线。
+    // 修复依据：仅显式传入正整数才启用 token 预算；缺省/0/非法值都视为不启用（不做 token admission）。
+    // 未配置时不预留、不拒绝，deadline 与 spawn 配额各自继续生效。不要重新引入缺省 token 上限。
+    const tokenLimit =
+      typeof input.tokenLimit === "number" &&
+      Number.isSafeInteger(input.tokenLimit) &&
+      input.tokenLimit > 0
+        ? input.tokenLimit
+        : 0;
     this.rootRunBudgets.set(input.rootRunId, {
       rootRunId: input.rootRunId,
       deadlineAt,
       rootSessionId: input.rootSessionId,
       turnId: input.turnId,
-      tokenLimit: input.tokenLimit ?? DEFAULT_ROOT_RUN_TOKEN_LIMIT,
+      tokenLimitEnabled: tokenLimit > 0,
+      tokenLimit,
       spawnBudget: input.spawnBudget ?? DEFAULT_SPAWN_BUDGET,
       spawnsUsed: 0,
       remainingSpawnsBySession: new Map(),
@@ -1475,6 +1483,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const requestedReservation = input.maxTokens;
     if (state && Date.now() >= state.deadlineAt) {
       this.expireRootRunBudget(state, "deadline");
+    }
+    // 未显式启用 token 上限时不预留、不因 token 拒绝；deadline 仍在上方生效。
+    if (state && !state.tokenLimitEnabled && !state.expired) {
+      return createNoopRootRunReservationRelease();
     }
     if (
       !state ||
@@ -1717,6 +1729,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   getRootRunBudgetSnapshot(rootRunId: string): {
     deadlineAt: number;
     reservedTokens: number;
+    tokenLimitEnabled: boolean;
     tokenLimit: number;
     usedTokens: number;
     spawnBudget: number;
@@ -1728,6 +1741,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       ? {
           deadlineAt: state.deadlineAt,
           reservedTokens: state.reservedTokens,
+          tokenLimitEnabled: state.tokenLimitEnabled,
           tokenLimit: state.tokenLimit,
           usedTokens: state.usedTokens,
           spawnBudget: state.spawnBudget,
@@ -1771,6 +1785,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     state: RootRunBudgetState,
     reason: RootRunBudgetExhaustionReason,
   ): void {
+    // token 上限未启用时，token_limit 事件不得取消整轮；deadline 仍正常生效。
+    if (reason === "token_limit" && !state.tokenLimitEnabled) return;
     if (state.expired) return;
     state.expired = true;
     state.onExhausted?.(reason);
@@ -1788,6 +1804,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
    * （reserveRootRunTokens 在 remaining <= 0 时拒绝），不会放行新请求。
    */
   private expireRootRunBudgetOnTokenLimit(state: RootRunBudgetState): void {
+    if (!state.tokenLimitEnabled) return;
     if (state.turnFinished) return;
     if (state.usedTokens < state.tokenLimit) return;
     this.expireRootRunBudget(state, "token_limit");

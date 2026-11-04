@@ -129,7 +129,7 @@ export function resolveAppRuntimeConfig(input: {
       options.runtimeConfig?.bashTimeoutPolicy ??
       resolveBashTimeoutPolicy(options.env ?? process.env),
     // root-run token 预算只由 Host 经 spawn env 下发（settings.rootRunTokenLimit 的唯一出口）。
-    // 显式 runtimeConfig 优先；两者都没有时保持 undefined，由 core 的默认上限兜底（不是无限）。
+    // 显式 runtimeConfig 优先；两者都没有时保持 undefined —— 不启用 token 上限（不是 1M 兜底）。
     rootRunTokenLimit:
       options.runtimeConfig?.rootRunTokenLimit ??
       readRootRunTokenLimit((options.env ?? process.env)[ZCODE_ROOT_RUN_TOKEN_LIMIT_ENV_KEY]),

@@ -1046,7 +1046,7 @@ export function GeneralSectionContent({
         />
       </SettingsGroupCard>
 
-      {/* 运行预算由目标 Environment 的 settingService 持有；留空保持默认值，不回写设置。 */}
+      {/* 运行预算由目标 Environment 的 settingService 持有；留空不回写设置，token 预算留空即不启用。 */}
       <SettingsGroupCard>
         <RunLimitSettingRow
           labelId="settings.runLimitRootTokenLimit"
