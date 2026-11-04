@@ -264,7 +264,6 @@ export function GeneralSectionContent({
   httpProxyList = "",
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
-  rootRunTokenLimit,
   spawnBudget,
   defaultHomeDir,
   isDesktop,
@@ -294,7 +293,6 @@ export function GeneralSectionContent({
   onHttpProxyListChange = async () => {},
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
-  onRootRunTokenLimitChange = async (): Promise<RunLimitSaveResult> => "saved",
   onSpawnBudgetChange = async (): Promise<RunLimitSaveResult> => "saved",
   onCloseToTrayOnWindowsChange,
   onKeepAwakeWhileRunningChange = async () => {},
@@ -333,8 +331,6 @@ export function GeneralSectionContent({
   httpProxyList?: string;
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
-  /** 单次运行的 root token 上限；undefined 表示沿用默认值 */
-  rootRunTokenLimit?: number;
   /** 单次 spawn 预算；undefined 表示沿用默认值 */
   spawnBudget?: number;
   defaultHomeDir: string;
@@ -374,7 +370,6 @@ export function GeneralSectionContent({
   onHttpProxyListChange?: (proxyList: string) => Promise<void>;
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
-  onRootRunTokenLimitChange?: (raw: string) => Promise<RunLimitSaveResult>;
   onSpawnBudgetChange?: (raw: string) => Promise<RunLimitSaveResult>;
   onCloseToTrayOnWindowsChange: (enabled: boolean) => Promise<void>;
   onKeepAwakeWhileRunningChange?: (enabled: boolean) => Promise<void>;
@@ -1046,21 +1041,12 @@ export function GeneralSectionContent({
         />
       </SettingsGroupCard>
 
-      {/* 运行预算由目标 Environment 的 settingService 持有；留空不回写设置，token 预算留空即不启用。 */}
+      {/* 运行预算由目标 Environment 的 settingService 持有；留空不回写设置。 */}
       <SettingsGroupCard>
         <RunLimitSettingRow
-          labelId="settings.runLimitRootTokenLimit"
-          descriptionId="settings.runLimitRootTokenLimitDescription"
-          invalidId="settings.runLimitRootTokenLimitInvalid"
-          placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
-          testId="settings-root-run-token-limit"
-          value={rootRunTokenLimit}
-          onSave={onRootRunTokenLimitChange}
-        />
-        <RunLimitSettingRow
-          labelId="settings.runLimitSpawnBudget"
-          descriptionId="settings.runLimitSpawnBudgetDescription"
-          invalidId="settings.runLimitSpawnBudgetInvalid"
+          labelId="settings.spawnBudget"
+          descriptionId="settings.spawnBudgetDescription"
+          invalidId="settings.spawnBudgetInvalid"
           placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
           testId="settings-spawn-budget"
           value={spawnBudget}

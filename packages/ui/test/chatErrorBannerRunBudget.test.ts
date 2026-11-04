@@ -25,7 +25,6 @@ describe("resolveChatErrorBannerDisplayMessage — run budget exhausted", () => 
       "Run stopped: run resource budget exhausted",
       "Root run resource budget exhausted (session_x:turn_y)",
     ],
-    ["Run stopped: token budget exhausted", "Root run token budget is exhausted"],
     ["Run stopped: time budget exhausted", "Root run time budget exhausted"],
   ] as const)("本地化 %s（attribution 已结构化）", (expected, raw) => {
     expect(
@@ -51,15 +50,6 @@ describe("resolveChatErrorBannerDisplayMessage — run budget exhausted", () => 
         zhIntl,
       ),
     ).toBe("已停止：运行资源预算耗尽");
-  });
-
-  it("没有 attribution 时靠稳定文案识别，不把内部原文丢给用户", () => {
-    expect(
-      resolveChatErrorBannerDisplayMessage(
-        { code: "UNKNOWN", message: "Root run token budget is exhausted" },
-        zhIntl,
-      ),
-    ).toBe("已停止：token 预算耗尽");
   });
 
   it("只有 detail 携带文案时也能识别", () => {
@@ -101,19 +91,6 @@ describe("resolveChatErrorBannerDisplayMessage — run budget exhausted", () => 
         enIntl,
       ),
     ).toBe("Run stopped: time budget exhausted");
-  });
-
-  it("TURN_CANCELLED 携带预算原因时提示达到上限", () => {
-    expect(
-      resolveChatErrorBannerDisplayMessage(
-        {
-          code: "TURN_CANCELLED",
-          message: "Turn was cancelled.",
-          underlyingErrorDetail: "Root run token budget is exhausted (session_x:turn_y)",
-        },
-        enIntl,
-      ),
-    ).toBe("Turn stopped: token limit reached");
   });
 
   it("没有预算原因的取消只显示取消，不误报为达到上限", () => {

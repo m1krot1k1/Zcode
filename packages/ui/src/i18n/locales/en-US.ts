@@ -3239,15 +3239,10 @@ const enUS: Record<string, string> = {
     "Optional. Set a PEM root certificate path to inject it as NODE_EXTRA_CA_CERTS for models, MCP, and command tools, and to trust it in renderer certificate verification. Restart the app to take effect.",
   "settings.httpProxyCaCertPathPlaceholder": "e.g. /Users/name/certs/root-ca.pem",
   "settings.httpProxySavedHint": "Network proxy settings saved. Restart the app to take effect.",
-  "settings.runLimitRootTokenLimit": "Root turn token limit",
-  "settings.runLimitRootTokenLimitDescription":
-    "Maximum tokens a single root turn may consume. Leave blank to disable the limit.",
-  "settings.runLimitRootTokenLimitInvalid":
-    "Enter a whole number of at least 1, or leave the field blank to disable the limit.",
-  "settings.runLimitSpawnBudget": "Subagent spawn budget",
-  "settings.runLimitSpawnBudgetDescription":
+  "settings.spawnBudget": "Subagent spawn budget",
+  "settings.spawnBudgetDescription":
     "Maximum subagent spawns per run. Leave blank to use the default of 32; enter 0 to disable spawning.",
-  "settings.runLimitSpawnBudgetInvalid":
+  "settings.spawnBudgetInvalid":
     "Enter a whole number of at least 0 (0 disables spawning), or leave the field blank to use the default.",
   "settings.runLimitPlaceholder": "Default",
   "settings.desktopChromiumHardwareAcceleration": "Chrome hardware acceleration",
@@ -5962,7 +5957,7 @@ const enUS: Record<string, string> = {
   "chat.history.topicInterrupted": "Interrupted by a new message",
   "chat.history.stopped": "Stopped",
   "chat.history.stopped.byError": "Interrupted by error",
-  "chat.history.stopped.byBudget": "Stop: token budget exhausted",
+  "chat.history.stopped.byBudget": "Stop: run budget exhausted",
   "chat.history.stopped.byResourceBudget": "Stop: run resource budget exhausted",
   "chat.history.stopped.byPreempted": "Stop: session taken over",
   "chat.history.duration.day": "d",
@@ -7223,9 +7218,7 @@ const enUS: Record<string, string> = {
     "This remote device has no available model yet. Configure models on this computer first; they will sync to the remote device automatically after you save.",
   "chat.error.sendFailed": "Failed to send. Try again later.",
   "chat.error.runBudgetResourceExhausted": "Run stopped: run resource budget exhausted",
-  "chat.error.runBudgetTokenExhausted": "Run stopped: token budget exhausted",
   "chat.error.runBudgetTimeExhausted": "Run stopped: time budget exhausted",
-  "chat.error.turnCancelledBudgetExhausted": "Turn stopped: token limit reached",
   "chat.error.modelSettings": "Model settings",
   "chat.error.setModels": "Set",
 

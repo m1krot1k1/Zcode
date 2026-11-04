@@ -813,7 +813,6 @@ export function SettingsPage({
   const [httpProxyList, setHttpProxyList] = useState("");
   const [httpProxyNoProxy, setHttpProxyNoProxy] = useState("");
   const [httpProxyCaCertPath, setHttpProxyCaCertPath] = useState("");
-  const [rootRunTokenLimit, setRootRunTokenLimit] = useState<number | undefined>(undefined);
   const [spawnBudget, setSpawnBudget] = useState<number | undefined>(undefined);
   const [embeddedBrowserAllowInsecureCertificates, setEmbeddedBrowserAllowInsecureCertificates] =
     useState(false);
@@ -950,7 +949,6 @@ export function SettingsPage({
         if (!active) return;
         setTerminalInheritSystemProfile(settings.terminalInheritSystemProfile ?? true);
         setTerminalFontFamily(settings.terminalFontFamily ?? "");
-        setRootRunTokenLimit(settings.rootRunTokenLimit);
         setSpawnBudget(settings.spawnBudget);
         setTaskAutoArchiveEnabled(settings.taskAutoArchiveEnabled ?? false);
         setTaskAutoArchiveOlderThanDays(settings.taskAutoArchiveOlderThanDays ?? 30);
@@ -1002,26 +1000,6 @@ export function SettingsPage({
         completed: { resultSource: "setting_service", configured: normalizedFontFamily.length > 0 },
       });
       setTerminalFontFamily(normalizedFontFamily);
-    },
-    [services.settingService],
-  );
-  const handleRootRunTokenLimitChange = useCallback(
-    async (raw: string): Promise<RunLimitSaveResult> => {
-      const parsed = parseRunLimitInput(raw, 1);
-      if (parsed === "empty" || parsed === "invalid") return parsed;
-      await runSettingsActionAsync({
-        featureId: "settings.run_limits",
-        action: "save_root_run_token_limit",
-        trigger: "button",
-        operation: () => services.settingService.update({ rootRunTokenLimit: parsed }),
-        completed: {
-          resultSource: "setting_service",
-          configured: true,
-          valueAfter: String(parsed),
-        },
-      });
-      setRootRunTokenLimit(parsed);
-      return "saved";
     },
     [services.settingService],
   );
@@ -1925,7 +1903,6 @@ export function SettingsPage({
                               dataBaseDir={dataBaseDir}
                               terminalInheritSystemProfile={terminalInheritSystemProfile}
                               terminalFontFamily={terminalFontFamily}
-                              rootRunTokenLimit={rootRunTokenLimit}
                               spawnBudget={spawnBudget}
                               integratedTerminalShell={integratedTerminalShell}
                               integratedTerminalShellOptions={integratedTerminalShellOptions}
@@ -1996,7 +1973,6 @@ export function SettingsPage({
                               onHttpProxyListChange={handleHttpProxyListChange}
                               onHttpProxyNoProxyChange={handleHttpProxyNoProxyChange}
                               onHttpProxyCaCertPathChange={handleHttpProxyCaCertPathChange}
-                              onRootRunTokenLimitChange={handleRootRunTokenLimitChange}
                               onSpawnBudgetChange={handleSpawnBudgetChange}
                               onCloseToTrayOnWindowsChange={handleCloseToTrayOnWindowsChange}
                               onKeepAwakeWhileRunningChange={handleKeepAwakeWhileRunningChange}

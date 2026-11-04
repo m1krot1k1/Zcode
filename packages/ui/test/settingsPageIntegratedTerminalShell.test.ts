@@ -627,17 +627,17 @@ describe("SettingsPage integrated terminal shell", () => {
     expect(stateUpdates).not.toContain("stale Source font");
   });
 
-  it("saves an integer root turn token limit through the target Environment setting service", async () => {
+  it("saves an integer spawn budget through the target Environment setting service", async () => {
     const { SettingsPage } = await import("../src/SettingsPage.js");
     renderToStaticMarkup(createElement(SettingsPage, {}));
     // 留空的输入框由 placeholder 表达默认值，state 里保持 undefined。
-    expect(generalSectionCapture.props?.rootRunTokenLimit).toBeUndefined();
-    const save = generalSectionCapture.props!.onRootRunTokenLimitChange as (
+    expect(generalSectionCapture.props?.spawnBudget).toBeUndefined();
+    const save = generalSectionCapture.props!.onSpawnBudgetChange as (
       raw: string,
     ) => Promise<"saved" | "empty" | "invalid">;
-    await expect(save(" 250000 ")).resolves.toBe("saved");
+    await expect(save(" 32 ")).resolves.toBe("saved");
     expect(remoteServices.settingService.update).toHaveBeenCalledWith({
-      rootRunTokenLimit: 250000,
+      spawnBudget: 32,
     });
     expect(localServices.settingService.update).not.toHaveBeenCalled();
   });
@@ -654,33 +654,25 @@ describe("SettingsPage integrated terminal shell", () => {
     expect(localServices.settingService.update).not.toHaveBeenCalled();
   });
 
-  it("does not write anything when a run limit field is left blank", async () => {
+  it("does not write anything when the spawn budget field is left blank", async () => {
     const { SettingsPage } = await import("../src/SettingsPage.js");
     renderToStaticMarkup(createElement(SettingsPage, {}));
-    const saveRoot = generalSectionCapture.props!.onRootRunTokenLimitChange as (
-      raw: string,
-    ) => Promise<"saved" | "empty" | "invalid">;
     const saveSpawn = generalSectionCapture.props!.onSpawnBudgetChange as (
       raw: string,
     ) => Promise<"saved" | "empty" | "invalid">;
-    await expect(saveRoot("   ")).resolves.toBe("empty");
-    await expect(saveSpawn("")).resolves.toBe("empty");
+    await expect(saveSpawn("   ")).resolves.toBe("empty");
     expect(remoteServices.settingService.update).not.toHaveBeenCalled();
     expect(localServices.settingService.update).not.toHaveBeenCalled();
   });
 
   it.each(["2.5", "-5"])(
-    "rejects the non-integer run limit %s without writing settings",
+    "rejects the non-integer spawn budget %s without writing settings",
     async (raw) => {
       const { SettingsPage } = await import("../src/SettingsPage.js");
       renderToStaticMarkup(createElement(SettingsPage, {}));
-      const saveRoot = generalSectionCapture.props!.onRootRunTokenLimitChange as (
-        value: string,
-      ) => Promise<"saved" | "empty" | "invalid">;
       const saveSpawn = generalSectionCapture.props!.onSpawnBudgetChange as (
         value: string,
       ) => Promise<"saved" | "empty" | "invalid">;
-      await expect(saveRoot(raw)).resolves.toBe("invalid");
       await expect(saveSpawn(raw)).resolves.toBe("invalid");
       expect(remoteServices.settingService.update).not.toHaveBeenCalled();
       expect(localServices.settingService.update).not.toHaveBeenCalled();

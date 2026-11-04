@@ -114,11 +114,9 @@ function parseClaudeUnknownCommandMessage(message: string): {
  */
 export type ChatErrorBannerModelConfigTarget = "local" | "remote";
 
-const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|token|time) budget (is )?exhausted/i;
+const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|time) budget (is )?exhausted/i;
 
-const TURN_CANCELLED_ERROR_CODES = new Set(["TURN_CANCELLED", "turn_cancelled"]);
-
-type RunBudgetKind = "resource" | "token" | "time";
+type RunBudgetKind = "resource" | "time";
 
 /**
  * 合并错误里所有可读原因文本。
@@ -172,19 +170,12 @@ export function resolveChatErrorBannerDisplayMessage(
   }
 
   const runBudgetKind = resolveRunBudgetExhaustedKind(error);
-  if (runBudgetKind && error.code && TURN_CANCELLED_ERROR_CODES.has(error.code)) {
-    // 取消码本身不带原因：只有全部文本确认预算耗尽时才提示达到上限，
-    // 否则用户主动停止 / 新消息打断会被误报成用量超限。
-    return intl.formatMessage({ id: "chat.error.turnCancelledBudgetExhausted" });
-  }
   if (runBudgetKind) {
     return intl.formatMessage({
       id:
-        runBudgetKind === "token"
-          ? "chat.error.runBudgetTokenExhausted"
-          : runBudgetKind === "time"
-            ? "chat.error.runBudgetTimeExhausted"
-            : "chat.error.runBudgetResourceExhausted",
+        runBudgetKind === "time"
+          ? "chat.error.runBudgetTimeExhausted"
+          : "chat.error.runBudgetResourceExhausted",
     });
   }
 

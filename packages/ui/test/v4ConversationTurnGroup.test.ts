@@ -2961,10 +2961,10 @@ describe("中断原因 → 状态文案", () => {
     [undefined, undefined, "chat.history.stopped"],
     ["user", undefined, "chat.history.stopped"],
     ["error", undefined, "chat.history.stopped.byError"],
-    ["budget", "token budget", "chat.history.stopped.byBudget"],
-    // 运行资源预算（admission 预留账本）与 token 预算成因不同，必须给用户不同的文案。
+    ["budget", "time budget", "chat.history.stopped.byBudget"],
+    // 运行资源预算（admission 预留账本）与时间预算成因不同，必须给用户不同的文案。
     ["budget", "resource budget", "chat.history.stopped.byResourceBudget"],
-    // 旧数据可能只有 reason 没有 detail，仍回落到 token 预算文案，避免文案缺失。
+    // 旧数据可能只有 reason 没有 detail，仍回落到通用预算文案，避免文案缺失。
     ["budget", undefined, "chat.history.stopped.byBudget"],
     ["preempted", undefined, "chat.history.stopped.byPreempted"],
   ] as const)("reason %j detail %j 映射为 %s", (reason, detail, expected) => {

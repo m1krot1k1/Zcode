@@ -3034,14 +3034,10 @@ const zhCN: Record<string, string> = {
     "可选。填写 PEM 根证书路径后，会作为 NODE_EXTRA_CA_CERTS 注入模型、MCP 与命令工具，并用于渲染层证书校验。修改后需重启应用生效。",
   "settings.httpProxyCaCertPathPlaceholder": "例如 /Users/name/certs/root-ca.pem",
   "settings.httpProxySavedHint": "网络代理设置已保存，重启应用后生效",
-  "settings.runLimitRootTokenLimit": "根回合 Token 上限",
-  "settings.runLimitRootTokenLimitDescription":
-    "单个根回合最多可消耗的 Token 数。留空则不启用上限（不限）。",
-  "settings.runLimitRootTokenLimitInvalid": "请填写不小于 1 的整数，或留空以不启用上限。",
-  "settings.runLimitSpawnBudget": "子代理派生预算",
-  "settings.runLimitSpawnBudgetDescription":
+  "settings.spawnBudget": "子代理派生预算",
+  "settings.spawnBudgetDescription":
     "单次运行最多可派生多少个子代理。留空则使用默认值 32；填 0 表示禁止派生。",
-  "settings.runLimitSpawnBudgetInvalid":
+  "settings.spawnBudgetInvalid":
     "请填写不小于 0 的整数（0 表示禁止派生），或留空以使用默认值。",
   "settings.runLimitPlaceholder": "默认值",
   "settings.desktopChromiumHardwareAcceleration": "Chrome 硬件加速",
@@ -5568,7 +5564,7 @@ const zhCN: Record<string, string> = {
   "chat.history.topicInterrupted": "已被新消息中断",
   "chat.history.stopped": "已停止",
   "chat.history.stopped.byError": "因错误中断",
-  "chat.history.stopped.byBudget": "已停止：token 预算耗尽",
+  "chat.history.stopped.byBudget": "已停止：运行预算耗尽",
   "chat.history.stopped.byResourceBudget": "已停止：运行资源预算耗尽",
   "chat.history.stopped.byPreempted": "已停止：会话已接管",
   "chat.history.duration.day": "天",
@@ -6866,9 +6862,7 @@ const zhCN: Record<string, string> = {
     "此远程设备尚无可用模型，请先在本机配置模型，保存后会自动同步到远程设备",
   "chat.error.sendFailed": "发送失败，请稍后重试。",
   "chat.error.runBudgetResourceExhausted": "已停止：运行资源预算耗尽",
-  "chat.error.runBudgetTokenExhausted": "已停止：token 预算耗尽",
   "chat.error.runBudgetTimeExhausted": "已停止：运行时间用尽",
-  "chat.error.turnCancelledBudgetExhausted": "本轮已停止：token 用量已达上限",
   "chat.error.modelSettings": "模型设置",
   "chat.error.setModels": "配置",
 

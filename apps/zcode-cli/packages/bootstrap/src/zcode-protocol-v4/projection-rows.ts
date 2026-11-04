@@ -139,15 +139,12 @@ export function classifyTurnInterruptReason(input: {
   if (input.preserveQueueAutoDrainOnCancel === true) return { interruptReason: "user" };
   const reason = typeof input.abortReason === "string" ? input.abortReason.trim() : "";
   const normalized = reason.toLowerCase();
-  if (normalized.includes("root run token budget exhausted")) {
-    return { interruptReason: "budget", interruptDetail: "token budget" };
-  }
   if (normalized.includes("root run time budget exhausted")) {
     return { interruptReason: "budget", interruptDetail: "time budget" };
   }
   // Bugfix：admission 拒绝预留时抛的是 “Root run resource budget is exhausted: <session>:<turn>”，
-  // 与 token/time 预算的原文不同；旧实现只 includes 那两句，资源预算会落到 error 分支，
-  // 把带 session/turn id 的英文原文原样透给 UI。放在 token/time 之后，保持既有 detail 优先级。
+  // 与 time 预算的原文不同；旧实现只 includes 那一句，资源预算会落到 error 分支，
+  // 把带 session/turn id 的英文原文原样透给 UI。放在 time 之后，保持既有 detail 优先级。
   if (/root run resource budget (is )?exhausted/iu.test(normalized)) {
     return { interruptReason: "budget", interruptDetail: "resource budget" };
   }
