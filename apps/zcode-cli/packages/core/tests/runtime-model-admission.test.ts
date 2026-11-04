@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createSessionEvent,
   createSessionId,
   createTurnId,
-  SessionEventType,
   runWithModelInvocationContext,
   type ModelInvocationContext,
   type ModelRequestAdmission,
@@ -19,7 +17,6 @@ import { skillHandler } from "../src/tool/handlers/skill.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
-import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
 // docs/dynamic-workflow/concurrency.md「Where the port is bound」：准入端口与重试预算绑定在 runtime 的模型工厂上，
@@ -381,11 +378,11 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     );
     expect(tool).toBeDefined();
     expect(turn).toBeDefined();
-    expect(tool!.modelRequestAdmission).not.toBe(admission);
+    expect(tool!.modelRequestAdmission).toBe(admission);
     expect(tool!.modelRequestAdmission?.acquire).toBeTypeOf("function");
     expect(tool!.modelRetryBudget).toBe("unbounded");
     expect(tool!.workingDirectory).toBe(workingDirectory);
-    expect(turn!.modelRequestAdmission).not.toBe(admission);
+    expect(turn!.modelRequestAdmission).toBe(admission);
     expect(turn!.modelRequestAdmission?.acquire).toBeTypeOf("function");
     expect(turn!.modelRetryBudget).toBe("unbounded");
   });
@@ -395,14 +392,16 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     ["subagent_child", "subagent"],
     ["selection_side_chat", "side_chat"],
   ] as const)(
-    "%s 工具请求继承宿主类型并使用 RootRun 预算准入",
+    "%s 工具请求继承宿主类型并携带 runtime 准入端口",
     async (taskType, expectedSessionType) => {
+      const admission = admissionStub();
       const requests: SeenRequest[] = [];
       const runtime = createTestAgentRuntime(
         createSessionId("runtime-admission-websearch-absent"),
         { modelSelection, modelStreaming: "off", taskType },
         {
           eventStore: createTestSessionEventStore(),
+          modelRequestAdmission: admission,
           modelFactory: modelFactoryWithWebSearch(requests),
         },
       );
@@ -412,7 +411,7 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
           (request.metadata as { querySource?: string })?.querySource === "web_search_tool",
       );
       expect(tool).toBeDefined();
-      expect(tool!.modelRequestAdmission?.acquire).toBeTypeOf("function");
+      expect(tool!.modelRequestAdmission).toBe(admission);
       expect(tool!.modelRetryBudget).toBe("default");
       expect(tool!.modelRequestSessionType).toBe(expectedSessionType);
     },
@@ -456,343 +455,4 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     expect((seen[0] as [unknown, unknown])[0]).toBe(admission);
     expect((seen[0] as [unknown, unknown])[1]).toBe("unbounded");
   });
-
-  it("在真实 runtime model admission 边界超预算时不调用 provider", async () => {
-    const sessionId = createSessionId("runtime-root-budget-admission");
-    const turnId = createTurnId("runtime-root-budget-admission-turn");
-    const rootRunId = `${sessionId}:${turnId}`;
-    const registry = new InMemoryRuntimeTaskRegistry();
-    registry.beginRootRunBudget({
-      rootRunId,
-      rootSessionId: sessionId,
-      turnId,
-      tokenLimit: 100,
-      deadlineMs: 60_000,
-    });
-    // 当前预算按实际 usage 结算；仅仅打开大 context window 不代表已经耗尽 token。
-    registry.recordRootRunUsage(
-      createSessionEvent(
-        SessionEventType.ModelComplete,
-        sessionId,
-        { content: "", stopReason: "stop", usage: { totalTokens: 100 } },
-        { turnId },
-      ),
-    );
-    const providerCall = vi.fn(async () => ({
-      finishReason: "stop",
-      providerMetadata: undefined,
-      text: "should not run",
-      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-    }));
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { modelSelection, modelStreaming: "off", taskType: "interactive" },
-      {
-        eventStore: createTestSessionEventStore(),
-        runtimeTaskRegistry: registry,
-        modelFactory: createTestModelFactory({
-          async generateText(_request, observation) {
-            const ticket = await observation.invocationContext?.modelRequestAdmission?.acquire({
-              model: {
-                providerId: observation.model.providerId,
-                modelId: observation.model.modelId,
-              },
-            });
-            ticket?.release();
-            return providerCall();
-          },
-          maxOutputTokens: 50,
-          properties: { contextWindow: 60 },
-        }),
-      },
-    );
-    const model = createRuntimeModel(runtime as never, { selection: modelSelection });
-    await expect(
-      runWithModelInvocationContext({ traceContext: { sessionId, turnId } as never }, () =>
-        model.generateText({ messages: [{ role: "user", content: "test" }] }),
-      ),
-    ).rejects.toThrow("Root run resource budget is exhausted");
-    expect(providerCall).not.toHaveBeenCalled();
-  });
-
-  it("子 Agent 按 trace 中的子会话解析并共享根 turn 的模型预算", async () => {
-    const rootSessionId = createSessionId("runtime-child-budget-root");
-    const childSessionId = createSessionId("runtime-child-budget-child");
-    const rootTurnId = createTurnId("runtime-child-budget-root-turn");
-    const childTurnId = createTurnId("runtime-child-budget-child-turn");
-    const rootRunId = `${rootSessionId}:${rootTurnId}`;
-    const registry = new InMemoryRuntimeTaskRegistry();
-    registry.beginRootRunBudget({
-      rootRunId,
-      rootSessionId,
-      turnId: rootTurnId,
-      tokenLimit: 100,
-      deadlineMs: 60_000,
-    });
-    registry.registerSubagentTask(
-      {
-        taskId: "runtime-child-budget-task",
-        agentId: "runtime-child-budget-agent",
-        agentType: "general-purpose",
-        description: "Verify child model admission",
-        status: "running",
-        startedAt: new Date(),
-        childSessionId,
-        parentSessionId: rootSessionId,
-        turnId: rootTurnId,
-        type: "local_agent",
-      },
-      { abort() {}, settled: Promise.resolve() },
-    );
-    // 根 turn 的实际 usage 已达到上限；child admission 必须看到同一 root-run 状态。
-    registry.recordRootRunUsage(
-      createSessionEvent(
-        SessionEventType.ModelComplete,
-        rootSessionId,
-        { content: "", stopReason: "stop", usage: { totalTokens: 100 } },
-        { turnId: rootTurnId },
-      ),
-    );
-    const providerCall = vi.fn(async () => ({
-      finishReason: "stop",
-      providerMetadata: undefined,
-      text: "should not run",
-      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-    }));
-    const runtime = createTestAgentRuntime(
-      rootSessionId,
-      { modelSelection, modelStreaming: "off", taskType: "interactive" },
-      {
-        eventStore: createTestSessionEventStore(),
-        runtimeTaskRegistry: registry,
-        modelFactory: createTestModelFactory({
-          async generateText(_request, observation) {
-            const ticket = await observation.invocationContext?.modelRequestAdmission?.acquire({
-              model: {
-                providerId: observation.model.providerId,
-                modelId: observation.model.modelId,
-              },
-            });
-            ticket?.release();
-            return providerCall();
-          },
-          maxOutputTokens: 50,
-          properties: { contextWindow: 60 },
-        }),
-      },
-    );
-    const model = createRuntimeModel(runtime as never, { selection: modelSelection });
-    await expect(
-      runWithModelInvocationContext(
-        {
-          traceContext: { sessionId: childSessionId, turnId: childTurnId } as never,
-        },
-        () => model.generateText({ messages: [{ role: "user", content: "child" }] }),
-      ),
-    ).rejects.toThrow(rootRunId);
-    expect(providerCall).not.toHaveBeenCalled();
-  });
-
-  it("turn 结束后已释放的 root-run 预算不再拦截 session_title 请求", async () => {
-    const sessionId = createSessionId("runtime-root-budget-released-sidecar");
-    const turnId = createTurnId("runtime-root-budget-released-sidecar-turn");
-    const rootRunId = `${sessionId}:${turnId}`;
-    const registry = new InMemoryRuntimeTaskRegistry();
-    registry.beginRootRunBudget({
-      rootRunId,
-      rootSessionId: sessionId,
-      turnId,
-      tokenLimit: 100,
-      deadlineMs: 60_000,
-    });
-    recordRootRunTokens(registry, sessionId, turnId, 100);
-    const providerCall = vi.fn(providerResult);
-    const model = createRuntimeModel(
-      createRootBudgetRuntime(sessionId, registry, providerCall) as never,
-      { selection: modelSelection },
-    );
-
-    // 活着的 turn 仍然受闸门约束；修复只放行已收尾 turn 的 sidecar。
-    await expect(
-      runWithModelInvocationContext({ traceContext: { sessionId, turnId } as never }, () =>
-        model.generateText({ messages: [{ role: "user", content: "turn" }] }),
-      ),
-    ).rejects.toThrow("Root run resource budget is exhausted");
-    expect(providerCall).not.toHaveBeenCalled();
-
-    // finishRootRunTurn 删除预算（不是耗尽）；同 turnId 的标题请求必须放行。
-    registry.finishRootRunTurn(rootRunId);
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toBeUndefined();
-    await expect(
-      runWithModelInvocationContext(
-        {
-          traceContext: { sessionId, turnId } as never,
-          metadata: { querySource: "session_title" },
-        },
-        () => model.generateText({ messages: [{ role: "user", content: "title" }] }),
-      ),
-    ).resolves.toBeDefined();
-    expect(providerCall).toHaveBeenCalledTimes(1);
-  });
-
-  it("turn 结束后下一个 turn 重新获得完整 root-run 预算（usedTokens=0）", async () => {
-    const sessionId = createSessionId("runtime-root-budget-next-turn");
-    const turnId = createTurnId("runtime-root-budget-next-turn-1");
-    const registry = new InMemoryRuntimeTaskRegistry();
-    registry.beginRootRunBudget({
-      rootRunId: `${sessionId}:${turnId}`,
-      rootSessionId: sessionId,
-      turnId,
-      tokenLimit: 100,
-      deadlineMs: 60_000,
-    });
-    recordRootRunTokens(registry, sessionId, turnId, 100);
-    registry.finishRootRunTurn(`${sessionId}:${turnId}`);
-
-    const nextTurnId = createTurnId("runtime-root-budget-next-turn-2");
-    const nextRootRunId = `${sessionId}:${nextTurnId}`;
-    registry.beginRootRunBudget({
-      rootRunId: nextRootRunId,
-      rootSessionId: sessionId,
-      turnId: nextTurnId,
-      tokenLimit: 100,
-      deadlineMs: 60_000,
-    });
-    expect(registry.getRootRunBudgetSnapshot(nextRootRunId)).toMatchObject({
-      tokenLimit: 100,
-      usedTokens: 0,
-      reservedTokens: 0,
-    });
-
-    const providerCall = vi.fn(providerResult);
-    const model = createRuntimeModel(
-      createRootBudgetRuntime(sessionId, registry, providerCall) as never,
-      { selection: modelSelection },
-    );
-    await expect(
-      runWithModelInvocationContext(
-        { traceContext: { sessionId, turnId: nextTurnId } as never },
-        () => model.generateText({ messages: [{ role: "user", content: "next" }] }),
-      ),
-    ).resolves.toBeDefined();
-    expect(providerCall).toHaveBeenCalledTimes(1);
-  });
-
-  it("预算释放只作用于 root 会话：child 会话在超限后仍被拦截", async () => {
-    const rootSessionId = createSessionId("runtime-budget-release-root");
-    const childSessionId = createSessionId("runtime-budget-release-child");
-    const rootTurnId = createTurnId("runtime-budget-release-root-turn");
-    const childTurnId = createTurnId("runtime-budget-release-child-turn");
-    const rootRunId = `${rootSessionId}:${rootTurnId}`;
-    const registry = new InMemoryRuntimeTaskRegistry();
-    registry.beginRootRunBudget({
-      rootRunId,
-      rootSessionId,
-      turnId: rootTurnId,
-      tokenLimit: 100,
-      deadlineMs: 60_000,
-    });
-    registry.registerSubagentTask(
-      {
-        taskId: "runtime-budget-release-task",
-        agentId: "runtime-budget-release-agent",
-        agentType: "general-purpose",
-        description: "Verify child admission after root turn finish",
-        status: "running",
-        startedAt: new Date(),
-        childSessionId,
-        parentSessionId: rootSessionId,
-        turnId: rootTurnId,
-        type: "local_agent",
-      },
-      { abort() {}, settled: Promise.resolve() },
-    );
-    recordRootRunTokens(registry, rootSessionId, rootTurnId, 100);
-    registry.finishRootRunTurn(rootRunId);
-
-    // child 仍存活，预算不释放；放行只针对 root 会话自己的 post-turn sidecar。
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)).toBeDefined();
-    expect(registry.shouldEnforceRootRunBudget(rootRunId, rootSessionId)).toBe(false);
-    expect(registry.shouldEnforceRootRunBudget(rootRunId, childSessionId)).toBe(true);
-
-    const providerCall = vi.fn(providerResult);
-    const model = createRuntimeModel(
-      createRootBudgetRuntime(rootSessionId, registry, providerCall) as never,
-      { selection: modelSelection },
-    );
-    await expect(
-      runWithModelInvocationContext(
-        { traceContext: { sessionId: childSessionId, turnId: childTurnId } as never },
-        () => model.generateText({ messages: [{ role: "user", content: "child" }] }),
-      ),
-    ).rejects.toThrow(rootRunId);
-    expect(providerCall).not.toHaveBeenCalled();
-
-    await expect(
-      runWithModelInvocationContext(
-        {
-          traceContext: { sessionId: rootSessionId, turnId: rootTurnId } as never,
-          metadata: { querySource: "project_memory_extract" },
-        },
-        () => model.generateText({ messages: [{ role: "user", content: "extract" }] }),
-      ),
-    ).resolves.toBeDefined();
-    expect(providerCall).toHaveBeenCalledTimes(1);
-  });
 });
-
-function recordRootRunTokens(
-  registry: InMemoryRuntimeTaskRegistry,
-  sessionId: ReturnType<typeof createSessionId>,
-  turnId: ReturnType<typeof createTurnId>,
-  totalTokens: number,
-): void {
-  registry.recordRootRunUsage(
-    createSessionEvent(
-      SessionEventType.ModelComplete,
-      sessionId,
-      { content: "", stopReason: "stop", usage: { totalTokens } },
-      { turnId },
-    ),
-  );
-}
-
-function createRootBudgetRuntime(
-  sessionId: ReturnType<typeof createSessionId>,
-  registry: InMemoryRuntimeTaskRegistry,
-  providerCall: () => Promise<ProviderResult>,
-) {
-  return createTestAgentRuntime(
-    sessionId,
-    { modelSelection, modelStreaming: "off", taskType: "interactive" },
-    {
-      eventStore: createTestSessionEventStore(),
-      runtimeTaskRegistry: registry,
-      modelFactory: createTestModelFactory({
-        async generateText(_request, observation) {
-          const ticket = await observation.invocationContext?.modelRequestAdmission?.acquire({
-            model: {
-              providerId: observation.model.providerId,
-              modelId: observation.model.modelId,
-            },
-          });
-          ticket?.release();
-          return providerCall();
-        },
-        maxOutputTokens: 50,
-        properties: { contextWindow: 60 },
-      }),
-    },
-  );
-}
-
-async function providerResult() {
-  return {
-    finishReason: "stop" as const,
-    providerMetadata: undefined,
-    text: "ok",
-    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-  };
-}
-
-type ProviderResult = Awaited<ReturnType<typeof providerResult>>;

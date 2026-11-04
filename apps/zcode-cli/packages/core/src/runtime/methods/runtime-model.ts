@@ -1,5 +1,4 @@
 import type { ModelRequestSessionType, ModelRetryBudget } from "@zcode/contracts";
-import type { ModelRequestAdmissionTicket, ModelRequestTarget } from "@zcode/contracts";
 import {
   CoreErrorType,
   createCoreError,
@@ -18,8 +17,6 @@ import {
   resolveModelRetryBudgetFromTaskType,
 } from "./model-request-session-type.js";
 import { getOffPeakModelBinding } from "../off-peak/model-binding.js";
-import { DEFAULT_COMPACT_CONTEXT_WINDOW } from "../../compact/policy.js";
-import { resolveRootRunReservationMaxOutputTokens } from "./model-token-limits.js";
 
 export function createRuntimeModel(
   runtime: AgentRuntimeInternal,
@@ -114,111 +111,7 @@ function withRuntimeInvocationLayer(
       ? {}
       : { modelRequestAdmission: runtime.modelRequestAdmission }),
   };
-  return withModelInvocationContext(model, (request) => {
-    const context = getCurrentModelInvocationContext();
-    const traceContext = context?.traceContext;
-    // 子 Agent 的 runtime 句柄可能仍归属根会话；根预算必须按本次请求的子会话查 lineage，
-    // 否则会把 child turn 拼成一个不存在的 rootRunId，并在首个模型请求时误判预算耗尽。
-    const invocationSessionId = traceContext?.sessionId ?? runtime.sessionId;
-    const rootRunId = runtime.runtimeTaskRegistry.getRootRunIdForSession(
-      invocationSessionId,
-      traceContext?.turnId,
-    );
-    const contextWindow =
-      model.properties.contextWindow === undefined
-        ? DEFAULT_COMPACT_CONTEXT_WINDOW
-        : model.properties.contextWindow;
-    // 根因与修复依据见 resolveRootRunReservationMaxOutputTokens：384k 的模型输出上限
-    // 不能原样变成 admission 预留，否则一个 in-flight 请求就吃掉 500k root-run 预算的 77%。
-    const maxTokens = resolveRootRunReservationMaxOutputTokens({
-      requestedMaxOutputTokens: request.options?.maxOutputTokens ?? model.options.maxOutputTokens,
-    });
-    // 预算被 finishRootRunTurn 删除后，post-turn sidecar（标题、Memory Extraction）仍会合成同一个
-    // rootRunId；已删除不等于已耗尽，此时不能进入 admission，否则每个 sidecar 都会抛预算超限。
-    if (
-      !rootRunId ||
-      !runtime.runtimeTaskRegistry.shouldEnforceRootRunBudget(rootRunId, invocationSessionId)
-    ) {
-      return layer;
-    }
-    return {
-      ...layer,
-      modelRequestAdmission: withRootRunResourceBudgetAdmission({
-        admission: runtime.modelRequestAdmission,
-        contextWindow,
-        maxTokens,
-        rootRunId,
-        registry: runtime.runtimeTaskRegistry,
-        sessionId: invocationSessionId,
-      }),
-    };
-  });
-}
-
-function withRootRunResourceBudgetAdmission(input: {
-  admission: ModelInvocationContext["modelRequestAdmission"];
-  contextWindow: number;
-  maxTokens: number;
-  rootRunId: string;
-  registry: AgentRuntimeInternal["runtimeTaskRegistry"];
-  sessionId: AgentRuntimeInternal["sessionId"];
-}): NonNullable<ModelInvocationContext["modelRequestAdmission"]> {
-  const reserve = () =>
-    input.registry.reserveRootRunTokens({
-      contextWindow: input.contextWindow,
-      maxTokens: input.maxTokens,
-      rootRunId: input.rootRunId,
-      sessionId: input.sessionId,
-    });
-  const withReservation = (
-    ticket: ModelRequestAdmissionTicket,
-    reservation: ReturnType<typeof reserve>,
-  ): ModelRequestAdmissionTicket => {
-    // 根因：adapter 的 attempt ticket 会在 ModelComplete 原始事件持久化前 release；
-    // 修复依据：token reservation 只能由 registry 观察到的 ModelComplete / model_request_failed 消费，
-    // 否则并发请求会在 provider 已返回、usage 尚未入账的窗口重复花费同一预算。
-    const wrapped: ModelRequestAdmissionTicket = {
-      publish: (event) => {
-        reservation.associateRequestId(event.requestId);
-        return ticket.publish(event);
-      },
-      release: () => {
-        ticket.release();
-      },
-    };
-    if (ticket.publishFailure) {
-      wrapped.publishFailure = (event, error) => {
-        reservation.associateRequestId(event.requestId);
-        return ticket.publishFailure!(event, error);
-      };
-    }
-    return wrapped;
-  };
-  const acquire = async (model: ModelRequestTarget, signal?: AbortSignal) => {
-    // acquire 失败后 adapter 仍写入 model_request_failed；保留 reservation，
-    // 让 durable raw event 负责消费它，避免与后续请求共用同一预算窗口。
-    const reservation = reserve();
-    const ticket = input.admission
-      ? await input.admission.acquire({ model, ...(signal ? { signal } : {}) })
-      : { publish() {}, release() {} };
-    return withReservation(ticket, reservation);
-  };
-  return {
-    ...(input.admission?.tryAcquire
-      ? {
-          tryAcquire: (request: { model: ModelRequestTarget }) => {
-            const reservation = reserve();
-            const ticket = input.admission!.tryAcquire!(request);
-            if (!ticket) {
-              reservation();
-              return undefined;
-            }
-            return withReservation(ticket, reservation);
-          },
-        }
-      : {}),
-    acquire: ({ model, signal }) => acquire(model, signal),
-  };
+  return withModelInvocationContext(model, () => layer);
 }
 
 export function withModelInvocationContext(

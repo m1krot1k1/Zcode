@@ -215,16 +215,9 @@ export async function executeTurnCommand(
       rootSessionId: this.sessionId,
       turnId,
       startedAt: turnStartedAtMs,
-      tokenLimit: this.config.rootRunTokenLimit,
       spawnBudget: this.config.spawnBudget,
-      onExhausted: (reason) =>
-        turnAbortScope.abort(
-          new Error(
-            reason === "deadline"
-              ? "Root run time budget exhausted"
-              : "Root run token budget exhausted",
-          ),
-        ),
+      onExhausted: () =>
+        turnAbortScope.abort(new Error("Root run time budget exhausted")),
     });
   }
   let activeTurn: ActiveTurnSteeringState | undefined;
@@ -905,8 +898,8 @@ export async function executeTurnCommand(
         openGoalStateChangeReminderDeferral(activeTurn);
         phaseStartedAt = startTurnPhase("regular_turn_loop");
         try {
-          // 原因：internalSwarmRootRunId 只用于共享 root budget。把它当作再次规划的条件后，
-          // 已分配的子任务会再开 planner 并继续拆分，短任务把共享 token budget 耗尽。
+          // 原因：internalSwarmRootRunId 只用于共享 root-run 预算。把它当作再次规划的条件后，
+          // 已分配的子任务会再开 planner 并继续拆分，短任务把共享 spawn 配额耗尽。
           // 修复依据：继续拆分只走角色允许的 Task/Agent，root 的 swarm/auto intent 才打开 planner。
           // 原因：子代理可能继承 root 的 orchestration intent；修复依据：只有创建 root-run budget 的 turn 拥有 planner，后代仅能显式调用 Task/Agent 继续委派。
           if (
@@ -1957,7 +1950,7 @@ function getRecursiveTaskCapabilityProbeDepth(task: string): number | undefined 
     /(?:внедр|реализ|измен|исправ|добав|напиши|перепиш|разработ|implement|change|fix|modify|edit|build|add)/iu.test(
       normalized,
     );
-  // 根任务只旁路 planner 执行明确的单链能力检查；深度仍受 root-run deadline、token budget 和取消级联约束。
+  // 根任务只旁路 planner 执行明确的单链能力检查；深度仍受 root-run deadline、spawn 配额和取消级联约束。
   if (
     !asksForCheck ||
     !namesDelegation ||
