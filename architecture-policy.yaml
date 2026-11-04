@@ -999,3 +999,7 @@ exceptions:
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/runtime/methods/provider-quota-fallback.ts]
     reason: 配额耗尽自动切换把候选选择与回退状态机从 provider registry runtime 中拆成独立模块，供 runtime 与单测共用并单独验收；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime/methods 目录没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 CLI 需要单独的边界梳理。
+  - id: agent-work-ledger-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/runtime-task/work-ledger.ts]
+    reason: 代理工作台账（谁在做什么、占用哪些路径、重复意图与冲突）先以独立纯函数模块落地并单独验收，随后在 spawn 路径接入声明、心跳与释放；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime-task 目录没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 CLI 需要单独的边界梳理。
