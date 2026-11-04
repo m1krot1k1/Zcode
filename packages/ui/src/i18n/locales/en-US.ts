@@ -7439,6 +7439,7 @@ const enUS: Record<string, string> = {
   "zcode.error.TURN_CANCELLED": "Turn cancelled",
   "zcode.error.FIRST_TOKEN_TIMEOUT":
     "The model did not start responding in time. Check the network or model configuration and try again.",
+  "zcode.error.NO_MODEL_SELECTED": "Select a model before continuing.",
   "zcode.error.MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE":
     "Current attachments are too large for one request. Remove or compress attachments and try again.",
   "zcode.error.MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE":

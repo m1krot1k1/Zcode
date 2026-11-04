@@ -66,7 +66,18 @@ const LOCALIZED_ERROR_CODES = new Set([
   // 首 token 看门狗：模型已接受请求但迟迟没有输出，必须显示真实原因，
   // 否则用户只看到底层英文 message 或无限等待。
   "first_token_timeout",
+  // 执行入口没有可用模型选择（CoreErrorType.NoModelSelected）会以 code 收口，
+  // 必须本地化，否则用户只能看到英文兜底文案。
+  "NO_MODEL_SELECTED",
+  "no_model_selected",
 ]);
+
+// runtime core error 的 snake_case 码 → 本地化键前缀，未列出时按原 codes 命名。
+const CORE_ERROR_LOCALE_KEYS: Readonly<Record<string, string>> = {
+  turn_cancelled: "TURN_CANCELLED",
+  no_model_selected: "NO_MODEL_SELECTED",
+  first_token_timeout: "FIRST_TOKEN_TIMEOUT",
+};
 
 const MODEL_CONFIG_MISSING_CODES = new Set([
   "model_config_missing",
@@ -211,14 +222,9 @@ export function resolveChatErrorBannerDisplayMessage(
   }
 
   if (error.code && LOCALIZED_ERROR_CODES.has(error.code)) {
-    // runtime core error 使用 snake_case，本地化键统一按大写稳定码命名。
-    // 新增 snake_case 错误码时必须在这里登记映射，否则会去找不存在的小写 key。
-    const codeKey =
-      error.code === "turn_cancelled"
-        ? "TURN_CANCELLED"
-        : error.code === "first_token_timeout"
-          ? "FIRST_TOKEN_TIMEOUT"
-          : error.code;
+    // runtime core error 的 snake_case 码在这里归一到大写本地化键。
+    // 新增 snake_case 错误码时必须登记到 CORE_ERROR_LOCALE_KEYS，否则会去找不存在的小写 key。
+    const codeKey = CORE_ERROR_LOCALE_KEYS[error.code] ?? error.code;
     return intl.formatMessage({ id: `zcode.error.${codeKey}` });
   }
 

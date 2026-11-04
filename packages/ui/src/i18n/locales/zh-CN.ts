@@ -7075,6 +7075,7 @@ const zhCN: Record<string, string> = {
   "zcode.error.OWNER_COMMAND_FAILED": "任务所有者未能完成该操作。",
   "zcode.error.TURN_CANCELLED": "本轮已取消",
   "zcode.error.FIRST_TOKEN_TIMEOUT": "模型未在预期时间内开始响应。请检查网络或模型配置后重试。",
+  "zcode.error.NO_MODEL_SELECTED": "请先选择一个模型再继续。",
   "zcode.error.MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE":
     "当前附件总量过大，请移除部分附件或压缩后重试。",
   "zcode.error.MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE":

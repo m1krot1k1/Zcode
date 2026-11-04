@@ -35,8 +35,12 @@ export function createRuntimeModel(
 ): Model {
   const { retryBudget, scope = "session", ...factoryInput } = input;
   // 未绑定 Session 可恢复历史；仅在执行入口拒绝缺失选择，Factory 契约仍严格。
-  if (!factoryInput.selection) {
-    throw createCoreError(CoreErrorType.ConfigurationError, "Select a model before continuing", {
+  // Bugfix：历史快照与未校验的协议输入会传 `{ providerId: "glm", modelId: null | "" }`，
+  // 旧守卫只判断 selection 是否存在，这种空模型会一路走到 registry（model-not-found 被包成
+  // protocol error）或 `selection.options!` 的 TypeError，本轮既不失败也不结束，只能等超时。
+  // 修复依据：执行入口只接受 providerId 与 modelId 都非空的完整选择。
+  if (!isCompleteModelSelection(factoryInput.selection)) {
+    throw createCoreError(CoreErrorType.NoModelSelected, "Select a model before continuing", {
       recoverable: true,
     });
   }
@@ -49,6 +53,20 @@ export function createRuntimeModel(
     retryBudget,
   );
   return getOffPeakModelBinding(input.requestDependencies)?.wrap(model) ?? model;
+}
+
+/**
+ * 判断 Selection 是否指向一个真实模型。
+ *
+ * Selection 可能来自历史快照或未校验的协议输入，类型声明（`providerId: string`）不保证运行时
+ * 非空：`{ providerId: "glm", modelId: null }` 在日志里就是 `model = NULL` 的那次挂起。
+ */
+function isCompleteModelSelection(
+  selection: { readonly providerId?: string | null; readonly modelId?: string | null } | undefined,
+): selection is RuntimeModelFactoryInput["selection"] {
+  const providerId = typeof selection?.providerId === "string" ? selection.providerId.trim() : "";
+  const modelId = typeof selection?.modelId === "string" ? selection.modelId.trim() : "";
+  return providerId.length > 0 && modelId.length > 0;
 }
 
 /** Возвращает ID реально завершившейся успешной provider-попытки для ModelComplete. */

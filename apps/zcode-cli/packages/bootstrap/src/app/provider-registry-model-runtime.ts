@@ -70,7 +70,10 @@ export class ApiProviderModelRuntime {
     const config = registryModel.config;
     // 输出预算属于单次请求，由 Agent 执行链显式决定，不能在 ModelFactory 中静默绑定。
     // Selection 已在上面的 Registry 边界完成校验，Factory 不再承担任何缺省修复。
-    const normalReasoningLevel = target.selection.options!.reasoningLevel!;
+    // 修复依据：Registry 校验只保证「provider/model 存在且选项合法」，历史或协议 Selection 可能
+    // 根本没有 options；原来的 `options!.reasoningLevel!` 会在这里抛 TypeError（读 undefined 的
+    // 属性），把「模型选择不完整」误报成运行时崩溃。这里只做安全读取，缺值仍由上游 guard 拒绝。
+    const normalReasoningLevel = target.selection.options?.reasoningLevel;
     return this.#modelAdapter.createModel({
       providerId: provider.providerId,
       modelId: registryModel.modelId,
