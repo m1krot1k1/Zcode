@@ -289,7 +289,11 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
         .providerTemplates!.entries()
         .filter(([id]) => id.startsWith("opencode-"));
       const visible = openCodeTemplates.filter(([, template]) => !template.deprecated);
-      expect(visible.map(([id]) => id)).toEqual(["opencode-api"]);
+      expect(visible.map(([id]) => id)).toEqual([
+        "opencode-api",
+        "opencode-go-inference",
+        "opencode-zen",
+      ]);
       expect(openCodeTemplates.filter(([, template]) => template.deprecated)).toHaveLength(7);
 
       const template = snapshot.providerTemplates!.get("opencode-api")!;

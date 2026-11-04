@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 35,
+  "revision": 36,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -580,6 +580,57 @@
               "claude-sonnet-4-6",
               "claude-sonnet-4-5",
               "nemotron-3.5-lightning-free"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "opencode"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-go-inference",
+          "templateNameMap": {
+            "zh-CN": "OpenCode Go",
+            "en-US": "OpenCode Go"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://opencode.ai/console"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            },
+            "builtinModelIds": [
+              "deepseek-v4.1-flash",
+              "glm-5.3",
+              "kimi-k3"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "opencode"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-zen",
+          "templateNameMap": {
+            "zh-CN": "OpenCode（按量付费）",
+            "en-US": "OpenCode (pay as you go)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://opencode.ai/console"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/inference/openai/v1"
+            },
+            "builtinModelIds": [
+              "deepseek-v4.1-flash",
+              "glm-5.3"
             ],
             "logo": {
               "type": "builtin",
@@ -6418,6 +6469,61 @@
             "api": {
               "type": "openai-chat-completions",
               "baseUrl": "https://opencode.ai/zen/v1"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-go-inference",
+          "modelId": "deepseek-v4.1-flash",
+          "config": {
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-go-inference",
+          "modelId": "glm-5.3",
+          "config": {
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-go-inference",
+          "modelId": "kimi-k3",
+          "config": {
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/go/v1"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-zen",
+          "modelId": "deepseek-v4.1-flash",
+          "config": {
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/inference/openai/v1"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-zen",
+          "modelId": "glm-5.3",
+          "config": {
+            "enabled": true,
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/inference/openai/v1"
             }
           }
         },
