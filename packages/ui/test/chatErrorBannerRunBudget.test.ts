@@ -75,6 +75,76 @@ describe("resolveChatErrorBannerDisplayMessage — run budget exhausted", () => 
     ).toBe("Run stopped: time budget exhausted");
   });
 
+  it("原因位于 underlyingErrorDetail 时仍能本地化，且不泄露内部标识", () => {
+    const message = resolveChatErrorBannerDisplayMessage(
+      {
+        code: "UNKNOWN",
+        message: "Turn execution failed",
+        underlyingErrorMessage: "Agent run failed",
+        underlyingErrorDetail: "Root run resource budget is exhausted: session_x:turn_y",
+      },
+      enIntl,
+    );
+
+    expect(message).toBe("Run stopped: run resource budget exhausted");
+    expect(message).not.toContain("session_");
+    expect(message).not.toContain("turn_");
+
+    // underlyingErrorMessage 也是 runtime 存放原因的位置，需要一并读取。
+    expect(
+      resolveChatErrorBannerDisplayMessage(
+        {
+          code: "UNKNOWN",
+          message: "Turn execution failed",
+          underlyingErrorMessage: "Root run time budget is exhausted",
+        },
+        enIntl,
+      ),
+    ).toBe("Run stopped: time budget exhausted");
+  });
+
+  it("TURN_CANCELLED 携带预算原因时提示达到上限", () => {
+    expect(
+      resolveChatErrorBannerDisplayMessage(
+        {
+          code: "TURN_CANCELLED",
+          message: "Turn was cancelled.",
+          underlyingErrorDetail: "Root run token budget is exhausted (session_x:turn_y)",
+        },
+        enIntl,
+      ),
+    ).toBe("Turn stopped: token limit reached");
+  });
+
+  it("没有预算原因的取消只显示取消，不误报为达到上限", () => {
+    const message = resolveChatErrorBannerDisplayMessage(
+      // runtime core error 用 snake_case 上报 TurnCancelled。
+      { code: "turn_cancelled", message: "Turn was cancelled." },
+      enIntl,
+    );
+
+    expect(message).toBe("Turn cancelled");
+    expect(message).not.toMatch(/limit|budget|token/i);
+  });
+
+  it("无关的 500 错误不被取消/预算文案拦截，兜底展示仍会脱敏", () => {
+    expect(
+      resolveChatErrorBannerDisplayMessage(
+        { code: "500", message: "Request failed with status 500" },
+        enIntl,
+      ),
+    ).toBe("Request failed with status 500");
+
+    const message = resolveChatErrorBannerDisplayMessage(
+      { code: "500", message: "Upstream failed: session_a:turn_b" },
+      enIntl,
+    );
+
+    expect(message).toBe("Upstream failed: <turn>");
+    expect(message).not.toContain("session_");
+    expect(message).not.toContain("turn_b");
+  });
+
   it("普通错误保持原有行为", () => {
     expect(
       resolveChatErrorBannerDisplayMessage(

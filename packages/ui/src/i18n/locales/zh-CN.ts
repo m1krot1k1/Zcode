@@ -6868,6 +6868,7 @@ const zhCN: Record<string, string> = {
   "chat.error.runBudgetResourceExhausted": "已停止：运行资源预算耗尽",
   "chat.error.runBudgetTokenExhausted": "已停止：token 预算耗尽",
   "chat.error.runBudgetTimeExhausted": "已停止：运行时间用尽",
+  "chat.error.turnCancelledBudgetExhausted": "本轮已停止：token 用量已达上限",
   "chat.error.modelSettings": "模型设置",
   "chat.error.setModels": "配置",
 
@@ -7072,6 +7073,7 @@ const zhCN: Record<string, string> = {
   "zcode.error.STALE_TASK_OWNER_COMMAND": "该操作属于旧的运行轮次，已忽略。",
   "zcode.error.NO_ACTIVE_TASK_OWNER": "当前没有可处理该操作的任务所有者。",
   "zcode.error.OWNER_COMMAND_FAILED": "任务所有者未能完成该操作。",
+  "zcode.error.TURN_CANCELLED": "本轮已取消",
   "zcode.error.MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE":
     "当前附件总量过大，请移除部分附件或压缩后重试。",
   "zcode.error.MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE":

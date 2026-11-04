@@ -7225,6 +7225,7 @@ const enUS: Record<string, string> = {
   "chat.error.runBudgetResourceExhausted": "Run stopped: run resource budget exhausted",
   "chat.error.runBudgetTokenExhausted": "Run stopped: token budget exhausted",
   "chat.error.runBudgetTimeExhausted": "Run stopped: time budget exhausted",
+  "chat.error.turnCancelledBudgetExhausted": "Turn stopped: token limit reached",
   "chat.error.modelSettings": "Model settings",
   "chat.error.setModels": "Set",
 
@@ -7435,6 +7436,7 @@ const enUS: Record<string, string> = {
   "zcode.error.STALE_TASK_OWNER_COMMAND": "This action belongs to an older run and was ignored.",
   "zcode.error.NO_ACTIVE_TASK_OWNER": "No active task owner is available for this action.",
   "zcode.error.OWNER_COMMAND_FAILED": "The task owner could not complete this action.",
+  "zcode.error.TURN_CANCELLED": "Turn cancelled",
   "zcode.error.MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE":
     "Current attachments are too large for one request. Remove or compress attachments and try again.",
   "zcode.error.MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE":
