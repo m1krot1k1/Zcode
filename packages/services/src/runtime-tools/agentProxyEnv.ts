@@ -79,9 +79,7 @@ export function buildAgentRuntimeEnv(input: {
   const proxyList = readZCodeProxyList(input.httpProxyList);
   return {
     ...proxyEnv,
-    ...(proxyList.length > 0
-      ? { [ZCODE_HTTP_PROXY_LIST_ENV_KEY]: proxyList.join("\n") }
-      : {}),
+    ...(proxyList.length > 0 ? { [ZCODE_HTTP_PROXY_LIST_ENV_KEY]: proxyList.join("\n") } : {}),
     ...buildAgentNoProxyEnv(input.noProxy),
     ...buildAgentCaCertEnv(input.caCertPath),
   };

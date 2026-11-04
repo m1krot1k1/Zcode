@@ -11,10 +11,7 @@ import { v4ConversationFileRewindPreviewResultSchema } from "./transport.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { modelExecutionSchema } from "../model-execution.js";
 import { submissionModeSchema } from "./submission.js";
-import {
-  botGroupInputSourceSchema,
-  zcodeAutomationBotDeliveryTargetSchema,
-} from "../bots.js";
+import { botGroupInputSourceSchema, zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
 import { DYNAMIC_WORKFLOW_MODES } from "../dynamic-workflow-feature.js";
 import {
   amendWorkflowRunSettingsPayloadSchema,
@@ -32,10 +29,7 @@ import {
 } from "../zcode-protocol/index.js";
 import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
-import {
-  conversationInputSourceSchema,
-  sendTextExecutionRouteSchema,
-} from "./input-intent.js";
+import { conversationInputSourceSchema, sendTextExecutionRouteSchema } from "./input-intent.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
 export * from "./workflow-command-rejections.js";
 
@@ -89,10 +83,7 @@ function validateOpenCodeAgentRoute(
     ["modelSelection", "OpenCode ACP route forbids modelSelection"],
     ["mode", "OpenCode ACP route forbids ZCode mode"],
     ["planEnabled", "OpenCode ACP route forbids ZCode plan mode"],
-    [
-      "orchestrationMode",
-      "OpenCode ACP route forbids ZCode swarm orchestration",
-    ],
+    ["orchestrationMode", "OpenCode ACP route forbids ZCode swarm orchestration"],
     ["modelExecution", "OpenCode ACP route forbids model execution metadata"],
     ["highspeedMeta", "OpenCode ACP route forbids Highspeed metadata"],
     ["browserAmbientContext", "OpenCode ACP route forbids browser context"],
@@ -102,35 +93,22 @@ function validateOpenCodeAgentRoute(
     ["offPeakRunType", "OpenCode ACP route forbids Off-Peak dispatch"],
     ["botDeliveryTarget", "OpenCode ACP route forbids bot dispatch"],
     ["botGroupSource", "OpenCode ACP route forbids bot dispatch"],
-    [
-      "toolDisallowlist",
-      "OpenCode ACP route does not support ZCode tool policy",
-    ],
+    ["toolDisallowlist", "OpenCode ACP route does not support ZCode tool policy"],
   ];
   for (const [field, message] of unsupported) {
     if (payload[field] !== undefined) reject(field, message);
   }
-  if (payload.attachments?.length)
-    reject("attachments", "OpenCode ACP route is text-only");
+  if (payload.attachments?.length) reject("attachments", "OpenCode ACP route is text-only");
   if (payload.context_refs?.length)
     reject("context_refs", "OpenCode ACP route forbids shared context");
   if (payload.conversationQuotes?.length)
-    reject(
-      "conversationQuotes",
-      "OpenCode ACP route forbids conversation context",
-    );
+    reject("conversationQuotes", "OpenCode ACP route forbids conversation context");
   if (payload.heldQueueDisposition !== undefined)
     reject("heldQueueDisposition", "OpenCode ACP route is idle-only");
   if (payload.expectedHeldQueueItemIds?.length)
     reject("expectedHeldQueueItemIds", "OpenCode ACP route is idle-only");
-  if (
-    payload.requestedDelivery !== undefined &&
-    payload.requestedDelivery !== "startNow"
-  )
-    reject(
-      "requestedDelivery",
-      "OpenCode ACP route requires immediate delivery",
-    );
+  if (payload.requestedDelivery !== undefined && payload.requestedDelivery !== "startNow")
+    reject("requestedDelivery", "OpenCode ACP route requires immediate delivery");
   if (!payload.text.trim()) reject("text", "OpenCode ACP route requires text");
 }
 
@@ -213,9 +191,7 @@ export const commandPayloadSchemas = {
       context_refs: z.array(sharedContextRefSchema).max(1).optional(),
       // 插件 UI 代发（ui/message）时的来源标记；随 intent 持久化并投影到 userInput row。
       source: conversationInputSourceSchema.optional(),
-      heldQueueDisposition: z
-        .enum(["clearQueueAndSend", "keepQueueAndSend"])
-        .optional(),
+      heldQueueDisposition: z.enum(["clearQueueAndSend", "keepQueueAndSend"]).optional(),
       // 暂停队列确认框打开时看到的 queueItemId 集合。CLI 在执行 clear/keep 前校验，
       // 防止桌面/手机并发增删后把用户没确认过的新队列一并处置。
       expectedHeldQueueItemIds: z.array(z.string().min(1)).optional(),
@@ -268,9 +244,7 @@ export const commandPayloadSchemas = {
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),
-    heldQueueDisposition: z
-      .enum(["clearQueueAndSend", "keepQueueAndSend"])
-      .optional(),
+    heldQueueDisposition: z.enum(["clearQueueAndSend", "keepQueueAndSend"]).optional(),
     expectedHeldQueueItemIds: z.array(z.string().min(1)).optional(),
   }),
   stop: z
@@ -287,10 +261,7 @@ export const commandPayloadSchemas = {
         .optional(),
     })
     .superRefine((payload, context) => {
-      if (
-        payload.expectedForegroundExecutionId &&
-        payload.expectedOpenCodeAgentRun
-      ) {
+      if (payload.expectedForegroundExecutionId && payload.expectedOpenCodeAgentRun) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: "stop must target one foreground execution owner",
@@ -444,9 +415,7 @@ export const commandPayloadSchemas = {
   amendWorkflowRunSettings: amendWorkflowRunSettingsPayloadSchema,
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),
-  discardSharedContext: z
-    .object({ contextId: z.string().trim().min(1) })
-    .strict(),
+  discardSharedContext: z.object({ contextId: z.string().trim().min(1) }).strict(),
 } as const;
 
 export type CommandType = keyof typeof commandPayloadSchemas;
@@ -471,24 +440,23 @@ export const BACKGROUND_WORK_CANCEL_REJECTED_FAULT_PREFIX =
   "fault.command.backgroundWorkCancelRejected." as const;
 
 // CAS ✓ 的命令：信封必带 baseRevision。
-export const COMMANDS_REQUIRING_BASE_REVISION: ReadonlySet<CommandType> =
-  new Set([
-    "applyFileRewind",
-    "forkAssistant",
-    "editUserQuery",
-    "retryTurn",
-    "setAssistantFeedback",
-    "sendQueuedNow",
-    "editQueueItem",
-    "reorderQueueItem",
-    "deleteQueueItem",
-    "setAutoDrain",
-    "switchModelConfig",
-    "switchCollaborationMode",
-    "setFollowupMode",
-    "pauseGoal",
-    "resumeGoal",
-  ]);
+export const COMMANDS_REQUIRING_BASE_REVISION: ReadonlySet<CommandType> = new Set([
+  "applyFileRewind",
+  "forkAssistant",
+  "editUserQuery",
+  "retryTurn",
+  "setAssistantFeedback",
+  "sendQueuedNow",
+  "editQueueItem",
+  "reorderQueueItem",
+  "deleteQueueItem",
+  "setAutoDrain",
+  "switchModelConfig",
+  "switchCollaborationMode",
+  "setFollowupMode",
+  "pauseGoal",
+  "resumeGoal",
+]);
 
 export const ROW_TARGETING_COMMANDS: ReadonlySet<CommandType> = new Set([
   "applyFileRewind",
@@ -522,26 +490,19 @@ export function parseCommandEnvelope(
 ): { ok: true; envelope: CommandEnvelope } | { ok: false; error: z.ZodError } {
   const envelope = commandEnvelopeSchema.safeParse(value);
   if (!envelope.success) return { ok: false, error: envelope.error };
-  const payload = commandPayloadSchemas[envelope.data.type].safeParse(
-    envelope.data.payload,
-  );
+  const payload = commandPayloadSchemas[envelope.data.type].safeParse(envelope.data.payload);
   if (!payload.success) return { ok: false, error: payload.error };
   if (
     (COMMANDS_REQUIRING_BASE_REVISION.has(envelope.data.type) &&
       envelope.data.baseRevision === undefined) ||
-    (ROW_TARGETING_COMMANDS.has(envelope.data.type) &&
-      envelope.data.baseLogEpoch === undefined)
+    (ROW_TARGETING_COMMANDS.has(envelope.data.type) && envelope.data.baseLogEpoch === undefined)
   ) {
     return {
       ok: false,
       error: new z.ZodError([
         {
           code: "custom",
-          path: [
-            envelope.data.baseRevision === undefined
-              ? "baseRevision"
-              : "baseLogEpoch",
-          ],
+          path: [envelope.data.baseRevision === undefined ? "baseRevision" : "baseLogEpoch"],
           message: "CAS commands require baseRevision and baseLogEpoch",
         },
       ]),
@@ -556,11 +517,7 @@ export function parseCommandEnvelope(
 // ── ACK ──
 export const commandResultSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.enum([
-      "createSession",
-      "createSelectionSideSession",
-      "forkAssistant",
-    ]),
+    type: z.enum(["createSession", "createSelectionSideSession", "forkAssistant"]),
     sessionId: z.string(),
     input: z
       .object({
@@ -624,14 +581,7 @@ export const commandAckSchema = z.object({
   ttftExcluded: z.literal("capacity").optional(),
   commandId: z.string(),
   // accepted 不承诺跨 CLI 进程存活；最终收口以权威数据（sourceCommandId）为准。
-  status: z.enum([
-    "accepted",
-    "rejected",
-    "stale",
-    "duplicate",
-    "noop",
-    "failed",
-  ]),
+  status: z.enum(["accepted", "rejected", "stale", "duplicate", "noop", "failed"]),
   // rejected/stale/noop/failed 必带；= guard id 或 fault code（命名空间）。
   reasonCode: z.string().optional(),
   message: z.string().optional(),
@@ -658,8 +608,7 @@ export const commandsQueryParamsSchema = z
   })
   .strict()
   .refine(
-    (params) =>
-      !params.clock || params.commands.every((key) => key.sessionId === null),
+    (params) => !params.clock || params.commands.every((key) => key.sessionId === null),
     "clock probes cannot query session commands",
   );
 export type CommandsQueryParams = z.infer<typeof commandsQueryParamsSchema>;

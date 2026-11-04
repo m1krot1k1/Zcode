@@ -43,12 +43,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SWARM_COMPOSER_ALPHA"
-        ],
-        "bodyExcludes": [
-          "Decide whether this task needs independent parallel work"
-        ]
+        "lastUserMessageIncludes": ["E2E_SWARM_COMPOSER_ALPHA"],
+        "bodyExcludes": ["Decide whether this task needs independent parallel work"]
       },
       "response": {
         "statusCode": 200,
@@ -105,12 +101,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SWARM_COMPOSER_BETA"
-        ],
-        "bodyExcludes": [
-          "Decide whether this task needs independent parallel work"
-        ]
+        "lastUserMessageIncludes": ["E2E_SWARM_COMPOSER_BETA"],
+        "bodyExcludes": ["Decide whether this task needs independent parallel work"]
       },
       "response": {
         "statusCode": 200,

@@ -3,23 +3,13 @@
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SELF_IMPROVE_EVALUATOR_CHECK } from "./self-improve-contract.mjs";
 
-const DEFAULT_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RECEIPT_SCHEMA = "zcode.prism.receipt.v3";
 const ARTIFACT_NAME = "self-improve-head-infrastructure-tests.log";
 const RECEIPT_NAME = "receipts.jsonl";
@@ -56,9 +46,7 @@ function isWithinDirectory(directory, candidate) {
   const relative = path.relative(directory, candidate);
   return (
     relative === "" ||
-    (!path.isAbsolute(relative) &&
-      !relative.startsWith(`..${path.sep}`) &&
-      relative !== "..")
+    (!path.isAbsolute(relative) && !relative.startsWith(`..${path.sep}`) && relative !== "..")
   );
 }
 
@@ -79,9 +67,7 @@ function captureGit(args, cwd, { trim = true } = {}) {
     maxBuffer: 2 * 1024 * 1024,
   });
   if (result.status !== 0) {
-    throw new Error(
-      `git ${args.join(" ")} завершился с кодом ${result.status}`,
-    );
+    throw new Error(`git ${args.join(" ")} завершился с кодом ${result.status}`);
   }
   return trim ? result.stdout.trim() : result.stdout;
 }
@@ -100,18 +86,12 @@ function captureGitBuffer(args, cwd) {
 }
 
 function readHeadBlob(rootDirectory, baseSha, relativePath) {
-  const entryText = captureGit(
-    ["ls-tree", "-z", baseSha, "--", relativePath],
-    rootDirectory,
-    {
-      trim: false,
-    },
-  );
+  const entryText = captureGit(["ls-tree", "-z", baseSha, "--", relativePath], rootDirectory, {
+    trim: false,
+  });
   const entries = entryText.split("\0").filter(Boolean);
   if (entries.length !== 1) {
-    throw new Error(
-      `В HEAD должен быть ровно один trusted test blob: ${relativePath}`,
-    );
+    throw new Error(`В HEAD должен быть ровно один trusted test blob: ${relativePath}`);
   }
   const match = /^(100644|100755) blob ([a-f0-9]+)\t(.+)$/u.exec(entries[0]);
   if (!match || match[3] !== relativePath) {
@@ -130,14 +110,10 @@ async function createHeadSnapshot(rootDirectory, baseSha) {
     for (const relativePath of HEAD_SNAPSHOT_FILES) {
       const targetPath = path.join(snapshotDirectory, relativePath);
       await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
-      await writeFile(
-        targetPath,
-        readHeadBlob(rootDirectory, baseSha, relativePath),
-        {
-          flag: "wx",
-          mode: 0o600,
-        },
-      );
+      await writeFile(targetPath, readHeadBlob(rootDirectory, baseSha, relativePath), {
+        flag: "wx",
+        mode: 0o600,
+      });
     }
     return snapshotDirectory;
   } catch (error) {
@@ -149,9 +125,7 @@ async function createHeadSnapshot(rootDirectory, baseSha) {
 function collectStagedCandidate(rootDirectory) {
   const branchName = captureGit(["branch", "--show-current"], rootDirectory);
   if (branchName !== "dev") {
-    throw new Error(
-      `Открой staged candidate на dev; текущая ветка: ${branchName || "неизвестно"}`,
-    );
+    throw new Error(`Открой staged candidate на dev; текущая ветка: ${branchName || "неизвестно"}`);
   }
 
   const status = captureGit(
@@ -185,22 +159,13 @@ function collectStagedCandidate(rootDirectory) {
   const paths = pathsText ? pathsText.split("\0").filter(Boolean) : [];
   const secretPathPattern =
     /(?:^|\/)(?:\.env(?:\.[^/]*)?|auth\.json|id_(?:rsa|ed25519)|[^/]+\.(?:pem|key|p12|pfx))$/iu;
-  const unsafePath = paths.find((candidatePath) =>
-    secretPathPattern.test(candidatePath),
-  );
-  if (unsafePath)
-    throw new Error(
-      `Кандидат содержит потенциальный секретный файл: ${unsafePath}`,
-    );
+  const unsafePath = paths.find((candidatePath) => secretPathPattern.test(candidatePath));
+  if (unsafePath) throw new Error(`Кандидат содержит потенциальный секретный файл: ${unsafePath}`);
 
   const baseSha = captureGit(["rev-parse", "HEAD"], rootDirectory);
-  const candidateDiff = captureGit(
-    ["diff", "--cached", "--binary", "HEAD"],
-    rootDirectory,
-    {
-      trim: false,
-    },
-  );
+  const candidateDiff = captureGit(["diff", "--cached", "--binary", "HEAD"], rootDirectory, {
+    trim: false,
+  });
   return {
     paths,
     baseSha,
@@ -324,14 +289,8 @@ function readWindowsProcessList({ runProcessList = spawnSync } = {}) {
       env: createSafeEnvironment(),
     },
   );
-  if (
-    result.error ||
-    result.status !== 0 ||
-    typeof result.stdout !== "string"
-  ) {
-    throw new Error(
-      "Не удалось получить проверяемые Windows process identities",
-    );
+  if (result.error || result.status !== 0 || typeof result.stdout !== "string") {
+    throw new Error("Не удалось получить проверяемые Windows process identities");
   }
   return parseWindowsProcessList(result.stdout);
 }
@@ -449,16 +408,10 @@ export function parseEvaluatorArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument !== "--evidence-dir" || evidenceDirectory !== undefined) {
-      throw new Error(
-        `Неизвестный или повторный аргумент evaluator: ${argument}`,
-      );
+      throw new Error(`Неизвестный или повторный аргумент evaluator: ${argument}`);
     }
     const value = argv[index + 1];
-    if (
-      typeof value !== "string" ||
-      value.trim() === "" ||
-      value.startsWith("--")
-    ) {
+    if (typeof value !== "string" || value.trim() === "" || value.startsWith("--")) {
       throw new Error("Укажи путь после --evidence-dir");
     }
     evidenceDirectory = value;
@@ -471,9 +424,7 @@ async function createEvidenceDirectory(rootDirectory, requestedPath) {
   const root = await realpath(rootDirectory);
   let evidenceDirectory;
   if (requestedPath === undefined) {
-    evidenceDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "zcode-prism-local-evidence-"),
-    );
+    evidenceDirectory = await mkdtemp(path.join(os.tmpdir(), "zcode-prism-local-evidence-"));
   } else {
     const requested = path.resolve(root, requestedPath);
     const parent = await realpath(path.dirname(requested));
@@ -486,11 +437,7 @@ async function createEvidenceDirectory(rootDirectory, requestedPath) {
   return evidenceDirectory;
 }
 
-function assertProtectedPaths(
-  candidatePaths,
-  rootDirectory,
-  captureCommand = captureGit,
-) {
+function assertProtectedPaths(candidatePaths, rootDirectory, captureCommand = captureGit) {
   const changedProtectedPath = candidatePaths.find((candidatePath) =>
     PROTECTED_PATHS.includes(candidatePath),
   );
@@ -533,12 +480,10 @@ export function runAllowlistedCheck({
     let terminationPromise;
     const requestTreeTermination = () => {
       if (!terminationPromise) {
-        terminationPromise = terminateProcessTreeAndWait(child).then(
-          (confirmed) => {
-            treeTerminationConfirmed = confirmed;
-            return confirmed;
-          },
-        );
+        terminationPromise = terminateProcessTreeAndWait(child).then((confirmed) => {
+          treeTerminationConfirmed = confirmed;
+          return confirmed;
+        });
       }
       return terminationPromise;
     };
@@ -609,10 +554,7 @@ export async function evaluateStagedCandidate({
     throw new Error("Нельзя оценивать пустой staged candidate");
   }
   assertProtectedPaths(candidate.paths, rootDirectory);
-  const headSnapshot = await createHeadSnapshot(
-    rootDirectory,
-    candidate.baseSha,
-  );
+  const headSnapshot = await createHeadSnapshot(rootDirectory, candidate.baseSha);
   try {
     const evidenceDirectory = await createEvidenceDirectory(
       rootDirectory,
@@ -621,9 +563,7 @@ export async function evaluateStagedCandidate({
     const artifactPath = path.join(evidenceDirectory, ARTIFACT_NAME);
     const result = await runAllowlistedCheck({ rootDirectory: headSnapshot });
     const artifactBytes = buildArtifactBytes(result);
-    if (
-      artifactBytes.byteLength > SELF_IMPROVE_EVALUATOR_CHECK.maxArtifactBytes
-    ) {
+    if (artifactBytes.byteLength > SELF_IMPROVE_EVALUATOR_CHECK.maxArtifactBytes) {
       throw new Error(
         `Локальный stdout/stderr artifact превышает лимит ${SELF_IMPROVE_EVALUATOR_CHECK.maxArtifactBytes} bytes`,
       );
@@ -657,9 +597,7 @@ export async function evaluateStagedCandidate({
       currentCandidate.baseSha !== candidate.baseSha ||
       currentCandidate.candidatePatchSha256 !== candidate.candidatePatchSha256
     ) {
-      throw new Error(
-        "HEAD или staged patch изменились во время инфраструктурного self-test",
-      );
+      throw new Error("HEAD или staged patch изменились во время инфраструктурного self-test");
     }
 
     const receipt = {
@@ -702,9 +640,7 @@ export async function runEvaluatorCli(argv, options = {}) {
 }
 
 // macOS временный путь может идти через /var или /private/var; сравниваем канонические пути CLI.
-const invokedPath = process.argv[1]
-  ? realpathSync(path.resolve(process.argv[1]))
-  : "";
+const invokedPath = process.argv[1] ? realpathSync(path.resolve(process.argv[1])) : "";
 const modulePath = realpathSync(fileURLToPath(import.meta.url));
 if (invokedPath === modulePath) {
   runEvaluatorCli(process.argv.slice(2))

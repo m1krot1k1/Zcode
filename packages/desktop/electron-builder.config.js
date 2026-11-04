@@ -328,13 +328,16 @@ function normalizeAsarEntry(entry) {
 
 function collectBundledExternalRuntimeModules() {
   const sources = [];
-  const roots = ["main", "host", "scheduler"].map((name) => resolve(desktopPackageRoot, "out", name));
+  const roots = ["main", "host", "scheduler"].map((name) =>
+    resolve(desktopPackageRoot, "out", name),
+  );
   const visit = (directory) => {
     if (!existsSync(directory)) return;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const entryPath = resolve(directory, entry.name);
       if (entry.isDirectory()) visit(entryPath);
-      else if (entry.isFile() && entry.name.endsWith(".js")) sources.push(readFileSync(entryPath, "utf8"));
+      else if (entry.isFile() && entry.name.endsWith(".js"))
+        sources.push(readFileSync(entryPath, "utf8"));
     }
   };
   for (const root of roots) visit(root);

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/services";
-import { buildRegistryModelSelectGroups, formatContextWindowLabel } from "../src/lib/modelSelectionGroups.js";
+import {
+  buildRegistryModelSelectGroups,
+  formatContextWindowLabel,
+} from "../src/lib/modelSelectionGroups.js";
 
 describe("model selection groups", () => {
   it.each([
@@ -235,7 +238,10 @@ describe("registry 模型上下文徽标", () => {
       providers: [
         {
           providerId: "fixture",
-          config: { access: { type: "api-key", apiKey: "sk-test" }, api: { type: "anthropic-messages" } },
+          config: {
+            access: { type: "api-key", apiKey: "sk-test" },
+            api: { type: "anthropic-messages" },
+          },
           models: [
             { modelId: "with-context", config: { properties: { contextWindow: 128_000 } } },
             { modelId: "without-context", config: {} },

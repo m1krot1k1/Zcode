@@ -108,10 +108,18 @@ function validateProviderApiShape(
 ): void {
   if (api.type === "opencode-sdk") {
     if (api.baseUrl !== undefined) {
-      context.addIssue({ code: "custom", path: ["baseUrl"], message: "opencode-sdk 不使用 endpoint" });
+      context.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message: "opencode-sdk 不使用 endpoint",
+      });
     }
     if (api.headers !== undefined) {
-      context.addIssue({ code: "custom", path: ["headers"], message: "opencode-sdk не использует headers" });
+      context.addIssue({
+        code: "custom",
+        path: ["headers"],
+        message: "opencode-sdk не использует headers",
+      });
     }
     return;
   }

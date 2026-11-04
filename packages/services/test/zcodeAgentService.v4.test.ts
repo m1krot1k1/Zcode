@@ -961,9 +961,7 @@ describe("zcodeAgentService v4 conversation channel", () => {
 
       expect(ack).toMatchObject({ status: "accepted" });
       const requests = readRequests(logPath);
-      expect(
-        requests.find((entry) => entry.method === "v4/command")?.params,
-      ).toMatchObject({
+      expect(requests.find((entry) => entry.method === "v4/command")?.params).toMatchObject({
         type: "sendText",
         sessionId: "opencode-chat-session",
         payload: {

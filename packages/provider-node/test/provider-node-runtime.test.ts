@@ -1,11 +1,4 @@
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,14 +56,13 @@ describe("@zcode/provider-node", () => {
       providers: [],
     };
     const listeners = new Set<(reason: string) => void>();
-    const runtimeProviderSource: ProviderSource<RuntimeProviderCatalogSnapshot> =
-      {
-        read: async () => runtimeCatalog,
-        onDidChange(listener) {
-          listeners.add(listener);
-          return () => listeners.delete(listener);
-        },
-      };
+    const runtimeProviderSource: ProviderSource<RuntimeProviderCatalogSnapshot> = {
+      read: async () => runtimeCatalog,
+      onDidChange(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
     const runtime = new NodeProviderRegistryRuntime({
       zcodeBuiltinFilePath: zcodeBuiltinProviderConfigFilePath,
       personalFilePath: join(directory, "personal.json"),
@@ -79,12 +71,10 @@ describe("@zcode/provider-node", () => {
     });
 
     await runtime.start();
-    expect(
-      runtime.registryService.getSnapshot()?.sourceRevisions.runtimeProviders,
-    ).toBe("opencode-models-1");
-    expect(
-      runtime.registryService.getSnapshot()?.runtimeProviders?.providers,
-    ).toEqual([]);
+    expect(runtime.registryService.getSnapshot()?.sourceRevisions.runtimeProviders).toBe(
+      "opencode-models-1",
+    );
+    expect(runtime.registryService.getSnapshot()?.runtimeProviders?.providers).toEqual([]);
     expect(listeners.size).toBe(1);
 
     runtime.dispose();
@@ -112,9 +102,7 @@ describe("@zcode/provider-node", () => {
       expect(anthropic.optionSpecs?.reasoningLevel).toMatchObject({
         values: ["low", "high", "max"],
       });
-      expect(anthropic.optionSpecs?.reasoningLevel?.map).toContain(
-        "reasoningLevel",
-      );
+      expect(anthropic.optionSpecs?.reasoningLevel?.map).toContain("reasoningLevel");
       expect(
         compileModelOptionMap(
           anthropic.optionSpecs!.reasoningLevel!.map!,
@@ -206,23 +194,17 @@ describe("@zcode/provider-node", () => {
       supportsMidConversationSystem: true,
       supportsNativeWebSearch: false,
     });
-    expect(
-      snapshot.providers.get("account:zai-start-plan")?.access,
-    ).toMatchObject({
+    expect(snapshot.providers.get("account:zai-start-plan")?.access).toMatchObject({
       type: "zhipu-account",
       accountType: "zai",
       mode: "start-plan",
     });
-    expect(
-      snapshot.providers.get("account:zai-offpeak-idle-plan")?.access,
-    ).toMatchObject({
+    expect(snapshot.providers.get("account:zai-offpeak-idle-plan")?.access).toMatchObject({
       type: "zhipu-account",
       accountType: "zai",
       mode: "off-peak",
     });
-    expect(
-      snapshot.providerTemplates?.get("deepseek")?.config.access,
-    ).toMatchObject({
+    expect(snapshot.providerTemplates?.get("deepseek")?.config.access).toMatchObject({
       type: "api-key",
     });
     source.dispose();
@@ -289,16 +271,12 @@ describe("@zcode/provider-node", () => {
     });
 
     expect(repeatedPath).toBe(firstPath);
-    expect(firstPath).toBe(
-      join(root, "runtime", "provider", "bundled", "zcode-builtin.json"),
-    );
+    expect(firstPath).toBe(join(root, "runtime", "provider", "bundled", "zcode-builtin.json"));
     expect(secondPath).toBe(firstPath);
-    expect(JSON.parse(await readFile(secondPath, "utf8"))).toEqual(
-      JSON.parse(secondContent),
-    );
-    expect(await readdir(join(root, "runtime", "provider", "bundled"))).toEqual(
-      ["zcode-builtin.json"],
-    );
+    expect(JSON.parse(await readFile(secondPath, "utf8"))).toEqual(JSON.parse(secondContent));
+    expect(await readdir(join(root, "runtime", "provider", "bundled"))).toEqual([
+      "zcode-builtin.json",
+    ]);
   });
 
   it("只在 ZCode Built-in 与 Personal 路径同时存在时启用进程 Registry", () => {
@@ -341,12 +319,8 @@ describe("@zcode/provider-node", () => {
     await writeZCodeBuiltin(filePath, "model-b");
     const second = await source.read();
 
-    expect(first.providers.get("zcodeBuiltin")?.builtinModelIds).toEqual([
-      "model-a",
-    ]);
-    expect(second.providers.get("zcodeBuiltin")?.builtinModelIds).toEqual([
-      "model-b",
-    ]);
+    expect(first.providers.get("zcodeBuiltin")?.builtinModelIds).toEqual(["model-a"]);
+    expect(second.providers.get("zcodeBuiltin")?.builtinModelIds).toEqual(["model-b"]);
     expect(second.revision).not.toBe(first.revision);
     source.dispose();
   });
@@ -373,20 +347,16 @@ describe("@zcode/provider-node", () => {
     await settleFileWatcher();
 
     expect(reasons).toEqual(["file-changed"]);
-    expect(
-      (await source.read()).providers.get("zcodeBuiltin")?.builtinModelIds,
-    ).toEqual(["model-b"]);
+    expect((await source.read()).providers.get("zcodeBuiltin")?.builtinModelIds).toEqual([
+      "model-b",
+    ]);
     source.dispose();
   });
 
   it("Personal Repository 在跨调用文件锁内执行 read-modify-write", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
-    await writeFile(
-      filePath,
-      JSON.stringify(storedConfig(emptyUpdate())),
-      "utf8",
-    );
+    await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
     const first = new NodePersonalProviderConfigRepository({
       filePath,
       watch: false,
@@ -407,10 +377,7 @@ describe("@zcode/provider-node", () => {
       })),
     ]);
 
-    expect((await first.read()).providers.keys().toSorted()).toEqual([
-      "A",
-      "B",
-    ]);
+    expect((await first.read()).providers.keys().toSorted()).toEqual(["A", "B"]);
     first.dispose();
     second.dispose();
   });
@@ -418,11 +385,7 @@ describe("@zcode/provider-node", () => {
   it("Personal Repository 的显式更新不会被 polling 重复通知", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
-    await writeFile(
-      filePath,
-      JSON.stringify(storedConfig(emptyUpdate())),
-      "utf8",
-    );
+    await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
     const repository = new NodePersonalProviderConfigRepository({
       filePath,
       pollingIntervalMs: 10,
@@ -432,10 +395,7 @@ describe("@zcode/provider-node", () => {
     await repository.read();
 
     await repository.update((current) => ({
-      providers: current.providers.set(
-        "personal",
-        personalProviderConfig(false),
-      ),
+      providers: current.providers.set("personal", personalProviderConfig(false)),
       models: current.models,
     }));
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -447,11 +407,7 @@ describe("@zcode/provider-node", () => {
   it("Personal Repository 不依赖文件事件也会发现正式原子写产生的新 revision", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
-    await writeFile(
-      filePath,
-      JSON.stringify(storedConfig(emptyUpdate())),
-      "utf8",
-    );
+    await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
     const writer = new NodePersonalProviderConfigRepository({
       filePath,
       pollingIntervalMs: false,
@@ -465,9 +421,7 @@ describe("@zcode/provider-node", () => {
     await repository.read();
 
     await writer.update(() => ({
-      providers: new ProviderConfigMap([
-        ["external", personalProviderConfig(false)],
-      ]),
+      providers: new ProviderConfigMap([["external", personalProviderConfig(false)]]),
       models: ModelConfigRules.empty(),
     }));
     await vi.waitFor(() => expect(reasons).toContain("poll-changed"), {
@@ -508,9 +462,7 @@ describe("@zcode/provider-node", () => {
       filePath,
       JSON.stringify(
         storedConfig({
-          providers: new ProviderConfigMap([
-            ["recovered", personalProviderConfig(false)],
-          ]),
+          providers: new ProviderConfigMap([["recovered", personalProviderConfig(false)]]),
           models: ModelConfigRules.empty(),
         }),
       ),
@@ -547,9 +499,7 @@ describe("@zcode/provider-node", () => {
     await writeZCodeBuiltin(zcodeBuiltinFilePath, "zcodeBuiltin-model");
     const importLegacy = vi.fn(async () => {
       return Object.freeze({
-        providers: new ProviderConfigMap([
-          ["legacy", personalProviderConfig(false)],
-        ]),
+        providers: new ProviderConfigMap([["legacy", personalProviderConfig(false)]]),
         models: ModelConfigRules.empty(),
       });
     });
@@ -569,15 +519,11 @@ describe("@zcode/provider-node", () => {
       schemaVersion: 1,
       config: {
         providerConfigRules: {
-          providerRules: [
-            { providerId: "legacy", config: { group: "standard-personal" } },
-          ],
+          providerRules: [{ providerId: "legacy", config: { group: "standard-personal" } }],
         },
       },
     });
-    expect((await readdir(root)).some((name) => name.endsWith(".bak"))).toBe(
-      false,
-    );
+    expect((await readdir(root)).some((name) => name.endsWith(".bak"))).toBe(false);
     runtime.dispose();
 
     const repeatedImport = vi.fn(async () => {
@@ -603,9 +549,7 @@ describe("@zcode/provider-node", () => {
     const personalFilePath = join(root, "provider_config.json");
     const importLegacy = vi.fn(async () =>
       Object.freeze({
-        providers: new ProviderConfigMap([
-          ["legacy", personalProviderConfig(false)],
-        ]),
+        providers: new ProviderConfigMap([["legacy", personalProviderConfig(false)]]),
         models: ModelConfigRules.empty(),
       }),
     );
@@ -671,11 +615,7 @@ describe("@zcode/provider-node", () => {
     const root = await temporaryDirectory();
     const zcodeBuiltinFilePath = join(root, "zcodeBuiltin.json");
     const personalFilePath = join(root, "provider_config.json");
-    const invalidText = JSON.stringify(
-      { provider: { unsupported: {} } },
-      null,
-      2,
-    );
+    const invalidText = JSON.stringify({ provider: { unsupported: {} } }, null, 2);
     await writeZCodeBuiltin(zcodeBuiltinFilePath, "zcodeBuiltin-model");
     await writeFile(personalFilePath, invalidText, "utf8");
     const importLegacy = vi.fn(async () => emptyUpdate());
@@ -688,14 +628,10 @@ describe("@zcode/provider-node", () => {
 
     await expect(runtime.start()).resolves.toBeUndefined();
     await expect(runtime.start()).resolves.toBeUndefined();
-    expect(
-      (await runtime.configService.read()).personalProviders.keys(),
-    ).toEqual([]);
+    expect((await runtime.configService.read()).personalProviders.keys()).toEqual([]);
     expect(importLegacy).not.toHaveBeenCalled();
     expect(await readFile(personalFilePath, "utf8")).toBe(invalidText);
-    expect((await readdir(root)).some((name) => name.endsWith(".bak"))).toBe(
-      false,
-    );
+    expect((await readdir(root)).some((name) => name.endsWith(".bak"))).toBe(false);
     runtime.dispose();
   });
 
@@ -734,8 +670,7 @@ describe("@zcode/provider-node", () => {
 
     expect(snapshot.registry.providers).toHaveLength(1);
     expect(
-      runtime.registryService.getModel("zcodeBuiltin", "model-a")?.config
-        .properties,
+      runtime.registryService.getModel("zcodeBuiltin", "model-a")?.config.properties,
     ).toMatchObject({
       contextWindow: 200_000,
       inputFormat: expect.objectContaining({ supportsVideo: false }),
@@ -772,10 +707,7 @@ function storedConfig(update: ProviderConfigLayerUpdate): object {
   return encodeProviderConfigFile(update);
 }
 
-async function writeZCodeBuiltin(
-  filePath: string,
-  modelId: string,
-): Promise<void> {
+async function writeZCodeBuiltin(filePath: string, modelId: string): Promise<void> {
   await writeFile(
     filePath,
     JSON.stringify({

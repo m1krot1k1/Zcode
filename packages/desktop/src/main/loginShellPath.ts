@@ -26,7 +26,10 @@ export function loginShellFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv)
   return env.SHELL?.trim() || defaultShellFor(platform);
 }
 
-export function shellInvocation(shell: string, command: string): { args: string[]; argv0?: string } {
+export function shellInvocation(
+  shell: string,
+  command: string,
+): { args: string[]; argv0?: string } {
   const kind = basename(shell);
   if (kind === "csh" || kind === "tcsh") {
     return { args: ["-c", command], argv0: `-${kind}` };
@@ -57,7 +60,10 @@ export function prependPathDirectory(env: NodeJS.ProcessEnv, directory: string):
   env.PATH = [directory, ...entries].join(delimiter);
 }
 
-export function resolveLoginShellPath(shell: string, timeoutMs = SHELL_TIMEOUT_MS): Promise<string | undefined> {
+export function resolveLoginShellPath(
+  shell: string,
+  timeoutMs = SHELL_TIMEOUT_MS,
+): Promise<string | undefined> {
   return new Promise((resolve) => {
     const invocation = shellInvocation(shell, PRINT_PATH_COMMAND);
     const child = spawn(shell, invocation.args, {
@@ -140,7 +146,9 @@ export async function ensureLoginShellPath(options?: {
  * E2E fixture 必须排在开发者安装的 `opencode` 前面，因此有绝对路径时不再合并登录 shell。
  * 真实启动走登录 shell，和 Cline sidecar 一样。
  */
-export async function applyDesktopProcessPath(env: NodeJS.ProcessEnv = process.env): Promise<LoginShellPathResult> {
+export async function applyDesktopProcessPath(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<LoginShellPathResult> {
   const e2eCliPath = env.ZCODE_E2E_OPENCODE_CLI_PATH?.trim();
   if (e2eCliPath && isAbsolute(e2eCliPath)) {
     prependPathDirectory(env, dirname(e2eCliPath));

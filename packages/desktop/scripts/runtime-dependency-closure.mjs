@@ -7,7 +7,8 @@ const nodeBuiltinModules = new Set(builtinModules.flatMap((name) => [name, `node
 
 export function collectExternalRuntimeModuleNames(sources) {
   const moduleNames = new Set();
-  const specifierPattern = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)["'](@?[A-Za-z0-9][A-Za-z0-9._/-]*)["']/g;
+  const specifierPattern =
+    /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)["'](@?[A-Za-z0-9][A-Za-z0-9._/-]*)["']/g;
 
   for (const source of sources) {
     for (const match of source.matchAll(specifierPattern)) {

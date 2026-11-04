@@ -13,7 +13,10 @@ test("hosted runners are used only for explicitly tagged cross-platform releases
   const workflowFiles = entries.filter((entry) => /\.ya?ml$/iu.test(entry));
   assert.deepEqual(workflowFiles, ["cross-platform-preview-release.yml"]);
   const workflow = YAML.parse(
-    await readFile(new URL("../../.github/workflows/cross-platform-preview-release.yml", import.meta.url), "utf8"),
+    await readFile(
+      new URL("../../.github/workflows/cross-platform-preview-release.yml", import.meta.url),
+      "utf8",
+    ),
   );
   assert.deepEqual(workflow.on.push, { tags: ["v[0-9]+.[0-9]+.[0-9]+"] });
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.release_tag, {

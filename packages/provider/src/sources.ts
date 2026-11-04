@@ -62,10 +62,7 @@ export function createFailClosedAccountProviderConfigSnapshot(
         : [],
     ),
   );
-  return createAccountProviderConfigSnapshot(
-    config.zcodeBuiltinRevision,
-    unentitledProviders,
-  );
+  return createAccountProviderConfigSnapshot(config.zcodeBuiltinRevision, unentitledProviders);
 }
 
 export function createAccountProviderConfigSnapshot(
@@ -81,12 +78,11 @@ export function createAccountProviderConfigSnapshot(
   });
 }
 
-const EMPTY_ACCOUNT_PROVIDER_CONFIG_SNAPSHOT: AccountProviderConfigSnapshot =
-  Object.freeze({
-    revision: "empty-account-config-v1",
-    basedOnZCodeBuiltinRevision: "uninitialized",
-    providers: ProviderConfigMap.empty(),
-  });
+const EMPTY_ACCOUNT_PROVIDER_CONFIG_SNAPSHOT: AccountProviderConfigSnapshot = Object.freeze({
+  revision: "empty-account-config-v1",
+  basedOnZCodeBuiltinRevision: "uninitialized",
+  providers: ProviderConfigMap.empty(),
+});
 
 /**
  * 由进程外围适配器更新的账号 Provider 可用范围。
@@ -96,8 +92,7 @@ const EMPTY_ACCOUNT_PROVIDER_CONFIG_SNAPSHOT: AccountProviderConfigSnapshot =
  */
 export class MutableAccountProviderConfigSource implements ProviderSource<AccountProviderConfigSnapshot> {
   readonly #listeners = new Set<(reason: string) => void>();
-  #snapshot: AccountProviderConfigSnapshot =
-    EMPTY_ACCOUNT_PROVIDER_CONFIG_SNAPSHOT;
+  #snapshot: AccountProviderConfigSnapshot = EMPTY_ACCOUNT_PROVIDER_CONFIG_SNAPSHOT;
 
   async read(): Promise<AccountProviderConfigSnapshot> {
     return this.#snapshot;
@@ -108,10 +103,7 @@ export class MutableAccountProviderConfigSource implements ProviderSource<Accoun
     return () => this.#listeners.delete(listener);
   }
 
-  replace(
-    snapshot: AccountProviderConfigSnapshot,
-    reason = "replace",
-  ): boolean {
+  replace(snapshot: AccountProviderConfigSnapshot, reason = "replace"): boolean {
     if (snapshot.revision === this.#snapshot.revision) return false;
     this.#snapshot = freezeAccountProviderConfigSnapshot(snapshot);
     for (const listener of this.#listeners) listener(reason);

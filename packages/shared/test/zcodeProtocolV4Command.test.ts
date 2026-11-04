@@ -79,10 +79,7 @@ describe("zcode-protocol-v4 command", () => {
   });
 
   it("defaults legacy submissions to ZCode and accepts explicit OpenCode model routes", () => {
-    expect(
-      commandPayloadSchemas.sendText.parse({ text: "ordinary turn" })
-        .executionRoute,
-    ).toEqual({
+    expect(commandPayloadSchemas.sendText.parse({ text: "ordinary turn" }).executionRoute).toEqual({
       kind: "zcode",
     });
     expect(
@@ -262,9 +259,7 @@ describe("zcode-protocol-v4 command", () => {
   it("preserves strict shared-context references on sendText", () => {
     const payload = commandPayloadSchemas.sendText.parse({
       text: "请继续这个分享里的工作",
-      context_refs: [
-        { kind: "shared_context_import", context_id: "context-1" },
-      ],
+      context_refs: [{ kind: "shared_context_import", context_id: "context-1" }],
     });
     expect(payload.context_refs).toEqual([
       { kind: "shared_context_import", context_id: "context-1" },
@@ -291,10 +286,9 @@ describe("zcode-protocol-v4 command", () => {
     ).toEqual({
       contextId: "context-1",
     });
-    expect(
-      commandPayloadSchemas.discardSharedContext.safeParse({ contextId: "" })
-        .success,
-    ).toBe(false);
+    expect(commandPayloadSchemas.discardSharedContext.safeParse({ contextId: "" }).success).toBe(
+      false,
+    );
   });
 
   it("parses a one-message start-now, queue or guide delivery override", () => {
@@ -973,10 +967,7 @@ describe("zcode-protocol-v4 command", () => {
           decision: { action: "trust_selected", reviewItemIds: ["item-1"] },
         },
       ],
-      [
-        "toggleWorkspaceHookReviewItem",
-        { ...target, reviewItemId: "item-1", enabled: false },
-      ],
+      ["toggleWorkspaceHookReviewItem", { ...target, reviewItemId: "item-1", enabled: false }],
       ["revokeWorkspaceHookTrust", { ...target, reviewItemIds: ["item-1"] }],
     ] as const) {
       expect(
@@ -1123,15 +1114,11 @@ describe("zcode-protocol-v4 command", () => {
       }).ok,
     ).toBe(true);
     // scope 可选：项目档缺省不传。
-    expect(
-      commandPayloadSchemas.startSavedWorkflow.parse({ name: "cleanup" }),
-    ).toEqual({
+    expect(commandPayloadSchemas.startSavedWorkflow.parse({ name: "cleanup" })).toEqual({
       name: "cleanup",
     });
     // 空名字被拒（invalid_name 属于运行时诊断，但 schema 先挡空串）。
-    expect(
-      commandPayloadSchemas.startSavedWorkflow.safeParse({ name: "" }).success,
-    ).toBe(false);
+    expect(commandPayloadSchemas.startSavedWorkflow.safeParse({ name: "" }).success).toBe(false);
     // scope 只认 project / global。
     expect(
       commandPayloadSchemas.startSavedWorkflow.safeParse({
@@ -1211,15 +1198,9 @@ describe("zcode-protocol-v4 command", () => {
       subagentModel: null,
       maxConcurrency: null,
     });
-    expect(
-      schema.safeParse({ workId: "run-a", maxConcurrency: 0 }).success,
-    ).toBe(false);
-    expect(
-      schema.safeParse({ workId: "run-a", maxConcurrency: 2.5 }).success,
-    ).toBe(false);
-    expect(
-      schema.safeParse({ workId: "run-a", subagentModel: "" }).success,
-    ).toBe(false);
+    expect(schema.safeParse({ workId: "run-a", maxConcurrency: 0 }).success).toBe(false);
+    expect(schema.safeParse({ workId: "run-a", maxConcurrency: 2.5 }).success).toBe(false);
+    expect(schema.safeParse({ workId: "run-a", subagentModel: "" }).success).toBe(false);
   });
 
   it("parses the amendWorkflowRunSettings accepted result and exposes its rejection vocabulary", () => {
@@ -1270,9 +1251,7 @@ describe("zcode-protocol-v4 command", () => {
       requestId: "permission-1",
       optionId: "allow-once",
     };
-    expect(
-      commandPayloadSchemas.respondToOpenCodePermission.parse(base),
-    ).toEqual(base);
+    expect(commandPayloadSchemas.respondToOpenCodePermission.parse(base)).toEqual(base);
     expect(
       commandPayloadSchemas.respondToOpenCodePermission.safeParse({
         ...base,

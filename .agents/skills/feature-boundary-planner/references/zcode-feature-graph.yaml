@@ -5554,7 +5554,8 @@ nodes:
     kind: "capability"
     label: "Legacy OpenCode ACP runtime awaiting retirement"
     aliases: ["legacy OpenCode ACP", "opencode acp", "delegated OpenCode agent"]
-    docs: ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
+    docs:
+      ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
     codeSeeds:
       - file: "packages/services/src/opencode-acp-runtime/index.ts"
       - file: "packages/services/src/node.ts"
@@ -5566,7 +5567,8 @@ nodes:
   - id: "service.opencode-acp-runtime"
     kind: "service"
     label: "Legacy Host-local OpenCode ACP lifecycle and session adapter"
-    docs: ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
+    docs:
+      ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
     codeSeeds:
       - file: "packages/services/src/opencode-acp-runtime/contract.ts"
       - file: "packages/services/src/opencode-acp-runtime/adapters/openCodeAcpRuntime.ts"
@@ -5575,7 +5577,8 @@ nodes:
   - id: "surface.opencode-agent-settings-ui"
     kind: "surface"
     label: "Legacy separate OpenCode ACP settings panel awaiting retirement"
-    docs: ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
+    docs:
+      ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
     codeSeeds:
       - file: "packages/ui/src/opencode-agent-settings/OpenCodeAgentSettingsPanel.tsx"
       - file: "packages/ui/src/settings/ModelProviderSection.tsx"

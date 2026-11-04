@@ -78,9 +78,7 @@ export function resolveConversationTurnWorkStatus(
   return {
     state: isRunning ? "running" : isInterrupted ? "interrupted" : "completed",
     ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(header?.interruptReason !== undefined
-      ? { interruptReason: header.interruptReason }
-      : {}),
+    ...(header?.interruptReason !== undefined ? { interruptReason: header.interruptReason } : {}),
     ...(header?.interruptDetail !== undefined ? { interruptDetail: header.interruptDetail } : {}),
   };
 }

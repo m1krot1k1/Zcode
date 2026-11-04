@@ -207,15 +207,18 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
       access,
       api: new ProviderApiConfig({ type: "opencode-sdk" }),
     },
-  ])("rejects mismatched local provider pair: $name", ({ access: accessConfig, api: apiConfig }) => {
-    const config = new ProviderConfig({
-      group: "standard-personal",
-      access: accessConfig,
-      api: apiConfig,
-    });
-    expect(createRegistryProviderConfig(config).ok).toBe(false);
-    expect(() => parseProviderConfig(config.toJSON())).toThrow();
-  });
+  ])(
+    "rejects mismatched local provider pair: $name",
+    ({ access: accessConfig, api: apiConfig }) => {
+      const config = new ProviderConfig({
+        group: "standard-personal",
+        access: accessConfig,
+        api: apiConfig,
+      });
+      expect(createRegistryProviderConfig(config).ok).toBe(false);
+      expect(() => parseProviderConfig(config.toJSON())).toThrow();
+    },
+  );
 
   it("overlaying an API provider with OpenCode drops stale URL, headers, and API key", () => {
     const current = parseProviderConfig({

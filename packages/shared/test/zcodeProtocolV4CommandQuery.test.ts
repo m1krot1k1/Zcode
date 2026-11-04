@@ -133,9 +133,9 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       steer: { state: "notRequested" as const },
       dispatch: { state: "admitted" as const },
     };
-    expect(
-      conversationInputIntentSchema.parse(openCodeIntent).executionRoute,
-    ).toEqual(openCodeIntent.executionRoute);
+    expect(conversationInputIntentSchema.parse(openCodeIntent).executionRoute).toEqual(
+      openCodeIntent.executionRoute,
+    );
     const swarmOnAcp = conversationInputIntentSchema.safeParse({
       ...openCodeIntent,
       orchestrationMode: "swarm",
@@ -201,9 +201,7 @@ describe("ZCode Protocol v4 commands/query", () => {
 
   it("方法名冻结，1/64 个 key 与 null global key 通过", () => {
     expect(V4_METHODS.commandsQuery).toBe("v4/commands/query");
-    expect(
-      commandsQueryParamsSchema.parse({ commands: [key(1, null)] }).commands,
-    ).toHaveLength(1);
+    expect(commandsQueryParamsSchema.parse({ commands: [key(1, null)] }).commands).toHaveLength(1);
     expect(
       commandsQueryParamsSchema.parse({
         commands: Array.from({ length: 64 }, (_, index) => key(index)),
@@ -212,9 +210,7 @@ describe("ZCode Protocol v4 commands/query", () => {
   });
 
   it("0/65 个 key 与额外字段拒绝", () => {
-    expect(commandsQueryParamsSchema.safeParse({ commands: [] }).success).toBe(
-      false,
-    );
+    expect(commandsQueryParamsSchema.safeParse({ commands: [] }).success).toBe(false);
     expect(
       commandsQueryParamsSchema.safeParse({
         commands: Array.from({ length: 65 }, (_, index) => key(index)),
@@ -243,10 +239,7 @@ describe("ZCode Protocol v4 commands/query", () => {
         },
       ],
     });
-    expect(parsed.results.map((item) => item.key.commandId)).toEqual([
-      "command-1",
-      "command-2",
-    ]);
+    expect(parsed.results.map((item) => item.key.commandId)).toEqual(["command-1", "command-2"]);
     expect(
       commandsQueryResultSchema.safeParse({
         results: [{ key: key(1), result: "unknown", extra: 1 }],

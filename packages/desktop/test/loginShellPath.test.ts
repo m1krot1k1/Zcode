@@ -10,15 +10,15 @@ import {
 
 describe("login shell PATH", () => {
   it("keeps shell entries ahead of directories already injected", () => {
-    expect(mergePaths(`/opt/homebrew/bin${delimiter}/usr/bin`, `/usr/bin${delimiter}/tmp/fixture`)).toBe(
-      `/opt/homebrew/bin${delimiter}/usr/bin${delimiter}/tmp/fixture`,
-    );
+    expect(
+      mergePaths(`/opt/homebrew/bin${delimiter}/usr/bin`, `/usr/bin${delimiter}/tmp/fixture`),
+    ).toBe(`/opt/homebrew/bin${delimiter}/usr/bin${delimiter}/tmp/fixture`);
   });
 
   it("reads PATH between markers and ignores profile noise", () => {
-    expect(extractMarkedPath("noise\n__ZCODE_LOGIN_PATH_START__/usr/bin__ZCODE_LOGIN_PATH_END__\n")).toBe(
-      "/usr/bin",
-    );
+    expect(
+      extractMarkedPath("noise\n__ZCODE_LOGIN_PATH_START__/usr/bin__ZCODE_LOGIN_PATH_END__\n"),
+    ).toBe("/usr/bin");
   });
 
   it("does not merge a login shell on Windows or when the skip flag is set", async () => {
@@ -35,7 +35,10 @@ describe("login shell PATH", () => {
   });
 
   it("puts the E2E OpenCode fixture directory first and skips the login shell", async () => {
-    const env = { PATH: `/opt/homebrew/bin${delimiter}/usr/bin`, ZCODE_E2E_OPENCODE_CLI_PATH: "/tmp/e2e/opencode" };
+    const env = {
+      PATH: `/opt/homebrew/bin${delimiter}/usr/bin`,
+      ZCODE_E2E_OPENCODE_CLI_PATH: "/tmp/e2e/opencode",
+    };
     await expect(applyDesktopProcessPath(env)).resolves.toEqual({
       status: "skipped",
       reason: "e2e-opencode-cli",

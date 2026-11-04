@@ -3037,8 +3037,7 @@ const zhCN: Record<string, string> = {
   "settings.spawnBudget": "子代理派生预算",
   "settings.spawnBudgetDescription":
     "单次运行最多可派生多少个子代理。留空则使用默认值 32；填 0 表示禁止派生。",
-  "settings.spawnBudgetInvalid":
-    "请填写不小于 0 的整数（0 表示禁止派生），或留空以使用默认值。",
+  "settings.spawnBudgetInvalid": "请填写不小于 0 的整数（0 表示禁止派生），或留空以使用默认值。",
   "settings.runLimitPlaceholder": "默认值",
   "settings.desktopChromiumHardwareAcceleration": "Chrome 硬件加速",
   "settings.desktopChromiumHardwareAccelerationDescription":

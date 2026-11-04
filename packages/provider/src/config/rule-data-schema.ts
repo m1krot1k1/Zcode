@@ -120,10 +120,7 @@ export const personalProviderConfigRuleSchema = providerConfigRuleSchema
     }),
   })
   .superRefine((rule, context) => {
-    if (
-      rule.config.access?.type === "local-auth" ||
-      rule.config.api?.type === "opencode-sdk"
-    ) {
+    if (rule.config.access?.type === "local-auth" || rule.config.api?.type === "opencode-sdk") {
       context.addIssue({
         code: "custom",
         path: ["config"],

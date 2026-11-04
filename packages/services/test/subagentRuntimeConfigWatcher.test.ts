@@ -29,10 +29,7 @@ afterEach(async () => {
   vi.mocked(stat).mockClear();
 });
 const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 8000, interval: 20 });
-async function pair(
-  prepareHome?: (homeDir: string) => Promise<void>,
-  isDesktopRuntime = false,
-) {
+async function pair(prepareHome?: (homeDir: string) => Promise<void>, isDesktopRuntime = false) {
   const homeDir = await mkdtemp(join(tmpdir(), "subagent-host-watch-"));
   cleanup.push(() => rm(homeDir, { recursive: true, force: true }));
   await prepareHome?.(homeDir);
@@ -111,7 +108,10 @@ describe("native subagent Host watchers", () => {
         oldFilePath: agent.path,
         config: config("researcher", "partial update must not publish"),
       }),
-    ).rejects.toMatchObject({ code: "EACCES", zcodeFsFaultId: "subagent-watcher-update-rename-failure" });
+    ).rejects.toMatchObject({
+      code: "EACCES",
+      zcodeFsFaultId: "subagent-watcher-update-rename-failure",
+    });
 
     await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
     expect(await readFile(agent.path, "utf8")).toContain("old");

@@ -48,15 +48,11 @@ describe("Host API proxy routing", () => {
       httpProxy: "http://proxy.example.com:8080",
       noProxy: "api.example.com:443,*.internal",
     };
-    expect(
-      resolveHostProxyForUrl("https://api.example.com/v1", options),
-    ).toMatchObject({
+    expect(resolveHostProxyForUrl("https://api.example.com/v1", options)).toMatchObject({
       kind: "direct",
       noProxyMatched: true,
     });
-    expect(
-      resolveHostProxyForUrl("http://service.internal/v1", options),
-    ).toMatchObject({
+    expect(resolveHostProxyForUrl("http://service.internal/v1", options)).toMatchObject({
       kind: "direct",
       noProxyMatched: true,
     });
@@ -96,9 +92,7 @@ describe("Host API proxy routing", () => {
     socket.emit("data", packet);
 
     await expect(firstRead).resolves.toEqual(packet.subarray(0, 4));
-    await expect(readSocketBytes(socket as never, 6)).resolves.toEqual(
-      packet.subarray(4),
-    );
+    await expect(readSocketBytes(socket as never, 6)).resolves.toEqual(packet.subarray(4));
   });
 
   it("显式代理配置无效时 fail closed，不回退到直连", async () => {
@@ -139,12 +133,12 @@ describe("Host API proxy routing", () => {
       .mockResolvedValue(new Response("direct", { status: 200 }));
     const transport = createHostApiNetworkTransport(resolveOptions);
 
-    await expect(
-      transport.fetch("https://api.example.com/first"),
-    ).rejects.toThrow("settings unavailable");
-    await expect(
-      transport.fetch("https://api.example.com/second"),
-    ).resolves.toBeInstanceOf(Response);
+    await expect(transport.fetch("https://api.example.com/first")).rejects.toThrow(
+      "settings unavailable",
+    );
+    await expect(transport.fetch("https://api.example.com/second")).resolves.toBeInstanceOf(
+      Response,
+    );
 
     expect(resolveOptions).toHaveBeenCalledTimes(2);
     expect(directFetch).toHaveBeenCalledOnce();
@@ -191,12 +185,12 @@ describe("Host API proxy routing", () => {
       { createDispatcher, fetchWithDispatcher },
     );
 
-    await expect(
-      transport.fetch("https://api.example.com/first"),
-    ).rejects.toThrow("CA unavailable");
-    await expect(
-      transport.fetch("https://api.example.com/second"),
-    ).resolves.toBeInstanceOf(Response);
+    await expect(transport.fetch("https://api.example.com/first")).rejects.toThrow(
+      "CA unavailable",
+    );
+    await expect(transport.fetch("https://api.example.com/second")).resolves.toBeInstanceOf(
+      Response,
+    );
 
     expect(createDispatcher).toHaveBeenCalledTimes(2);
     expect(fetchWithDispatcher).toHaveBeenCalledOnce();
@@ -217,9 +211,9 @@ describe("Host API proxy routing", () => {
       },
     );
 
-    await expect(
-      transport.fetch("https://api.example.com/race"),
-    ).rejects.toThrow("Host API network transport has been disposed");
+    await expect(transport.fetch("https://api.example.com/race")).rejects.toThrow(
+      "Host API network transport has been disposed",
+    );
     await Promise.resolve();
 
     expect(createDispatcher).toHaveBeenCalledOnce();
@@ -290,9 +284,9 @@ describe("Host API proxy routing", () => {
 
     await transport.fetch("https://api.example.com/one");
     transport.dispose();
-    await expect(
-      transport.fetch("https://api.example.com/two"),
-    ).rejects.toThrow("Host API network transport has been disposed");
+    await expect(transport.fetch("https://api.example.com/two")).rejects.toThrow(
+      "Host API network transport has been disposed",
+    );
 
     expect(dispatcher.destroy).toHaveBeenCalledOnce();
     expect(dispatcher.close).not.toHaveBeenCalled();

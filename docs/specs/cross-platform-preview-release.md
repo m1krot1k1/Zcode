@@ -18,14 +18,14 @@ Acceptance requires a successful Actions run for the exact tag, all three Deskto
 
 ## Acceptance scenarios
 
-| ID | Scenario | Required result |
-| --- | --- | --- |
-| XPREVIEW-01 | Push a matching version tag or dispatch with a matching release tag | Exactly one workflow starts and checks out the tag's source; pushes to `dev` alone do not start it. |
-| XPREVIEW-02 | Build Desktop targets | macOS arm64, Windows x64, and Linux x64 each produce the formats listed above. |
-| XPREVIEW-03 | Build CLI targets | macOS arm64, Windows x64, and Linux x64 standalone executables are generated and smoke-tested. |
-| XPREVIEW-04 | No Apple signing credentials | Unsigned macOS Preview packages build and release notes explain first launch approval. |
-| XPREVIEW-05 | Publish when no release exists | One prerelease points to the exact tag commit and contains all expected versioned artifacts. |
-| XPREVIEW-08 | Publish when a same-tag prerelease already exists | The complete validated asset set is added idempotently to that prerelease without creating a duplicate release. |
-| XPREVIEW-09 | Existing tag points to a stable release or another commit | Publication stops before uploading assets or editing the release. |
-| XPREVIEW-06 | A target fails or an artifact is missing | The publish job does not create a partial release. |
-| XPREVIEW-07 | Tag and root version differ | Workflow fails before building. |
+| ID          | Scenario                                                            | Required result                                                                                                 |
+| ----------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| XPREVIEW-01 | Push a matching version tag or dispatch with a matching release tag | Exactly one workflow starts and checks out the tag's source; pushes to `dev` alone do not start it.             |
+| XPREVIEW-02 | Build Desktop targets                                               | macOS arm64, Windows x64, and Linux x64 each produce the formats listed above.                                  |
+| XPREVIEW-03 | Build CLI targets                                                   | macOS arm64, Windows x64, and Linux x64 standalone executables are generated and smoke-tested.                  |
+| XPREVIEW-04 | No Apple signing credentials                                        | Unsigned macOS Preview packages build and release notes explain first launch approval.                          |
+| XPREVIEW-05 | Publish when no release exists                                      | One prerelease points to the exact tag commit and contains all expected versioned artifacts.                    |
+| XPREVIEW-08 | Publish when a same-tag prerelease already exists                   | The complete validated asset set is added idempotently to that prerelease without creating a duplicate release. |
+| XPREVIEW-09 | Existing tag points to a stable release or another commit           | Publication stops before uploading assets or editing the release.                                               |
+| XPREVIEW-06 | A target fails or an artifact is missing                            | The publish job does not create a partial release.                                                              |
+| XPREVIEW-07 | Tag and root version differ                                         | Workflow fails before building.                                                                                 |

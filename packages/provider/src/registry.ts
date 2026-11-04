@@ -48,9 +48,7 @@ export class ProviderRegistry {
   #view: ProviderRegistryView;
   #providerById = new Map<ProviderId, Provider>();
   #modelByProviderId = new Map<ProviderId, Map<ModelId, ProviderModel>>();
-  readonly #listeners = new Set<
-    (event: ProviderRegistryChangedEvent) => void
-  >();
+  readonly #listeners = new Set<(event: ProviderRegistryChangedEvent) => void>();
 
   constructor(providers: readonly Provider[] = []) {
     this.#view = freezeView(0, providers);
@@ -69,10 +67,7 @@ export class ProviderRegistry {
     return this.#providerById.get(providerId);
   }
 
-  getModel(
-    providerId: ProviderId,
-    modelId: ModelId,
-  ): ProviderModel | undefined {
+  getModel(providerId: ProviderId, modelId: ModelId): ProviderModel | undefined {
     return this.#modelByProviderId.get(providerId)?.get(modelId);
   }
 
@@ -108,9 +103,7 @@ export class ProviderRegistry {
     for (const listener of this.#listeners) listener(event);
   }
 
-  onDidChange(
-    listener: (event: ProviderRegistryChangedEvent) => void,
-  ): () => void {
+  onDidChange(listener: (event: ProviderRegistryChangedEvent) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
@@ -136,9 +129,7 @@ function buildIndexes(providers: readonly Provider[]): {
     const models = new Map<ModelId, ProviderModel>();
     for (const model of provider.models) {
       if (models.has(model.modelId)) {
-        throw new Error(
-          `Registry 中存在重复 Model: ${provider.providerId}/${model.modelId}`,
-        );
+        throw new Error(`Registry 中存在重复 Model: ${provider.providerId}/${model.modelId}`);
       }
       models.set(model.modelId, model);
     }
@@ -182,10 +173,7 @@ export function validateModelSelectionOptions(
   return { ok: true };
 }
 
-function freezeView(
-  revision: number,
-  providers: readonly Provider[],
-): ProviderRegistryView {
+function freezeView(revision: number, providers: readonly Provider[]): ProviderRegistryView {
   const frozenProviders = providers.map((provider) =>
     Object.freeze({
       providerId: provider.providerId,

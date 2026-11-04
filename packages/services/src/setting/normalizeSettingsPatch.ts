@@ -54,7 +54,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
       .map((proxy) => proxy.trim())
       .filter(Boolean)
       .join("\n");
-    normalizedPatch.httpProxyList = normalizedProxyList.length > 0 ? normalizedProxyList : undefined;
+    normalizedPatch.httpProxyList =
+      normalizedProxyList.length > 0 ? normalizedProxyList : undefined;
   }
 
   if (

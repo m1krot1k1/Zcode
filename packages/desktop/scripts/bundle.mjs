@@ -450,7 +450,8 @@ function collectExternalRuntimeModulesFromBuiltBundles() {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const entryPath = resolve(directory, entry.name);
       if (entry.isDirectory()) visit(entryPath);
-      else if (entry.isFile() && entry.name.endsWith(".js")) sources.push(readFileSync(entryPath, "utf8"));
+      else if (entry.isFile() && entry.name.endsWith(".js"))
+        sources.push(readFileSync(entryPath, "utf8"));
     }
   };
   for (const root of roots) visit(root);

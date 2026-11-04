@@ -148,7 +148,9 @@ async function waitForGates(fixtureIds: readonly string[], timeoutMsg: string) {
   const baseUrl = await replayBaseUrl();
   await browser.waitUntil(
     async () => {
-      const response = await fetch(`${baseUrl}/__e2e__/gates`, { signal: AbortSignal.timeout(5_000) });
+      const response = await fetch(`${baseUrl}/__e2e__/gates`, {
+        signal: AbortSignal.timeout(5_000),
+      });
       if (!response.ok) throw new Error(`Не удалось прочитать replay gates: ${response.status}`);
       const gated = (await response.json()) as string[];
       return fixtureIds.every((fixtureId) => gated.includes(fixtureId));
@@ -289,9 +291,7 @@ async function killAgentProcesses() {
 async function swarmRowStatus(runId: string) {
   return browser.execute((id) => {
     const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-row-kind="swarmRun"]'));
-    return (
-      rows.find((row) => row.dataset.swarmRunId === id)?.getAttribute("data-status") ?? ""
-    );
+    return rows.find((row) => row.dataset.swarmRunId === id)?.getAttribute("data-status") ?? "";
   }, runId);
 }
 
@@ -398,7 +398,10 @@ describe("SWARM-42: обрыв агента на границах роя", () =>
     this.timeout(180_000);
     await prepareV4ConversationE2E();
     const startedAt = await sendSwarmPrompt();
-    await waitForGates(CHILD_FIXTURE_IDS, `${CASE_MARKER}: обе дочерние модели не удерживались одновременно`);
+    await waitForGates(
+      CHILD_FIXTURE_IDS,
+      `${CASE_MARKER}: обе дочерние модели не удерживались одновременно`,
+    );
     const snap = await waitForBoundary(
       startedAt,
       "execution",

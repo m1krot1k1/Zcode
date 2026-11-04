@@ -2,12 +2,7 @@ import { readFile } from "node:fs/promises";
 import { connect as connectNet, isIP, type Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
 import { rootCertificates } from "node:tls";
-import {
-  Agent,
-  ProxyAgent,
-  fetch as undiciFetch,
-  type Dispatcher,
-} from "undici";
+import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 
 export interface HostApiNetworkOptions {
   httpProxy?: string;
@@ -46,10 +41,7 @@ function normalizeProxyUrl(value: string): string | undefined {
         : `http://${value}`;
   try {
     const url = new URL(candidate);
-    if (
-      !url.hostname ||
-      !["http:", "https:", "socks5:", "socks5h:"].includes(url.protocol)
-    ) {
+    if (!url.hostname || !["http:", "https:", "socks5:", "socks5h:"].includes(url.protocol)) {
       return undefined;
     }
     return url.href;
@@ -62,11 +54,7 @@ export type ProxyConnectivityResult =
   | { ok: true; outboundIp: string }
   | {
       ok: false;
-      reason:
-        | "invalid_proxy"
-        | "connection_failed"
-        | "timeout"
-        | "invalid_response";
+      reason: "invalid_proxy" | "connection_failed" | "timeout" | "invalid_response";
     };
 
 const PROXY_TEST_TARGETS = [
@@ -76,9 +64,7 @@ const PROXY_TEST_TARGETS = [
 ] as const;
 
 /** Проверяет прокси только по явному запросу UI; значения URL и ошибки с credentials наружу не возвращаются. */
-export async function testProxyConnectivity(
-  rawProxy: string,
-): Promise<ProxyConnectivityResult> {
+export async function testProxyConnectivity(rawProxy: string): Promise<ProxyConnectivityResult> {
   const normalized = normalizeProxyUrl(rawProxy.trim());
   if (!normalized) return { ok: false, reason: "invalid_proxy" };
 
@@ -89,8 +75,7 @@ export async function testProxyConnectivity(
     return { ok: false, reason: "invalid_proxy" };
   }
 
-  let lastReason: Extract<ProxyConnectivityResult, { ok: false }>["reason"] =
-    "connection_failed";
+  let lastReason: Extract<ProxyConnectivityResult, { ok: false }>["reason"] = "connection_failed";
   for (const target of PROXY_TEST_TARGETS) {
     let dispatcher: Dispatcher | undefined;
     try {
@@ -108,30 +93,20 @@ export async function testProxyConnectivity(
               secureSocket.setTimeout(8_000, () =>
                 secureSocket.destroy(new Error("proxy response timeout")),
               );
-              secureSocket.once("secureConnect", () =>
-                callback(null, secureSocket),
-              );
+              secureSocket.once("secureConnect", () => callback(null, secureSocket));
               secureSocket.once("error", (error) => callback(error, null));
             })
             .catch((error: unknown) =>
-              callback(
-                error instanceof Error
-                  ? error
-                  : new Error("proxy connection failed"),
-                null,
-              ),
+              callback(error instanceof Error ? error : new Error("proxy connection failed"), null),
             );
           return undefined;
         },
       } as never);
-      const response = await undiciFetch(
-        `https://${target.host}${target.path}`,
-        {
-          dispatcher,
-          signal: AbortSignal.timeout(8_000),
-          headers: { accept: target.accept },
-        } as never,
-      );
+      const response = await undiciFetch(`https://${target.host}${target.path}`, {
+        dispatcher,
+        signal: AbortSignal.timeout(8_000),
+        headers: { accept: target.accept },
+      } as never);
       if (!response.ok) {
         lastReason = "connection_failed";
         continue;
@@ -148,8 +123,7 @@ export async function testProxyConnectivity(
       lastReason = "invalid_response";
     } catch (error) {
       lastReason =
-        error instanceof Error &&
-        (error.name === "TimeoutError" || error.name === "AbortError")
+        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
           ? "timeout"
           : "connection_failed";
     } finally {
@@ -167,12 +141,7 @@ async function createProxyTestTunnel(
   targetPort = 443,
 ): Promise<Socket> {
   const port = Number(
-    proxy.port ||
-      (proxy.protocol === "https:"
-        ? 443
-        : proxy.protocol === "http:"
-          ? 80
-          : 1080),
+    proxy.port || (proxy.protocol === "https:" ? 443 : proxy.protocol === "http:" ? 80 : 1080),
   );
   // Bug 原因：Node socket.setTimeout 只覆盖建连后的空闲阶段，代理主机不响应 TCP
   // 握手时不会触发它，导致批量测试永远停在 Testing。连接阶段单独使用可销毁 socket 的定时器。
@@ -186,13 +155,8 @@ async function createProxyTestTunnel(
           }),
           "secureConnect",
         )
-      : await connectSocketWithTimeout(
-          connectNet({ host: proxy.hostname, port }),
-          "connect",
-        );
-  proxySocket.setTimeout(8_000, () =>
-    proxySocket.destroy(new Error("proxy timeout")),
-  );
+      : await connectSocketWithTimeout(connectNet({ host: proxy.hostname, port }), "connect");
+  proxySocket.setTimeout(8_000, () => proxySocket.destroy(new Error("proxy timeout")));
 
   if (proxy.protocol === "socks5:" || proxy.protocol === "socks5h:") {
     const hasCredentials = Boolean(proxy.username || proxy.password);
@@ -205,11 +169,7 @@ async function createProxyTestTunnel(
       const password = decodeURIComponent(proxy.password);
       const userBytes = Buffer.from(username);
       const passBytes = Buffer.from(password);
-      if (
-        !userBytes.length ||
-        userBytes.length > 255 ||
-        passBytes.length > 255
-      ) {
+      if (!userBytes.length || userBytes.length > 255 || passBytes.length > 255) {
         throw new Error("proxy authentication invalid");
       }
       proxySocket.write(
@@ -236,11 +196,7 @@ async function createProxyTestTunnel(
     const reply = await readSocketBytes(proxySocket, 4);
     if (reply[1] !== 0) throw new Error("proxy tunnel rejected");
     const addressLength =
-      reply[3] === 1
-        ? 4
-        : reply[3] === 4
-          ? 16
-          : ((await readSocketBytes(proxySocket, 1))[0] ?? 0);
+      reply[3] === 1 ? 4 : reply[3] === 4 ? 16 : ((await readSocketBytes(proxySocket, 1))[0] ?? 0);
     await readSocketBytes(proxySocket, addressLength + 2);
     return proxySocket;
   }
@@ -253,8 +209,7 @@ async function createProxyTestTunnel(
     `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\n${auth}Connection: keep-alive\r\n\r\n`,
   );
   const headers = await readSocketHeader(proxySocket);
-  if (!/^HTTP\/\d(?:\.\d)? 200\b/u.test(headers))
-    throw new Error("proxy tunnel rejected");
+  if (!/^HTTP\/\d(?:\.\d)? 200\b/u.test(headers)) throw new Error("proxy tunnel rejected");
   return proxySocket;
 }
 
@@ -287,10 +242,7 @@ function connectSocketWithTimeout(
   });
 }
 
-export async function readSocketBytes(
-  socket: Socket,
-  expectedLength: number,
-): Promise<Buffer> {
+export async function readSocketBytes(socket: Socket, expectedLength: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     // Node's flowing `data` mode does not reliably re-emit bytes passed back
     // with socket.unshift(). Keep surplus protocol bytes ourselves so a SOCKS
@@ -381,8 +333,7 @@ function matchesNoProxy(url: URL, value: string | undefined): boolean {
     const [ruleHost = "", rulePort] = ruleWithoutScheme.split(":");
     const normalizedHost = ruleHost.replace(/^\*\.?/, "").replace(/^\./, "");
     if (!normalizedHost) return false;
-    const hostMatches =
-      host === normalizedHost || host.endsWith(`.${normalizedHost}`);
+    const hostMatches = host === normalizedHost || host.endsWith(`.${normalizedHost}`);
     return hostMatches && (!rulePort || rulePort === port);
   });
 }
@@ -440,8 +391,7 @@ export function createHostApiNetworkTransport(
   const dispatcherFactory = dependencies.createDispatcher ?? createDispatcher;
   const fetchWithDispatcher =
     dependencies.fetchWithDispatcher ??
-    ((input, init) =>
-      undiciFetch(input, init as never) as unknown as Promise<Response>);
+    ((input, init) => undiciFetch(input, init as never) as unknown as Promise<Response>);
 
   const fetch: typeof globalThis.fetch = async (input, init) => {
     if (disposed) {
@@ -487,9 +437,7 @@ export function createHostApiNetworkTransport(
           ) {
             dispatcherPromises.delete(dispatcherKey);
             const cleanupPromise = Promise.resolve(
-              disposeMode === "close"
-                ? dispatcher.close()
-                : dispatcher.destroy(),
+              disposeMode === "close" ? dispatcher.close() : dispatcher.destroy(),
             ).catch(() => {});
             lateDisposePromises.push(cleanupPromise);
           }
@@ -502,10 +450,7 @@ export function createHostApiNetworkTransport(
           resolveDispatcherCreations = undefined;
         }
       };
-      void dispatcherPromise.then(
-        markDispatcherCreationDone,
-        markDispatcherCreationDone,
-      );
+      void dispatcherPromise.then(markDispatcherCreationDone, markDispatcherCreationDone);
       dispatcherPromise.catch(() => {
         // 设置/CA 等临时 IO 失败只影响当前请求；清理 rejected dispatcher，避免一次启动竞态
         // 把同一路由永久锁死，同时仍保持失败请求 fail-closed、不回退到直连。
@@ -598,18 +543,11 @@ async function createDispatcher(
                 servername: String(options.servername ?? targetHost),
                 ca,
               });
-              secureSocket.once("secureConnect", () =>
-                callback(null, secureSocket),
-              );
+              secureSocket.once("secureConnect", () => callback(null, secureSocket));
               secureSocket.once("error", (error) => callback(error, null));
             })
             .catch((error: unknown) =>
-              callback(
-                error instanceof Error
-                  ? error
-                  : new Error("proxy connection failed"),
-                null,
-              ),
+              callback(error instanceof Error ? error : new Error("proxy connection failed"), null),
             );
           return undefined;
         },

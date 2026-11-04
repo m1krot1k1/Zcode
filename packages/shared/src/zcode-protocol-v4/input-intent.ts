@@ -32,10 +32,9 @@ export const conversationExecutionRouteSchema = z.discriminatedUnion("kind", [
 ]);
 
 /** Legacy senders omit the field; omission means the existing ZCode model route. */
-export const sendTextExecutionRouteSchema =
-  conversationExecutionRouteSchema.default({
-    kind: "zcode",
-  });
+export const sendTextExecutionRouteSchema = conversationExecutionRouteSchema.default({
+  kind: "zcode",
+});
 
 /**
  * 用户输入的结构化来源：插件 UI 经 `ui/message`
@@ -58,9 +57,7 @@ export const conversationInputSourceSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
-export type ConversationInputSource = z.infer<
-  typeof conversationInputSourceSchema
->;
+export type ConversationInputSource = z.infer<typeof conversationInputSourceSchema>;
 
 export const conversationInputDeliverySchema = z
   .object({
@@ -79,13 +76,7 @@ export const conversationInputOrderSchema = z
 
 export const conversationInputSteerSchema = z
   .object({
-    state: z.enum([
-      "notRequested",
-      "submitting",
-      "steering",
-      "guided",
-      "fellBack",
-    ]),
+    state: z.enum(["notRequested", "submitting", "steering", "guided", "fellBack"]),
     reasonCode: z.string().optional(),
   })
   .strict();
@@ -137,28 +128,19 @@ export const conversationInputIntentSchema = z
     if (intent.executionRoute.kind !== "opencode-acp") return;
     const reject = (field: string, message: string) =>
       context.addIssue({ code: z.ZodIssueCode.custom, message, path: [field] });
-    if (intent.kind !== "sendText")
-      reject("kind", "OpenCode ACP route requires sendText");
+    if (intent.kind !== "sendText") reject("kind", "OpenCode ACP route requires sendText");
     if (intent.modelSelection !== undefined)
       reject("modelSelection", "OpenCode ACP route forbids modelSelection");
-    if (intent.mode !== undefined)
-      reject("mode", "OpenCode ACP route forbids ZCode mode");
+    if (intent.mode !== undefined) reject("mode", "OpenCode ACP route forbids ZCode mode");
     if (intent.planEnabled !== undefined)
       reject("planEnabled", "OpenCode ACP route forbids ZCode plan mode");
     if (intent.orchestrationMode !== undefined)
-      reject(
-        "orchestrationMode",
-        "OpenCode ACP route forbids ZCode swarm orchestration",
-      );
-    if (intent.attachments.length > 0)
-      reject("attachments", "OpenCode ACP route is text-only");
+      reject("orchestrationMode", "OpenCode ACP route forbids ZCode swarm orchestration");
+    if (intent.attachments.length > 0) reject("attachments", "OpenCode ACP route is text-only");
     if (intent.sharedContextRefs?.length)
       reject("sharedContextRefs", "OpenCode ACP route forbids shared context");
     if (intent.highspeed !== undefined)
-      reject(
-        "highspeed",
-        "OpenCode ACP route forbids model execution metadata",
-      );
+      reject("highspeed", "OpenCode ACP route forbids model execution metadata");
     if (intent.source !== undefined)
       reject("source", "OpenCode ACP route forbids Composer/plugin context");
     if (
@@ -174,6 +156,4 @@ export const conversationInputIntentSchema = z
   })
   .strict();
 
-export type ConversationInputIntent = z.infer<
-  typeof conversationInputIntentSchema
->;
+export type ConversationInputIntent = z.infer<typeof conversationInputIntentSchema>;

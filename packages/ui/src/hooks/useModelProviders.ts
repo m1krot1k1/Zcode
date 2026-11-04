@@ -12,7 +12,10 @@ import {
 } from "@/lib/providerSettingsFormProjection.js";
 import { persistProviderDisplayOrder } from "@/lib/providerDisplayOrderPersistence.js";
 import { persistPersonalProviderDeletion } from "@/lib/providerPersonalPersistence.js";
-import { persistPersonalProvider, hasProviderConnectionChange } from "@/lib/providerPersonalSave.js";
+import {
+  persistPersonalProvider,
+  hasProviderConnectionChange,
+} from "@/lib/providerPersonalSave.js";
 import type { ProviderOrderView } from "@/lib/modelProviderOrdering.js";
 
 export function useModelProviders(target: {

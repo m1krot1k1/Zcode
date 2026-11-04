@@ -50,9 +50,7 @@ export class NodeProviderRegistryRuntime {
       const account = await this.#accountSource.read();
       if (account.basedOnZCodeBuiltinRevision === "uninitialized") {
         this.#accountSource.replace(
-          createFailClosedAccountProviderConfigSnapshot(
-            await this.configService.read(),
-          ),
+          createFailClosedAccountProviderConfigSnapshot(await this.configService.read()),
           "initial-fail-closed",
         );
       }
@@ -76,8 +74,7 @@ export class NodeProviderRegistryRuntime {
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed)
-      throw new Error("NodeProviderRegistryRuntime 已 dispose");
+    if (this.#disposed) throw new Error("NodeProviderRegistryRuntime 已 dispose");
   }
 }
 

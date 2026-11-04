@@ -602,11 +602,7 @@
               "type": "openai-chat-completions",
               "baseUrl": "https://opencode.ai/zen/go/v1"
             },
-            "builtinModelIds": [
-              "deepseek-v4.1-flash",
-              "glm-5.3",
-              "kimi-k3"
-            ],
+            "builtinModelIds": ["deepseek-v4.1-flash", "glm-5.3", "kimi-k3"],
             "logo": {
               "type": "builtin",
               "key": "opencode"
@@ -628,10 +624,7 @@
               "type": "openai-chat-completions",
               "baseUrl": "https://opencode.ai/inference/openai/v1"
             },
-            "builtinModelIds": [
-              "deepseek-v4.1-flash",
-              "glm-5.3"
-            ],
+            "builtinModelIds": ["deepseek-v4.1-flash", "glm-5.3"],
             "logo": {
               "type": "builtin",
               "key": "opencode"

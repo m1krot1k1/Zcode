@@ -843,7 +843,9 @@ async function getExternalMcpRoots(workspacePath?: string): Promise<McpSourceRoo
   const home = resolveUserHomeDir();
   const userRoots: McpSourceRoot[] = [];
   for (const source of SUPPORTED_MCP_AGENT_SOURCES) {
-    const resolvedGlobalFile = source.resolveGlobalFile ? await source.resolveGlobalFile() : undefined;
+    const resolvedGlobalFile = source.resolveGlobalFile
+      ? await source.resolveGlobalFile()
+      : undefined;
     for (const rootPath of [
       ...source.globalFiles.map((globalFile) => join(home, ...globalFile)),
       ...(resolvedGlobalFile ? [resolvedGlobalFile] : []),

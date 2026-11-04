@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import YAML from "yaml";
 
-const workflowPath = new URL("../../.github/workflows/cross-platform-preview-release.yml", import.meta.url);
+const workflowPath = new URL(
+  "../../.github/workflows/cross-platform-preview-release.yml",
+  import.meta.url,
+);
 
 test("tagged Preview workflow builds and publishes Desktop and CLI for all requested targets", async () => {
   const workflow = YAML.parse(await readFile(workflowPath, "utf8"));
@@ -36,12 +39,17 @@ test("tagged Preview workflow builds and publishes Desktop and CLI for all reque
   const publish = workflow.jobs.publish;
   assert.deepEqual(publish.needs, ["desktop", "cli"]);
   assert.equal(publish.permissions.contents, "write");
-  assert.match(publish.steps.find(({ name }) => name === "Validate complete release asset set").run, /-ge 10/);
+  assert.match(
+    publish.steps.find(({ name }) => name === "Validate complete release asset set").run,
+    /-ge 10/,
+  );
   assert.match(
     publish.steps.find(({ name }) => name === "Verify release tag matches package version").run,
     /process\.env\.RELEASE_TAG/,
   );
-  const publishScript = publish.steps.find(({ name }) => name === "Create or update Preview prerelease").run;
+  const publishScript = publish.steps.find(
+    ({ name }) => name === "Create or update Preview prerelease",
+  ).run;
   assert.match(publishScript, /gh release view/);
   assert.match(publishScript, /gh release upload[\s\S]*--clobber/);
   assert.match(publishScript, /gh release edit[\s\S]*--prerelease[\s\S]*--verify-tag/);

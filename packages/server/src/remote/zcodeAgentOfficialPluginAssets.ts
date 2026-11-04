@@ -155,9 +155,7 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   "zcode-cua-plugin/skills/computer-use/SKILL.md",
 ] as const;
 
-export function buildRemoteAgentOfficialPluginDir(
-  remoteProviderDir: string,
-): string {
+export function buildRemoteAgentOfficialPluginDir(remoteProviderDir: string): string {
   return posix.join(remoteProviderDir, REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME);
 }
 
@@ -172,12 +170,9 @@ export function buildRemoteAgentOfficialPluginSourceRelativePath(params: {
   );
 }
 
-export function buildRemoteAgentOfficialPluginRequiredPaths(
-  remoteProviderDir: string,
-): string[] {
-  const remoteOfficialPluginDir =
-    buildRemoteAgentOfficialPluginDir(remoteProviderDir);
-  return REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.map(
-    (relativePath) => posix.join(remoteOfficialPluginDir, relativePath),
+export function buildRemoteAgentOfficialPluginRequiredPaths(remoteProviderDir: string): string[] {
+  const remoteOfficialPluginDir = buildRemoteAgentOfficialPluginDir(remoteProviderDir);
+  return REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.map((relativePath) =>
+    posix.join(remoteOfficialPluginDir, relativePath),
   );
 }

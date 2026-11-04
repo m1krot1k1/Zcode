@@ -133,9 +133,7 @@ export const apiRetryStateSchema = z.object({
   nextRetryAt: timestampSchema,
   reasonCode: z.string(),
   /** 配额耗尽自动切换 Provider 的提示；旧 Desktop 不认识该字段但可安全忽略。 */
-  providerFallback: z
-    .object({ from: z.string(), to: z.string(), reason: z.string() })
-    .optional(),
+  providerFallback: z.object({ from: z.string(), to: z.string(), reason: z.string() }).optional(),
 });
 export type ApiRetryState = z.infer<typeof apiRetryStateSchema>;
 

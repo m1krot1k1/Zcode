@@ -14,10 +14,7 @@ import {
   SELF_IMPROVE_RECEIPT_CRITERIA,
 } from "./self-improve-contract.mjs";
 
-const DEFAULT_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RECEIPT_SCHEMA = "zcode.prism.receipt.v3";
 export { SELF_IMPROVE_RECEIPT_CRITERIA };
 
@@ -70,9 +67,7 @@ async function inspectLocalArtifact(evidenceDirectory, artifactPath) {
     throw new Error("Evidence artifact не найден в каталоге evidence");
   }
   if (!isWithinDirectory(evidenceRoot, resolvedArtifact)) {
-    throw new Error(
-      "Evidence artifact должен оставаться внутри каталога evidence",
-    );
+    throw new Error("Evidence artifact должен оставаться внутри каталога evidence");
   }
 
   let metadata;
@@ -86,17 +81,12 @@ async function inspectLocalArtifact(evidenceDirectory, artifactPath) {
   }
   const maxArtifactBytes = SELF_IMPROVE_EVALUATOR_CHECK.maxArtifactBytes;
   if (metadata.size > maxArtifactBytes) {
-    throw new Error(
-      `Evidence artifact превышает локальный лимит ${maxArtifactBytes} bytes`,
-    );
+    throw new Error(`Evidence artifact превышает локальный лимит ${maxArtifactBytes} bytes`);
   }
 
   let handle;
   try {
-    handle = await open(
-      resolvedArtifact,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-    );
+    handle = await open(resolvedArtifact, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   } catch {
     throw new Error("Evidence artifact не удалось безопасно открыть");
   }
@@ -109,9 +99,7 @@ async function inspectLocalArtifact(evidenceDirectory, artifactPath) {
     }
     const bytes = await handle.readFile();
     if (bytes.byteLength > maxArtifactBytes) {
-      throw new Error(
-        `Evidence artifact превышает локальный лимит ${maxArtifactBytes} bytes`,
-      );
+      throw new Error(`Evidence artifact превышает локальный лимит ${maxArtifactBytes} bytes`);
     }
     return sha256(bytes);
   } finally {
@@ -125,17 +113,13 @@ export async function parseCandidateEvidence(
 ) {
   if (
     typeof text !== "string" ||
-    Buffer.byteLength(text, "utf8") >
-      SELF_IMPROVE_EVALUATOR_CHECK.maxEvidenceBytes
+    Buffer.byteLength(text, "utf8") > SELF_IMPROVE_EVALUATOR_CHECK.maxEvidenceBytes
   ) {
     throw new Error(
       `Evidence JSONL отсутствует или превышает локальный лимит ${SELF_IMPROVE_EVALUATOR_CHECK.maxEvidenceBytes} bytes`,
     );
   }
-  if (
-    typeof evidenceDirectory !== "string" ||
-    evidenceDirectory.trim() === ""
-  ) {
+  if (typeof evidenceDirectory !== "string" || evidenceDirectory.trim() === "") {
     throw new Error("Не указан каталог локальных evidence artifacts");
   }
 
@@ -171,8 +155,7 @@ export async function parseCandidateEvidence(
           SELF_IMPROVE_RECEIPT_CRITERIA[value.criterion_id]?.evaluationScope ||
         value.reported_status !== "pass" ||
         typeof value.command !== "string" ||
-        value.command !==
-          SELF_IMPROVE_RECEIPT_CRITERIA[value.criterion_id]?.command ||
+        value.command !== SELF_IMPROVE_RECEIPT_CRITERIA[value.criterion_id]?.command ||
         value.exit_code !== 0 ||
         typeof value.observed_at !== "string" ||
         Number.isNaN(Date.parse(value.observed_at)) ||
@@ -180,9 +163,7 @@ export async function parseCandidateEvidence(
         value.candidate_patch_sha256 !== candidatePatchSha256 ||
         !isSha256(value.artifact_sha256)
       ) {
-        throw new Error(
-          `Evidence JSONL строка ${index + 1} не соответствует receipt-контракту`,
-        );
+        throw new Error(`Evidence JSONL строка ${index + 1} не соответствует receipt-контракту`);
       }
       return value;
     });
@@ -192,21 +173,14 @@ export async function parseCandidateEvidence(
   if (
     observedCriteria.length !== expectedCriteria.length ||
     new Set(observedCriteria).size !== observedCriteria.length ||
-    expectedCriteria.some(
-      (criterionId) => !observedCriteria.includes(criterionId),
-    )
+    expectedCriteria.some((criterionId) => !observedCriteria.includes(criterionId))
   ) {
-    throw new Error(
-      "Evidence receipts должны содержать каждый allowlist criterion ровно один раз",
-    );
+    throw new Error("Evidence receipts должны содержать каждый allowlist criterion ровно один раз");
   }
 
   const records = [];
   for (const record of rawRecords) {
-    const artifactSha256 = await inspectLocalArtifact(
-      evidenceDirectory,
-      record.artifact_path,
-    );
+    const artifactSha256 = await inspectLocalArtifact(evidenceDirectory, record.artifact_path);
     if (artifactSha256 !== record.artifact_sha256) {
       throw new Error(
         `Evidence artifact для ${record.criterion_id} не совпадает с заявленным SHA-256`,
@@ -215,8 +189,7 @@ export async function parseCandidateEvidence(
     // Этот hash подтверждает целостность локальных bytes, а не источник или исполнение команды.
     records.push({ ...record, artifact_sha256: artifactSha256 });
   }
-  if (records.length === 0)
-    throw new Error("Нет evidence receipts для candidate");
+  if (records.length === 0) throw new Error("Нет evidence receipts для candidate");
   return records;
 }
 
@@ -224,25 +197,11 @@ export function validateCandidatePaths(paths) {
   const secretPathPattern =
     /(?:^|\/)(?:\.env(?:\.[^/]*)?|auth\.json|id_(?:rsa|ed25519)|[^/]+\.(?:pem|key|p12|pfx))$/iu;
   const unsafe = paths.find((filePath) => secretPathPattern.test(filePath));
-  if (unsafe)
-    throw new Error(
-      `Кандидат содержит потенциальный секретный файл: ${unsafe}`,
-    );
+  if (unsafe) throw new Error(`Кандидат содержит потенциальный секретный файл: ${unsafe}`);
 }
 
-export function buildSelfImprovePlan({
-  branch,
-  base,
-  baseSha,
-  candidateDiff,
-  evidenceRecords,
-}) {
-  if (
-    base !== "dev" ||
-    branch === "main" ||
-    branch === "master" ||
-    base === branch
-  ) {
+export function buildSelfImprovePlan({ branch, base, baseSha, candidateDiff, evidenceRecords }) {
+  if (base !== "dev" || branch === "main" || branch === "master" || base === branch) {
     throw new Error("Кандидат может открывать PR только в dev, не в main");
   }
   if (!branch.startsWith("self-improve/")) {
@@ -259,13 +218,10 @@ export function buildSelfImprovePlan({
   if (
     observedCriteria.length !== expectedCriteria.length ||
     new Set(observedCriteria).size !== observedCriteria.length ||
-    expectedCriteria.some(
-      (criterionId) => !observedCriteria.includes(criterionId),
-    ) ||
+    expectedCriteria.some((criterionId) => !observedCriteria.includes(criterionId)) ||
     evidenceRecords.some(
       (record) =>
-        record.command !==
-          SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id]?.command ||
+        record.command !== SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id]?.command ||
         record.evaluation_scope !==
           SELF_IMPROVE_RECEIPT_CRITERIA[record.criterion_id]?.evaluationScope,
     )
@@ -275,11 +231,7 @@ export function buildSelfImprovePlan({
     );
   }
   const patchHash = sha256(candidateDiff);
-  if (
-    evidenceRecords.some(
-      (record) => record.candidate_patch_sha256 !== patchHash,
-    )
-  ) {
+  if (evidenceRecords.some((record) => record.candidate_patch_sha256 !== patchHash)) {
     throw new Error("Evidence относится к другому candidate patch");
   }
   if (evidenceRecords.some((record) => record.base_sha !== baseSha)) {
@@ -338,9 +290,7 @@ function capture(command, trim = true, cwd = DEFAULT_ROOT) {
     maxBuffer: 16 * 1024 * 1024,
   });
   if (result.status !== 0) {
-    throw new Error(
-      `${file} завершился с кодом ${result.status}: ${(result.stderr || "").trim()}`,
-    );
+    throw new Error(`${file} завершился с кодом ${result.status}: ${(result.stderr || "").trim()}`);
   }
   return trim ? result.stdout.trim() : result.stdout;
 }
@@ -384,20 +334,15 @@ function parseArgs(argv) {
     else if (argument === "--evidence") options.evidencePath = argv[++index];
     else throw new Error(`Неизвестный аргумент: ${argument}`);
   }
-  if (!options.evidencePath)
-    throw new Error("Укажи --evidence <receipt.jsonl>");
+  if (!options.evidencePath) throw new Error("Укажи --evidence <receipt.jsonl>");
   return options;
 }
 
 function localBranchExists(cwd, branch) {
-  const result = spawnSync(
-    "git",
-    ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-    {
-      cwd,
-      encoding: "utf8",
-    },
-  );
+  const result = spawnSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], {
+    cwd,
+    encoding: "utf8",
+  });
   if (result.status === 0) return true;
   if (result.status === 1) return false;
   throw new Error(`git show-ref завершился с кодом ${result.status}`);
@@ -418,20 +363,14 @@ export async function runSelfImproveCli(
       "--apply запрещён: заранее существующий внешний protected secret gate не настроен; доступен только dry-run",
     );
   }
-  const commandCapture = (command, trim = true) =>
-    captureCommand(command, trim, rootDirectory);
+  const commandCapture = (command, trim = true) => captureCommand(command, trim, rootDirectory);
   const branchName = commandCapture(["git", "branch", "--show-current"]);
   if (branchName !== "dev")
-    throw new Error(
-      `Открой staged candidate на dev; текущая ветка: ${branchName}`,
-    );
+    throw new Error(`Открой staged candidate на dev; текущая ветка: ${branchName}`);
   const paths = assertOnlyStagedChanges(rootDirectory, captureCommand);
   validateCandidatePaths(paths);
   const baseSha = commandCapture(["git", "rev-parse", "HEAD"]);
-  const candidateDiff = commandCapture(
-    ["git", "diff", "--cached", "--binary", "HEAD"],
-    false,
-  );
+  const candidateDiff = commandCapture(["git", "diff", "--cached", "--binary", "HEAD"], false);
   const candidatePatchSha256 = sha256(candidateDiff);
   const evidencePath = path.resolve(rootDirectory, options.evidencePath);
   let evidenceMetadata;
@@ -473,9 +412,7 @@ export async function runSelfImproveCli(
     log(
       JSON.stringify(
         plan.commands.map((command) =>
-          command[0] === "gh"
-            ? [...command.slice(0, -1), "[generated PR body]"]
-            : command,
+          command[0] === "gh" ? [...command.slice(0, -1), "[generated PR body]"] : command,
         ),
         null,
         2,

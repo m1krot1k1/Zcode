@@ -118,8 +118,7 @@ describe("buildAgentRuntimeEnv", () => {
         httpProxyList: " 10.0.0.8:1080:user:secret \n\n socks://127.0.0.1:1081 ",
       }),
     ).toEqual({
-      ZCODE_HTTP_PROXY_LIST:
-        "socks5://user:secret@10.0.0.8:1080\nsocks5://127.0.0.1:1081",
+      ZCODE_HTTP_PROXY_LIST: "socks5://user:secret@10.0.0.8:1080\nsocks5://127.0.0.1:1081",
     });
   });
 

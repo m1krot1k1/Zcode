@@ -47,11 +47,7 @@ export function extractLinks(source) {
 
     if (fence) {
       const close = line.match(FENCE_CLOSE_RE);
-      if (
-        close &&
-        close[1][0] === fence.char &&
-        close[1].length >= fence.length
-      ) {
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) {
         fence = null;
       }
       continue;
@@ -120,11 +116,11 @@ function gitRoot() {
 
 /** 用 NUL 分隔读取跟踪文件，避免空格与换行文件名被拆开。 */
 function listTrackedMarkdown(root) {
-  const stdout = execFileSync(
-    "git",
-    ["-c", "core.quotepath=false", "ls-files", "-z", "*.md"],
-    { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-  );
+  const stdout = execFileSync("git", ["-c", "core.quotepath=false", "ls-files", "-z", "*.md"], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
   return stdout.split("\0").filter(Boolean);
 }
 
@@ -167,9 +163,7 @@ function main() {
     return;
   }
 
-  console.log(
-    `[doc-links] OK：${files.length} 个文件、${checked} 条相对链接全部有效`,
-  );
+  console.log(`[doc-links] OK：${files.length} 个文件、${checked} 条相对链接全部有效`);
 }
 
 const invokedDirectly =

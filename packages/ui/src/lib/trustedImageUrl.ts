@@ -1,7 +1,4 @@
-import {
-  isZCodeOfficialPluginCdnUrl,
-  ZCODE_OFFLINE_PREVIEW,
-} from "@zcode/shared";
+import { isZCodeOfficialPluginCdnUrl, ZCODE_OFFLINE_PREVIEW } from "@zcode/shared";
 
 /** UI 远端图片只允许 HTTPS；Offline Preview 对 ZCode 官方 CDN 回退到本地图标。 */
 export function isTrustedImageUrl(

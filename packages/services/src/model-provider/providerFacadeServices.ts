@@ -390,7 +390,8 @@ function normalizeReasoningEffort(
   reasoning: Record<string, unknown> | undefined,
 ): readonly string[] | undefined {
   // 只有上游声明支持推理时才把档位当成配置事实，避免把残留字段写进模型选项。
-  if (!reasoning || reasoning.supported !== true || !Array.isArray(reasoning.effort)) return undefined;
+  if (!reasoning || reasoning.supported !== true || !Array.isArray(reasoning.effort))
+    return undefined;
   const levels: string[] = [];
   for (const value of reasoning.effort) {
     if (typeof value !== "string") continue;

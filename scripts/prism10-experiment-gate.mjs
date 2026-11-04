@@ -76,11 +76,7 @@ function checkPositiveInteger(value, name) {
 
 export function assessPrismPairs(
   rows,
-  {
-    objective = "success",
-    minCases = DEFAULT_MIN_CASES,
-    minTrials = DEFAULT_MIN_TRIALS,
-  } = {},
+  { objective = "success", minCases = DEFAULT_MIN_CASES, minTrials = DEFAULT_MIN_TRIALS } = {},
 ) {
   if (objective !== "success" && objective !== "discovery") {
     throw new PrismGateInputError("objective must be success or discovery");
@@ -150,9 +146,7 @@ export function assessPrismPairs(
       for (const field of ["success", "cost_usd", "latency_s", "safety_violations", "receipt"]) {
         if (!(field in run)) throw new PrismGateInputError(`row ${row}: missing ${kind}.${field}`);
       }
-      if (
-        !(typeof run.success === "boolean" || run.success === 0 || run.success === 1)
-      ) {
+      if (!(typeof run.success === "boolean" || run.success === 0 || run.success === 1)) {
         throw new PrismGateInputError(`row ${row}: ${kind}.success must be 0/1`);
       }
       if (typeof run.receipt !== "string" || !run.receipt.trim()) {
@@ -194,12 +188,20 @@ export function assessPrismPairs(
     else ties += 1;
   }
 
-  if (environments.size !== 1 || graders.size !== 1 || splits.size !== 1 || !splits.has("protected_holdout")) {
+  if (
+    environments.size !== 1 ||
+    graders.size !== 1 ||
+    splits.size !== 1 ||
+    !splits.has("protected_holdout")
+  ) {
     throw new PrismGateInputError(
       "rows must have the same single environment/grader and protected_holdout split",
     );
   }
-  for (const [name, identifiers] of [["environment", environments], ["grader", graders]]) {
+  for (const [name, identifiers] of [
+    ["environment", environments],
+    ["grader", graders],
+  ]) {
     for (const value of identifiers) {
       if (typeof value !== "string" || !value.trim()) {
         throw new PrismGateInputError(`invalid ${name} identifier`);
@@ -215,10 +217,7 @@ export function assessPrismPairs(
     ["baseline score", baselineScore],
     ["candidate score", candidateScore],
   ]) {
-    if (
-      !Number.isFinite(value) ||
-      (!Number.isSafeInteger(value) && name.endsWith("score"))
-    ) {
+    if (!Number.isFinite(value) || (!Number.isSafeInteger(value) && name.endsWith("score"))) {
       throw new PrismGateInputError(`${name} aggregate exceeds the supported numeric range`);
     }
   }
@@ -260,10 +259,7 @@ export function assessPrismPairs(
   } else if (synthetic) {
     status = "INSUFFICIENT_EVIDENCE";
     reason = "synthetic/example data are not evidence of capability gains";
-  } else if (
-    trialsPerCase.size < minCases ||
-    Math.min(...trialsPerCase.values()) < minTrials
-  ) {
+  } else if (trialsPerCase.size < minCases || Math.min(...trialsPerCase.values()) < minTrials) {
     status = "INSUFFICIENT_EVIDENCE";
     reason = "insufficient distinct cases or repetitions";
   } else if (wins <= losses) {
@@ -294,19 +290,31 @@ function parsePositiveInteger(value, name) {
 }
 
 export function parsePrismGateArgs(argv) {
-  const result = { objective: "success", minCases: DEFAULT_MIN_CASES, minTrials: DEFAULT_MIN_TRIALS };
+  const result = {
+    objective: "success",
+    minCases: DEFAULT_MIN_CASES,
+    minTrials: DEFAULT_MIN_TRIALS,
+  };
   let inputPath;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--input" || argument === "--objective" || argument === "--min-cases" || argument === "--min-trials") {
+    if (
+      argument === "--input" ||
+      argument === "--objective" ||
+      argument === "--min-cases" ||
+      argument === "--min-trials"
+    ) {
       const value = argv[index + 1];
-      if (!value || value.startsWith("--")) throw new PrismGateInputError(`missing value for ${argument}`);
+      if (!value || value.startsWith("--"))
+        throw new PrismGateInputError(`missing value for ${argument}`);
       index += 1;
       if (argument === "--input") {
-        if (inputPath !== undefined) throw new PrismGateInputError("--input may be supplied only once");
+        if (inputPath !== undefined)
+          throw new PrismGateInputError("--input may be supplied only once");
         inputPath = value;
       } else if (argument === "--objective") result.objective = value;
-      else if (argument === "--min-cases") result.minCases = parsePositiveInteger(value, "min-cases");
+      else if (argument === "--min-cases")
+        result.minCases = parsePositiveInteger(value, "min-cases");
       else result.minTrials = parsePositiveInteger(value, "min-trials");
     } else {
       throw new PrismGateInputError(`unknown argument: ${argument}`);

@@ -6,7 +6,11 @@ import {
   TID_TASK_SETTINGS_BUTTON,
   testId,
 } from "@zcode/shared/test-ids";
-import { clickTestIdByDom, getE2EAppDataPaths, waitForTestIdByDom } from "../helpers/desktop-app.js";
+import {
+  clickTestIdByDom,
+  getE2EAppDataPaths,
+  waitForTestIdByDom,
+} from "../helpers/desktop-app.js";
 import { prepareV4ConversationE2E } from "../helpers/v4-conversation.js";
 
 const SESSION_MARKER = "E2E_CLINE_OAUTH_SESSION_MARKER";
@@ -120,7 +124,9 @@ async function waitForImportDiscovery(): Promise<void> {
 }
 
 async function clickMoreActions(): Promise<void> {
-  const trigger = await browser.$('button[aria-label="More actions"], button[aria-label="更多操作"]');
+  const trigger = await browser.$(
+    'button[aria-label="More actions"], button[aria-label="更多操作"]',
+  );
   await trigger.waitForDisplayed({ timeout: 15_000 });
   await trigger.click();
 }
