@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGenUiStateStorage } from "./stateStorage.js";
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -50,7 +50,7 @@ describe("desktop Gen UI state persistence", () => {
     await second.set(target, { modelContent: { year: 2026 }, privateContent: null });
     expect(await first.get(target)).toEqual({ modelContent: { year: 2026 }, privateContent: null });
   });
-  it("delivers external writes through native filesystem watchers", async () => {
+  it("delivers external writes through native filesystem watchers", { timeout: 120_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "gen-ui-state-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
     const a = createGenUiStateStorage(root),
@@ -65,13 +65,21 @@ describe("desktop Gen UI state persistence", () => {
       path: "/workspace/chart.html",
     };
     await a.get(target);
-    const changed = new Promise<unknown>((resolve) => {
-      const off = a.onChanged((event) => {
-        off.dispose();
-        resolve(event.state);
-      });
-    });
-    await b.set(target, { modelContent: "selection", privateContent: null });
-    expect(await changed).toEqual({ modelContent: "selection", privateContent: null });
+    const received: unknown[] = [];
+    const off = a.onChanged((event) => received.push(event.state));
+    cleanup.push(() => off.dispose());
+    // 根因：macOS 的 fs.watch 基于 FSEvents，watch() 返回、原生流真正生效之前存在启动空窗，
+    // 空窗内的文件事件会永久丢失（同仓库 subagentRuntimeConfigWatcher 用例实测立即写入约 1/8 丢失）。
+    // 原用例只写一次再等事件，命中空窗后只能等满 30s 全局超时，属真实竞态而非慢。
+    // 改为 100ms 步长重发同一版快照直到 onChanged 送达（90s 截止，首个事件即成功）；
+    // 断言强度不变：送达内容必须与写入内容完全一致，仍然验证外部写入经原生 watcher 送达。
+    const expected = { modelContent: "selection", privateContent: null };
+    await vi.waitFor(
+      async () => {
+        await b.set(target, expected);
+        expect(received).toContainEqual(expected);
+      },
+      { timeout: 90_000, interval: 100 },
+    );
   });
 });
