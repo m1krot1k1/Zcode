@@ -995,3 +995,7 @@ exceptions:
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/adapters/src/model/first-token-watchdog.ts]
     reason: 首 token 看门狗把“模型已受理但迟迟没有输出”的判定与定时器从模型 runner 中拆成独立纯函数模块，供 runner 与 stream 共用并单独验收；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，model 目录没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 CLI 需要单独的边界梳理。
+  - id: agent-work-ledger-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/runtime-task/work-ledger.ts]
+    reason: 代理工作台账（谁在做什么、占用哪些路径、重复意图与冲突）先以独立纯函数模块落地并单独验收，暂不接入 spawn；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime-task 目录没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 CLI 需要单独的边界梳理。
