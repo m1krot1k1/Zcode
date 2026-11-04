@@ -1789,7 +1789,11 @@ const ReasoningRowView = memo(function ReasoningRowView({
   // autoCollapseKey 仍保证状态边界不会覆盖已经发生过的用户交互。
   const durationSeconds =
     row.durationMs !== undefined ? Math.max(1, Math.ceil(row.durationMs / 1000)) : undefined;
-  if (streaming && row.text.length === 0) {
+  // Bug 原因：流式 reasoning 的首个 chunk 可能只是空白（换行/缩进），只判断
+  // length === 0 会把它当成有内容，渲染出没有正文的裸「Thinking」触发器。
+  // 修复依据：该行没有任何可展示思考内容，与空字符串同等处理；可见性语义
+  // 仍由 isConversationReasoningRowVisible 决定，不在此处扩展。
+  if (streaming && row.text.trim().length === 0) {
     return null;
   }
   return (

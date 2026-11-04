@@ -474,6 +474,80 @@ describe("ConversationRowView reasoning summary", () => {
   });
 });
 
+// 流式 reasoning 的「空块」回归：guard 必须按 trim 后的内容判断，
+// 但只有 reasoning 行受影响；普通 assistant 行与可见性语义保持原样。
+describe("ConversationRowView streaming reasoning emptiness guard", () => {
+  async function mountRow(
+    row: ReasoningRow | AssistantTextRow,
+    context: ConversationRowRenderContext = rowContext,
+  ): Promise<{ container: Element; root: Root }> {
+    const container = installMinimalDom();
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(
+          ZCodeIntlProvider,
+          { initialLocale: "zh-CN" },
+          createElement(ConversationRowView, { context, row }),
+        ),
+      );
+    });
+    return { container, root };
+  }
+
+  it.each([" \n\t ", "\n\n  "])(
+    "renders no reasoning block when streaming text is whitespace-only (%j)",
+    async (text) => {
+      const { container, root } = await mountRow(reasoningRow({ text }));
+
+      expect(collectAttributeValues(container, "data-row-id")).toEqual([]);
+      expect(reasoningTriggerProps).toHaveLength(0);
+      // 空块不能以裸「Thinking / 正在思考」触发器的形式留在 DOM 里。
+      expect(collectText(container)).not.toContain("正在思考");
+
+      await act(async () => root.unmount());
+    },
+  );
+
+  it("still renders streaming reasoning that carries real content", async () => {
+    const row = reasoningRow({ text: "先确认仓库状态" });
+    const { container, root } = await mountRow(row);
+
+    expect(collectAttributeValues(container, "data-row-id")).toEqual([String(row.rowId)]);
+    expect(reasoningTriggerProps).toHaveLength(1);
+    expect(reasoningTriggerProps[0]?.streamingText).toBe(row.text);
+    expect(collectText(container)).toContain(row.text);
+
+    await act(async () => root.unmount());
+  });
+
+  it.each(["", " \n"])(
+    "keeps non-reasoning assistant rows with empty text on their existing path (%j)",
+    async (text) => {
+      const { container, root } = await mountRow(assistantTextRow({ state: "streaming", text }));
+
+      expect(collectAttributeValues(container, "data-row-id")).toEqual(["43"]);
+      expect(reasoningTriggerProps).toHaveLength(0);
+
+      await act(async () => root.unmount());
+    },
+  );
+
+  it("keeps the first reasoning row visible when the reasoning gate is off", async () => {
+    const row = reasoningRow({ text: "首条思考提示" });
+    const { container, root } = await mountRow(row, {
+      ...rowContext,
+      messageStreamShowReasoning: false,
+      messageStreamFirstReasoningRowId: row.rowId,
+    });
+
+    expect(collectAttributeValues(container, "data-row-id")).toEqual([String(row.rowId)]);
+    expect(collectText(container)).toContain("首条思考提示");
+
+    await act(async () => root.unmount());
+  });
+});
+
 describe("ConversationRowView user query editing", () => {
   it.each([false, true])(
     "renders topic originals separately (mobile=%s)",
