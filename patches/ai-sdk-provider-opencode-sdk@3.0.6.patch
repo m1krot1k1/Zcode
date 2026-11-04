@@ -1,8 +1,30 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index c26b98c34089657b030010fd8652f868fd42d2e1..ca875050e0e4d3d3d0a7c38551e784021a5a5819 100644
+index c26b98c34089657b030010fd8652f868fd42d2e1..5c3afc8b4d7a923a35891764a4cb1f6e96e59822 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs	
-@@ -792,6 +792,16 @@ function flushPendingApproval(callID, state, parts) {
+@@ -363,7 +363,10 @@ function createAuthenticationError(error) {
+ function createAPICallError(error, metadata) {
+   const message = extractErrorMessage(error);
+   const statusCode = extractStatusCode(error);
+-  const isRetryable = metadata?.isRetryable ?? isRetryableError(error);
++  // OpenCode 的额度耗尽必须显式声明不可重试，否则 APICallError.isRetryable 会按 429 判定为可重试，
++  // 上层 maxAttempts 会把用户挂在 “Working” 上几十分钟。
++  const isRetryable = metadata?.isRetryable ?? (typeof error?.isRetryable === "boolean" ? error.isRetryable : isRetryableError(error));
++  const retryAfterSeconds = metadata?.retryAfterSeconds ?? (typeof error?.retryAfterSeconds === "number" ? error.retryAfterSeconds : void 0);
+   return new provider.APICallError({
+     message,
+     url: "opencode://session",
+@@ -374,7 +377,8 @@ function createAPICallError(error, metadata) {
+       errorType: metadata?.errorType ?? extractErrorType(error),
+       sessionId: metadata?.sessionId,
+       messageId: metadata?.messageId,
+-      modelId: metadata?.modelId
++      modelId: metadata?.modelId,
++      ...(retryAfterSeconds === void 0 ? {} : { retryAfterSeconds })
+     }
+   });
+ }
+@@ -792,7 +796,56 @@ function flushPendingApproval(callID, state, parts) {
      }
    });
  }
@@ -16,10 +38,42 @@ index c26b98c34089657b030010fd8652f868fd42d2e1..ca875050e0e4d3d3d0a7c38551e78402
 +  }
 +  return payload.error ?? new Error("OpenCode session failed.");
 +}
- function isEventForSession(event, sessionId) {
-   if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
-     const props = event.properties;
-@@ -802,4 +812,7 @@ function isEventForSession(event, sessionId) {
++/**
++ * OpenCode 1.19.x 的免费额度耗尽不返回 HTTP 429：本地服务端用 session.status(retry)
++ * 事件挂在 Zen 的 Retry-After 上，prompt 请求保持打开且不产生任何 part。
++ * 这里把它归一化成 429/不可重试错误，避免上层只能等 first-token 看门狗再重试。
++ */
++function readSessionRetryLimitEvent(event, sessionId) {
++  if (!event || event.type !== "session.status") {
++    return void 0;
++  }
++  const payload = event.properties && typeof event.properties === "object" ? event.properties : event.data && typeof event.data === "object" ? event.data : void 0;
++  if (!payload || payload.sessionID !== sessionId) {
++    return void 0;
++  }
++  const status = payload.status;
++  if (!status || status.type !== "retry") {
++    return void 0;
++  }
++  const actionReason = status.action && status.action.reason;
++  const nextAt = typeof status.next === "number" ? status.next : void 0;
++  const retryAfterSeconds = nextAt === void 0 ? void 0 : Math.max(0, Math.ceil((nextAt - Date.now()) / 1000));
++  const longPause = retryAfterSeconds !== void 0 && retryAfterSeconds > 600;
++  // 只有免费额度上限或超过 10 分钟的等待才是终局；短暂 retry 继续交给上层重试策略。
++  if (actionReason !== "free_tier_limit" && !longPause) {
++    return void 0;
++  }
++  const message = typeof status.message === "string" && status.message.length > 0 ? status.message : "OpenCode free usage limit reached.";
++  const error = new Error(message);
++  error.name = "FreeUsageLimitError";
++  error.code = "OPENCODE_FREE_LIMIT_REACHED";
++  error.statusCode = 429;
++  error.isRetryable = false;
++  if (retryAfterSeconds !== void 0) {
++    error.retryAfterSeconds = retryAfterSeconds;
++  }
++  return error;
++}
  function isEventForSession(event, sessionId) {
 +  if (event.type === "session.error" && event.data && typeof event.data === "object") {
 +    return event.data.sessionID === sessionId;
@@ -27,7 +81,7 @@ index c26b98c34089657b030010fd8652f868fd42d2e1..ca875050e0e4d3d3d0a7c38551e78402
    if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
      const props = event.properties;
      if ("part" in props && typeof props.part === "object" && props.part !== null) {
-@@ -2103,6 +2116,11 @@ var OpencodeLanguageModel = class {
+@@ -2103,6 +2156,16 @@ var OpencodeLanguageModel = class {
                if (!isEventForSession(event, sessionId)) {
                  continue;
                }
@@ -36,14 +90,41 @@ index c26b98c34089657b030010fd8652f868fd42d2e1..ca875050e0e4d3d3d0a7c38551e78402
 +                handlePromptFailure(sessionError);
 +                continue;
 +              }
++              const sessionRetryLimit = readSessionRetryLimitEvent(event, sessionId);
++              if (sessionRetryLimit !== void 0 && !requestAbortController.signal.aborted) {
++                handlePromptFailure(sessionRetryLimit);
++                continue;
++              }
                const streamParts = convertEventToStreamParts(
                  event,
                  state,
 diff --git a/dist/index.js b/dist/index.js
-index 23ba43b5c63824ffaa36aaf8b6c209b62028fd04..adf7199af5a388b25ac28b77d1a63feeb824116d 100644
+index 23ba43b5c63824ffaa36aaf8b6c209b62028fd04..2ffc19710438f8fecd6be4591a6ffb9a365c945b 100644
 --- a/dist/index.js
 +++ b/dist/index.js	
-@@ -790,6 +790,16 @@ function flushPendingApproval(callID, state, parts) {
+@@ -361,7 +361,10 @@ function createAuthenticationError(error) {
+ function createAPICallError(error, metadata) {
+   const message = extractErrorMessage(error);
+   const statusCode = extractStatusCode(error);
+-  const isRetryable = metadata?.isRetryable ?? isRetryableError(error);
++  // OpenCode 的额度耗尽必须显式声明不可重试，否则 APICallError.isRetryable 会按 429 判定为可重试，
++  // 上层 maxAttempts 会把用户挂在 “Working” 上几十分钟。
++  const isRetryable = metadata?.isRetryable ?? (typeof error?.isRetryable === "boolean" ? error.isRetryable : isRetryableError(error));
++  const retryAfterSeconds = metadata?.retryAfterSeconds ?? (typeof error?.retryAfterSeconds === "number" ? error.retryAfterSeconds : void 0);
+   return new APICallError({
+     message,
+     url: "opencode://session",
+@@ -372,7 +375,8 @@ function createAPICallError(error, metadata) {
+       errorType: metadata?.errorType ?? extractErrorType(error),
+       sessionId: metadata?.sessionId,
+       messageId: metadata?.messageId,
+-      modelId: metadata?.modelId
++      modelId: metadata?.modelId,
++      ...(retryAfterSeconds === void 0 ? {} : { retryAfterSeconds })
+     }
+   });
+ }
+@@ -790,7 +794,56 @@ function flushPendingApproval(callID, state, parts) {
      }
    });
  }
@@ -57,10 +138,42 @@ index 23ba43b5c63824ffaa36aaf8b6c209b62028fd04..adf7199af5a388b25ac28b77d1a63fee
 +  }
 +  return payload.error ?? new Error("OpenCode session failed.");
 +}
- function isEventForSession(event, sessionId) {
-   if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
-     const props = event.properties;
-@@ -800,4 +810,7 @@ function isEventForSession(event, sessionId) {
++/**
++ * OpenCode 1.19.x 的免费额度耗尽不返回 HTTP 429：本地服务端用 session.status(retry)
++ * 事件挂在 Zen 的 Retry-After 上，prompt 请求保持打开且不产生任何 part。
++ * 这里把它归一化成 429/不可重试错误，避免上层只能等 first-token 看门狗再重试。
++ */
++function readSessionRetryLimitEvent(event, sessionId) {
++  if (!event || event.type !== "session.status") {
++    return void 0;
++  }
++  const payload = event.properties && typeof event.properties === "object" ? event.properties : event.data && typeof event.data === "object" ? event.data : void 0;
++  if (!payload || payload.sessionID !== sessionId) {
++    return void 0;
++  }
++  const status = payload.status;
++  if (!status || status.type !== "retry") {
++    return void 0;
++  }
++  const actionReason = status.action && status.action.reason;
++  const nextAt = typeof status.next === "number" ? status.next : void 0;
++  const retryAfterSeconds = nextAt === void 0 ? void 0 : Math.max(0, Math.ceil((nextAt - Date.now()) / 1000));
++  const longPause = retryAfterSeconds !== void 0 && retryAfterSeconds > 600;
++  // 只有免费额度上限或超过 10 分钟的等待才是终局；短暂 retry 继续交给上层重试策略。
++  if (actionReason !== "free_tier_limit" && !longPause) {
++    return void 0;
++  }
++  const message = typeof status.message === "string" && status.message.length > 0 ? status.message : "OpenCode free usage limit reached.";
++  const error = new Error(message);
++  error.name = "FreeUsageLimitError";
++  error.code = "OPENCODE_FREE_LIMIT_REACHED";
++  error.statusCode = 429;
++  error.isRetryable = false;
++  if (retryAfterSeconds !== void 0) {
++    error.retryAfterSeconds = retryAfterSeconds;
++  }
++  return error;
++}
  function isEventForSession(event, sessionId) {
 +  if (event.type === "session.error" && event.data && typeof event.data === "object") {
 +    return event.data.sessionID === sessionId;
@@ -68,13 +181,18 @@ index 23ba43b5c63824ffaa36aaf8b6c209b62028fd04..adf7199af5a388b25ac28b77d1a63fee
    if ("properties" in event && typeof event.properties === "object" && event.properties !== null) {
      const props = event.properties;
      if ("part" in props && typeof props.part === "object" && props.part !== null) {
-@@ -2101,6 +2114,11 @@ var OpencodeLanguageModel = class {
+@@ -2101,6 +2154,16 @@ var OpencodeLanguageModel = class {
                if (!isEventForSession(event, sessionId)) {
                  continue;
                }
 +              const sessionError = readSessionErrorEvent(event, sessionId);
 +              if (sessionError !== void 0 && !requestAbortController.signal.aborted) {
 +                handlePromptFailure(sessionError);
++                continue;
++              }
++              const sessionRetryLimit = readSessionRetryLimitEvent(event, sessionId);
++              if (sessionRetryLimit !== void 0 && !requestAbortController.signal.aborted) {
++                handlePromptFailure(sessionRetryLimit);
 +                continue;
 +              }
                const streamParts = convertEventToStreamParts(

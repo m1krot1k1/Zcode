@@ -252,9 +252,9 @@ describe("OpenCode session.create diagnostics", () => {
       providerErrorMessage: "OpenCode usage limit reached.",
     });
     expect(classifyModelFailure(error)).toMatchObject({
-      code: "model_rate_limited",
+      code: "OPENCODE_FREE_LIMIT_REACHED",
       reason: "rate_limited",
-      retryable: true,
+      retryable: false,
       statusCode: 429,
     });
   });
@@ -512,9 +512,9 @@ describe("classifyModelFailure provider business codes", () => {
     );
 
     expect(failure).toMatchObject({
-      code: "model_rate_limited",
+      code: "OPENCODE_FREE_LIMIT_REACHED",
       message:
-        "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+        "OpenCode free usage limit reached. Resets in about 4 hours, or switch to another model.",
       reason: "rate_limited",
       retryable: false,
     });

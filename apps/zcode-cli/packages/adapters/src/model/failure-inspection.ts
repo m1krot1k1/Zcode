@@ -381,7 +381,36 @@ function isExactFetchFailedMessage(message: string): boolean {
 }
 
 export function isOpenCodeFreeUsageLimitMessage(message: string | undefined): boolean {
-  return Boolean(message && /free usage limit reached|free models work in opencode/i.test(message));
+  return Boolean(
+    message && /free usage limit reached|free usage exceeded|free models work in opencode/i.test(message),
+  );
+}
+
+/** 通用“额度用尽”文案单独判断：只有确认是 OpenCode 请求时才能当成免费额度耗尽。 */
+export function isGenericUsageLimitMessage(message: string | undefined): boolean {
+  return Boolean(message && /usage limit reached|usage limit exceeded/i.test(message));
+}
+
+/** OpenCode 1.19.x 把免费额度耗尽放进结构化错误，文案可能被本地化，必须同时认 code。 */
+export function isOpenCodeFreeLimitError(error: unknown): boolean {
+  const record = asRecord(error);
+  const data = asRecord(record.data);
+  return [record.code, record.errorType, record.name, data?.errorType, data?.code].some(
+    (value) =>
+      typeof value === "string" &&
+      /^(FreeUsageLimitError|OPENCODE_FREE_LIMIT_REACHED)$/i.test(value),
+  );
+}
+
+/** session.status(retry) 事件不带响应头，等待秒数由 provider patch 放在 data.retryAfterSeconds。 */
+export function readProviderRetryAfterMs(error: unknown): number | undefined {
+  const record = asRecord(error);
+  const data = asRecord(record.data);
+  const raw = data?.retryAfterSeconds ?? record.retryAfterSeconds;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return undefined;
+  }
+  return Math.round(raw * 1000);
 }
 
 export function readOriginalErrorTail(message: string | undefined): string | undefined {

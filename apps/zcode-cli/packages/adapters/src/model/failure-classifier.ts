@@ -19,9 +19,12 @@ import {
   isProxyFailure,
   isTimeoutFailure,
   parseRetryAfterMs,
+  isOpenCodeFreeLimitError,
   isOpenCodeFreeUsageLimitMessage,
+  isGenericUsageLimitMessage,
   readOpenCodeRequestDiagnostic,
   readOpenCodeSessionDiagnostic,
+  readProviderRetryAfterMs,
   unwrapRetryError,
 } from "./failure-inspection.js";
 import { readMappedAiSdkProviderBusinessError } from "./failure-ai-sdk-provider-error.js";
@@ -44,6 +47,14 @@ const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
 // registry.ts 的 admission 拒绝与 turn.ts 的预算中止共用同一句文案，只有预算维度不同。
 const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|token|time) budget (is )?exhausted/i;
 
+// Retry-After 超过 10 分钟说明配额/限流窗口远超一次会话的等待窗口：
+// 此时任何 429 都必须立即失败，否则 maxAttempts 会把用户挂在 “Working” 上几十分钟。
+const LONG_RETRY_AFTER_MS = 600_000;
+
+function isLongRetryAfter(retryAfterMs: number | undefined): boolean {
+  return retryAfterMs !== undefined && retryAfterMs > LONG_RETRY_AFTER_MS;
+}
+
 export interface ClassifiedModelFailure {
   code: ModelErrorCodeType;
   message: string;
@@ -51,6 +62,8 @@ export interface ClassifiedModelFailure {
   retryReason: ModelRetryReason;
   retryable: boolean;
   retryAfterMs?: number;
+  /** 与 retryAfterMs 同源，便于日志/UI 直接展示等待秒数。 */
+  retryAfterSeconds?: number;
   statusCode?: number;
 }
 
@@ -102,7 +115,7 @@ export function classifyModelFailure(
   const statusCode = getStatusCode(unwrapped);
   const code = getErrorCode(unwrapped);
   const headers = getResponseHeaders(unwrapped);
-  const retryAfterMs = parseRetryAfterMs(headers);
+  const retryAfterMs = parseRetryAfterMs(headers) ?? readProviderRetryAfterMs(unwrapped);
 
   const openCodeDiagnostic =
     readOpenCodeSessionDiagnostic(unwrapped) ?? readOpenCodeRequestDiagnostic(unwrapped);
@@ -113,20 +126,29 @@ export function classifyModelFailure(
       ? providerBusinessMessage(openCodeProviderFailure)
       : undefined);
   const rawMessage = unwrapped instanceof Error ? unwrapped.message : undefined;
-  // session.error 和 SDK 空响应的 Original error 尾部都带同一句限额文案。
-  // 只认这句，避免把通用 5xx 当成配额，也不把配额当成可重试的网络错误。
-  if (
+  // session.error、SDK 空响应的 Original error 尾部、以及 1.19.x 的 session.status(retry)
+  // 都带同一句免费额度文案；只在确认是 OpenCode 时把通用 “usage limit reached” 也算进来。
+  const openCodeContext =
+    openCodeDiagnostic !== undefined ||
+    openCodeProviderFailure?.providerId === "opencode" ||
+    isOpenCodeFreeLimitError(unwrapped);
+  const openCodeFreeLimit =
+    isOpenCodeFreeLimitError(unwrapped) ||
     isOpenCodeFreeUsageLimitMessage(openCodeProviderMessage) ||
-    isOpenCodeFreeUsageLimitMessage(rawMessage)
-  ) {
+    isOpenCodeFreeUsageLimitMessage(rawMessage) ||
+    (openCodeContext && isGenericUsageLimitMessage(rawMessage));
+  // 只认这句/这个 code，避免把通用 5xx 当成配额，也不把配额当成可重试的网络错误。
+  if (openCodeFreeLimit) {
     return {
-      code: ModelErrorCode.ModelRateLimited,
+      code: ModelErrorCode.OpenCodeFreeLimitReached,
       message:
-        "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+        "OpenCode free usage limit reached. Resets in about 4 hours, or switch to another model.",
       reason: ModelFailureReasonValue.RateLimited,
       retryReason: ModelRetryReasonValue.RateLimited,
       retryable: false,
-      statusCode,
+      retryAfterMs,
+      retryAfterSeconds: retryAfterMs === undefined ? undefined : Math.round(retryAfterMs / 1000),
+      statusCode: statusCode ?? 429,
     };
   }
 
@@ -270,8 +292,9 @@ export function classifyModelFailure(
       message: "Provider rate limited the model request.",
       reason: ModelFailureReasonValue.RateLimited,
       retryReason: ModelRetryReasonValue.RateLimited,
-      retryable: true,
+      retryable: !isLongRetryAfter(retryAfterMs),
       retryAfterMs,
+      retryAfterSeconds: retryAfterMs === undefined ? undefined : Math.round(retryAfterMs / 1000),
       statusCode,
     };
   }
@@ -596,8 +619,9 @@ function classifyProviderBusinessFailure(
       message,
       reason: ModelFailureReasonValue.RateLimited,
       retryReason: ModelRetryReasonValue.RateLimited,
-      retryable: true,
+      retryable: !isLongRetryAfter(retryAfterMs),
       retryAfterMs,
+      retryAfterSeconds: retryAfterMs === undefined ? undefined : Math.round(retryAfterMs / 1000),
       statusCode: effectiveStatusCode,
     };
   }

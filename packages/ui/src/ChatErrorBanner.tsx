@@ -70,6 +70,8 @@ const LOCALIZED_ERROR_CODES = new Set([
   // 必须本地化，否则用户只能看到英文兜底文案。
   "NO_MODEL_SELECTED",
   "no_model_selected",
+  // OpenCode 免费额度耗尽必须显示“换模型/等重置”，不能透出 429 原文或长时间“Working”。
+  "OPENCODE_FREE_LIMIT_REACHED",
 ]);
 
 // runtime core error 的 snake_case 码 → 本地化键前缀，未列出时按原 codes 命名。

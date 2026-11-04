@@ -113,6 +113,8 @@ export const ModelErrorCode = {
   /** 请求已发出但首个 content/reasoning 增量迟迟未到，已中止本次 attempt。 */
   FirstTokenTimeout: "first_token_timeout",
   ModelRateLimited: "model_rate_limited",
+  /** OpenCode 免费模型额度耗尽（Zen 免费额度），需要换模型或等额度重置。 */
+  OpenCodeFreeLimitReached: "OPENCODE_FREE_LIMIT_REACHED",
   ModelContextExceeded: "model_context_exceeded",
 } as const;
 
