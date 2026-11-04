@@ -58,6 +58,11 @@ const LOCALIZED_ERROR_CODES = new Set([
   // 历史任务模型不可用要按稳定 code 本地化，避免英文界面显示中文提示。
   "ZCODE_RUNTIME_MODEL_UNAVAILABLE",
   "ZCODE_BIGMODEL_TEAM_PLAN_MEMBER_REQUIRED",
+  // 预算耗尽在 runtime 侧会以 TurnCancelled 收口；取消码必须本地化，
+  // 否则外层 "Turn was cancelled." 会盖住真实原因。
+  "TURN_CANCELLED",
+  // runtime core error 使用 snake_case（CoreErrorType.TurnCancelled）。
+  "turn_cancelled",
 ]);
 
 const MODEL_CONFIG_MISSING_CODES = new Set([
@@ -97,14 +102,29 @@ export type ChatErrorBannerModelConfigTarget = "local" | "remote";
 
 const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|token|time) budget (is )?exhausted/i;
 
+const TURN_CANCELLED_ERROR_CODES = new Set(["TURN_CANCELLED", "turn_cancelled"]);
+
 type RunBudgetKind = "resource" | "token" | "time";
+
+/**
+ * 合并错误里所有可读原因文本。
+ *
+ * Bugfix: runtime 把真实原因放在 underlyingErrorMessage / underlyingErrorDetail 里，
+ * 外层 message 往往只是 "Turn was cancelled." 或 "Internal error" 这类包装文案。
+ * 只读 message/detail 会把预算耗尽显示成普通失败，并把 session_x:turn_y 原文带进 UI。
+ */
+function collectErrorReasonText(error: ZCodeUiError): string {
+  return [error.message, error.detail, error.underlyingErrorMessage, error.underlyingErrorDetail]
+    .filter((value): value is string => Boolean(value))
+    .join("\n");
+}
 
 /**
  * 预算耗尽的错误来自 runtime，原始 message 是英文技术文案（还可能带内部 id）。
  * 这里只按结构化 attribution.reason 或稳定文案识别，命中后交给 UI 本地化。
  */
 function resolveRunBudgetExhaustedKind(error: ZCodeUiError): RunBudgetKind | null {
-  const text = [error.message, error.detail].filter(Boolean).join("\n");
+  const text = collectErrorReasonText(error);
   const match = text.match(RUN_BUDGET_EXHAUSTED_PATTERN);
   const textKind = match?.[1]?.toLowerCase() as RunBudgetKind | undefined;
   if (textKind) {
@@ -138,6 +158,11 @@ export function resolveChatErrorBannerDisplayMessage(
   }
 
   const runBudgetKind = resolveRunBudgetExhaustedKind(error);
+  if (runBudgetKind && error.code && TURN_CANCELLED_ERROR_CODES.has(error.code)) {
+    // 取消码本身不带原因：只有全部文本确认预算耗尽时才提示达到上限，
+    // 否则用户主动停止 / 新消息打断会被误报成用量超限。
+    return intl.formatMessage({ id: "chat.error.turnCancelledBudgetExhausted" });
+  }
   if (runBudgetKind) {
     return intl.formatMessage({
       id:
@@ -168,22 +193,28 @@ export function resolveChatErrorBannerDisplayMessage(
         );
   }
 
+  const reasonText = collectErrorReasonText(error);
   const providerBusinessCode =
-    resolveRequestVerificationBusinessCode(error.code, error.message) ??
-    resolveOffPeakTicketExpiredBusinessCode(error.code, error.message) ??
+    resolveRequestVerificationBusinessCode(error.code, reasonText) ??
+    resolveOffPeakTicketExpiredBusinessCode(error.code, reasonText) ??
     error.code;
   const providerBusinessMessageId = getProviderBusinessErrorMessageId(providerBusinessCode);
   if (providerBusinessMessageId) {
     return intl.formatMessage({ id: providerBusinessMessageId });
   }
 
-  if (isSuspiciousEmptyModelResultMessage(error.message)) {
+  if (isSuspiciousEmptyModelResultMessage(reasonText)) {
     return intl.formatMessage({ id: "zcode.error.modelSuspiciousEmpty" });
   }
 
-  return error.code && LOCALIZED_ERROR_CODES.has(error.code)
-    ? intl.formatMessage({ id: `zcode.error.${error.code}` })
-    : error.message;
+  if (error.code && LOCALIZED_ERROR_CODES.has(error.code)) {
+    // runtime core error 使用 snake_case（turn_cancelled），本地化键统一按大写稳定码命名。
+    const codeKey = error.code === "turn_cancelled" ? "TURN_CANCELLED" : error.code;
+    return intl.formatMessage({ id: `zcode.error.${codeKey}` });
+  }
+
+  // 兜底文案来自 runtime 原文，可能带 session_x:turn_y 等内部标识，展示前必须脱敏。
+  return sanitizeErrorDetailForUser(error.message);
 }
 
 export function shouldSuppressChatErrorBanner(
