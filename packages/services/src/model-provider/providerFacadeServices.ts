@@ -27,6 +27,22 @@ export type {
   ProviderSettingsView,
 } from "@zcode/provider";
 
+/** 自动发现得到的最小模型信息；上游缺省字段保持可选，不把未知值写成配置事实。 */
+export interface DiscoveredModel {
+  readonly id: string;
+  readonly displayName: string;
+  readonly contextWindow?: number;
+  readonly maxOutput?: number;
+  readonly reasoningEffort?: readonly string[];
+}
+
+export interface ProviderSettingsServiceOptions {
+  /** 测试注入的网络实现；生产使用运行时 fetch。 */
+  readonly fetchImpl?: typeof fetch;
+  /** 测试注入的时钟，供后续 models.dev 缓存复用。 */
+  readonly now?: () => number;
+}
+
 export interface IProviderSettingsService {
   readonly onDidChange: Event<ProviderSettingsView>;
   getView(): Promise<ProviderSettingsView>;
@@ -68,6 +84,10 @@ export interface IProviderSettingsService {
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
+  /** 读取 Provider 的 /models 目录；任何网络、状态或解析失败都返回空数组。 */
+  discoverProviderModels(providerId: ProviderId): Promise<DiscoveredModel[]>;
+  /** 将发现结果写入个人模型并跳过已存在 ID，返回本次新增数量。 */
+  importDiscoveredModels(providerId: ProviderId): Promise<number>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -110,7 +130,37 @@ export function createProviderSettingsService(
   facade: ProviderSettingsFacade,
   ensureReady: () => Promise<void> = async () => {},
   testConnectivity?: ProviderSettingsConnectivityTester,
+  options: ProviderSettingsServiceOptions = {},
 ): IProviderSettingsService {
+  const log = createServiceLogger("provider-settings");
+  const fetchImpl = options.fetchImpl ?? fetch;
+  // 发现结果只来自 Provider 自身的 /models 目录；不把内置模板或远端目录当作可用事实。
+  const discoverProviderModels = async (providerId: ProviderId): Promise<DiscoveredModel[]> => {
+    await ensureReady();
+    const provider = facade.getView().providers.find((item) => item.providerId === providerId);
+    if (!provider) return [];
+    const baseUrl = readStringField(provider.effectiveConfig.api, "baseUrl");
+    // 无 HTTP 端点的 Provider（如 SDK 直连）没有可探测的目录，按空结果处理。
+    if (!baseUrl) return [];
+    const apiKey = readStringField(provider.effectiveConfig.access, "apiKey");
+    const url = `${baseUrl.replace(/\/+$/, "")}/models`;
+    try {
+      const response = await fetchImpl(url, {
+        method: "GET",
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        signal: AbortSignal.timeout(MODEL_DISCOVERY_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        log.warn(undefined, `Provider ${providerId} 模型目录返回状态 ${response.status}`);
+        return [];
+      }
+      return normalizeDiscoveredModels(await response.json());
+    } catch (error) {
+      // 发现是可选增强能力；网络、超时和解析失败都收敛为空结果，不能阻断设置页其他操作。
+      log.warn(undefined, `Provider ${providerId} 模型目录读取失败: ${String(error)}`);
+      return [];
+    }
+  };
   return {
     onDidChange: toEvent((listener) => facade.onDidChange(listener)),
     getView: async () => {
@@ -206,6 +256,28 @@ export function createProviderSettingsService(
         modelId: input.modelId,
       });
     },
+    discoverProviderModels,
+    importDiscoveredModels: async (providerId) => {
+      const discovered = await discoverProviderModels(providerId);
+      if (discovered.length === 0) return 0;
+      const provider = facade.getView().providers.find((item) => item.providerId === providerId);
+      if (!provider) return 0;
+      const known = new Set(provider.models.map((model) => model.modelId));
+      let added = 0;
+      for (const model of discovered) {
+        // 已在 Registry 中的 ID（内置或已导入）不重复写入，避免每次连接都追加同一模型。
+        if (known.has(model.id)) continue;
+        try {
+          await facade.addPersonalModel(providerId, model.id, toDiscoveredModelConfig(model));
+          known.add(model.id);
+          added += 1;
+        } catch (error) {
+          // 单个模型的配置校验或写入失败不能回滚其他模型，逐项隔离并如实计数。
+          log.warn(undefined, `Provider ${providerId} 模型 ${model.id} 导入失败: ${String(error)}`);
+        }
+      }
+      return added;
+    },
   };
 }
 
@@ -260,6 +332,87 @@ export function createModelSelectionService(
       disposeConfiguredDefault?.();
       listeners.clear();
     },
+  };
+}
+
+const MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
+
+function readObjectField(source: unknown, key: string): Record<string, unknown> | undefined {
+  if (typeof source !== "object" || source === null) return undefined;
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readStringField(source: unknown, key: string): string | undefined {
+  if (typeof source !== "object" || source === null) return undefined;
+  const value = (source as Record<string, unknown>)[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPositiveInteger(source: unknown, key: string): number | undefined {
+  if (typeof source !== "object" || source === null) return undefined;
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/** 上游目录格式不完全统一：只保留可验证字段，缺省或非法值直接省略。 */
+function normalizeDiscoveredModels(payload: unknown): DiscoveredModel[] {
+  if (typeof payload !== "object" || payload === null) return [];
+  const data = (payload as Record<string, unknown>).data;
+  if (!Array.isArray(data)) return [];
+  const models: DiscoveredModel[] = [];
+  for (const entry of data) {
+    const id = readStringField(entry, "id");
+    if (!id) continue;
+    const limit = readObjectField(entry, "limit");
+    const reasoning = readObjectField(readObjectField(entry, "capabilities"), "reasoning");
+    const reasoningEffort = normalizeReasoningEffort(reasoning);
+    const contextWindow = readPositiveInteger(limit, "context");
+    const maxOutput = readPositiveInteger(limit, "output");
+    models.push(
+      Object.freeze({
+        id,
+        displayName: readStringField(entry, "name") ?? id,
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxOutput === undefined ? {} : { maxOutput }),
+        ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+      }),
+    );
+  }
+  return models;
+}
+
+function normalizeReasoningEffort(
+  reasoning: Record<string, unknown> | undefined,
+): readonly string[] | undefined {
+  // 只有上游声明支持推理时才把档位当成配置事实，避免把残留字段写进模型选项。
+  if (!reasoning || reasoning.supported !== true || !Array.isArray(reasoning.effort)) return undefined;
+  const levels: string[] = [];
+  for (const value of reasoning.effort) {
+    if (typeof value !== "string") continue;
+    const level = value.trim();
+    if (level.length === 0 || levels.includes(level)) continue;
+    levels.push(level);
+  }
+  return levels.length > 0 ? Object.freeze(levels) : undefined;
+}
+
+function toDiscoveredModelConfig(model: DiscoveredModel): ModelConfigObject {
+  const optionSpecs: NonNullable<ModelConfigObject["optionSpecs"]> = {
+    ...(model.reasoningEffort && model.reasoningEffort.length > 0
+      ? { reasoningLevel: { values: [...model.reasoningEffort] } }
+      : {}),
+    ...(model.maxOutput === undefined ? {} : { maxOutputTokens: { max: model.maxOutput } }),
+  };
+  return {
+    ...(model.contextWindow === undefined
+      ? {}
+      : { properties: { contextWindow: model.contextWindow } }),
+    ...(Object.keys(optionSpecs).length === 0 ? {} : { optionSpecs }),
   };
 }
 
