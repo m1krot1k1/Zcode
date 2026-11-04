@@ -21,6 +21,28 @@ export interface ModelProviderGroupLabelOptions {
   teamPlanFallbackLabel?: string;
 }
 
+/**
+ * 把有效上下文窗口格式化成模型菜单徽标：1_000_000 → 1M，200_000 → 200K。
+ * 未知、非正数或非有限值不展示，避免把缺省值写成配置事实。
+ */
+export function formatContextWindowLabel(contextWindow: number | null | undefined): string {
+  if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow) || contextWindow <= 0) {
+    return "";
+  }
+  if (contextWindow >= 1_000_000) {
+    return `${formatScaledContextValue(contextWindow / 1_000_000)}M`;
+  }
+  if (contextWindow >= 1_000) {
+    return `${formatScaledContextValue(contextWindow / 1_000)}K`;
+  }
+  return String(contextWindow);
+}
+
+function formatScaledContextValue(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 function supportsRegistryApiFormat(
   providerId: string,
   accessType: string | null | undefined,
@@ -74,18 +96,23 @@ export function buildRegistryModelSelectGroups(
         ...(provider.config.logo ? { logo: provider.config.logo } : {}),
         ...(labelBadge ? { labelBadge } : {}),
         ...(accountPresentation ? { directItems: true } : {}),
-        items: provider.models.map(({ modelId, config }) => ({
-          key: `registry-provider:${provider.providerId}:${modelId}`,
-          value: encodeCustomModelValue(provider.providerId, modelId),
-          name: modelId,
-          ...(shouldShowModelVisionBadge(
-            modelId,
-            config.properties?.inputFormat?.supportsImage,
-            provider.config.access,
-          )
-            ? { supportsVisionInput: true }
-            : {}),
-        })),
+        items: provider.models.map(({ modelId, config }) => {
+          // 上下文窗口来自有效配置；未知值不渲染徽标，避免把缺省值写成事实。
+          const contextBadgeLabel = formatContextWindowLabel(config.properties?.contextWindow);
+          return {
+            key: `registry-provider:${provider.providerId}:${modelId}`,
+            value: encodeCustomModelValue(provider.providerId, modelId),
+            name: modelId,
+            ...(contextBadgeLabel ? { badgeLabel: contextBadgeLabel } : {}),
+            ...(shouldShowModelVisionBadge(
+              modelId,
+              config.properties?.inputFormat?.supportsImage,
+              provider.config.access,
+            )
+              ? { supportsVisionInput: true }
+              : {}),
+          };
+        }),
       },
     ];
   });
