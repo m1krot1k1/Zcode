@@ -991,3 +991,7 @@ exceptions:
     rule: unmanaged-new-file
     paths: [packages/ui/src/lib/sanitizeErrorDetail.ts]
     reason: 聊天错误横幅与复制/反馈文本共用的纯脱敏函数，只把 session_x:turn_y 与 UUID 替换为占位符；packages/ui/src 整体仍是受管状态为 false 的 ui 模块，lib 目录也没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 ui 需要单独的边界梳理。
+  - id: first-token-watchdog-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/adapters/src/model/first-token-watchdog.ts]
+    reason: 首 token 看门狗把“模型已受理但迟迟没有输出”的判定与定时器从模型 runner 中拆成独立纯函数模块，供 runner 与 stream 共用并单独验收；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，model 目录没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 CLI 需要单独的边界梳理。
