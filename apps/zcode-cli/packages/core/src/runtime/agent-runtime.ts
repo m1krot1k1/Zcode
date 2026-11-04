@@ -364,7 +364,7 @@ export class AgentRuntime {
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
     this.runtimeTaskRegistry =
-      deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
+      deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry({ workLedger: deps.workLedger });
     const branchOwnerSessionId = this.config.parentSessionId ?? sessionId;
     this.branchGeneration =
       this.runtimeTaskRegistry.getBranchGenerationForSession(

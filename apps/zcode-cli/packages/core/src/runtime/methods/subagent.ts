@@ -37,6 +37,10 @@ import { cloneModelSelection } from "../model-selection.js";
 import { resolveSubagentSelection } from "../helpers/subagent-selection.js";
 import type { AgentRuntimeDeps } from "../types.js";
 import { toMcpToolName } from "../../mcp/index.js";
+import {
+  buildWorkLedgerEnvelopeBlock,
+  heartbeatWorkClaim,
+} from "../../runtime-task/work-ledger-wire.js";
 import { createBorrowedSubagentMcpAccess } from "../../subagent/borrowed-mcp-port.js";
 import { createSubagentMessageSink } from "../../subagent/message-steering.js";
 import {
@@ -221,9 +225,29 @@ export function createDefaultSubagentPort(
                 `remaining_spawns="${request.spawnGrant}"`,
                 `max_parallel="8" />`,
               ].join(" ");
+        // Реестр работ: предупреждаем ребёнка, чем заняты другие агенты в том же workspace.
+        // Ошибка реестра не должна ломать спавн — пропадает только подсказка.
+        let workLedgerBlock: string | undefined;
+        try {
+          workLedgerBlock = buildWorkLedgerEnvelopeBlock({
+            ledger: this.runtimeTaskRegistry.workLedger,
+            workspacePath: request.workspaceRoot || request.workingDirectory,
+            agentId: request.agentId,
+          });
+        } catch (error) {
+          this.logger?.warn("Work ledger envelope block failed", {
+            agentId: request.agentId,
+            error: String(error),
+          });
+        }
         // 空 agent prompt 不是一个语义段；先硬拼 `\n\n` 会把缺失段的边界
         // 泄漏到 persistent Memory 开头。这里只组合非空正文，block 左边界由 builder 统一添加。
-        const agentPrompt = [spawnEnvelope, baseAgentPrompt, persistentMemory?.prompt]
+        const agentPrompt = [
+          spawnEnvelope,
+          baseAgentPrompt,
+          persistentMemory?.prompt,
+          workLedgerBlock,
+        ]
           .filter((part): part is string => typeof part === "string" && part.length > 0)
           .join("\n\n");
         const childRuntimeEnvInfo = {
@@ -481,6 +505,16 @@ export function createDefaultSubagentPort(
                 // parent runtime; выше передаются только raw events.
                 if (isMirroredSubagentEvent(event)) return;
                 request.reportActivity?.();
+                // Прогресс ребёнка = жизнь claim'а: heartbeat не чаще раза в минуту,
+                // иначе append-only журнал распухнет на каждом streaming-событии.
+                try {
+                  heartbeatWorkClaim(this.runtimeTaskRegistry.workLedger, request.agentId);
+                } catch (error) {
+                  this.logger?.warn("Work ledger heartbeat failed", {
+                    agentId: request.agentId,
+                    error: String(error),
+                  });
+                }
                 // child runtime 的事件已经按 childSessionId 落库，但旧链路只把
                 // 少量工具事件镜像给 parent sink，导致 UI 订阅 child topic 后只能拿到打开时
                 // 的 hydration，后续流式内容不会更新。raw child event 只通知父 runtime 的

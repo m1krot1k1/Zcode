@@ -35,6 +35,12 @@ import {
   SessionEventType,
   type AgentOutput,
 } from "@zcode/contracts";
+import type { WorkLedger } from "./work-ledger.js";
+import {
+  extractTaskPaths,
+  forgetWorkClaimHeartbeat,
+  summarizeWorkIntent,
+} from "./work-ledger-wire.js";
 
 // local_dynamic_workflow 与 local_workflow 刻意分开：后者是 legacy `Workflow` 工具（不可取消），
 // 前者是 workflow run（经 DynamicWorkflowRunPort.cancel 可取消）。合成一个类型，取消分派就无法区分。
@@ -115,6 +121,8 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   traceContext?: TraceContext;
   turnId?: TurnId;
   usage?: RuntimeTaskUsageSnapshot;
+  /** Workspace спавна; вместе с agentId задаёт область claim'а в work ledger. */
+  workspacePath?: string;
 }
 
 export const MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS = 512;
@@ -1250,6 +1258,11 @@ function utf8ByteLength(value: string): number {
 }
 
 export interface RuntimeTaskRegistry {
+  /**
+   * Реестр работ, в который этот registry объявляет claim'ы подзадач. Отсутствует —
+   * wiring выключен (тесты и встраиваемые хосты без реестра).
+   */
+  readonly workLedger?: WorkLedger;
   subscribe?(listener: () => void): () => void;
   setOffPeakExecutionId?(executionId: string | undefined): void;
   all(): Record<string, RuntimeTaskSnapshot>;
@@ -1348,7 +1361,18 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
  */
 export const DEFAULT_SPAWN_BUDGET = 32;
 
+export interface InMemoryRuntimeTaskRegistryOptions {
+  /** Единственный владелец реестра работ; без него claim'ы не создаются. */
+  workLedger?: WorkLedger;
+}
+
 export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
+  readonly workLedger: WorkLedger | undefined;
+
+  constructor(options: InMemoryRuntimeTaskRegistryOptions = {}) {
+    this.workLedger = options.workLedger;
+  }
+
   private offPeakExecutionId: string | undefined;
   private readonly listeners = new Set<() => void>();
   subscribe(listener: () => void): () => void {
@@ -1614,6 +1638,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
     this.setTaskSnapshot(stamped);
     this.cancellationHandles.set(stamped.taskId, cancellation);
+    // Объявление работы — после успешной регистрации; ошибка ledger'а не отменяет admit.
+    this.declareWorkClaim(stamped, parentTask?.agentId ?? null);
     // 终态清理结束后才允许同一 task id 开启新生命期、唤醒 terminal waiter。
     void cancellation.settled.then(() => {
       this.finishSubagentTaskFinalization(stamped.taskId, cancellation);
@@ -1820,6 +1846,42 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return taskId ? this.tasks.get(taskId) : undefined;
   }
 
+  /**
+   * Объявляет работу агента в реестре. Ошибка реестра не ломает спавн: задача уже
+   * принята registry, а конфликты всё равно не блокируют (только предупреждают).
+   */
+  private declareWorkClaim(task: RuntimeTaskSnapshot, parentAgentId: string | null): void {
+    const ledger = this.workLedger;
+    const workspacePath = task.workspacePath?.trim();
+    if (!ledger || !workspacePath) return;
+    const text = task.prompt || task.description;
+    // Пустой intent ядро отклоняет, поэтому fallback — description/agentId.
+    const intent = summarizeWorkIntent(text) || task.description.trim() || task.agentId;
+    try {
+      ledger.claim({
+        workspacePath,
+        agentId: task.agentId,
+        parentAgentId,
+        profile: task.agentType,
+        intent,
+        paths: extractTaskPaths(text),
+      });
+    } catch (error) {
+      console.warn(`[work-ledger] не удалось объявить ${task.agentId}:`, error);
+    }
+  }
+
+  private releaseWorkClaim(agentId: string): void {
+    const ledger = this.workLedger;
+    if (!ledger) return;
+    try {
+      ledger.release(agentId);
+      forgetWorkClaimHeartbeat(ledger, agentId);
+    } catch (error) {
+      console.warn(`[work-ledger] не удалось снять claim ${agentId}:`, error);
+    }
+  }
+
   private setTaskSnapshot(task: RuntimeTaskSnapshot): void {
     const ownerOfChildSession =
       task.type === "local_agent" && task.childSessionId
@@ -1830,6 +1892,16 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
 
     const previous = this.tasks.get(task.taskId);
+    // Единый funnel всех записей задачи: здесь ловим переход в терминальное состояние,
+    // чтобы завершение, падение и отмена одинаково снимали claim.
+    if (
+      previous &&
+      task.type === "local_agent" &&
+      !isTerminalRuntimeTask(previous) &&
+      isTerminalRuntimeTask(task)
+    ) {
+      this.releaseWorkClaim(task.agentId);
+    }
     if (task.type === "local_agent" && isTerminalRuntimeTask(task)) {
       this.terminalSubagentTaskIds.add(task.taskId);
     } else {
@@ -1994,6 +2066,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   remove(id: string): void {
     const task = this.tasks.get(id);
+    if (task && task.type === "local_agent" && !isTerminalRuntimeTask(task)) {
+      // Удаление активной задачи без терминального перехода тоже освобождает работу.
+      this.releaseWorkClaim(task.agentId);
+    }
     if (task) this.removeTaskIndexes(task);
     this.tasks.delete(id);
     this.terminalSubagentTaskIds.delete(id);

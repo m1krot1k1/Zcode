@@ -2598,6 +2598,8 @@ function createRuntimeTaskSnapshot(input: {
     traceContext: input.lifecycle.runTraceContext,
     type: "local_agent",
     turnId: input.request.turnId,
+    // Область claim'а в work ledger: тот же workspace, что видит конверт ребёнка.
+    workspacePath: input.request.workspaceRoot || input.request.workingDirectory,
     ...(input.spawnGrant === undefined ? {} : { spawnGrant: input.spawnGrant }),
     ...(input.level === undefined ? {} : { level: input.level }),
   };

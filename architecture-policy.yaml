@@ -1003,3 +1003,7 @@ exceptions:
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/runtime-task/work-ledger.ts]
     reason: 代理工作台账（谁在做什么、占用哪些路径、重复意图与冲突）先以独立纯函数模块落地并单独验收，随后在 spawn 路径接入声明、心跳与释放；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime-task 目录没有独立模块边界，为这一个人文件登记路径级例外，adopt 整个 CLI 需要单独的边界梳理。
+  - id: agent-work-ledger-wire-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/runtime-task/work-ledger-wire.ts]
+    reason: work-ledger 的接线层（保守抽取任务路径、拼装 child 信封中的占用块、节流 heartbeat、进程级单例）与纯台账核心分开，便于核心保持无运行时依赖并分别验收；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime-task 目录没有独立模块边界，为这一个人文件登记路径级例外。

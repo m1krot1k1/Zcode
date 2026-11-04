@@ -22,6 +22,7 @@ import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import { createMcpAdapter } from "@zcode/adapters/mcp";
 import {
   AgentRuntime,
+  getProcessWorkLedger,
   normalizeAgentProfiles,
   PermissionService,
   buildPluginReferenceCatalog,
@@ -830,6 +831,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       currentSelection: () => getRuntime().getSessionModelSelection(),
     });
     runtime = new AgentRuntime(sessionId, runtimeConfig, {
+      // Один реестр работ на процесс CLI: journal общий, writer один.
+      workLedger: getProcessWorkLedger(),
       ...(options.readSubagentRuntimeConfig
         ? {
             loadAgentDefinitions: async (input) => {

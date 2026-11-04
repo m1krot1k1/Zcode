@@ -1,9 +1,11 @@
 # Реестр работ агентов (Agent Work Ledger)
 
-> Статус: реализовано ядро. Интеграция в спавн субагентов — отдельный следующий шаг
-> (в этом изменении её нет, протокол не меняется).
-> Код: `apps/zcode-cli/packages/core/src/runtime-task/work-ledger.ts`.
-> Тесты: `apps/zcode-cli/packages/core/tests/work-ledger.test.ts`.
+> Статус: реализованы ядро и интеграция в спавн субагентов (декларация, блок занятости
+> в конверте, heartbeat и release). Протокол не меняется.
+> Код: `apps/zcode-cli/packages/core/src/runtime-task/work-ledger.ts`,
+> `apps/zcode-cli/packages/core/src/runtime-task/work-ledger-wire.ts`.
+> Тесты: `apps/zcode-cli/packages/core/tests/work-ledger.test.ts`,
+> `apps/zcode-cli/packages/core/tests/work-ledger-wire.test.ts`.
 
 ## 1. Проблема
 
@@ -27,11 +29,11 @@
 - in-memory реестр активных работ в процессе CLI — единственный владелец состояния;
 - append-only журнал для переживания рестарта;
 - API: `claim`, `heartbeat`, `release`, `list`, `findConflicts`, `findSimilarIntent`, `sweepStale`;
-- нормализация и сравнение путей, TTL, дедупликация намерений.
+- нормализация и сравнение путей, TTL, дедупликация намерений;
+- вызовы реестра из спавна субагентов: декларация, блок занятости в конверте, heartbeat и release.
 
 Вне скоупа (следующие шаги, требуют отдельного согласования):
 
-- вызовы реестра из спавна субагентов и подмешивание предупреждений в промпт;
 - принудительная блокировка записи инструментов (реестр только предупреждает);
 - изменения протокола `packages/shared/src/zcode-protocol/`, UI и remote-каналов;
 - очередь работ, планировщик, распределение задач между агентами.
@@ -279,9 +281,22 @@ ledger.flush(): Promise<void>;
 ## 10. Совместимость
 
 - Новых зависимостей нет, протокол не меняется, UI не затрагивается.
-- Новый файл — path-level exception `unmanaged-new-file` в `architecture-policy.yaml`
+- Новые файлы — path-level exceptions `unmanaged-new-file` в `architecture-policy.yaml`
   (как у `first-token-watchdog.ts`): `apps/zcode-cli` остаётся `managed: false`,
   отдельного модуля у `runtime-task` нет.
-- Следующий шаг интеграции: спавн вызывает `claim` до старта субагента, добавляет
-  `conflicts`/`similarIntent` в его контекст как предупреждение, а `release` — на
-  терминальном событии; heartbeat — по таймеру рантайма.
+- Интеграция (spawn path):
+  - `InMemoryRuntimeTaskRegistry` получает `workLedger` только извне; `AgentRuntime`
+    передаёт его в registry, bootstrap создаёт один процессный экземпляр
+    (`getProcessWorkLedger`, ленивый реплей журнала). Без ledger'а wiring выключен.
+  - `registerSubagentTask` после успешного admission вызывает `claim`:
+    `intent` — первые 200 символов `prompt` (fallback `description`), `paths` —
+    консервативно извлечённые явные пути, `profile` — `agentType`,
+    `parentAgentId` — `agentId` родительской задачи.
+  - В конверт ребёнка (`runtime/methods/subagent.ts`, конец `agentPrompt`) добавляется
+    блок «Сейчас в работе у других агентов» (≤15 строк) и строка о похожем намерении.
+    Блок появляется только при активных чужих claim'ах в том же workspace.
+  - `setTaskSnapshot` — единый funnel: переход в терминальное состояние
+    (completed/failed/cancelled/killed) вызывает `release`; удаление активной задачи
+    тоже освобождает claim. `heartbeat` идёт с шагов ребёнка (child event sink),
+    не чаще раза в минуту.
+  - Любая ошибка ledger'а ловится и логируется: спавн, конверт и release не ломаются.
