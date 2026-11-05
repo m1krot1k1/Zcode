@@ -9,6 +9,8 @@ import {
   isBuiltInExploreAgentProfile,
   normalizeAgentProfiles,
   parseAgentProfileFromMarkdown,
+  ROOT_ONLY_TOOL_NAMES,
+  decideDelegationRoute,
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
@@ -565,6 +567,29 @@ Review carefully.`,
       }
     });
 
+    it("does not advertise root-only tools as subagent capabilities", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+
+      for (const profile of profiles) {
+        for (const tool of ROOT_ONLY_TOOL_NAMES) {
+          expect(profile.tools, `${profile.name}: ${tool}`).not.toContain(tool);
+        }
+      }
+    });
+
+    it("routes implementation away from start and forbids orchestrator self-implementation", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+      const start = profiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
+      const orchestrator = profiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
+
+      expect(start).toContain("ты не исполняешь её сам");
+      expect(start).toContain("implementer");
+      expect(start).toContain("orchestrator");
+      expect(start).toContain("Если Task недоступен");
+      expect(orchestrator).toContain("Ты не исполнитель");
+      expect(orchestrator).toContain("не реализуй ветки сам");
+    });
+
     it("states the available tools and the L1-L4 nesting chain in the system prompt", () => {
       const prompt = startPrompt();
 
@@ -590,7 +615,47 @@ Review carefully.`,
 
       expect(prompt).not.toContain("Небольшой самостоятельный запрос обработай кратко");
       expect(prompt).toContain("Тривиальна только светская реплика без задачи");
-      expect(prompt).toContain("Любая просьба что-то проверить, прогнать, найти, собрать или изменить");
+      expect(prompt).toContain(
+        "Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств",
+      );
+      expect(prompt).toContain("ты не исполняешь её сам");
+    });
+  });
+});
+
+describe("delegation routing gate", () => {
+  it("answers social-only requests directly", () => {
+    expect(decideDelegationRoute({ role: "start", socialOnly: true })).toMatchObject({
+      route: "answer_directly",
+      maxParallel: 0,
+    });
+  });
+
+  it("never lets start or orchestrator integrate implementation inline", () => {
+    for (const role of ["start", "orchestrator"] as const) {
+      expect(
+        decideDelegationRoute({ role, serialDependencies: true, integrationOwnedByCaller: true }),
+      ).toMatchObject({ route: "delegate_single", maxParallel: 1 });
+    }
+  });
+
+  it("orchestrates two or more independent workstreams", () => {
+    expect(decideDelegationRoute({ role: "root", independentWorkstreams: 3 })).toMatchObject({
+      route: "orchestrate",
+      maxParallel: 3,
+    });
+  });
+
+  it("keeps serial caller-owned integration in the root", () => {
+    expect(
+      decideDelegationRoute({ role: "root", serialDependencies: true, integrationOwnedByCaller: true }),
+    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
+  });
+
+  it("delegates a single bounded task even from the root", () => {
+    expect(decideDelegationRoute({ role: "root" })).toMatchObject({
+      route: "delegate_single",
+      maxParallel: 1,
     });
   });
 });

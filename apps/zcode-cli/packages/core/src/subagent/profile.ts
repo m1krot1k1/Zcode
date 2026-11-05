@@ -38,7 +38,7 @@ const SUBAGENT_HANDOFF_CONTRACT = [
 // 提示里既没有工具清单，也没有层级语义和「必须真实调用」的要求，模型零调用就结束了。
 // 现在所有内置角色拿到同一套能力面；角色差异只保留在系统提示的行为约束里。
 const START_TOOLING_AND_NESTING_CONTRACT = [
-  "Твои инструменты: полный набор, включая Read, Glob, Grep, Write, Edit, Bash, WebFetch, WebSearch, Task и Skill. Не заявляй об инструменте, которого нет в текущем ответе хоста; если хост отклонил вызов, зафиксируй это и продолжи доступным способом.",
+  "Твои инструменты: child-safe набор, включая Read, Glob, Grep, Write, Edit, Bash, WebFetch, Task и Skill. WebSearch доступен только если модель поддерживает native search; иначе используй WebFetch или Bash. Root-only инструменты (Cron*, Workflow, EnterWorktree/ExitWorktree, ScheduleWakeup, TaskCreate/Get/List/Update) субагентам не выдаются. Не заявляй об инструменте, которого нет в текущем ответе хоста; если хост отклонил вызов, зафиксируй это и продолжи доступным способом.",
   "Вложенность измеряется глубиной цепочки Task: L1 — Task вызвал ты, L2 — Task вызвал твой ребёнок, L3 — его ребёнок, L4 — четвёртый уровень. L4 — достаточная глубина для проверки вложенности; глубже без прямой просьбы пользователя не ныряй.",
   "Глубина сама по себе не ограничивает работу: ограничивают бюджет спавнов (remaining_spawns) и параллелизм (max_parallel). Номер уровня — только запись, а не стоп-условие.",
   "Каждый уровень подтверждается только собственным вызовом Task в его транскрипте; скопированная строка из ответа ребёнка доказательством не является, и мелкий PASS не доказывает глубокий.",
@@ -48,6 +48,14 @@ const START_TOOLING_AND_NESTING_CONTRACT = [
   "Никогда не вызывай Task(start) и не Task(orchestrator) без нового, более узкого конверта.",
   "Если Task недоступен или хост отказал — зафиксируй факт, один раз повтори при реально существующем инструменте, иначе выполни оставшийся объём сам.",
   "Не изобретай гейты, approval-шаги и выбор тира; не заявляй о работе и проверке, которых не было.",
+].join("\n");
+
+// Routing gate: start/orchestrator маршрутизируют, root интегрирует. Правило должно быть
+// одинаковым в промпте и в тестируемой функции, иначе модель и код разойдутся.
+const DELEGATION_ROUTING_CONTRACT = [
+  "Перед действием классифицируй задачу: social-only → answer_directly; одна ограниченная задача → delegate_single; ≥2 независимых workstreams → orchestrate; последовательная интеграция, принадлежащая вызывающему → integrate_inline.",
+  "start и orchestrator никогда не выбирают integrate_inline для реализации: они делегируют. integrate_inline доступен только root-сессии для последовательной сборки и финальной проверки.",
+  "Зафиксируй решение одной строкой: route, reason, owner, max_parallel. Если route = orchestrate, перечисли ветки и их файловые области.",
 ].join("\n");
 const RESERVED_GENERIC_AGENT_NAMES = new Set(["general", "general-purpose"]);
 
@@ -72,10 +80,13 @@ const FULL_SUBAGENT_TOOL_NAMES = [
   "LSP",
   "TaskOutput",
   "TaskStop",
-  "TaskCreate",
-  "TaskGet",
-  "TaskList",
-  "TaskUpdate",
+] as const;
+
+// Root-only / host-gated tools. subagent_child runtime does not register them
+// (Cron/automation are disabled for subagent_child; Workflow/Worktree and task
+// board tools belong to the root orchestration surface). Keeping them out of
+// the profile list prevents the prompt from promising unavailable tools.
+export const ROOT_ONLY_TOOL_NAMES = [
   "CronCreate",
   "CronDelete",
   "CronList",
@@ -84,7 +95,65 @@ const FULL_SUBAGENT_TOOL_NAMES = [
   "Workflow",
   "EnterWorktree",
   "ExitWorktree",
+  "TaskCreate",
+  "TaskGet",
+  "TaskList",
+  "TaskUpdate",
 ] as const;
+
+export type DelegationRoute =
+  | "answer_directly"
+  | "delegate_single"
+  | "orchestrate"
+  | "integrate_inline";
+
+export interface DelegationEnvelope {
+  role: "start" | "orchestrator" | "root";
+  socialOnly?: boolean;
+  independentWorkstreams?: number;
+  serialDependencies?: boolean;
+  integrationOwnedByCaller?: boolean;
+}
+
+export interface DelegationDecision {
+  route: DelegationRoute;
+  reason: string;
+  maxParallel: number;
+}
+
+/** Pure routing gate used by prompts and tests; it never performs work itself. */
+export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationDecision {
+  if (envelope.socialOnly === true) {
+    return { route: "answer_directly", reason: "social-only request", maxParallel: 0 };
+  }
+
+  const workstreams = Math.max(1, envelope.independentWorkstreams ?? 1);
+  if (workstreams >= 2) {
+    return {
+      route: "orchestrate",
+      reason: "multiple independent workstreams",
+      maxParallel: Math.min(workstreams, 4),
+    };
+  }
+
+  if (envelope.role === "start" || envelope.role === "orchestrator") {
+    return {
+      route: "delegate_single",
+      reason: `${envelope.role} never implements directly`,
+      maxParallel: 1,
+    };
+  }
+
+  if (envelope.serialDependencies === true || envelope.integrationOwnedByCaller === true) {
+    return {
+      route: "integrate_inline",
+      reason: "serial or caller-owned integration",
+      maxParallel: 0,
+    };
+  }
+
+  return { route: "delegate_single", reason: "single bounded task", maxParallel: 1 };
+}
 
 const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
   {
@@ -97,9 +166,10 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты профиль start в ZCode. Перед маршрутизацией кратко зафиксируй результат, границы и ограничения, объём работы, уже данное пользователем разрешение и только неизвестные факты, которые реально блокируют действие.",
       "Не спрашивай повторно то, что пользователь уже разрешил. Не придумывай сохранённую миссию и не обещай возобновление после перезапуска: такого владельца состояния у runtime нет.",
-      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение. Любая просьба что-то проверить, прогнать, найти, собрать или изменить не тривиальна: на неё отвечай реальным вызовом инструмента (Read/Glob/Grep) или Task, а не пересказом. Для сложной работы передай цель orchestrator с исходными фактами и ограничениями; не распыляй её на несвязанные задачи.",
+      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Небольшой ограниченный объём делегируй профильному исполнителю (implementer/test-engineer/evaluator/researcher), сложную или многоветочную работу — orchestrator. Read/Glob/Grep используй только для триажа и проверки результата; Write/Edit/Bash не применяй для реализации, пока Task доступен. Если Task недоступен, зафиксируй это и выполни минимальный объём сам.",
       "Не выдумывай состояние проекта и не заявляй о невыполненной проверке.",
       SUBAGENT_HANDOFF_CONTRACT,
+      DELEGATION_ROUTING_CONTRACT,
       "",
       START_TOOLING_AND_NESTING_CONTRACT,
     ].join("\n"),
@@ -125,11 +195,13 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     source: "built-in",
     systemPrompt: [
       "Ты оркестратор ZCode. Создай компактный mission envelope: результат, ограничения, разрешённый объём, deliverable и evidence для каждой ветки.",
+      "Ты не исполнитель: не реализуй ветки сам. Делегируй каждую независимую ветку профильному агенту; сам только собирай конверты, проверяй результаты и своди. Если ветка не делегируется, зафиксируй причину и не подменяй её своей реализацией.",
       "Разбивай только на независимо полезные результаты. Для каждой ветки укажи точный профиль-владельца, отдельную область, зависимости, проверяемое завершение и только нужные исходные факты.",
       "Запускай независимые ветки параллельно именованными профилями из каталога в пределах runtime budget. Не размножай одну задачу в дублирующие ветки, в том числе capability probe; зависимые ветки запускай после prerequisites.",
       "После join сопоставь каждый запрос пользователя с фактическим результатом и перепроверь важные утверждения по источнику или выводу проверки. Отметь завершённое, неполное и заблокированное; не подменяй факты заявлениями агентов.",
       "Не заявляй о durable wave ledger или автоматическом resume после перезапуска: ZCode runtime этого не предоставляет.",
       SUBAGENT_HANDOFF_CONTRACT,
+      DELEGATION_ROUTING_CONTRACT,
     ].join("\n"),
     tools: [...FULL_SUBAGENT_TOOL_NAMES],
     skills: [

@@ -221,12 +221,9 @@ export function registerBuiltInTools(
   const disallowedTools = createToolRuleNameSet(options.disallowedTools);
 
   for (const entry of builtInTools) {
-    if (
-      options.embeddedSearchEnabled === true &&
-      (entry.metadata.name === "Glob" || entry.metadata.name === "Grep")
-    ) {
-      continue;
-    }
+    // Embedded Bash search дополняет Glob/Grep, а не заменяет их: профили явно
+    // allowlist'ят оба инструмента, и allowlist ребёнка пересекается с фактическим
+    // tool surface родителя. Снятие Glob/Grep здесь молча лишало child поиска.
     if (allowedTools && !allowedTools.has(entry.metadata.name)) {
       continue;
     }

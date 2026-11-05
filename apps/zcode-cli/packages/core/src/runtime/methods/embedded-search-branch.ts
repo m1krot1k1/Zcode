@@ -20,10 +20,9 @@ export function resolveRuntimeEmbeddedSearchEnabled(runtime: AgentRuntimeInterna
 
 export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): void {
   const embeddedSearchEnabled = resolveRuntimeEmbeddedSearchEnabled(runtime);
-  if (embeddedSearchEnabled) {
-    runtime.registry.unregister("Glob");
-    runtime.registry.unregister("Grep");
-  }
+  // Glob/Grep остаются зарегистрированными: embedded search в Bash — дополнение,
+  // а не замена. Иначе child allowlist, построенный из tool surface родителя,
+  // теряет оба инструмента и профиль обещает то, чего у ребёнка нет.
 
   registerBuiltInTools(runtime.registry, {
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
@@ -45,9 +44,10 @@ export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): v
 }
 
 export function filterEmbeddedSearchRuntimeVisibleTools(
-  runtime: AgentRuntimeInternal,
+  _runtime: AgentRuntimeInternal,
   tools: ModelToolContract[],
 ): ModelToolContract[] {
-  if (!resolveRuntimeEmbeddedSearchEnabled(runtime)) return tools;
-  return tools.filter((tool) => tool.name !== "Glob" && tool.name !== "Grep");
+  // Не скрываем Glob/Grep: они входят в явный allowlist профилей и должны быть
+  // видны модели наравне с embedded find/grep внутри Bash.
+  return tools;
 }

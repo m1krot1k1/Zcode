@@ -4,6 +4,7 @@ import type { RuntimeMessageEntry } from "../src/agent/message-history.js";
 import { PermissionService, defaultPermissionConfig } from "../src/permission/service.js";
 import { prepareRuntimeProviderRequest } from "../src/runtime/helpers/runtime-provider-request-messages.js";
 import { createToolExecutor } from "../src/tool/executor.js";
+import { filterEmbeddedSearchRuntimeVisibleTools } from "../src/runtime/methods/embedded-search-branch.js";
 import { builtInTools, registerBuiltInTools } from "../src/tool/handlers/index.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { buildToolSearchAnnouncement } from "../src/tool/search/exposure.js";
@@ -89,6 +90,22 @@ it.each([false, true])(
     }
   },
 );
+
+it("keeps Glob/Grep registered when embedded search is enabled", () => {
+  const registry = createToolRegistry();
+  registerBuiltInTools(registry, {
+    embeddedSearchEnabled: true,
+    allowedTools: ["Read", "Glob", "Grep", "Bash"],
+  });
+
+  expect(registry.has("Glob")).toBe(true);
+  expect(registry.has("Grep")).toBe(true);
+});
+
+it("does not hide Glob/Grep from provider-visible tools", () => {
+  const tools = [{ name: "Read" }, { name: "Glob" }, { name: "Grep" }] as never;
+  expect(filterEmbeddedSearchRuntimeVisibleTools({} as never, tools)).toBe(tools);
+});
 
 it("loads builtin schemas with deferLoading after executing a real ToolSearch", async () => {
   const input = fixture();
