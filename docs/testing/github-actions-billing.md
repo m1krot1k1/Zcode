@@ -35,12 +35,14 @@ prerelease can exist while the Actions run is red.
 
 ## Scope
 
-No repository change can enable Actions billing. Until the account is fixed, the supported preview
-release path remains the local script:
+No repository change can enable Actions billing. The macOS Preview release is built and published
+locally; the cross-platform workflow is manual-only (`workflow_dispatch`), so a tag created by the
+local release does not produce failing runs. The supported macOS path is:
 
 ```bash
 mise exec -- pnpm release:macos:preview patch
 ```
 
 That script publishes the unsigned `_TEST` prerelease from the local Mac. It is not a substitute
-for CI cross-platform builds (Windows/Linux installers still require the workflow).
+for CI cross-platform builds: Windows/Linux installers still require the workflow and remain
+unavailable until billing is restored.

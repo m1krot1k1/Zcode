@@ -1,9 +1,9 @@
 name: Cross-platform Preview release
 
 on:
-  push:
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+  # macOS Preview releases are built and published locally while GitHub Actions billing is
+  # unavailable. Keep cross-platform builds manual; a tag created by the local release must not
+  # spawn a failing workflow run.
   workflow_dispatch:
     inputs:
       release_tag:

@@ -5,7 +5,7 @@ import YAML from "yaml";
 
 const workflowsDirectory = new URL("../../.github/workflows/", import.meta.url);
 
-test("hosted runners are used only for explicitly tagged cross-platform releases", async () => {
+test("hosted runners are manual-only while Actions billing is unavailable", async () => {
   const entries = await readdir(workflowsDirectory).catch((error) => {
     if (error.code === "ENOENT") return [];
     throw error;
@@ -18,12 +18,14 @@ test("hosted runners are used only for explicitly tagged cross-platform releases
       "utf8",
     ),
   );
-  assert.deepEqual(workflow.on.push, { tags: ["v[0-9]+.[0-9]+.[0-9]+"] });
+  // Local macOS Preview releases create tags. A tag-triggered workflow would spawn failing
+  // hosted runs while billing is unavailable, so cross-platform builds are manual-only.
+  assert.equal(workflow.on.push, undefined);
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.release_tag, {
     description: "Existing version tag to build and attach platform assets to",
     required: true,
     type: "string",
   });
-  assert.deepEqual(Object.keys(workflow.on).sort(), ["push", "workflow_dispatch"]);
+  assert.deepEqual(Object.keys(workflow.on).sort(), ["workflow_dispatch"]);
   assert.equal(workflow.jobs.publish.permissions.contents, "write");
 });
