@@ -2,10 +2,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -31,7 +31,12 @@ function walkFiles(rootDir, visitor) {
 
   for (const entry of readdirSync(rootDir)) {
     const entryPath = resolve(rootDir, entry);
-    const stat = statSync(entryPath);
+    // asar 解包会保留 node_modules 里的 workspace symlink，但链接目标不在 staging
+    // 目录中；statSync 跟随链接会抛 ENOENT。cleanup 只处理真实文件，跳过 symlink。
+    const stat = lstatSync(entryPath);
+    if (stat.isSymbolicLink()) {
+      continue;
+    }
     if (stat.isDirectory()) {
       walkFiles(entryPath, visitor);
       continue;

@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -47,6 +55,25 @@ describe("packaged sourcemap cleanup", () => {
       expect(readFileSync(cssFile, "utf8")).toBe(".x{color:red}");
       expect(readFileSync(jsonFile, "utf8")).toBe('{"sourceMappingURL":"keep"}');
       expect(existsSync(mapFile)).toBe(false);
+    } finally {
+      rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("应跳过 asar 解包后指向不存在目标的 symlink", { skip: process.platform === "win32" }, () => {
+    const rootDir = mkdtempSync(resolve(tmpdir(), "zcode-sourcemap-cleanup-symlink-"));
+    try {
+      const jsFile = resolve(rootDir, "index.js");
+      writeFileSync(jsFile, "console.log('ok');\n//# sourceMappingURL=index.js.map\n");
+      // asar extract 保留 node_modules/@zcode/shared 这类 workspace symlink，
+      // 但目标不在 staging 目录中；walkFiles 不能跟随它并因 ENOENT 中断打包。
+      symlinkSync(resolve(rootDir, "missing-target"), resolve(rootDir, "node_modules"), "dir");
+
+      expect(stripSourceMappingUrlCommentsInDirectory(rootDir)).toEqual({
+        filesChanged: 1,
+        referencesRemoved: 1,
+      });
+      expect(readFileSync(jsFile, "utf8")).toBe("console.log('ok');\n");
     } finally {
       rmSync(rootDir, { force: true, recursive: true });
     }
