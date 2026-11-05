@@ -74,7 +74,7 @@ import {
   maybeStartDeferredSessionTitleGeneration,
   maybeStartSessionTitleGeneration,
 } from "./session-title.js";
-import type { RegularTurnLoopState } from "./turn-loop-state.js";
+import { getPlannerToolNames, type RegularTurnLoopState } from "./turn-loop-state.js";
 import {
   commitTurnRequestEntries,
   finishOutputTokenRecovery,
@@ -1597,7 +1597,9 @@ async function executeSwarmRun(
           prompt: buildSwarmPlannerPrompt(
             task,
             swarmAgentProfiles,
-            this.getTools().map((tool) => tool.name),
+            // planner 是元数据消费者：必须按本轮 Active Model 过滤条件工具（WebSearch），
+            // 完整注册表不能冒充当前模型的能力。
+            getPlannerToolNames(this, state.model),
           ),
         },
         {

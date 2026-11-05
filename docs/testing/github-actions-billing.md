@@ -2,8 +2,10 @@
 
 ## Symptom
 
-A preview tag push starts `.github/workflows/cross-platform-preview-release.yml`, but every build
-job fails within 2–3 seconds with no steps and an empty runner name. The check-run annotation says:
+A manual `workflow_dispatch` run of `.github/workflows/cross-platform-preview-release.yml` starts,
+but every build job fails within 2–3 seconds with no steps and an empty runner name. The workflow is
+manual-only, so a tag push, branch push, or pull request starts nothing. The check-run annotation
+says:
 
 > The job was not started because recent account payments have failed or your spending limit needs
 > to be increased. Please check the 'Billing & plans' section in your settings.
@@ -35,9 +37,10 @@ prerelease can exist while the Actions run is red.
 
 ## Scope
 
-No repository change can enable Actions billing. The macOS Preview release is built and published
-locally; the cross-platform workflow is manual-only (`workflow_dispatch`), so a tag created by the
-local release does not produce failing runs. The supported macOS path is:
+No repository change can enable Actions billing. The cross-platform workflow is manual-only
+(`workflow_dispatch`); no push, tag push, or pull request starts it, so a tag created by the local
+release does not produce failing runs. While billing is unavailable, the canonical release path is
+the local macOS Preview release, built and published from the developer's Mac:
 
 ```bash
 mise exec -- pnpm release:macos:preview patch

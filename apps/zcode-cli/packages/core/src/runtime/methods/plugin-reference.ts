@@ -13,6 +13,7 @@ import {
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { TraceContext } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { getMetadataTools } from "./config.js";
 
 async function collectLiveMcpServers(
   runtime: AgentRuntimeInternal,
@@ -25,7 +26,11 @@ async function collectLiveMcpServers(
   await runtime.initializeMcp(traceContext);
   const statuses = await runtime.mcpPort.status();
   const snapshot = runtime.mcpStartupPromise ? await runtime.mcpStartupPromise : undefined;
-  const registeredToolNames = new Set(runtime.getTools().map((tool) => tool.name));
+  // 能力清单只用于核对 MCP 描述符是否真的 provider-visible；按元数据语义枚举，
+  // 无本轮 Model 时不把条件工具（WebSearch）当作可用能力。
+  const registeredToolNames = new Set(
+    getMetadataTools.call(runtime).map((tool) => tool.name),
+  );
   // 与 turn-loop 的 provider 工具过滤保持完全相同的“完整工具名”语义；
   // 带参数的执行规则不会把整个工具从 provider 工具表移除，不能在 reminder 侧扩大解释。
   const turnDisallowedToolNames = new Set(toolDisallowlist ?? []);

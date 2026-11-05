@@ -1011,3 +1011,7 @@ exceptions:
     rule: unmanaged-new-file
     paths: [packages/ui/src/theme.ts]
     reason: 主题工具（Theme 类型、applyTheme、normalizeThemePreference）从 useTheme.ts 拆出，打破 store 与 hook 的循环依赖并让 Zustand store 成为主题唯一所有者；packages/ui/src 整体仍是 managed=false 的 legacy 模块，为这一个人文件登记路径级例外，adopt 整个 ui 需要单独的边界梳理。
+  - id: websearch-metadata-persistence-unmanaged-edit
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/runtime/methods/runtime-reminder-persistence.ts]
+    reason: 已准入的上游文件只把 reminder 持久化的 tools 映射从完整注册表改为按本轮 Active Model 过滤的条件工具（WebSearch），修复不支持原生检索的模型在元数据里仍显示可用的问题；签名与模块边界不变，adopt 整个 zcode-cli legacy 模块需要单独的边界梳理。

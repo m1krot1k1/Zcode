@@ -34,9 +34,17 @@ import {
   sha256,
 } from "../release-macos-local.mjs";
 import {
+  assertPinnedNodeVersion,
+  parsePinnedNodeVersion,
+  readPinnedNodeVersion,
+} from "../assert-node-version.mjs";
+import {
   assertPreviewReleaseMetadata,
   createPreviewBuildEnvironment,
 } from "../release-macos-preview.mjs";
+
+// preflight-тесты передают версии Node явно и не зависят от версии Node в shell.
+const pinnedNodeOptions = { nodeVersion: "24.14.0", pinnedNodeVersion: "24.14.0" };
 
 async function createAppBundle(
   appPath,
@@ -167,6 +175,43 @@ async function createReleaseFixture(
     runCommand,
   };
 }
+
+test("пин [tools] node читается из mise.toml с кавычками и комментариями", async () => {
+  assert.equal(parsePinnedNodeVersion('[tools]\nnode = "24.14.0" # pin\n'), "24.14.0");
+  assert.throws(() => parsePinnedNodeVersion('[tools]\npnpm = "10.33.2"\n'), /не найден пин/u);
+  assert.throws(() => parsePinnedNodeVersion('[tools]\nnode = "24"\n'), /X\.Y\.Z/u);
+  assert.match(await readPinnedNodeVersion(), /^\d+\.\d+\.\d+$/u);
+});
+
+test("совпадение версии Node с пином mise.toml не блокирует выпуск", () => {
+  assert.doesNotThrow(() => assertPinnedNodeVersion({ actual: "24.14.0", pinned: "24.14.0" }));
+});
+
+test("несовпадение версии Node с пином mise.toml называет обе версии и команду mise", () => {
+  assert.throws(
+    () => assertPinnedNodeVersion({ actual: "24.22.2", pinned: "24.14.0" }),
+    (error) => {
+      assert.match(error.message, /24\.22\.2/u);
+      assert.match(error.message, /24\.14\.0/u);
+      assert.match(error.message, /mise exec -- pnpm release:macos:preview/u);
+      assert.match(error.message, /mise exec -- pnpm release:macos </u);
+      return true;
+    },
+  );
+});
+
+test("preflight останавливается на чужой версии Node до чтения dist", async () => {
+  await assert.rejects(
+    preflightMacRelease({
+      version: "3.17.1",
+      targetArch: "arm64",
+      distDir: path.join(tmpdir(), "zcode-missing-dist"),
+      nodeVersion: "24.22.2",
+      pinnedNodeVersion: "24.14.0",
+    }),
+    /не совпадает с пином/u,
+  );
+});
 
 test("major и minor сбрасывают младшие разряды", () => {
   assert.equal(bumpSemver("3.16.2", "patch"), "3.16.3");
@@ -412,6 +457,7 @@ test("локальный release preflight проходит без публик�
   try {
     const fixture = await createReleaseFixture(root);
     const preflight = await preflightMacRelease({
+      ...pinnedNodeOptions,
       version: "3.17.1",
       targetArch: "arm64",
       distDir: fixture.distDir,
@@ -496,6 +542,7 @@ test("Preview preflight validates preview identity, architecture and unsigned ar
       artifactSuffix: "_TEST",
     });
     const result = await preflightMacRelease({
+      ...pinnedNodeOptions,
       version: "3.17.1",
       targetArch: "arm64",
       distDir: fixture.distDir,
@@ -530,6 +577,7 @@ test("отказ local signing/notarization gate прерывает preflight д
     const fixture = await createReleaseFixture(root, { doctorRejectAt: 2 });
     await assert.rejects(
       preflightMacRelease({
+        ...pinnedNodeOptions,
         version: "3.17.1",
         targetArch: "arm64",
         distDir: fixture.distDir,
@@ -554,6 +602,7 @@ test("устаревшее приложение в ZIP отклоняется п
     const fixture = await createReleaseFixture(root, { zipVersion: "3.17.0" });
     await assert.rejects(
       preflightMacRelease({
+        ...pinnedNodeOptions,
         version: "3.17.1",
         targetArch: "arm64",
         distDir: fixture.distDir,
@@ -582,6 +631,7 @@ test("подменённая подпись в ZIP отклоняется сра
     const fixture = await createReleaseFixture(root, { zipSignature: "different-signature" });
     await assert.rejects(
       preflightMacRelease({
+        ...pinnedNodeOptions,
         version: "3.17.1",
         targetArch: "arm64",
         distDir: fixture.distDir,
@@ -610,6 +660,7 @@ test("подменённый notarization ticket в DMG отклоняется �
     const fixture = await createReleaseFixture(root, { dmgTicket: "different-ticket" });
     await assert.rejects(
       preflightMacRelease({
+        ...pinnedNodeOptions,
         version: "3.17.1",
         targetArch: "arm64",
         distDir: fixture.distDir,
@@ -641,6 +692,7 @@ test("DMG с приложением другой архитектуры откл
     const fixture = await createReleaseFixture(root, { dmgArch: "x86_64" });
     await assert.rejects(
       preflightMacRelease({
+        ...pinnedNodeOptions,
         version: "3.17.1",
         targetArch: "arm64",
         distDir: fixture.distDir,
@@ -681,6 +733,7 @@ test("ZIP app symlink вместо bundle отклоняется", async () => {
     };
     await assert.rejects(
       preflightMacRelease({
+        ...pinnedNodeOptions,
         version: "3.17.1",
         targetArch: "arm64",
         distDir: fixture.distDir,

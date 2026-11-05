@@ -8,13 +8,18 @@ const workflowPath = new URL(
   import.meta.url,
 );
 
-test("tagged Preview workflow builds and publishes Desktop and CLI for all requested targets", async () => {
+test("manual-dispatch Preview workflow builds and publishes Desktop and CLI for all requested targets", async () => {
   const workflow = YAML.parse(await readFile(workflowPath, "utf8"));
-  assert.deepEqual(workflow.on.push.tags, ["v[0-9]+.[0-9]+.[0-9]+"]);
-  assert.equal(workflow.on.push.branches, undefined);
+
+  // Контракт: workflow запускается только вручную. Push тега (его создаёт локальный
+  // macOS-релиз), push ветки и PR не должны запускать hosted run, пока GitHub Actions
+  // billing недоступен. См. docs/testing/github-actions-billing.md.
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  assert.equal(workflow.on.push, undefined);
+  assert.equal(workflow.on.tags, undefined);
   assert.equal(workflow.on.workflow_dispatch.inputs.release_tag.required, true);
   assert.equal(workflow.on.workflow_dispatch.inputs.release_tag.type, "string");
-  assert.match(workflow.env.RELEASE_TAG, /github\.event\.inputs\.release_tag/);
+  assert.match(workflow.env.RELEASE_TAG, /inputs\.release_tag/);
   assert.deepEqual(workflow.permissions, { contents: "read" });
 
   const desktop = workflow.jobs.desktop.strategy.matrix.include;
@@ -24,7 +29,7 @@ test("tagged Preview workflow builds and publishes Desktop and CLI for all reque
   );
   assert.match(
     workflow.jobs.desktop.steps.find(({ name }) => name === "Checkout tagged source").with.ref,
-    /github\.event\.inputs\.release_tag/,
+    /inputs\.release_tag/,
   );
   const cli = workflow.jobs.cli.strategy.matrix.include;
   assert.deepEqual(
@@ -33,7 +38,7 @@ test("tagged Preview workflow builds and publishes Desktop and CLI for all reque
   );
   assert.match(
     workflow.jobs.cli.steps.find(({ name }) => name === "Checkout tagged source").with.ref,
-    /github\.event\.inputs\.release_tag/,
+    /inputs\.release_tag/,
   );
 
   const publish = workflow.jobs.publish;

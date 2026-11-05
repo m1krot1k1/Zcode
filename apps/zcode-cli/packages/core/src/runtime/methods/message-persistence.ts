@@ -25,6 +25,7 @@ import {
   buildSyntheticUserNoticeSemantics,
 } from "./synthetic-notice-metadata.js";
 import { buildPersistedConversationInputIntent } from "./input-intent-persistence.js";
+import { getMetadataTools } from "./config.js";
 import { buildProjectionAnchor, mapSyntheticSourceToAnchorOrigin } from "./projection-anchor.js";
 
 export async function persistUserPrompt(
@@ -60,7 +61,9 @@ export async function persistUserPrompt(
   if (!this.sessionStore) return;
 
   const created = Date.now();
-  const tools = Object.fromEntries(this.getTools().map((tool) => [tool.name, true]));
+  // 用户消息的 tools 映射是持久化元数据，不是 provider 能力声明；该入口没有本轮 Model，
+  // 未知能力下不能把条件工具 WebSearch 写成可用。
+  const tools = Object.fromEntries(getMetadataTools.call(this).map((tool) => [tool.name, true]));
   const conversationInputIntent = buildPersistedConversationInputIntent(
     input,
     options?.intent,
@@ -250,7 +253,8 @@ export async function persistSyntheticUserNoticeForSession(
       source: options.source,
       system: this.config.systemPrompt,
       synthetic: true,
-      tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
+      // 同上：synthetic notice 也没有本轮 Model，条件工具按不可用处理。
+      tools: Object.fromEntries(getMetadataTools.call(this).map((tool) => [tool.name, true])),
       visibility,
     },
     options.traceContext,

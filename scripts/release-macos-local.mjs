@@ -25,6 +25,7 @@ import {
   createMacReleaseBuildEnvironment,
   preflightMacReleaseSecurity,
 } from "./macos-release-security.mjs";
+import { assertPinnedNodeVersionFromMise } from "./assert-node-version.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -576,7 +577,16 @@ export async function preflightMacRelease({
   hashDirectory = hashMacAppBundle,
   createTemporaryDirectory = (prefix) => mkdtemp(path.join(tmpdir(), prefix)),
   removeTemporaryDirectory = (directoryPath) => rm(directoryPath, { recursive: true, force: true }),
+  nodeVersion = process.versions.node,
+  pinnedNodeVersion,
+  misePath,
 }) {
+  // Fail-fast до чтения dist и временных каталогов: выпуск допустим только на Node из mise.toml.
+  await assertPinnedNodeVersionFromMise({
+    actual: nodeVersion,
+    pinned: pinnedNodeVersion,
+    misePath,
+  });
   const assetNames = selectMacReleaseAssets(
     await readdir(distDir),
     version,
@@ -720,6 +730,7 @@ async function main() {
     console.log("usage: node scripts/release-macos-local.mjs <major|minor|patch>");
     return;
   }
+  await assertPinnedNodeVersionFromMise();
   bumpSemver("0.0.0", level);
   const releaseSecurity = await preflightMacReleaseSecurity({
     env: process.env,

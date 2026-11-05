@@ -25,6 +25,7 @@ import {
 import type { CompactTimelineContext } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
+import { getMetadataTools } from "./config.js";
 import {
   persistRuntimeReminderMessage,
   removeRuntimePersistenceMessagesBestEffort,
@@ -327,7 +328,11 @@ export async function persistCompactSummary(
           transcriptVisibility: "hidden",
         },
         system: this.config.systemPrompt,
-        tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
+        // compact summary 是非 provider-visible 元数据：按本次 compact 的 Active Model
+        // 过滤条件工具（WebSearch），完整注册表不能冒充可用能力。
+        tools: Object.fromEntries(
+          getMetadataTools.call(this, options?.model).map((tool) => [tool.name, true]),
+        ),
       },
       traceContext,
     );

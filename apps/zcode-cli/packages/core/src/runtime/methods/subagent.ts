@@ -35,6 +35,7 @@ import { AgentRuntime } from "../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { resolveSubagentSelection } from "../helpers/subagent-selection.js";
+import { modelSupportsNativeWebSearch } from "./config.js";
 import type { AgentRuntimeDeps } from "../types.js";
 import { toMcpToolName } from "../../mcp/index.js";
 import {
@@ -288,10 +289,27 @@ export function createDefaultSubagentPort(
           requestedMcpTools,
           childMcpAccess,
         );
+        // child Model 必须先于 allowlist 解析创建：WebSearch 是模型能力条件工具，child 能力
+        // 清单（SubagentSpawned.allowedTools）只能按 child 自己的 Active Model 过滤。
+        // 创建顺序前移只改变错误优先级，不改变其它 preflight 的语义。
+        const baseChildModelFactory = modelOverride
+          ? createSubagentOverrideModelFactory(modelOverride, this.modelFactory)
+          : inheritedModel
+            ? createInheritedSubagentModelFactory(childSelection, inheritedModel, this.modelFactory)
+            : this.modelFactory;
+        if (!baseChildModelFactory) {
+          throw createCoreError(
+            CoreErrorType.ConfigurationError,
+            `Subagent model factory cannot resolve ${childSelection.providerId}/${childSelection.modelId}`,
+            { recoverable: true },
+          );
+        }
+        const childModel = baseChildModelFactory({ selection: childSelection });
         const childToolAllowlist = resolveSubagentToolAllowlist.call(
           this,
           request,
           childMcpAccess.snapshot?.tools.map((descriptor) => toMcpToolName(descriptor)) ?? [],
+          childModel,
         );
         const childMode = resolveSubagentPermissionMode(
           this.getPlanEnabled() ? "plan" : this.config.mode,
@@ -309,19 +327,6 @@ export function createDefaultSubagentPort(
           request.profile.skills,
           childCuaPolicy,
         );
-        const baseChildModelFactory = modelOverride
-          ? createSubagentOverrideModelFactory(modelOverride, this.modelFactory)
-          : inheritedModel
-            ? createInheritedSubagentModelFactory(childSelection, inheritedModel, this.modelFactory)
-            : this.modelFactory;
-        if (!baseChildModelFactory) {
-          throw createCoreError(
-            CoreErrorType.ConfigurationError,
-            `Subagent model factory cannot resolve ${childSelection.providerId}/${childSelection.modelId}`,
-            { recoverable: true },
-          );
-        }
-        const childModel = baseChildModelFactory({ selection: childSelection });
         const childModelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]> = (target) =>
           target.selection.providerId === childSelection.providerId &&
           target.selection.modelId === childSelection.modelId &&
@@ -738,10 +743,12 @@ function resolveSubagentPermissionMode(
   }
 }
 
-function resolveSubagentToolAllowlist(
+/** 导出仅供 core 单测验证 child 能力清单的 WebSearch 条件过滤。 */
+export function resolveSubagentToolAllowlist(
   this: AgentRuntimeInternal,
   request: ExploreSubagentRuntimeRequest,
   visibleMcpToolNames: readonly string[],
+  childModel: Model,
 ): readonly string[] {
   const disallowedRules = buildSubagentChildDisallowRules([
     ...(this.config.toolDisallowlist ?? []),
@@ -757,6 +764,9 @@ function resolveSubagentToolAllowlist(
     ...this.getTools()
       // child MCP must use the same descriptors as the parent's startup snapshot.
       .filter((tool) => tool.permission?.permission !== "mcp")
+      // WebSearch 是否进入 child 能力清单取决于 child Active Model，而不是父注册表：
+      // 否则 SubagentSpawned.allowedTools 会把 child 实际拿不到的条件工具持久化出去。
+      .filter((tool) => tool.name !== "WebSearch" || modelSupportsNativeWebSearch(childModel))
       .map((tool) => tool.name),
     ...parentAllowedMcpToolNames,
   ];

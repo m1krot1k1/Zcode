@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopProductIdentities } from "../packages/desktop/scripts/desktop-product-identity.mjs";
+import { assertPinnedNodeVersionFromMise } from "./assert-node-version.mjs";
 import { OFFLINE_PREVIEW_ZCODE_ENDPOINT } from "./preview-release-contract.mjs";
 import {
   assertAssetHashes,
@@ -308,6 +309,7 @@ async function main() {
     );
     return;
   }
+  await assertPinnedNodeVersionFromMise();
   const baseSha = await capture(["git", "rev-parse", "HEAD"]);
   assertPreviewReleasePreconditions({
     platform: process.platform,

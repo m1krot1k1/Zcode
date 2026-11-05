@@ -18,6 +18,7 @@ import type { DrainedPendingInputDiagnostics, ModelExecutionContext } from "../t
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { getMetadataTools } from "./config.js";
 
 export type PendingStreamRecoveryRequest = ModelStreamRecoveryStatus;
 
@@ -37,6 +38,16 @@ export const OFF_PEAK_MUTATION_TOOL_NAMES = OFF_PEAK_EXECUTION_TOOL_DENYLIST;
 // 闲时派发 init 段 traceId 无固定前缀，只有 resume 段是 `${offPeakTaskId}:resume:*`
 // （offpeak- 开头）；前缀只是 resume 兜底信号，主信号必须是显式 offPeakTaskId。
 const OFF_PEAK_QUERY_ID_PREFIX = "offpeak-";
+
+/**
+ * Swarm planner 的可用工具名（元数据，不进入 provider 请求）。
+ *
+ * planner prompt 不能把完整注册表当成能力事实：必须按本轮 Active Model 过滤条件工具，
+ * 否则不支持原生检索的模型会在规划提示里看到 WebSearch。
+ */
+export function getPlannerToolNames(runtime: AgentRuntimeInternal, model: Model): string[] {
+  return getMetadataTools.call(runtime, model).map((tool) => tool.name);
+}
 
 export function getTurnTools(runtime: AgentRuntimeInternal, state: RegularTurnLoopState) {
   if (state.automationCreateLimitReached) return [];
