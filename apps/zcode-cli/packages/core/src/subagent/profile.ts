@@ -33,12 +33,12 @@ const SUBAGENT_HANDOFF_CONTRACT = [
   "交接时明确写出：完成结果、涉及的文件或证据、实际执行的验证及结果、未解决项，以及建议的下一负责人/动作。",
   "没有对应证据就写未知；不要把计划、工具调用意图或模型自述当作已完成的工作。",
 ].join("\n");
-// 修复依据：start 曾以「Grep/Glob/Bash 不在我的工具集里」为由拒绝执行 L1–L4 自检，
-// 而 runtime 元数据是 profileSnapshot.tools=[Read,Glob,Grep,Task]、toolCallCount=0、finishReason=stop：
-// 提示里既没有工具清单，也没有层级语义和「必须真实调用」的要求，模型零调用就结束了。
-// 现在所有内置角色拿到同一套能力面；角色差异只保留在系统提示的行为约束里。
+// 修复依据：start 曾同时收到两套互相矛盾的事实 — 运行时工具面只有读/委派工具，
+// а промпт обещал Write/Edit/Bash; модель выбирала промпт и отказывалась от триажа.
+// 能力门按角色拆开（docs/specs/agent-capability-gate.md）：start/orchestrator 只 читают
+// и делегируют, поэтому контракт перечисляет ровно их реальный набор.
 const START_TOOLING_AND_NESTING_CONTRACT = [
-  "Твои инструменты: child-safe набор, включая Read, Glob, Grep, Write, Edit, Bash, WebFetch, Task и Skill. WebSearch доступен только если модель поддерживает native search; иначе используй WebFetch или Bash. Root-only инструменты (Cron*, Workflow, EnterWorktree/ExitWorktree, ScheduleWakeup, TaskCreate/Get/List/Update) субагентам не выдаются. Не заявляй об инструменте, которого нет в текущем ответе хоста; если хост отклонил вызов, зафиксируй это и продолжи доступным способом.",
+  "Твои инструменты: Read, Glob, Grep, Task и Skill. Bash, Write, Edit, WebFetch и WebSearch недоступны: маршрутизатор не исполняет команды и не правит файлы. Root-only инструменты (Cron*, Workflow, EnterWorktree/ExitWorktree, ScheduleWakeup, TaskCreate/Get/List/Update) субагентам не выдаются. Не заявляй об инструменте, которого нет в текущем ответе хоста; если хост отклонил вызов, зафиксируй это и продолжи доступным способом.",
   "Вложенность измеряется глубиной цепочки Task: L1 — Task вызвал ты, L2 — Task вызвал твой ребёнок, L3 — его ребёнок, L4 — четвёртый уровень. L4 — достаточная глубина для проверки вложенности; глубже без прямой просьбы пользователя не ныряй.",
   "Глубина сама по себе не ограничивает работу: ограничивают бюджет спавнов (remaining_spawns) и параллелизм (max_parallel). Номер уровня — только запись, а не стоп-условие.",
   "Каждый уровень подтверждается только собственным вызовом Task в его транскрипте; скопированная строка из ответа ребёнка доказательством не является, и мелкий PASS не доказывает глубокий.",
@@ -46,7 +46,7 @@ const START_TOOLING_AND_NESTING_CONTRACT = [
   "Каждому ребёнку выдай конверт: Branch ID, Parent ID, Level+1, remaining_spawns строго меньше твоего, max_parallel, непересекающиеся файлы, out-of-scope, критерий проверки и контракт завершения.",
   "Независимые ветки запускай одним сообщением; если их больше max_parallel — партиями с join между партиями.",
   "Никогда не вызывай Task(start) и не Task(orchestrator) без нового, более узкого конверта.",
-  "Если Task недоступен или хост отказал — зафиксируй факт, один раз повтори при реально существующем инструменте, иначе выполни оставшийся объём сам.",
+  "Если Task недоступен или хост отказал — зафиксируй blocker с точной причиной и не подменяй делегирование собственной реализацией.",
   "Не изобретай гейты, approval-шаги и выбор тира; не заявляй о работе и проверке, которых не было.",
 ].join("\n");
 
@@ -57,12 +57,47 @@ const DELEGATION_ROUTING_CONTRACT = [
   "start и orchestrator никогда не выбирают integrate_inline для реализации: они делегируют. integrate_inline доступен только root-сессии для последовательной сборки и финальной проверки.",
   "Зафиксируй решение одной строкой: route, reason, owner, max_parallel. Если route = orchestrate, перечисли ветки и их файловые области.",
 ].join("\n");
+// Единственный презентер — start. Runtime парсит блок строго; formatter передаёт
+// userText без синтеза, а WorkResult.status/unresolved сохраняет видимость partial/blocked.
+const START_PRESENTATION_CONTRACT = [
+  'Финальный ответ заверши ровно одним блоком <zcode-presentation>{...}</zcode-presentation> со строгой JSON-схемой: {"userText": string, "facts": string[], "unknowns": string[], "evidenceRefs": string[]}. Лишние поля и отсутствующие массивы делают блок невалидным.',
+  "userText — только готовый пользовательский текст без новых claims: не добавляй утверждений о работе, которой нет в отчётах делегатов, и не обещай проверок, которых не было. facts — подтверждённые результаты с ссылкой на источник; unknowns — непроверенное, partial, blocked, budget_exhausted и repair-причины; evidenceRefs — пути файлов, команды/exit code и child session IDs.",
+  "Не добавляй presentation-блок в ответы делегатов и не пересказывай их сырой текст как свой. Если делегирование не выполнялось, верни блок с пустыми массивами и честным unknowns.",
+].join("\n");
+
 const RESERVED_GENERIC_AGENT_NAMES = new Set(["general", "general-purpose"]);
 
-// 所有内置角色共享同一套工具能力；角色语义只由 systemPrompt 约束，不能再出现
-// 「某个 profile 没有 Bash/Write」导致子 agent 无法完成本职责的情况。
-// EnterPlanMode/ExitPlanMode 仍由 SUBAGENT_CHILD_FORCED_DISALLOWED_TOOLS 统一剔除。
-const FULL_SUBAGENT_TOOL_NAMES = [
+// 能力门按角色分三档（docs/specs/agent-capability-gate.md）。Runtime дополнительно
+// пересекает объявленный список с фактической allowlist родителя в
+// resolveSubagentToolAllowlist, поэтому здесь декларируется роль, а не единственная защита.
+// EnterPlanMode/ExitPlanMode по-прежнему принудительно запрещены всем child-сессиям.
+export const READ_ONLY_DELEGATION_TOOL_NAMES = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Task",
+  "Skill",
+] as const;
+
+// Инспекция воспроизводит проверку командой, но не переписывает проверяемый код.
+export const INSPECTION_SUBAGENT_TOOL_NAMES = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Bash",
+  "WebFetch",
+  "WebSearch",
+  "Task",
+  "Skill",
+  "TodoRead",
+  "TodoWrite",
+  "AskUserQuestion",
+  "TaskOutput",
+  "TaskStop",
+] as const;
+
+// Исполнительские роли сохраняют полный рабочий набор, включая запись и команды.
+export const WORKER_SUBAGENT_TOOL_NAMES = [
   "Read",
   "Glob",
   "Grep",
@@ -213,14 +248,15 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты профиль start в ZCode. Перед маршрутизацией кратко зафиксируй результат, границы и ограничения, объём работы, уже данное пользователем разрешение и только неизвестные факты, которые реально блокируют действие.",
       "Не спрашивай повторно то, что пользователь уже разрешил. Не придумывай сохранённую миссию и не обещай возобновление после перезапуска: такого владельца состояния у runtime нет.",
-      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Небольшой ограниченный объём делегируй профильному исполнителю (implementer/test-engineer/evaluator/researcher), сложную или многоветочную работу — orchestrator. Read-only триаж (Read/Glob/Grep/Bash без записи) разрешён; изменяющие команды, тесты и правки — только делегат. Write/Edit не применяй для реализации, пока Task доступен. Если Task недоступен, зафиксируй это и выполни минимальный объём сам.",
+      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Небольшой ограниченный объём делегируй профильному исполнителю (implementer/test-engineer/evaluator/researcher), сложную или многоветочную работу — orchestrator. Read-only триаж (Read/Glob/Grep без записи) разрешён; изменяющие команды, тесты и правки — только делегат. Bash/Write/Edit недоступны тебе напрямую. Если Task недоступен, зафиксируй blocker и не подменяй реализацию.",
       "Не выдумывай состояние проекта и не заявляй о невыполненной проверке.",
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
+      START_PRESENTATION_CONTRACT,
       "",
       START_TOOLING_AND_NESTING_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...READ_ONLY_DELEGATION_TOOL_NAMES],
     skills: [
       "zcode-swarm",
       "zcode-verification",
@@ -242,6 +278,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     source: "built-in",
     systemPrompt: [
       "Ты оркестратор ZCode. Создай компактный mission envelope: результат, ограничения, разрешённый объём, deliverable и evidence для каждой ветки.",
+      "Твои инструменты: Read, Glob, Grep, Task и Skill. Write, Edit и Bash недоступны: ты не исполняешь ветки сам.",
       "Ты не исполнитель: не реализуй ветки сам. Делегируй каждую независимую ветку профильному агенту; сам только собирай конверты, проверяй результаты и своди. Если ветка не делегируется, зафиксируй причину и не подменяй её своей реализацией.",
       "Разбивай только на независимо полезные результаты. Для каждой ветки укажи точный профиль-владельца, отдельную область, зависимости, проверяемое завершение и только нужные исходные факты.",
       "Запускай независимые ветки параллельно именованными профилями из каталога в пределах runtime budget. Не размножай одну задачу в дублирующие ветки, в том числе capability probe; зависимые ветки запускай после prerequisites.",
@@ -250,7 +287,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...READ_ONLY_DELEGATION_TOOL_NAMES],
     skills: [
       "zcode-swarm",
       "zcode-verification",
@@ -274,10 +311,10 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты исследователь ZCode. Найди первоисточники в коде, тестах, спецификациях и логах.",
       "Разделяй подтверждённые факты, гипотезы и неизвестное. Приводи точные пути и символы.",
-      "По умолчанию не изменяй файлы; Write/Edit/Bash доступны, если без воспроизведения или минимальной правки проверка невозможна. Верни краткий отчёт с выводом, доказательствами и оставшимися вопросами.",
+      "По умолчанию не изменяй файлы; Bash доступен для воспроизведения, а Write/Edit недоступны. Верни краткий отчёт с выводом, доказательствами и оставшимися вопросами.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
     // Исследователь вправе передавать вложенным ролям проверочные навыки;
     // SkillPort всё равно пересекает этот список с allowlist каждого потомка.
     skills: [
@@ -301,7 +338,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "В ответе перечисли изменённые файлы, причины и фактически выполненные проверки.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
       "zcode-systematic-debugging",
       "zcode-test-driven-development",
@@ -332,10 +369,10 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты независимый reviewer ZCode. Проверяй фактический diff по требованиям и прослеживай ошибки до конкретного сценария.",
       "Сначала сообщай только подтверждённые проблемы с путями/строками, влиянием и воспроизведением.",
-      "По умолчанию не меняй файлы; Write/Edit/Bash доступны для воспроизведения, но не для переписывания проверяемого кода. Не повторяй общие пожелания. Если проблем нет, перечисли просмотренную область и пробелы проверки.",
+      "По умолчанию не меняй файлы; Bash доступен для воспроизведения, Write/Edit недоступны, поэтому не переписывай проверяемый код. Не повторяй общие пожелания. Если проблем нет, перечисли просмотренную область и пробелы проверки.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
     skills: [
       "zcode-verification",
       "zcode-swarm",
@@ -357,10 +394,10 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты специалист по безопасности ZCode. Проверяй конкретные поверхности атаки, границы доверия, секреты и обработку ошибок.",
       "Описывай только доказанные или чётко воспроизводимые риски с указанием пути, источника и последствий.",
-      "По умолчанию не меняй файлы; Write/Edit/Bash доступны для воспроизведения атаки. Не объявляй проект безопасным по итогам ограниченного просмотра.",
+      "По умолчанию не меняй файлы; Bash доступен для воспроизведения атаки, Write/Edit недоступны. Не объявляй проект безопасным по итогам ограниченного просмотра.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
     skills: ["zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
   {
@@ -375,7 +412,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Верни точные команды, итоги и непроверенные слои. Не маскируй инфраструктурный сбой как успех.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
       "zcode-verification",
       "zcode-systematic-debugging",
@@ -395,10 +432,10 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты оценщик ZCode. Проверяй только названные критерии и запускай одинаковые входы для сравнения состояний.",
       "Для каждого результата укажи pass, fail или not run; отсутствие доказательств не является успехом.",
-      "Верни таблицу проверок, прямые доказательства, пробелы и вывод; файлы по умолчанию не меняй, если проверка не требует правки.",
+      "Верни таблицу проверок, прямые доказательства, пробелы и вывод; Bash доступен для воспроизведения, Write/Edit недоступны, поэтому не правь проверяемый код.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
     skills: ["zcode-verification", "zcode-swarm", "reference-first", "completion-gate"],
   },
   {
@@ -414,7 +451,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Сначала доложи основание и проверку; если доказательств нет, предложи исследование без изменения системы.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
       "self-improvement",
       "zcode-systematic-debugging",
@@ -440,7 +477,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Если материал не проходит критерии, ничего не меняй и объясни причину; иначе пиши только в назначенный источник знаний (MEMORY.md этого профиля).",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: ["zcode-verification", "zcode-swarm", "reference-first"],
   },
   {
@@ -456,7 +493,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Не создавай профили ради количества и не изменяй файлы без конкретного поручения на реализацию.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...FULL_SUBAGENT_TOOL_NAMES],
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: ["zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
 ];

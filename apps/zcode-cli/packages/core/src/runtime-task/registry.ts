@@ -35,10 +35,12 @@ import {
   SessionEventType,
   type AgentOutput,
 } from "@zcode/contracts";
-import type { WorkLedger } from "./work-ledger.js";
+import type { WorkConflict, WorkLedger } from "./work-ledger.js";
+import { WORK_LEDGER_TTL_MS } from "./work-ledger.js";
 import {
   extractTaskPaths,
   forgetWorkClaimHeartbeat,
+  heartbeatWorkClaim,
   summarizeWorkIntent,
 } from "./work-ledger-wire.js";
 
@@ -127,6 +129,14 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
 
 export const MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS = 512;
 
+/**
+ * Terminal catalog record + additive `runId`. Контракт `RuntimeTaskTerminalCatalogRecord`
+ * не расширяется в shared: поле optional и читается старыми парсерами как отсутствующее.
+ */
+type RuntimeTaskTerminalCatalogRecordWithRun = RuntimeTaskTerminalCatalogRecord & {
+  runId?: string;
+};
+
 export function createRuntimeTaskTerminalCatalogEntry(
   task: RuntimeTaskSnapshot,
 ): SessionEntryInfo | undefined {
@@ -139,7 +149,7 @@ export function createRuntimeTaskTerminalCatalogEntry(
   ) {
     return undefined;
   }
-  const record: RuntimeTaskTerminalCatalogRecord = {
+  const record: RuntimeTaskTerminalCatalogRecordWithRun = {
     schema: "zcode.runtime.task-terminal.v1",
     taskId: task.taskId,
     attemptId: task.attemptId,
@@ -153,6 +163,7 @@ export function createRuntimeTaskTerminalCatalogEntry(
     description: task.description.slice(0, 4096),
     ...(task.error ? { error: task.error.slice(0, 4096) } : {}),
     ...(task.exitCode === undefined ? {} : { exitCode: task.exitCode }),
+    ...(task.rootRunId ? { runId: task.rootRunId } : {}),
     startedAt: task.startedAt.getTime(),
     completedAt: task.completedAt.getTime(),
   };
@@ -193,6 +204,7 @@ export function readRuntimeTaskTerminalCatalogRecord(
     (record.exitCode !== undefined && typeof record.exitCode !== "number") ||
     (record.childSessionId !== undefined && typeof record.childSessionId !== "string") ||
     (record.parentToolCallId !== undefined && typeof record.parentToolCallId !== "string") ||
+    (record.runId !== undefined && typeof record.runId !== "string") ||
     (record.pid !== undefined && typeof record.pid !== "number")
   ) {
     return;
@@ -211,6 +223,7 @@ export function runtimeTaskSnapshotFromTerminalCatalog(
   rootSessionId: SessionId,
   outputRootDir: string,
 ): RuntimeTaskSnapshot {
+  const instant = record as RuntimeTaskTerminalCatalogRecordWithRun;
   return {
     taskId: record.taskId,
     agentId: record.agentId,
@@ -219,11 +232,13 @@ export function runtimeTaskSnapshotFromTerminalCatalog(
     status: record.status,
     startedAt: new Date(record.startedAt),
     completedAt: new Date(record.completedAt),
+    attemptId: record.attemptId,
     ...(record.childSessionId ? { childSessionId: record.childSessionId } : {}),
     ...(record.parentToolCallId ? { parentToolCallId: record.parentToolCallId } : {}),
     ...(record.pid === undefined ? {} : { pid: record.pid }),
     ...(record.error ? { error: record.error } : {}),
     ...(record.exitCode === undefined ? {} : { exitCode: record.exitCode }),
+    ...(instant.runId ? { rootRunId: instant.runId } : {}),
     outputFile: runtimeTaskOutputFile(outputRootDir, rootSessionId, record.taskId),
     rootSessionId,
     type: "local_agent",
@@ -269,7 +284,11 @@ export type RuntimeTaskAdmissionResult =
         | "owner_closed"
         | "parent_stopped"
         | "task_already_running"
-        | "task_finalizing";
+        | "task_finalizing"
+        /** Пути задачи пересекаются с живым claim'ом другого агента. */
+        | "write_claim_conflict"
+        /** Ledger подключён, но чтение/запись claim'а недоступны (fail-closed). */
+        | "work_claim_unavailable";
     };
 
 /** Per-root-session worker ceiling: foreground children replace waiting parents; background children use another slot. */
@@ -1288,6 +1307,16 @@ export interface RuntimeTaskRegistry {
   openSessionOwner(sessionId: SessionId): void;
   getRootSessionIdForSession(sessionId: SessionId): SessionId;
   getRootRunIdForSession(sessionId: SessionId, turnId?: TurnId): string | undefined;
+  /** Остаток spawn-бюджета конкретного session в root run; undefined — root-run состояния нет. */
+  getRemainingSpawnBudget?(rootRunId: string, sessionId: SessionId): number | undefined;
+  /** Текущее число активных worker-слотов root session (для фактического maxParallel). */
+  getActiveSubagentWorkItemCount?(rootSessionId: SessionId): number;
+  /** Останавливает process-level таймеры registry (periodic sweep ledger). */
+  dispose?(): void;
+  /** Продлевает claim'ы живых running local_agent задач (перед periodic sweep). */
+  heartbeatActiveWorkClaims?(now?: number): void;
+  /** Heartbeat живых задач + материализация протухших claim'ов в `stale`. */
+  sweepWorkLedger?(now?: number): void;
   getBranchGenerationForSession(sessionId: SessionId): number;
   setBranchGenerationForSession(sessionId: SessionId, generation: number): void;
   remove(id: string): void;
@@ -1345,6 +1374,10 @@ interface RuntimeTaskWaiter {
   signal?: AbortSignal;
 }
 
+type WorkClaimAdmission =
+  | { accepted: true; claimed: boolean }
+  | { accepted: false; reason: "write_claim_conflict" | "work_claim_unavailable" };
+
 const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
   "completed",
   "failed",
@@ -1361,6 +1394,9 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
  */
 export const DEFAULT_SPAWN_BUDGET = 32;
 
+/** Periodic materialization of stale work claims; lazy expiry stays authoritative. */
+export const WORK_LEDGER_SWEEP_INTERVAL_MS = Math.max(1_000, Math.floor(WORK_LEDGER_TTL_MS / 2));
+
 export interface InMemoryRuntimeTaskRegistryOptions {
   /** Единственный владелец реестра работ; без него claim'ы не создаются. */
   workLedger?: WorkLedger;
@@ -1369,8 +1405,61 @@ export interface InMemoryRuntimeTaskRegistryOptions {
 export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   readonly workLedger: WorkLedger | undefined;
 
+  private workLedgerSweepTimer: ReturnType<typeof setInterval> | undefined;
+
   constructor(options: InMemoryRuntimeTaskRegistryOptions = {}) {
     this.workLedger = options.workLedger;
+    if (this.workLedger) {
+      // 根因：без periodic sweep протухшие claim'ы остаются в памяти и в журнале до
+      // следующего чтения; lazy expire гарантирует корректность, но не освобождает память.
+      // 修复依据：отдельный unref-таймер материализует stale, не удерживая процесс.
+      this.workLedgerSweepTimer = setInterval(() => {
+        this.sweepWorkLedger();
+      }, WORK_LEDGER_SWEEP_INTERVAL_MS);
+      this.workLedgerSweepTimer.unref?.();
+    }
+  }
+
+  /** Освобождает process-level ресурсы registry; повторные вызовы безопасны. */
+  dispose(): void {
+    if (this.workLedgerSweepTimer) {
+      clearInterval(this.workLedgerSweepTimer);
+      this.workLedgerSweepTimer = undefined;
+    }
+  }
+
+  /**
+   * F5: задача может долго не присылать child-события, но registry знает, что она
+   * `running`. Перед sweep продлеваем её claim'ы, иначе TTL сделает путь свободным
+   * при живой задаче. Журнал пишется не чаще одного раза на агента за sweep.
+   */
+  heartbeatActiveWorkClaims(now: number = Date.now()): void {
+    const ledger = this.workLedger;
+    if (!ledger) return;
+    const seen = new Set<string>();
+    for (const task of this.tasks.values()) {
+      if (task.type !== "local_agent" || task.status !== "running") continue;
+      const agentId = task.agentId.trim();
+      if (agentId.length === 0 || seen.has(agentId)) continue;
+      seen.add(agentId);
+      try {
+        // intervalMs: 0 — periodic sweep сам задаёт частоту; общий throttle-кеш
+        // синхронизирует ручные heartbeat'ы с шага ребёнка.
+        heartbeatWorkClaim(ledger, agentId, { now, intervalMs: 0 });
+      } catch (error) {
+        console.warn(`[work-ledger] heartbeat ${agentId} failed:`, error);
+      }
+    }
+  }
+
+  /** Periodic materialization: сначала продлевает живые задачи, затем гасит протухшие. */
+  sweepWorkLedger(now: number = Date.now()): void {
+    this.heartbeatActiveWorkClaims(now);
+    try {
+      this.workLedger?.sweepStale(now);
+    } catch (error) {
+      console.warn("[work-ledger] periodic sweep failed:", error);
+    }
   }
 
   private offPeakExecutionId: string | undefined;
@@ -1629,17 +1718,29 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       attemptId: randomUUID(),
       ...(childSpawnGrant === undefined ? {} : { spawnGrant: childSpawnGrant }),
     };
-    if (rootBudget && parentRemainingSpawns !== undefined) {
-      rootBudget.remainingSpawnsBySession.set(parentSessionId, parentRemainingSpawns - 1);
-      if (task.childSessionId) {
-        rootBudget.remainingSpawnsBySession.set(task.childSessionId, childSpawnGrant ?? 0);
-      }
-      rootBudget.spawnsUsed += 1;
+    // Registrar hard gate: findConflicts и claim выполняются до расхода бюджета и записи
+    // снапшота, чтобы отклонённый admission не оставлял ни задачи, ни claim'а.
+    const claimAdmission = this.admitWorkClaim(stamped, parentTask?.agentId ?? null);
+    if (!claimAdmission.accepted) return claimAdmission;
+    try {
+      this.setTaskSnapshot(stamped);
+    } catch (error) {
+      // Claim уже записан; сбой записи снапшота не должен оставить «призрак» в ledger.
+      if (claimAdmission.claimed) this.releaseWorkClaim(stamped.agentId);
+      throw error;
     }
-    this.setTaskSnapshot(stamped);
+    // 修复依据：预算只能在快照成功写入后扣减。原来先扣预算再 setTaskSnapshot，抛错时
+    // claim откатывался, а spawn-бюджет оставался израсходованным.
+    // 重新读取状态：setTaskSnapshot 可能因 turnFinished 已经删掉 budget。
+    const committedBudget = this.rootRunBudgets.get(rootRunId);
+    if (committedBudget && parentRemainingSpawns !== undefined) {
+      committedBudget.remainingSpawnsBySession.set(parentSessionId, parentRemainingSpawns - 1);
+      if (task.childSessionId) {
+        committedBudget.remainingSpawnsBySession.set(task.childSessionId, childSpawnGrant ?? 0);
+      }
+      committedBudget.spawnsUsed += 1;
+    }
     this.cancellationHandles.set(stamped.taskId, cancellation);
-    // Объявление работы — после успешной регистрации; ошибка ledger'а не отменяет admit.
-    this.declareWorkClaim(stamped, parentTask?.agentId ?? null);
     // 终态清理结束后才允许同一 task id 开启新生命期、唤醒 terminal waiter。
     void cancellation.settled.then(() => {
       this.finishSubagentTaskFinalization(stamped.taskId, cancellation);
@@ -1824,6 +1925,21 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return this.findTaskByChildSession(sessionId)?.rootSessionId ?? sessionId;
   }
 
+  /**
+   * Остаток spawn-бюджета session внутри root run. `undefined` означает, что root-run
+   * состояния нет (legacy-вызов): вызывающий сохраняет старый fallback.
+   */
+  getRemainingSpawnBudget(rootRunId: string, sessionId: SessionId): number | undefined {
+    const state = this.rootRunBudgets.get(rootRunId);
+    if (!state) return undefined;
+    return state.remainingSpawnsBySession.get(sessionId) ?? state.spawnBudget;
+  }
+
+  /** Число активных worker-слотов root session; основа фактического maxParallel. */
+  getActiveSubagentWorkItemCount(rootSessionId: SessionId): number {
+    return this.getActiveSubagentWorkItems(rootSessionId).length;
+  }
+
   getRootRunIdForSession(sessionId: SessionId, turnId?: TurnId): string | undefined {
     const task = this.findTaskByChildSession(sessionId);
     return task?.rootRunId ?? (turnId ? makeRootRunId(sessionId, turnId) : undefined);
@@ -1847,14 +1963,36 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }
 
   /**
-   * Объявляет работу агента в реестре. Ошибка реестра не ломает спавн: задача уже
-   * принята registry, а конфликты всё равно не блокируют (только предупреждают).
+   * Registrar hard gate: проверяет пересечение путей с живыми claim'ами и создаёт claim.
+   * Конфликт или недоступность ledger'а отклоняют admission до любых мутаций состояния.
+   * Без ledger'а/workspace gate выключен (обратная совместимость).
    */
-  private declareWorkClaim(task: RuntimeTaskSnapshot, parentAgentId: string | null): void {
+  private admitWorkClaim(
+    task: RuntimeTaskSnapshot,
+    parentAgentId: string | null,
+  ): WorkClaimAdmission {
     const ledger = this.workLedger;
     const workspacePath = task.workspacePath?.trim();
-    if (!ledger || !workspacePath) return;
+    if (!ledger || !workspacePath) return { accepted: true, claimed: false };
     const text = task.prompt || task.description;
+    const paths = extractTaskPaths(text);
+    if (paths.length > 0) {
+      let conflicts: WorkConflict[];
+      try {
+        conflicts = ledger.findConflicts({
+          workspacePath,
+          paths,
+          agentId: task.agentId,
+        });
+      } catch (error) {
+        console.warn(`[work-ledger] не удалось проверить конфликты ${task.agentId}:`, error);
+        return { accepted: false, reason: "work_claim_unavailable" };
+      }
+      if (conflicts.length > 0) {
+        // Конфликт теперь блокирует spawn: claim не создаётся, budget не тратится.
+        return { accepted: false, reason: "write_claim_conflict" };
+      }
+    }
     // Пустой intent ядро отклоняет, поэтому fallback — description/agentId.
     const intent = summarizeWorkIntent(text) || task.description.trim() || task.agentId;
     try {
@@ -1864,10 +2002,14 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         parentAgentId,
         profile: task.agentType,
         intent,
-        paths: extractTaskPaths(text),
+        paths,
+        ...(task.rootRunId ? { runId: task.rootRunId } : {}),
+        ...(task.attemptId ? { attemptId: task.attemptId } : {}),
       });
+      return { accepted: true, claimed: true };
     } catch (error) {
       console.warn(`[work-ledger] не удалось объявить ${task.agentId}:`, error);
+      return { accepted: false, reason: "work_claim_unavailable" };
     }
   }
 

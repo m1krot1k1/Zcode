@@ -226,6 +226,8 @@ export class AgentRuntime {
   private dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   private modelCatalogPort?: ModelCatalogPort;
   private runtimeTaskRegistry: RuntimeTaskRegistry;
+  // 修复依据：只有本 runtime 创建的 registry 才归它 teardown；子 runtime 拿到的是共享实例。
+  private readonly ownsRuntimeTaskRegistry: boolean;
   // 「run 还欠着决定、主代理闲着」的提醒钟；由命令队列的忙 / 闲沿驱动，beginShutdown 停掉。
   private workflowBlockedReminder: WorkflowBlockedReminderClock;
   private branchGeneration = 0;
@@ -363,8 +365,13 @@ export class AgentRuntime {
       : undefined;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
-    this.runtimeTaskRegistry =
-      deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry({ workLedger: deps.workLedger });
+    if (deps.runtimeTaskRegistry) {
+      this.runtimeTaskRegistry = deps.runtimeTaskRegistry;
+      this.ownsRuntimeTaskRegistry = false;
+    } else {
+      this.runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry({ workLedger: deps.workLedger });
+      this.ownsRuntimeTaskRegistry = true;
+    }
     const branchOwnerSessionId = this.config.parentSessionId ?? sessionId;
     this.branchGeneration =
       this.runtimeTaskRegistry.getBranchGenerationForSession(
@@ -445,6 +452,9 @@ export class AgentRuntime {
       });
     // 同一条理由：会话在关，提醒钟不能再到点唤起一轮。
     this.workflowBlockedReminder.stop();
+    // 修复依据：periodic work-ledger sweep 是 registry 自有的 unref setInterval；
+    // root runtime 关闭时停掉，注入的共享 registry 由注入方负责。
+    if (this.ownsRuntimeTaskRegistry) this.runtimeTaskRegistry.dispose?.();
     // 关闭单个 session 后进程仍存活，
     // 因此必须先终止该 runtime 的 Extraction，不能只在超时后放弃等待。
     this.memoryExtractionScheduler?.shutdown();

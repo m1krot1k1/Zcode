@@ -1,7 +1,10 @@
 import {
+  SessionEventType,
   createSessionId,
   createTurnId,
+  type AgentCompletedOutput,
   type AgentOutput,
+  type SessionEvent,
   type SessionId,
   type SubagentTaskDagRequest,
   type SubagentRunOptions,
@@ -14,8 +17,15 @@ import {
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
-import { executeSubagentTaskDag, resolveSpawnGrant } from "../src/subagent/runner.js";
+import {
+  createExploreSubagentPort,
+  executeSubagentTaskDag,
+  resolveActualMaxParallel,
+  resolveSpawnGrant,
+  resolveSwarmParallelismWithCapacity,
+} from "../src/subagent/runner.js";
 import type { ExploreSubagentPortOptions } from "../src/subagent/runner.js";
+import { buildSpawnEnvelope } from "../src/runtime/methods/subagent.js";
 
 describe("subagent spawn budget", () => {
   it("defaults to 32 and rejects the next spawn once the root budget is exhausted (a)", async () => {
@@ -25,9 +35,7 @@ describe("subagent spawn budget", () => {
     const rootRunId = `${root}:${turnId}`;
     registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId });
 
-    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.spawnBudget).toBe(
-      DEFAULT_SPAWN_BUDGET,
-    );
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.spawnBudget).toBe(DEFAULT_SPAWN_BUDGET);
 
     for (let index = 0; index < DEFAULT_SPAWN_BUDGET; index += 1) {
       const result = registry.registerSubagentTask(
@@ -103,8 +111,8 @@ describe("subagent spawn budget", () => {
       { internalSpawnGrant: 32 },
     );
 
-    // r=32, maxParallel=8, n=3: keep=8, pool=24, each=8，余数 0 留给父级。
-    expect(grants).toEqual([8, 8, 8]);
+    // r=32, nodeCount=3 → actual maxParallel=3: keep=3, pool=29, каждый узел получает 9.
+    expect(grants).toEqual([9, 9, 9]);
   });
 
   it("blocks every spawn when the configured budget is 0 (d)", () => {
@@ -134,9 +142,9 @@ describe("subagent spawn budget", () => {
     const options = { spawnBudget: 32 } as ExploreSubagentPortOptions;
 
     expect(resolveSpawnGrant(request, runOptions, options)).toBe(6);
-    expect(
-      resolveSpawnGrant({ spawnBudget: 3 } as SubagentRunRequest, runOptions, options),
-    ).toBe(3);
+    expect(resolveSpawnGrant({ spawnBudget: 3 } as SubagentRunRequest, runOptions, options)).toBe(
+      3,
+    );
     expect(resolveSpawnGrant({} as SubagentRunRequest, undefined, options)).toBe(31);
 
     // registry 也独立把子级声明的 grant 夹到 hostGrant，不能靠伪造字段绕过。
@@ -167,6 +175,212 @@ describe("subagent spawn budget", () => {
     );
     expect(accepted.accepted).toBe(true);
     expect(accepted.accepted && accepted.task.spawnGrant).toBeUndefined();
+  });
+
+  it("counts registry remaining budget for grants instead of the port fallback (g)", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-registry-root");
+    const turnId = createTurnId("spawn-registry-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 4,
+    });
+    const options = { spawnBudget: 32 } as ExploreSubagentPortOptions;
+
+    expect(
+      resolveSpawnGrant(
+        { sessionId: root, turnId } as SubagentRunRequest,
+        undefined,
+        options,
+        registry,
+      ),
+    ).toBe(3);
+  });
+
+  it("computes actual maxParallel from nodeCount, request, remaining and active cap (h)", () => {
+    expect(
+      resolveActualMaxParallel({ nodeCount: 5, requestedMaxParallel: 8, remainingSpawns: 2 }),
+    ).toBe(2);
+    // max(1): даже при нулевом остатке один узел должен дойти до admission.
+    expect(
+      resolveActualMaxParallel({ nodeCount: 5, requestedMaxParallel: 8, remainingSpawns: 0 }),
+    ).toBe(1);
+    expect(
+      resolveActualMaxParallel({
+        nodeCount: 5,
+        requestedMaxParallel: 8,
+        activeCount: 24,
+        activeCap: 24,
+      }),
+    ).toBe(1);
+
+    expect(
+      resolveSwarmParallelismWithCapacity({
+        nodeCount: 5,
+        requestedMaxParallel: 8,
+        remainingSpawns: 2,
+      }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
+    expect(
+      resolveSwarmParallelismWithCapacity({
+        nodeCount: 5,
+        spawnBudget: 8,
+        remainingSpawns: 0,
+      }),
+    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
+    expect(
+      resolveSwarmParallelismWithCapacity({
+        nodeCount: 5,
+        spawnBudget: 8,
+        activeCount: 24,
+        activeCap: 24,
+      }),
+    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
+  });
+
+  it("prints the actual max_parallel in the spawn envelope, never a hardcoded 8 (i)", () => {
+    expect(buildSpawnEnvelope({ level: 1, spawnGrant: 2, maxParallel: 2 })).toBe(
+      '<zcode-spawn-envelope level="1" remaining_spawns="2" max_parallel="2" />',
+    );
+    expect(buildSpawnEnvelope({ level: 2, spawnGrant: 2, maxParallel: 2 })).not.toContain(
+      'max_parallel="8"',
+    );
+    expect(buildSpawnEnvelope({ level: 1, spawnGrant: 2 })).toBe(
+      '<zcode-spawn-envelope level="1" remaining_spawns="2" />',
+    );
+    expect(buildSpawnEnvelope({})).toBeUndefined();
+  });
+
+  it("clamps a 5-node DAG to the registry remaining=2 and surfaces exhausted spawns (j)", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-dag-remaining-root");
+    const turnId = createTurnId("spawn-dag-remaining-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 2,
+    });
+    let active = 0;
+    let maxActive = 0;
+    const port = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-dag-remaining",
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return { events: [], response: "node done", traceId: request.traceContext.traceId };
+      },
+    });
+
+    const output = (await port.runTaskDag?.({
+      ...makeTaskDagRequest(
+        ["n1", "n2", "n3", "n4", "n5"].map((id) => ({
+          ...dagNode(id),
+          subagent_type: "Explore",
+        })),
+        8,
+      ),
+      sessionId: root,
+      turnId,
+    })) as AgentCompletedOutput;
+
+    expect(maxActive).toBe(2);
+    expect(output.workResult?.status).toBe("failed");
+    const text = output.content.map((block) => block.text).join("\n");
+    expect(text).toContain("Work result: status=failed");
+    expect(text).toContain("Spawn budget exhausted");
+  });
+
+  it("keeps spawn_budget_exhausted visible in DAG output and WorkResult when remaining=0 (k)", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-dag-zero-root");
+    const turnId = createTurnId("spawn-dag-zero-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 0,
+    });
+    let childRuns = 0;
+    const port = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-dag-zero",
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        childRuns += 1;
+        return { events: [], response: "should not run", traceId: request.traceContext.traceId };
+      },
+    });
+
+    const output = (await port.runTaskDag?.({
+      ...makeTaskDagRequest([dagNode("z1"), dagNode("z2")], 8),
+      sessionId: root,
+      turnId,
+      nodes: [
+        { ...dagNode("z1"), subagent_type: "Explore" },
+        { ...dagNode("z2"), subagent_type: "Explore" },
+      ],
+    })) as AgentCompletedOutput;
+
+    expect(childRuns).toBe(0);
+    expect(output.workResult?.status).toBe("failed");
+    expect(output.workResult?.unresolved.join(" ")).toContain("spawn_budget_exhausted");
+    const text = output.content.map((block) => block.text).join("\n");
+    expect(text).toContain("Work result: status=failed");
+    expect(text).toContain("Spawn budget exhausted");
+  });
+
+  it("emits runId/attemptId in SubagentSpawned and the actual maxParallel to the child (l)", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-correlation-root");
+    const turnId = createTurnId("spawn-correlation-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, spawnBudget: 4 });
+    const events: SessionEvent[] = [];
+    const childMaxParallel: Array<number | undefined> = [];
+    const port = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-correlation",
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async (event) => {
+        events.push(event);
+      },
+      runExploreAgent: async (request) => {
+        childMaxParallel.push(request.maxParallel);
+        return { events: [], response: "ok", traceId: request.traceContext.traceId };
+      },
+    });
+
+    await port.run({
+      sessionId: root,
+      turnId,
+      parentToolCallId: "spawn-correlation-call",
+      agentType: "Explore",
+      description: "Correlation probe",
+      prompt: "Return a short answer.",
+      callerCanReadOutputFile: true,
+      workingDirectory: "/tmp/zcode-spawn-correlation",
+      workspaceRoot: "/tmp/zcode-spawn-correlation",
+      trace: {
+        traceId: "trace_spawn_correlation",
+        spanId: "span_spawn_correlation",
+        sessionId: root,
+        turnId,
+      },
+    });
+
+    const spawned = events.find((event) => event.type === SessionEventType.SubagentSpawned);
+    expect(spawned?.payload).toMatchObject({
+      runId: rootRunId,
+      attemptId: expect.any(String),
+    });
+    // grant = remaining(4) - 1 = 3; активных слотов нет, cap 24 → max_parallel = 3.
+    expect(childMaxParallel).toEqual([3]);
   });
 });
 

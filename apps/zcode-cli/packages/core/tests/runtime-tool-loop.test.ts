@@ -4372,7 +4372,7 @@ describe("AgentRuntime tool loop", () => {
     });
   });
 
-  it("lets OpenCode auto planning choose a normal answer without spawning agents", async () => {
+  it("runs an OpenCode auto intent as a regular answer without a root planner", async () => {
     const sessionId = createSessionId("runtime-swarm-auto-leaf");
     const eventStore = createTestSessionEventStore();
     const runTaskDag = vi.fn();
@@ -4391,15 +4391,7 @@ describe("AgentRuntime tool loop", () => {
             const requestText = providerMessagesToText(request.messages);
             requestedPrompts.push(requestText);
             if (requestText.includes("Decide whether this task needs independent parallel work")) {
-              return {
-                finishReason: "stop",
-                providerMetadata: undefined,
-                text: JSON.stringify({
-                  decision: "leaf",
-                  reason: "A short greeting needs no delegation.",
-                }),
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
+              throw new Error("auto intent must not request a root plan");
             }
             return {
               finishReason: "stop",
@@ -4417,7 +4409,7 @@ describe("AgentRuntime tool loop", () => {
     });
 
     expect(result.response).toBe("ordinary OpenCode answer");
-    expect(requestedPrompts).toHaveLength(2);
+    expect(requestedPrompts).toHaveLength(1);
     expect(runTaskDag).not.toHaveBeenCalled();
     expect(
       (await eventStore.getEvents(sessionId)).filter(
@@ -4772,7 +4764,7 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
   });
 
-  it("keeps an OpenCode auto chat working when the optional planner request fails", async () => {
+  it("never sends an auto intent to the optional root planner", async () => {
     const sessionId = createSessionId("runtime-swarm-auto-planner-failure");
     const eventStore = createTestSessionEventStore();
     const runTaskDag = vi.fn();
@@ -4794,12 +4786,12 @@ describe("AgentRuntime tool loop", () => {
                 "Decide whether this task needs independent parallel work",
               )
             ) {
-              throw new Error("temporary planner transport failure");
+              throw new Error("auto intent must not request a root plan");
             }
             return {
               finishReason: "stop",
               providerMetadata: undefined,
-              text: "ordinary answer after planner fallback",
+              text: "ordinary answer without a root plan",
               usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
             };
           },
@@ -4811,8 +4803,8 @@ describe("AgentRuntime tool loop", () => {
       intent: { orchestrationMode: "auto" },
     });
 
-    expect(result.response).toBe("ordinary answer after planner fallback");
-    expect(callCount).toBe(2);
+    expect(result.response).toBe("ordinary answer without a root plan");
+    expect(callCount).toBe(1);
     expect(runTaskDag).not.toHaveBeenCalled();
     expect(
       (await eventStore.getEvents(sessionId)).filter(

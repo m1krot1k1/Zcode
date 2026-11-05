@@ -82,6 +82,10 @@ export interface WorkClaim {
   startedAt: number;
   heartbeatAt: number;
   status: WorkClaimStatus;
+  /** Root run, в котором выдан claim; additive для аудита и repair. */
+  runId?: string;
+  /** Попытка задачи, выдавшая claim; additive для аудита и repair. */
+  attemptId?: string;
 }
 
 export interface WorkLedgerScope {
@@ -95,6 +99,10 @@ export interface WorkClaimInput extends WorkLedgerScope {
   profile?: string | null;
   intent: string;
   paths?: readonly string[];
+  /** Root run, в котором создаётся claim; additive, не влияет на конфликты. */
+  runId?: string;
+  /** Попытка задачи, выдавшая claim; additive, не влияет на конфликты. */
+  attemptId?: string;
   now?: number;
 }
 
@@ -326,6 +334,8 @@ export class WorkLedger {
     const paths = normalizeClaimPaths(input.paths ?? [], workspacePath);
 
     const existing = this.#findReusableClaim(workspaceIdentity, agentId);
+    const runId = optionalNonEmpty(input.runId);
+    const attemptId = optionalNonEmpty(input.attemptId);
     let claim: WorkClaim;
     if (existing) {
       existing.workspacePath = workspacePath;
@@ -335,6 +345,8 @@ export class WorkLedger {
       existing.paths = paths;
       existing.heartbeatAt = now;
       existing.status = "active";
+      if (runId !== undefined) existing.runId = runId;
+      if (attemptId !== undefined) existing.attemptId = attemptId;
       claim = existing;
     } else {
       claim = {
@@ -349,6 +361,8 @@ export class WorkLedger {
         startedAt: now,
         heartbeatAt: now,
         status: "active",
+        ...(runId === undefined ? {} : { runId }),
+        ...(attemptId === undefined ? {} : { attemptId }),
       };
       this.#claims.set(claim.id, claim);
     }
@@ -371,7 +385,6 @@ export class WorkLedger {
   /** Продлевает все активные claim'ы агента. */
   heartbeat(agentId: string, now: number = this.#now()): WorkClaim[] {
     const id = requireNonEmpty(agentId, "agentId");
-    this.#expire(now);
     const updated: WorkClaim[] = [];
     for (const claim of this.#claims.values()) {
       if (claim.agentId !== id || claim.status !== "active") continue;
@@ -379,6 +392,10 @@ export class WorkLedger {
       this.#append({ v: WORK_LEDGER_JOURNAL_VERSION, type: "heartbeat", at: now, claimId: claim.id });
       updated.push(claim);
     }
+    // 修复依据：registry 在 periodic sweep 前给 running 任务续期。若先 #expire(now)，
+    // 超过 TTL 的存活任务会先被判 stale，后续 heartbeat 无法再续期；先续期再让其余
+    // claim 按 TTL 过期，保持"心跳即存活"。
+    this.#expire(now);
     return updated.map(snapshot);
   }
 
@@ -641,6 +658,13 @@ function requireNonEmpty(value: string, field: string): string {
   return trimmed;
 }
 
+/** Optional audit fields: пустая строка и не-строка трактуются как отсутствие значения. */
+function optionalNonEmpty(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
 function normalizeClaimPaths(paths: readonly string[], workspacePath: string): string[] {
   const normalized = new Set<string>();
   for (const path of paths) {
@@ -724,6 +748,8 @@ function parseWorkClaim(value: unknown): WorkClaim | null {
   }
   const parentAgentId = typeof value.parentAgentId === "string" ? value.parentAgentId : null;
   const profile = typeof value.profile === "string" ? value.profile : null;
+  const runId = optionalNonEmpty(value.runId);
+  const attemptId = optionalNonEmpty(value.attemptId);
   return {
     id,
     workspaceIdentity,
@@ -736,5 +762,7 @@ function parseWorkClaim(value: unknown): WorkClaim | null {
     startedAt: value.startedAt,
     heartbeatAt: value.heartbeatAt,
     status,
+    ...(runId === undefined ? {} : { runId }),
+    ...(attemptId === undefined ? {} : { attemptId }),
   };
 }

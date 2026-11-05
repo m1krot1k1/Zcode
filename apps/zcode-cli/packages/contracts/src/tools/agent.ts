@@ -244,6 +244,138 @@ export interface AgentTextContentBlock {
   text: string;
 }
 
+/**
+ * Machine-readable итог работы субагента. `AgentOutput.status` остаётся `"completed"`
+ * по контракту; фактическую полноту показывает `WorkResult.status`.
+ */
+export const WORK_RESULT_STATUSES = ["completed", "partial", "failed", "blocked"] as const;
+
+export type WorkResultStatus = (typeof WORK_RESULT_STATUSES)[number];
+export type WorkResultTestStatus = "passed" | "failed" | "not_run";
+
+export interface WorkResultTestEntry {
+  command: string;
+  status: WorkResultTestStatus;
+  summary?: string;
+}
+
+export interface WorkResultClaimEntry {
+  path: string;
+  runId?: string;
+  attemptId?: string;
+}
+
+export interface WorkResultMetrics {
+  durationMs?: number;
+  toolUses?: number;
+  tokens?: number;
+}
+
+export interface WorkResult {
+  status: WorkResultStatus;
+  summary: string;
+  files: string[];
+  evidence: string[];
+  tests: WorkResultTestEntry[];
+  unresolved: string[];
+  confidence?: number;
+  claims: WorkResultClaimEntry[];
+  metrics?: WorkResultMetrics;
+}
+
+/**
+ * Единые лимиты `WorkResult`. Схема, runtime bounding и DAG-агрегация используют
+ * один источник, иначе сгенерированный результат может не пройти собственную схему
+ * и успешный child превращается в ToolExecutionFailed.
+ */
+export const WORK_RESULT_LIMITS = {
+  summary: 8_000,
+  files: { max: 200, entry: 1_000 },
+  evidence: { max: 200, entry: 2_000 },
+  tests: { max: 100, command: 2_000, summary: 2_000 },
+  unresolved: { max: 200, entry: 2_000 },
+  claims: { max: 200, path: 1_000, runId: 512, attemptId: 512 },
+} as const;
+
+const WorkResultTestEntrySchema = z
+  .object({
+    command: z.string().min(1).max(WORK_RESULT_LIMITS.tests.command),
+    status: z.enum(["passed", "failed", "not_run"]),
+    summary: z.string().max(WORK_RESULT_LIMITS.tests.summary).optional(),
+  })
+  .strict();
+
+const WorkResultClaimEntrySchema = z
+  .object({
+    path: z.string().min(1).max(WORK_RESULT_LIMITS.claims.path),
+    runId: z.string().min(1).max(WORK_RESULT_LIMITS.claims.runId).optional(),
+    attemptId: z.string().min(1).max(WORK_RESULT_LIMITS.claims.attemptId).optional(),
+  })
+  .strict();
+
+const WorkResultMetricsSchema = z
+  .object({
+    durationMs: z.number().int().nonnegative().optional(),
+    toolUses: z.number().int().nonnegative().optional(),
+    tokens: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+/** Строгая схема `<zcode-work-result>`; несоответствие переводит потребителя на fallback. */
+export const WorkResultSchema = z
+  .object({
+    status: z.enum(WORK_RESULT_STATUSES),
+    summary: z.string().min(1).max(WORK_RESULT_LIMITS.summary),
+    files: z
+      .array(z.string().min(1).max(WORK_RESULT_LIMITS.files.entry))
+      .max(WORK_RESULT_LIMITS.files.max)
+      .default([]),
+    evidence: z
+      .array(z.string().min(1).max(WORK_RESULT_LIMITS.evidence.entry))
+      .max(WORK_RESULT_LIMITS.evidence.max)
+      .default([]),
+    tests: z.array(WorkResultTestEntrySchema).max(WORK_RESULT_LIMITS.tests.max).default([]),
+    unresolved: z
+      .array(z.string().min(1).max(WORK_RESULT_LIMITS.unresolved.entry))
+      .max(WORK_RESULT_LIMITS.unresolved.max)
+      .default([]),
+    confidence: z.number().min(0).max(1).optional(),
+    claims: z.array(WorkResultClaimEntrySchema).max(WORK_RESULT_LIMITS.claims.max).default([]),
+    metrics: WorkResultMetricsSchema.optional(),
+  })
+  .strict();
+
+/**
+ * Пользовательский конверт, который формирует только профиль `start`.
+ * Runtime парсит его из финального ответа Start и передаёт в formatter как есть:
+ * без синтеза новых утверждений и без worker/DAG-содержимого.
+ */
+export interface AgentPresentation {
+  userText: string;
+  facts: string[];
+  unknowns: string[];
+  evidenceRefs: string[];
+}
+
+const AGENT_PRESENTATION_USER_TEXT_MAX_CHARS = 20_000;
+const AGENT_PRESENTATION_ENTRY_MAX_CHARS = 2_000;
+const AGENT_PRESENTATION_MAX_ENTRIES = 200;
+
+const AgentPresentationEntrySchema = z
+  .string()
+  .min(1)
+  .max(AGENT_PRESENTATION_ENTRY_MAX_CHARS);
+
+/** Строгая схема `<zcode-presentation>`; любое несоответствие отбрасывает блок целиком. */
+export const AgentPresentationSchema = z
+  .object({
+    userText: z.string().min(1).max(AGENT_PRESENTATION_USER_TEXT_MAX_CHARS),
+    facts: z.array(AgentPresentationEntrySchema).max(AGENT_PRESENTATION_MAX_ENTRIES),
+    unknowns: z.array(AgentPresentationEntrySchema).max(AGENT_PRESENTATION_MAX_ENTRIES),
+    evidenceRefs: z.array(AgentPresentationEntrySchema).max(AGENT_PRESENTATION_MAX_ENTRIES),
+  })
+  .strict();
+
 export interface AgentCompletedOutput {
   status: "completed";
   agentId: string;
@@ -255,6 +387,10 @@ export interface AgentCompletedOutput {
   totalDurationMs: number;
   totalTokens?: number;
   usage?: ModelUsage;
+  /** Machine-readable итог: status/summary/files/tests/evidence/unresolved/claims. */
+  workResult?: WorkResult;
+  /** Пользовательский конверт Start; worker-роли и DAG-узлы его не формируют. */
+  presentation?: AgentPresentation;
   /** Host-derived decision. A verified command criterion does not prove semantic task quality. */
   acceptance?: PrismTaskAcceptanceDecision;
 }
@@ -293,6 +429,8 @@ export const AgentCompletedOutputSchema = z
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
     usage: z.record(z.unknown()).optional(),
+    workResult: WorkResultSchema.optional(),
+    presentation: AgentPresentationSchema.optional(),
     acceptance: z
       .object({
         status: z.enum(["unknown", "verified", "rejected"]),

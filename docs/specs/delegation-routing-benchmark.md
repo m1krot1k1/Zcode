@@ -26,7 +26,8 @@ Each family contains paired tasks with the same inputs and acceptance checks:
 5. **Release pipeline** — version bump, build, release, and verification are serial; expected
    `integrate_inline` in the root.
 6. **Duplicate-work probe** — two agents are intentionally given overlapping file scopes; the
-   work-ledger must report the overlap and the run must not silently duplicate the edit.
+   work-ledger registrar must reject the second spawn (`write_claim_conflict`) instead of
+   silently duplicating the edit. The benchmark records the rejection as a routing outcome.
 
 ## Metrics
 
@@ -34,6 +35,8 @@ Each family contains paired tasks with the same inputs and acceptance checks:
 - `durationMs` — wall-clock time to verified result.
 - `tokens` — total model tokens for the task.
 - `duplicateClaims` — work-ledger claims that overlap another live claim on the same path.
+  With the registrar hard gate accepted spawns must not add duplicate claims; a non-zero value
+  is a gate regression, not a routing trade-off.
 - `criticalRegressions` — failed safety, release, or data-integrity checks.
 - `repeats` — how many runs are aggregated into the record; real runs require at least three.
 - `synthetic` — `true` for fixtures. Synthetic records are labeled as such and never prove model gains.

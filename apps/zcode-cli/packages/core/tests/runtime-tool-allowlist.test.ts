@@ -16,6 +16,9 @@ import {
 import { createSessionId } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 import { AgentRuntime } from "../src/runtime.js";
+import { resolveSubagentToolAllowlist } from "../src/runtime/methods/subagent.js";
+import { getSwarmAgentProfiles, normalizeAgentProfiles } from "../src/subagent/profile.js";
+import { createTestRuntimeModel } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "../src/subagent/explore-tools.js";
 import {
@@ -392,6 +395,113 @@ describe("AgentRuntime：分支刷新后灰度门仍然成立", () => {
 // Agent / Task 的 provider 描述里有一条「用户点名工作流时 CreateWorkflow 是强制的」，
 // 关闭时那个工具不在注册表里，留着这句话只会把模型指向一个不存在的工具。
 // 两个注册入口共用 options.includeDynamicWorkflow，所以分支刷新后的描述也必须一致。
+// docs/specs/agent-capability-gate.md: profile.tools — верхняя граница, runtime выставляет
+// реальную границу через пересечение с parent allowlist. Эти тесты проверяют именно
+// runtime-границу, а не только декларацию в профиле, поэтому родитель отдаёт все инструменты.
+describe("built-in profile capability gate at the runtime boundary", () => {
+  const ALL_PARENT_TOOL_NAMES = [
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+    "Agent",
+  ] as const;
+
+  function createCapabilityModel() {
+    return createTestRuntimeModel({
+      generateText: async () => ({ finishReason: "stop", text: "", usage: {} }),
+      propertyOverrides: { supportsNativeWebSearch: true },
+    });
+  }
+
+  function createFakeParent(availableToolNames: readonly string[] = ALL_PARENT_TOOL_NAMES) {
+    return {
+      config: { toolAllowlist: undefined, toolDisallowlist: undefined },
+      getTools: () => availableToolNames.map((name) => ({ name, permission: undefined })),
+    };
+  }
+
+  function builtInTools(name: string): readonly string[] {
+    const profile = getSwarmAgentProfiles(normalizeAgentProfiles([])).find(
+      (candidate) => candidate.name === name,
+    );
+    if (!profile?.tools) throw new Error(`Missing built-in profile tools for ${name}`);
+    return profile.tools;
+  }
+
+  function resolveChildAllowlist(
+    name: string,
+    availableToolNames: readonly string[] = ALL_PARENT_TOOL_NAMES,
+  ): readonly string[] {
+    const request = { allowedTools: builtInTools(name), disallowedTools: [] } as never;
+    return resolveSubagentToolAllowlist.call(
+      createFakeParent(availableToolNames) as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+  }
+
+  it.each(["start", "orchestrator"])(
+    "%s cannot receive Write/Edit/Bash even when the parent exposes them",
+    (name) => {
+      const allowlist = resolveChildAllowlist(name);
+
+      expect(allowlist).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task", "Skill"]));
+      expect(allowlist).not.toContain("Write");
+      expect(allowlist).not.toContain("Edit");
+      expect(allowlist).not.toContain("Bash");
+    },
+  );
+
+  it.each(["researcher", "reviewer", "security-reviewer", "evaluator"])(
+    "%s receives Bash but not Write/Edit",
+    (name) => {
+      const allowlist = resolveChildAllowlist(name);
+
+      expect(allowlist).toContain("Bash");
+      expect(allowlist).not.toContain("Write");
+      expect(allowlist).not.toContain("Edit");
+    },
+  );
+
+  it.each(["implementer", "test-engineer", "self-improver", "knowledge-curator", "subagent-factory"])(
+    "%s keeps the worker write toolset",
+    (name) => {
+      expect(resolveChildAllowlist(name)).toEqual(
+        expect.arrayContaining(["Write", "Edit", "Bash"]),
+      );
+    },
+  );
+
+  it("keeps the parent tool surface as an upper bound", () => {
+    const allowlist = resolveChildAllowlist("implementer", [
+      "Read",
+      "Glob",
+      "Grep",
+      "Task",
+      "Skill",
+      "Agent",
+    ]);
+
+    expect(allowlist).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task", "Skill"]));
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+    expect(allowlist).not.toContain("Bash");
+  });
+});
+
 describe("Agent / Task 描述随灰度门增删工作流那一行", () => {
   function descriptionsOf(options: { includeDynamicWorkflow?: boolean }): {
     agent: string;

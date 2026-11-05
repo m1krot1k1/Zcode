@@ -24,6 +24,7 @@ import {
   type BackgroundResultOriginMeta,
   type AgentCompletedOutput,
   type AgentOutput,
+  type AgentPresentation,
   type SwarmNodeAttemptLifecycleFact,
   type Logger,
   type ModelUsage,
@@ -49,10 +50,18 @@ import {
   type PrismTaskAcceptanceDecision,
   type PrismTaskAcceptanceLineage,
   type PrismTaskContract,
+  type WorkResult,
+  type WorkResultClaimEntry,
+  type WorkResultMetrics,
+  type WorkResultStatus,
+  type WorkResultTestEntry,
 } from "@zcode/contracts";
 import {
+  AgentPresentationSchema,
   PRISM_BASH_EXIT_CODE_EVALUATOR_ID,
   PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION,
+  WORK_RESULT_LIMITS,
+  WorkResultSchema,
 } from "@zcode/contracts";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
@@ -62,7 +71,9 @@ import { dirname, join } from "node:path";
 import {
   isBuiltInExploreAgentProfile,
   normalizeAgentProfiles,
+  resolveSwarmParallelism,
   type AgentProfile,
+  type SwarmParallelismDecision,
 } from "./profile.js";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "./explore-tools.js";
 import { formatLocalAgentTaskNotification } from "./completion-notification.js";
@@ -75,6 +86,7 @@ import {
 import {
   DEFAULT_SPAWN_BUDGET,
   InMemoryRuntimeTaskRegistry,
+  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
   isTerminalRuntimeTask,
   runtimeTaskOutputFile,
   type RuntimeTaskAdmissionResult,
@@ -108,8 +120,10 @@ export interface ExploreSubagentRuntimeRequest {
   reportActivity?: () => void;
   resumeFromStore?: boolean;
   systemPrompt?: string;
-  /** Host 签发的 spawn 配额；仅用于 system prompt envelope，准入仍由 registry 决定。 */
+  /** Host 签发的 spawn 配额; только для system prompt envelope, admission решает registry. */
   spawnGrant?: number;
+  /** Фактический параллелизм для envelope: remaining grant и свободные worker slots. */
+  maxParallel?: number;
   /** 本 child 的嵌套层级；仅记录，不设硬上限。 */
   level?: number;
   workingDirectory: string;
@@ -170,6 +184,111 @@ export interface ExploreSubagentPortOptions {
   logger?: Logger;
 }
 
+/** Внутренние capacity-поля DAG run: не входят в публичный контракт SubagentRunOptions. */
+interface InternalDagParallelismOptions {
+  internalRemainingSpawns?: number;
+  internalActiveCount?: number;
+  internalActiveCap?: number;
+}
+
+type InternalDagRunOptions = SubagentRunOptions & InternalDagParallelismOptions;
+
+/**
+ * Фактический параллелизм DAG: max(1, min(nodeCount, requested, remaining, freeSlots)).
+ * `max(1)` нужен, чтобы узел мог дойти до admission и вернуть видимую причину отказа.
+ */
+export function resolveActualMaxParallel(input: {
+  nodeCount: number;
+  requestedMaxParallel?: number;
+  remainingSpawns?: number;
+  activeCount?: number;
+  activeCap?: number;
+}): number {
+  const nodeCount = Math.max(1, Math.floor(input.nodeCount));
+  const requested =
+    input.requestedMaxParallel === undefined
+      ? 8
+      : Math.max(1, Math.floor(input.requestedMaxParallel));
+  const candidates = [nodeCount, requested];
+  if (input.remainingSpawns !== undefined) {
+    candidates.push(Math.max(1, Math.floor(input.remainingSpawns)));
+  }
+  if (input.activeCount !== undefined && input.activeCap !== undefined) {
+    candidates.push(Math.max(1, Math.floor(input.activeCap - input.activeCount)));
+  }
+  return Math.max(1, Math.min(...candidates));
+}
+
+/** Max_parallel конверта ребёнка: остаток его grant'а и свободные worker slots. */
+export function resolveChildMaxParallel(input: {
+  remainingSpawns?: number;
+  activeCount?: number;
+  activeCap?: number;
+}): number | undefined {
+  if (input.remainingSpawns === undefined && input.activeCount === undefined) return undefined;
+  const remaining = input.remainingSpawns ?? Number.POSITIVE_INFINITY;
+  const freeSlots =
+    input.activeCount === undefined || input.activeCap === undefined
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, input.activeCap - input.activeCount);
+  return Math.max(0, Math.min(remaining, freeSlots));
+}
+
+/**
+ * Обёртка над routing gate из profile.ts: подставляет registry remaining и active cap.
+ * При нулевом бюджете или отсутствии свободных слотов возвращает integrate_inline.
+ */
+export function resolveSwarmParallelismWithCapacity(input: {
+  nodeCount: number;
+  requestedMaxParallel?: number;
+  spawnBudget?: number;
+  userMaxParallel?: number;
+  remainingSpawns?: number;
+  activeCount?: number;
+  activeCap?: number;
+}): SwarmParallelismDecision {
+  const freeSlots =
+    input.activeCount === undefined || input.activeCap === undefined
+      ? undefined
+      : Math.max(0, Math.floor(input.activeCap - input.activeCount));
+  const effectiveBudget = minDefinedNumber(input.spawnBudget, input.remainingSpawns);
+  if (effectiveBudget !== undefined && effectiveBudget <= 0) {
+    return { route: "integrate_inline", reason: "no spawn budget", maxParallel: 0 };
+  }
+  if (freeSlots !== undefined && freeSlots <= 0) {
+    return { route: "integrate_inline", reason: "no free worker slots", maxParallel: 0 };
+  }
+  const decision = resolveSwarmParallelism({
+    nodeCount: input.nodeCount,
+    ...(input.userMaxParallel === undefined ? {} : { userMaxParallel: input.userMaxParallel }),
+    ...(input.requestedMaxParallel === undefined
+      ? {}
+      : { requestedMaxParallel: input.requestedMaxParallel }),
+    ...(effectiveBudget === undefined ? {} : { spawnBudget: effectiveBudget }),
+  });
+  if (decision.route === "integrate_inline") return decision;
+  const maxParallel = Math.max(
+    1,
+    Math.min(decision.maxParallel, freeSlots ?? Number.POSITIVE_INFINITY),
+  );
+  return maxParallel === decision.maxParallel
+    ? decision
+    : {
+        route: maxParallel < 2 ? "delegate_single" : decision.route,
+        reason: `${decision.reason}; clamped by active capacity`,
+        maxParallel,
+      };
+}
+
+function minDefinedNumber(...values: Array<number | undefined>): number | undefined {
+  let result: number | undefined;
+  for (const value of values) {
+    if (value === undefined) continue;
+    result = result === undefined ? value : Math.min(result, value);
+  }
+  return result;
+}
+
 export function createExploreSubagentPort(options: ExploreSubagentPortOptions): SubagentPort {
   const registry = options.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
   const borrowedForegroundAgentIds = new Set<string>();
@@ -221,7 +340,25 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         nodes: rawRequest.nodes,
         ...(rawRequest.maxParallel === undefined ? {} : { max_parallel: rawRequest.maxParallel }),
       });
-      const maxParallel = graph.max_parallel ?? 8;
+      // 根因：сырой request.maxParallel игнорировал остаток registry budget и свободные
+      // worker slots, поэтому DAG мог одновременно запустить больше детей, чем разрешено.
+      // 修复依据: фактический параллелизм считается по registry до создания задач.
+      const rootSessionId = registry.getRootSessionIdForSession(rawRequest.sessionId);
+      const rootRunId =
+        runOptions?.internalSwarmRootRunId ??
+        registry.getRootRunIdForSession(rawRequest.sessionId, rawRequest.turnId);
+      const remainingSpawns =
+        rootRunId === undefined
+          ? undefined
+          : registry.getRemainingSpawnBudget?.(rootRunId, rawRequest.sessionId);
+      const activeCount = registry.getActiveSubagentWorkItemCount?.(rootSessionId);
+      const maxParallel = resolveActualMaxParallel({
+        nodeCount: graph.nodes.length,
+        ...(graph.max_parallel === undefined ? {} : { requestedMaxParallel: graph.max_parallel }),
+        ...(remainingSpawns === undefined ? {} : { remainingSpawns }),
+        ...(activeCount === undefined ? {} : { activeCount }),
+        activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+      });
       // Swarm uses its own runtime correlation key. The legacy runner still needs an internal
       // parentCall-shaped key for task records, but it is never emitted as a provider ToolCall.
       const internalParentCorrelationId =
@@ -245,11 +382,15 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           trace: rawRequest.trace,
         });
       }
-      const dagRunOptions: SubagentRunOptions = {
+      const dagRunOptions: InternalDagRunOptions = {
         ...runOptions,
         // План и admission должны сверяться с одним и тем же snapshot профилей,
         // даже если Host обновит список агентов во время параллельного запуска.
         internalAgentProfilesSnapshot: profileSnapshot,
+        // Значения передаются в scheduler, чтобы он пересчитал тот же кламп.
+        ...(remainingSpawns === undefined ? {} : { internalRemainingSpawns: remainingSpawns }),
+        ...(activeCount === undefined ? {} : { internalActiveCount: activeCount }),
+        internalActiveCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
       };
       return executeSubagentTaskDag(
         {
@@ -284,9 +425,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               // DAG 节点预算来自父级的均分结果，节点自身不能再抬价。
               ...(spawnGrant === undefined ? {} : { internalSpawnGrant: spawnGrant }),
               level: (dagRunOptions.level ?? 0) + 1,
-              ...(rawRequest.orchestrationRunId && dagRunOptions.persistSwarmNodeAttempt
-                ? { internalSwarmNodeID: node.id }
-                : {}),
+              // Причина: DAG-узел не должен формировать root presentation даже если его роль start.
+              // Маркер передаётся всегда; persistSwarmNodeAttempt по-прежнему опционален.
+              internalSwarmNodeID: node.id,
             },
           ),
         dagRunOptions,
@@ -344,7 +485,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           status: "running",
           // Host 依据父级剩余配额推导子级 grant；模型 remaining_spawns 只能收紧。
           // 没有 root-run 状态时 spawnGrant 仅记录，registry 不做门禁（向后兼容）。
-          spawnGrant: resolveSpawnGrant(request, runOptions, options),
+          spawnGrant: resolveSpawnGrant(request, runOptions, options, registry),
           // level 只记录层级；预算本身已从数学上限制树规模，不设硬深度上限。
           level: (runOptions?.level ?? 0) + 1,
         }),
@@ -428,6 +569,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           ...(runOptions?.internalAgentProfilesSnapshot
             ? { internalAgentProfilesSnapshot: runOptions.internalAgentProfilesSnapshot }
             : {}),
+          // DAG-маркер нужен runAgentToCompletion, чтобы не парсить presentation у узлов.
+          ...(runOptions?.internalSwarmNodeID === undefined
+            ? {}
+            : { internalSwarmNodeID: runOptions.internalSwarmNodeID }),
         },
         {
           reportActivity: activityWatchdog.reportActivity,
@@ -448,6 +593,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 prompt: request.prompt,
                 parentToolCallId: request.parentToolCallId,
                 status: "running",
+                ...taskCorrelationPayload(registry, lifecycle.agentId),
                 allowedTools: [...resolveAllowedTools(profile, options)],
                 model: profile.modelSelection
                   ? `${profile.modelSelection.providerId}/${profile.modelSelection.modelId}`
@@ -602,10 +748,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             lifecycle.runTraceContext,
           ),
         } satisfies AgentCompletedOutput;
-        await persistSwarmFact(
-          "completed",
-          { resultText: completed.output.content.map((block) => block.text).join("\n\n") },
-        );
+        await persistSwarmFact("completed", {
+          resultText: completed.output.content.map((block) => block.text).join("\n\n"),
+        });
         autoBackgroundTimer?.cancel();
         activityWatchdog.stop();
         taskAbort.dispose();
@@ -859,6 +1004,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 prompt: request.prompt,
                 parentToolCallId: request.parentToolCallId,
                 status: "running",
+                ...taskCorrelationPayload(registry, lifecycle.agentId),
                 allowedTools: [...resolveAllowedTools(profile, options)],
                 outputFile: lifecycle.outputFile,
                 model: profile.modelSelection
@@ -954,7 +1100,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
   return port;
 }
 
-type SubagentDagNodeStatus =
+export type SubagentDagNodeStatus =
   | "pending"
   | "running"
   | "completed"
@@ -980,6 +1126,549 @@ const SUBAGENT_DAG_NODE_OUTPUT_MAX_BYTES = 2 * 1024;
 const SUBAGENT_DAG_DEPENDENCY_CONTEXT_MAX_BYTES = 24 * 1024;
 const SUBAGENT_DAG_DEPENDENCY_OUTPUT_MAX_BYTES = 4 * 1024;
 
+const WORK_RESULT_BLOCK = /<zcode-work-result>\s*([\s\S]*?)\s*<\/zcode-work-result>/gu;
+const WORK_RESULT_SUMMARY_MAX_CHARS = 2_000;
+const WORK_RESULT_DERIVED_ENTRIES_MAX = 20;
+const WORK_RESULT_TEST_SUMMARY_MAX_CHARS = 500;
+const WORK_RESULT_FILE_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+const WORK_RESULT_TEST_COMMAND =
+  /\b(?:vitest|jest|pytest|(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?test|tsc\s+--noEmit|oxlint|eslint|cargo\s+test|go\s+test)\b/u;
+/** Заголовок схемы — источник правды для лимитов; summary без текста не проходит min(1). */
+const WORK_RESULT_SUMMARY_FALLBACK = "(no textual summary)";
+
+/**
+ * Обрезка по UTF-16 code units: zod `.max()` считает именно их, а не байты.
+ * Маркер входит в лимит, а последний code unit не разрезается между surrogate pair.
+ */
+function boundWorkResultText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  const marker = "…";
+  let end = Math.max(0, maxChars - marker.length);
+  if (end > 0) {
+    const lastCodeUnit = value.charCodeAt(end - 1);
+    if (lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) end -= 1;
+  }
+  return `${value.slice(0, end)}${marker}`;
+}
+
+function boundWorkResultEntries(
+  values: readonly string[],
+  maxEntries: number,
+  maxChars: number,
+): string[] {
+  const bounded: string[] = [];
+  for (const value of values) {
+    // Пустая строка не проходит min(1) — выбрасываем вместо невалидного элемента.
+    if (value.length === 0) continue;
+    bounded.push(boundWorkResultText(value, maxChars));
+    if (bounded.length >= maxEntries) break;
+  }
+  return bounded;
+}
+
+function boundWorkResultMetrics(metrics: WorkResultMetrics): WorkResultMetrics {
+  const bound = (value: number | undefined): number | undefined =>
+    value !== undefined && Number.isInteger(value) && value >= 0 ? value : undefined;
+  const durationMs = bound(metrics.durationMs);
+  const toolUses = bound(metrics.toolUses);
+  const tokens = bound(metrics.tokens);
+  return {
+    ...(durationMs === undefined ? {} : { durationMs }),
+    ...(toolUses === undefined ? {} : { toolUses }),
+    ...(tokens === undefined ? {} : { tokens }),
+  };
+}
+
+/**
+ * Приводит WorkResult к лимитам `WorkResultSchema`.
+ *
+ * Причина: WorkResult собирается из tool events и DAG-узлов без ограничений, поэтому
+ * длинный file_path/Bash-команда или большой fan-out давали результат, который сама
+ * схема отклоняла; `validateOutput` бросал ToolExecutionFailed и терял работу child'а.
+ */
+export function boundWorkResult(result: WorkResult): WorkResult {
+  const confidence =
+    result.confidence !== undefined && Number.isFinite(result.confidence)
+      ? Math.min(1, Math.max(0, result.confidence))
+      : undefined;
+  const claims: WorkResultClaimEntry[] = [];
+  for (const claim of result.claims) {
+    if (claim.path.length === 0) continue;
+    claims.push({
+      path: boundWorkResultText(claim.path, WORK_RESULT_LIMITS.claims.path),
+      ...(claim.runId === undefined || claim.runId.length === 0
+        ? {}
+        : { runId: boundWorkResultText(claim.runId, WORK_RESULT_LIMITS.claims.runId) }),
+      ...(claim.attemptId === undefined || claim.attemptId.length === 0
+        ? {}
+        : {
+            attemptId: boundWorkResultText(claim.attemptId, WORK_RESULT_LIMITS.claims.attemptId),
+          }),
+    });
+    if (claims.length >= WORK_RESULT_LIMITS.claims.max) break;
+  }
+  const tests: WorkResultTestEntry[] = [];
+  for (const test of result.tests) {
+    if (test.command.length === 0) continue;
+    tests.push({
+      command: boundWorkResultText(test.command, WORK_RESULT_LIMITS.tests.command),
+      status: test.status,
+      ...(test.summary === undefined
+        ? {}
+        : { summary: boundWorkResultText(test.summary, WORK_RESULT_LIMITS.tests.summary) }),
+    });
+    if (tests.length >= WORK_RESULT_LIMITS.tests.max) break;
+  }
+  return {
+    status: result.status,
+    summary: boundWorkResultText(
+      result.summary.length === 0 ? WORK_RESULT_SUMMARY_FALLBACK : result.summary,
+      WORK_RESULT_LIMITS.summary,
+    ),
+    files: boundWorkResultEntries(
+      result.files,
+      WORK_RESULT_LIMITS.files.max,
+      WORK_RESULT_LIMITS.files.entry,
+    ),
+    evidence: boundWorkResultEntries(
+      result.evidence,
+      WORK_RESULT_LIMITS.evidence.max,
+      WORK_RESULT_LIMITS.evidence.entry,
+    ),
+    tests,
+    unresolved: boundWorkResultEntries(
+      result.unresolved,
+      WORK_RESULT_LIMITS.unresolved.max,
+      WORK_RESULT_LIMITS.unresolved.entry,
+    ),
+    ...(confidence === undefined ? {} : { confidence }),
+    claims,
+    ...(result.metrics === undefined ? {} : { metrics: boundWorkResultMetrics(result.metrics) }),
+  };
+}
+
+/** Обрезает только размеры/количества сырого JSON, не подменяя типы и структуру. */
+function boundWorkResultCandidate(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const bounded: Record<string, unknown> = { ...value };
+  if (typeof bounded.summary === "string") {
+    bounded.summary = boundWorkResultText(bounded.summary, WORK_RESULT_LIMITS.summary);
+  }
+  const boundEntryArray = (raw: unknown, maxEntries: number, maxChars: number): unknown => {
+    if (!Array.isArray(raw)) return raw;
+    return raw
+      .slice(0, maxEntries)
+      .map((entry) => (typeof entry === "string" ? boundWorkResultText(entry, maxChars) : entry));
+  };
+  bounded.files = boundEntryArray(
+    bounded.files,
+    WORK_RESULT_LIMITS.files.max,
+    WORK_RESULT_LIMITS.files.entry,
+  );
+  bounded.evidence = boundEntryArray(
+    bounded.evidence,
+    WORK_RESULT_LIMITS.evidence.max,
+    WORK_RESULT_LIMITS.evidence.entry,
+  );
+  bounded.unresolved = boundEntryArray(
+    bounded.unresolved,
+    WORK_RESULT_LIMITS.unresolved.max,
+    WORK_RESULT_LIMITS.unresolved.entry,
+  );
+  if (Array.isArray(bounded.tests)) {
+    bounded.tests = bounded.tests
+      .slice(0, WORK_RESULT_LIMITS.tests.max)
+      .map((entry) =>
+        isRecord(entry)
+          ? {
+              ...entry,
+              ...(typeof entry.command === "string"
+                ? { command: boundWorkResultText(entry.command, WORK_RESULT_LIMITS.tests.command) }
+                : {}),
+              ...(typeof entry.summary === "string"
+                ? { summary: boundWorkResultText(entry.summary, WORK_RESULT_LIMITS.tests.summary) }
+                : {}),
+            }
+          : entry,
+      );
+  }
+  if (Array.isArray(bounded.claims)) {
+    bounded.claims = bounded.claims
+      .slice(0, WORK_RESULT_LIMITS.claims.max)
+      .map((entry) =>
+        isRecord(entry)
+          ? {
+              ...entry,
+              ...(typeof entry.path === "string"
+                ? { path: boundWorkResultText(entry.path, WORK_RESULT_LIMITS.claims.path) }
+                : {}),
+              ...(typeof entry.runId === "string"
+                ? { runId: boundWorkResultText(entry.runId, WORK_RESULT_LIMITS.claims.runId) }
+                : {}),
+              ...(typeof entry.attemptId === "string"
+                ? {
+                    attemptId: boundWorkResultText(
+                      entry.attemptId,
+                      WORK_RESULT_LIMITS.claims.attemptId,
+                    ),
+                  }
+                : {}),
+            }
+          : entry,
+      );
+  }
+  return bounded;
+}
+
+/**
+ * Парсит последний блок `<zcode-work-result>JSON</zcode-work-result>`.
+ * Невалидный JSON или несоответствие схеме — undefined (вызывающий использует fallback).
+ * Превышение лимитов обрезается до валидации: иначе огромный, но корректный итог
+ * отбрасывался бы целиком вместе с заявленным статусом.
+ */
+export function parseWorkResultBlock(text: string): WorkResult | undefined {
+  let payload: string | undefined;
+  for (const match of text.matchAll(WORK_RESULT_BLOCK)) {
+    payload = match[1];
+  }
+  if (payload === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return undefined;
+  }
+  const result = WorkResultSchema.safeParse(boundWorkResultCandidate(parsed));
+  return result.success ? boundWorkResult(result.data) : undefined;
+}
+
+const PRESENTATION_BLOCK = /<zcode-presentation>\s*([\s\S]*?)\s*<\/zcode-presentation>/gu;
+
+/**
+ * Парсит последний блок `<zcode-presentation>JSON</zcode-presentation>`.
+ * Невалидный JSON или несоответствие строгой схеме — undefined: runtime не переписывает
+ * ответ агента и использует прежний formatter-вывод.
+ */
+export function parsePresentationBlock(text: string): AgentPresentation | undefined {
+  let payload: string | undefined;
+  for (const match of text.matchAll(PRESENTATION_BLOCK)) {
+    payload = match[1];
+  }
+  if (payload === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return undefined;
+  }
+  const result = AgentPresentationSchema.safeParse(parsed);
+  return result.success ? result.data : undefined;
+}
+
+export interface WorkResultDerivationInput {
+  text: string;
+  events: readonly SessionEvent[];
+  durationMs?: number;
+  toolUses?: number;
+  tokens?: number;
+  claims?: readonly WorkResultClaimEntry[];
+  fallbackStatus?: WorkResultStatus;
+}
+
+interface ScheduledToolFact {
+  toolName: string;
+  input: unknown;
+}
+
+interface ToolOutcomeFact {
+  success: boolean;
+  summary?: string;
+}
+
+function uniqueStrings(values: Iterable<string>, limit: number): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function collectToolFacts(events: readonly SessionEvent[]): {
+  scheduled: Map<string, ScheduledToolFact>;
+  outcomes: Map<string, ToolOutcomeFact>;
+} {
+  const scheduled = new Map<string, ScheduledToolFact>();
+  const outcomes = new Map<string, ToolOutcomeFact>();
+  for (const event of events) {
+    if (!isRecord(event.payload)) continue;
+    const payload = event.payload;
+    const toolCallId = typeof payload.toolCallId === "string" ? payload.toolCallId : undefined;
+    if (event.type === SessionEventType.ToolCallScheduled) {
+      if (!toolCallId || typeof payload.toolName !== "string") continue;
+      scheduled.set(toolCallId, { toolName: payload.toolName, input: payload.input });
+      continue;
+    }
+    if (!toolCallId) continue;
+    if (event.type === SessionEventType.ToolCallResult) {
+      const result = isRecord(payload.result) ? payload.result : undefined;
+      outcomes.set(toolCallId, {
+        success: result?.success === true,
+        summary:
+          typeof result?.content === "string"
+            ? result.content.slice(0, WORK_RESULT_TEST_SUMMARY_MAX_CHARS)
+            : undefined,
+      });
+      continue;
+    }
+    if (event.type === SessionEventType.ToolCallError) {
+      const error = isRecord(payload.error) ? payload.error : undefined;
+      const detail =
+        (typeof error?.underlyingErrorMessage === "string" && error.underlyingErrorMessage) ||
+        (typeof error?.detail === "string" && error.detail) ||
+        (typeof error?.code === "string" && error.code) ||
+        undefined;
+      outcomes.set(toolCallId, {
+        success: false,
+        ...(detail ? { summary: detail.slice(0, WORK_RESULT_TEST_SUMMARY_MAX_CHARS) } : {}),
+      });
+    }
+  }
+  return { scheduled, outcomes };
+}
+
+function deriveFilesFromToolFacts(scheduled: Map<string, ScheduledToolFact>): string[] {
+  const files: string[] = [];
+  for (const fact of scheduled.values()) {
+    if (!WORK_RESULT_FILE_TOOL_NAMES.has(fact.toolName) || !isRecord(fact.input)) continue;
+    const filePath = fact.input.file_path ?? fact.input.path;
+    if (typeof filePath === "string") files.push(filePath);
+  }
+  return uniqueStrings(files, WORK_RESULT_DERIVED_ENTRIES_MAX);
+}
+
+function deriveTestsFromToolFacts(
+  scheduled: Map<string, ScheduledToolFact>,
+  outcomes: Map<string, ToolOutcomeFact>,
+): WorkResultTestEntry[] {
+  const tests: WorkResultTestEntry[] = [];
+  const seenCommands = new Set<string>();
+  for (const [toolCallId, fact] of scheduled) {
+    if (fact.toolName !== "Bash" && fact.toolName !== "bash" && fact.toolName !== "Shell") {
+      continue;
+    }
+    if (!isRecord(fact.input) || typeof fact.input.command !== "string") continue;
+    const command = fact.input.command.trim();
+    if (command.length === 0 || seenCommands.has(command)) continue;
+    if (!WORK_RESULT_TEST_COMMAND.test(command)) continue;
+    seenCommands.add(command);
+    const outcome = outcomes.get(toolCallId);
+    tests.push({
+      command,
+      status: outcome === undefined ? "not_run" : outcome.success ? "passed" : "failed",
+      ...(outcome?.success === false && outcome.summary ? { summary: outcome.summary } : {}),
+    });
+    if (tests.length >= WORK_RESULT_DERIVED_ENTRIES_MAX) break;
+  }
+  return tests;
+}
+
+function deriveEvidenceFromToolFacts(
+  scheduled: Map<string, ScheduledToolFact>,
+  outcomes: Map<string, ToolOutcomeFact>,
+): string[] {
+  const evidence: string[] = [];
+  for (const [toolCallId, outcome] of outcomes) {
+    const toolName = scheduled.get(toolCallId)?.toolName ?? "unknown";
+    evidence.push(
+      `${outcome.success ? "tool_call_result" : "tool_call_error"}:${toolName}:${toolCallId}`,
+    );
+  }
+  return uniqueStrings(evidence, WORK_RESULT_DERIVED_ENTRIES_MAX);
+}
+
+function withRuntimeWorkResultFacts(
+  result: WorkResult,
+  input: WorkResultDerivationInput,
+): WorkResult {
+  const metrics: WorkResultMetrics = {
+    ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
+    ...(input.toolUses === undefined ? {} : { toolUses: input.toolUses }),
+    ...(input.tokens === undefined ? {} : { tokens: input.tokens }),
+  };
+  return {
+    ...result,
+    // Claims принадлежат runtime/ledger, а не worker-тексту: переданный массив
+    // (включая пустой) побеждает claims из `<zcode-work-result>`.
+    ...(input.claims !== undefined ? { claims: [...input.claims] } : {}),
+    ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
+  };
+}
+
+/**
+ * WorkResult из финального текста worker'а с детерминированным fallback:
+ * summary — текст, files/tests/evidence — tool events, metrics — usage/toolUseCount.
+ * Результат всегда приводится к лимитам `WorkResultSchema`.
+ */
+export function deriveWorkResult(input: WorkResultDerivationInput): WorkResult {
+  const parsed = parseWorkResultBlock(input.text);
+  if (parsed) return boundWorkResult(withRuntimeWorkResultFacts(parsed, input));
+
+  const facts = collectToolFacts(input.events);
+  const trimmedText = input.text.trim();
+  const summary =
+    trimmedText.length === 0
+      ? "(no textual summary)"
+      : trimmedText.length > WORK_RESULT_SUMMARY_MAX_CHARS
+        ? `${trimmedText.slice(0, WORK_RESULT_SUMMARY_MAX_CHARS - 1)}…`
+        : trimmedText;
+  return boundWorkResult({
+    status: input.fallbackStatus ?? "completed",
+    summary,
+    files: deriveFilesFromToolFacts(facts.scheduled),
+    evidence: deriveEvidenceFromToolFacts(facts.scheduled, facts.outcomes),
+    tests: deriveTestsFromToolFacts(facts.scheduled, facts.outcomes),
+    unresolved: [],
+    claims: [...(input.claims ?? [])],
+    ...(input.durationMs === undefined && input.toolUses === undefined && input.tokens === undefined
+      ? {}
+      : {
+          metrics: {
+            ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
+            ...(input.toolUses === undefined ? {} : { toolUses: input.toolUses }),
+            ...(input.tokens === undefined ? {} : { tokens: input.tokens }),
+          },
+        }),
+  });
+}
+
+/** WorkResult готового node output; для моков/старых путей выводится из текста. */
+export function deriveWorkResultFromOutput(output: AgentCompletedOutput): WorkResult {
+  if (output.workResult) return boundWorkResult(output.workResult);
+  return deriveWorkResult({
+    text: output.content.map((block) => block.text).join("\n"),
+    events: [],
+    durationMs: output.totalDurationMs,
+    toolUses: output.totalToolUseCount,
+    ...(output.totalTokens === undefined ? {} : { tokens: output.totalTokens }),
+  });
+}
+
+export interface WorkResultNodeInput {
+  nodeId: string;
+  status: SubagentDagNodeStatus;
+  output?: AgentCompletedOutput;
+  error?: string;
+}
+
+/** Агрегирует WorkResult узлов DAG: completed только при полном успехе. */
+export function aggregateWorkResults(
+  entries: readonly WorkResultNodeInput[],
+  options: { description?: string } = {},
+): WorkResult {
+  const nodes = entries.map((entry) => ({
+    entry,
+    result: entry.output ? deriveWorkResultFromOutput(entry.output) : undefined,
+  }));
+  const anyFailed = nodes.some(
+    (node) => node.entry.status === "failed" || node.result?.status === "failed",
+  );
+  const allCompleted =
+    nodes.length > 0 &&
+    nodes.every(
+      (node) =>
+        node.entry.status === "completed" && (node.result?.status ?? "completed") === "completed",
+    );
+  const status: WorkResultStatus = anyFailed ? "failed" : allCompleted ? "completed" : "partial";
+
+  const files = uniqueStrings(
+    nodes.flatMap((node) => node.result?.files ?? []),
+    WORK_RESULT_DERIVED_ENTRIES_MAX,
+  );
+  const evidence = uniqueStrings(
+    nodes.flatMap((node) => node.result?.evidence ?? []),
+    WORK_RESULT_DERIVED_ENTRIES_MAX,
+  );
+  const testByCommand = new Map<string, WorkResultTestEntry>();
+  for (const node of nodes) {
+    for (const test of node.result?.tests ?? []) {
+      const existing = testByCommand.get(test.command);
+      if (!existing || test.status === "failed" || existing.status === "not_run") {
+        testByCommand.set(test.command, test);
+      }
+    }
+  }
+  const unresolved: string[] = [];
+  for (const node of nodes) {
+    for (const item of node.result?.unresolved ?? []) {
+      unresolved.push(`${node.entry.nodeId}: ${item}`);
+    }
+    if (!node.result && node.entry.status !== "completed") {
+      unresolved.push(
+        `${node.entry.nodeId}: ${node.entry.status}${
+          node.entry.error ? `: ${node.entry.error}` : ""
+        }`,
+      );
+    }
+  }
+  const claims = new Map<string, WorkResultClaimEntry>();
+  for (const node of nodes) {
+    for (const claim of node.result?.claims ?? []) {
+      claims.set(`${claim.path}\u0000${claim.runId ?? ""}\u0000${claim.attemptId ?? ""}`, claim);
+    }
+  }
+  const metrics = { durationMs: 0, toolUses: 0, tokens: 0 };
+  let sawMetrics = false;
+  const confidences: number[] = [];
+  for (const node of nodes) {
+    const nodeMetrics = node.result?.metrics;
+    if (nodeMetrics) {
+      sawMetrics = true;
+      metrics.durationMs += nodeMetrics.durationMs ?? 0;
+      metrics.toolUses += nodeMetrics.toolUses ?? 0;
+      metrics.tokens += nodeMetrics.tokens ?? 0;
+    }
+    if (node.result?.confidence !== undefined) confidences.push(node.result.confidence);
+  }
+  const summaryLines = [
+    ...(options.description ? [`DAG objective: ${truncateUtf8(options.description, 512)}`] : []),
+    ...nodes.map((node) => {
+      const summary = node.result?.summary ?? node.entry.error ?? "(no result)";
+      return `${node.entry.nodeId}: [${node.entry.status}] ${
+        node.result?.status ?? "unknown"
+      } — ${truncateUtf8(summary.replace(/\s+/gu, " "), 300)}`;
+    }),
+  ];
+
+  return boundWorkResult({
+    status,
+    summary: truncateUtf8(summaryLines.join("\n"), 4_000),
+    files,
+    evidence,
+    tests: [...testByCommand.values()],
+    unresolved: unresolved.slice(0, WORK_RESULT_DERIVED_ENTRIES_MAX),
+    ...(confidences.length > 0 && confidences.length === nodes.length
+      ? {
+          confidence: confidences.reduce((sum, value) => sum + value, 0) / confidences.length,
+        }
+      : {}),
+    claims: [...claims.values()],
+    ...(sawMetrics
+      ? {
+          metrics: {
+            durationMs: metrics.durationMs,
+            toolUses: metrics.toolUses,
+            tokens: metrics.tokens,
+          },
+        }
+      : {}),
+  });
+}
+
 /** Runs a validated DAG while leaving each child lifecycle in the shared RuntimeTaskRegistry. */
 export async function executeSubagentTaskDag(
   request: SubagentTaskDagRequest,
@@ -988,10 +1677,20 @@ export async function executeSubagentTaskDag(
     prompt: string,
     spawnGrant?: number,
   ) => Promise<AgentOutput>,
-  options?: SubagentRunOptions,
+  options?: InternalDagRunOptions,
 ): Promise<AgentCompletedOutput> {
   const startedAt = Date.now();
-  const maxParallel = request.maxParallel ?? 8;
+  const maxParallel = resolveActualMaxParallel({
+    nodeCount: request.nodes.length,
+    ...(request.maxParallel === undefined ? {} : { requestedMaxParallel: request.maxParallel }),
+    ...(options?.internalRemainingSpawns === undefined
+      ? {}
+      : { remainingSpawns: options.internalRemainingSpawns }),
+    ...(options?.internalActiveCount === undefined
+      ? {}
+      : { activeCount: options.internalActiveCount }),
+    ...(options?.internalActiveCap === undefined ? {} : { activeCap: options.internalActiveCap }),
+  });
   // Cursor 公式：父级保留 keep 个配额自用，其余 pool 均分给本批 n 个节点，余数留给父级。
   // 由此保证每个 child 的配额严格小于父级，且本批 child 配额总和不超过父级预算。
   const parentSpawnBudget =
@@ -1078,13 +1777,30 @@ export async function executeSubagentTaskDag(
       continue;
     }
     const boundedOutput = boundSubagentDagOutput(output);
+    // WorkResult узла — источник фактического статуса: worker может вернуть completed-конверт,
+    // но объявить failed/blocked в машинном итоге.
+    const declaredWorkResult =
+      output.workResult ??
+      parseWorkResultBlock(output.content.map((block) => block.text).join("\n"));
+    const rejectedByHost = output.acceptance?.status === "rejected";
+    const nodeStatus: SubagentDagNodeStatus =
+      rejectedByHost || declaredWorkResult?.status === "failed"
+        ? "failed"
+        : declaredWorkResult?.status === "blocked"
+          ? "blocked"
+          : "completed";
+    const nodeError = rejectedByHost
+      ? "Host acceptance rejected one or more declared criteria."
+      : declaredWorkResult?.status === "failed"
+        ? "Worker reported work_result=failed."
+        : declaredWorkResult?.status === "blocked"
+          ? "Worker reported work_result=blocked."
+          : undefined;
     states.set(settled.nodeId, {
-      status: output.acceptance?.status === "rejected" ? "failed" : "completed",
+      status: nodeStatus,
       output: boundedOutput.output,
       ...(boundedOutput.truncated ? { outputTruncated: true } : {}),
-      ...(output.acceptance?.status === "rejected"
-        ? { error: "Host acceptance rejected one or more declared criteria." }
-        : {}),
+      ...(nodeError ? { error: nodeError } : {}),
     });
   }
 
@@ -1100,6 +1816,7 @@ export async function executeSubagentTaskDag(
     completedOutputs.length > 0 &&
     completedOutputs.every((output) => output.totalTokens !== undefined);
   const content = buildSubagentDagSummary(request, states);
+  const workResult = aggregateTaskDagWorkResult(request, states);
 
   return {
     status: "completed",
@@ -1111,6 +1828,7 @@ export async function executeSubagentTaskDag(
     description: request.description,
     prompt: request.prompt,
     content: [{ type: "text", text: content }],
+    workResult,
     acceptance: aggregateTaskDagAcceptance(request, states),
     totalToolUseCount: completedOutputs.reduce((sum, output) => sum + output.totalToolUseCount, 0),
     totalDurationMs: Math.max(0, Date.now() - startedAt),
@@ -1160,15 +1878,41 @@ function aggregateTaskDagAcceptance(
   };
 }
 
+/** WorkResult DAG: completed только когда все узлы completed и их WorkResult completed. */
+function aggregateTaskDagWorkResult(
+  request: SubagentTaskDagRequest,
+  states: ReadonlyMap<string, SubagentDagNodeResult>,
+): WorkResult {
+  return aggregateWorkResults(
+    request.nodes.map((node) => {
+      const state = states.get(node.id);
+      return {
+        nodeId: node.id,
+        status: state?.status ?? "failed",
+        ...(state?.output ? { output: state.output } : {}),
+        ...(state?.error ? { error: state.error } : {}),
+      };
+    }),
+    { description: request.description },
+  );
+}
+
+function formatWorkResultTestsForSummary(tests: readonly WorkResultTestEntry[]): string {
+  if (tests.length === 0) return "none";
+  return tests.map((test) => `${test.command}=${test.status}`).join("; ");
+}
+
 function buildSubagentDagSummary(
   request: SubagentTaskDagRequest,
   states: ReadonlyMap<string, SubagentDagNodeResult>,
 ): string {
+  const workResult = aggregateTaskDagWorkResult(request, states);
   const rows = request.nodes.map((node) => {
     const result = states.get(node.id) ?? { status: "failed" as const };
     const fields = [
       `[${result.status}] ${formatSubagentDagNodeId(node.id)}`,
       `description=${truncateUtf8(node.description, 72)}`,
+      `work_result=${result.output ? deriveWorkResultFromOutput(result.output).status : "unknown"}`,
       `host_acceptance=${result.output?.acceptance?.status ?? "unknown"}`,
       ...(result.output ? [`agentId=${result.output.agentId}`] : []),
       ...(result.error ? [`reason=${truncateUtf8(result.error, 120)}`] : []),
@@ -1178,6 +1922,10 @@ function buildSubagentDagSummary(
   const sections = [
     `Task DAG finished for: ${truncateUtf8(request.description, 512)}`,
     "Scheduler completion does not certify the natural-language objective; review every node status and Host acceptance.",
+    `Work result: status=${workResult.status}`,
+    `Files: ${truncateUtf8(workResult.files.join(", ") || "none", 1_000)}`,
+    `Tests: ${truncateUtf8(formatWorkResultTestsForSummary(workResult.tests), 1_000)}`,
+    `Unresolved: ${truncateUtf8(workResult.unresolved.join(" | ") || "none", 1_000)}`,
     "Node status:",
     ...rows,
   ];
@@ -1290,6 +2038,7 @@ function boundSubagentDagOutput(output: AgentCompletedOutput): {
   return {
     output: {
       ...output,
+      ...(output.workResult === undefined ? {} : { workResult: boundWorkResult(output.workResult) }),
       content: bounded.text ? [{ type: "text", text: bounded.text }] : [],
     },
     truncated: bounded.truncated,
@@ -1585,13 +2334,20 @@ function throwOnSubagentAdmissionFailure(
 ): never {
   const isQuota = admission.reason === "active_limit";
   const isSpawnBudget = admission.reason === "spawn_budget_exhausted";
+  const isWriteConflict = admission.reason === "write_claim_conflict";
+  const isClaimUnavailable = admission.reason === "work_claim_unavailable";
+  const message = isSpawnBudget
+    ? "Spawn budget exhausted: this run cannot start more subagents. Finish the current tasks or continue in this session without spawning."
+    : isWriteConflict
+      ? "Work claim conflict: another agent holds an overlapping file path. Choose non-overlapping files, read the held path first, or wait for that agent to finish. The spawn was not started."
+      : isClaimUnavailable
+        ? "Work ledger is unavailable: the host could not reserve this agent's file claim, so the spawn was not started to avoid a silent write conflict."
+        : isQuota
+          ? "Subagent root-session active task quota reached."
+          : "The parent runtime no longer accepts subagent work.";
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
-    isSpawnBudget
-      ? "Spawn budget exhausted: this run cannot start more subagents. Finish the current tasks or continue in this session without spawning."
-      : isQuota
-        ? "Subagent root-session active task quota reached."
-        : "The parent runtime no longer accepts subagent work.",
+    `${message} (reason: ${admission.reason})`,
     {
       context: {
         code: "agent_subagent_admission_rejected",
@@ -2072,6 +2828,7 @@ async function resumeTerminalAgentInBackground(
             prompt: resumeRequest.prompt,
             resumed: true,
             status: "running",
+            ...taskCorrelationPayload(registry, lifecycle.agentId),
           },
         );
         readyGate.resolve();
@@ -2166,6 +2923,42 @@ function createSendMessageFailure(
   };
 }
 
+/**
+ * Claims текущего attempt для WorkResult: только активные claim'ы ledger'а этого
+ * агента, выданные текущей попытке.
+ *
+ * Причина: без фильтра released claim'ы прошлых resume накапливались в WorkResult,
+ * и результат переставал проходить WorkResultSchema по количеству элементов.
+ */
+export function collectWorkResultClaims(
+  registry: RuntimeTaskRegistry,
+  task: RuntimeTaskSnapshot | undefined,
+): WorkResultClaimEntry[] {
+  const ledger = registry.workLedger;
+  const workspacePath = task?.workspacePath?.trim();
+  if (!ledger || !task || !workspacePath) return [];
+  try {
+    return ledger
+      .list({ workspacePath, agentId: task.agentId, status: "active" })
+      .filter(
+        (claim) =>
+          claim.attemptId === undefined ||
+          // У задачи без attemptId (legacy snapshot) активный claim и есть текущий.
+          task.attemptId === undefined ||
+          claim.attemptId === task.attemptId,
+      )
+      .flatMap((claim) =>
+        claim.paths.map((path) => ({
+          path,
+          ...(claim.runId ? { runId: claim.runId } : {}),
+          ...(claim.attemptId ? { attemptId: claim.attemptId } : {}),
+        })),
+      );
+  } catch {
+    return [];
+  }
+}
+
 async function runAgentToCompletion(
   options: ExploreSubagentPortOptions,
   request: SubagentRunRequest,
@@ -2196,6 +2989,15 @@ async function runAgentToCompletion(
     }
     sessionReady = true;
   };
+  const taskSnapshot = registry.get(lifecycle.agentId);
+  const rootSessionId = taskSnapshot?.rootSessionId ?? request.sessionId;
+  const childMaxParallel = resolveChildMaxParallel({
+    ...(taskSnapshot?.spawnGrant === undefined ? {} : { remainingSpawns: taskSnapshot.spawnGrant }),
+    ...(registry.getActiveSubagentWorkItemCount === undefined
+      ? {}
+      : { activeCount: registry.getActiveSubagentWorkItemCount(rootSessionId) }),
+    activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+  });
   const childResult = await options.runExploreAgent(
     {
       agentId: lifecycle.agentId,
@@ -2220,12 +3022,9 @@ async function runAgentToCompletion(
       reportActivity: monitorOptions.reportActivity,
       resumeFromStore: executionOptions.resumeFromStore,
       systemPrompt: lifecycle.profile.systemPrompt,
-      ...(registry.get(lifecycle.agentId)?.spawnGrant === undefined
-        ? {}
-        : { spawnGrant: registry.get(lifecycle.agentId)?.spawnGrant }),
-      ...(registry.get(lifecycle.agentId)?.level === undefined
-        ? {}
-        : { level: registry.get(lifecycle.agentId)?.level }),
+      ...(taskSnapshot?.spawnGrant === undefined ? {} : { spawnGrant: taskSnapshot.spawnGrant }),
+      ...(childMaxParallel === undefined ? {} : { maxParallel: childMaxParallel }),
+      ...(taskSnapshot?.level === undefined ? {} : { level: taskSnapshot.level }),
       workingDirectory: request.workingDirectory,
       workspaceRoot: request.workspaceRoot,
       traceContext: lifecycle.childTraceContext,
@@ -2254,6 +3053,20 @@ async function runAgentToCompletion(
   const totalTokens = usage?.totalTokens;
   const totalToolUseCount = resolveSubagentToolUseCount(childResult.events);
   const totalDurationMs = Date.now() - lifecycle.startedAt;
+  const workResult = deriveWorkResult({
+    text: childResult.response,
+    events: childResult.events,
+    durationMs: totalDurationMs,
+    toolUses: totalToolUseCount,
+    ...(totalTokens === undefined ? {} : { tokens: totalTokens }),
+    claims: collectWorkResultClaims(registry, registry.get(lifecycle.agentId)),
+  });
+  // Причина: presentation — пользовательский конверт, который формирует только start.
+  // Worker-роли и DAG-узлы (internalSwarmNodeID) не парсятся, даже если блок попал в текст.
+  const presentation =
+    request.agentType === "start" && runOptions?.internalSwarmNodeID === undefined
+      ? parsePresentationBlock(childResult.response)
+      : undefined;
 
   const output: AgentCompletedOutput = {
     status: "completed",
@@ -2271,6 +3084,8 @@ async function runAgentToCompletion(
     totalDurationMs,
     ...(totalTokens === undefined ? {} : { totalTokens }),
     ...(usage === undefined ? {} : { usage }),
+    workResult,
+    ...(presentation === undefined ? {} : { presentation }),
   };
 
   return { events: childResult.events, evidenceEvents, output };
@@ -2558,9 +3373,21 @@ export function resolveSpawnGrant(
   request: SubagentRunRequest,
   runOptions: SubagentRunOptions | undefined,
   options: ExploreSubagentPortOptions,
+  registry?: RuntimeTaskRegistry,
 ): number | undefined {
-  const parentBudget =
-    runOptions?.internalSpawnGrant ?? runOptions?.spawnBudget ?? options.spawnBudget;
+  const explicitParentBudget = runOptions?.internalSpawnGrant ?? runOptions?.spawnBudget;
+  let parentBudget = explicitParentBudget;
+  if (parentBudget === undefined && registry) {
+    // Root-run registry — владелец остатка; явные portal/root значения не должны его перекрывать.
+    const rootRunId =
+      runOptions?.internalSwarmRootRunId ??
+      registry.getRootRunIdForSession(request.sessionId, request.turnId);
+    if (rootRunId !== undefined) {
+      parentBudget = registry.getRemainingSpawnBudget?.(rootRunId, request.sessionId);
+    }
+  }
+  // Старый fallback допустим только когда root-run состояния нет.
+  if (parentBudget === undefined) parentBudget = options.spawnBudget;
   if (parentBudget === undefined) return undefined;
   const hostGrant = Math.max(0, Math.floor(parentBudget) - 1);
   if (request.spawnBudget === undefined) return hostGrant;
@@ -3138,6 +3965,18 @@ function traceContextFromRuntimeTask(task: RuntimeTaskSnapshot): TraceContext {
       turnId: task.turnId,
     }
   );
+}
+
+/** Additive run correlation для SubagentSpawned: старые подписчики просто не читают поля. */
+function taskCorrelationPayload(
+  registry: RuntimeTaskRegistry,
+  taskId: string,
+): { runId?: string; attemptId?: string } {
+  const task = registry.get(taskId);
+  return {
+    ...(task?.rootRunId ? { runId: task.rootRunId } : {}),
+    ...(task?.attemptId ? { attemptId: task.attemptId } : {}),
+  };
 }
 
 async function emitSubagentEvent(

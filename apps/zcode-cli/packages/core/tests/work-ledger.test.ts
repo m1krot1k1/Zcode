@@ -333,4 +333,75 @@ describe("WorkLedger", () => {
     expect(restored.skippedLines).toBe(1);
     expect(restored.list({ status: "active" })).toHaveLength(1);
   });
+
+  it("runId/attemptId сохраняются в claim, журнале и при replay", async () => {
+    const ledger = createLedger();
+    ledger.claim({
+      agentId: "agent-a",
+      workspacePath,
+      workspaceIdentity: WORKSPACE_IDENTITY,
+      intent: "правлю реестр",
+      paths: ["src/runtime-task/work-ledger.ts"],
+      runId: "root-session:turn-1",
+      attemptId: "attempt-1",
+    });
+    await ledger.flush();
+
+    const line = readFileSync(journalPath, "utf8")
+      .split("\n")
+      .find((candidate) => candidate.includes('"type":"claim"'));
+    expect(line).toBeDefined();
+    expect(JSON.parse(line!)).toMatchObject({
+      claim: { runId: "root-session:turn-1", attemptId: "attempt-1" },
+    });
+
+    const restored = await WorkLedger.open({ journalPath, now: () => now });
+    expect(restored.list({ agentId: "agent-a" })[0]).toMatchObject({
+      runId: "root-session:turn-1",
+      attemptId: "attempt-1",
+    });
+
+    // Повторный claim обновляет audit-поля, а не создаёт вторую запись.
+    const updated = ledger.claim({
+      agentId: "agent-a",
+      workspacePath,
+      workspaceIdentity: WORKSPACE_IDENTITY,
+      intent: "правлю реестр",
+      paths: ["src/runtime-task/work-ledger.ts"],
+      runId: "root-session:turn-2",
+      attemptId: "attempt-2",
+    });
+    expect(updated.reused).toBe(true);
+    expect(updated.claim.runId).toBe("root-session:turn-2");
+    expect(updated.claim.attemptId).toBe("attempt-2");
+  });
+
+  it("старые записи журнала без runId/attemptId читаются", async () => {
+    const record = {
+      v: WORK_LEDGER_JOURNAL_VERSION,
+      type: "claim",
+      at: now,
+      claim: {
+        id: "legacy-claim",
+        workspaceIdentity: WORKSPACE_IDENTITY,
+        workspacePath,
+        agentId: "agent-legacy",
+        parentAgentId: null,
+        profile: null,
+        intent: "старая работа",
+        paths: ["src/a.ts"],
+        startedAt: now,
+        heartbeatAt: now,
+        status: "active",
+      },
+    };
+    writeFileSync(journalPath, `${JSON.stringify(record)}\n`, "utf8");
+
+    const restored = await WorkLedger.open({ journalPath, now: () => now });
+    const claim = restored.list({ agentId: "agent-legacy" })[0];
+    expect(claim?.paths).toEqual(["src/a.ts"]);
+    expect(claim?.runId).toBeUndefined();
+    expect(claim?.attemptId).toBeUndefined();
+    expect(restored.skippedLines).toBe(0);
+  });
 });

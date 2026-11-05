@@ -13,6 +13,7 @@ import {
   createCoreError,
   type AgentInput,
   type AgentOutput,
+  type AgentPresentation,
   type TraceContext,
 } from "@zcode/contracts";
 import { TASK_TOOL_NAME } from "../compat.js";
@@ -46,6 +47,68 @@ const AGENT_TOOL_OUTPUT_SCHEMA = {
         totalDurationMs: { type: "integer", minimum: 0 },
         totalTokens: { type: "integer", minimum: 0 },
         usage: { type: "object", additionalProperties: true },
+        workResult: {
+          type: "object",
+          properties: {
+            status: {
+              enum: ["completed", "partial", "failed", "blocked"],
+              type: "string",
+            },
+            summary: { type: "string" },
+            files: { type: "array", items: { type: "string" } },
+            evidence: { type: "array", items: { type: "string" } },
+            tests: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  command: { type: "string" },
+                  status: { enum: ["passed", "failed", "not_run"], type: "string" },
+                  summary: { type: "string" },
+                },
+                required: ["command", "status"],
+                additionalProperties: false,
+              },
+            },
+            unresolved: { type: "array", items: { type: "string" } },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            claims: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  path: { type: "string" },
+                  runId: { type: "string" },
+                  attemptId: { type: "string" },
+                },
+                required: ["path"],
+                additionalProperties: false,
+              },
+            },
+            metrics: {
+              type: "object",
+              properties: {
+                durationMs: { type: "integer", minimum: 0 },
+                toolUses: { type: "integer", minimum: 0 },
+                tokens: { type: "integer", minimum: 0 },
+              },
+              additionalProperties: false,
+            },
+          },
+          required: ["status", "summary", "files", "evidence", "tests", "unresolved", "claims"],
+          additionalProperties: false,
+        },
+        presentation: {
+          type: "object",
+          properties: {
+            userText: { type: "string" },
+            facts: { type: "array", items: { type: "string" } },
+            unknowns: { type: "array", items: { type: "string" } },
+            evidenceRefs: { type: "array", items: { type: "string" } },
+          },
+          required: ["userText", "facts", "unknowns", "evidenceRefs"],
+          additionalProperties: false,
+        },
         acceptance: {
           type: "object",
           properties: {
@@ -132,7 +195,48 @@ function buildAgentProviderDescription(
 
 const AGENT_PROVIDER_DESCRIPTION = buildAgentProviderDescription();
 
-function formatAgentOutputForModel(output: unknown): string {
+const WORK_RESULT_SUMMARY_MAX_CHARS = 1_000;
+
+function formatWorkResultList(values: readonly string[]): string {
+  if (values.length === 0) return "none";
+  const joined = values.join(", ");
+  return joined.length > WORK_RESULT_SUMMARY_MAX_CHARS
+    ? `${joined.slice(0, WORK_RESULT_SUMMARY_MAX_CHARS - 1)}…`
+    : joined;
+}
+
+function formatWorkResultTests(tests: ReadonlyArray<{ command: string; status: string }>): string {
+  if (tests.length === 0) return "none";
+  const joined = tests.map((test) => `${test.command}=${test.status}`).join("; ");
+  return joined.length > WORK_RESULT_SUMMARY_MAX_CHARS
+    ? `${joined.slice(0, WORK_RESULT_SUMMARY_MAX_CHARS - 1)}…`
+    : joined;
+}
+
+/**
+ * Pass-through единственного презентера: Start уже сформировал пользовательский текст.
+ * Никакого синтеза, сырого child content, agentId или usage здесь быть не должно.
+ */
+function formatPresentationForModel(
+  presentation: AgentPresentation,
+  status: string,
+  unresolved: readonly string[],
+): string {
+  return [
+    presentation.userText,
+    `status: ${status}`,
+    formatPresentationSection("facts", presentation.facts),
+    formatPresentationSection("unknowns", presentation.unknowns),
+    formatPresentationSection("evidence_refs", presentation.evidenceRefs),
+    formatPresentationSection("unresolved", unresolved),
+  ].join("\n");
+}
+
+function formatPresentationSection(label: string, values: readonly string[]): string {
+  return `${label}: ${formatWorkResultList(values)}`;
+}
+
+export function formatAgentOutputForModel(output: unknown): string {
   const parsed = AgentOutputSchema.safeParse(output);
   if (!parsed.success) {
     return typeof output === "string" ? output : (JSON.stringify(output) ?? String(output));
@@ -140,6 +244,13 @@ function formatAgentOutputForModel(output: unknown): string {
 
   const data = parsed.data as AgentOutput;
   if (data.status !== "async_launched") {
+    if (data.presentation !== undefined) {
+      return formatPresentationForModel(
+        data.presentation,
+        data.workResult?.status ?? "completed",
+        data.workResult?.unresolved ?? [],
+      );
+    }
     const childText = data.content.map((block) => block.text).join("\n");
     const childContent =
       childText.trim().length > 0 ? [childText] : ["(Subagent completed but returned no output.)"];
@@ -155,6 +266,14 @@ function formatAgentOutputForModel(output: unknown): string {
             `host_acceptance_failed: ${data.acceptance.failedCriterionIds.join(",") || "none"}`,
             `host_acceptance_missing: ${data.acceptance.missingCriterionIds.join(",") || "none"}`,
             "host_acceptance_scope: exact declared checks only; does not prove semantic task quality",
+          ]),
+      ...(data.workResult === undefined
+        ? []
+        : [
+            `work_result: ${data.workResult.status}`,
+            `work_result_files: ${formatWorkResultList(data.workResult.files)}`,
+            `work_result_tests: ${formatWorkResultTests(data.workResult.tests)}`,
+            `work_result_unresolved: ${formatWorkResultList(data.workResult.unresolved)}`,
           ]),
     ];
     return [
@@ -267,9 +386,7 @@ const agentHandler: ToolHandler = async (input, context) => {
         description: parsed.description,
         prompt: parsed.prompt,
         nodes: parsed.task_graph.nodes,
-        ...(parsed.remaining_spawns === undefined
-          ? {}
-          : { spawnBudget: parsed.remaining_spawns }),
+        ...(parsed.remaining_spawns === undefined ? {} : { spawnBudget: parsed.remaining_spawns }),
         ...(parsed.level === undefined ? {} : { level: parsed.level }),
         ...(parsed.task_graph.max_parallel === undefined
           ? {}
@@ -288,9 +405,7 @@ const agentHandler: ToolHandler = async (input, context) => {
       ...(parsed.acceptance_criteria === undefined
         ? {}
         : { acceptanceCriteria: parsed.acceptance_criteria }),
-      ...(parsed.remaining_spawns === undefined
-        ? {}
-        : { spawnBudget: parsed.remaining_spawns }),
+      ...(parsed.remaining_spawns === undefined ? {} : { spawnBudget: parsed.remaining_spawns }),
       ...(parsed.level === undefined ? {} : { level: parsed.level }),
       runInBackground: parsed.run_in_background === true,
     },

@@ -80,6 +80,31 @@ import {
   runtimeTaskSnapshotFromTerminalCatalog,
 } from "../../runtime-task/registry.js";
 
+interface SpawnEnvelopeInput {
+  level?: number;
+  spawnGrant?: number;
+  /** Фактический parallel cap из registry; без него атрибут не печатается. */
+  maxParallel?: number;
+}
+
+/**
+ * Чистый builder конверта spawn. `max_parallel` — фактическая ёмкость, а не константа:
+ * хардкод 8 скрывал остаток бюджета и свободные worker slots.
+ */
+export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefined {
+  if (input.spawnGrant === undefined || !Number.isFinite(input.spawnGrant)) return undefined;
+  const parts = [
+    "<zcode-spawn-envelope",
+    `level="${Math.max(0, Math.floor(input.level ?? 1))}"`,
+    `remaining_spawns="${Math.max(0, Math.floor(input.spawnGrant))}"`,
+  ];
+  if (input.maxParallel !== undefined && Number.isFinite(input.maxParallel)) {
+    parts.push(`max_parallel="${Math.max(0, Math.floor(input.maxParallel))}"`);
+  }
+  parts.push("/>");
+  return parts.join(" ");
+}
+
 export function createDefaultSubagentPort(
   this: AgentRuntimeInternal,
   deps: AgentRuntimeDeps,
@@ -215,17 +240,12 @@ export function createDefaultSubagentPort(
           workspaceRoot: request.workspaceRoot,
         });
         // Host 在 child 的 system prompt 中显式声明本层 spawn 约定：Level+1 已由 runner 记录，
-        // remaining_spawns 是 Host 签发的 grant，模型申请更多也只能被 hostGrant 压回。
-        // max_parallel 与 DAG 默认并发一致（executeSubagentTaskDag 的 8）。
-        const spawnEnvelope =
-          request.spawnGrant === undefined
-            ? undefined
-            : [
-                "<zcode-spawn-envelope",
-                `level="${request.level ?? 1}"`,
-                `remaining_spawns="${request.spawnGrant}"`,
-                `max_parallel="8" />`,
-              ].join(" ");
+        // remaining_spawns 是 Host 签发的 grant, max_parallel — фактическая ёмкость registry.
+        const spawnEnvelope = buildSpawnEnvelope({
+          level: request.level,
+          spawnGrant: request.spawnGrant,
+          maxParallel: request.maxParallel,
+        });
         // Реестр работ: предупреждаем ребёнка, чем заняты другие агенты в том же workspace.
         // Ошибка реестра не должна ломать спавн — пропадает только подсказка.
         let workLedgerBlock: string | undefined;
@@ -997,11 +1017,7 @@ function resolveSubagentSkillPort(
   }
   // 根因：把空数组压成 undefined 会被过滤器解释为不限权，导致子代理拿到父级全部技能。
   // 修复依据：缺省和显式空白名单都应没有权限；只有逐项声明的技能可穿过此边界。
-  return new FilteredSkillPort(
-    parentSkillPort,
-    new Set(skillNames ?? []),
-    cuaPolicy,
-  );
+  return new FilteredSkillPort(parentSkillPort, new Set(skillNames ?? []), cuaPolicy);
 }
 
 class FilteredSkillPort implements SkillPort {

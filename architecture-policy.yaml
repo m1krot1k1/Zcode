@@ -1015,3 +1015,7 @@ exceptions:
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/runtime/methods/runtime-reminder-persistence.ts]
     reason: 已准入的上游文件只把 reminder 持久化的 tools 映射从完整注册表改为按本轮 Active Model 过滤的条件工具（WebSearch），修复不支持原生检索的模型在元数据里仍显示可用的问题；签名与模块边界不变，adopt 整个 zcode-cli legacy 模块需要单独的边界梳理。
+  - id: swarm-planner-gate-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/runtime/helpers/swarm-planner-gate.ts]
+    reason: 纯 root planner gate 从 turn/runtime 中拆出，供生产路径与单测共用并单独验收；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime/helpers 目录没有独立模块边界，为这一个人文件登记路径级例外，文件不扩充公开契约，adopt 整个 CLI 需要单独的边界梳理。

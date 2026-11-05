@@ -95,8 +95,9 @@ import { captureEvidenceGatedLesson } from "../../subagent/persistent-memory.js"
 import {
   formatAgentProfileForPrompt,
   getSwarmAgentProfiles,
-  resolveSwarmParallelism,
 } from "../../subagent/profile.js";
+import { resolveSwarmParallelismWithCapacity } from "../../subagent/runner.js";
+import { SUBAGENT_ROOT_MAX_ACTIVE_TASKS } from "../../runtime-task/registry.js";
 import { filterSubagentChildToolNames } from "../../subagent/tool-policy.js";
 import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
 import { clearBrowserTurnState } from "../../repl/browser-turn-state.js";
@@ -113,6 +114,7 @@ import {
   resolveExecutionFallbackCandidates,
 } from "./turn-execution-fallback.js";
 import { classifySwarmRestartNodes, holdSwarmCrashBoundary } from "../helpers/turn-errors.js";
+import { shouldRunRootSwarmPlanner } from "../helpers/swarm-planner-gate.js";
 import { recoverAndHydrateSwarmJournal } from "./resume.js";
 
 const TARGET_RUN_HEARTBEAT_MS = 15_000;
@@ -902,14 +904,17 @@ export async function executeTurnCommand(
         openGoalStateChangeReminderDeferral(activeTurn);
         phaseStartedAt = startTurnPhase("regular_turn_loop");
         try {
-          // 原因：internalSwarmRootRunId 只用于共享 root-run 预算。把它当作再次规划的条件后，
-          // 已分配的子任务会再开 planner 并继续拆分，短任务把共享 spawn 配额耗尽。
-          // 修复依据：继续拆分只走角色允许的 Task/Agent，root 的 swarm/auto intent 才打开 planner。
-          // 原因：子代理可能继承 root 的 orchestration intent；修复依据：只有创建 root-run budget 的 turn 拥有 planner，后代仅能显式调用 Task/Agent 继续委派。
+          // 原因：internalSwarmRootRunId 只用于共享 root-run 预算；后代不应再次规划。
+          // 修复依据：root planner 只在显式 swarm 且拥有 root-run budget 时开启；
+          // auto 不再开启 planner，复杂任务走 Root → Start → Orchestrator。
+          // 原因：子代理可能继承 root 的 orchestration intent；修复依据：只有创建 root-run budget
+          // 且显式 swarm 的 turn 拥有 planner，后代仅能显式调用 Task/Agent 继续委派。
           if (
-            ownsRootRunBudget &&
-            (options?.intent?.orchestrationMode === "swarm" ||
-              options?.intent?.orchestrationMode === "auto")
+            shouldRunRootSwarmPlanner({
+              ownsRootRunBudget,
+              orchestrationMode: options?.intent?.orchestrationMode,
+              internalSwarmRootRunId: options?.internalSwarmRootRunId,
+            })
           ) {
             await executeSwarmRun.call(this, loopState, input, {
               rootRunId,
@@ -1712,10 +1717,25 @@ async function executeSwarmRun(
     const unsubscribeTaskRegistry = this.runtimeTaskRegistry.subscribe?.(publishChildProgress);
     let output: AgentOutput;
     try {
-      const routingDecision = resolveSwarmParallelism({
+      // Registry — владелец остатка budget и активных worker slots: routing gate получает
+      // фактическую ёмкость, а не только статический config.spawnBudget.
+      const remainingSpawns = this.runtimeTaskRegistry.getRemainingSpawnBudget?.(
+        policy.rootRunId,
+        this.sessionId,
+      );
+      const activeWorkItems =
+        this.runtimeTaskRegistry.getActiveSubagentWorkItemCount?.(rootSessionID);
+      const routingDecision = resolveSwarmParallelismWithCapacity({
         nodeCount: graph.nodes.length,
-        requestedMaxParallel: graph.max_parallel,
-        spawnBudget: this.config.spawnBudget,
+        ...(graph.max_parallel === undefined
+          ? {}
+          : { requestedMaxParallel: graph.max_parallel }),
+        ...(this.config.spawnBudget === undefined
+          ? {}
+          : { spawnBudget: this.config.spawnBudget }),
+        ...(remainingSpawns === undefined ? {} : { remainingSpawns }),
+        ...(activeWorkItems === undefined ? {} : { activeCount: activeWorkItems }),
+        activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
       });
       if (routingDecision.route === "integrate_inline") {
         throw new SwarmPlanValidationError(routingDecision.reason);

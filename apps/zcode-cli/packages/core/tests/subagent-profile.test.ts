@@ -258,8 +258,10 @@ tools:
     for (const role of SWARM_AGENT_TYPES) expect(prompt).toContain(`- ${role}:`);
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
     expect(prompt).toContain("- reviewer:");
+    expect(prompt).toContain(
+      "(Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, TodoRead",
+    );
     expect(prompt).toContain("(Tools: Read, Glob, Grep, Write, Edit, Bash");
-    expect(prompt).toContain("Task, Skill");
     expect(prompt).not.toContain("tools: Read");
     expect(prompt).not.toContain("background: true");
     expect(prompt).not.toContain("model:");
@@ -558,16 +560,6 @@ Review carefully.`,
       getSwarmAgentProfiles(normalizeAgentProfiles([])).find(({ name }) => name === "start");
     const startPrompt = () => startProfile()?.systemPrompt ?? "";
 
-    it("grants every built-in role the full toolset, including shell and write access", () => {
-      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
-      const required = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebFetch", "WebSearch", "Task"];
-
-      for (const profile of profiles) {
-        expect(profile.tools).toEqual(expect.arrayContaining(required));
-        expect(profile.tools).toContain("Skill");
-      }
-    });
-
     it("does not advertise root-only tools as subagent capabilities", () => {
       const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
 
@@ -614,9 +606,11 @@ Review carefully.`,
     it("states the available tools and the L1-L4 nesting chain in the system prompt", () => {
       const prompt = startPrompt();
 
-      for (const tool of ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Task", "Skill"]) {
-        expect(prompt).toContain(tool);
-      }
+      expect(prompt).toContain("Твои инструменты: Read, Glob, Grep, Task и Skill");
+      expect(prompt).toContain("Bash, Write, Edit");
+      expect(prompt).toContain("недоступны");
+      expect(prompt).not.toContain("включая Read, Glob, Grep, Write, Edit, Bash");
+      for (const tool of ["Read", "Glob", "Grep", "Task", "Skill"]) expect(prompt).toContain(tool);
       for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
       expect(prompt).toContain("L4 — достаточная глубина для проверки вложенности");
       expect(prompt).toContain("Номер уровня — только запись, а не стоп-условие");
@@ -641,6 +635,102 @@ Review carefully.`,
       );
       expect(prompt).toContain("ты не исполняешь её сам");
     });
+  });
+});
+
+// docs/specs/agent-capability-gate.md: роль определяет реальный набор инструментов.
+// Ожидаемые списки продублированы литералами намеренно — изменение матрицы должно
+// требовать явного обновления теста, а не следовать за экспортированной константой.
+describe("built-in role capability matrix", () => {
+  const builtInProfiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
+  const toolsOf = (name: string): readonly string[] =>
+    builtInProfiles().find((profile) => profile.name === name)?.tools ?? [];
+
+  const READ_ONLY_TOOLS = ["Read", "Glob", "Grep", "Task", "Skill"];
+  const INSPECTION_TOOLS = [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+  ];
+  const WORKER_TOOLS = [
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+  ];
+
+  it.each(["start", "orchestrator"])(
+    "%s routes and reads without direct mutation tools",
+    (name) => {
+      const tools = toolsOf(name);
+
+      expect(tools).toEqual(READ_ONLY_TOOLS);
+      expect(tools).not.toContain("Write");
+      expect(tools).not.toContain("Edit");
+      expect(tools).not.toContain("Bash");
+    },
+  );
+
+  it.each(["researcher", "reviewer", "security-reviewer", "evaluator"])(
+    "%s inspects with Bash but cannot write files",
+    (name) => {
+      const tools = toolsOf(name);
+
+      expect(tools).toEqual(INSPECTION_TOOLS);
+      expect(tools).toContain("Bash");
+      expect(tools).not.toContain("Write");
+      expect(tools).not.toContain("Edit");
+    },
+  );
+
+  it.each(["implementer", "test-engineer", "self-improver", "knowledge-curator", "subagent-factory"])(
+    "%s keeps the full worker toolset",
+    (name) => {
+      expect(toolsOf(name)).toEqual(WORKER_TOOLS);
+    },
+  );
+
+  it("covers every built-in swarm role without gaps or duplicates", () => {
+    expect(builtInProfiles().map((profile) => profile.name)).toEqual([...SWARM_AGENT_TYPES]);
+  });
+
+  it("keeps inspection roles' prompts honest about Bash and write access", () => {
+    for (const role of ["researcher", "reviewer", "security-reviewer", "evaluator"] as const) {
+      const prompt =
+        builtInProfiles().find((profile) => profile.name === role)?.systemPrompt ?? "";
+
+      expect(prompt, role).toContain("Bash");
+      expect(prompt, role).toContain("Write/Edit недоступны");
+    }
+  });
+
+  it("advertises the read-only toolset in the orchestrator prompt", () => {
+    const prompt =
+      builtInProfiles().find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Твои инструменты: Read, Glob, Grep, Task и Skill");
+    expect(prompt).toContain("Write, Edit и Bash недоступны");
   });
 });
 

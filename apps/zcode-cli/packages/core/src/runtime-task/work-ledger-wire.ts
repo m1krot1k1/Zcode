@@ -19,6 +19,35 @@ const HAS_WHITESPACE = /\s/u;
 const LINE_SUFFIX = /:\d+(?::\d+)?$/u;
 const EXTENSION_SUFFIX = /\.[A-Za-z0-9]{1,10}$/u;
 const SEGMENT = /^[\w@.+-]+$/u;
+// Путь из backticks может содержать пробел (`/tmp/zcode workspace/repo/src/a.ts`):
+// пробел допустим внутри сегмента, но не в начале/конце (проверяется отдельно).
+const SEGMENT_WITH_SPACES = /^[\w@.+\- ]+$/u;
+const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:\//u;
+/**
+ * Каталоги исходников: `src/runtime-task` — явный directory scope, а `text/html` — MIME.
+ * Правило применяется только к двум сегментам без расширения; всё остальное требует >= 3.
+ */
+const KNOWN_SOURCE_DIRECTORIES = new Set([
+  "src",
+  "apps",
+  "packages",
+  "docs",
+  "scripts",
+  "tests",
+  "test",
+  "lib",
+  "config",
+  "public",
+  "assets",
+  "server",
+  "client",
+  "shared",
+  "ui",
+  "web",
+  "desktop",
+  "runtime",
+  "core",
+]);
 const BACKTICKED_SPAN = /`([^`\n]+)`/gu;
 // Абсолютный путь ищем первым: иначе relative-ветка приняла бы его хвост за путь внутри
 // workspace и приписала claim к чужому файлу.
@@ -35,8 +64,16 @@ const HOME_PATH_SPAN = /(?:^|\s)~\/[^\s`]+/gu;
  * Консервативно проверяет, что токен — явный путь: только сегменты из безопасных
  * символов, последний сегмент с расширением (или путь из трёх и более сегментов).
  * Всё остальное (`--flag`, `pnpm test`, `text/html`, URL) отбрасывается.
+ *
+ * `allowSpaces` включается только для backtick-спана: внутри него пробел может быть
+ * частью имени каталога (`/tmp/zcode workspace/repo/src/a.ts`). Спан с более чем одной
+ * группой пробелов принимается, только если пробел есть в имени файла и оно с
+ * расширением; иначе это текст или команда, и берутся отдельные токены.
  */
-function normalizeExplicitPath(raw: string): string | undefined {
+function normalizeExplicitPath(
+  raw: string,
+  options: { allowSpaces?: boolean; allowSourceDirectory?: boolean } = {},
+): string | undefined {
   let candidate = raw.trim();
   if (candidate.length === 0 || candidate.length > 260) return undefined;
   // Обёртки, которые часто оказываются внутри backticks: (path), "path", <path>.
@@ -49,18 +86,50 @@ function normalizeExplicitPath(raw: string): string | undefined {
   ) {
     return undefined;
   }
-  if (candidate.includes("://") || HAS_WHITESPACE.test(candidate)) return undefined;
-  if (/[*?<>{}|$]/u.test(candidate)) return undefined;
+  if (candidate.includes("://") || /[*?<>{}|$]/u.test(candidate)) return undefined;
+
+  const hasWhitespace = HAS_WHITESPACE.test(candidate);
+  const tokens = hasWhitespace ? candidate.split(INTENT_WHITESPACE) : [];
+  if (hasWhitespace) {
+    if (!options.allowSpaces) return undefined;
+    // Флаг внутри спана (`... --run`) и первое слово без "/" (`pnpm test ...`) — команда.
+    if (tokens.some((token) => token.startsWith("-"))) return undefined;
+    const head = tokens[0] ?? "";
+    if (!head.startsWith("/") && !WINDOWS_ABSOLUTE_PATH.test(head) && !head.includes("/")) {
+      return undefined;
+    }
+  }
 
   const withoutLine = candidate.replace(LINE_SUFFIX, "");
   if (!withoutLine.includes("/")) return undefined;
   const segments = withoutLine.split("/").filter((segment) => segment.length > 0);
   if (segments.length === 0) return undefined;
-  if (!segments.every((segment) => SEGMENT.test(segment))) return undefined;
+  const segmentPattern = hasWhitespace ? SEGMENT_WITH_SPACES : SEGMENT;
+  if (!segments.every((segment) => segment.trim() === segment && segmentPattern.test(segment))) {
+    return undefined;
+  }
   const last = segments[segments.length - 1]!;
   const hasExtension = EXTENSION_SUFFIX.test(last);
-  // Односегментные каталоги и «foo/bar» без расширения слишком похожи на обычный текст.
-  if (!hasExtension && segments.length < 3) return undefined;
+  // Спан с пробелами целиком — только при одной группе пробелов
+  // (`/tmp/zcode workspace/repo/src/a.ts`) или когда пробел внутри имени файла
+  // (`/tmp/my project/file name.ts`). Иначе это текст или команда:
+  // `src/a.ts line 20` и `/usr/bin/pnpm test src/a.ts` должны распасться на токены,
+  // иначе claim получает несуществующий путь и пропускает конфликт на файле.
+  if (hasWhitespace && tokens.length > 2 && (!HAS_WHITESPACE.test(last) || !hasExtension)) {
+    return undefined;
+  }
+  if (!hasExtension && segments.length < 3) {
+    // Односегментные каталоги и «foo/bar» без расширения слишком похожи на обычный
+    // текст. Исключение — весь backtick-спан без пробелов, который является известным
+    // исходным каталогом (`src/runtime-task` — scope). Для токенов внутри команды
+    // правило не действует, иначе `git checkout src/main` стал бы claim'ом на каталог.
+    const knownSourceDirectory =
+      !hasWhitespace &&
+      options.allowSourceDirectory === true &&
+      segments.length === 2 &&
+      KNOWN_SOURCE_DIRECTORIES.has(segments[0]!.toLowerCase());
+    if (!knownSourceDirectory) return undefined;
+  }
   return withoutLine;
 }
 
@@ -83,17 +152,38 @@ export function extractTaskPaths(text: string): string[] {
     .replace(GIT_REF_SPAN, " ")
     .replace(HOME_PATH_SPAN, " ");
 
+  // Backtick-спан — явная цитата пути. Сначала пробуем весь спан: в workspace с пробелом
+  // (`/Users/x/Zcode Fork/repo`) разбиение по пробелам теряет полный путь и оставляет
+  // ложный claim на родительский каталог. Принятый спан вырезаем из текста для голых
+  // regexp'ов, чтобы их хвосты не добавили частичные пути.
+  let bareText = "";
+  let consumed = 0;
   for (const match of sanitized.matchAll(BACKTICKED_SPAN)) {
-    // В backticks часто лежит команда целиком (`pnpm test apps/...`), поэтому
-    // проверяем каждый токен отдельно, а не всю строку.
-    for (const token of match[1]!.split(INTENT_WHITESPACE)) {
-      pushUnique(paths, seen, normalizeExplicitPath(token));
+    const span = match[1]!;
+    const whole = normalizeExplicitPath(span, {
+      allowSpaces: true,
+      allowSourceDirectory: true,
+    });
+    const start = match.index ?? 0;
+    if (whole) {
+      pushUnique(paths, seen, whole);
+      bareText += `${sanitized.slice(consumed, start)} `;
+    } else {
+      bareText += sanitized.slice(consumed, start) + match[0];
+      // В backticks часто лежит команда целиком (`pnpm test apps/...`), поэтому
+      // проверяем каждый токен отдельно, а не всю строку.
+      for (const token of span.split(INTENT_WHITESPACE)) {
+        pushUnique(paths, seen, normalizeExplicitPath(token));
+      }
     }
+    consumed = start + match[0].length;
   }
-  for (const match of sanitized.matchAll(BARE_ABSOLUTE_PATH)) {
+  bareText += sanitized.slice(consumed);
+
+  for (const match of bareText.matchAll(BARE_ABSOLUTE_PATH)) {
     pushUnique(paths, seen, normalizeExplicitPath(match[0]));
   }
-  for (const match of sanitized.matchAll(BARE_RELATIVE_PATH)) {
+  for (const match of bareText.matchAll(BARE_RELATIVE_PATH)) {
     pushUnique(paths, seen, normalizeExplicitPath(match[0]));
   }
   return paths.slice(0, WORK_LEDGER_MAX_EXTRACTED_PATHS);
