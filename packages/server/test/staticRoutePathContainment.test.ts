@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { once } from "node:events";
 import { AddressInfo } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -80,6 +81,7 @@ describe("static route path containment", () => {
       spaFallback: true,
     });
     servers.push(server);
+    if (!server.listening) await once(server, "listening");
     return (server.address() as AddressInfo).port;
   }
 

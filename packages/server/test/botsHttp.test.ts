@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { once } from "node:events";
+import type { Server } from "node:http";
 import { AddressInfo } from "node:net";
 import { ServiceCollection, IBotsService, type IBotsService as BotsService } from "@zcode/services";
 import { createHttpServer } from "../src/http.js";
 
+async function waitForListening(server: Server): Promise<AddressInfo> {
+  // createHttpServer now binds 127.0.0.1 explicitly; listen is async, so address() can be null.
+  if (!server.listening) await once(server, "listening");
+  return server.address() as AddressInfo;
+}
+
 describe("bots HTTP callback", () => {
-  const servers: Array<{ close(callback?: (err?: Error) => void): void }> = [];
+  const servers: Server[] = [];
 
   afterEach(async () => {
     await Promise.all(
@@ -43,7 +51,7 @@ describe("bots HTTP callback", () => {
     } as unknown as BotsService);
     const server = createHttpServer(services, 0);
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/bots/webhook`, {
       method: "POST",
@@ -86,7 +94,7 @@ describe("bots HTTP callback", () => {
     const services = new ServiceCollection();
     const server = createHttpServer(services, 0);
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/bots/unknown`, {
       method: "POST",
@@ -106,7 +114,7 @@ describe("bots HTTP callback", () => {
     } as unknown as BotsService);
     const server = createHttpServer(services, 0);
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/bots/webhook`, {
       method: "POST",
@@ -121,7 +129,7 @@ describe("bots HTTP callback", () => {
     const services = new ServiceCollection();
     const server = createHttpServer(services, 0);
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/bots/feishu/feishu-1`, {
       method: "POST",

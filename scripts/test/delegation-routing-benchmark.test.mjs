@@ -16,6 +16,8 @@ function record(taskId, arm, patch = {}) {
     tokens: 1000,
     duplicateClaims: 0,
     criticalRegressions: 0,
+    synthetic: true,
+    repeats: 1,
     ...patch,
   };
 }
@@ -108,4 +110,41 @@ test("rejects malformed records", () => {
     () => parseBenchmarkRecords(JSON.stringify({ ...record("a", "baseline"), durationMs: -1 })),
     /durationMs/,
   );
+  assert.throws(
+    () => parseBenchmarkRecords(JSON.stringify({ ...record("a", "baseline"), repeats: 0 })),
+    /repeats/,
+  );
+});
+
+test("real records require three repeats and a holdout task", () => {
+  const pairs = compareBenchmarkRecords([
+    record("a", "baseline", { synthetic: false, repeats: 1, holdout: false }),
+    record("a", "candidate", { synthetic: false, repeats: 1, holdout: false, durationMs: 500 }),
+  ]);
+  const report = evaluateBenchmark(pairs);
+
+  assert.equal(report.evidence, "real");
+  assert.equal(report.verdict, "inconclusive");
+  assert.match(report.reasons.join(" "), /fewer than 3 repeats/);
+  assert.match(report.reasons.join(" "), /no holdout/);
+});
+
+test("accepts a real candidate with repeats and a holdout", () => {
+  const pairs = compareBenchmarkRecords([
+    record("a", "baseline", { synthetic: false, repeats: 3, holdout: true }),
+    record("a", "candidate", { synthetic: false, repeats: 3, holdout: true, durationMs: 500 }),
+  ]);
+
+  assert.equal(evaluateBenchmark(pairs).verdict, "candidate");
+});
+
+test("rejects a large latency regression even when tokens drop", () => {
+  const pairs = compareBenchmarkRecords([
+    record("a", "baseline", { durationMs: 1000, tokens: 1000 }),
+    record("a", "candidate", { durationMs: 2000, tokens: 500 }),
+  ]);
+  const report = evaluateBenchmark(pairs);
+
+  assert.equal(report.verdict, "reject");
+  assert.match(report.reasons.join(" "), /latency/);
 });

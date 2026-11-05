@@ -9,6 +9,7 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
   credentialsFile: string;
   settingsFile: string;
   workspacePath: string;
+  webPort?: number;
 }): Promise<(() => Promise<void>) | null> {
   if (
     options.specs.some(
@@ -20,7 +21,7 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
   )
     return prepareWebRemoteControlSessionEventsFixture({
       ...options,
-      webUrl: "http://127.0.0.1:5173/remote/v4",
+      webUrl: `http://127.0.0.1:${options.webPort ?? 5173}/remote/v4`,
     });
   if (options.specs.some((spec) => spec.endsWith("web-remote-control-session-events.test.ts")))
     return prepareWebRemoteControlSessionEventsFixture(options);

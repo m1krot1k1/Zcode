@@ -42,7 +42,12 @@ export function collectAgentListingAttachment(input: {
   removedTypes.sort();
   const delta: AgentListingDelta = {
     addedTypes: added.map((profile) => profile.name),
-    addedLines: added.map((profile) => formatAgentProfileForPrompt(profile, input)),
+    addedLines: added.map((profile) =>
+      formatAgentProfileForPrompt(profile, {
+        embeddedSearchEnabled: input.embeddedSearchEnabled,
+        availableToolNames: input.tools.map((tool) => tool.name),
+      }),
+    ),
     removedTypes,
     isInitial: announced.size === 0,
     showConcurrencyNote: true,

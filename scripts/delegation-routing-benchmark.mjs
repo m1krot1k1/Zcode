@@ -22,6 +22,18 @@ function requireNonNegativeNumber(value, field, taskId, arm) {
   }
 }
 
+function requireOptionalBoolean(value, field, taskId, arm) {
+  if (value !== undefined && typeof value !== "boolean") {
+    fail(`${taskId}/${arm}: ${field} must be boolean when present`);
+  }
+}
+
+function requireOptionalPositiveInteger(value, field, taskId, arm) {
+  if (value !== undefined && (!Number.isInteger(value) || value < 1)) {
+    fail(`${taskId}/${arm}: ${field} must be a positive integer when present`);
+  }
+}
+
 export function parseBenchmarkRecords(text) {
   const records = [];
   for (const [index, line] of text.split(/\r?\n/u).entries()) {
@@ -53,6 +65,9 @@ export function parseBenchmarkRecords(text) {
         fail(`${record.taskId}/${record.arm}: criticalRegressions must be a non-negative integer`);
       }
     }
+    requireOptionalPositiveInteger(record.repeats, "repeats", record.taskId, record.arm);
+    requireOptionalBoolean(record.synthetic, "synthetic", record.taskId, record.arm);
+    requireOptionalBoolean(record.holdout, "holdout", record.taskId, record.arm);
     records.push(record);
   }
   return records;
@@ -109,15 +124,46 @@ export function evaluateBenchmark(pairs) {
     criticalRegressions: candidate.criticalRegressions - baseline.criticalRegressions,
   };
 
+  const allRecords = pairs.flatMap((pair) => [pair.baseline, pair.candidate]);
+  const synthetic = allRecords.every((record) => record.synthetic === true);
+  const minRepeats = Math.min(...allRecords.map((record) => record.repeats ?? 1));
+  const holdoutTasks = pairs.filter((pair) => pair.candidate.holdout === true).length;
+  // A candidate that buys fewer tokens with a much slower run is not a win.
+  const latencyRegression =
+    baseline.medianDurationMs > 0 && candidate.medianDurationMs > baseline.medianDurationMs * 1.5;
   const rejected =
-    candidate.criticalRegressions > 0 || candidate.successRate < baseline.successRate;
+    candidate.criticalRegressions > 0 ||
+    candidate.successRate < baseline.successRate ||
+    latencyRegression;
   const efficiencyWin =
     candidate.medianDurationMs < baseline.medianDurationMs ||
     candidate.totalTokens < baseline.totalTokens ||
     candidate.duplicateClaims < baseline.duplicateClaims;
-  const verdict = rejected ? "reject" : efficiencyWin ? "candidate" : "inconclusive";
+  const reasons = [];
+  if (candidate.criticalRegressions > 0) reasons.push("critical regressions");
+  if (candidate.successRate < baseline.successRate) reasons.push("success rate dropped");
+  if (latencyRegression) reasons.push("median latency regressed by more than 50%");
+  if (!synthetic && minRepeats < 3) reasons.push("fewer than 3 repeats");
+  if (!synthetic && holdoutTasks === 0) reasons.push("no holdout tasks");
+  if (synthetic) reasons.push("synthetic records are not evidence");
+  const verdict = rejected
+    ? "reject"
+    : !synthetic && (minRepeats < 3 || holdoutTasks === 0)
+      ? "inconclusive"
+      : efficiencyWin
+        ? "candidate"
+        : "inconclusive";
 
-  return { baseline, candidate, deltas, verdict };
+  return {
+    baseline,
+    candidate,
+    deltas,
+    evidence: synthetic ? "synthetic" : "real",
+    minRepeats,
+    holdoutTasks,
+    verdict,
+    reasons,
+  };
 }
 
 function parseArgs(argv) {

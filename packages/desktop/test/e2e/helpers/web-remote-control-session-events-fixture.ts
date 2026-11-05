@@ -21,6 +21,8 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
   settingsFile: string;
   workspacePath: string;
   webUrl?: string;
+  /** Optional port for the Vite fixture; 0/undefined keeps the legacy 5173. */
+  webPort?: number;
 }): Promise<() => Promise<void>> {
   const relay = await createFakeRelayV2({
     users: { "mock-token": "zcode-e2e-user" },
@@ -65,7 +67,7 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
           "--host",
           "127.0.0.1",
           "--port",
-          "5173",
+          String(options.webPort ?? 5173),
           "--strictPort",
         ],
         {
@@ -84,8 +86,9 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
       web.once("exit", (code) =>
         reject(new Error(`Mobile Web fixture exited before ready: ${code}`)),
       );
+      const readyUrl = `http://127.0.0.1:${options.webPort ?? 5173}`;
       web.stdout.on("data", (chunk) => {
-        if (String(chunk).includes("http://127.0.0.1:5173")) resolveReady();
+        if (String(chunk).includes(readyUrl)) resolveReady();
       });
       web.stderr.on("data", (chunk) => process.stderr.write(chunk));
     });

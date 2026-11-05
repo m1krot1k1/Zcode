@@ -577,6 +577,26 @@ Review carefully.`,
       }
     });
 
+    it("does not list tools that have no child runtime handler", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+
+      for (const profile of profiles) {
+        expect(profile.tools).not.toContain("NotebookEdit");
+        expect(profile.tools).not.toContain("LSP");
+      }
+    });
+
+    it("filters the model-visible catalog to the actual provider-visible tools", () => {
+      const prompt = formatAgentProfilesForPrompt([], {
+        availableToolNames: ["Read", "Glob", "Grep", "Bash", "Task", "Skill"],
+      });
+
+      expect(prompt).toContain("(Tools: Read, Glob, Grep, Bash");
+      expect(prompt).not.toContain("WebSearch");
+      expect(prompt).not.toContain("NotebookEdit");
+      expect(prompt).not.toContain("LSP");
+    });
+
     it("routes implementation away from start and forbids orchestrator self-implementation", () => {
       const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
       const start = profiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
@@ -657,5 +677,48 @@ describe("delegation routing gate", () => {
       route: "delegate_single",
       maxParallel: 1,
     });
+  });
+
+  it("clamps parallelism to the spawn budget and the user cap", () => {
+    expect(
+      decideDelegationRoute({
+        role: "start",
+        independentWorkstreams: 6,
+        spawnBudget: 1,
+        userMaxParallel: 8,
+      }),
+    ).toMatchObject({ route: "delegate_single", maxParallel: 1 });
+
+    expect(
+      decideDelegationRoute({
+        role: "root",
+        independentWorkstreams: 6,
+        spawnBudget: 2,
+        userMaxParallel: 8,
+      }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
+
+    expect(
+      decideDelegationRoute({ role: "start", independentWorkstreams: 6, spawnBudget: 0 }),
+    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
+  });
+
+  it("allows read-only triage in place and still delegates implementation", () => {
+    expect(decideDelegationRoute({ role: "start", readOnly: true })).toMatchObject({
+      route: "integrate_inline",
+      maxParallel: 0,
+    });
+    expect(decideDelegationRoute({ role: "start" })).toMatchObject({ route: "delegate_single" });
+  });
+
+  it("embeds the routing contract in start and orchestrator prompts", () => {
+    const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+
+    for (const name of ["start", "orchestrator"]) {
+      const prompt = profiles.find((profile) => profile.name === name)?.systemPrompt ?? "";
+      expect(prompt).toContain("Перед действием классифицируй задачу");
+      expect(prompt).toContain("integrate_inline");
+      expect(prompt).toContain("max_parallel");
+    }
   });
 });

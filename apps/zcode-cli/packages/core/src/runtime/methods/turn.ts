@@ -1590,7 +1590,11 @@ async function executeSwarmRun(
             SWARM_PLAN_MAX_OUTPUT_TOKENS,
             state.model.optionSpecs.maxOutputTokens.max,
           ),
-          prompt: buildSwarmPlannerPrompt(task, swarmAgentProfiles),
+          prompt: buildSwarmPlannerPrompt(
+            task,
+            swarmAgentProfiles,
+            this.getTools().map((tool) => tool.name),
+          ),
         },
         {
           // Root abort отменяет planner; отдельный deadline освобождает чат при молчании провайдера.
@@ -2064,9 +2068,12 @@ async function isWorkingDirectoryEmpty(
 function buildSwarmPlannerPrompt(
   task: string,
   agentProfiles: ReturnType<typeof getSwarmAgentProfiles>,
+  availableToolNames?: readonly string[],
 ): string {
   const availableProfileIds = agentProfiles.map((profile) => profile.name);
-  const availableProfiles = agentProfiles.map((profile) => formatAgentProfileForPrompt(profile));
+  const availableProfiles = agentProfiles.map((profile) =>
+    formatAgentProfileForPrompt(profile, { availableToolNames }),
+  );
   const exampleProfileId = availableProfileIds[0] ?? "";
   return [
     "Decide whether this task needs independent parallel work. Return only JSON in one of these shapes:",

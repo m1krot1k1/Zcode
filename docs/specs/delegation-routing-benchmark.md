@@ -35,6 +35,9 @@ Each family contains paired tasks with the same inputs and acceptance checks:
 - `tokens` — total model tokens for the task.
 - `duplicateClaims` — work-ledger claims that overlap another live claim on the same path.
 - `criticalRegressions` — failed safety, release, or data-integrity checks.
+- `repeats` — how many runs are aggregated into the record; real runs require at least three.
+- `synthetic` — `true` for fixtures. Synthetic records are labeled as such and never prove model gains.
+- `holdout` — `true` for protected-holdout tasks. A real comparison requires at least one holdout task.
 
 ## Protocol
 
@@ -44,8 +47,8 @@ Each family contains paired tasks with the same inputs and acceptance checks:
 - Record one JSONL line per task and arm:
 
 ```json
-{"taskId":"single-file-bugfix-1","arm":"baseline","success":true,"durationMs":42000,"tokens":18000,"duplicateClaims":0,"criticalRegressions":0}
-{"taskId":"single-file-bugfix-1","arm":"candidate","success":true,"durationMs":31000,"tokens":15000,"duplicateClaims":0,"criticalRegressions":0}
+{"taskId":"single-file-bugfix-1","arm":"baseline","success":true,"durationMs":42000,"tokens":18000,"duplicateClaims":0,"criticalRegressions":0,"repeats":3,"synthetic":false,"holdout":true}
+{"taskId":"single-file-bugfix-1","arm":"candidate","success":true,"durationMs":31000,"tokens":15000,"duplicateClaims":0,"criticalRegressions":0,"repeats":3,"synthetic":false,"holdout":true}
 ```
 
 - Compare the records:
@@ -54,8 +57,11 @@ Each family contains paired tasks with the same inputs and acceptance checks:
 node scripts/delegation-routing-benchmark.mjs --baseline baseline.jsonl --candidate candidate.jsonl
 ```
 
-The gate exits non-zero only for a rejected candidate (critical regression or lower success). It
-prints both arm summaries, paired deltas, and one of `candidate`, `inconclusive`, or `reject`.
+The gate exits non-zero for a rejected candidate: critical regression, lower success, or a median
+latency regression above 50%. Real records also need at least three repeats and one holdout task;
+otherwise the verdict is `inconclusive`. It prints both arm summaries, paired deltas, `evidence`
+(`real` or `synthetic`), `minRepeats`, `holdoutTasks`, reasons, and one of `candidate`,
+`inconclusive`, or `reject`. Synthetic records are always labeled and never treated as proof.
 
 ## Acceptance
 
@@ -63,7 +69,9 @@ A candidate is accepted only when:
 
 - `criticalRegressions` does not increase;
 - `successRate` is not lower than baseline;
-- at least one efficiency metric improves (median time, tokens, or duplicate claims).
+- median latency does not regress by more than 50%;
+- at least one efficiency metric improves (median time, tokens, or duplicate claims);
+- real records have at least three repeats and at least one protected-holdout task.
 
 Otherwise the result is `inconclusive` (no proven gain) or `reject` (regression). Do not present
 synthetic fixtures or a single lucky run as evidence of a general capability gain.

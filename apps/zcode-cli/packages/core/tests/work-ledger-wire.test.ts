@@ -189,4 +189,16 @@ describe("work ledger wiring", () => {
       "path/to/file.ts",
     ]);
   });
+
+  it("(f) не принимает URL, git-refs и ~-пути за workspace-пути", () => {
+    expect(
+      extractTaskPaths(
+        "Смотри https://github.com/m1krot1k1/Zcode/releases/tag/v3.17.67 и refs/heads/dev, refs/tags/v3.17.67",
+      ),
+    ).toEqual([]);
+    expect(extractTaskPaths("Открой ~/.zcode/cli/work-ledger.jsonl")).toEqual([]);
+    expect(extractTaskPaths("Смотри /home/dev/project/src/a.ts")).toEqual([
+      "/home/dev/project/src/a.ts",
+    ]);
+  });
 });

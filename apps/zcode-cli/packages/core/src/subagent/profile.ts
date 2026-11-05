@@ -76,8 +76,6 @@ const FULL_SUBAGENT_TOOL_NAMES = [
   "TodoRead",
   "TodoWrite",
   "AskUserQuestion",
-  "NotebookEdit",
-  "LSP",
   "TaskOutput",
   "TaskStop",
 ] as const;
@@ -113,6 +111,12 @@ export interface DelegationEnvelope {
   independentWorkstreams?: number;
   serialDependencies?: boolean;
   integrationOwnedByCaller?: boolean;
+  /** Remaining spawn budget for this turn; 0 means the caller must not spawn. */
+  spawnBudget?: number;
+  /** User-provided parallelism cap; defaults to 4. */
+  userMaxParallel?: number;
+  /** Read-only triage may stay with the caller; implementation still delegates. */
+  readOnly?: boolean;
 }
 
 export interface DelegationDecision {
@@ -127,12 +131,26 @@ export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationD
     return { route: "answer_directly", reason: "social-only request", maxParallel: 0 };
   }
 
+  if (envelope.readOnly === true) {
+    return {
+      route: "integrate_inline",
+      reason: "read-only triage stays with the caller",
+      maxParallel: 0,
+    };
+  }
+
   const workstreams = Math.max(1, envelope.independentWorkstreams ?? 1);
-  if (workstreams >= 2) {
+  const spawnBudget = envelope.spawnBudget ?? Number.POSITIVE_INFINITY;
+  const userMaxParallel = Math.max(1, envelope.userMaxParallel ?? 4);
+  if (spawnBudget <= 0) {
+    return { route: "integrate_inline", reason: "no spawn budget", maxParallel: 0 };
+  }
+  const maxParallel = Math.max(1, Math.min(workstreams, userMaxParallel, spawnBudget));
+  if (workstreams >= 2 && maxParallel >= 2) {
     return {
       route: "orchestrate",
       reason: "multiple independent workstreams",
-      maxParallel: Math.min(workstreams, 4),
+      maxParallel,
     };
   }
 
@@ -166,7 +184,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты профиль start в ZCode. Перед маршрутизацией кратко зафиксируй результат, границы и ограничения, объём работы, уже данное пользователем разрешение и только неизвестные факты, которые реально блокируют действие.",
       "Не спрашивай повторно то, что пользователь уже разрешил. Не придумывай сохранённую миссию и не обещай возобновление после перезапуска: такого владельца состояния у runtime нет.",
-      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Небольшой ограниченный объём делегируй профильному исполнителю (implementer/test-engineer/evaluator/researcher), сложную или многоветочную работу — orchestrator. Read/Glob/Grep используй только для триажа и проверки результата; Write/Edit/Bash не применяй для реализации, пока Task доступен. Если Task недоступен, зафиксируй это и выполни минимальный объём сам.",
+      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Небольшой ограниченный объём делегируй профильному исполнителю (implementer/test-engineer/evaluator/researcher), сложную или многоветочную работу — orchestrator. Read-only триаж (Read/Glob/Grep/Bash без записи) разрешён; изменяющие команды, тесты и правки — только делегат. Write/Edit не применяй для реализации, пока Task доступен. Если Task недоступен, зафиксируй это и выполни минимальный объём сам.",
       "Не выдумывай состояние проекта и не заявляй о невыполненной проверке.",
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
@@ -495,9 +513,15 @@ export function normalizeAgentProfiles(
   return Array.from(active.values());
 }
 
+export interface AgentProfilePromptOptions {
+  embeddedSearchEnabled?: boolean;
+  /** Actual provider-visible tool names; when present, the catalog is filtered to them. */
+  availableToolNames?: readonly string[];
+}
+
 export function formatAgentProfilesForPrompt(
   profiles: readonly AgentProfile[],
-  options: { embeddedSearchEnabled?: boolean } = {},
+  options: AgentProfilePromptOptions = {},
 ): string | null {
   // Внутренняя роль Explore остаётся совместимой для старых сессий, но не предлагается модели как ZCode-роль.
   const active = normalizeAgentProfiles(profiles).filter(isModelSelectableAgentProfile);
@@ -511,18 +535,24 @@ export function formatAgentProfilesForPrompt(
 
 export function formatAgentProfileForPrompt(
   profile: Readonly<AgentProfile>,
-  options: { embeddedSearchEnabled?: boolean } = {},
+  options: AgentProfilePromptOptions = {},
 ): string {
   const tools = isBuiltInExploreAgentProfile(profile)
     ? formatExploreAllowedToolsForAgentDescription(options)
     : profile.tools
       ? filterSubagentChildToolNames(profile.tools, profile.disallowedTools)
       : undefined;
-  const listedTools = Array.isArray(tools) ? [...tools] : undefined;
+  const availableToolNames = options.availableToolNames
+    ? new Set(options.availableToolNames)
+    : undefined;
+  const listedTools = Array.isArray(tools)
+    ? [...tools].filter((toolName) => !availableToolNames || availableToolNames.has(toolName))
+    : undefined;
   if (
     listedTools &&
     profile.skills?.length &&
     !profile.disallowedTools?.includes("Skill") &&
+    (!availableToolNames || availableToolNames.has("Skill")) &&
     !listedTools.includes("Skill")
   ) {
     listedTools.push("Skill");

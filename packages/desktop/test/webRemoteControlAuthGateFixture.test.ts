@@ -1,7 +1,20 @@
+import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+
+async function getFreePort(): Promise<number> {
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  return port;
+}
 import { mapClientScenesToDraftSuggestedPromptItems } from "@/v4/draftSuggestedPromptItems.js";
 import { prepareWebRemoteControlAuthGateFixture } from "#e2e/helpers/web-remote-control-auth-gate-fixture";
 
@@ -50,14 +63,18 @@ it.each([
     let close: (() => Promise<void>) | null = null;
     try {
       await writeFile(settingsFile, "{}");
+      const webPort = await getFreePort();
       close = await prepareWebRemoteControlAuthGateFixture({
         specs: [spec],
         credentialsFile,
         settingsFile,
         workspacePath: root,
+        webPort,
       });
       expect(close).not.toBeNull();
-      expect(process.env.ZCODE_WEB_REMOTE_CONTROL_URL).toBe("http://127.0.0.1:5173/remote/v4");
+      expect(process.env.ZCODE_WEB_REMOTE_CONTROL_URL).toBe(
+        `http://127.0.0.1:${webPort}/remote/v4`,
+      );
       const origin = process.env.ZCODE_E2E_REMOTE_AUTH_GATE_URL!;
       expect(new URL(origin).hostname).toBe("127.0.0.1");
       expect(process.env.ZAI_BUSINESS_BASE_URL).toBe(origin);

@@ -25,6 +25,11 @@ const BACKTICKED_SPAN = /`([^`\n]+)`/gu;
 const BARE_ABSOLUTE_PATH = /(?<![\w@.+-])\/(?:[\w@.+-]+\/)*[\w@.+-]+\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/gu;
 const BARE_RELATIVE_PATH =
   /(?<![\w/@.+-])(?:[\w@.+-]+\/)+[\w@.+-]+\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/gu;
+// URL без схемы после матчинга выглядит как /github.com/...; refs/heads/dev проходит
+// как «путь из трёх сегментов»; ~/.zcode/... теряет тильду. Вырезаем эти формы до матчинга.
+const URL_SPAN = /\bhttps?:\/\/[^\s`]+/gu;
+const GIT_REF_SPAN = /\brefs\/(?:heads|tags)\/[^\s`]+/gu;
+const HOME_PATH_SPAN = /(?:^|\s)~\/[^\s`]+/gu;
 
 /**
  * Консервативно проверяет, что токен — явный путь: только сегменты из безопасных
@@ -36,7 +41,12 @@ function normalizeExplicitPath(raw: string): string | undefined {
   if (candidate.length === 0 || candidate.length > 260) return undefined;
   // Обёртки, которые часто оказываются внутри backticks: (path), "path", <path>.
   candidate = candidate.replace(/^[("'<[]+/u, "").replace(/[)"'>\].,;]+$/u, "");
-  if (candidate.length === 0 || candidate.startsWith("~") || candidate.startsWith("-")) {
+  if (
+    candidate.length === 0 ||
+    candidate.startsWith("~") ||
+    candidate.startsWith("-") ||
+    candidate.startsWith("refs/")
+  ) {
     return undefined;
   }
   if (candidate.includes("://") || HAS_WHITESPACE.test(candidate)) return undefined;
@@ -68,18 +78,22 @@ export function extractTaskPaths(text: string): string[] {
   if (text.trim().length === 0) return [];
   const paths: string[] = [];
   const seen = new Set<string>();
+  const sanitized = text
+    .replace(URL_SPAN, " ")
+    .replace(GIT_REF_SPAN, " ")
+    .replace(HOME_PATH_SPAN, " ");
 
-  for (const match of text.matchAll(BACKTICKED_SPAN)) {
+  for (const match of sanitized.matchAll(BACKTICKED_SPAN)) {
     // В backticks часто лежит команда целиком (`pnpm test apps/...`), поэтому
     // проверяем каждый токен отдельно, а не всю строку.
     for (const token of match[1]!.split(INTENT_WHITESPACE)) {
       pushUnique(paths, seen, normalizeExplicitPath(token));
     }
   }
-  for (const match of text.matchAll(BARE_ABSOLUTE_PATH)) {
+  for (const match of sanitized.matchAll(BARE_ABSOLUTE_PATH)) {
     pushUnique(paths, seen, normalizeExplicitPath(match[0]));
   }
-  for (const match of text.matchAll(BARE_RELATIVE_PATH)) {
+  for (const match of sanitized.matchAll(BARE_RELATIVE_PATH)) {
     pushUnique(paths, seen, normalizeExplicitPath(match[0]));
   }
   return paths.slice(0, WORK_LEDGER_MAX_EXTRACTED_PATHS);
