@@ -988,7 +988,7 @@ export default {
     // 只是按单 Range 顺序拉取差异块，避免 Windows 用户更新时从约 15MB 退化成 300MB+ 全量包。
     useMultipleRangeRequest: false,
     // 新客户端运行时使用服务端 manifest provider；这里仅保留 electron-builder 必需的
-    // generic publish 占位，避免打包产物继续携带可配置的旧 stable feed。
-    url: "http://localhost:8081",
+    // generic publish 占位。使用产品域名而不是 localhost，避免 production 产物携带本机 feed。
+    url: "https://zcode.z.ai/updates",
   },
 };

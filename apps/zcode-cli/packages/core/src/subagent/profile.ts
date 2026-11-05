@@ -173,6 +173,35 @@ export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationD
   return { route: "delegate_single", reason: "single bounded task", maxParallel: 1 };
 }
 
+export interface SwarmParallelismInput {
+  nodeCount: number;
+  requestedMaxParallel?: number;
+  spawnBudget?: number;
+  userMaxParallel?: number;
+}
+
+export interface SwarmParallelismDecision {
+  route: DelegationRoute;
+  maxParallel: number;
+  reason: string;
+}
+
+/**
+ * Runtime wiring for the routing gate: the swarm DAG parallelism is clamped by the
+ * spawn budget and the user cap before it reaches the subagent runner.
+ */
+export function resolveSwarmParallelism(
+  input: SwarmParallelismInput,
+): SwarmParallelismDecision {
+  return decideDelegationRoute({
+    role: "orchestrator",
+    independentWorkstreams: Math.max(1, input.nodeCount),
+    spawnBudget: input.spawnBudget,
+    // The DAG default is 8; preserve it when the planner omitted max_parallel.
+    userMaxParallel: input.userMaxParallel ?? input.requestedMaxParallel ?? 8,
+  });
+}
+
 const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
   {
     name: "start",

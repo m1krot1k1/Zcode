@@ -11,6 +11,7 @@ import {
   parseAgentProfileFromMarkdown,
   ROOT_ONLY_TOOL_NAMES,
   decideDelegationRoute,
+  resolveSwarmParallelism,
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
@@ -720,5 +721,20 @@ describe("delegation routing gate", () => {
       expect(prompt).toContain("integrate_inline");
       expect(prompt).toContain("max_parallel");
     }
+  });
+
+  it("clamps the runtime swarm DAG parallelism through the routing gate", () => {
+    expect(
+      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8, spawnBudget: 2 }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
+    expect(
+      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8, spawnBudget: 1 }),
+    ).toMatchObject({ route: "delegate_single", maxParallel: 1 });
+    expect(
+      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8, spawnBudget: 0 }),
+    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
+    expect(
+      resolveSwarmParallelism({ nodeCount: 2, requestedMaxParallel: 8, spawnBudget: 8 }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
   });
 });

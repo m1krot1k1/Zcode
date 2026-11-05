@@ -92,7 +92,11 @@ import {
 import { ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH } from "../../memory/project-memory-retrieval-branch.js";
 import { scheduleProjectMemoryExtraction } from "../helpers/project-memory-extraction.js";
 import { captureEvidenceGatedLesson } from "../../subagent/persistent-memory.js";
-import { formatAgentProfileForPrompt, getSwarmAgentProfiles } from "../../subagent/profile.js";
+import {
+  formatAgentProfileForPrompt,
+  getSwarmAgentProfiles,
+  resolveSwarmParallelism,
+} from "../../subagent/profile.js";
 import { filterSubagentChildToolNames } from "../../subagent/tool-policy.js";
 import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
 import { clearBrowserTurnState } from "../../repl/browser-turn-state.js";
@@ -1706,6 +1710,14 @@ async function executeSwarmRun(
     const unsubscribeTaskRegistry = this.runtimeTaskRegistry.subscribe?.(publishChildProgress);
     let output: AgentOutput;
     try {
+      const routingDecision = resolveSwarmParallelism({
+        nodeCount: graph.nodes.length,
+        requestedMaxParallel: graph.max_parallel,
+        spawnBudget: this.config.spawnBudget,
+      });
+      if (routingDecision.route === "integrate_inline") {
+        throw new SwarmPlanValidationError(routingDecision.reason);
+      }
       output = await this.subagentPort.runTaskDag(
         {
           sessionId: this.sessionId,
@@ -1720,7 +1732,7 @@ async function executeSwarmRun(
           workspaceRoot: this.workspaceRoot,
           trace: state.turnTraceContext,
           nodes: graph.nodes,
-          ...(graph.max_parallel === undefined ? {} : { maxParallel: graph.max_parallel }),
+          maxParallel: routingDecision.maxParallel,
         },
         {
           signal: state.turnAbortSignal,

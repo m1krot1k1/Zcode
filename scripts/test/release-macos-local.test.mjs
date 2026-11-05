@@ -24,6 +24,7 @@ import {
   bumpSemver,
   buildReleaseCreateArgs,
   clearExpectedMacReleaseAssets,
+  expectedMacReleaseAssetNames,
   macTargetArch,
   preflightMacRelease,
   replacePackageVersion,
@@ -763,4 +764,19 @@ test("опубликованные файлы и их SHA-256 совпадают
       ]),
     ),
   );
+});
+
+test("production release names do not carry the preview _TEST suffix", () => {
+  assert.deepEqual(expectedMacReleaseAssetNames("3.17.69", "arm64", "ZCode Preview"), [
+    "ZCode Preview-3.17.69-mac-arm64.dmg",
+    "ZCode Preview-3.17.69-mac-arm64.zip",
+  ]);
+});
+
+test("desktop publish placeholder is not a localhost feed", async () => {
+  const config = await readFile(
+    path.resolve(import.meta.dirname, "../../packages/desktop/electron-builder.config.js"),
+    "utf8",
+  );
+  assert.ok(!config.includes("localhost:8081"));
 });
