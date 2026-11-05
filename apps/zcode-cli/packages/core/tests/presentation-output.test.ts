@@ -183,12 +183,22 @@ describe("presentation formatter", () => {
 
     expect(text).toBe(
       [
+        "<zcode-start-report>",
+        "This is the authoritative final user-facing report authored by the start agent; start is its sole author and this text must reach the user.",
+        "Relay userText, facts, unknowns and evidenceRefs verbatim. Do not paraphrase, summarize, omit or reorder them, do not add your own retelling or claims, and do not mix them with raw child/subagent text.",
+        "",
+        "userText:",
         "Готовый пользовательский ответ",
+        "facts:",
+        "- src/a.ts: исправлено",
+        "unknowns:",
+        "- стенд недоступен",
+        "evidenceRefs:",
+        "- pnpm typecheck (exit 0)",
         "status: partial",
-        "facts: src/a.ts: исправлено",
-        "unknowns: стенд недоступен",
-        "evidence_refs: pnpm typecheck (exit 0)",
-        "unresolved: spawn_budget_exhausted: remaining=0",
+        "unresolved:",
+        "- spawn_budget_exhausted: remaining=0",
+        "</zcode-start-report>",
       ].join("\n"),
     );
     expect(text).not.toContain("RAW CHILD TEXT");
@@ -214,7 +224,7 @@ describe("presentation formatter", () => {
         }),
       );
       expect(text).toContain(`status: ${status}`);
-      expect(text).toContain("unresolved: repair: node failed");
+      expect(text).toContain("unresolved:\n- repair: node failed");
     }
   });
 

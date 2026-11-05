@@ -19,7 +19,8 @@ const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
 const snapshot = (version: string): AgentDefinitionsSnapshot => ({
   activeAgents: [
     {
-      name: "researcher",
+      // built-in владеет именем researcher; custom-профиль должен иметь уникальное имя.
+      name: "research-specialist",
       description: "Research",
       source: "user",
       tools: ["Read"],
@@ -35,7 +36,7 @@ const snapshot = (version: string): AgentDefinitionsSnapshot => ({
 const call = (id: string) => ({
   id,
   name: "Agent",
-  input: { description: "Research", prompt: "Read", subagent_type: "researcher" },
+  input: { description: "Research", prompt: "Read", subagent_type: "research-specialist" },
 });
 
 describe("subagent turn snapshot", () => {

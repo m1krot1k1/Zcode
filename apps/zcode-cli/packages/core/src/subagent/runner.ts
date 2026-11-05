@@ -384,6 +384,15 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       }
       const dagRunOptions: InternalDagRunOptions = {
         ...runOptions,
+        // 原因：runOptions 未携带 spawnBudget 时，executeSubagentTaskDag 回落到
+        // DEFAULT_SPAWN_BUDGET (32)。即使端口/root 配置了更大的预算，DAG 第一个
+        // 节点也只能拿到 31，串行 capability probe 在 D32 被截断。
+        // 修复依据：把端口 root spawnBudget 补进 DAG run options。显式的
+        // runOptions.spawnBudget 和 internalSpawnGrant 仍优先，registry 继续把实际
+        // grant 夹到每层剩余预算。
+        ...(runOptions?.spawnBudget === undefined && options.spawnBudget !== undefined
+          ? { spawnBudget: options.spawnBudget }
+          : {}),
         // План и admission должны сверяться с одним и тем же snapshot профилей,
         // даже если Host обновит список агентов во время параллельного запуска.
         internalAgentProfilesSnapshot: profileSnapshot,

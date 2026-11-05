@@ -476,14 +476,19 @@ describe("built-in profile capability gate at the runtime boundary", () => {
     },
   );
 
-  it.each(["implementer", "test-engineer", "self-improver", "knowledge-curator", "subagent-factory"])(
-    "%s keeps the worker write toolset",
-    (name) => {
-      expect(resolveChildAllowlist(name)).toEqual(
-        expect.arrayContaining(["Write", "Edit", "Bash"]),
-      );
-    },
-  );
+  it.each([
+    "implementer",
+    "coder",
+    "frontend-coder",
+    "backend-coder",
+    "infra-coder",
+    "test-engineer",
+    "self-improver",
+    "knowledge-curator",
+    "subagent-factory",
+  ])("%s keeps the worker write toolset", (name) => {
+    expect(resolveChildAllowlist(name)).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
 
   it("keeps the parent tool surface as an upper bound", () => {
     const allowlist = resolveChildAllowlist("implementer", [

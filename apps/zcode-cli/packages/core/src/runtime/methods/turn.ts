@@ -1655,6 +1655,33 @@ async function executeSwarmRun(
       throw new Error("В этом runtime недоступен исполнитель задач роя.");
     }
 
+    // 原因：routing gate 原先在 phase = "running" 和 running 事件之后才判断
+    // integrate_inline，catch 因此跳过 pre-spawn fallback（phase === "planning"），
+    // 把可回退的任务变成 SWARM_RUN_FAILED。
+    // 修复依据：先按 registry 的实际容量决定 route；integrate_inline 保持 planning，
+    // 由既有 catch 发布 failed("План роя отклонён: ...") 并继续普通 turn。
+    // Registry — владелец остатка budget и активных worker slots: routing gate получает
+    // фактическую ёмкость, а не только статический config.spawnBudget.
+    const remainingSpawns = this.runtimeTaskRegistry.getRemainingSpawnBudget?.(
+      policy.rootRunId,
+      this.sessionId,
+    );
+    const activeWorkItems =
+      this.runtimeTaskRegistry.getActiveSubagentWorkItemCount?.(rootSessionID);
+    const routingDecision = resolveSwarmParallelismWithCapacity({
+      nodeCount: graph.nodes.length,
+      ...(graph.max_parallel === undefined ? {} : { requestedMaxParallel: graph.max_parallel }),
+      ...(this.config.spawnBudget === undefined
+        ? {}
+        : { spawnBudget: this.config.spawnBudget }),
+      ...(remainingSpawns === undefined ? {} : { remainingSpawns }),
+      ...(activeWorkItems === undefined ? {} : { activeCount: activeWorkItems }),
+      activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+    });
+    if (routingDecision.route === "integrate_inline") {
+      throw new SwarmPlanValidationError(routingDecision.reason);
+    }
+
     if (durableRun && journal?.commitSwarmRunGraph) {
       journalFailClosed = true;
       const committed = await journal.commitSwarmRunGraph({
@@ -1717,29 +1744,6 @@ async function executeSwarmRun(
     const unsubscribeTaskRegistry = this.runtimeTaskRegistry.subscribe?.(publishChildProgress);
     let output: AgentOutput;
     try {
-      // Registry — владелец остатка budget и активных worker slots: routing gate получает
-      // фактическую ёмкость, а не только статический config.spawnBudget.
-      const remainingSpawns = this.runtimeTaskRegistry.getRemainingSpawnBudget?.(
-        policy.rootRunId,
-        this.sessionId,
-      );
-      const activeWorkItems =
-        this.runtimeTaskRegistry.getActiveSubagentWorkItemCount?.(rootSessionID);
-      const routingDecision = resolveSwarmParallelismWithCapacity({
-        nodeCount: graph.nodes.length,
-        ...(graph.max_parallel === undefined
-          ? {}
-          : { requestedMaxParallel: graph.max_parallel }),
-        ...(this.config.spawnBudget === undefined
-          ? {}
-          : { spawnBudget: this.config.spawnBudget }),
-        ...(remainingSpawns === undefined ? {} : { remainingSpawns }),
-        ...(activeWorkItems === undefined ? {} : { activeCount: activeWorkItems }),
-        activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
-      });
-      if (routingDecision.route === "integrate_inline") {
-        throw new SwarmPlanValidationError(routingDecision.reason);
-      }
       output = await this.subagentPort.runTaskDag(
         {
           sessionId: this.sessionId,

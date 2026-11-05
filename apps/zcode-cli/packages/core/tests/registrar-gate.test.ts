@@ -2,9 +2,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSessionId, createTurnId, type SessionId } from "@zcode/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   InMemoryRuntimeTaskRegistry,
+  WORK_LEDGER_SWEEP_INTERVAL_MS,
   createRuntimeTaskTerminalCatalogEntry,
   readRuntimeTaskTerminalCatalogRecord,
   runtimeTaskSnapshotFromTerminalCatalog,
@@ -14,6 +15,9 @@ import {
 import { WORK_LEDGER_TTL_MS, WorkLedger, type WorkClaim } from "../src/runtime-task/work-ledger.js";
 
 const WORKSPACE = "/workspace/zcode";
+
+/** Стартовое время memory-ledger; periodic-sweep тест выравнивает по нему fake Date. */
+const MEMORY_CLOCK_NOW = 1_800_000_000_000;
 
 const directories: string[] = [];
 
@@ -26,7 +30,7 @@ afterEach(() => {
 function memoryLedger(clock?: { now: number }): WorkLedger {
   return new WorkLedger({
     journalPath: null,
-    now: () => clock?.now ?? 1_800_000_000_000,
+    now: () => clock?.now ?? MEMORY_CLOCK_NOW,
   });
 }
 
@@ -436,5 +440,53 @@ describe("registrar work-claim hard gate", () => {
     const restored = runtimeTaskSnapshotFromTerminalCatalog(record!, root, "/tmp/zcode-audit");
     expect(restored.rootRunId).toBe(rootRunId);
     expect(restored.attemptId).toBe(admission.task.attemptId);
+  });
+});
+
+describe("periodic work-ledger sweep", () => {
+  it("materializes a ghost claim as stale from the interval timer and disposes cleanly", () => {
+    vi.useFakeTimers();
+    let registry: InMemoryRuntimeTaskRegistry | undefined;
+    try {
+      // ledger.now и fake Date стартуют из одной точки, иначе sweepStale получит
+      // Date.now(), не совпадающий с часами ledger'а, и TTL посчитается неверно.
+      vi.setSystemTime(MEMORY_CLOCK_NOW);
+      const ledger = memoryLedger();
+      registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+      const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+
+      // Ghost claim: running-задачи нет, поэтому heartbeat никто не продлевает.
+      ledger.claim({
+        workspacePath: WORKSPACE,
+        agentId: "ghost-periodic",
+        intent: "старая работа",
+        paths: [path],
+      });
+      expect(claimOf(ledger, "ghost-periodic")?.status).toBe("active");
+      expect(vi.getTimerCount()).toBe(1);
+      const sweep = vi.spyOn(ledger, "sweepStale");
+
+      // TTL = 2 × sweep interval: первый тик не должен гасить ещё живой claim.
+      vi.advanceTimersByTime(WORK_LEDGER_SWEEP_INTERVAL_MS);
+      expect(sweep).toHaveBeenCalledTimes(1);
+      expect(sweep).toHaveBeenLastCalledWith(MEMORY_CLOCK_NOW + WORK_LEDGER_SWEEP_INTERVAL_MS);
+      expect(claimOf(ledger, "ghost-periodic")?.status).toBe("active");
+
+      // Второй тик попадает на границу TTL и материализует stale без ручного sweepWorkLedger.
+      // ledger.now здесь фиксирован на MEMORY_CLOCK_NOW, поэтому lazy expire из list()
+      // не мог перевести claim в stale — это сделал именно интервал.
+      vi.advanceTimersByTime(WORK_LEDGER_SWEEP_INTERVAL_MS);
+      expect(sweep).toHaveBeenCalledTimes(2);
+      expect(claimOf(ledger, "ghost-periodic")?.status).toBe("stale");
+
+      registry.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      // Повторный dispose безопасен: таймера уже нет.
+      expect(() => registry?.dispose()).not.toThrow();
+    } finally {
+      registry?.dispose();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
   });
 });

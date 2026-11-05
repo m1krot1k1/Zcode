@@ -927,6 +927,12 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
             modelId: createModelId("swarm-depth-five-test-model"),
           },
           workingDirectory: workspace,
+          // 原因：root-run spawn budget 缺省为 DEFAULT_SPAWN_BUDGET (32)，串行探针的
+          // 每层 grant 严格递减 1，因此 D1–D100 在默认预算下只到 D32 就被
+          // spawn_budget_exhausted 截断，测试看起来像 D100 失败。
+          // 修复依据：测试显式给出 targetDepth+2 的预算；这足以覆盖 targetDepth 次
+          // spawn 和叶节点余量，不放宽生产默认值，也不改变链式 grant 语义。
+          spawnBudget: targetDepth + 2,
         },
         {
           eventStore,

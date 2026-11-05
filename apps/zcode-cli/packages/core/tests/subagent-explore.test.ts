@@ -35,6 +35,10 @@ import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { toMcpToolName } from "../src/mcp/index.js";
 import { PermissionService } from "../src/permission/index.js";
 import { createExploreSubagentPort } from "../src/subagent/runner.js";
+import {
+  DEFAULT_SPAWN_BUDGET,
+  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+} from "../src/runtime-task/registry.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import {
   createTestModelFactory,
@@ -716,9 +720,14 @@ describe("Explore subagent", () => {
     expect(parentFirstRequestText).not.toContain("- `test`: vitest");
     expect(parentFirstRequestText).toContain("# currentDate");
     expect(parentFirstToolNames).toContain("Agent");
-    expect(parentFirstToolNames).not.toContain("Task");
-    expect(parentFirstToolNames).not.toContain("Glob");
-    expect(parentFirstToolNames).not.toContain("Grep");
+    // Task — совместимый alias делегирования: interactive root регистрирует его вместе
+    // с Agent (includeTaskAlias в runtime-tools.ts), поэтому alias виден провайдеру.
+    expect(parentFirstToolNames).toContain("Task");
+    // Root — обычная рабочая сессия: поиск и запись доступны, в отличие от read-only
+    // Explore child, чей точный набор проверяется ниже.
+    expect(parentFirstToolNames).toEqual(
+      expect.arrayContaining(["Glob", "Grep", "Read", "Write", "Edit"]),
+    );
     expect(parentFirstToolNames).not.toContain("GoalRead");
     expect(childRequests).toHaveLength(1);
     expect(childRequestText).not.toContain("# agentsMd");
@@ -744,11 +753,24 @@ describe("Explore subagent", () => {
       "WebSearch",
       RESPOND_TO_COORDINATOR_TOOL_NAME,
     ]);
+    // Host добавляет в child system prompt конверт spawn: level, выданный grant и
+    // фактическую ёмкость registry. Без явного spawnBudget root-run действует
+    // DEFAULT_SPAWN_BUDGET, а один активный child занимает один worker slot.
+    const expectedSpawnEnvelope = [
+      '<zcode-spawn-envelope level="1"',
+      `remaining_spawns="${DEFAULT_SPAWN_BUDGET - 1}"`,
+      `max_parallel="${SUBAGENT_ROOT_MAX_ACTIVE_TASKS - 1}" />`,
+    ].join(" ");
+    // context-builder добавляет \n перед agentPrompt; ожидаемый второй system message
+    // начинается с того же \n, поэтому конверт вставляется сразу после него.
     expect(
       childRequests[0].messages
         .filter((message: any) => message.role === "system")
         .map((message: any) => message.content),
-    ).toEqual(exploreSystemMessages);
+    ).toEqual([
+      exploreSystemMessages[0],
+      `\n${expectedSpawnEnvelope}\n\n${exploreSystemMessages[1].slice(1)}`,
+    ]);
     expect(childRequests[0].messages[1].content).not.toContain(
       "You help the user with software engineering work in the current workspace.",
     );
@@ -3018,7 +3040,7 @@ describe("Explore subagent", () => {
     expect(secondParentRequestText).toContain("mcp__required-server__search");
   });
 
-  it("starts a wildcard general-purpose subagent when plugin MCP status uses raw server names", async () => {
+  it("starts a wildcard subagent when plugin MCP status uses raw server names", async () => {
     const sessionId = createSessionId("runtime-subagent-wildcard-plugin-mcp");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -3076,6 +3098,17 @@ describe("Explore subagent", () => {
         },
         mode: "build",
         workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "plugin-mcp-worker",
+              description: "Wildcard worker for plugin MCP tools.",
+              source: "user",
+              systemPrompt: "Use every inherited tool within the configured MCP scope.",
+              tools: ["*"],
+            },
+          ],
+        },
       },
       {
         eventStore,
@@ -3100,12 +3133,12 @@ describe("Explore subagent", () => {
                   text: "",
                   toolCalls: [
                     {
-                      id: "call_general_purpose",
+                      id: "call_plugin_mcp_worker",
                       name: "Agent",
                       input: {
                         description: "测试 plugin MCP 名称",
-                        prompt: "确认 general-purpose 可以启动。",
-                        subagent_type: "general-purpose",
+                        prompt: "确认 wildcard worker 可以启动。",
+                        subagent_type: "plugin-mcp-worker",
                       },
                     },
                   ],
@@ -3116,7 +3149,7 @@ describe("Explore subagent", () => {
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
-                text: "父 agent 收到了 general-purpose 结果。",
+                text: "父 agent 收到了 plugin-mcp-worker 结果。",
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
@@ -3131,7 +3164,7 @@ describe("Explore subagent", () => {
             return {
               finishReason: "stop",
               providerMetadata: undefined,
-              text: "general-purpose 正常启动。",
+              text: "plugin-mcp-worker 正常启动。",
               usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
             };
           },
@@ -3139,12 +3172,12 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("让 general-purpose 跑一下");
+    const result = await runtime.executeTurn("让 wildcard worker 跑一下");
     const secondParentRequestText = parentRequests[1].messages
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
 
-    expect(result.response).toBe("父 agent 收到了 general-purpose 结果。");
+    expect(result.response).toBe("父 agent 收到了 plugin-mcp-worker 结果。");
     expect(childRequests).toHaveLength(1);
     expect(secondParentRequestText).not.toContain(
       "Required MCP server is not connected",
@@ -3875,6 +3908,17 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "permission-reviewer",
+              description: "Checks permission chains and reports progress to the coordinator.",
+              source: "user",
+              systemPrompt: "Check permission chains and report progress.",
+              tools: ["Read", "TodoRead"],
+            },
+          ],
+        },
       },
       {
         eventStore,
@@ -3902,7 +3946,7 @@ describe("Explore subagent", () => {
                         description: "检查权限链路",
                         prompt:
                           "检查权限链路，并在收到询问时回复进度后继续任务。",
-                        subagent_type: "general-purpose",
+                        subagent_type: "permission-reviewer",
                       },
                     },
                   ],
@@ -4321,7 +4365,8 @@ describe("Explore subagent", () => {
         subagents: {
           profiles: [
             {
-              name: "reviewer",
+              // built-in владеет именем reviewer; custom-профиль должен иметь уникальное имя.
+              name: "review-specialist",
               description: "Review",
               source: "user",
               systemPrompt: "Review",
@@ -4356,7 +4401,7 @@ describe("Explore subagent", () => {
       turnId,
     };
     const first = await port.run({
-      agentType: "reviewer",
+      agentType: "review-specialist",
       description: "Review",
       parentToolCallId: "first",
       prompt: "Review first",

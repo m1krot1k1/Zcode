@@ -6,17 +6,19 @@
 
 - **read-only маршрутизатор** (`start`, `orchestrator`) — только читает и делегирует;
 - **инспекция** (`researcher`, `reviewer`, `security-reviewer`, `evaluator`) — читает и воспроизводит проверки командой, но не меняет файлы;
-- **исполнитель** (`implementer`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory`) — полный рабочий набор, включая запись и команды.
+- **исполнитель** (`implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory`) — полный рабочий набор, включая запись и команды.
+
+Специализированные исполнители делят одну и ту же способность, но разные границы роли: `coder` — production-код в назначенной области, спецификации и regression tests; `frontend-coder` — UI/renderer/design system, `DESIGN.md`, темы, i18n и desktop/mobile; `backend-coder` — services/runtime/protocol/data, границы архитектуры, конкурентность и идемпотентность; `infra-coder` — build/release/CI/scripts/electron, упаковка и кросс-платформенность. Границы заданы prompt-контрактом и назначенной областью, а не разным набором инструментов.
 
 Декларируемый список инструментов принадлежит профилю: `apps/zcode-cli/packages/core/src/subagent/profile.ts`. Фактическую способность child-сессии определяет runtime: `resolveSubagentToolAllowlist` в `apps/zcode-cli/packages/core/src/runtime/methods/subagent.ts` пересекает `request.allowedTools` с реально доступными инструментами родителя (`this.getTools()`), применяет child-запреты (`EnterPlanMode`/`ExitPlanMode` и `disallowedTools`) и добавляет управляющий канал `RespondToCoordinator`. Поэтому список профиля — это верхняя граница, а не единственная защита; профиль не может расширить способность родителя.
 
 ## Матрица ролей
 
-| Класс                   | Профили                                                                                  | Инструменты                                                                                                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read-only маршрутизатор | `start`, `orchestrator`                                                                  | `Read`, `Glob`, `Grep`, `Task`, `Skill`                                                                                                                         |
-| Инспекция               | `researcher`, `reviewer`, `security-reviewer`, `evaluator`                               | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
-| Исполнитель             | `implementer`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory` | `Read`, `Glob`, `Grep`, `Write`, `Edit`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop` |
+| Класс                   | Профили                                                                                                                                             | Инструменты                                                                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read-only маршрутизатор | `start`, `orchestrator`                                                                                                                             | `Read`, `Glob`, `Grep`, `Task`, `Skill`                                                                                                                         |
+| Инспекция               | `researcher`, `reviewer`, `security-reviewer`, `evaluator`                                                                                          | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
+| Исполнитель             | `implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory` | `Read`, `Glob`, `Grep`, `Write`, `Edit`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop` |
 
 `start` и `orchestrator` не получают `Bash`, `Write`, `Edit`, `WebFetch` и `WebSearch`: маршрутизатор не исполняет команды, не правит файлы и не подменяет делегирование собственной реализацией. Read-only триаж выполняется чтением (`Read`/`Glob`/`Grep`). Если `Task` недоступен или хост отклонил вызов, профиль фиксирует blocker и возвращает его вызывающему.
 
@@ -25,12 +27,27 @@
 ## Инварианты
 
 1. `start`/`orchestrator` никогда не реализуют задачу сами; любая задача, требующая команд, тестов, правок или сбора доказательств, делегируется.
-2. `implementer`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory` сохраняют `Write`/`Edit`/`Bash`.
+2. `implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory` сохраняют `Write`/`Edit`/`Bash`.
 3. Итоговая способность child = пересечение `profile.tools` с фактической allowlist родителя и child-запретами. Профиль не расширяет родителя.
 4. Промпт не обещает инструмент, которого нет в объявленном наборе. `START_TOOLING_AND_NESTING_CONTRACT` перечисляет точный набор `start`.
 5. `RespondToCoordinator` добавляется runtime как управляющий канал и не входит в профильную матрицу.
 6. Root-only инструменты из `ROOT_ONLY_TOOL_NAMES` не попадают в профили, пока child runtime их не регистрирует.
 7. `EnterPlanMode` и `ExitPlanMode` принудительно запрещены всем child-сессиям.
+8. Встроенная роль владеет своим именем: custom-профиль с тем же именем (без учёта регистра) не заменяет её prompt, tools или skills. `normalizeAgentProfiles` сохраняет built-in и добавляет custom-профиль только под уникальным именем.
+9. `subagent-factory` создаёт файл только при устойчивом направлении, которого нет в каталоге; существующая роль или навык важнее нового профиля.
+
+## Границы custom-профилей и фабрики
+
+`subagent-factory` — единственный встроенный профиль, который создаёт новые роли. Формат: `.zcode/agents/<kebab-name>.md` с YAML frontmatter (`name`, `description`, `tools`, `skills`; опционально `disallowedTools` и `mcpServers`) и телом — системными правилами роли.
+
+- Имя в kebab-case не совпадает с built-in ролью или зарезервированными `general`, `general-purpose`, `Explore`.
+- `tools` — только имена из `WORKER_SUBAGENT_TOOL_NAMES`; root-only инструменты не добавляются.
+- `skills` — только реально доступные имена из текущего Skill-каталога.
+- Запрещены секреты, токены, персональные данные и внутренние адреса; запрещены generic-роль «делаю всё» и профиль под разовую задачу, один файл или одну правку.
+- Фабрика не изменяет встроенные профили и не подменяет их имена. Если поручение не разрешает запись, она возвращает готовый Markdown и blocker.
+- После Write фабрика возвращает путь, имя, tools, skills, правила роли и пометку, что профиль станет доступен в следующем turn. В окружении без Host-загрузчика каталог перечитывается после перезапуска.
+
+Custom-профиль с уникальным именем остаётся обычной пользовательской ролью: он не входит в canonical Swarm snapshot, но доступен обычным `Agent`/`Task` вызовам, если вызывающий разрешает custom-профили.
 
 ## Поток способности
 
@@ -65,5 +82,8 @@ sequenceDiagram
 5. Runtime enforcement: если родитель не имеет инструмента, профиль не получает его даже при наличии в `profile.tools`.
 6. Prompt honesty: промпт `start` перечисляет реальный набор и явно сообщает, что `Bash`/`Write`/`Edit` недоступны; промпты инспекционных ролей сообщают «Bash доступен, Write/Edit недоступны».
 7. Ни один профиль не рекламирует root-only инструменты и инструменты без child-обработчика.
+8. Roster содержит ровно 15 канонических ролей в стабильном порядке; `getSwarmAgentProfiles` возвращает их независимо от custom-каталога.
+9. Custom-профиль `start`/`implementer` не меняет built-in tools и systemPrompt; custom-профиль с уникальным именем добавляется в каталог и виден в model prompt.
+10. `subagent-factory` описывает формат `.zcode/agents/<kebab-name>.md`, worker-only tools, доступные skills, запрет секретов/generic/разовых задач и пометку про следующий turn. `start` называет специализированных владельцев, `orchestrator` требует 3–5 параллельных веток примерно до 10 минут и вызывает фабрику для отсутствующего устойчивого направления.
 
-Проверки: `tests/subagent-profile.test.ts` (матрица и промпты) и `tests/runtime-tool-allowlist.test.ts` (runtime enforcement через `resolveSubagentToolAllowlist`).
+Проверки: `tests/subagent-profile.test.ts` (матрица, промпты, roster и приоритет built-in) и `tests/runtime-tool-allowlist.test.ts` (runtime enforcement через `resolveSubagentToolAllowlist`).

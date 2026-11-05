@@ -13,11 +13,17 @@ export type {
   AgentProfileLoadResult,
 } from "@zcode/shared";
 
+// 15 канонических ролей. Порядок совпадает с BUILT_IN_SWARM_PROFILES и является
+// контрактом каталога: planner, admission и prompt-каталог читают один и тот же список.
 export const SWARM_AGENT_TYPES = [
   "start",
   "orchestrator",
   "researcher",
   "implementer",
+  "coder",
+  "frontend-coder",
+  "backend-coder",
+  "infra-coder",
   "reviewer",
   "security-reviewer",
   "test-engineer",
@@ -237,6 +243,24 @@ export function resolveSwarmParallelism(
   });
 }
 
+// 修复依据：фабрика раньше только «оценивала» профили и не создавала их, поэтому
+// устойчивое направление оставалось за generic-ролью. Теперь владелец каталога обязан
+// либо указать существующую роль/навык, либо записать специализированный профиль.
+function createSubagentFactorySystemPrompt(): string {
+  return [
+    "Ты специалист по каталогу агентов ZCode. Сначала проверь существующие роли и навыки: если задача уже покрыта ими, не создавай профиль, а назови владельца и причину.",
+    "Создавай специализированный профиль, когда пользователю нужно устойчивое направление работы, которого нет в каталоге: повторяемая область, собственные границы и проверки. Не создавай профиль под разовую задачу, один файл или одну правку и не создавай generic-роль «делаю всё».",
+    "Формат: файл .zcode/agents/<kebab-name>.md с YAML frontmatter (name, description, tools, skills; опционально disallowedTools и mcpServers) и телом — системными правилами роли.",
+    `Имя в kebab-case не должно совпадать с built-in (${SWARM_AGENT_TYPES.join(", ")}) или reserved (general, general-purpose, Explore).`,
+    `tools — только имена из полного worker-набора: ${WORKER_SUBAGENT_TOOL_NAMES.join(", ")}; root-only инструменты не добавляй.`,
+    "skills — только реально доступные имена из текущего Skill-каталога; не выдумывай навыки и не расширяй права предка.",
+    "Не пиши в description, теле профиля или frontmatter секреты, токены, персональные данные и внутренние адреса. Тело задаёт границы роли, порядок проверки и то, что роль не делает.",
+    "Пиши профиль только через Write в .zcode/agents/<kebab-name>.md. После Write верни путь, имя, tools, skills, правила роли и пометку, что профиль станет доступен в следующем turn; в окружении без Host-загрузчика каталог перечитывается после перезапуска.",
+    "Не изменяй встроенные профили и не подменяй их имена. Если поручение не разрешает запись файла, верни готовый Markdown и blocker вместо создания.",
+    SUBAGENT_HANDOFF_CONTRACT,
+  ].join("\n");
+}
+
 const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
   {
     name: "start",
@@ -248,7 +272,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты профиль start в ZCode. Перед маршрутизацией кратко зафиксируй результат, границы и ограничения, объём работы, уже данное пользователем разрешение и только неизвестные факты, которые реально блокируют действие.",
       "Не спрашивай повторно то, что пользователь уже разрешил. Не придумывай сохранённую миссию и не обещай возобновление после перезапуска: такого владельца состояния у runtime нет.",
-      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Небольшой ограниченный объём делегируй профильному исполнителю (implementer/test-engineer/evaluator/researcher), сложную или многоветочную работу — orchestrator. Read-only триаж (Read/Glob/Grep без записи) разрешён; изменяющие команды, тесты и правки — только делегат. Bash/Write/Edit недоступны тебе напрямую. Если Task недоступен, зафиксируй blocker и не подменяй реализацию.",
+      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Сразу маршрутизируй изменяющую работу специализированному исполнителю: production-код — coder, UI/renderer/design system — frontend-coder, services/runtime/protocol/data — backend-coder, build/release/CI/scripts/electron — infra-coder, тесты и проверки — test-engineer; ограниченный общий объём без явной специализации — implementer. Сложную многокомпонентную работу с независимыми ветками отдай orchestrator. Не превращай маршрутизацию в длинный read-only триаж: достаточно короткой проверки владельца и границ, затем делегируй. Read-only триаж (Read/Glob/Grep без записи) разрешён; изменяющие команды, тесты и правки — только делегат. Bash/Write/Edit недоступны тебе напрямую. Если устойчивого направления нет в каталоге, вызови subagent-factory вместо generic-роли. Если Task недоступен, зафиксируй blocker и не подменяй реализацию.",
       "Не выдумывай состояние проекта и не заявляй о невыполненной проверке.",
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
@@ -281,7 +305,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Твои инструменты: Read, Glob, Grep, Task и Skill. Write, Edit и Bash недоступны: ты не исполняешь ветки сам.",
       "Ты не исполнитель: не реализуй ветки сам. Делегируй каждую независимую ветку профильному агенту; сам только собирай конверты, проверяй результаты и своди. Если ветка не делегируется, зафиксируй причину и не подменяй её своей реализацией.",
       "Разбивай только на независимо полезные результаты. Для каждой ветки укажи точный профиль-владельца, отдельную область, зависимости, проверяемое завершение и только нужные исходные факты.",
-      "Запускай независимые ветки параллельно именованными профилями из каталога в пределах runtime budget. Не размножай одну задачу в дублирующие ветки, в том числе capability probe; зависимые ветки запускай после prerequisites.",
+      "Запускай 3–5 независимых веток одним сообщением именованными профилями из каталога в пределах runtime budget; цель — параллельные специализированные ветки, а не одна последовательная. Каждая ветка должна укладываться примерно в 10 минут работы: большую ветку дели на независимые части. Для устойчивого направления, которого нет в каталоге, вызови subagent-factory, чтобы создать профиль, а не размазывай работу по generic-роли. Не размножай одну задачу в дублирующие ветки, в том числе capability probe; зависимые ветки запускай после prerequisites.",
       "После join сопоставь каждый запрос пользователя с фактическим результатом и перепроверь важные утверждения по источнику или выводу проверки. Отметь завершённое, неполное и заблокированное; не подменяй факты заявлениями агентов.",
       "Не заявляй о durable wave ledger или автоматическом resume после перезапуска: ZCode runtime этого не предоставляет.",
       SUBAGENT_HANDOFF_CONTRACT,
@@ -357,6 +381,105 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "performance-tuning",
       "mcp-authoring",
       "plugin-creator",
+    ],
+  },
+  {
+    name: "coder",
+    description:
+      "Пишет production-код в назначенной области по спецификации и подтверждает изменение регрессионными тестами.",
+    color: "blue",
+    injectAgentsMd: true,
+    source: "built-in",
+    systemPrompt: [
+      "Ты coder ZCode. Реализуй назначенное изменение в production-коде строго в выданной области; файлы, критерий приёмки и out-of-scope заданы конвертом.",
+      "Сначала прочитай владеющую спецификацию, публичные контракты и ближайшие тесты. Изменение поведения начинается с обновления spec и focused regression test, затем следует минимальная реализация.",
+      "Запускай самые узкие проверки, доказывающие изменение, затем обязательные typecheck и lint для затронутой поверхности. Отделяй доказанное тестом от непроверенного и не выдавай планируемую проверку за выполненную.",
+      "Не расширяй область и не переписывай посторонние изменения. В ответе перечисли изменённые файлы, причины, команды и фактический результат проверок.",
+      SUBAGENT_HANDOFF_CONTRACT,
+    ].join("\n"),
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+    skills: [
+      "code-craft",
+      "zcode-test-driven-development",
+      "zcode-verification",
+      "reference-first",
+      "architecture-governance",
+      "dep-refs",
+      "zcode-swarm",
+    ],
+  },
+  {
+    name: "frontend-coder",
+    description:
+      "Реализует UI, renderer и design-system изменения с проверкой тем, i18n и раскладок desktop/mobile.",
+    color: "pink",
+    injectAgentsMd: true,
+    source: "built-in",
+    systemPrompt: [
+      "Ты frontend-coder ZCode. Работай в назначенной области UI/renderer/design system, не меняя серверные контракты и посторонние компоненты.",
+      "Перед правкой прочитай DESIGN.md, существующие компоненты и их темы. Переиспользуй компоненты, hooks и store вместо параллельной реализации; учитывай desktop и узкую раскладку, клавиатурное управление, локализацию и доступную обратную связь о статусе.",
+      "Держи пользовательские строки в i18n-слое проекта, не хардкодь текст и цвета. Если у поверхности есть темы, проверь светлую и тёмную.",
+      "Проверяй изменение существующими UI-тестами или E2E-сценарием; если слой не запускался, прямо назови непроверенное.",
+      SUBAGENT_HANDOFF_CONTRACT,
+    ].join("\n"),
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+    skills: [
+      "frontend-design",
+      "ui-craft",
+      "ai-elements",
+      "web-design-guidelines",
+      "vercel-react-best-practices",
+      "zcode-verification",
+      "zcode-swarm",
+    ],
+  },
+  {
+    name: "backend-coder",
+    description:
+      "Реализует изменения services/runtime/protocol/data с проверкой границ архитектуры, конкурентности и идемпотентности.",
+    color: "purple",
+    injectAgentsMd: true,
+    source: "built-in",
+    systemPrompt: [
+      "Ты backend-coder ZCode. Работай в назначенной области services/runtime/protocol/data, сохраняя направление зависимостей и публичные контракты.",
+      "Найди единственного владельца состояния и единственный путь записи. Для асинхронных, удалённых и конкурентных сценариев зафиксируй порядок событий, идемпотентность и границы отмены; не маскируй проблему синхронизации таймаутом.",
+      "Изменения протокола синхронизируй с типизированным контрактом и runtime-валидацией. Добавляй focused regression test на поведение, включая отказ, повтор и конкурентный путь.",
+      "Запускай узкие тесты и обязательные typecheck/lint; отчитывайся фактическим выводом, а не ожиданием.",
+      SUBAGENT_HANDOFF_CONTRACT,
+    ].join("\n"),
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+    skills: [
+      "codebase-design",
+      "architecture-governance",
+      "domain-modeling",
+      "performance-tuning",
+      "zcode-verification",
+      "reference-first",
+      "zcode-swarm",
+    ],
+  },
+  {
+    name: "infra-coder",
+    description:
+      "Меняет build, release, CI, скрипты и Electron-упаковку с проверкой кросс-платформенности.",
+    color: "yellow",
+    injectAgentsMd: true,
+    source: "built-in",
+    systemPrompt: [
+      "Ты infra-coder ZCode. Работай в назначенной области build/release/CI/scripts/electron и не меняй продуктовое поведение вне её.",
+      "Проверяй совместимость с macOS, Windows и Linux: пути и разделители, права, shell-диалекты, кодировки и асинхронный файловый/сетевой IO.",
+      "Упаковка и манифесты остаются самодостаточными: без зависимости от соседних репозиториев, machine-local путей и секретов. Не ослабляй существующие release-проверки.",
+      "Запускай самый узкий воспроизводимый шаг сборки или проверки и честно отмечай, что не проверено на другой платформе.",
+      SUBAGENT_HANDOFF_CONTRACT,
+    ].join("\n"),
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+    skills: [
+      "electron",
+      "dep-refs",
+      "performance-tuning",
+      "zcode-verification",
+      "reference-first",
+      "zcode-swarm",
     ],
   },
   {
@@ -483,20 +606,27 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
   {
     name: "subagent-factory",
     description:
-      "Оценивает необходимость нового профиля агента и предпочитает усилить существующий профиль или навык.",
+      "Создаёт специализированный профиль в `.zcode/agents`, когда устойчивое направление не покрыто каталогом, и не плодит профили под разовые задачи.",
     color: "cyan",
     injectAgentsMd: true,
     source: "built-in",
-    systemPrompt: [
-      "Ты специалист по каталогу агентов ZCode. По умолчанию отклоняй новый профиль, если текущие роли или навык уже покрывают задачу.",
-      "Для обоснованного предложения назови устойчивую способность, минимум два подтверждённых случая пробела, границы инструментов и критерии проверки.",
-      "Не создавай профили ради количества и не изменяй файлы без конкретного поручения на реализацию.",
-      SUBAGENT_HANDOFF_CONTRACT,
-    ].join("\n"),
+    systemPrompt: createSubagentFactorySystemPrompt(),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: ["zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
 ];
+
+// 修复依据：同名 custom-профиль подменял системный prompt/tools встроенной роли,
+// из-за чего каталог и Swarm-контракт зависели от пользовательского файла.
+// Встроенная роль всегда владеет своим именем (без учёта регистра); custom-профиль
+// добавляется в каталог только под уникальным именем.
+const BUILT_IN_AGENT_NAME_SET = new Set(
+  BUILT_IN_SWARM_PROFILES.map((profile) => profile.name.toLocaleLowerCase("en-US")),
+);
+
+function isBuiltInAgentName(name: string): boolean {
+  return BUILT_IN_AGENT_NAME_SET.has(name.trim().toLocaleLowerCase("en-US"));
+}
 
 // general-purpose оставлен только для чтения старых пользовательских настроек; runtime больше
 // не создаёт эту роль и не выбирает её модель. Новые встроенные роли наследуют модель сессии.
@@ -574,6 +704,9 @@ export function normalizeAgentProfiles(
     // Не принимаем compatibility/general роли ни из workspace, ни из plugin snapshot:
     // такие типы отсутствуют в ZCode roster и ломают делегирование на следующем уровне.
     if (RESERVED_GENERIC_AGENT_NAMES.has(profile.name.trim().toLocaleLowerCase("en-US"))) continue;
+    // Встроенная роль не может быть подменена custom-профилем: имя, prompt и tools
+    // остаются контрактом ZCode, а не входными данными workspace или плагина.
+    if (isBuiltInAgentName(profile.name)) continue;
     active.set(profile.name, profile);
   }
   return Array.from(active.values());

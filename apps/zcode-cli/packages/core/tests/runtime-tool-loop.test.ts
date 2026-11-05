@@ -3630,6 +3630,95 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[3]?.childSessionIds).toEqual(["sess_swarm-child-a", "sess_swarm-child-b"]);
   });
 
+  it("routes a zero-capacity explicit swarm to integrate_inline without dispatching the DAG", async () => {
+    const sessionId = createSessionId("runtime-swarm-zero-capacity");
+    const eventStore = createTestSessionEventStore();
+    const runTaskDag = vi.fn();
+    const requestedPrompts: string[] = [];
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        maxOutputTokens: 80,
+        mode: "build",
+        spawnBudget: 0,
+        modelSelection: createTestModelSelection("test/swarm-zero-capacity"),
+      },
+      {
+        eventStore,
+        subagentPort: { runTaskDag } as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            const requestText = providerMessagesToText(request.messages);
+            requestedPrompts.push(requestText);
+            if (requestText.includes("Decide whether this task needs independent parallel work")) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: JSON.stringify({
+                  decision: "split",
+                  graph: {
+                    max_parallel: 2,
+                    nodes: [
+                      {
+                        id: "zero-a",
+                        description: "Inspect A",
+                        prompt: "Inspect A",
+                        subagent_type: "researcher",
+                      },
+                      {
+                        id: "zero-b",
+                        description: "Inspect B",
+                        prompt: "Inspect B",
+                        subagent_type: "implementer",
+                      },
+                    ],
+                  },
+                }),
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "inline answer after zero-capacity routing",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run this task as a swarm", undefined, {
+      intent: { orchestrationMode: "swarm" },
+    });
+
+    // Planner — обычный inline model call, а не spawn: он строит граф до проверки
+    // ёмкости. При integrate_inline turn продолжается обычным inline-ответом.
+    expect(result.response).toBe("inline answer after zero-capacity routing");
+    expect(requestedPrompts).toHaveLength(2);
+    expect(requestedPrompts[0]).toContain(
+      "Decide whether this task needs independent parallel work",
+    );
+    expect(runTaskDag).not.toHaveBeenCalled();
+
+    const events = await eventStore.getEvents(sessionId);
+    expect(events.some((event) => event.type === SessionEventType.SubagentSpawned)).toBe(false);
+    const swarmEvents = events
+      .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
+      .map(
+        (event) =>
+          event.payload as {
+            status?: string;
+            summary?: string;
+            childSessionIds?: string[];
+          },
+      );
+    expect(swarmEvents.map((event) => event.status)).toEqual(["planning", "failed"]);
+    expect(swarmEvents[1]?.summary).toContain("План роя отклонён");
+    expect(swarmEvents[1]?.summary).toContain("no spawn budget");
+    expect(swarmEvents[1]?.childSessionIds).toEqual([]);
+  }, 30_000);
+
   it("journals an accepted root swarm before projection and dispatch, then rejects duplicate input without redispatch", async () => {
     const sessionId = createSessionId("runtime-swarm-durable-admission");
     const eventStore = createTestSessionEventStore();
@@ -15309,8 +15398,12 @@ describe("AgentRuntime tool loop", () => {
       source: "agent_listing_delta",
       agentListingDelta: {
         addedTypes: [
+          "backend-coder",
+          "coder",
           "evaluator",
+          "frontend-coder",
           "implementer",
+          "infra-coder",
           "knowledge-curator",
           "orchestrator",
           "researcher",

@@ -10,6 +10,7 @@ import {
   normalizeAgentProfiles,
   parseAgentProfileFromMarkdown,
   ROOT_ONLY_TOOL_NAMES,
+  WORKER_SUBAGENT_TOOL_NAMES,
   decideDelegationRoute,
   resolveSwarmParallelism,
 } from "../src/subagent/profile.js";
@@ -319,8 +320,10 @@ tools:
     expect(normalAgentPrompt).toContain("- research-helper: Workspace research role");
     expect(normalAgentPrompt).not.toContain("general-purpose");
     expect(normalAgentPrompt).not.toContain("- general:");
+    // built-in владеет своим именем: custom reviewer не подменяет системную роль.
+    expect(normalAgentPrompt).not.toContain("Workspace attempt to shadow the canonical role");
     expect(normalAgentPrompt).toContain(
-      "- reviewer: Workspace attempt to shadow the canonical role",
+      "- reviewer: Независимо ищет ошибки, пропущенные случаи и нарушения спецификации; не меняет код.",
     );
     const forgedBuiltInReviewer = {
       name: "reviewer",
@@ -638,6 +641,203 @@ Review carefully.`,
   });
 });
 
+// 回归依据：custom-профиль с именем встроенной роли подменял prompt/tools, поэтому
+// каталог и Swarm-контракт зависели от пользовательского файла. Теперь built-in выигрывает.
+describe("built-in profile precedence over custom profiles", () => {
+  const builtIn = (name: string) =>
+    getSwarmAgentProfiles(normalizeAgentProfiles([])).find((profile) => profile.name === name);
+
+  it("keeps start and implementer prompts and tools when a custom profile reuses their names", () => {
+    const merged = normalizeAgentProfiles([
+      {
+        name: "start",
+        description: "Custom start",
+        source: "project",
+        systemPrompt: "CUSTOM_START_PROMPT",
+        tools: ["Read", "Write", "Edit", "Bash"],
+      },
+      {
+        name: "implementer",
+        description: "Custom implementer",
+        source: "user",
+        systemPrompt: "CUSTOM_IMPLEMENTER_PROMPT",
+        tools: ["Read"],
+      },
+    ]);
+
+    expect(merged.find((profile) => profile.name === "start")).toEqual(builtIn("start"));
+    expect(merged.find((profile) => profile.name === "implementer")).toEqual(builtIn("implementer"));
+    expect(merged.find((profile) => profile.name === "start")?.systemPrompt).not.toContain(
+      "CUSTOM_START_PROMPT",
+    );
+    expect(merged.find((profile) => profile.name === "implementer")?.tools).toEqual(
+      expect.arrayContaining(["Write", "Edit", "Bash"]),
+    );
+  });
+
+  it("blocks same-name built-ins regardless of casing", () => {
+    const merged = normalizeAgentProfiles([
+      {
+        name: "Reviewer",
+        description: "Case-variant shadow",
+        source: "project",
+        systemPrompt: "CUSTOM_REVIEWER_PROMPT",
+        tools: ["Read"],
+      },
+    ]);
+
+    expect(merged.filter((profile) => profile.name.toLowerCase() === "reviewer")).toHaveLength(1);
+    expect(merged.find((profile) => profile.name === "Reviewer")).toBeUndefined();
+  });
+
+  it("adds a custom profile with a unique name", () => {
+    const merged = normalizeAgentProfiles([
+      {
+        name: "mobile-coder",
+        description: "Mobile platform specialist",
+        source: "project",
+        systemPrompt: "MOBILE_CODER_PROMPT",
+        tools: ["Read", "Write"],
+      },
+    ]);
+
+    expect(merged.find((profile) => profile.name === "mobile-coder")).toMatchObject({
+      description: "Mobile platform specialist",
+      source: "project",
+      systemPrompt: "MOBILE_CODER_PROMPT",
+      tools: ["Read", "Write"],
+    });
+    expect(formatAgentProfilesForPrompt(merged)).toContain(
+      "- mobile-coder: Mobile platform specialist",
+    );
+  });
+});
+
+// 15 канонических ролей: специализированные исполнители плюс прежний roster.
+describe("specialized worker roster", () => {
+  const profiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
+  const profile = (name: string) => profiles().find((candidate) => candidate.name === name);
+
+  it("ships 15 canonical roles in a stable order", () => {
+    expect(SWARM_AGENT_TYPES).toHaveLength(15);
+    expect(profiles().map(({ name }) => name)).toEqual([...SWARM_AGENT_TYPES]);
+  });
+
+  it.each(["coder", "frontend-coder", "backend-coder", "infra-coder"])(
+    "%s is a built-in worker with the full toolset and AGENTS.md injection",
+    (name) => {
+      expect(profile(name)).toMatchObject({
+        injectAgentsMd: true,
+        source: "built-in",
+        tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+      });
+      expect(profile(name)?.description.length).toBeGreaterThan(0);
+      expect(profile(name)?.color).toBeDefined();
+      expect(profile(name)?.systemPrompt).toContain("下一负责人");
+    },
+  );
+
+  it("declares the requested skill allowlists", () => {
+    expect(profile("coder")?.skills).toEqual([
+      "code-craft",
+      "zcode-test-driven-development",
+      "zcode-verification",
+      "reference-first",
+      "architecture-governance",
+      "dep-refs",
+      "zcode-swarm",
+    ]);
+    expect(profile("frontend-coder")?.skills).toEqual([
+      "frontend-design",
+      "ui-craft",
+      "ai-elements",
+      "web-design-guidelines",
+      "vercel-react-best-practices",
+      "zcode-verification",
+      "zcode-swarm",
+    ]);
+    expect(profile("backend-coder")?.skills).toEqual([
+      "codebase-design",
+      "architecture-governance",
+      "domain-modeling",
+      "performance-tuning",
+      "zcode-verification",
+      "reference-first",
+      "zcode-swarm",
+    ]);
+    expect(profile("infra-coder")?.skills).toEqual([
+      "electron",
+      "dep-refs",
+      "performance-tuning",
+      "zcode-verification",
+      "reference-first",
+      "zcode-swarm",
+    ]);
+  });
+
+  it("states each specialized role boundary in its prompt", () => {
+    expect(profile("coder")?.description).toContain("регрессионными тестами");
+    expect(profile("coder")?.systemPrompt).toContain("production-код");
+    expect(profile("frontend-coder")?.systemPrompt).toContain("DESIGN.md");
+    expect(profile("frontend-coder")?.systemPrompt).toContain("i18n");
+    expect(profile("frontend-coder")?.systemPrompt).toContain("desktop");
+    expect(profile("backend-coder")?.systemPrompt).toContain("services/runtime/protocol/data");
+    expect(profile("backend-coder")?.systemPrompt).toContain("идемпотентность");
+    expect(profile("backend-coder")?.systemPrompt).toContain("конкурентных");
+    expect(profile("infra-coder")?.systemPrompt).toContain("build/release/CI/scripts/electron");
+    expect(profile("infra-coder")?.systemPrompt).toContain("Windows");
+    expect(profile("infra-coder")?.systemPrompt).toContain("Linux");
+  });
+
+  it("routes start to specialized owners instead of a long read-only triage", () => {
+    const prompt = profile("start")?.systemPrompt ?? "";
+
+    for (const role of [
+      "coder",
+      "frontend-coder",
+      "backend-coder",
+      "infra-coder",
+      "test-engineer",
+    ]) {
+      expect(prompt, role).toContain(role);
+    }
+    expect(prompt).toContain("Не превращай маршрутизацию в длинный read-only триаж");
+    expect(prompt).toContain("subagent-factory");
+    expect(prompt).toContain("orchestrator");
+  });
+
+  it("asks orchestrator for 3-5 parallel specialized branches with a 10-minute bound", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("3–5 независимых веток одним сообщением");
+    expect(prompt).toContain("10 минут");
+    expect(prompt).toContain("большую ветку дели");
+    expect(prompt).toContain("subagent-factory");
+    expect(prompt).toContain("параллельные специализированные ветки");
+  });
+
+  it("turns subagent-factory into a real profile author with catalog boundaries", () => {
+    const factory = profile("subagent-factory");
+    const prompt = factory?.systemPrompt ?? "";
+
+    expect(factory?.description).toContain(".zcode/agents");
+    expect(prompt).toContain(".zcode/agents/<kebab-name>.md");
+    expect(prompt).toContain("frontmatter");
+    expect(prompt).toContain("disallowedTools");
+    expect(prompt).toContain("mcpServers");
+    for (const role of SWARM_AGENT_TYPES) expect(prompt, role).toContain(role);
+    expect(prompt).toContain("general-purpose");
+    expect(prompt).toContain("Explore");
+    for (const tool of WORKER_SUBAGENT_TOOL_NAMES) expect(prompt, tool).toContain(tool);
+    expect(prompt).toContain("следующем turn");
+    expect(prompt).toContain("секреты");
+    expect(prompt).toContain("разовую задачу");
+    expect(prompt).toContain("generic-роль");
+    expect(prompt).toContain("не создавай профиль");
+    expect(prompt).toContain("существующие роли и навыки");
+  });
+});
+
 // docs/specs/agent-capability-gate.md: роль определяет реальный набор инструментов.
 // Ожидаемые списки продублированы литералами намеренно — изменение матрицы должно
 // требовать явного обновления теста, а не следовать за экспортированной константой.
@@ -704,12 +904,19 @@ describe("built-in role capability matrix", () => {
     },
   );
 
-  it.each(["implementer", "test-engineer", "self-improver", "knowledge-curator", "subagent-factory"])(
-    "%s keeps the full worker toolset",
-    (name) => {
-      expect(toolsOf(name)).toEqual(WORKER_TOOLS);
-    },
-  );
+  it.each([
+    "implementer",
+    "coder",
+    "frontend-coder",
+    "backend-coder",
+    "infra-coder",
+    "test-engineer",
+    "self-improver",
+    "knowledge-curator",
+    "subagent-factory",
+  ])("%s keeps the full worker toolset", (name) => {
+    expect(toolsOf(name)).toEqual(WORKER_TOOLS);
+  });
 
   it("covers every built-in swarm role without gaps or duplicates", () => {
     expect(builtInProfiles().map((profile) => profile.name)).toEqual([...SWARM_AGENT_TYPES]);

@@ -1,6 +1,7 @@
 import {
   SessionEventType,
   createSessionId,
+  createTraceId,
   createTurnId,
   type AgentCompletedOutput,
   type AgentOutput,
@@ -10,6 +11,9 @@ import {
   type SubagentRunOptions,
   type SubagentRunRequest,
 } from "@zcode/contracts";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SPAWN_BUDGET,
@@ -24,8 +28,16 @@ import {
   resolveSpawnGrant,
   resolveSwarmParallelismWithCapacity,
 } from "../src/subagent/runner.js";
-import type { ExploreSubagentPortOptions } from "../src/subagent/runner.js";
+import type {
+  ExploreSubagentPortOptions,
+  ExploreSubagentRuntimeRequest,
+} from "../src/subagent/runner.js";
 import { buildSpawnEnvelope } from "../src/runtime/methods/subagent.js";
+import { createTestAgentRuntime } from "./test-agent-runtime.js";
+import { createTestSessionEventStore } from "./test-event-store.js";
+import { createTestModelFactory } from "./test-runtime-model.js";
+import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
+import { MemoryFileSystem } from "./memory-test-utils.js";
 
 describe("subagent spawn budget", () => {
   it("defaults to 32 and rejects the next spawn once the root budget is exhausted (a)", async () => {
@@ -335,6 +347,163 @@ describe("subagent spawn budget", () => {
     expect(text).toContain("Work result: status=failed");
     expect(text).toContain("Spawn budget exhausted");
   });
+
+  it("feeds the DAG child request with the registry-clamped capacity, not the requested 8 (m)", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-envelope-dag-root");
+    const turnId = createTurnId("spawn-envelope-dag-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 2,
+    });
+    const childRequests: ExploreSubagentRuntimeRequest[] = [];
+    const port = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-envelope-dag",
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        childRequests.push(request);
+        return { events: [], response: "node done", traceId: request.traceContext.traceId };
+      },
+    });
+
+    await port.runTaskDag?.({
+      ...makeTaskDagRequest(
+        ["envelope-a", "envelope-b"].map((id) => ({
+          ...dagNode(id),
+          subagent_type: "Explore",
+        })),
+        8,
+      ),
+      sessionId: root,
+      turnId,
+    });
+
+    const envelopeInputs = childRequests.map((request) => ({
+      level: request.level,
+      spawnGrant: request.spawnGrant,
+      maxParallel: request.maxParallel,
+      prompt: request.prompt,
+    }));
+
+    expect(envelopeInputs).toHaveLength(2);
+    // DAG-узел получает уровень 2 (root -> DAG -> child) и grant строго меньше
+    // родительского: при бюджете 2 registry выдаёт 1 первому ребёнку и 0 второму.
+    expect(envelopeInputs.map((input) => input.level)).toEqual([2, 2]);
+    expect(envelopeInputs.map((input) => input.spawnGrant).sort()).toEqual([0, 1]);
+    expect(envelopeInputs.map((input) => input.maxParallel).sort()).toEqual([0, 1]);
+    // Fake runExploreAgent получает task prompt узла; конверт spawn собирает реальный
+    // runExploreAgent из этих полей в system prompt (проверяется тестом (n)).
+    expect(
+      envelopeInputs.every(
+        (input) =>
+          input.prompt.includes("Overall objective: Execute a dependency graph") &&
+          input.prompt.includes("Task node"),
+      ),
+    ).toBe(true);
+    const envelopes = envelopeInputs
+      .map((input) =>
+        buildSpawnEnvelope({
+          level: input.level,
+          spawnGrant: input.spawnGrant,
+          maxParallel: input.maxParallel,
+        }),
+      )
+      .sort();
+    expect(envelopes).toEqual([
+      '<zcode-spawn-envelope level="2" remaining_spawns="0" max_parallel="0" />',
+      '<zcode-spawn-envelope level="2" remaining_spawns="1" max_parallel="1" />',
+    ]);
+    expect(envelopes.join("\n")).not.toContain('max_parallel="8"');
+  });
+
+  it("prints the actual max_parallel in the real child system prompt (n)", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "zcode-spawn-envelope-real-"));
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-envelope-real-root");
+    const turnId = createTurnId("spawn-envelope-real-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 2,
+    });
+    const childSystemPrompts: string[] = [];
+    const runtime = createTestAgentRuntime(
+      root,
+      { mode: "build", workingDirectory: workspace },
+      {
+        eventStore: createTestSessionEventStore(),
+        sessionStore: createRecordingSubagentSessionStore(),
+        runtimeTaskRegistry: registry,
+        fileSystemPort: new MemoryFileSystem({}),
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (sessionId !== root) {
+              childSystemPrompts.push(
+                (request.messages ?? [])
+                  .filter((message) => message.role === "system")
+                  .map((message) =>
+                    typeof message.content === "string"
+                      ? message.content
+                      : JSON.stringify(message.content),
+                  )
+                  .join("\n"),
+              );
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "child done",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+
+    try {
+      const port = (runtime as any).subagentPort;
+      const output = (await port.runTaskDag({
+        sessionId: root,
+        turnId,
+        parentToolCallId: "spawn-envelope-real-call",
+        agentType: "Explore",
+        description: "Real child envelope probe",
+        prompt: "Complete the requested graph objective",
+        nodes: [
+          { ...dagNode("real-a"), subagent_type: "Explore" },
+          { ...dagNode("real-b"), subagent_type: "Explore" },
+        ],
+        maxParallel: 8,
+        callerCanReadOutputFile: true,
+        workingDirectory: workspace,
+        workspaceRoot: workspace,
+        trace: {
+          traceId: createTraceId("trace-spawn-envelope-real"),
+          sessionId: root,
+          turnId,
+        },
+      })) as AgentCompletedOutput;
+
+      expect(output.status).toBe("completed");
+      expect(childSystemPrompts).toHaveLength(2);
+      const envelopes = childSystemPrompts
+        .flatMap((prompt) => prompt.match(/<zcode-spawn-envelope [^>]*\/>/g) ?? [])
+        .sort();
+      expect(envelopes).toEqual([
+        '<zcode-spawn-envelope level="2" remaining_spawns="0" max_parallel="0" />',
+        '<zcode-spawn-envelope level="2" remaining_spawns="1" max_parallel="1" />',
+      ]);
+      expect(envelopes.join("\n")).not.toContain('max_parallel="8"');
+    } finally {
+      await runtime.closeBrowserSession();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("emits runId/attemptId in SubagentSpawned and the actual maxParallel to the child (l)", async () => {
     const registry = new InMemoryRuntimeTaskRegistry();

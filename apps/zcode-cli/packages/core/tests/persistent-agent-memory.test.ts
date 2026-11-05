@@ -13,6 +13,7 @@ import {
   sanitizePersistentAgentMemoryKey,
 } from "../src/subagent/persistent-memory.js";
 import {
+  WORKER_SUBAGENT_TOOL_NAMES,
   formatAgentProfilesForPrompt,
   getSwarmAgentProfiles,
   type AgentProfile,
@@ -57,17 +58,29 @@ describe("persistent custom-agent memory", () => {
     },
   );
 
-  it("projects Write/Edit for built-in knowledge-curator project memory (AGENT-12)", async () => {
+  it("keeps built-in knowledge-curator project memory and full worker tools (AGENT-12)", async () => {
     const curator = getSwarmAgentProfiles([]).find((profile) => profile.name === "knowledge-curator");
     expect(curator?.memory).toBe("project");
-    expect(curator?.tools).toEqual(["Read", "Glob", "Grep", "Task"]);
+    // knowledge-curator — исполнитель по capability gate: у него уже полный worker-набор,
+    // поэтому проекция памяти не добавляет Write/Edit и остаётся no-op.
+    expect(curator?.tools).toEqual([...WORKER_SUBAGENT_TOOL_NAMES]);
+    expect(curator?.tools).toEqual(
+      expect.arrayContaining(["Read", "Glob", "Grep", "Task", "Write", "Edit"]),
+    );
 
     const memory = { enabled: true, storageRoot: "/storage", use: true };
-    const projected = projectPersistentAgentMemoryTools(
-      { activeAgents: [curator!] },
-      memory,
-    ).activeAgents[0];
-    expect(projected?.tools).toEqual(["Read", "Glob", "Grep", "Task", "Write", "Edit"]);
+    const definitions = { activeAgents: [curator!] };
+    expect(projectPersistentAgentMemoryTools(definitions, memory)).toBe(definitions);
+
+    // Проекция Write/Edit по-прежнему нужна профилю с явным набором без записи.
+    const readOnly = customProfile({
+      memory: "project",
+      tools: ["Read", "Glob", "Grep", "Task"],
+    });
+    expect(
+      projectPersistentAgentMemoryTools({ activeAgents: [readOnly] }, memory).activeAgents[0]?.tools,
+    ).toEqual(["Read", "Glob", "Grep", "Task", "Write", "Edit"]);
+
     expect(resolvePersistentAgentMemoryRoot({
       agentName: curator!.name,
       scope: "project",

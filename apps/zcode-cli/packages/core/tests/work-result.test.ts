@@ -3,6 +3,7 @@ import {
   SessionEventType,
   WorkResultSchema,
   createSessionId,
+  createTraceId,
   createTurnId,
   type AgentCompletedOutput,
   type SessionEvent,
@@ -10,6 +11,9 @@ import {
   type WorkResult,
 } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   InMemoryRuntimeTaskRegistry,
   type RuntimeTaskSnapshot,
@@ -19,6 +23,7 @@ import {
   aggregateWorkResults,
   boundWorkResult,
   collectWorkResultClaims,
+  createExploreSubagentPort,
   deriveWorkResult,
   deriveWorkResultFromOutput,
   executeSubagentTaskDag,
@@ -544,5 +549,62 @@ describe("WorkResult claims ownership", () => {
     );
     // Без runtime-источника блок остаётся единственным источником claims.
     expect(deriveWorkResult({ text, events: [] }).claims).toEqual([{ path: "src/from-text.ts" }]);
+  });
+
+  it("fills a single-run WorkResult with claims from the live ledger, not an empty array", async () => {
+    const claimPath = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+    const agentId = "agent_live_ledger";
+    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-work-result-live-ledger-"));
+    const ledger = new WorkLedger({ journalPath: null });
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    try {
+      const port = createExploreSubagentPort({
+        outputRootDir,
+        runtimeTaskRegistry: registry,
+        createAgentId: () => agentId,
+        async emitParentEvent() {},
+        async runExploreAgent(request) {
+          return {
+            response: "Прочитал файл, изменений не вносил.",
+            traceId: request.traceContext.traceId,
+            events: [],
+          };
+        },
+      });
+      const sessionId = createSessionId("work-result-live-ledger");
+      const turnId = createTurnId("work-result-live-ledger-turn");
+
+      const output = await port.run({
+        sessionId,
+        turnId,
+        parentToolCallId: "work-result-live-ledger-call",
+        agentType: "Explore",
+        description: "Изучить реестр",
+        prompt: `Прочитай \`${claimPath}\``,
+        callerCanReadOutputFile: true,
+        workingDirectory: workspacePath,
+        workspaceRoot: workspacePath,
+        trace: { traceId: createTraceId(), sessionId },
+      });
+
+      expect(output.status).toBe("completed");
+      const completed = output as AgentCompletedOutput;
+      // Клейм выдаётся на admission и снимается терминальным update. runId/attemptId
+      // существуют только в живом ledger'е, поэтому их совпадение доказывает источник claims.
+      const liveClaim = ledger.list({ workspacePath, agentId })[0];
+      expect(liveClaim).toMatchObject({ status: "released", paths: [claimPath] });
+      expect(liveClaim?.attemptId).toBeDefined();
+      expect(completed.agentId).toBe(agentId);
+      expect(completed.workResult?.claims).toEqual([
+        {
+          path: claimPath,
+          ...(liveClaim?.runId ? { runId: liveClaim.runId } : {}),
+          ...(liveClaim?.attemptId ? { attemptId: liveClaim.attemptId } : {}),
+        },
+      ]);
+    } finally {
+      registry.dispose();
+      await rm(outputRootDir, { force: true, recursive: true });
+    }
   });
 });

@@ -214,8 +214,19 @@ function formatWorkResultTests(tests: ReadonlyArray<{ command: string; status: s
 }
 
 /**
+ * Авторитетная инструкция для корневого агента: Start — единственный автор готового
+ * пользовательского отчёта, root лишь передаёт его дословно. Без этой рамки модель
+ * склонна пересказывать tool result своими словами и смешивать его с сырым текстом child.
+ */
+const PRESENTATION_AUTHORITY_INSTRUCTION = [
+  "This is the authoritative final user-facing report authored by the start agent; start is its sole author and this text must reach the user.",
+  "Relay userText, facts, unknowns and evidenceRefs verbatim. Do not paraphrase, summarize, omit or reorder them, do not add your own retelling or claims, and do not mix them with raw child/subagent text.",
+].join("\n");
+
+/**
  * Pass-through единственного презентера: Start уже сформировал пользовательский текст.
  * Никакого синтеза, сырого child content, agentId или usage здесь быть не должно.
+ * Обёртка делает авторство и правило передачи явными для корневого агента.
  */
 function formatPresentationForModel(
   presentation: AgentPresentation,
@@ -223,17 +234,23 @@ function formatPresentationForModel(
   unresolved: readonly string[],
 ): string {
   return [
+    "<zcode-start-report>",
+    PRESENTATION_AUTHORITY_INSTRUCTION,
+    "",
+    "userText:",
     presentation.userText,
-    `status: ${status}`,
     formatPresentationSection("facts", presentation.facts),
     formatPresentationSection("unknowns", presentation.unknowns),
-    formatPresentationSection("evidence_refs", presentation.evidenceRefs),
+    formatPresentationSection("evidenceRefs", presentation.evidenceRefs),
+    `status: ${status}`,
     formatPresentationSection("unresolved", unresolved),
+    "</zcode-start-report>",
   ].join("\n");
 }
 
 function formatPresentationSection(label: string, values: readonly string[]): string {
-  return `${label}: ${formatWorkResultList(values)}`;
+  if (values.length === 0) return `${label}: none`;
+  return [`${label}:`, ...values.map((value) => `- ${value}`)].join("\n");
 }
 
 export function formatAgentOutputForModel(output: unknown): string {
