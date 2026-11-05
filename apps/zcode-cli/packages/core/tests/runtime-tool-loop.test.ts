@@ -4878,7 +4878,7 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[1]?.payload).toMatchObject({
       taskCount: 0,
       childSessionIds: [],
-      summary: expect.stringContaining("Планирование не удалось"),
+      summary: expect.stringContaining("План роя отклонён"),
     });
   });
 
