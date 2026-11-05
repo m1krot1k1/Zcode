@@ -125,6 +125,12 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   usage?: RuntimeTaskUsageSnapshot;
   /** Workspace спавна; вместе с agentId задаёт область claim'а в work ledger. */
   workspacePath?: string;
+  /**
+   * Может ли профиль задачи писать файлы (Write/Edit в его tools).
+   * `false` — read-only роль: пути из prompt описывают область исследования, а не запись,
+   * поэтому claim не создаётся и не проверяется на конфликты. `undefined` — legacy-поведение.
+   */
+  writeCapable?: boolean;
 }
 
 export const MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS = 512;
@@ -1974,6 +1980,10 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     const ledger = this.workLedger;
     const workspacePath = task.workspacePath?.trim();
     if (!ledger || !workspacePath) return { accepted: true, claimed: false };
+    // 根因: read-only профили (researcher/reviewer/evaluator и т.п.) не пишут файлы, но их
+    // prompt-пути трактовались как write-intent: параллельные исследователи с общим файлом
+    // падали с write_claim_conflict. Write-capability приходит из профиля, а не из текста.
+    if (task.writeCapable === false) return { accepted: true, claimed: false };
     const text = task.prompt || task.description;
     const paths = extractTaskPaths(text);
     if (paths.length > 0) {

@@ -5074,7 +5074,79 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[1]?.payload).toMatchObject({
       taskCount: 0,
       childSessionIds: [],
-      summary: expect.stringContaining("Планирование не удалось"),
+      summary: expect.stringContaining("Планировщик недоступен"),
+    });
+    expect(swarmEvents[1]?.payload.summary).toContain("Orchestrator fallback недоступен");
+  });
+
+  it("falls back to orchestrator when the planner is unavailable", async () => {
+    const sessionId = createSessionId("runtime-swarm-orchestrator-fallback");
+    const eventStore = createTestSessionEventStore();
+    const runTaskDag = vi.fn();
+    const launch = vi.fn(async () => ({
+      status: "completed" as const,
+      agentId: "agent_orchestrator_fallback",
+      agentType: "orchestrator",
+      description: "fallback",
+      prompt: "Run the task",
+      content: [{ type: "text" as const, text: "orchestrator completed the task" }],
+      totalToolUseCount: 0,
+      totalDurationMs: 1,
+    }));
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        modelSelection: createTestModelSelection("test/swarm-orchestrator-fallback"),
+      },
+      {
+        eventStore,
+        subagentPort: { launch, runTaskDag } as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            if (
+              providerMessagesToText(request.messages).includes(
+                "Decide whether this task needs independent parallel work",
+              )
+            ) {
+              throw new Error("planner unavailable");
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "root synthesized orchestrator result",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run this task as a swarm", undefined, {
+      intent: { orchestrationMode: "swarm" },
+    });
+
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect((launch.mock.calls[0]?.[0] as { agentType?: string }).agentType).toBe("orchestrator");
+    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(result.response).toContain("root synthesized orchestrator result");
+    const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
+      (event) => event.type === SessionEventType.SwarmRunUpdated,
+    );
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual([
+      "planning",
+      "running",
+      "completed",
+    ]);
+    expect(swarmEvents[1]?.payload).toMatchObject({
+      taskCount: 1,
+      childSessionIds: [],
+      summary: expect.stringContaining("orchestrator"),
+    });
+    expect(swarmEvents[2]?.payload).toMatchObject({
+      taskCount: 1,
+      childSessionIds: [],
+      summary: expect.stringContaining("orchestrator"),
     });
   });
 
@@ -5120,7 +5192,7 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[1]?.payload).toMatchObject({
       taskCount: 0,
       childSessionIds: [],
-      summary: "Планирование не удалось; сообщение передано обычному выполнению.",
+      summary: expect.stringContaining("Планировщик недоступен"),
     });
   });
 
@@ -5170,9 +5242,10 @@ describe("AgentRuntime tool loop", () => {
       },
     );
 
-    // Root cancellation остаётся внешним владельцем; подменяем только planner deadline на 1 ms.
+    // Root cancellation остаётся внешним владельцем; сокращаем planner attempt deadline
+    // (30 s) до 1 ms, сохраняя остальные таймеры turn без изменений.
     vi.spyOn(AbortSignal, "timeout").mockImplementation((delay) =>
-      originalTimeout(delay === 60_000 ? 1 : delay),
+      originalTimeout(delay === 30_000 ? 1 : delay),
     );
     try {
       const result = await runtime.executeTurn("Split this independent task", undefined, {
@@ -5180,7 +5253,8 @@ describe("AgentRuntime tool loop", () => {
       });
 
       expect(result.response).toBe("ordinary answer after planner timeout");
-      expect(callCount).toBe(2);
+      // Два planner attempt после timeout + обычный model turn.
+      expect(callCount).toBe(3);
       expect(plannerSignal?.aborted).toBe(true);
       expect(runTaskDag).not.toHaveBeenCalled();
       const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
@@ -5190,7 +5264,7 @@ describe("AgentRuntime tool loop", () => {
       expect(swarmEvents[1]?.payload).toMatchObject({
         taskCount: 0,
         childSessionIds: [],
-        summary: expect.stringContaining("Планирование не удалось"),
+        summary: expect.stringContaining("Планировщик недоступен"),
       });
     } finally {
       vi.restoreAllMocks();

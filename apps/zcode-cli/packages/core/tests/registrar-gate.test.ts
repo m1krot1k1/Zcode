@@ -1,7 +1,16 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSessionId, createTurnId, type SessionId } from "@zcode/contracts";
+import {
+  CoreErrorType,
+  createCoreError,
+  createSessionId,
+  createTraceId,
+  createTurnId,
+  type AgentOutput,
+  type SessionId,
+  type SubagentTaskDagRequest,
+} from "@zcode/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   InMemoryRuntimeTaskRegistry,
@@ -12,6 +21,12 @@ import {
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
+import {
+  createExploreSubagentPort,
+  executeSubagentTaskDag,
+  isAgentProfileWriteCapable,
+} from "../src/subagent/runner.js";
+import { normalizeAgentProfiles } from "../src/subagent/profile.js";
 import { WORK_LEDGER_TTL_MS, WorkLedger, type WorkClaim } from "../src/runtime-task/work-ledger.js";
 
 const WORKSPACE = "/workspace/zcode";
@@ -43,12 +58,14 @@ function task(
     parentSessionId?: SessionId;
     workspacePath?: string;
     turnId?: ReturnType<typeof createTurnId>;
+    agentType?: string;
+    writeCapable?: boolean;
   },
 ): RuntimeTaskSnapshot {
   return {
     taskId: agentId,
     agentId,
-    agentType: "general-purpose",
+    agentType: input.agentType ?? "general-purpose",
     description: input.description ?? `Задача ${agentId}`,
     prompt: input.prompt,
     status: "running",
@@ -58,6 +75,7 @@ function task(
     turnId: input.turnId ?? createTurnId(`turn-${agentId}`),
     type: "local_agent",
     workspacePath: input.workspacePath ?? WORKSPACE,
+    ...(input.writeCapable === undefined ? {} : { writeCapable: input.writeCapable }),
   };
 }
 
@@ -442,6 +460,297 @@ describe("registrar work-claim hard gate", () => {
     expect(restored.attemptId).toBe(admission.task.attemptId);
   });
 });
+
+describe("write-capability admission", () => {
+  it("treats a wildcard profile as write-capable unless both write tools are denied", () => {
+    expect(isAgentProfileWriteCapable({ tools: ["*"] })).toBe(true);
+    expect(isAgentProfileWriteCapable({ tools: ["*"], disallowedTools: ["Write"] })).toBe(true);
+    expect(
+      isAgentProfileWriteCapable({ tools: ["*"], disallowedTools: ["Write", "Edit"] }),
+    ).toBe(false);
+  });
+
+  it("marks exactly the read-only swarm roles as non-writers", () => {
+    const profiles = new Map(normalizeAgentProfiles([]).map((profile) => [profile.name, profile]));
+    for (const role of [
+      "start",
+      "orchestrator",
+      "researcher",
+      "reviewer",
+      "security-reviewer",
+      "evaluator",
+    ]) {
+      expect(profiles.get(role), role).toBeDefined();
+      expect(isAgentProfileWriteCapable(profiles.get(role)!), role).toBe(false);
+    }
+    for (const role of [
+      "implementer",
+      "coder",
+      "frontend-coder",
+      "backend-coder",
+      "infra-coder",
+      "test-engineer",
+      "self-improver",
+      "knowledge-curator",
+      "subagent-factory",
+    ]) {
+      expect(profiles.get(role), role).toBeDefined();
+      expect(isAgentProfileWriteCapable(profiles.get(role)!), role).toBe(true);
+    }
+  });
+
+  it("passes profile write-capability into task registration", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "zcode-registrar-port-"));
+    directories.push(directory);
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const traceId = createTraceId();
+    const sessionId = createSessionId("registrar-port-parent");
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+    let agentSequence = 0;
+    const port = createExploreSubagentPort({
+      outputRootDir: directory,
+      runtimeTaskRegistry: registry,
+      profiles: normalizeAgentProfiles([]),
+      createAgentId: () => `registrar-port-agent-${(agentSequence += 1)}`,
+      async emitParentEvent() {},
+      async runExploreAgent() {
+        return { response: "done", traceId, events: [] };
+      },
+    });
+    const run = (agentType: string, prompt: string) =>
+      port.run({
+        agentType,
+        description: `${agentType} task`,
+        prompt,
+        sessionId,
+        trace: { traceId, sessionId },
+        workingDirectory: WORKSPACE,
+        workspaceRoot: WORKSPACE,
+      });
+
+    const researcher = await run("researcher", `Исследую \`${path}\``);
+    expect(researcher.status).toBe("completed");
+    expect(registry.get("registrar-port-agent-1")?.writeCapable).toBe(false);
+    expect(claimOf(ledger, "registrar-port-agent-1")).toBeUndefined();
+
+    const coder = await run("coder", `Правлю \`${path}\``);
+    expect(coder.status).toBe("completed");
+    expect(registry.get("registrar-port-agent-2")?.writeCapable).toBe(true);
+    expect(claimOf(ledger, "registrar-port-agent-2")?.paths).toEqual([path]);
+  });
+
+  it("admits two researchers on the same path without creating claims", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+
+    const first = registry.registerSubagentTask(
+      task("researcher-a", {
+        childSessionId: createSessionId("researcher-child-a"),
+        prompt: `Исследую \`${path}\``,
+        agentType: "researcher",
+        writeCapable: false,
+      }),
+      pending(),
+    );
+    const second = registry.registerSubagentTask(
+      task("researcher-b", {
+        childSessionId: createSessionId("researcher-child-b"),
+        prompt: `Тоже исследую \`${path}\``,
+        agentType: "researcher",
+        writeCapable: false,
+      }),
+      pending(),
+    );
+
+    expect(first.accepted).toBe(true);
+    expect(second.accepted).toBe(true);
+    expect(claimOf(ledger, "researcher-a")).toBeUndefined();
+    expect(claimOf(ledger, "researcher-b")).toBeUndefined();
+    expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(0);
+  });
+
+  it("rejects two write-capable coders on the same path", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+
+    expect(
+      registry.registerSubagentTask(
+        task("coder-a", {
+          childSessionId: createSessionId("coder-child-a"),
+          prompt: `Правлю \`${path}\``,
+          agentType: "coder",
+          writeCapable: true,
+        }),
+        pending(),
+      ).accepted,
+    ).toBe(true);
+
+    const second = registry.registerSubagentTask(
+      task("coder-b", {
+        childSessionId: createSessionId("coder-child-b"),
+        prompt: `Тоже правлю \`${path}\``,
+        agentType: "coder",
+        writeCapable: true,
+      }),
+      pending(),
+    );
+
+    expect(second).toEqual({ accepted: false, reason: "write_claim_conflict" });
+    expect(claimOf(ledger, "coder-b")).toBeUndefined();
+    expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(1);
+  });
+
+  it("does not create claims for start and orchestrator routers", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+
+    for (const role of ["start", "orchestrator"]) {
+      expect(
+        registry.registerSubagentTask(
+          task(`${role}-router`, {
+            childSessionId: createSessionId(`${role}-router-child`),
+            prompt: `Маршрутизирую работу по \`${path}\``,
+            agentType: role,
+            writeCapable: false,
+          }),
+          pending(),
+        ).accepted,
+        role,
+      ).toBe(true);
+      expect(claimOf(ledger, `${role}-router`), role).toBeUndefined();
+    }
+
+    // Ни один router не удерживает путь: writer получает claim без конфликта.
+    expect(
+      registry.registerSubagentTask(
+        task("router-coder", {
+          childSessionId: createSessionId("router-coder-child"),
+          prompt: `Правлю \`${path}\``,
+          agentType: "coder",
+          writeCapable: true,
+        }),
+        pending(),
+      ).accepted,
+    ).toBe(true);
+    expect(claimOf(ledger, "router-coder")?.status).toBe("active");
+  });
+
+  it("does not block a read-only researcher behind an active writer claim", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+
+    expect(
+      registry.registerSubagentTask(
+        task("researcher-behind-writer-coder", {
+          childSessionId: createSessionId("researcher-behind-writer-child"),
+          prompt: `Правлю \`${path}\``,
+          agentType: "coder",
+          writeCapable: true,
+        }),
+        pending(),
+      ).accepted,
+    ).toBe(true);
+
+    expect(
+      registry.registerSubagentTask(
+        task("researcher-behind-writer", {
+          childSessionId: createSessionId("researcher-behind-writer-child-2"),
+          prompt: `Исследую \`${path}\``,
+          agentType: "researcher",
+          writeCapable: false,
+        }),
+        pending(),
+      ).accepted,
+    ).toBe(true);
+    expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(1);
+  });
+});
+
+describe("DAG write-claim conflicts", () => {
+  it("blocks only the conflicting branch and finishes independent branches", async () => {
+    const request = makeTaskDagRequest([
+      dagNode("writer-a", "coder"),
+      dagNode("writer-b", "coder"),
+      dagNode("dependent", "coder", ["writer-b"]),
+      dagNode("researcher-c", "researcher"),
+    ]);
+    const started: string[] = [];
+
+    const result = await executeSubagentTaskDag(request, async (node) => {
+      started.push(node.id);
+      if (node.id === "writer-b") {
+        throw createCoreError(CoreErrorType.ToolExecutionFailed, "Work claim conflict", {
+          context: {
+            code: "agent_subagent_admission_rejected",
+            reason: "write_claim_conflict",
+            parentSessionId: request.sessionId,
+            parentToolCallId: request.parentToolCallId,
+          },
+          recoverable: true,
+        });
+      }
+      return completedDagOutput(node.id);
+    });
+
+    const text = result.content.map((block) => block.text).join("\n");
+    expect(started).toContain("writer-a");
+    expect(started).toContain("researcher-c");
+    expect(started).not.toContain("dependent");
+    expect(text).toContain('[blocked] "writer-b"');
+    expect(text).toContain('[blocked] "dependent"');
+    expect(text).toContain('[completed] "writer-a"');
+    expect(text).toContain('[completed] "researcher-c"');
+    expect(result.workResult?.status).toBe("partial");
+  });
+});
+
+function makeTaskDagRequest(
+  nodes: SubagentTaskDagRequest["nodes"],
+  maxParallel = 8,
+): SubagentTaskDagRequest {
+  return {
+    sessionId: createSessionId("registrar-dag-session"),
+    turnId: createTurnId("registrar-dag-turn"),
+    parentToolCallId: "registrar-dag-tool-call",
+    agentType: "orchestrator",
+    description: "Execute a dependency graph",
+    prompt: "Complete the requested graph objective",
+    nodes,
+    maxParallel,
+    callerCanReadOutputFile: true,
+    workingDirectory: WORKSPACE,
+    workspaceRoot: WORKSPACE,
+    trace: {} as SubagentTaskDagRequest["trace"],
+  };
+}
+
+function dagNode(id: string, subagentType: string, dependsOn: string[] = []) {
+  return {
+    id,
+    description: `Task ${id}`,
+    prompt: `Perform task ${id}`,
+    subagent_type: subagentType,
+    ...(dependsOn.length === 0 ? {} : { depends_on: dependsOn }),
+  };
+}
+
+function completedDagOutput(agentId: string): AgentOutput {
+  return {
+    status: "completed",
+    agentId,
+    agentType: "coder",
+    description: `Task ${agentId}`,
+    prompt: `Perform task ${agentId}`,
+    content: [{ type: "text", text: `Result for ${agentId}` }],
+    totalToolUseCount: 1,
+    totalDurationMs: 1,
+  };
+}
 
 describe("periodic work-ledger sweep", () => {
   it("materializes a ghost claim as stale from the interval timer and disposes cleanly", () => {

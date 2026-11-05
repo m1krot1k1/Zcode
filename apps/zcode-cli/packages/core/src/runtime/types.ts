@@ -165,6 +165,13 @@ export interface AgentRuntimeConfig {
   toolAllowlist?: readonly string[];
   toolDisallowlist?: readonly string[];
   /**
+   * Capability set, которое read-only маршрутизатор может делегировать детям, не
+   * показывая эти инструменты собственной модели. Наследуется только router-ролями
+   * (start/orchestrator); worker и read-only дети получают пересечение со своим
+   * фактическим tool surface.
+   */
+  delegationToolAllowlist?: readonly string[];
+  /**
    * Defaults to main. Explore child runtimes use the explore toolset to opt into
    * 只读探索工具白名单；是否包含 direct Glob/Grep 由 embedded search branch 决定。
    * 主模式下 allowlist 仅做直接交集过滤，explore 子运行时还会补齐默认只读白名单。

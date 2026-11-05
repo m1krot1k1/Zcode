@@ -551,6 +551,51 @@ describe("subagent spawn budget", () => {
     // grant = remaining(4) - 1 = 3; активных слотов нет, cap 24 → max_parallel = 3.
     expect(childMaxParallel).toEqual([3]);
   });
+
+  it("runs 6 independent nodes at the actual capacity with budget 8, not a fixed cap of 3 (o)", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-fanout-root");
+    const turnId = createTurnId("spawn-fanout-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 8,
+    });
+    let active = 0;
+    let maxActive = 0;
+    const port = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-fanout",
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        active -= 1;
+        return { events: [], response: "node done", traceId: request.traceContext.traceId };
+      },
+    });
+
+    const output = (await port.runTaskDag?.({
+      ...makeTaskDagRequest(
+        ["f1", "f2", "f3", "f4", "f5", "f6"].map((id) => ({
+          ...dagNode(id),
+          subagent_type: "Explore",
+        })),
+        8,
+      ),
+      sessionId: root,
+      turnId,
+    })) as AgentCompletedOutput;
+
+    expect(output.status).toBe("completed");
+    // nodeCount=6, requested=8, remaining=8, свободные слоты=24 → actual maxParallel=6.
+    // Раньше промпт обещал 3–5 веток, и оркестратор искусственно ограничивал fan-out.
+    expect(maxActive).toBe(6);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.spawnsUsed).toBe(6);
+  });
 });
 
 function task(

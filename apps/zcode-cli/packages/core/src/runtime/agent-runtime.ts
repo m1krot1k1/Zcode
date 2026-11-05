@@ -7,6 +7,7 @@ import {
   createAgentDefinitionsReader,
   type GetAgentDefinitions,
 } from "../subagent/definitions.js";
+import { WORKER_SUBAGENT_TOOL_NAMES } from "../subagent/profile.js";
 import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
   resolveExecutionState,
@@ -294,6 +295,12 @@ export class AgentRuntime {
     this.config = {
       ...config,
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
+      // Root получает право делегировать полный worker-набор. Router-дети
+      // наследуют его явно в subagent.ts; read-only и worker-дети не получают
+      // этот набор и пересекаются со своим фактическим tool surface.
+      ...(config.delegationToolAllowlist === undefined && config.taskType !== "subagent_child"
+        ? { delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES] }
+        : {}),
     };
     Object.assign(this.config, resolveExecutionState(config));
     const definitions = createTurnAgentDefinitions(

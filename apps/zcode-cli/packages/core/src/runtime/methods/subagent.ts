@@ -52,7 +52,7 @@ import {
   isMirroredSubagentEvent,
   mirrorSubagentToolEvent,
 } from "../../subagent/tool-event-mirror.js";
-import { isBuiltInExploreAgentProfile } from "../../subagent/profile.js";
+import { isBuiltInExploreAgentProfile, isDelegationRouterAgentType } from "../../subagent/profile.js";
 import {
   buildSubagentChildDisallowRules,
   filterSubagentChildToolNames,
@@ -441,6 +441,12 @@ export function createDefaultSubagentPort(
             // 导致嵌套层级越深反而预算越大；无 grant 时沿用父配置（兼容旧调用）。
             spawnBudget: request.spawnGrant ?? this.config.spawnBudget,
             taskType: "subagent_child",
+            // Router-роль не использует Write/Edit/Bash сама, но должна передать
+            // worker-возможности дальше. Набор наследуется только router-детьми;
+            // read-only и worker-дети пересекаются со своим фактическим tool surface.
+            delegationToolAllowlist: isDelegationRouterAgentType(request.agentType)
+              ? this.config.delegationToolAllowlist
+              : undefined,
             // 动态工作流灰度门必须结构性继承：
             // 父会话关着而子代理开着，等于 Agent 工具变成绕过灰度的后门。默认路径（child 继承
             // 父 registry 可见的工具名）本来就够，但**自定义 agent profile 显式写
@@ -780,16 +786,18 @@ export function resolveSubagentToolAllowlist(
     visibleMcpToolNames,
     this.config.toolAllowlist,
   );
-  const parentAvailableToolNames = [
-    ...this.getTools()
-      // child MCP must use the same descriptors as the parent's startup snapshot.
-      .filter((tool) => tool.permission?.permission !== "mcp")
-      // WebSearch 是否进入 child 能力清单取决于 child Active Model，而不是父注册表：
-      // 否则 SubagentSpawned.allowedTools 会把 child 实际拿不到的条件工具持久化出去。
-      .filter((tool) => tool.name !== "WebSearch" || modelSupportsNativeWebSearch(childModel))
-      .map((tool) => tool.name),
-    ...parentAllowedMcpToolNames,
-  ];
+  const parentBuiltInToolNames = this.config.delegationToolAllowlist
+    ? this.config.delegationToolAllowlist.filter(
+        (toolName) => toolName !== "WebSearch" || modelSupportsNativeWebSearch(childModel),
+      )
+    : this.getTools()
+        // child MCP must use the same descriptors as the parent's startup snapshot.
+        .filter((tool) => tool.permission?.permission !== "mcp")
+        // WebSearch 是否进入 child 能力清单取决于 child Active Model，而不是父注册表：
+        // 否则 SubagentSpawned.allowedTools 会把 child 实际拿不到的条件工具持久化出去。
+        .filter((tool) => tool.name !== "WebSearch" || modelSupportsNativeWebSearch(childModel))
+        .map((tool) => tool.name);
+  const parentAvailableToolNames = [...parentBuiltInToolNames, ...parentAllowedMcpToolNames];
   const inheritedParentToolNames = filterSubagentChildToolNames(
     parentAvailableToolNames,
     disallowedRules,

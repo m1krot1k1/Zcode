@@ -1770,10 +1770,27 @@ export async function executeSubagentTaskDag(
     const settled = await Promise.race(active.values());
     active.delete(settled.nodeId);
     if (settled.error !== undefined) {
-      states.set(settled.nodeId, {
-        status: options?.signal?.aborted ? "cancelled" : "failed",
-        error: selectExecutionErrorMessage(settled.error),
-      });
+      // Writer-конфликт в DAG не должен валить весь swarm: помечаем только конфликтную
+      // ветку blocked, независимые ветки продолжают работу, а зависимые от неё узлы
+      // блокирует обычный dependency gate.
+      const admissionReason = readSubagentAdmissionReason(settled.error);
+      if (options?.signal?.aborted) {
+        states.set(settled.nodeId, {
+          status: "cancelled",
+          error: selectExecutionErrorMessage(settled.error),
+        });
+      } else if (admissionReason === "write_claim_conflict") {
+        states.set(settled.nodeId, {
+          status: "blocked",
+          error:
+            "Work claim conflict: another agent holds an overlapping write path. This branch is blocked; independent branches continue.",
+        });
+      } else {
+        states.set(settled.nodeId, {
+          status: "failed",
+          error: selectExecutionErrorMessage(settled.error),
+        });
+      }
       continue;
     }
 
@@ -2337,6 +2354,20 @@ function unknownPrismDecision(
   };
 }
 
+const SUBAGENT_ADMISSION_REJECTED_CODE = "agent_subagent_admission_rejected";
+
+/**
+ * Причина отказа registry admission из ошибки порта. DAG по ней отличает write-claim
+ * конфликт (ветка blocked, остальные ветки продолжаются) от прочих сбоев child.
+ */
+function readSubagentAdmissionReason(error: unknown): string | undefined {
+  if (!isCoreError(error) || error.context?.code !== SUBAGENT_ADMISSION_REJECTED_CODE) {
+    return undefined;
+  }
+  const reason = error.context.reason;
+  return typeof reason === "string" ? reason : undefined;
+}
+
 function throwOnSubagentAdmissionFailure(
   admission: Extract<RuntimeTaskAdmissionResult, { accepted: false }>,
   request: SubagentRunRequest,
@@ -2359,7 +2390,7 @@ function throwOnSubagentAdmissionFailure(
     `${message} (reason: ${admission.reason})`,
     {
       context: {
-        code: "agent_subagent_admission_rejected",
+        code: SUBAGENT_ADMISSION_REJECTED_CODE,
         reason: admission.reason,
         parentSessionId: request.sessionId,
         parentToolCallId: request.parentToolCallId,
@@ -3436,9 +3467,32 @@ function createRuntimeTaskSnapshot(input: {
     turnId: input.request.turnId,
     // Область claim'а в work ledger: тот же workspace, что видит конверт ребёнка.
     workspacePath: input.request.workspaceRoot || input.request.workingDirectory,
+    // Write-capability берётся из фактического профиля, а не из текста prompt:
+    // read-only роли не создают claim'ы на упомянутые для чтения пути.
+    writeCapable: isAgentProfileWriteCapable(input.lifecycle.profile),
     ...(input.spawnGrant === undefined ? {} : { spawnGrant: input.spawnGrant }),
     ...(input.level === undefined ? {} : { level: input.level }),
   };
+}
+
+/**
+ * Роль может писать только если её профиль реально объявляет Write/Edit.
+ * Read-only роли (start, orchestrator, researcher, reviewer, security-reviewer, evaluator)
+ * объявляют инспекционный набор инструментов, поэтому не претендуют на запись путей.
+ */
+export function isAgentProfileWriteCapable(
+  profile: Pick<AgentProfile, "tools" | "disallowedTools">,
+): boolean {
+  const disallowed = new Set(profile.disallowedTools ?? []);
+  const tools = profile.tools ?? [];
+  // `*` наследует весь доступный tool surface; запись остаётся возможной, пока
+  // профиль явно не запретил оба write-инструмента.
+  if (tools.includes("*")) {
+    return !(disallowed.has("Write") && disallowed.has("Edit"));
+  }
+  return tools.some(
+    (tool) => (tool === "Write" || tool === "Edit") && !disallowed.has(tool),
+  );
 }
 
 function withoutRuntimeMessageState(task: RuntimeTaskSnapshot): RuntimeTaskSnapshot {

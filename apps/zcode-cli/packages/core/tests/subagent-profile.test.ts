@@ -347,7 +347,9 @@ tools:
     expect(startPrompt).toContain("не обещай возобновление после перезапуска");
     const orchestratorPrompt =
       swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
-    expect(orchestratorPrompt).toContain("Не размножай одну задачу в дублирующие ветки");
+    expect(orchestratorPrompt).toContain(
+      "Не создавай дублирующие или пересекающиеся по файлам ветки",
+    );
     expect(orchestratorPrompt).toContain("сопоставь каждый запрос пользователя");
     expect(orchestratorPrompt).toContain("не предоставляет");
     expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
@@ -806,14 +808,18 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("orchestrator");
   });
 
-  it("asks orchestrator for 3-5 parallel specialized branches with a 10-minute bound", () => {
+  it("takes orchestrator fan-out capacity from the spawn envelope, not a fixed 3-5 branches", () => {
     const prompt = profile("orchestrator")?.systemPrompt ?? "";
 
-    expect(prompt).toContain("3–5 независимых веток одним сообщением");
+    expect(prompt).toContain(
+      "min(nodeCount, requested max_parallel, remaining_spawns, activeCap",
+    );
+    expect(prompt).toContain("5–8 независимыми областями");
     expect(prompt).toContain("10 минут");
     expect(prompt).toContain("большую ветку дели");
     expect(prompt).toContain("subagent-factory");
     expect(prompt).toContain("параллельные специализированные ветки");
+    expect(prompt).not.toContain("3–5 независимых веток");
   });
 
   it("turns subagent-factory into a real profile author with catalog boundaries", () => {

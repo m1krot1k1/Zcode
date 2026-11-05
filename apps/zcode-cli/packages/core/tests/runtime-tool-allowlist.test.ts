@@ -17,7 +17,7 @@ import { createSessionId } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 import { AgentRuntime } from "../src/runtime.js";
 import { resolveSubagentToolAllowlist } from "../src/runtime/methods/subagent.js";
-import { getSwarmAgentProfiles, normalizeAgentProfiles } from "../src/subagent/profile.js";
+import { getSwarmAgentProfiles, normalizeAgentProfiles, WORKER_SUBAGENT_TOOL_NAMES } from "../src/subagent/profile.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "../src/subagent/explore-tools.js";
@@ -464,6 +464,47 @@ describe("built-in profile capability gate at the runtime boundary", () => {
       expect(allowlist).not.toContain("Bash");
     },
   );
+
+  it("lets a read-only router delegate worker write tools without exposing them to itself", () => {
+    const request = { allowedTools: builtInTools("coder"), disallowedTools: [] } as never;
+    const routerParent = {
+      config: {
+        toolAllowlist: undefined,
+        toolDisallowlist: undefined,
+        delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
+      },
+      // Router's own provider-visible surface stays read-only.
+      getTools: () =>
+        ["Read", "Glob", "Grep", "Task", "Skill"].map((name) => ({
+          name,
+          permission: undefined,
+        })),
+    };
+    const allowlist = resolveSubagentToolAllowlist.call(
+      routerParent as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+
+    expect(allowlist).toEqual(
+      expect.arrayContaining(["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Task"]),
+    );
+  });
+
+  it("does not let a read-only non-router parent escalate a router child to writers", () => {
+    const request = { allowedTools: builtInTools("coder"), disallowedTools: [] } as never;
+    const readOnlyParent = createFakeParent(["Read", "Glob", "Grep", "Bash", "Task", "Skill"]);
+    const allowlist = resolveSubagentToolAllowlist.call(
+      readOnlyParent as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+  });
 
   it.each(["researcher", "reviewer", "security-reviewer", "evaluator"])(
     "%s receives Bash but not Write/Edit",
