@@ -59,7 +59,9 @@ export function setup(onChild?: (record: ChildRequest) => Promise<ModelResult>) 
       compact: { enabled: false },
       titleGeneration: { enabled: false },
       // Grep must be available to the parent before a child profile may inherit it.
-      toolAllowlist: ["Agent", "Task", "Read", "Grep"],
+      // SendMessage is required by the resume half of these scenarios; without it the
+      // parent tool call is filtered and the child never resumes.
+      toolAllowlist: ["Agent", "Task", "SendMessage", "Read", "Grep"],
     },
     {
       sessionStore: store,
