@@ -14,10 +14,17 @@ export function collectRuntimeAgentListing(
   // Причина бага: каталог профилей читался до проверки toolset и мог сорвать обычный turn,
   // когда Agent/Task выключен или запрещён. В этом случае listing не нужен вовсе.
   if (!tools.some((tool) => tool.name === "Agent" || tool.name === "Task")) return undefined;
+  // Router (start/orchestrator) не использует worker-tools сам, но может делегировать
+  // их named worker'у. Каталог должен показывать фактическую delegation-capability, иначе
+  // start видит coder без Write/Bash и ошибочно считает запись недоступной.
+  const delegationToolNames = runtime.config.delegationToolAllowlist;
+  const listingTools = delegationToolNames?.length
+    ? [...tools, ...delegationToolNames.map((name) => ({ name }))]
+    : tools;
   return collectAgentListingAttachment({
     definitions: runtime.getAgentDefinitions(),
     entries,
-    tools,
+    tools: listingTools,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
   });
 }

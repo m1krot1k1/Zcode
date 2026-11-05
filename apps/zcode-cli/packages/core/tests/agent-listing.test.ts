@@ -17,7 +17,7 @@ const profile = (name: string, description = `Description ${name}`): AgentProfil
 const collect = (
   names: string[],
   history: readonly RuntimeMessageEntry[] = [],
-  tools = [{ name: "Agent" }],
+  tools = [{ name: "Agent" }, { name: "Read" }],
 ) =>
   collectAgentListingAttachment({
     definitions: { activeAgents: names.map((name) => profile(name)) },

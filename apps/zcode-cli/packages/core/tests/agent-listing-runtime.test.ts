@@ -15,6 +15,7 @@ import { createRecordingMessageStore } from "./runtime-output-token-continuation
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ToolEntry } from "../src/tool/types.js";
 import { collectAgentListingAttachment } from "../src/subagent/listing.js";
+import { WORKER_SUBAGENT_TOOL_NAMES } from "../src/subagent/profile.js";
 import type { AgentDefinitionsSnapshot } from "../src/subagent/definitions.js";
 import { MessageHistoryImpl } from "../src/agent/message-history.js";
 import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-hydrator.js";
@@ -137,6 +138,34 @@ describe("runtime agent listing", () => {
       requests[1]!.messages.findIndex((m) => m.role === "tool"),
     );
     expect(listingMessages(requests[2]!)).toEqual(notices);
+  });
+
+  it("shows delegated worker tools in the router catalog", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "coder",
+          description: "Coder",
+          source: "user",
+          systemPrompt: "private",
+          tools: ["Read", "Write", "Edit", "Bash"],
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      {
+        toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
+        delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
+      },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- coder: Coder (Tools:");
+    expect(notice?.content).toContain("Write");
+    expect(notice?.content).toContain("Bash");
   });
 
   it.each(["disabled", "denied"])("does not read definitions when Agent is %s", async (reason) => {
