@@ -55,6 +55,7 @@ import {
 import { isBuiltInExploreAgentProfile, isDelegationRouterAgentType } from "../../subagent/profile.js";
 import {
   buildSubagentChildDisallowRules,
+  filterDelegationToolNames,
   filterSubagentChildToolNames,
   isToolAllowedByParentAllowlist,
 } from "../../subagent/tool-policy.js";
@@ -444,8 +445,10 @@ export function createDefaultSubagentPort(
             // Router-роль не использует Write/Edit/Bash сама, но должна передать
             // worker-возможности дальше. Набор наследуется только router-детьми;
             // read-only и worker-дети пересекаются со своим фактическим tool surface.
+            // Грант выдаётся уже ограниченным политикой текущей сессии (toolAllowlist /
+            // toolDisallowlist), чтобы router не мог расширить её на следующем уровне.
             delegationToolAllowlist: isDelegationRouterAgentType(request.agentType)
-              ? this.config.delegationToolAllowlist
+              ? resolveRuntimeDelegationToolNames(this)
               : undefined,
             // 动态工作流灰度门必须结构性继承：
             // 父会话关着而子代理开着，等于 Agent 工具变成绕过灰度的后门。默认路径（child 继承
@@ -769,6 +772,27 @@ function resolveSubagentPermissionMode(
   }
 }
 
+/**
+ * Router-delegation candidate set of this runtime, bounded by the session that owns it.
+ *
+ * Root и session-рантаймы применяют свой `toolAllowlist` (`*` = allow-all) и общие child
+ * disallow-правила. У `subagent_child` `toolAllowlist` — это производная поверхность
+ * профиля, а не allowlist сессии, и его `delegationToolAllowlist` уже ограничен тем, кто
+ * выдал грант; повторное ограничение здесь срезало бы worker-набор у read-only
+ * start/orchestrator. Функция экспортируется, чтобы spawn и каталог агентов применяли
+ * одну и ту же границу.
+ */
+export function resolveRuntimeDelegationToolNames(
+  runtime: Pick<AgentRuntimeInternal, "config">,
+): readonly string[] {
+  return filterDelegationToolNames({
+    candidates: runtime.config.delegationToolAllowlist,
+    parentAllowlist:
+      runtime.config.taskType === "subagent_child" ? undefined : runtime.config.toolAllowlist,
+    disallowedTools: runtime.config.toolDisallowlist,
+  });
+}
+
 /** 导出仅供 core 单测验证 child 能力清单的 WebSearch 条件过滤。 */
 export function resolveSubagentToolAllowlist(
   this: AgentRuntimeInternal,
@@ -786,17 +810,21 @@ export function resolveSubagentToolAllowlist(
     visibleMcpToolNames,
     this.config.toolAllowlist,
   );
-  const parentBuiltInToolNames = this.config.delegationToolAllowlist
-    ? this.config.delegationToolAllowlist.filter(
-        (toolName) => toolName !== "WebSearch" || modelSupportsNativeWebSearch(childModel),
-      )
-    : this.getTools()
+  // Фактическая поверхность родителя = зарегистрированные built-in инструменты ∪
+  // делегируемый набор. Объединение, а не подмена: иначе router-грант терял зарегистрированные
+  // инструменты (CreateWorkflow, alias Agent), которых нет в worker-константе. Сам грант
+  // ограничен политикой выдавшей его сессии (toolAllowlist / toolDisallowlist).
+  const parentBuiltInToolNames = [
+    ...new Set([
+      ...this.getTools()
         // child MCP must use the same descriptors as the parent's startup snapshot.
         .filter((tool) => tool.permission?.permission !== "mcp")
-        // WebSearch 是否进入 child 能力清单取决于 child Active Model，而不是父注册表：
-        // 否则 SubagentSpawned.allowedTools 会把 child 实际拿不到的条件工具持久化出去。
-        .filter((tool) => tool.name !== "WebSearch" || modelSupportsNativeWebSearch(childModel))
-        .map((tool) => tool.name);
+        .map((tool) => tool.name),
+      ...resolveRuntimeDelegationToolNames(this),
+    ]),
+    // WebSearch 是否进入 child 能力清单取决于 child Active Model，而不是父注册表：
+    // 否则 SubagentSpawned.allowedTools 会把 child 实际拿不到的条件工具持久化出去。
+  ].filter((toolName) => toolName !== "WebSearch" || modelSupportsNativeWebSearch(childModel));
   const parentAvailableToolNames = [...parentBuiltInToolNames, ...parentAllowedMcpToolNames];
   const inheritedParentToolNames = filterSubagentChildToolNames(
     parentAvailableToolNames,

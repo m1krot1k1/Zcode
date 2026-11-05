@@ -140,7 +140,9 @@ describe("runtime agent listing", () => {
     expect(listingMessages(requests[2]!)).toEqual(notices);
   });
 
-  it("shows delegated worker tools in the router catalog", async () => {
+  // Router-ребёнок (start/orchestrator) сам read-only, но грант на worker-набор уже выдан
+  // родителем. Каталог обязан показывать его, иначе start считает запись недоступной.
+  it("shows the bounded worker grant in a start router catalog", async () => {
     definitions.mockReturnValue({
       activeAgents: [
         {
@@ -155,6 +157,8 @@ describe("runtime agent listing", () => {
     runtime = createRuntime(
       {},
       {
+        // Router child: its own allowlist is the profile-derived read-only surface.
+        taskType: "subagent_child",
         toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
         delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
       },
@@ -166,6 +170,56 @@ describe("runtime agent listing", () => {
     expect(notice?.content).toContain("- coder: Coder (Tools:");
     expect(notice?.content).toContain("Write");
     expect(notice?.content).toContain("Bash");
+  });
+
+  // Root сессии: грант ограничен session toolAllowlist. Каталог не должен рекламировать
+  // инструменты, которые spawn всё равно срежет на пересечении с поверхностью root.
+  it("does not advertise worker write tools from a restricted root", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "coder",
+          description: "Coder",
+          source: "user",
+          systemPrompt: "private",
+          tools: ["Read", "Write", "Edit", "Bash"],
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      { toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"] },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- coder: Coder (Tools: Read)");
+    expect(notice?.content).not.toContain("Write");
+    expect(notice?.content).not.toContain("Edit");
+    expect(notice?.content).not.toContain("Bash");
+  });
+
+  it("does not advertise a worker tool removed by the session disallowlist", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "coder",
+          description: "Coder",
+          source: "user",
+          systemPrompt: "private",
+          tools: ["Read", "Write", "Edit", "Bash"],
+        },
+      ],
+    });
+    runtime = createRuntime({}, { toolDisallowlist: ["Bash"] });
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("Write");
+    expect(notice?.content).toContain("Edit");
+    expect(notice?.content).not.toContain("Bash");
   });
 
   it.each(["disabled", "denied"])("does not read definitions when Agent is %s", async (reason) => {

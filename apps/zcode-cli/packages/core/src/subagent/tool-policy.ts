@@ -55,3 +55,38 @@ export function isToolAllowedByParentAllowlist(
   if (toolName === TASK_TOOL_NAME) return parentAllowlist.includes(AGENT_TOOL_NAME);
   return false;
 }
+
+interface DelegationToolFilterInput {
+  /** Candidate worker capabilities, normally the runtime's delegationToolAllowlist. */
+  candidates: readonly string[] | undefined;
+  /**
+   * Allowlist of the session that issues the grant. `undefined` means unconstrained.
+   * Router children pass `undefined` because their grant was already bounded by the
+   * ancestor session and their own toolAllowlist is only the profile-derived surface.
+   */
+  parentAllowlist?: readonly string[] | undefined;
+  /** Session disallowlist; alias closure and forced child rules are applied by the filter. */
+  disallowedTools: readonly string[] | undefined;
+}
+
+/**
+ * Bounds the router-delegation candidate set by the issuing session's tool policy.
+ *
+ * This is the single place that combines the allowlist bound (`*` means allow-all,
+ * Agent/Task count as one capability) with the shared child disallow rules. Spawn
+ * resolution and the model-visible agent catalog both call it, so the advertised
+ * delegation capability cannot drift from what a spawned child actually receives.
+ */
+export function filterDelegationToolNames(
+  input: DelegationToolFilterInput,
+): readonly string[] {
+  const candidates = input.candidates ?? [];
+  if (candidates.length === 0) return [];
+  const allowAll = input.parentAllowlist?.includes("*") ?? false;
+  const allowlisted = allowAll
+    ? candidates
+    : candidates.filter((toolName) =>
+        isToolAllowedByParentAllowlist(toolName, input.parentAllowlist),
+      );
+  return filterSubagentChildToolNames(allowlisted, input.disallowedTools);
+}

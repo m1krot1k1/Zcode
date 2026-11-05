@@ -78,6 +78,7 @@ import {
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "./explore-tools.js";
 import { formatLocalAgentTaskNotification } from "./completion-notification.js";
 import { filterSubagentChildToolNames } from "./tool-policy.js";
+import { createToolRuleNameSet } from "../tool/tool-visibility.js";
 import {
   ErrorPayloadRole,
   selectExecutionErrorMessage,
@@ -3476,22 +3477,32 @@ function createRuntimeTaskSnapshot(input: {
 }
 
 /**
- * Роль может писать только если её профиль реально объявляет Write/Edit.
+ * Роль может писать, если её эффективная (унаследованная) поверхность содержит Write/Edit.
  * Read-only роли (start, orchestrator, researcher, reviewer, security-reviewer, evaluator)
  * объявляют инспекционный набор инструментов, поэтому не претендуют на запись путей.
  */
 export function isAgentProfileWriteCapable(
   profile: Pick<AgentProfile, "tools" | "disallowedTools">,
 ): boolean {
-  const disallowed = new Set(profile.disallowedTools ?? []);
-  const tools = profile.tools ?? [];
+  // 修复原因：runtime (resolveSubagentToolAllowlist) трактует tools: undefined/[]
+  // как наследование родительского tool surface, а прежний классификатор считал это
+  // пустым набором: custom/plugin профиль реально получал Write/Edit, но registrar
+  // не создавал claim. 修复依据：disallowedTools 按 rule syntax 归一化 (Write(*)),
+  // а пустой/отсутствующий tools наследует запись, пока не запрещены оба write-инструмента.
+  const disallowed = createToolRuleNameSet(profile.disallowedTools);
+  const deniesWriteSurface =
+    disallowed?.has("Write") === true && disallowed.has("Edit") === true;
+  // `tools: undefined` и `tools: []` наследуют весь доступный tool surface.
+  if (profile.tools === undefined || profile.tools.length === 0) {
+    return !deniesWriteSurface;
+  }
   // `*` наследует весь доступный tool surface; запись остаётся возможной, пока
   // профиль явно не запретил оба write-инструмента.
-  if (tools.includes("*")) {
-    return !(disallowed.has("Write") && disallowed.has("Edit"));
+  if (profile.tools.includes("*")) {
+    return !deniesWriteSurface;
   }
-  return tools.some(
-    (tool) => (tool === "Write" || tool === "Edit") && !disallowed.has(tool),
+  return profile.tools.some(
+    (tool) => (tool === "Write" || tool === "Edit") && disallowed?.has(tool) !== true,
   );
 }
 

@@ -3,6 +3,7 @@ import type { RuntimeAttachmentEntry, RuntimeMessageEntry } from "../../agent/me
 import { collectAgentListingAttachment } from "../../subagent/listing.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { resolveRuntimeEmbeddedSearchEnabled } from "../methods/embedded-search-branch.js";
+import { resolveRuntimeDelegationToolNames } from "../methods/subagent.js";
 import { commitTurnRequestEntries } from "../methods/turn-output-token-continuation.js";
 import type { TurnRequestState } from "../methods/turn-loop-state.js";
 
@@ -16,9 +17,11 @@ export function collectRuntimeAgentListing(
   if (!tools.some((tool) => tool.name === "Agent" || tool.name === "Task")) return undefined;
   // Router (start/orchestrator) не использует worker-tools сам, но может делегировать
   // их named worker'у. Каталог должен показывать фактическую delegation-capability, иначе
-  // start видит coder без Write/Bash и ошибочно считает запись недоступной.
-  const delegationToolNames = runtime.config.delegationToolAllowlist;
-  const listingTools = delegationToolNames?.length
+  // start видит coder без Write/Bash и ошибочно считает запись недоступной. Набор берётся
+  // через ту же границу, что и spawn: allowlist/disallowlist сессии и общие child-запреты,
+  // поэтому каталог не рекламирует инструмент, который spawn всё равно срежет.
+  const delegationToolNames = resolveRuntimeDelegationToolNames(runtime);
+  const listingTools = delegationToolNames.length
     ? [...tools, ...delegationToolNames.map((name) => ({ name }))]
     : tools;
   return collectAgentListingAttachment({

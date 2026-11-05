@@ -223,6 +223,18 @@ interface WorkConflict {
 8. `agentId` в `findConflicts` исключает собственные claim'ы: repair/повторный admission
    того же агента не конфликтует сам с собой.
 
+Write-capability для gate выводится из **эффективной (унаследованной) поверхности** профиля,
+а не из декларированного списка `tools` самого по себе. `tools: undefined` и `tools: []`
+означают наследование tool surface родителя (`resolveSubagentToolAllowlist`), поэтому такой
+профиль считается write-capable, пока `disallowedTools` не запретил оба write-инструмента
+(`Write` и `Edit`). Правила `disallowedTools` нормализуются парсером видимости инструментов
+(`getToolRuleName` / `createToolRuleNameSet`), поэтому формы вида `Write(*)`, пробелы и
+alias-имена учитываются. Профиль только с `Bash` (встроенные researcher, reviewer,
+security-reviewer, evaluator) остаётся non-writer: ledger намеренно не блокирует Bash, и
+два таких агента на одном файле допускаются без `write_claim_conflict`. Путь из prompt,
+который после нормализации совпадает с корнем workspace (`"."`), не превращается в claim:
+это область обзора, а не заявка на запись всего дерева.
+
 При отказе узел DAG падает, его потомки получают `blocked`, агрегированный `workResult`
 становится `partial`/`failed`. Отказ admission не оставляет ни задачи, ни claim'а.
 

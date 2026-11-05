@@ -25,6 +25,7 @@ import {
   createExploreSubagentPort,
   executeSubagentTaskDag,
   isAgentProfileWriteCapable,
+  type ExploreSubagentRuntimeResult,
 } from "../src/subagent/runner.js";
 import { normalizeAgentProfiles } from "../src/subagent/profile.js";
 import { WORK_LEDGER_TTL_MS, WorkLedger, type WorkClaim } from "../src/runtime-task/work-ledger.js";
@@ -82,6 +83,20 @@ function task(
 /** Задача остаётся running: settled никогда не резолвится. */
 function pending(): RuntimeTaskCancellationHandle {
   return { abort() {}, settled: new Promise<void>(() => {}) };
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+/** Держит первый запуск активным, пока второй проходит admission. */
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
 }
 
 function claimOf(ledger: WorkLedger, agentId: string): WorkClaim | undefined {
@@ -470,6 +485,31 @@ describe("write-capability admission", () => {
     ).toBe(false);
   });
 
+  it("treats omitted or empty tools as an inherited write surface", () => {
+    // Runtime наследует родительский tool surface при tools: undefined / [].
+    expect(isAgentProfileWriteCapable({ tools: undefined })).toBe(true);
+    expect(isAgentProfileWriteCapable({ tools: [] })).toBe(true);
+    expect(
+      isAgentProfileWriteCapable({ tools: undefined, disallowedTools: ["Write", "Edit"] }),
+    ).toBe(false);
+    expect(isAgentProfileWriteCapable({ tools: [], disallowedTools: ["Write", "Edit"] })).toBe(
+      false,
+    );
+    // Один запрещённый инструмент не закрывает наследованную запись целиком.
+    expect(isAgentProfileWriteCapable({ tools: [], disallowedTools: ["Write"] })).toBe(true);
+  });
+
+  it("normalizes disallowedTools rule syntax before classifying", () => {
+    expect(isAgentProfileWriteCapable({ tools: ["Write"], disallowedTools: ["Write(*)"] })).toBe(
+      false,
+    );
+    expect(
+      isAgentProfileWriteCapable({ tools: ["Write"], disallowedTools: ["  Write(*)  "] }),
+    ).toBe(false);
+    // Bash-only профиль (встроенные researcher/reviewer/evaluator) не пишет файлы.
+    expect(isAgentProfileWriteCapable({ tools: ["Bash"] })).toBe(false);
+  });
+
   it("marks exactly the read-only swarm roles as non-writers", () => {
     const profiles = new Map(normalizeAgentProfiles([]).map((profile) => [profile.name, profile]));
     for (const role of [
@@ -538,6 +578,61 @@ describe("write-capability admission", () => {
     expect(coder.status).toBe("completed");
     expect(registry.get("registrar-port-agent-2")?.writeCapable).toBe(true);
     expect(claimOf(ledger, "registrar-port-agent-2")?.paths).toEqual([path]);
+  });
+
+  it("claims the path for a custom profile with an empty tools list", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "zcode-registrar-inherit-"));
+    directories.push(directory);
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const traceId = createTraceId();
+    const sessionId = createSessionId("registrar-inherit-parent");
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+    let agentSequence = 0;
+    const pendingRun = deferred<ExploreSubagentRuntimeResult>();
+    const port = createExploreSubagentPort({
+      outputRootDir: directory,
+      runtimeTaskRegistry: registry,
+      // Custom/plugin профиль без tools наследует write surface родителя.
+      profiles: normalizeAgentProfiles([
+        {
+          name: "plugin-writer",
+          description: "Custom profile without an explicit tools list",
+          source: "project",
+          systemPrompt: "Edit files when the task requires it.",
+          tools: [],
+        },
+      ]),
+      createAgentId: () => `registrar-inherit-agent-${(agentSequence += 1)}`,
+      async emitParentEvent() {},
+      runExploreAgent: () => pendingRun.promise,
+    });
+    const run = (prompt: string) =>
+      port.run({
+        agentType: "plugin-writer",
+        description: "plugin writer task",
+        prompt,
+        sessionId,
+        trace: { traceId, sessionId },
+        workingDirectory: WORKSPACE,
+        workspaceRoot: WORKSPACE,
+      });
+
+    // writeCapable выводится настоящим классификатором внутри порта, а не задаётся вручную.
+    const first = run(`Правлю \`${path}\``);
+    await flushMicrotasks();
+    expect(registry.get("registrar-inherit-agent-1")?.writeCapable).toBe(true);
+    expect(claimOf(ledger, "registrar-inherit-agent-1")?.paths).toEqual([path]);
+
+    await expect(run(`Тоже правлю \`${path}\``)).rejects.toMatchObject({
+      context: expect.objectContaining({ reason: "write_claim_conflict" }),
+    });
+    expect(registry.get("registrar-inherit-agent-2")).toBeUndefined();
+    expect(claimOf(ledger, "registrar-inherit-agent-2")).toBeUndefined();
+    expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(1);
+
+    pendingRun.resolve({ response: "done", traceId, events: [] });
+    await first;
   });
 
   it("admits two researchers on the same path without creating claims", () => {

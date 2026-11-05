@@ -16,7 +16,10 @@ import {
 import { createSessionId } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 import { AgentRuntime } from "../src/runtime.js";
-import { resolveSubagentToolAllowlist } from "../src/runtime/methods/subagent.js";
+import {
+  resolveRuntimeDelegationToolNames,
+  resolveSubagentToolAllowlist,
+} from "../src/runtime/methods/subagent.js";
 import { getSwarmAgentProfiles, normalizeAgentProfiles, WORKER_SUBAGENT_TOOL_NAMES } from "../src/subagent/profile.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
@@ -29,6 +32,7 @@ import { registerBuiltInTools } from "../src/tool/handlers/index.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import {
   buildSubagentChildDisallowRules,
+  filterDelegationToolNames,
   filterSubagentChildToolNames,
   isToolAllowedByParentAllowlist,
 } from "../src/subagent/tool-policy.js";
@@ -545,6 +549,143 @@ describe("built-in profile capability gate at the runtime boundary", () => {
     expect(allowlist).not.toContain("Write");
     expect(allowlist).not.toContain("Edit");
     expect(allowlist).not.toContain("Bash");
+  });
+
+  // Router-грант ограничен политикой выдавшей его сессии. Root получает worker-набор по
+  // умолчанию, поэтому без этой границы restricted root всё равно выдавал бы coder Write/Bash.
+  const RESTRICTED_ROOT_TOOLS = ["Read", "Glob", "Grep", "Task", "Skill"] as const;
+
+  function createSessionRoot(options: {
+    toolAllowlist?: readonly string[];
+    toolDisallowlist?: readonly string[];
+  }) {
+    return {
+      config: {
+        toolAllowlist: options.toolAllowlist,
+        toolDisallowlist: options.toolDisallowlist,
+        delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
+      },
+      // 生产 runtime 注册的就是 allowlist 交集后的工具，因此 fake 的注册面与 allowlist 一致。
+      getTools: () =>
+        (options.toolAllowlist ?? ALL_PARENT_TOOL_NAMES).map((name) => ({
+          name,
+          permission: undefined,
+        })),
+    };
+  }
+
+  function resolveForProfile(parent: unknown, profileName: string): readonly string[] {
+    const request = { allowedTools: builtInTools(profileName), disallowedTools: [] } as never;
+    return resolveSubagentToolAllowlist.call(
+      parent as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+  }
+
+  // Воспроизводит router-ребёнка так, как его создаёт subagent.ts: собственная allowlist —
+  // производная read-only поверхность, а грант ограничен родителем тем же helper'ом.
+  function createRouterChild(root: ReturnType<typeof createSessionRoot>) {
+    const routerAllowlist = resolveForProfile(root, "start");
+    return {
+      config: {
+        taskType: "subagent_child" as const,
+        toolAllowlist: routerAllowlist,
+        toolDisallowlist: root.config.toolDisallowlist,
+        delegationToolAllowlist: resolveRuntimeDelegationToolNames(root),
+      },
+      getTools: () =>
+        routerAllowlist.map((name) => ({
+          name,
+          permission: undefined,
+        })),
+    };
+  }
+
+  it("keeps a restricted root from granting coder write tools", () => {
+    const allowlist = resolveForProfile(
+      createSessionRoot({ toolAllowlist: RESTRICTED_ROOT_TOOLS }),
+      "coder",
+    );
+
+    expect(allowlist).toEqual(expect.arrayContaining([...RESTRICTED_ROOT_TOOLS]));
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+    expect(allowlist).not.toContain("Bash");
+  });
+
+  it("lets an unrestricted root grant coder write tools", () => {
+    const allowlist = resolveForProfile(createSessionRoot({}), "coder");
+
+    expect(allowlist).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
+
+  it("keeps the router grant bounded when start delegates under a restricted root", () => {
+    const start = createRouterChild(createSessionRoot({ toolAllowlist: RESTRICTED_ROOT_TOOLS }));
+    const allowlist = resolveForProfile(start, "coder");
+
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+    expect(allowlist).not.toContain("Bash");
+  });
+
+  it("keeps the worker grant for coder under start when the root is unrestricted", () => {
+    const start = createRouterChild(createSessionRoot({}));
+    const allowlist = resolveForProfile(start, "coder");
+
+    expect(allowlist).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
+
+  it("keeps registered parent tools that the worker constant does not enumerate", () => {
+    const root = createSessionRoot({});
+    root.getTools = () =>
+      ["Read", "CreateWorkflow", "Agent"].map((name) => ({ name, permission: undefined }));
+    const request = {
+      allowedTools: ["Read", "CreateWorkflow", "Agent"],
+      disallowedTools: [],
+    } as never;
+
+    const allowlist = resolveSubagentToolAllowlist.call(
+      root as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+
+    expect(allowlist).toContain("Read");
+    expect(allowlist).toContain("CreateWorkflow");
+    expect(allowlist).toContain("Agent");
+  });
+
+  it("bounds delegation candidates with the session disallowlist", () => {
+    expect(
+      filterDelegationToolNames({
+        candidates: ["Agent", "Task", "Bash", "Read"],
+        parentAllowlist: undefined,
+        disallowedTools: ["Bash"],
+      }),
+    ).toEqual(["Agent", "Task", "Read"]);
+  });
+
+  it("treats Agent and Task as one capability in the session allowlist", () => {
+    expect(
+      filterDelegationToolNames({
+        candidates: ["Agent", "Task", "Write"],
+        parentAllowlist: ["Task"],
+        disallowedTools: [],
+      }),
+    ).toEqual(["Agent", "Task"]);
+  });
+
+  it("treats * in the session allowlist as allow-all", () => {
+    expect(
+      filterDelegationToolNames({
+        candidates: ["Write", "Bash"],
+        parentAllowlist: ["*"],
+        disallowedTools: [],
+      }),
+    ).toEqual(["Write", "Bash"]);
   });
 });
 

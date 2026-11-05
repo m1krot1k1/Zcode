@@ -36,7 +36,7 @@ import {
   type AgentOutput,
 } from "@zcode/contracts";
 import type { WorkConflict, WorkLedger } from "./work-ledger.js";
-import { WORK_LEDGER_TTL_MS } from "./work-ledger.js";
+import { normalizeWorkspacePath, WORK_LEDGER_TTL_MS } from "./work-ledger.js";
 import {
   extractTaskPaths,
   forgetWorkClaimHeartbeat,
@@ -1384,6 +1384,20 @@ type WorkClaimAdmission =
   | { accepted: true; claimed: boolean }
   | { accepted: false; reason: "write_claim_conflict" | "work_claim_unavailable" };
 
+/**
+ * Text-derived путь, который после нормализации совпадает с корнем workspace.
+ * Ledger канонизирует корень в "."; используем его же нормализацию, чтобы фильтр
+ * admission'а не расходился с conflict-check. Некорректный кандидат не отбрасываем:
+ * ledger сам отвергнет его, сохраняя прежний fail-closed контракт.
+ */
+function resolvesToWorkspaceRoot(path: string, workspacePath: string): boolean {
+  try {
+    return normalizeWorkspacePath(path, workspacePath) === ".";
+  } catch {
+    return false;
+  }
+}
+
 const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
   "completed",
   "failed",
@@ -1985,7 +1999,16 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // падали с write_claim_conflict. Write-capability приходит из профиля, а не из текста.
     if (task.writeCapable === false) return { accepted: true, claimed: false };
     const text = task.prompt || task.description;
-    const paths = extractTaskPaths(text);
+    // 根因 (3.17.75): абсолютный корень workspace в prompt'е (в backticks или голым
+    // путём) нормализуется ledger'ом в ".", а "." по контракту pathsOverlap
+    // пересекается с любым путём. Один такой spawn создавал claim на весь workspace,
+    // и все последующие writers получали write_claim_conflict до истечения TTL.
+    // 修复依据: text-derived кандидат, резолвящийся в корень, — не write-intent.
+    // Фильтруем только производные текста; явный WorkLedger.claim({ paths: ["."] })
+    // сохраняет прежнюю семантику "весь workspace".
+    const paths = extractTaskPaths(text).filter(
+      (path) => !resolvesToWorkspaceRoot(path, workspacePath),
+    );
     if (paths.length > 0) {
       let conflicts: WorkConflict[];
       try {
