@@ -63,6 +63,18 @@ otherwise the verdict is `inconclusive`. It prints both arm summaries, paired de
 (`real` or `synthetic`), `minRepeats`, `holdoutTasks`, reasons, and one of `candidate`,
 `inconclusive`, or `reject`. Synthetic records are always labeled and never treated as proof.
 
+## Budget and protected holdout
+
+`scripts/delegation-routing-benchmark-plan.json` is the concrete allocation for real runs:
+
+- 12 tasks (two per family), 3 repeats per arm, 2 arms = 72 runs;
+- caps: 200k tokens per run and 180 minutes wall clock;
+- six protected-holdout tasks, one per family, excluded from prompt and routing tuning.
+
+The plan is an allocation, not evidence. Real records must set `synthetic:false`, `repeats:3`, and
+`holdout:true` for holdout tasks; otherwise the gate returns `inconclusive`. The plan is validated by
+`pnpm test:delegation-routing-benchmark` and does not run an LLM.
+
 ## Acceptance
 
 A candidate is accepted only when:
