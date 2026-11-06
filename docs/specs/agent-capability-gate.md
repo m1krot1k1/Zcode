@@ -2,10 +2,11 @@
 
 ## Назначение и владельцы
 
-Встроенные профили ZCode делятся на три класса по реальной способности, а не по описанию в промпте:
+Встроенные профили ZCode делятся на четыре класса по реальной способности, а не по описанию в промпте:
 
 - **read-only маршрутизатор** (`start`, `orchestrator`) — только читает и делегирует;
-- **инспекция** (`researcher`, `reviewer`, `security-reviewer`, `evaluator`) — читает и воспроизводит проверки командой, но не меняет файлы;
+- **инспекция** (`researcher`, `evaluator`) — читает, воспроизводит проверки командой и может делегировать, но не меняет файлы;
+- **review-only** (`reviewer`, `security-reviewer`) — читает и воспроизводит проверки командой, но не меняет файлы и не делегирует (`Task`/`Agent` не выдаются);
 - **исполнитель** (`implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory`) — полный рабочий набор, включая запись и команды.
 
 Специализированные исполнители делят одну и ту же способность, но разные границы роли: `coder` — production-код в назначенной области, спецификации и regression tests; `frontend-coder` — UI/renderer/design system, `DESIGN.md`, темы, i18n и desktop/mobile; `backend-coder` — services/runtime/protocol/data, границы архитектуры, конкурентность и идемпотентность; `infra-coder` — build/release/CI/scripts/electron, упаковка и кросс-платформенность. Границы заданы prompt-контрактом и назначенной областью, а не разным набором инструментов.
@@ -19,12 +20,15 @@
 | Класс                   | Профили                                                                                                                                             | Инструменты                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Read-only маршрутизатор | `start`, `orchestrator`                                                                                                                             | `Read`, `Glob`, `Grep`, `Task`, `Skill`                                                                                                                         |
-| Инспекция               | `researcher`, `reviewer`, `security-reviewer`, `evaluator`                                                                                          | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
+| Инспекция               | `researcher`, `evaluator`                                                                                                                           | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
+| Review-only             | `reviewer`, `security-reviewer`                                                                                                                     | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                          |
 | Исполнитель             | `implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory` | `Read`, `Glob`, `Grep`, `Write`, `Edit`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop` |
 
 `start` и `orchestrator` не получают `Bash`, `Write`, `Edit`, `WebFetch` и `WebSearch`: маршрутизатор не исполняет команды, не правит файлы и не подменяет делегирование собственной реализацией. Read-only триаж выполняется чтением (`Read`/`Glob`/`Grep`). Если `Task` недоступен или хост отклонил вызов, профиль фиксирует blocker и возвращает его вызывающему.
 
 Инспекционные профили получают `Bash` для воспроизведения, но не получают `Write`/`Edit`: проверка не должна переписывать проверяемый код. Исполнительские профили сохраняют полный набор, и их промпты не ослабляются.
+
+Review-only профили дополнительно не получают `Task`/`Agent`: ревью не открывает рекурсивные review-ветки и завершается в текущем профиле. Это профильный тир, а не runtime-губернатор: контракт держится списком инструментов профиля и промптом.
 
 ## Инварианты
 
@@ -40,6 +44,8 @@
 10. Router-грант: `start`/`orchestrator` могут делегировать worker-набор, не имея `Write`/`Edit`/`Bash` сами. Грант ограничен политикой выдавшей его сессии: `toolAllowlist` (`*` = allow-all, `Agent`/`Task` считаются одной способностью) и `toolDisallowlist` через те же `buildSubagentChildDisallowRules`/`filterSubagentChildToolNames`. `WebSearch` дополнительно фильтруется по Active Model child.
 11. Грант наследуют только router-дети; worker- и read-only-дети его не получают и пересекаются со своим фактическим tool surface.
 12. Каталог агентов, показываемый модели, использует тот же ограниченный delegation-набор (видимые инструменты ∪ `resolveRuntimeDelegationToolNames`). Каталог не рекламирует инструмент, который spawn срежет, и не скрывает worker-набор у router-ребёнка.
+13. `reviewer`/`security-reviewer` не получают `Task`/`Agent`; `researcher`/`evaluator` сохраняют `Task`. Ревью-тир не открывает рекурсивные review-ветки.
+14. Review-промпты начинаются с выданного diff, ограничивают findings числом 10 и явно возвращают partial/blocked при исчерпании deadline. Параллелизм review-волны 2–3 держится промптом/планом; runtime-губернатора нет.
 
 ## Router delegation grant
 
@@ -49,6 +55,17 @@
 - `resolveRuntimeDelegationToolNames` (`runtime/methods/subagent.ts`) ограничивает этот набор политикой сессии. Для `subagent_child` allowlist — производная поверхность профиля, а `delegationToolAllowlist` уже ограничен тем, кто выдал грант; повторная граница там срезала бы worker-набор у read-only router.
 - При spawn router-ребёнка (`start`/`orchestrator`) `subagent.ts` передаёт ему **уже ограниченный** грант; worker- и read-only-дети получают `undefined`.
 - `collectRuntimeAgentListing` (`runtime/helpers/agent-listing.ts`) добавляет к видимым инструментам тот же ограниченный набор, поэтому каталог и spawn используют одну границу.
+
+## Review-wave contract (prompt-level)
+
+Владельцы — системные промпты `reviewer`/`security-reviewer` в `profile.ts` и `bundled-skills/skills/reviewer/SKILL.md`. Отдельного runtime-губернатора конкурентности для ревью нет, поэтому исполнимая сегодня граница — только промпт и план вызывающего.
+
+- **Diff-first.** Первичный вход — точный commit, diff или набор путей от вызывающего. Сначала читается diff; затем ревью идёт по выданному diff и непосредственно требуемым call sites (вызовы изменённых символов, владеющая спецификация, ближайшие тесты).
+- **Без повторного обхода.** Если пути выданы, reviewer не запускает широкий Explore-подобный обход репозитория. Отчёт содержит просмотренные файлы, фактически запущенные команды/тесты и использованный чеклист.
+- **Findings cap.** Не более 10 подтверждённых findings, каждый с severity, `file:line`, impact и reproduction/evidence. Неподтверждённые подозрения идут в `gaps`, а не в findings.
+- **Partial/blocked.** При исчерпании deadline или бюджета профиль явно возвращает `partial` или `blocked`: что просмотрено, что нет и что осталось. Частичный просмотр нельзя выдавать за полный.
+- **Параллелизм.** Review-волна планируется на 2–3 параллельных reviewer'а. Это planner/prompt-политика, а не runtime-лимит: `resolveSwarmParallelism` управляет общим fan-out, отдельного счётчика review-конкурентности нет.
+- **Security scoping.** `security-reviewer` запускается только на security-sensitive diff: аутентификация/авторизация, секреты и ключи, границы доверия, сетевой ввод и парсинг, разрешения и sandbox. Обычный code review без этих поверхностей не должен его запрашивать.
 
 ## Границы custom-профилей и фабрики
 
@@ -91,7 +108,7 @@ sequenceDiagram
 
 ## Приёмочные сценарии
 
-1. Матрица ролей: `start`/`orchestrator` имеют ровно `Read, Glob, Grep, Task, Skill`; инспекционные роли имеют `Bash`, но не `Write`/`Edit`; исполнительские роли имеют `Write`/`Edit`/`Bash`.
+1. Матрица ролей: `start`/`orchestrator` имеют ровно `Read, Glob, Grep, Task, Skill`; `researcher`/`evaluator` имеют `Bash` и `Task`, но не `Write`/`Edit`; `reviewer`/`security-reviewer` имеют `Bash`/`Read`/`Grep`/`Glob` и не имеют `Task`/`Agent`/`Write`/`Edit`; исполнительские роли имеют `Write`/`Edit`/`Bash`.
 2. Runtime enforcement: при родителе, который отдаёт `Write`/`Edit`/`Bash`, итоговый allowlist `start`/`orchestrator` их не содержит, а `Read`/`Glob`/`Grep`/`Task`/`Skill` содержит.
 3. Runtime enforcement: инспекционные роли получают `Bash` и не получают `Write`/`Edit`.
 4. Runtime enforcement: исполнительские роли получают `Write`/`Edit`/`Bash`.
@@ -101,5 +118,7 @@ sequenceDiagram
 8. Roster содержит ровно 15 канонических ролей в стабильном порядке; `getSwarmAgentProfiles` возвращает их независимо от custom-каталога.
 9. Custom-профиль `start`/`implementer` не меняет built-in tools и systemPrompt; custom-профиль с уникальным именем добавляется в каталог и виден в model prompt.
 10. `subagent-factory` описывает формат `.zcode/agents/<kebab-name>.md`, worker-only tools, доступные skills, запрет секретов/generic/разовых задач и пометку про следующий turn. `start` называет специализированных владельцев, `orchestrator` требует 3–5 параллельных веток примерно до 10 минут и вызывает фабрику для отсутствующего устойчивого направления.
+11. Review-промпты `reviewer`/`security-reviewer` содержат diff-first вход, запрет широкого повторного обхода при выданных путях, лимит 10 findings с форматом severity/`file:line`/impact/reproduction и явный partial/blocked при исчерпании deadline.
+12. `security-reviewer` ограничен security-sensitive поверхностями (auth, secrets, trust boundaries, network/input parsing, permissions); обычный review его не запрашивает. Параллелизм review-волны 2–3 зафиксирован как prompt/planner-политика, без отдельного runtime-губернатора.
 
 Проверки: `tests/subagent-profile.test.ts` (матрица, промпты, roster и приоритет built-in) и `tests/runtime-tool-allowlist.test.ts` (runtime enforcement через `resolveSubagentToolAllowlist`).

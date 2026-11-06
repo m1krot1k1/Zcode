@@ -578,6 +578,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       });
       const readyGate = createSubagentSessionReadyGate();
       let sessionReady = false;
+      // Владелец terminal-перехода выставляется ровно один раз; success/failure ветки одного
+      // run используют его совместно, а конкурирующий deadline/Stop не перезаписывает terminal.
+      let ownsTaskFinalization = false;
       // child persistence/resume 可能在 onSessionReady 前永久挂起；watchdog 和
       // abort guard 必须覆盖完整 setup，而不能把 Ready 当成取消能力的安装边界。
       activityWatchdog.start();
@@ -740,10 +743,14 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           taskAbort.detachParent();
           activityWatchdog.stop();
           void completionPromise
-            .then((completed) =>
-              finalizeBackgroundCompletion(options, request, lifecycle, registry, completed),
-            )
+            .then((completed) => {
+              // Child фактически завершился: снимаем deadline до захвата финализации,
+              // иначе поздний timer мог бы конкурировать за terminal-переход.
+              taskDeadline.clear();
+              return finalizeBackgroundCompletion(options, request, lifecycle, registry, completed);
+            })
             .catch(async (error) => {
+              taskDeadline.clear();
               if (taskAbort.signal.aborted) {
                 await finalizeBackgroundStopped(options, request, lifecycle, registry, true);
               } else {
@@ -773,6 +780,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
 
         const completed =
           winner.kind === "completed" ? winner.completed : await guardedCompletionPromise;
+        // Bug 原因: timer deadline жил до внешнего finally, поэтому поздний callback мог
+        // захватить финализацию и записать failed уже после успешного completion.
+        // 修复依据: completion — единственный владелец результата, снимаем timer до финализации.
+        taskDeadline.clear();
         const acceptedOutput = {
           ...completed.output,
           acceptance: await evaluateAndPersistPrismAcceptance(
@@ -783,6 +794,24 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             lifecycle.runTraceContext,
           ),
         } satisfies AgentCompletedOutput;
+        // Bug 原因: при гонке deadline успевал первым захватить finalization, а success path
+        // всё равно перезаписывал terminal failed на completed. 修复依据: terminal пишет только
+        // владелец финализации; проигравший путь не публикует второй terminal и не перезаписывает artifacts.
+        ownsTaskFinalization = registry.beginSubagentTaskFinalization(lifecycle.agentId);
+        if (!ownsTaskFinalization) {
+          throw createCoreError(
+            CoreErrorType.ToolExecutionFailed,
+            "Subagent task was already finalized",
+            {
+              context: {
+                agentId: lifecycle.agentId,
+                agentType: request.agentType,
+                parentToolCallId: request.parentToolCallId,
+              },
+              recoverable: true,
+            },
+          );
+        }
         await persistSwarmFact("completed", {
           resultText: completed.output.content.map((block) => block.text).join("\n\n"),
         });
@@ -792,7 +821,6 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
 
         // 终态提交后 UI/SendMessage 可立即观察到它；同 id 的重启必须等本次产物和事件落定。
-        registry.beginSubagentTaskFinalization(lifecycle.agentId);
         await writeCompletedAgentArtifacts(lifecycle, request, acceptedOutput);
         const terminalTask = registry.update(lifecycle.agentId, (task) => ({
           ...withoutRuntimeMessageState(task),
@@ -859,6 +887,13 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         return acceptedOutput;
       } catch (error) {
         activityWatchdog.stop();
+        // Bug 原因: deadline/Stop finalizer мог уже записать terminal snapshot, пока этот путь
+        // ждал promise; повторная запись давала второй terminal и расходилась с artifacts.
+        // 修复依据: terminal snapshot — источник истины, поздний путь только пробрасывает ошибку.
+        const currentTerminalTask = registry.get(lifecycle.agentId);
+        if (currentTerminalTask && isTerminalRuntimeTask(currentTerminalTask)) {
+          throw error;
+        }
         if (taskAbort.signal.aborted) {
           await persistSwarmFact("cancelled", { diagnosticCode: "child_cancelled" });
           // guardSubagentPromiseWithAbort быстрее завершает вызывающий tool, чем child runtime;
@@ -885,6 +920,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             });
           throw error;
         }
+        // Задача уже завершилась ошибкой: timer не должен участвовать в финализации.
+        taskDeadline.clear();
         await persistSwarmFact("failed", { diagnosticCode: "child_execution_failed" });
         taskAbort.dispose();
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
@@ -892,7 +929,15 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         // 根因：前台子代理收到 Turn failure wrapper，因此 message 可能只有通用文案；依据：
         // 后台 settlement 已从 cause 链选择原始错误，任务注册表应保留同一诊断原因。
         const errorMessage = selectExecutionErrorMessage(error);
-        registry.beginSubagentTaskFinalization(lifecycle.agentId);
+        // Bug 原因: параллельный deadline/Stop finalizer мог уже записать terminal сразу после
+        // проверки выше. 修复依据: если финализацией владеет этот же run (например, persist
+        // после completion), продолжаем его failure-ветку; чужой владелец не перезаписывается.
+        if (!ownsTaskFinalization) {
+          ownsTaskFinalization = registry.beginSubagentTaskFinalization(lifecycle.agentId);
+        }
+        if (!ownsTaskFinalization) {
+          throw error;
+        }
         await writeFailedAgentArtifacts(lifecycle, request, errorMessage);
         const terminalTask = registry.update(lifecycle.agentId, (task) => ({
           ...withoutRuntimeMessageState(task),
@@ -987,9 +1032,18 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         taskAbort.settle(registry.get(lifecycle.agentId));
         throwOnSubagentAdmissionFailure(admission, request);
       }
-      // Background start does not own a per-task deadline: the foreground run path
-      // enforces the router hard cap, while background lifecycle is controlled by
-      // its task owner and existing stop/finalization contract.
+      // Bug 原因: explicit background start раньше не получал per-task deadline, поэтому
+      // переданная в фон задача могла выполняться бесконечно и не иметь terminal-факта.
+      // 修复依据: тот же per-role timer, что и у foreground run; он живёт до фактического
+      // settlement и очищается на каждом выходе, а финализацию по-прежнему захватывает
+      // beginSubagentTaskFinalization (старт не становится вторым владельцем terminal).
+      const taskDeadline = createSubagentTaskDeadline({
+        lifecycle,
+        options,
+        registry,
+        request,
+        taskAbort,
+      });
       try {
         await writeAgentMetadataFile(lifecycle, request, "running");
         if (taskAbort.signal.aborted) {
@@ -1006,6 +1060,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           throw taskAbort.signal.reason ?? new Error("Subagent startup aborted");
         }
       } catch (error) {
+        taskDeadline.clear();
         if (taskAbort.signal.aborted) {
           await finalizeBackgroundStopped(options, request, lifecycle, registry, false);
         } else {
@@ -1058,6 +1113,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           onSessionStartFailed: readyGate.reject,
         },
         () => {
+          // Background задача фактически settlement'нулась: timer больше не нужен.
+          taskDeadline.clear();
           taskAbort.dispose();
           registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
           taskAbort.settle(registry.get(lifecycle.agentId));
@@ -1071,6 +1128,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           taskAbort.signal,
         );
       } catch (error) {
+        // Readiness не наступила: задача ещё не передана владельцу, timer снимаем здесь.
+        taskDeadline.clear();
         const wasAborted = taskAbort.signal.aborted;
         taskAbort.abort(error);
         if (!wasAborted) {

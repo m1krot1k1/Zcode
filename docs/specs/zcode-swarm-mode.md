@@ -133,6 +133,38 @@ sequenceDiagram
   Core->>Tasks: cancel root subtree and await settlement
 ```
 
+## Жёсткие per-role deadline дочерних задач
+
+- Владелец deadline — `SubagentPort` конкретного runtime. `createDefaultSubagentPort` передаёт runner'у чистый резолвер `resolveSubagentTaskTimeoutMs(agentType)`; ошибка резолвера не пробрасывается в child и не отменяет задачу без terminal-факта.
+- Отсчёт начинается от фактического старта задачи (`lifecycle.startedAt`), поэтому в бюджет входит не только model turn, но и stalled setup/resume до первого события child. Один admitted task получает ровно один таймер.
+- Базовые бюджеты: `start` — 45 минут; `orchestrator` — 20 минут; `researcher`, `reviewer`, `security-reviewer` — 15 минут; все worker-роли из `SWARM_AGENT_TYPES` (implementer, coder, frontend-coder, backend-coder, infra-coder, test-engineer, evaluator, self-improver, knowledge-curator, subagent-factory) — 20 минут. Неизвестный, custom и compatibility-профиль (включая `Explore`) получает worker-дефолт 20 минут. Резолвер нормализует имя роли и не бросает исключений; таблица значений — контракт, а не подсказка модели.
+- Terminal-переход делает deadline finalizer. Он первым захватывает финализацию через `beginSubagentTaskFinalization`, пишет failed artifacts, переводит registry-запись в `failed` с причиной `Subagent task deadline exceeded`, abort-ит child signal, публикует `SubagentExecutionTerminal`, `SubagentStopped` и background notification/`BackgroundTaskCompleted` для background-задачи, затем освобождает cancellation handle и settle-ит waiter. Если финализацией уже владеет success/stop/другой finalizer, deadline только abort-ит child и не пишет второй terminal.
+- Timer очищается на успешном completion, startup-ошибке, non-abort ошибке выполнения, stop/abort, передаче в auto-background (только после фактического settlement) и в explicit `start()`. Success path очищает timer до захвата финализации, поэтому поздний deadline не может перезаписать `completed` в `failed`. Повторный terminal event после успешного completion не публикуется.
+- Явный background `start()` использует тот же per-role deadline, что и foreground `run()`; передача в background не снимает и не продлевает бюджет. Владение финализацией, остановка и registry-инварианты остаются прежними: при гонке пользовательского Stop и deadline terminal пишет только первый владелец, второй не дублирует artifacts/events/notification.
+- Вложенность не ослабляет бюджеты: каждый child runtime создаёт собственный `SubagentPort`, поэтому таймер роли ставится на каждом уровне независимо. Истечение deadline потомка не завершает родителя; родитель продолжает до собственного бюджета. Внешний root-run deadline (2 часа) остаётся границей всего дерева и по-прежнему может отменить его целиком.
+
+```mermaid
+sequenceDiagram
+  participant Runner as Subagent runner
+  participant Registry as RuntimeTaskRegistry
+  participant Child as Child runtime
+  participant UI as Parent events
+  Runner->>Runner: admission + lifecycle.startedAt
+  Runner->>Runner: setTimeout(role deadline)
+  alt success / stop before deadline
+    Runner->>Runner: clearTimeout + own finalization
+    Runner->>Registry: terminal completed/killed
+    Runner->>Child: abort only if stopped
+  else deadline fires
+    Runner->>Registry: beginSubagentTaskFinalization
+    Runner->>Registry: terminal failed (deadline reason)
+    Runner->>Child: abort signal
+    Runner->>Runner: failed artifacts
+    Runner->>UI: SubagentExecutionTerminal + SubagentStopped (+ background notification)
+    Runner->>Registry: release cancellation handle + settle waiter
+  end
+```
+
 ## Предварительная проверка пустого рабочего каталога
 
 Для явных запросов проверить, проанализировать, исправить или протестировать уже существующий репозиторий Core перед планированием проверяет верхний уровень текущего `workingDirectory` через `FileSystemPort`. Русская формулировка «Анализ репы на ошибки и недоделки» также считается запросом анализа существующего кода. Если список доступен и в нём нет файлов, каталогов и ссылок (кроме системного `.DS_Store`), Core не вызывает planner и не создаёт дочерние задачи: публикует терминальный Swarm row с причиной «текущая папка пуста; выберите проект», затем обычный root turn может попросить пользователя открыть нужный проект. Ошибка чтения каталога не считается пустым результатом и не блокирует задачу. Создание нового проекта с нуля и общие вопросы не блокируются. Эта проверка не меняет cwd и не ищет соседние каталоги.
@@ -193,6 +225,10 @@ sequenceDiagram
 | SWARM-47 | Start вернул финальный ответ с валидным `<zcode-presentation>` | Runtime парсит последний блок и прикладывает `presentation` к `AgentCompletedOutput`; formatter выводит авторитетный `<zcode-start-report>` с точным userText, status, facts, unknowns, evidenceRefs, unresolved, требованием дословной передачи и без сырого child text. |
 | SWARM-48 | Presentation невалиден/отсутствует или его вернула worker-роль/DAG-узел | Presentation не прикладывается; worker/DAG не парсятся; formatter использует прежний вывод: сырой ответ, `work_result`, usage, acceptance. |
 | SWARM-49 | `WorkResult.status` = `partial`/`failed`/`blocked`, а `unresolved` содержит `spawn_budget_exhausted` или repair-причину | Model-текст показывает фактический status и unresolved; успешный lifecycle не скрывает partial/blocked и не подменяет status на `completed`. |
+| SWARM-50 | `researcher`/`reviewer`/`security-reviewer` не завершается за 15 минут | Deadline finalizer переводит задачу в terminal `failed` с `Subagent task deadline exceeded`, abort-ит child signal, пишет failed artifact, публикует один terminal/stopped event и освобождает cancellation handle; waiter получает `failed`, задача не остаётся running. |
+| SWARM-51 | Worker/custom-роль, `orchestrator` или `start` завершается успешно до своего бюджета | Таймер снят до финализации: registry остаётся `completed`, поздний deadline не публикует второй terminal и не перезаписывает результат. Для неизвестной роли действует 20 минут, для `start` — 45 минут. |
+| SWARM-52 | Явный background `start()` превысил per-role deadline | Задача terminal `failed` по тому же finalizer-контракту, с background notification; при гонке с пользовательским Stop terminal пишет только первый владелец, второй не дублирует события, registry и cancellation handle освобождены. |
+| SWARM-53 | Вложенный child достигает deadline своей роли, пока родитель ещё работает | Потомок на своём уровне получает terminal `failed`; родитель продолжает выполнение до собственного per-role бюджета. Deadline каждого уровня ставится портом соответствующего runtime. |
 
 ## Независимые доказательства
 
@@ -225,6 +261,10 @@ sequenceDiagram
 - Core unit: `parsePresentationBlock` принимает только строгую схему и последний валидный блок; formatter с presentation выводит `<zcode-start-report>` с авторитетной инструкцией и точным userText/status/facts/unknowns/evidenceRefs/unresolved, не содержит сырого child text; без presentation сохраняется прежний Branch B вывод.
 - Core unit: presentation парсится только у `agentType === "start"`; worker-роль и DAG-узел (`internalSwarmNodeID`) её игнорируют. Start prompt содержит presentation-инструкцию, worker-промпты — нет.
 - Core unit: partial/blocked status и unresolved-строки (`spawn_budget_exhausted`, repair) остаются видимыми в model-тексте при наличии и отсутствии presentation.
+- Core unit: `resolveSubagentTaskTimeoutMs` возвращает 15 минут для `researcher`/`reviewer`/`security-reviewer`, 20 минут для worker-ролей, `orchestrator`, custom/unknown и compatibility-профилей, 45 минут для `start`; имена нормализуются, резолвер не бросает.
+- Core unit: foreground `reviewer` с истёкшим deadline terminal-`failed` в registry, child signal aborted, waiter resolved, cancellation handle released; успешный task снимает таймер и не публикует поздний terminal.
+- Core unit: explicit background `start()` с истёкшим deadline terminal-`failed`, notification и registry-факт согласованы; гонка deadline со `stopTask` даёт ровно один terminal без дублирующих событий.
+- Core unit: вложенный reviewer получает deadline на своём уровне, пока родительский orchestrator остаётся running, затем завершается по собственному бюджету.
 - Acceptance case проверяется текущим case lifecycle; ручной/pending E2E не объявляется завершённым, пока не replayed/promoted согласно `e2e-case-lifecycle`.
 
 ## Ограничения

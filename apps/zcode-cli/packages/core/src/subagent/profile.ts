@@ -69,6 +69,25 @@ const ORCHESTRATOR_WORKER_ROUTING_CONTRACT = [
   "Каждая ветка должна укладываться примерно в 10 минут. Если ветка вернула partial, blocked или timeout, верни partial с накопленным контекстом (сделано, осталось, evidence) и остатком бюджета, чтобы следующий wave orchestrator продолжил с этого места, а не начинал заново.",
 ].join("\n");
 
+// 修复依据：review-ветки уходили в повторный обход репозитория и не ограничивали
+// число findings, из-за чего волна ревью росла по времени. Контракт задаёт diff-first
+// вход, лимит findings и честный partial/blocked при исчерпании deadline.
+const REVIEW_EXECUTION_CONTRACT = [
+  "Первичный вход — точный commit, diff или набор путей, переданный вызывающим. Сначала прочитай diff (git show/git diff по указанному диапазону) и ревьюй именно его, а не весь репозиторий.",
+  "Если вызывающий дал файлы или пути, не делай широкий Explore-подобный обход репозитория: проверяй только выданный diff и непосредственно требуемые call sites — вызовы изменённых символов, владеющую спецификацию и ближайшие тесты.",
+  "Отчёт обязательно содержит: просмотренные файлы, фактически запущенные тесты или команды с результатом и использованный чеклист. Не заявляй проверку, которой не было.",
+  "Максимум 10 подтверждённых findings. Каждый finding: severity, file:line, impact, reproduction/evidence. Неподтверждённые подозрения идут в раздел gaps, а не в findings.",
+  "При исчерпании deadline или бюджета явно верни partial/blocked: что просмотрено, что нет и что осталось проверить. Не зависай и не выдавай частичный просмотр за полный.",
+  "Review-волна планируется на 2–3 параллельных reviewer'а. Runtime-губернатора конкурентности для ревью нет, поэтому граница задаётся промптом и планом вызывающего, а не отдельным механизмом.",
+].join("\n");
+
+// security-reviewer — узкий профиль: обычный code review без названных поверхностей
+// не должен его запускать, иначе ревью-волна тратит слот на нерелевантную проверку.
+const SECURITY_REVIEW_SCOPE_CONTRACT = [
+  "Запускайся только на security-sensitive diff: аутентификация и авторизация, секреты и ключи, границы доверия, сетевой ввод и парсинг, разрешения и sandbox.",
+  "Обычный code review без этих поверхностей не запрашивает security-reviewer. Если выданный diff не содержит security-sensitive поверхностей, верни это одной строкой и не расширяй область поиска.",
+].join("\n");
+
 // Routing gate: start/orchestrator маршрутизируют, root интегрирует. Правило должно быть
 // одинаковым в промпте и в тестируемой функции, иначе модель и код разойдутся.
 const DELEGATION_ROUTING_CONTRACT = [
@@ -107,6 +126,24 @@ export const INSPECTION_SUBAGENT_TOOL_NAMES = [
   "WebFetch",
   "WebSearch",
   "Task",
+  "Skill",
+  "TodoRead",
+  "TodoWrite",
+  "AskUserQuestion",
+  "TaskOutput",
+  "TaskStop",
+] as const;
+
+// 修复依据：reviewer/security-reviewer получали Task и могли рекурсивно открывать
+// новые review-ветки, из-за чего ревью-волна распухала по времени и теряла фокус.
+// Review-тир не делегирует: проверка остаётся локальной и завершается в этом профиле.
+export const REVIEW_SUBAGENT_TOOL_NAMES = [
+  "Read",
+  "Glob",
+  "Grep",
+  "Bash",
+  "WebFetch",
+  "WebSearch",
   "Skill",
   "TodoRead",
   "TodoWrite",
@@ -508,11 +545,11 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     source: "built-in",
     systemPrompt: [
       "Ты независимый reviewer ZCode. Проверяй фактический diff по требованиям и прослеживай ошибки до конкретного сценария.",
-      "Сначала сообщай только подтверждённые проблемы с путями/строками, влиянием и воспроизведением.",
+      REVIEW_EXECUTION_CONTRACT,
       "По умолчанию не меняй файлы; Bash доступен для воспроизведения, Write/Edit недоступны, поэтому не переписывай проверяемый код. Не повторяй общие пожелания. Если проблем нет, перечисли просмотренную область и пробелы проверки.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
+    tools: [...REVIEW_SUBAGENT_TOOL_NAMES],
     skills: [
       "zcode-verification",
       "zcode-swarm",
@@ -533,11 +570,13 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     source: "built-in",
     systemPrompt: [
       "Ты специалист по безопасности ZCode. Проверяй конкретные поверхности атаки, границы доверия, секреты и обработку ошибок.",
+      SECURITY_REVIEW_SCOPE_CONTRACT,
+      REVIEW_EXECUTION_CONTRACT,
       "Описывай только доказанные или чётко воспроизводимые риски с указанием пути, источника и последствий.",
       "По умолчанию не меняй файлы; Bash доступен для воспроизведения атаки, Write/Edit недоступны. Не объявляй проект безопасным по итогам ограниченного просмотра.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
-    tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
+    tools: [...REVIEW_SUBAGENT_TOOL_NAMES],
     skills: ["zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
   {

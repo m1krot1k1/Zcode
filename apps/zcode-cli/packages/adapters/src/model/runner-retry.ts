@@ -8,11 +8,13 @@ import {
   ModelErrorSource,
   type ModelErrorSource as ModelErrorSourceType,
 } from "./errors.js";
-import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
+import {
+  MAX_HONORED_RETRY_AFTER_MS,
+  type ResolvedAiSdkModelRetryOptions,
+} from "./retry-policy.js";
 import { modelStatusContextToLogContext, type ModelStatusContext } from "./runner-status.js";
 import { modelFailureAttributionFields } from "./runner-telemetry.js";
 
-const MAX_REASONABLE_RETRY_AFTER_MS = 5 * 60_000;
 const RELIABLE_ATTRIBUTION_CONTEXT_KEYS = [
   "errorPhase",
   "exceptionKind",
@@ -42,8 +44,8 @@ export function calculateRetryDelay(
 ): number {
   const uncapped = retry.baseDelayMs * retry.backoffFactor ** Math.max(0, attempt - 1);
   const capped = Math.min(uncapped, retry.maxDelayMs);
-  // provider 会返回几十秒到数分钟的 retry-after；
-  // 旧 60s 上限会把合法限流等待退化为本地短退避。
+  // provider 会返回几十秒到数分钟的 retry-after；旧 60s 上限会把合法限流等待退化为本地短退避。
+  // 超过本地可兑现窗口的 Retry-After 不再走这里：重试闸门会先按配额/限流耗尽终止。
   if (isReasonableRetryAfterMs(retryAfterMs, uncapped)) {
     return retryAfterMs;
   }
@@ -229,7 +231,7 @@ function isReasonableRetryAfterMs(
     value !== undefined &&
     Number.isFinite(value) &&
     value >= 0 &&
-    (value <= MAX_REASONABLE_RETRY_AFTER_MS || value < exponentialDelayMs)
+    (value <= MAX_HONORED_RETRY_AFTER_MS || value < exponentialDelayMs)
   );
 }
 

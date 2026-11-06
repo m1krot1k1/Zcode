@@ -10,10 +10,33 @@ Provider 返回配额耗尽（402/429/`FreeUsageLimitError`）时，adapter 仍�
 ## 2. 触发条件
 
 - HTTP 402，业务码 `insufficient_balance`；
-- HTTP 429 且 `Retry-After` 大于 600 秒（15 995 即 15 995 秒）；
+- HTTP 429 且 `Retry-After` 大于 300 秒（本地可兑现窗口，见下节）；
 - 错误信息命中 `FreeUsageLimitError`。
 
 命中后 adapter 不再重试该 Provider，直接抛出带 `providerQuotaExhausted` 归因的错误。
+
+## 2.1 Retry-After 与本地等待窗口
+
+- 单一事实来源：`MAX_HONORED_RETRY_AFTER_MS = 300_000`（`retry-policy.ts`）。
+- `Retry-After <= 300s`：按 provider 要求等待（优先于指数退避），等待可被 `abortSignal` 立刻打断；
+- `Retry-After > 300s`：不等待、不重试，分类为 `retryable: false` + `providerQuotaExhausted: true`，
+  `retryAfterMs` / `retryAfterSeconds` / `statusCode` 原样保留在 normalized context 中；
+- `x-should-retry: false`：`Retry-After` 不参与退避计算（`parseRetryAfterMs` 忽略它），既有行为不变；
+- 有界预算仍为 `maxAttempts = 11`（含首次）；重试只重发模型请求，`emittedRetryBoundaryEvent`
+  之后（含已输出文本或已完成工具调用）不重放。
+
+测试证据（`apps/zcode-cli/packages/adapters/tests/runner-retry-after-policy.test.ts`）：
+
+- `honors Retry-After up to five minutes and rejects longer waits`
+- `keeps a 429 with an in-capacity Retry-After retryable`
+- `classifies a 429 beyond the local wait as terminal quota exhaustion`
+- `retries a 429 with Retry-After 1s, then emits only the successful attempt`
+- `aborts during Retry-After backoff with the caller reason and sends no next request`
+- `sleep rejects promptly with the abort reason`
+- `stops after one attempt when Retry-After exceeds the local wait`
+- `still gives up at maxAttempts for an in-capacity Retry-After`
+- `retries before tool dispatch and emits the tool call exactly once`
+- `does not retry after a tool call chunk has been emitted`
 
 ## 3. 下一次选择
 

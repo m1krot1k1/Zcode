@@ -79,7 +79,10 @@ import {
   publishModelTelemetryMilestone,
 } from "./runner-status.js";
 import { StreamingToolCallAssembler } from "./streaming-tool-call-assembler.js";
-import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
+import {
+  isRetryAfterBeyondHonoredWait,
+  type ResolvedAiSdkModelRetryOptions,
+} from "./retry-policy.js";
 import type {
   AiSdkStreamTextResult,
   AiSdkModelRuntime,
@@ -1560,6 +1563,13 @@ function canRetryStreamFailure(input: {
   }
 
   if (input.failure.reason === ModelFailureReasonValue.Cancelled) {
+    return false;
+  }
+
+  // provider 要求的 Retry-After 超过本地可兑现窗口：本地短退避重试只会空转。
+  // 分类器已把 429 标成配额/限流耗尽；这里兜住其它 state（如 5xx 带超长 Retry-After），
+  // 统一在重试闸门终止，让上层看到 retryable=false 与 providerQuotaExhausted 上下文。
+  if (isRetryAfterBeyondHonoredWait(input.failure.retryAfterMs)) {
     return false;
   }
 

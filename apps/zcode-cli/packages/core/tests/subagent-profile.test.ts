@@ -9,6 +9,7 @@ import {
   isBuiltInExploreAgentProfile,
   normalizeAgentProfiles,
   parseAgentProfileFromMarkdown,
+  REVIEW_SUBAGENT_TOOL_NAMES,
   ROOT_ONLY_TOOL_NAMES,
   WORKER_SUBAGENT_TOOL_NAMES,
   decideDelegationRoute,
@@ -263,7 +264,7 @@ tools:
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
     expect(prompt).toContain("- reviewer:");
     expect(prompt).toContain(
-      "(Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, TodoRead",
+      "(Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Skill, TodoRead",
     );
     expect(prompt).toContain("(Tools: Read, Glob, Grep, Write, Edit, Bash");
     expect(prompt).not.toContain("tools: Read");
@@ -317,8 +318,11 @@ tools:
     expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")).toMatchObject({
       source: "built-in",
       description: expect.not.stringContaining("Workspace attempt"),
-      tools: expect.arrayContaining(["Task"]),
+      tools: expect.arrayContaining(["Read", "Glob", "Grep", "Bash"]),
     });
+    expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")?.tools).not.toContain(
+      "Task",
+    );
     const normalAgentPrompt = formatAgentProfilesForPrompt(mergedProfiles) ?? "";
     expect(normalAgentPrompt).toContain("- research-helper: Workspace research role");
     expect(normalAgentPrompt).not.toContain("general-purpose");
@@ -341,7 +345,17 @@ tools:
       ),
     ).toEqual(swarmProfiles.find(({ name }) => name === "reviewer"));
     expect(swarmProfiles.every((profile) => profile.injectAgentsMd)).toBe(true);
-    expect(swarmProfiles.every((profile) => profile.tools?.includes("Task"))).toBe(true);
+    const reviewOnlyRoles = new Set(["reviewer", "security-reviewer"]);
+    expect(
+      swarmProfiles
+        .filter((profile) => !reviewOnlyRoles.has(profile.name))
+        .every((profile) => profile.tools?.includes("Task")),
+    ).toBe(true);
+    for (const name of reviewOnlyRoles) {
+      const tools = swarmProfiles.find((profile) => profile.name === name)?.tools ?? [];
+      expect(tools, name).not.toContain("Task");
+      expect(tools, name).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Bash"]));
+    }
     expect(swarmProfiles.every((profile) => profile.systemPrompt.includes("下一负责人"))).toBe(
       true,
     );
@@ -880,6 +894,20 @@ describe("built-in role capability matrix", () => {
     "TaskOutput",
     "TaskStop",
   ];
+  const REVIEW_TOOLS = [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Skill",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+  ];
   const WORKER_TOOLS = [
     "Read",
     "Glob",
@@ -910,12 +938,28 @@ describe("built-in role capability matrix", () => {
     },
   );
 
-  it.each(["researcher", "reviewer", "security-reviewer", "evaluator"])(
-    "%s inspects with Bash but cannot write files",
+  it.each(["researcher", "evaluator"])(
+    "%s inspects and may delegate with Bash but cannot write files",
     (name) => {
       const tools = toolsOf(name);
 
       expect(tools).toEqual(INSPECTION_TOOLS);
+      expect(tools).toContain("Task");
+      expect(tools).toContain("Bash");
+      expect(tools).not.toContain("Write");
+      expect(tools).not.toContain("Edit");
+    },
+  );
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s reviews the given diff without a recursion-capable toolset",
+    (name) => {
+      const tools = toolsOf(name);
+
+      expect(tools).toEqual(REVIEW_TOOLS);
+      expect(tools).toEqual([...REVIEW_SUBAGENT_TOOL_NAMES]);
+      expect(tools).not.toContain("Task");
+      expect(tools).not.toContain("Agent");
       expect(tools).toContain("Bash");
       expect(tools).not.toContain("Write");
       expect(tools).not.toContain("Edit");
@@ -956,6 +1000,64 @@ describe("built-in role capability matrix", () => {
 
     expect(prompt).toContain("Твои инструменты: Read, Glob, Grep, Task и Skill");
     expect(prompt).toContain("Write, Edit и Bash недоступны");
+  });
+});
+
+// docs/specs/agent-capability-gate.md: review-тир не делегирует, начинает с выданного
+// diff, ограничивает findings и честно возвращает partial/blocked при исчерпании deadline.
+describe("review prompt contract", () => {
+  const promptOf = (name: string): string =>
+    getSwarmAgentProfiles(normalizeAgentProfiles([])).find((profile) => profile.name === name)
+      ?.systemPrompt ?? "";
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s reads the provided diff first and avoids broad repository re-traversal",
+    (name) => {
+      const prompt = promptOf(name);
+
+      expect(prompt).toContain("Первичный вход");
+      expect(prompt).toContain("Сначала прочитай diff");
+      expect(prompt).toContain("не делай широкий Explore-подобный обход репозитория");
+      expect(prompt).toContain("непосредственно требуемые call sites");
+    },
+  );
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s caps findings at 10 and reports files, tests and checklist",
+    (name) => {
+      const prompt = promptOf(name);
+
+      expect(prompt).toContain("Максимум 10 подтверждённых findings");
+      expect(prompt).toContain("severity, file:line, impact, reproduction/evidence");
+      expect(prompt).toContain("раздел gaps");
+      expect(prompt).toContain("просмотренные файлы");
+      expect(prompt).toContain("фактически запущенные тесты");
+      expect(prompt).toContain("использованный чеклист");
+    },
+  );
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s returns explicit partial/blocked on deadline exhaustion",
+    (name) => {
+      const prompt = promptOf(name);
+
+      expect(prompt).toContain("partial/blocked");
+      expect(prompt).toContain("что просмотрено, что нет");
+      expect(prompt).toContain("Не зависай");
+      expect(prompt).toContain("2–3 параллельных reviewer");
+    },
+  );
+
+  it("scopes security-reviewer to security-sensitive diffs only", () => {
+    const prompt = promptOf("security-reviewer");
+
+    expect(prompt).toContain("только на security-sensitive diff");
+    expect(prompt).toContain("аутентификация и авторизация");
+    expect(prompt).toContain("границы доверия");
+    expect(prompt).toContain("сетевой ввод и парсинг");
+    expect(prompt).toContain("разрешения и sandbox");
+    expect(prompt).toContain("не запрашивает security-reviewer");
+    expect(prompt).toContain("не расширяй область поиска");
   });
 });
 

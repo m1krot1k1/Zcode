@@ -42,18 +42,15 @@ import {
 } from "./failure-provider-business-codes.js";
 import { isModelFirstTokenTimeoutError } from "./first-token-watchdog.js";
 import { isModelStreamIdleTimeoutError } from "./stream-idle-timeout.js";
+import { isRetryAfterBeyondHonoredWait } from "./retry-policy.js";
 
 const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
 
 // registry.ts 的 admission 拒绝与 turn.ts 的预算中止共用同一句文案，只有预算维度不同。
 const RUN_BUDGET_EXHAUSTED_PATTERN = /root run (resource|token|time) budget (is )?exhausted/i;
 
-// Retry-After 超过 10 分钟说明配额/限流窗口远超一次会话的等待窗口：
-// 此时任何 429 都必须立即失败，否则 maxAttempts 会把用户挂在 “Working” 上几十分钟。
-const LONG_RETRY_AFTER_MS = 600_000;
-
 function isLongRetryAfter(retryAfterMs: number | undefined): boolean {
-  return retryAfterMs !== undefined && retryAfterMs > LONG_RETRY_AFTER_MS;
+  return isRetryAfterBeyondHonoredWait(retryAfterMs);
 }
 
 export interface ClassifiedModelFailure {
