@@ -181,6 +181,33 @@ describe("PRISM Host Bash evaluator", () => {
     expect(result.receipts).toHaveLength(0);
   });
 
+  it("verifies a schedule without a turn ID against a result without a turn ID", () => {
+    const events = [
+      { ...scheduledEvent({ withoutTurnId: true }), sequenceNumber: 1 },
+      { ...resultEvent({ withoutTurnId: true }), sequenceNumber: 2 },
+    ];
+
+    const result = evaluatePrismTaskAcceptance({ contract, current, childSessionId, events });
+
+    expect(result.decision).toMatchObject({
+      status: "verified",
+      passedCriterionIds: ["typecheck"],
+    });
+    expect(result.receipts).toHaveLength(1);
+  });
+
+  it("rejects a result with a turn ID when the schedule has no turn ID", () => {
+    const events = [
+      { ...scheduledEvent({ withoutTurnId: true }), sequenceNumber: 1 },
+      { ...resultEvent(), sequenceNumber: 2 },
+    ];
+
+    const result = evaluatePrismTaskAcceptance({ contract, current, childSessionId, events });
+
+    expect(result.decision.status).toBe("unknown");
+    expect(result.receipts).toHaveLength(0);
+  });
+
   it("uses sequence order rather than input array order and rejects invalid sequences", () => {
     const outOfArrayOrder = [
       { ...resultEvent(), sequenceNumber: 2 },
