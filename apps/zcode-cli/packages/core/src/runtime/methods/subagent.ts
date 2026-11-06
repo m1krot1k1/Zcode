@@ -115,14 +115,23 @@ export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefine
 const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 20 * 60_000;
 // Start должен успеть получить partial от orchestrator и запустить следующий wave.
 const SUBAGENT_START_TASK_DEADLINE_MS = 45 * 60_000;
-// Инспекция (чтение/аудит) должна укладываться в короткую ветку без правок.
-const SUBAGENT_INSPECTION_TASK_DEADLINE_MS = 15 * 60_000;
+// Review должен укладываться в короткую diff-first ветку; 10 минут — аварийный cap.
+const SUBAGENT_REVIEW_TASK_DEADLINE_MS = 10 * 60_000;
+// Researcher может параллельно собирать evidence, но не превращается в долгий аудит.
+const SUBAGENT_RESEARCH_TASK_DEADLINE_MS = 15 * 60_000;
 // Worker-роли и custom-профили получают одинаковый дефолтный бюджет.
 const SUBAGENT_WORKER_TASK_DEADLINE_MS = 20 * 60_000;
 
-const SUBAGENT_INSPECTION_ROLE_NAMES = new Set(
-  ["researcher", "reviewer", "security-reviewer"].map((role) => normalizeRoleName(role)),
+const SUBAGENT_REVIEW_ROLE_NAMES = new Set(
+  ["reviewer", "security-reviewer"].map((role) => normalizeRoleName(role)),
 );
+const SUBAGENT_RESEARCH_ROLE_NAMES = new Set(
+  ["researcher"].map((role) => normalizeRoleName(role)),
+);
+const SUBAGENT_INSPECTION_ROLE_NAMES = new Set([
+  ...SUBAGENT_REVIEW_ROLE_NAMES,
+  ...SUBAGENT_RESEARCH_ROLE_NAMES,
+]);
 
 // Встроенные worker-роли берутся из единого реестра профилей, а не дублируются строкой:
 // добавление роли в SWARM_AGENT_TYPES автоматически включает её в deadline-контракт.
@@ -141,8 +150,11 @@ function normalizeRoleName(role: string): string {
 
 const SUBAGENT_ROLE_TASK_DEADLINE_MS: ReadonlyMap<string, number> = new Map<string, number>([
   [normalizeRoleName("start"), SUBAGENT_START_TASK_DEADLINE_MS],
-  ...[...SUBAGENT_INSPECTION_ROLE_NAMES].map(
-    (role) => [role, SUBAGENT_INSPECTION_TASK_DEADLINE_MS] as const,
+  ...[...SUBAGENT_REVIEW_ROLE_NAMES].map(
+    (role) => [role, SUBAGENT_REVIEW_TASK_DEADLINE_MS] as const,
+  ),
+  ...[...SUBAGENT_RESEARCH_ROLE_NAMES].map(
+    (role) => [role, SUBAGENT_RESEARCH_TASK_DEADLINE_MS] as const,
   ),
   ...[...SUBAGENT_WORKER_ROLE_NAMES].map(
     (role) => [role, SUBAGENT_WORKER_TASK_DEADLINE_MS] as const,
@@ -152,9 +164,9 @@ const SUBAGENT_ROLE_TASK_DEADLINE_MS: ReadonlyMap<string, number> = new Map<stri
 
 /**
  * Чистый резолвер hard deadline по роли. Контракт: start — 45 минут,
- * orchestrator/worker/custom — 20 минут, researcher/reviewer/security-reviewer — 15 минут.
- * Резолвер не бросает и не зависит от состояния runtime, чтобы late/unknown профиль
- * не оставлял задачу без таймера.
+ * orchestrator/worker/custom — 20 минут, researcher — 15 минут,
+ * reviewer/security-reviewer — 10 минут. Резолвер не бросает и не зависит от
+ * состояния runtime, чтобы late/unknown профиль не оставлял задачу без таймера.
  */
 export function resolveSubagentTaskTimeoutMs(agentType: string): number {
   // Неизвестный, custom и compatibility-профиль получает worker-дефолт.

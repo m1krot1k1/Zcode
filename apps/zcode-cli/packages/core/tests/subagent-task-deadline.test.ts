@@ -19,7 +19,8 @@ import { createExploreSubagentPort } from "../src/subagent/runner.js";
 import { normalizeAgentProfiles } from "../src/subagent/profile.js";
 
 const WORKSPACE = "/workspace/zcode";
-const REVIEWER_DEADLINE_MS = 15 * 60_000;
+const REVIEWER_DEADLINE_MS = 10 * 60_000;
+const RESEARCHER_DEADLINE_MS = 15 * 60_000;
 const WORKER_DEADLINE_MS = 20 * 60_000;
 const START_DEADLINE_MS = 45 * 60_000;
 const DEADLINE_ERROR = "Subagent task deadline exceeded";
@@ -86,7 +87,8 @@ describe("subagent per-role task deadline", () => {
       resolveSubagentTaskTimeoutMs("implementer"),
     );
 
-    for (const role of ["researcher", "reviewer", "security-reviewer"] as const) {
+    expect(resolveSubagentTaskTimeoutMs("researcher")).toBe(RESEARCHER_DEADLINE_MS);
+    for (const role of ["reviewer", "security-reviewer"] as const) {
       expect(resolveSubagentTaskTimeoutMs(role)).toBe(REVIEWER_DEADLINE_MS);
     }
     // Резолвер нормализует имя роли так же, как admission каталога.
@@ -114,7 +116,7 @@ describe("subagent per-role task deadline", () => {
     }
   });
 
-  it("terminal-fails a reviewer at 15 minutes, aborts the child and releases the handle", async () => {
+  it("terminal-fails a reviewer at 10 minutes, aborts the child and releases the handle", async () => {
     vi.useFakeTimers();
     const directory = createTempDirectory();
     const registry = new InMemoryRuntimeTaskRegistry();

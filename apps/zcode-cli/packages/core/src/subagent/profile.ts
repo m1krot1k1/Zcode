@@ -78,7 +78,22 @@ const REVIEW_EXECUTION_CONTRACT = [
   "Отчёт обязательно содержит: просмотренные файлы, фактически запущенные тесты или команды с результатом и использованный чеклист. Не заявляй проверку, которой не было.",
   "Максимум 10 подтверждённых findings. Каждый finding: severity, file:line, impact, reproduction/evidence. Неподтверждённые подозрения идут в раздел gaps, а не в findings.",
   "При исчерпании deadline или бюджета явно верни partial/blocked: что просмотрено, что нет и что осталось проверить. Не зависай и не выдавай частичный просмотр за полный.",
+  "Мягкий бюджет review — 2–3 минуты; если к 5 минутам картина не закрыта, верни partial с gaps. Hard cap 10 минут — аварийный, не целевое время.",
   "Review-волна планируется на 2–3 параллельных reviewer'а. Runtime-губернатора конкурентности для ревью нет, поэтому граница задаётся промптом и планом вызывающего, а не отдельным механизмом.",
+].join("\n");
+
+// Review-тир может параллельно собирать evidence через researcher-ветки, но не
+// запускает другие review- или writer-роли: это исключает рекурсивный review-loop.
+const REVIEW_PARALLEL_RESEARCH_CONTRACT = [
+  "Для параллельного сбора доказательств можешь запустить до двух researcher-подагентов через Task. Не запускай reviewer/security-reviewer или writer-роли; researcher остаётся read-only.",
+  "Каждый researcher получает один узкий вопрос и возвращает evidence; итоговый review и findings остаются за тобой.",
+].join("\n");
+
+// Worker-роль может распараллелить независимые части своей области, но не может
+// подняться до router-ролей или расширить назначенную область.
+const WORKER_PARALLEL_DELEGATION_CONTRACT = [
+  "Если в назначенной области есть независимые части, можешь запустить до двух worker/researcher-подагентов через Task; не запускай start/orchestrator и не расширяй область.",
+  "Каждый подагент получает узкий deliverable, непересекающиеся файлы и критерий проверки; итог и проверки остаются за тобой.",
 ].join("\n");
 
 // security-reviewer — узкий профиль: обычный code review без названных поверхностей
@@ -134,9 +149,8 @@ export const INSPECTION_SUBAGENT_TOOL_NAMES = [
   "TaskStop",
 ] as const;
 
-// 修复依据：reviewer/security-reviewer получали Task и могли рекурсивно открывать
-// новые review-ветки, из-за чего ревью-волна распухала по времени и теряла фокус.
-// Review-тир не делегирует: проверка остаётся локальной и завершается в этом профиле.
+// Review-тир делегирует только bounded researcher-ветки для параллельного evidence;
+// recursive review и writer-роли запрещены caller-policy в filterAgentTypesForCaller.
 export const REVIEW_SUBAGENT_TOOL_NAMES = [
   "Read",
   "Glob",
@@ -144,6 +158,7 @@ export const REVIEW_SUBAGENT_TOOL_NAMES = [
   "Bash",
   "WebFetch",
   "WebSearch",
+  "Task",
   "Skill",
   "TodoRead",
   "TodoWrite",
@@ -390,6 +405,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Ты исследователь ZCode. Найди первоисточники в коде, тестах, спецификациях и логах.",
       "Разделяй подтверждённые факты, гипотезы и неизвестное. Приводи точные пути и символы.",
       "По умолчанию не изменяй файлы; Bash доступен для воспроизведения, а Write/Edit недоступны. Верни краткий отчёт с выводом, доказательствами и оставшимися вопросами.",
+      "Для параллельного поиска можешь запустить до двух researcher-подагентов через Task; не запускай writer/reviewer/security-reviewer. Каждый получает узкий вопрос; итог сводишь ты.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
@@ -414,6 +430,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Ты инженер-исполнитель ZCode. Следуй пользовательским и workspace-инструкциям и принятой спецификации.",
       "Меняй только назначенную область, сохраняя посторонние изменения. Не заявляй о проверках, которых не запускал.",
       "В ответе перечисли изменённые файлы, причины и фактически выполненные проверки.",
+      WORKER_PARALLEL_DELEGATION_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
@@ -449,6 +466,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Сначала прочитай владеющую спецификацию, публичные контракты и ближайшие тесты. Изменение поведения начинается с обновления spec и focused regression test, затем следует минимальная реализация.",
       "Запускай самые узкие проверки, доказывающие изменение, затем обязательные typecheck и lint для затронутой поверхности. Отделяй доказанное тестом от непроверенного и не выдавай планируемую проверку за выполненную.",
       "Не расширяй область и не переписывай посторонние изменения. В ответе перечисли изменённые файлы, причины, команды и фактический результат проверок.",
+      WORKER_PARALLEL_DELEGATION_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
@@ -474,6 +492,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Перед правкой прочитай DESIGN.md, существующие компоненты и их темы. Переиспользуй компоненты, hooks и store вместо параллельной реализации; учитывай desktop и узкую раскладку, клавиатурное управление, локализацию и доступную обратную связь о статусе.",
       "Держи пользовательские строки в i18n-слое проекта, не хардкодь текст и цвета. Если у поверхности есть темы, проверь светлую и тёмную.",
       "Проверяй изменение существующими UI-тестами или E2E-сценарием; если слой не запускался, прямо назови непроверенное.",
+      WORKER_PARALLEL_DELEGATION_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
@@ -499,6 +518,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Найди единственного владельца состояния и единственный путь записи. Для асинхронных, удалённых и конкурентных сценариев зафиксируй порядок событий, идемпотентность и границы отмены; не маскируй проблему синхронизации таймаутом.",
       "Изменения протокола синхронизируй с типизированным контрактом и runtime-валидацией. Добавляй focused regression test на поведение, включая отказ, повтор и конкурентный путь.",
       "Запускай узкие тесты и обязательные typecheck/lint; отчитывайся фактическим выводом, а не ожиданием.",
+      WORKER_PARALLEL_DELEGATION_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
@@ -524,6 +544,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Проверяй совместимость с macOS, Windows и Linux: пути и разделители, права, shell-диалекты, кодировки и асинхронный файловый/сетевой IO.",
       "Упаковка и манифесты остаются самодостаточными: без зависимости от соседних репозиториев, machine-local путей и секретов. Не ослабляй существующие release-проверки.",
       "Запускай самый узкий воспроизводимый шаг сборки или проверки и честно отмечай, что не проверено на другой платформе.",
+      WORKER_PARALLEL_DELEGATION_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
@@ -546,6 +567,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты независимый reviewer ZCode. Проверяй фактический diff по требованиям и прослеживай ошибки до конкретного сценария.",
       REVIEW_EXECUTION_CONTRACT,
+      REVIEW_PARALLEL_RESEARCH_CONTRACT,
       "По умолчанию не меняй файлы; Bash доступен для воспроизведения, Write/Edit недоступны, поэтому не переписывай проверяемый код. Не повторяй общие пожелания. Если проблем нет, перечисли просмотренную область и пробелы проверки.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
@@ -572,6 +594,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Ты специалист по безопасности ZCode. Проверяй конкретные поверхности атаки, границы доверия, секреты и обработку ошибок.",
       SECURITY_REVIEW_SCOPE_CONTRACT,
       REVIEW_EXECUTION_CONTRACT,
+      REVIEW_PARALLEL_RESEARCH_CONTRACT,
       "Описывай только доказанные или чётко воспроизводимые риски с указанием пути, источника и последствий.",
       "По умолчанию не меняй файлы; Bash доступен для воспроизведения атаки, Write/Edit недоступны. Не объявляй проект безопасным по итогам ограниченного просмотра.",
       SUBAGENT_HANDOFF_CONTRACT,
@@ -697,6 +720,12 @@ function normalizeAgentTypeName(agentType: string | null | undefined): string {
 }
 
 const ROOT_CALLER_AGENT_TYPES = new Set(["", "main", "root", "zcode", "zcode-agent"]);
+const INSPECTION_CALLER_ROLE_NAMES = new Set([
+  "researcher",
+  "reviewer",
+  "security-reviewer",
+  "evaluator",
+]);
 
 function isSubagentCaller(caller: string): boolean {
   return caller.length > 0 && !ROOT_CALLER_AGENT_TYPES.has(caller);
@@ -704,7 +733,8 @@ function isSubagentCaller(caller: string): boolean {
 
 /**
  * Admission predicate shared by the Agent/Task handler and the catalog filter.
- * start -> orchestrator only; any other subagent caller -> any role except router roles;
+ * start -> orchestrator only; inspection roles -> researcher only (parallel evidence,
+ * no recursive review/writers); other subagent callers -> any role except router roles;
  * root/main (undefined) -> unrestricted.
  */
 export function isAgentTypeAllowedForCaller(
@@ -714,6 +744,9 @@ export function isAgentTypeAllowedForCaller(
   const caller = normalizeAgentTypeName(callerAgentType);
   if (caller === "start") {
     return normalizeAgentTypeName(agentType) === START_ROUTING_TARGET_AGENT_TYPE;
+  }
+  if (INSPECTION_CALLER_ROLE_NAMES.has(caller)) {
+    return normalizeAgentTypeName(agentType) === "researcher";
   }
   if (isSubagentCaller(caller)) {
     return !isDelegationRouterAgentType(normalizeAgentTypeName(agentType));
@@ -732,6 +765,13 @@ export function filterAgentTypesForCaller<T extends Pick<AgentProfile, "name" | 
   const caller = normalizeAgentTypeName(callerAgentType);
   if (caller === "start") {
     return profiles.filter((profile) => isAgentTypeAllowedForCaller(profile.name, caller));
+  }
+  if (INSPECTION_CALLER_ROLE_NAMES.has(caller)) {
+    return profiles.filter(
+      (profile) =>
+        isModelSelectableAgentProfile(profile) &&
+        normalizeAgentTypeName(profile.name) === "researcher",
+    );
   }
   if (isSubagentCaller(caller)) {
     return profiles.filter(

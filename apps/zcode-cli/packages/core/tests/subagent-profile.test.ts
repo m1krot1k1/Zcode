@@ -264,7 +264,7 @@ tools:
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
     expect(prompt).toContain("- reviewer:");
     expect(prompt).toContain(
-      "(Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Skill, TodoRead",
+      "(Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, TodoRead",
     );
     expect(prompt).toContain("(Tools: Read, Glob, Grep, Write, Edit, Bash");
     expect(prompt).not.toContain("tools: Read");
@@ -320,7 +320,7 @@ tools:
       description: expect.not.stringContaining("Workspace attempt"),
       tools: expect.arrayContaining(["Read", "Glob", "Grep", "Bash"]),
     });
-    expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")?.tools).not.toContain(
+    expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")?.tools).toContain(
       "Task",
     );
     const normalAgentPrompt = formatAgentProfilesForPrompt(mergedProfiles) ?? "";
@@ -353,7 +353,9 @@ tools:
     ).toBe(true);
     for (const name of reviewOnlyRoles) {
       const tools = swarmProfiles.find((profile) => profile.name === name)?.tools ?? [];
-      expect(tools, name).not.toContain("Task");
+      expect(tools, name).toContain("Task");
+      expect(tools, name).not.toContain("Write");
+      expect(tools, name).not.toContain("Edit");
       expect(tools, name).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Bash"]));
     }
     expect(swarmProfiles.every((profile) => profile.systemPrompt.includes("下一负责人"))).toBe(
@@ -416,6 +418,10 @@ tools:
       "zcode-verification",
     );
     expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("reviewer");
+    const reviewerPrompt =
+      swarmProfiles.find(({ name }) => name === "reviewer")?.systemPrompt ?? "";
+    expect(reviewerPrompt).toContain("researcher-подагентов");
+    expect(reviewerPrompt).toContain("2–3 минуты");
     expect(swarmProfiles.find(({ name }) => name === "evaluator")?.skills).toContain(
       "completion-gate",
     );
@@ -901,6 +907,7 @@ describe("built-in role capability matrix", () => {
     "Bash",
     "WebFetch",
     "WebSearch",
+    "Task",
     "Skill",
     "TodoRead",
     "TodoWrite",
@@ -952,13 +959,13 @@ describe("built-in role capability matrix", () => {
   );
 
   it.each(["reviewer", "security-reviewer"])(
-    "%s reviews the given diff without a recursion-capable toolset",
+    "%s reviews the given diff with bounded researcher delegation",
     (name) => {
       const tools = toolsOf(name);
 
       expect(tools).toEqual(REVIEW_TOOLS);
       expect(tools).toEqual([...REVIEW_SUBAGENT_TOOL_NAMES]);
-      expect(tools).not.toContain("Task");
+      expect(tools).toContain("Task");
       expect(tools).not.toContain("Agent");
       expect(tools).toContain("Bash");
       expect(tools).not.toContain("Write");

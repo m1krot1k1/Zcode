@@ -128,6 +128,62 @@ describe("Agent/Task caller routing policy", () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it("lets reviewer delegate bounded evidence to researcher", async () => {
+    const launch = vi.fn(async () => completedOutput("researcher"));
+    await agentToolEntry.handler(
+      { description: "collect evidence", prompt: "inspect one call site", subagent_type: "researcher" },
+      createContext({
+        callerAgentType: "reviewer",
+        availableAgentTypes: ["researcher"],
+        subagentPort: { launch } as never,
+      }),
+    );
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reviewer -> coder", async () => {
+    const launch = vi.fn();
+    await expect(
+      agentToolEntry.handler(
+        { description: "delegate", prompt: "implement", subagent_type: "coder" },
+        createContext({
+          callerAgentType: "reviewer",
+          availableAgentTypes: ["researcher", "coder"],
+          subagentPort: { launch } as never,
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("lets researcher delegate nested research", async () => {
+    const launch = vi.fn(async () => completedOutput("researcher"));
+    await agentToolEntry.handler(
+      { description: "nested research", prompt: "inspect one module", subagent_type: "researcher" },
+      createContext({
+        callerAgentType: "researcher",
+        availableAgentTypes: ["researcher"],
+        subagentPort: { launch } as never,
+      }),
+    );
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects researcher -> coder", async () => {
+    const launch = vi.fn();
+    await expect(
+      agentToolEntry.handler(
+        { description: "delegate", prompt: "implement", subagent_type: "coder" },
+        createContext({
+          callerAgentType: "researcher",
+          availableAgentTypes: ["researcher", "coder"],
+          subagentPort: { launch } as never,
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(launch).not.toHaveBeenCalled();
+  });
+
   it("lets start delegate to orchestrator", async () => {
     const launch = vi.fn(async () => completedOutput("orchestrator"));
 

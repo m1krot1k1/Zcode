@@ -467,7 +467,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       input: {
                         description: "L4 alpha leaf",
                         prompt: `Grandchild alpha level 4: read ${fixturePath} and report ${markers.alpha}.`,
-                        subagent_type: "test-engineer",
+                        subagent_type: "researcher",
                       },
                     },
                   ],
