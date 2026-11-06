@@ -1513,6 +1513,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   private readonly activeSubagentTaskIdsByRootSession = new Map<SessionId, Set<string>>();
   private readonly terminalWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
   private readonly rootRunBudgets = new Map<string, RootRunBudgetState>();
+  // Root runs whose budget was deliberately released after turn finish. A terminal
+  // task from such a run cannot be resumed without a fresh budget.
+  private readonly finishedRootRunIds = new Set<string>();
 
   beginRootRunBudget(input: {
     rootRunId: string;
@@ -1524,6 +1527,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     onExhausted?: () => void;
   }): void {
     if (this.rootRunBudgets.has(input.rootRunId)) return;
+    this.finishedRootRunIds.delete(input.rootRunId);
     const deadlineAt = (input.startedAt ?? Date.now()) + (input.deadlineMs ?? 2 * 60 * 60 * 1000);
     this.rootRunBudgets.set(input.rootRunId, {
       rootRunId: input.rootRunId,
@@ -1613,6 +1617,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     if (!state) return;
     if (state.deadlineTimer) clearTimeout(state.deadlineTimer);
     this.rootRunBudgets.delete(rootRunId);
+    this.finishedRootRunIds.add(rootRunId);
   }
 
   private expireRootRunBudget(state: RootRunBudgetState): void {
@@ -1694,8 +1699,18 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
 
     // spawn 预算门禁：必须在 active-limit 与任何写入之前拒绝，保证被拒请求不留副作用。
-    // 没有 root-run 状态时（直接调用 registry 的旧路径）不做门禁，保持向后兼容。
+    // 没有 root-run 状态时（直接调用 registry 的旧路径）不做门禁，保持向后兼容.
     const rootBudget = this.rootRunBudgets.get(rootRunId);
+    // Resume of a terminal task after finishRootRunTurn: the root budget was deleted,
+    // so re-admission must fail closed instead of bypassing the spent spawn budget.
+    if (
+      !rootBudget &&
+      existing?.rootRunId === rootRunId &&
+      isTerminalRuntimeTask(existing) &&
+      this.finishedRootRunIds.has(rootRunId)
+    ) {
+      return { accepted: false, reason: "spawn_budget_exhausted" };
+    }
     let parentRemainingSpawns: number | undefined;
     let childSpawnGrant: number | undefined;
     if (rootBudget) {

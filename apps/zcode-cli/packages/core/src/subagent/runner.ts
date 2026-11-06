@@ -447,9 +447,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             },
             {
               ...dagRunOptions,
-              // DAG 节点预算来自父级的均分结果，节点自身不能再抬价。
+              // DAG 节点预算来自父级的均分结果，节点自身不能再抬价.
               ...(spawnGrant === undefined ? {} : { internalSpawnGrant: spawnGrant }),
-              level: (dagRunOptions.level ?? 0) + 1,
+              // Parent level is passed through; port.run owns the single +1 for the child.
+              level: dagRunOptions.level ?? 0,
               // Причина: DAG-узел не должен формировать root presentation даже если его роль start.
               // Маркер передаётся всегда; persistSwarmNodeAttempt по-прежнему опционален.
               internalSwarmNodeID: node.id,
@@ -3759,11 +3760,14 @@ function deriveChildTaskLevel(
   parentLevel: number | undefined,
   registry?: RuntimeTaskRegistry,
 ): number {
+  // AgentInput.level is the caller-provided parent level; it must participate in the
+  // same precedence chain as DAG runOptions and the parent registry snapshot.
+  const explicitParentLevel = parentLevel ?? request.level;
   const snapshotParentLevel =
-    parentLevel === undefined
+    explicitParentLevel === undefined
       ? registry?.getSubagentTaskByChildSession(request.sessionId)?.level
       : undefined;
-  return (parentLevel ?? snapshotParentLevel ?? 0) + 1;
+  return (explicitParentLevel ?? snapshotParentLevel ?? 0) + 1;
 }
 
 function createRuntimeTaskSnapshot(input: {
@@ -4652,6 +4656,6 @@ function resolveAllowedTools(
 }
 
 async function writeTextFile(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf8");
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, content, { encoding: "utf8", mode: 0o600 });
 }

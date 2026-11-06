@@ -702,6 +702,7 @@ describe("background task control", () => {
       prompt: "Original prompt",
       startedAt: new Date(0),
       status: "completed",
+      level: 2,
       taskId: "agent_resume",
       taskType: "local_agent",
       traceContext: {
@@ -762,6 +763,9 @@ describe("background task control", () => {
         status: "success",
         taskId: "agent_resume",
       });
+      // Resume must preserve the terminal task's level; otherwise nested descendants
+      // restart at level 1 after SendMessage.
+      expect(registry.get("agent_resume")?.level).toBe(2);
       const resumedStartEvents = parentEvents.filter(
         (event) =>
           event.type === SessionEventType.SubagentSpawned ||

@@ -389,9 +389,9 @@ describe("subagent spawn budget", () => {
     }));
 
     expect(envelopeInputs).toHaveLength(2);
-    // DAG-узел получает уровень 2 (root -> DAG -> child) и grant строго меньше
+    // DAG-узел получает уровень 1 (root -> DAG child) и grant строго меньше
     // родительского: при бюджете 2 registry выдаёт 1 первому ребёнку и 0 второму.
-    expect(envelopeInputs.map((input) => input.level)).toEqual([2, 2]);
+    expect(envelopeInputs.map((input) => input.level)).toEqual([1, 1]);
     expect(envelopeInputs.map((input) => input.spawnGrant).sort()).toEqual([0, 1]);
     expect(envelopeInputs.map((input) => input.maxParallel).sort()).toEqual([0, 1]);
     // Fake runExploreAgent получает task prompt узла; конверт spawn собирает реальный
@@ -413,8 +413,8 @@ describe("subagent spawn budget", () => {
       )
       .sort();
     expect(envelopes).toEqual([
-      '<zcode-spawn-envelope level="2" remaining_spawns="0" max_parallel="0" />',
-      '<zcode-spawn-envelope level="2" remaining_spawns="1" max_parallel="1" />',
+      '<zcode-spawn-envelope level="1" remaining_spawns="0" max_parallel="0" />',
+      '<zcode-spawn-envelope level="1" remaining_spawns="1" max_parallel="1" />',
     ]);
     expect(envelopes.join("\n")).not.toContain('max_parallel="8"');
   });
@@ -495,8 +495,8 @@ describe("subagent spawn budget", () => {
         .flatMap((prompt) => prompt.match(/<zcode-spawn-envelope [^>]*\/>/g) ?? [])
         .sort();
       expect(envelopes).toEqual([
-        '<zcode-spawn-envelope level="2" remaining_spawns="0" max_parallel="0" />',
-        '<zcode-spawn-envelope level="2" remaining_spawns="1" max_parallel="1" />',
+        '<zcode-spawn-envelope level="1" remaining_spawns="0" max_parallel="0" />',
+        '<zcode-spawn-envelope level="1" remaining_spawns="1" max_parallel="1" />',
       ]);
       expect(envelopes.join("\n")).not.toContain('max_parallel="8"');
     } finally {
@@ -600,6 +600,7 @@ describe("subagent spawn budget", () => {
   it("derives the nested direct-spawn level from the parent task snapshot (p)", async () => {
     const spawnNested = async (
       requestBudget?: number,
+      requestLevel?: number,
     ): Promise<ExploreSubagentRuntimeRequest> => {
       const registry = new InMemoryRuntimeTaskRegistry();
       const root = createSessionId("spawn-nested-root");
@@ -643,6 +644,7 @@ describe("subagent spawn budget", () => {
           turnId,
         },
         ...(requestBudget === undefined ? {} : { spawnBudget: requestBudget }),
+        ...(requestLevel === undefined ? {} : { level: requestLevel }),
       });
 
       expect(captured).toHaveLength(1);
@@ -675,8 +677,13 @@ describe("subagent spawn budget", () => {
       }),
     ).toBe('<zcode-spawn-envelope level="2" remaining_spawns="23" max_parallel="23" />');
 
-    // 嵌套 DAG：节点自身拿到父 1 + 1 = 2，registry snapshot 记录 3；
-    // 修复前 dagRunOptions.level 缺失会让节点 envelope 停在 2。
+    // AgentInput.level is the caller-provided parent level; it must participate in
+    // the same precedence chain and produce exactly +1 for the child.
+    const fromRequestLevel = await spawnNested(undefined, 4);
+    expect(fromRequestLevel.level).toBe(5);
+
+    // Nested DAG: parent level 1, node gets exactly 2; port.run owns the single +1.
+    // A second +1 in runTaskDag would incorrectly produce 3.
     const dagRegistry = new InMemoryRuntimeTaskRegistry();
     const dagRoot = createSessionId("spawn-nested-dag-root");
     const dagParentSession = createSessionId("spawn-nested-dag-parent-session");
@@ -712,7 +719,40 @@ describe("subagent spawn budget", () => {
       sessionId: dagParentSession,
       turnId: dagTurnId,
     });
-    expect(dagLevels).toEqual([3, 3]);
+    expect(dagLevels).toEqual([2, 2]);
+  });
+
+  it("rejects resume after finishRootRunTurn when the root budget was deleted", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("resume-budget-root");
+    const childSession = createSessionId("resume-budget-child");
+    const turnId = createTurnId("resume-budget-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({
+      rootRunId,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 4,
+    });
+    const snapshot = {
+      ...task("resume-budget-agent", root, childSession, turnId),
+      rootRunId,
+      level: 1,
+      spawnGrant: 3,
+    };
+    expect(registry.registerSubagentTask(snapshot, settled()).accepted).toBe(true);
+    registry.update("resume-budget-agent", (current) => ({
+      ...current,
+      status: "completed",
+    }));
+    registry.finishRootRunTurn(rootRunId);
+
+    // Resume after turn finish must fail closed: the spent root budget was deleted,
+    // so re-admission cannot silently bypass it.
+    expect(
+      registry.registerSubagentTask({ ...snapshot, status: "running" }, settled()),
+    ).toEqual({ accepted: false, reason: "spawn_budget_exhausted" });
+    expect(registry.get("resume-budget-agent")).toMatchObject({ status: "completed" });
   });
 
   it("records level and spawnGrant for background start so nested descendants do not reset (q)", async () => {
