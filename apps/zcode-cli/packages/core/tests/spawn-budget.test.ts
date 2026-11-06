@@ -714,6 +714,63 @@ describe("subagent spawn budget", () => {
     });
     expect(dagLevels).toEqual([3, 3]);
   });
+
+  it("records level and spawnGrant for background start so nested descendants do not reset (q)", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("spawn-background-level-root");
+    const turnId = createTurnId("spawn-background-level-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      spawnBudget: 4,
+    });
+    let releaseRuntime: (() => void) | undefined;
+    const runtimeGate = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+    const port = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-background-level",
+      runtimeTaskRegistry: registry,
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        await request.onSessionReady?.();
+        await runtimeGate;
+        return { events: [], response: "ok", traceId: request.traceContext.traceId };
+      },
+    });
+    const makeStartRequest = (sessionId: SessionId, parentToolCallId: string) => ({
+      sessionId,
+      turnId,
+      parentToolCallId,
+      agentType: "implementer",
+      description: "Background level probe",
+      prompt: "Wait in background.",
+      // 模型收紧值 3 仍受 host grant 限制；修复前后台快照完全丢弃该值。
+      spawnBudget: 3,
+      callerCanReadOutputFile: true,
+      workingDirectory: "/tmp/zcode-spawn-background-level",
+      workspaceRoot: "/tmp/zcode-spawn-background-level",
+      trace: {
+        traceId: createTraceId("trace_spawn_background_level"),
+        sessionId,
+        turnId,
+      },
+    });
+
+    const first = await port.start?.(makeStartRequest(root, "spawn-background-call-1"));
+    expect(first).toBeDefined();
+    expect(registry.get(first!.agentId)).toMatchObject({ level: 1, spawnGrant: 3 });
+
+    // 第二个后台任务的父 session 是第一个子任务；修复前 snapshot 无 level 会重新记为 1。
+    const second = await port.start?.(
+      makeStartRequest(first!.childSessionId, "spawn-background-call-2"),
+    );
+    expect(second).toBeDefined();
+    expect(registry.get(second!.agentId)).toMatchObject({ level: 2, spawnGrant: 2 });
+
+    releaseRuntime?.();
+  });
 });
 
 function task(

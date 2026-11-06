@@ -504,10 +504,6 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       // 因此每个嵌套 direct spawn 都被记录成 1。修复依据：父任务 registry snapshot 是
       // level 的持久所有者（spawnGrant 已走同一条 snapshot 链）；显式 runOptions.level
       // （DAG 节点）仍保持最高优先级。
-      const parentTaskLevel =
-        runOptions?.level === undefined
-          ? registry.getSubagentTaskByChildSession(request.sessionId)?.level
-          : undefined;
       const admission = registerSubagentTask(
         registry,
         createRuntimeTaskSnapshot({
@@ -520,7 +516,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           // 没有 root-run 状态时 spawnGrant 仅记录，registry 不做门禁（向后兼容）。
           spawnGrant: resolveSpawnGrant(request, runOptions, options, registry),
           // level 只记录层级；预算本身已从数学上限制树规模，不设硬深度上限。
-          level: (runOptions?.level ?? parentTaskLevel ?? 0) + 1,
+          level: deriveChildTaskLevel(request, runOptions?.level, registry),
           // Эффективная поверхность родителя: профиль не может объявить запись,
           // которой нет у фактического tool surface родителя.
           parentToolNames: options.parentToolNames,
@@ -1039,6 +1035,11 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           request,
           startedAt,
           status: "running",
+          // 根因：Background snapshot 之前既不记录 level 也不记录 spawnGrant，导致后台子代理
+          // 的嵌套后代从 0 重新起算 level，并丢失模型 remaining_spawns 的收紧值。
+          // 修复依据：与 foreground snapshot 共用同一父级 registry 链推导 level/grant。
+          spawnGrant: resolveSpawnGrant(request, undefined, options, registry),
+          level: deriveChildTaskLevel(request, undefined, registry),
           parentToolNames: options.parentToolNames,
         }),
         taskAbort,
@@ -3110,6 +3111,11 @@ async function resumeTerminalAgentInBackground(
       pendingMessages: task.pendingMessages,
       startedAt,
       status: "running",
+      // 根因：Resume snapshot 之前同样不记录 level/spawnGrant，恢复后的代理会按根级重新起算，
+      // 其嵌套子级 level 被重置为 1，且自身 grant 丢失。修复依据：恢复保留 task 自身层级
+      // （legacy 无 level 时回落到 resumer 链推导），grant 沿用 task 记录值并由 registry 继续钳制。
+      ...(task.spawnGrant === undefined ? {} : { spawnGrant: task.spawnGrant }),
+      level: task.level ?? deriveChildTaskLevel(resumeRequest, undefined, registry),
     }),
     taskAbort,
   );
@@ -3741,6 +3747,23 @@ export function resolveSpawnGrant(
   const hostGrant = Math.max(0, Math.floor(parentBudget) - 1);
   if (request.spawnBudget === undefined) return hostGrant;
   return Math.min(Math.max(0, Math.floor(request.spawnBudget)), hostGrant);
+}
+
+/**
+ * 子级 level 由“父级显式值 > 父任务 registry snapshot > 0”推导后加一。
+ * foreground run 传入 runOptions.level（DAG 节点）、background start 无显式值，
+ * resume 优先沿用自身 task.level；三者共用同一推导避免快照链在不同路径断开。
+ */
+function deriveChildTaskLevel(
+  request: SubagentRunRequest,
+  parentLevel: number | undefined,
+  registry?: RuntimeTaskRegistry,
+): number {
+  const snapshotParentLevel =
+    parentLevel === undefined
+      ? registry?.getSubagentTaskByChildSession(request.sessionId)?.level
+      : undefined;
+  return (parentLevel ?? snapshotParentLevel ?? 0) + 1;
 }
 
 function createRuntimeTaskSnapshot(input: {
