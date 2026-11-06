@@ -1604,6 +1604,22 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     );
   }
 
+  private findActiveRootRunBudget(
+    rootSessionId: SessionId,
+    turnId: TurnId,
+  ): RootRunBudgetState | undefined {
+    for (const budget of this.rootRunBudgets.values()) {
+      if (
+        budget.rootSessionId === rootSessionId &&
+        budget.turnId === turnId &&
+        !budget.turnFinished
+      ) {
+        return budget;
+      }
+    }
+    return undefined;
+  }
+
   private maybeReleaseRootRunBudget(rootRunId: string | undefined): void {
     if (!rootRunId) return;
     const state = this.rootRunBudgets.get(rootRunId);
@@ -1690,10 +1706,19 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
     // SendMessage resume keeps the existing node in its original root run, even though the
     // coordinator request that resumed it may have a newer turn id.
-    const rootRunId =
+    const pinnedRootRunId =
       existing?.rootSessionId === rootSessionId && existing.rootRunId
         ? existing.rootRunId
         : (parentTask?.rootRunId ?? makeRootRunId(rootSessionId, task.turnId));
+    // 根因：resume 固定在已结束的 root run 上，而该 run 的预算在 finishRootRunTurn 后已删除，
+    // finishedRootRunIds 标记会让新 turn 中合法的 SendMessage resume 永久被拒。
+    // 修复依据：仅当原 run 已释放且当前 turn 有活动预算时，把 resume 计入当前 turn 的预算，
+    // 保持唯一预算所有者与单条扣减路径；没有活动预算时仍由下方 finishedRootRunIds 门禁 fail-closed。
+    const activeResumeBudget =
+      existing && isTerminalRuntimeTask(existing) && this.finishedRootRunIds.has(pinnedRootRunId)
+        ? this.findActiveRootRunBudget(rootSessionId, task.turnId)
+        : undefined;
+    const rootRunId = activeResumeBudget?.rootRunId ?? pinnedRootRunId;
     if (this.isRootRunBudgetExpired(rootRunId)) {
       return { accepted: false, reason: "root_run_budget_exceeded" };
     }

@@ -755,6 +755,50 @@ describe("subagent spawn budget", () => {
     expect(registry.get("resume-budget-agent")).toMatchObject({ status: "completed" });
   });
 
+  it("admits a resume inside the next turn and charges the current root budget", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("resume-next-turn-root");
+    const childSession = createSessionId("resume-next-turn-child");
+    const turn1 = createTurnId("resume-next-turn-1");
+    const turn2 = createTurnId("resume-next-turn-2");
+    const rootRunId1 = `${root}:${turn1}`;
+    registry.beginRootRunBudget({
+      rootRunId: rootRunId1,
+      rootSessionId: root,
+      turnId: turn1,
+      spawnBudget: 4,
+    });
+    const snapshot = {
+      ...task("resume-next-turn-agent", root, childSession, turn1),
+      rootRunId: rootRunId1,
+      level: 1,
+      spawnGrant: 3,
+    };
+    expect(registry.registerSubagentTask(snapshot, settled()).accepted).toBe(true);
+    registry.update("resume-next-turn-agent", (current) => ({ ...current, status: "completed" }));
+    registry.finishRootRunTurn(rootRunId1);
+
+    // A new turn starts its own root-run budget, exactly like turn.ts does.
+    const rootRunId2 = `${root}:${turn2}`;
+    registry.beginRootRunBudget({
+      rootRunId: rootRunId2,
+      rootSessionId: root,
+      turnId: turn2,
+      spawnBudget: 4,
+    });
+
+    // SendMessage resume keeps the same task/agent/child session but runs in the active turn 2.
+    const resume = registry.registerSubagentTask(
+      { ...snapshot, turnId: turn2, status: "running" },
+      settled(),
+    );
+    expect(resume).toMatchObject({ accepted: true });
+    // The resume must be charged to turn 2's budget instead of escaping the gate entirely.
+    expect(registry.getRootRunBudgetSnapshot(rootRunId2)?.spawnsUsed).toBe(1);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId2)?.remainingSpawnsBySession.get(root)).toBe(3);
+    expect(resume.accepted && resume.task.rootRunId).toBe(rootRunId2);
+  });
+
   it("records level and spawnGrant for background start so nested descendants do not reset (q)", async () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const root = createSessionId("spawn-background-level-root");
