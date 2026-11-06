@@ -1714,9 +1714,12 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // finishedRootRunIds 标记会让新 turn 中合法的 SendMessage resume 永久被拒。
     // 修复依据：仅当原 run 已释放且当前 turn 有活动预算时，把 resume 计入当前 turn 的预算，
     // 保持唯一预算所有者与单条扣减路径；没有活动预算时仍由下方 finishedRootRunIds 门禁 fail-closed。
+    // turnId 缺失时无法匹配活动预算，保持 pinned/fail-closed 语义。
     const activeResumeBudget =
       existing && isTerminalRuntimeTask(existing) && this.finishedRootRunIds.has(pinnedRootRunId)
-        ? this.findActiveRootRunBudget(rootSessionId, task.turnId)
+        ? task.turnId
+          ? this.findActiveRootRunBudget(rootSessionId, task.turnId)
+          : undefined
         : undefined;
     const rootRunId = activeResumeBudget?.rootRunId ?? pinnedRootRunId;
     if (this.isRootRunBudgetExpired(rootRunId)) {
