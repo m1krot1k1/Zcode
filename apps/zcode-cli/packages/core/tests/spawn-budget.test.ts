@@ -596,6 +596,124 @@ describe("subagent spawn budget", () => {
     expect(maxActive).toBe(6);
     expect(registry.getRootRunBudgetSnapshot(rootRunId)?.spawnsUsed).toBe(6);
   });
+
+  it("derives the nested direct-spawn level from the parent task snapshot (p)", async () => {
+    const spawnNested = async (
+      requestBudget?: number,
+    ): Promise<ExploreSubagentRuntimeRequest> => {
+      const registry = new InMemoryRuntimeTaskRegistry();
+      const root = createSessionId("spawn-nested-root");
+      const childSession = createSessionId("spawn-nested-parent-session");
+      const turnId = createTurnId("spawn-nested-turn");
+      registry.beginRootRunBudget({
+        rootRunId: `${root}:${turnId}`,
+        rootSessionId: root,
+        turnId,
+        spawnBudget: 25,
+      });
+      const seeded = registry.registerSubagentTask(
+        { ...task("nested-parent", root, childSession, turnId), level: 1, spawnGrant: 24 },
+        settled(),
+      );
+      expect(seeded.accepted).toBe(true);
+      const captured: ExploreSubagentRuntimeRequest[] = [];
+      const port = createExploreSubagentPort({
+        outputRootDir: "/tmp/zcode-spawn-nested",
+        runtimeTaskRegistry: registry,
+        emitParentEvent: async () => {},
+        runExploreAgent: async (request) => {
+          captured.push(request);
+          return { events: [], response: "ok", traceId: request.traceContext.traceId };
+        },
+      });
+
+      await port.run({
+        sessionId: childSession,
+        turnId,
+        parentToolCallId: "spawn-nested-call",
+        agentType: "implementer",
+        description: "Nested spawn level probe",
+        prompt: "Return a short answer.",
+        callerCanReadOutputFile: true,
+        workingDirectory: "/tmp/zcode-spawn-nested",
+        workspaceRoot: "/tmp/zcode-spawn-nested",
+        trace: {
+          traceId: createTraceId("trace_spawn_nested"),
+          sessionId: childSession,
+          turnId,
+        },
+        ...(requestBudget === undefined ? {} : { spawnBudget: requestBudget }),
+      });
+
+      expect(captured).toHaveLength(1);
+      return captured[0]!;
+    };
+
+    // 模型声明 remaining_spawns=12 时保留模型收紧值；层级必须是父级 1 + 1。
+    const tightened = await spawnNested(12);
+    expect(tightened.level).toBe(2);
+    expect(tightened.spawnGrant).toBe(12);
+    expect(tightened.maxParallel).toBe(12);
+    expect(
+      buildSpawnEnvelope({
+        level: tightened.level,
+        spawnGrant: tightened.spawnGrant,
+        maxParallel: tightened.maxParallel,
+      }),
+    ).toBe('<zcode-spawn-envelope level="2" remaining_spawns="12" max_parallel="12" />');
+
+    // 无请求预算时 hostGrant = 父级剩余 24 - 1 = 23；层级同样来自父级快照。
+    const inherited = await spawnNested();
+    expect(inherited.level).toBe(2);
+    expect(inherited.spawnGrant).toBe(23);
+    expect(inherited.maxParallel).toBe(23);
+    expect(
+      buildSpawnEnvelope({
+        level: inherited.level,
+        spawnGrant: inherited.spawnGrant,
+        maxParallel: inherited.maxParallel,
+      }),
+    ).toBe('<zcode-spawn-envelope level="2" remaining_spawns="23" max_parallel="23" />');
+
+    // 嵌套 DAG：节点自身拿到父 1 + 1 = 2，registry snapshot 记录 3；
+    // 修复前 dagRunOptions.level 缺失会让节点 envelope 停在 2。
+    const dagRegistry = new InMemoryRuntimeTaskRegistry();
+    const dagRoot = createSessionId("spawn-nested-dag-root");
+    const dagParentSession = createSessionId("spawn-nested-dag-parent-session");
+    const dagTurnId = createTurnId("spawn-nested-dag-turn");
+    dagRegistry.beginRootRunBudget({
+      rootRunId: `${dagRoot}:${dagTurnId}`,
+      rootSessionId: dagRoot,
+      turnId: dagTurnId,
+      spawnBudget: 25,
+    });
+    expect(
+      dagRegistry.registerSubagentTask(
+        {
+          ...task("nested-dag-parent", dagRoot, dagParentSession, dagTurnId),
+          level: 1,
+          spawnGrant: 24,
+        },
+        settled(),
+      ).accepted,
+    ).toBe(true);
+    const dagLevels: Array<number | undefined> = [];
+    const dagPort = createExploreSubagentPort({
+      outputRootDir: "/tmp/zcode-spawn-nested-dag",
+      runtimeTaskRegistry: dagRegistry,
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        dagLevels.push(request.level);
+        return { events: [], response: "node done", traceId: request.traceContext.traceId };
+      },
+    });
+    await dagPort.runTaskDag?.({
+      ...makeTaskDagRequest([dagNode("nested-dag-a"), dagNode("nested-dag-b")], 2),
+      sessionId: dagParentSession,
+      turnId: dagTurnId,
+    });
+    expect(dagLevels).toEqual([3, 3]);
+  });
 });
 
 function task(

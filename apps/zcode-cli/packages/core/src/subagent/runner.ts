@@ -390,8 +390,16 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           trace: rawRequest.trace,
         });
       }
+      // 根因：dagRunOptions.level 从未从父任务推导，DAG 节点一律从 0 起算层级，
+      // 嵌套在 level=1 运行时下的 DAG 会记录 2 而不是 3。修复依据：父任务 registry
+      // snapshot 是 level 的持久所有者；调用方显式 runOptions.level 仍优先。
+      const parentTaskLevel =
+        runOptions?.level === undefined
+          ? registry.getSubagentTaskByChildSession(rawRequest.sessionId)?.level
+          : undefined;
       const dagRunOptions: InternalDagRunOptions = {
         ...runOptions,
+        ...(parentTaskLevel === undefined ? {} : { level: parentTaskLevel }),
         // 原因：runOptions 未携带 spawnBudget 时，executeSubagentTaskDag 回落到
         // DEFAULT_SPAWN_BUDGET (32)。即使端口/root 配置了更大的预算，DAG 第一个
         // 节点也只能拿到 31，串行 capability probe 在 D32 被截断。
@@ -492,6 +500,14 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           throw error;
         }
       }
+      // 根因：Agent handler 只把解析出的 level 写进 request，runOptions.level 始终为空，
+      // 因此每个嵌套 direct spawn 都被记录成 1。修复依据：父任务 registry snapshot 是
+      // level 的持久所有者（spawnGrant 已走同一条 snapshot 链）；显式 runOptions.level
+      // （DAG 节点）仍保持最高优先级。
+      const parentTaskLevel =
+        runOptions?.level === undefined
+          ? registry.getSubagentTaskByChildSession(request.sessionId)?.level
+          : undefined;
       const admission = registerSubagentTask(
         registry,
         createRuntimeTaskSnapshot({
@@ -504,7 +520,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           // 没有 root-run 状态时 spawnGrant 仅记录，registry 不做门禁（向后兼容）。
           spawnGrant: resolveSpawnGrant(request, runOptions, options, registry),
           // level 只记录层级；预算本身已从数学上限制树规模，不设硬深度上限。
-          level: (runOptions?.level ?? 0) + 1,
+          level: (runOptions?.level ?? parentTaskLevel ?? 0) + 1,
           // Эффективная поверхность родителя: профиль не может объявить запись,
           // которой нет у фактического tool surface родителя.
           parentToolNames: options.parentToolNames,
