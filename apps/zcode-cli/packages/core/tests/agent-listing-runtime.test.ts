@@ -141,8 +141,8 @@ describe("runtime agent listing", () => {
   });
 
   // Router-ребёнок (start/orchestrator) сам read-only, но грант на worker-набор уже выдан
-  // родителем. Каталог обязан показывать его, иначе start считает запись недоступной.
-  it("shows the bounded worker grant in a start router catalog", async () => {
+  // родителем. Каталог обязан показывать его, иначе orchestrator считает запись недоступной.
+  it("shows the bounded worker grant in an orchestrator router catalog", async () => {
     definitions.mockReturnValue({
       activeAgents: [
         {
@@ -159,6 +159,7 @@ describe("runtime agent listing", () => {
       {
         // Router child: its own allowlist is the profile-derived read-only surface.
         taskType: "subagent_child",
+        agentType: "orchestrator",
         toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
         delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
       },
@@ -170,6 +171,100 @@ describe("runtime agent listing", () => {
     expect(notice?.content).toContain("- coder: Coder (Tools:");
     expect(notice?.content).toContain("Write");
     expect(notice?.content).toContain("Bash");
+  });
+
+  it("shows start only the orchestrator in its catalog", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "start",
+          description: "Gateway",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "orchestrator",
+          description: "Orchestrates work",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "coder",
+          description: "Coder",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "researcher",
+          description: "Researcher",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      {
+        taskType: "subagent_child",
+        agentType: "start",
+        toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
+      },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- orchestrator: Orchestrates work");
+    expect(notice?.content).not.toContain("- coder:");
+    expect(notice?.content).not.toContain("- researcher:");
+    expect(notice?.content).not.toContain("- start:");
+  });
+
+  it("shows orchestrator worker roles but not the router roles", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "start",
+          description: "Gateway",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "orchestrator",
+          description: "Orchestrates work",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "coder",
+          description: "Coder",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "researcher",
+          description: "Researcher",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      {
+        taskType: "subagent_child",
+        agentType: "orchestrator",
+        toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
+      },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- coder: Coder");
+    expect(notice?.content).toContain("- researcher: Researcher");
+    expect(notice?.content).not.toContain("- start:");
+    expect(notice?.content).not.toContain("- orchestrator:");
   });
 
   // Root сессии: грант ограничен session toolAllowlist. Каталог не должен рекламировать

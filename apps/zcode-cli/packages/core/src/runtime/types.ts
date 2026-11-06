@@ -228,6 +228,12 @@ export interface AgentRuntimeConfig {
   parentSessionId?: SessionId;
   taskType?: SessionTaskType;
   /**
+   * Caller routing identity. Root/main sessions leave it undefined; subagent children
+   * set their canonical profile name so Agent/Task admission and the visible catalog
+   * only expose roles the caller is allowed to spawn (start -> orchestrator only).
+   */
+  agentType?: string;
+  /**
    * 动态工作流灰度门（docs/dynamic-workflow/launch.md「Gray release」）：Host 判定后经
    * ZCode Protocol 下发，runtime 只消费。**缺席即开启**（进程内嵌入方靠这个极性）；
    * 独立 CLI 的 TUI 与 headless 按 --workflow-mode 显式传 true/false（缺省 disabled，DWG-04），

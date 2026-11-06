@@ -106,6 +106,11 @@ export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefine
   return parts.join(" ");
 }
 
+/** Hard cap для router-задач: не даёт start/orchestrator висеть бесконечно. */
+const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 20 * 60_000;
+// Start должен успеть получить partial от orchestrator и запустить следующий wave.
+const SUBAGENT_START_TASK_DEADLINE_MS = 45 * 60_000;
+
 export function createDefaultSubagentPort(
   this: AgentRuntimeInternal,
   deps: AgentRuntimeDeps,
@@ -113,6 +118,12 @@ export function createDefaultSubagentPort(
   if (this.config.subagents?.enabled === false) {
     return undefined;
   }
+  const getParentToolNames = (): readonly string[] => [
+    ...new Set([
+      ...this.getTools().map((tool) => tool.name),
+      ...resolveRuntimeDelegationToolNames(this),
+    ]),
+  ];
   return createExploreSubagentPort({
     logger: this.logger,
     // 根预算从这里进入端口；子任务由 runner 按 grant 推导后向下传递。
@@ -151,6 +162,19 @@ export function createDefaultSubagentPort(
       const outputRootDir = this.config.subagents?.outputRootDir ?? join(tmpdir(), "zcode-agents");
       return runtimeTaskSnapshotFromTerminalCatalog(latest, sessionId, outputRootDir);
     },
+    // Эффективная поверхность родителя: зарегистрированные built-ins ∪ делегируемый набор.
+    // Getter обязателен: subagent port создаётся до инициализации tool registry, а MCP tools
+    // регистрируются позже; eager-снимок терял бы фактическую поверхность.
+    get parentToolNames() {
+      return getParentToolNames();
+    },
+    // Start получает 45m (успевает second wave), orchestrator — 20m; root 2h остаётся внешним.
+    getTaskTimeoutMs: (agentType) =>
+      agentType === "start"
+        ? SUBAGENT_START_TASK_DEADLINE_MS
+        : agentType === "orchestrator"
+          ? SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS
+          : undefined,
     getChildEventCursor: (sessionId) => this.eventStore.getLatestSequenceNumber(sessionId),
     getChildEventsAfter: (sessionId, cursor) => this.eventStore.getEventsAfter(sessionId, cursor),
     emitParentEvent: async (event, traceContext) => {
@@ -436,6 +460,9 @@ export function createDefaultSubagentPort(
               ...(workspaceRules ? { workspaceRules } : {}),
             },
             agentName: `zcode-${request.agentType}`,
+            // Child knows its routing identity: start -> orchestrator only, orchestrator ->
+            // worker roles, worker/custom roles -> full catalog. Root remains undefined.
+            agentType: request.agentType,
             maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
             parentSessionId: this.sessionId,
             // 子 runtime 的 spawn 预算必须等于 Host 签发的 grant，否则每层都会回落到根预算 32，

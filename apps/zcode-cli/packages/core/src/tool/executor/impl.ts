@@ -28,6 +28,8 @@ export class ToolExecutorImpl implements ToolExecutor {
 
   constructor(options: ToolExecutorOptions) {
     this.deps = {
+      getAvailableAgentTypes: options.getAvailableAgentTypes,
+      callerAgentType: options.callerAgentType,
       agentTelemetry: options.agentTelemetry,
       agentTelemetryActorKind: options.agentTelemetryActorKind,
       registry: options.registry,

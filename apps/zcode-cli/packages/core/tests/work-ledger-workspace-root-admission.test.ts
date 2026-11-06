@@ -218,6 +218,28 @@ describe("workspace-root prompt admission", () => {
     ).toBe(true);
   });
 
+  it("filters a backticked Windows workspace root after separator normalization", () => {
+    // Экстрактор теперь принимает `C:\...`: корень не должен превратиться в "." claim.
+    const workspacePath = "C:\\Users\\dev\\projects\\zcode";
+    const ledger = memoryLedger();
+    const registry = makeRegistry(ledger);
+    const prompt = `Твоя область — \`${workspacePath}\`; правь только \`${FILE_A}\`.`;
+    expect(extractTaskPaths(prompt)).toContain("C:/Users/dev/projects/zcode");
+
+    const admission = registry.registerSubagentTask(
+      task("win-root-coder", {
+        childSessionId: createSessionId("workspace-win-root-child"),
+        prompt,
+        workspacePath,
+      }),
+      pending(),
+    );
+
+    expect(admission.accepted).toBe(true);
+    expect(claimOf(ledger, "win-root-coder", workspacePath)?.paths).toEqual([FILE_A]);
+    expectNoWorkspaceRootClaim(ledger, workspacePath);
+  });
+
   it("keeps explicit whole-workspace claim semantics unchanged", () => {
     const ledger = memoryLedger();
     const registry = makeRegistry(ledger);

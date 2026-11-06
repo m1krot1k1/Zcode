@@ -22,7 +22,12 @@ const SEGMENT = /^[\w@.+-]+$/u;
 // Путь из backticks может содержать пробел (`/tmp/zcode workspace/repo/src/a.ts`):
 // пробел допустим внутри сегмента, но не в начале/конце (проверяется отдельно).
 const SEGMENT_WITH_SPACES = /^[\w@.+\- ]+$/u;
-const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:\//u;
+// Windows-путь принимается с любым разделителем: text extractor нормализует `\` в `/`
+// до сегментации, но guard'ы по сырому тексту должны узнавать обе формы.
+const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/u;
+// Drive-префикс — служебный сегмент, а не имя каталога: `C:/repo/src/a.ts`
+// не должен отбрасываться как путь с невалидным первым сегментом `C:`.
+const WINDOWS_DRIVE_SEGMENT = /^[A-Za-z]:$/u;
 /**
  * Каталоги исходников: `src/runtime-task` — явный directory scope, а `text/html` — MIME.
  * Правило применяется только к двум сегментам без расширения; всё остальное требует >= 3.
@@ -54,6 +59,11 @@ const BACKTICKED_SPAN = /`([^`\n]+)`/gu;
 const BARE_ABSOLUTE_PATH = /(?<![\w@.+-])\/(?:[\w@.+-]+\/)*[\w@.+-]+\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/gu;
 const BARE_RELATIVE_PATH =
   /(?<![\w/@.+-])(?:[\w@.+-]+\/)+[\w@.+-]+\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/gu;
+// Windows drive-путь: `\` — валидный разделитель, но POSIX-regexp'ы его не видят,
+// а от `C:/repo/...` они матчат только хвост `/repo/...` без drive-префикса.
+// Матчим такие пути раньше POSIX-веток и вырезаем из текста.
+const BARE_WINDOWS_PATH =
+  /(?<![\w@.+-])[A-Za-z]:[\\/]+(?:[\w@.+-]+[\\/]+)*[\w@.+-]+\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?/gu;
 // URL без схемы после матчинга выглядит как /github.com/...; refs/heads/dev проходит
 // как «путь из трёх сегментов»; ~/.zcode/... теряет тильду. Вырезаем эти формы до матчинга.
 const URL_SPAN = /\bhttps?:\/\/[^\s`]+/gu;
@@ -78,15 +88,16 @@ function normalizeExplicitPath(
   if (candidate.length === 0 || candidate.length > 260) return undefined;
   // Обёртки, которые часто оказываются внутри backticks: (path), "path", <path>.
   candidate = candidate.replace(/^[("'<[]+/u, "").replace(/[)"'>\].,;]+$/u, "");
-  if (
-    candidate.length === 0 ||
-    candidate.startsWith("~") ||
-    candidate.startsWith("-") ||
-    candidate.startsWith("refs/")
-  ) {
+  if (candidate.length === 0 || candidate.startsWith("~") || candidate.startsWith("-")) {
     return undefined;
   }
   if (candidate.includes("://") || /[*?<>{}|$]/u.test(candidate)) return undefined;
+  // Windows: `\` — такой же разделитель, как `/`. Нормализуем до сегментации, иначе
+  // `C:\repo\src\a.ts` не содержит "/" и отбрасывается, а `C:/repo/src/a.ts` теряет
+  // drive-префикс как невалидный сегмент `C:`. Двойные разделители (`C:\\repo`)
+  // схлопываем, чтобы вернуть стабильную форму `C:/repo/...`.
+  candidate = candidate.replace(/\\+/gu, "/").replace(/\/{2,}/gu, "/");
+  if (candidate.startsWith("refs/")) return undefined;
 
   const hasWhitespace = HAS_WHITESPACE.test(candidate);
   const tokens = hasWhitespace ? candidate.split(INTENT_WHITESPACE) : [];
@@ -102,7 +113,12 @@ function normalizeExplicitPath(
 
   const withoutLine = candidate.replace(LINE_SUFFIX, "");
   if (!withoutLine.includes("/")) return undefined;
-  const segments = withoutLine.split("/").filter((segment) => segment.length > 0);
+  const rawSegments = withoutLine.split("/").filter((segment) => segment.length > 0);
+  // Drive-префикс `C:` — не имя каталога, а корень диска: исключаем его из проверки
+  // сегментов, но сохраняем в нормализованном результате.
+  const hasDrivePrefix =
+    rawSegments.length > 1 && WINDOWS_DRIVE_SEGMENT.test(rawSegments[0] ?? "");
+  const segments = hasDrivePrefix ? rawSegments.slice(1) : rawSegments;
   if (segments.length === 0) return undefined;
   const segmentPattern = hasWhitespace ? SEGMENT_WITH_SPACES : SEGMENT;
   if (!segments.every((segment) => segment.trim() === segment && segmentPattern.test(segment))) {
@@ -115,7 +131,17 @@ function normalizeExplicitPath(
   // (`/tmp/my project/file name.ts`). Иначе это текст или команда:
   // `src/a.ts line 20` и `/usr/bin/pnpm test src/a.ts` должны распасться на токены,
   // иначе claim получает несуществующий путь и пропускает конфликт на файле.
-  if (hasWhitespace && tokens.length > 2 && (!HAS_WHITESPACE.test(last) || !hasExtension)) {
+  // Путь с несколькими пробельными разрывами (`/Users/x/My Projects/Zcode Fork/repo/a.ts`)
+  // принимаем, пока каждый токен после первого — продолжение пути с разделителем:
+  // это отсекает команды (`pnpm test ...`), где после executable идёт обычное слово.
+  const pathContinuation =
+    tokens.length > 2 && tokens.slice(1).every((token) => token.includes("/")) && hasExtension;
+  if (
+    hasWhitespace &&
+    tokens.length > 2 &&
+    !pathContinuation &&
+    (!HAS_WHITESPACE.test(last) || !hasExtension)
+  ) {
     return undefined;
   }
   if (!hasExtension && segments.length < 3) {
@@ -137,6 +163,46 @@ function pushUnique(target: string[], seen: Set<string>, candidate: string | und
   if (!candidate || seen.has(candidate)) return;
   seen.add(candidate);
   target.push(candidate);
+}
+
+/** Снимает обёртки с токена, не трогая содержимое пути. */
+function stripTokenWrappers(token: string): string {
+  return token.replace(/^[("'<[`]+/u, "").replace(/[)"'>\].,;]+$/u, "");
+}
+
+/** Absolute-токен: `/repo/a.ts` или `C:\repo\a.ts`. */
+function isAbsolutePathToken(token: string): boolean {
+  const candidate = stripTokenWrappers(token);
+  return candidate.startsWith("/") || WINDOWS_ABSOLUTE_PATH.test(candidate);
+}
+
+/** Relative-токен с разделителем: `repo/a.ts`, `repo\a.ts`. */
+function isRelativePathToken(token: string): boolean {
+  const candidate = stripTokenWrappers(token);
+  if (candidate.length === 0 || isAbsolutePathToken(candidate)) return false;
+  return /^[\w@.+-]+[\\/]/u.test(candidate);
+}
+
+/**
+ * Хвост absolute-пути, разорванного пробелом. Голые regexp'ы не матчат пробел внутри
+ * пути, поэтому из `/Users/x/Zcode Fork/repo/src/a.ts` они извлекают relative-хвост
+ * `Fork/repo/src/a.ts` — ложный claim на несуществующий путь. Идём назад по цепочке
+ * path-подобных токенов: обычное слово (`and`, `test`) цепочку разрывает.
+ */
+function isPathTailAfterAbsolute(text: string, index: number): boolean {
+  const before = text.slice(0, index);
+  if (!/\s$/u.test(before)) return false;
+  const tokens = before.trimEnd().split(INTENT_WHITESPACE);
+  const immediate = tokens[tokens.length - 1] ?? "";
+  // Пунктуация завершает путь: `/a/b.ts, src/c.ts` — два отдельных файла,
+  // а не путь `/a/b.ts, src/c.ts` с пробелом внутри.
+  if (/[),;:.\]]$/u.test(immediate)) return false;
+  for (let cursor = tokens.length - 1; cursor >= 0; cursor -= 1) {
+    const token = tokens[cursor]!;
+    if (!token.includes("/") && !token.includes("\\")) return false;
+    if (isAbsolutePathToken(token)) return true;
+  }
+  return false;
 }
 
 /**
@@ -172,7 +238,24 @@ export function extractTaskPaths(text: string): string[] {
       bareText += sanitized.slice(consumed, start) + match[0];
       // В backticks часто лежит команда целиком (`pnpm test apps/...`), поэтому
       // проверяем каждый токен отдельно, а не всю строку.
-      for (const token of span.split(INTENT_WHITESPACE)) {
+      const spanTokens = [...span.matchAll(/\S+/gu)];
+      // Спан вида `/Users/x/Zcode Fork/repo/a.ts (line 20)`: целиком он не принят
+      // (хвост — не путь), но первый токен — префикс пути, а не самостоятельный scope.
+      // Команда (`/usr/bin/pnpm test src/a.ts`) отличается: второй токен не путь.
+      const splitAbsolutePath =
+        spanTokens.length > 1 &&
+        isAbsolutePathToken(spanTokens[0]![0]) &&
+        isRelativePathToken(spanTokens[1]![0]);
+      for (const [position, tokenMatch] of spanTokens.entries()) {
+        const token = tokenMatch[0];
+        if (splitAbsolutePath && position === 0) continue;
+        if (
+          position > 0 &&
+          !isAbsolutePathToken(token) &&
+          isPathTailAfterAbsolute(span, tokenMatch.index ?? 0)
+        ) {
+          continue;
+        }
         pushUnique(paths, seen, normalizeExplicitPath(token));
       }
     }
@@ -180,10 +263,19 @@ export function extractTaskPaths(text: string): string[] {
   }
   bareText += sanitized.slice(consumed);
 
+  // Windows drive-путь вырезаем до POSIX-веток: иначе от `C:/repo/...` останется
+  // ложный `/repo/...`, а `C:\repo\...` вообще не будет найден.
+  bareText = bareText.replace(BARE_WINDOWS_PATH, (match) => {
+    pushUnique(paths, seen, normalizeExplicitPath(match));
+    return " ";
+  });
+
   for (const match of bareText.matchAll(BARE_ABSOLUTE_PATH)) {
     pushUnique(paths, seen, normalizeExplicitPath(match[0]));
   }
   for (const match of bareText.matchAll(BARE_RELATIVE_PATH)) {
+    // Хвост absolute-пути с пробелом — не отдельный файл.
+    if (isPathTailAfterAbsolute(bareText, match.index ?? 0)) continue;
     pushUnique(paths, seen, normalizeExplicitPath(match[0]));
   }
   return paths.slice(0, WORK_LEDGER_MAX_EXTRACTED_PATHS);

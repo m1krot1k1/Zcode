@@ -38,7 +38,7 @@ describe("Subagent 有效选择到实际执行", () => {
           subagents: {
             profiles: [
               {
-                name: "researcher",
+                name: "effective-researcher",
                 description: "Research code",
                 source: "user",
                 tools: ["Read"],
@@ -77,7 +77,7 @@ describe("Subagent 有效选择到实际执行", () => {
                       input: {
                         description: "Research",
                         prompt: "Research code",
-                        subagent_type: "researcher",
+                        subagent_type: "effective-researcher",
                       },
                     },
                   ],

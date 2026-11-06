@@ -248,7 +248,7 @@ describe("subagent background notifications", () => {
     const staleCatalogTask: RuntimeTaskSnapshot = {
       taskId,
       agentId: taskId,
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "old completion",
       status: "completed",
       startedAt: new Date(0),
@@ -292,7 +292,7 @@ describe("subagent background notifications", () => {
     const previousTask: RuntimeTaskSnapshot = {
       taskId: "agent_resume_rollback",
       agentId: "agent_resume_rollback",
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "completed task",
       status: "completed",
       startedAt: new Date(0),
@@ -358,7 +358,7 @@ describe("subagent background notifications", () => {
     registry.register({
       taskId,
       agentId: taskId,
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "Resume signal test",
       status: "completed",
       startedAt: new Date(),
@@ -2403,7 +2403,7 @@ describe("subagent background notifications", () => {
 
     const notification = notifications[0]!;
     expect(notification).toContain(
-      `<summary>Agent general-purpose task &quot;Auto background test&quot; failed. ${providerMessage}</summary>`,
+      `<summary>Agent implementer task &quot;Auto background test&quot; failed. ${providerMessage}</summary>`,
     );
     expect(notification).toContain(`<error>${providerMessage}</error>`);
     expect(notification).not.toContain("Turn execution failed");
@@ -3006,7 +3006,7 @@ function seedPrismParentTask(
   registry.register({
     taskId: parentTaskId,
     agentId: parentTaskId,
-    agentType: "general-purpose",
+    agentType: "implementer",
     description: "PRISM test parent",
     status: "running",
     startedAt: new Date(0),
@@ -3024,7 +3024,7 @@ function createSubagentRunRequest(input: {
   turnId: ReturnType<typeof createTurnId>;
 }) {
   return {
-    agentType: "general-purpose",
+    agentType: "implementer",
     description: "Auto background test",
     parentToolCallId: "call_auto_background",
     prompt: "Run slowly",

@@ -433,7 +433,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       input: {
                         description: "Grandchild alpha one",
                         prompt: `Grandchild alpha one: read ${fixturePath} and report ${markers.alpha}.`,
-                        subagent_type: "orchestrator",
+                        subagent_type: "researcher",
                       },
                     },
                     {
@@ -442,7 +442,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       input: {
                         description: "Grandchild alpha two",
                         prompt: `Grandchild alpha two: read ${fixturePath} and report ${markers.alpha}.`,
-                        subagent_type: "orchestrator",
+                        subagent_type: "researcher",
                       },
                     },
                   ],
@@ -647,7 +647,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       expect(levelFourCallCounts).toEqual([1, 2]);
       expect(nestedRoleRequests).toHaveLength(3);
       for (const nestedRequest of nestedRoleRequests) {
-        expect(nestedRequest.system).toMatch(/Ты (?:оркестратор|тест-инженер) ZCode/u);
+        expect(nestedRequest.system).toMatch(/Ты (?:оркестратор|исследователь|тест-инженер) ZCode/u);
         expect(nestedRequest.tools).toContain("Read");
         expect(nestedRequest.tools).toContain("Task");
         expect(nestedRequest.tools).toContain("RespondToCoordinator");
@@ -1084,7 +1084,9 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                     input: {
                       description: nextDescription,
                       prompt: `Continue the serial capability probe at ${nextDescription}.`,
-                      subagent_type: "orchestrator",
+                      // Router-роль не может вызывать другой router; цепочку продолжает
+                      // обычная worker-роль с Task, чтобы проверять именно рекурсию Task.
+                      subagent_type: "researcher",
                     },
                   },
                 ],

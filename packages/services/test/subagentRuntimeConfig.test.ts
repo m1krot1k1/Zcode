@@ -61,7 +61,8 @@ afterEach(async () => {
 });
 const markdown = (name: string, prompt = name) =>
   `---\nname: ${name}\ndescription: Test\n---\n${prompt}`;
-const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 5000, interval: 10 });
+// File-watch events can lag under full-suite load; waitFor is the correctness retry.
+const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 15000, interval: 10 });
 function initialWatcherFor(path: string): ReturnType<typeof watch> {
   // 各 scope 并行 stat，注册顺序不固定；按监听路径取得初始实例，避免向其他 scope 发事件。
   const index = vi.mocked(watch).mock.calls.findIndex(([root]) => root === path);

@@ -485,6 +485,9 @@ async function executeToolCallImpl(
         ...(deps.getAvailableAgentTypes === undefined
           ? {}
           : { availableAgentTypes: deps.getAvailableAgentTypes() }),
+        ...(deps.callerAgentType === undefined
+          ? {}
+          : { callerAgentType: deps.callerAgentType }),
         toolCallId: canonicalToolCall.id,
         toolSearch: options?.toolSearch,
         telemetry,

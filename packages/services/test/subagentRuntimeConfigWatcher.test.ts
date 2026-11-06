@@ -28,7 +28,10 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
   vi.mocked(stat).mockClear();
 });
-const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 8000, interval: 20 });
+// FSEvents watcher startup and full-suite load can delay the first real event beyond 8s;
+// waitFor is the correctness retry, so keep a generous ceiling without weakening assertions.
+const until = (assertion: () => unknown) =>
+  vi.waitFor(assertion, { timeout: 15_000, interval: 20 });
 async function pair(prepareHome?: (homeDir: string) => Promise<void>, isDesktopRuntime = false) {
   const homeDir = await mkdtemp(join(tmpdir(), "subagent-host-watch-"));
   cleanup.push(() => rm(homeDir, { recursive: true, force: true }));

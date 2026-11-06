@@ -18,6 +18,10 @@ import {
 } from "@zcode/contracts";
 import { TASK_TOOL_NAME } from "../compat.js";
 import type { ToolEntry, ToolHandler } from "../types.js";
+import {
+  isAgentTypeAllowedForCaller,
+  matchAgentTypeInCatalog,
+} from "../../subagent/profile.js";
 
 const MAX_AGENT_MODEL_BYTES = 120_000;
 
@@ -324,25 +328,125 @@ export function formatAgentOutputForModel(output: unknown): string {
 const agentHandler: ToolHandler = async (input, context) => {
   const parsed = AgentInputSchema.parse(input) as AgentInput;
   const agentType = parsed.subagent_type;
+  const callerAgentType = context.callerAgentType;
 
-  const availableAgentTypes = context.availableAgentTypes;
-  if (availableAgentTypes && !availableAgentTypes.includes(agentType)) {
-    // Причина: встроенный general-purpose оставался во внутреннем runtime-каталоге и обходил
-    // скрытие из model prompt; проверка по тому же snapshot закрывает Agent и Task до admission.
+  // start is a gateway: it owns no DAG and never dispatches worker roles itself.
+  if (
+    parsed.task_graph &&
+    callerAgentType?.trim().toLocaleLowerCase("en-US") === "start"
+  ) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,
-      `Agent type '${agentType}' is not available. Choose one exact active role ID: ${availableAgentTypes.join(", ")}`,
+      "start must use Task(orchestrator), not task_graph",
       {
         context: {
-          code: AgentErrorCode.UNKNOWN_AGENT_TYPE,
+          code: AgentErrorCode.TASK_DAG_UNAVAILABLE,
           agentType,
-          availableAgentTypes: [...availableAgentTypes],
+          callerAgentType,
           toolCallId: context.toolCallId,
           toolName: "Agent",
         },
         recoverable: true,
       },
     );
+  }
+
+  // Caller routing policy is the same predicate that builds the visible catalog:
+  // start -> orchestrator only, orchestrator -> worker roles only.
+  if (callerAgentType !== undefined && !isAgentTypeAllowedForCaller(agentType, callerAgentType)) {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      callerAgentType.trim().toLocaleLowerCase("en-US") === "start"
+        ? `Agent type '${agentType}' is not available to start. start must delegate through Task(orchestrator).`
+        : `Agent type '${agentType}' is not available to ${callerAgentType}. Router roles must delegate to worker roles instead of calling start or orchestrator.`,
+      {
+        context: {
+          code: AgentErrorCode.UNKNOWN_AGENT_TYPE,
+          agentType,
+          callerAgentType,
+          toolCallId: context.toolCallId,
+          toolName: "Agent",
+        },
+        recoverable: true,
+      },
+    );
+  }
+
+  const availableAgentTypes = context.availableAgentTypes;
+  if (availableAgentTypes) {
+    // 原因: встроенный general-purpose оставался во внутреннем runtime-каталоге и обходил
+    // скрытие из model prompt; проверка по тому же snapshot закрывает Agent и Task до admission.
+    // Нормализация сохранена: runner сам разрешает регистр и разделители, поэтому handler
+    // отклоняет только те роли, которые runner всё равно не сможет разрешить.
+    if (matchAgentTypeInCatalog(agentType, availableAgentTypes) === "none") {
+      const availableList = availableAgentTypes.join(", ");
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        [
+          `Agent type '${agentType}' is not available. Choose one exact active role ID: ${availableList}`,
+          `Agent type '${agentType}' not found. Available agents: ${availableList}`,
+        ].join("\n"),
+        {
+          context: {
+            code: AgentErrorCode.UNKNOWN_AGENT_TYPE,
+            agentType,
+            availableAgentTypes: [...availableAgentTypes],
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
+        },
+      );
+    }
+  }
+
+  // task_graph bypasses the top-level subagent_type check: every node picks its own
+  // profile. Apply the same caller policy and catalog to nodes before runTaskDag can
+  // resolve them against the shared snapshot.
+  if (parsed.task_graph) {
+    for (const node of parsed.task_graph.nodes) {
+      if (!isAgentTypeAllowedForCaller(node.subagent_type, callerAgentType)) {
+        throw createCoreError(
+          CoreErrorType.ToolExecutionFailed,
+          `Agent type '${node.subagent_type}' is not available to ${callerAgentType ?? "root"}. task_graph node '${node.id}' must delegate to a worker role instead of start or orchestrator.`,
+          {
+            context: {
+              code: AgentErrorCode.UNKNOWN_AGENT_TYPE,
+              agentType: node.subagent_type,
+              callerAgentType,
+              nodeId: node.id,
+              toolCallId: context.toolCallId,
+              toolName: "Agent",
+            },
+            recoverable: true,
+          },
+        );
+      }
+      if (
+        availableAgentTypes &&
+        matchAgentTypeInCatalog(node.subagent_type, availableAgentTypes) === "none"
+      ) {
+        const availableList = availableAgentTypes.join(", ");
+        throw createCoreError(
+          CoreErrorType.ToolExecutionFailed,
+          [
+            `Agent type '${node.subagent_type}' is not available. Choose one exact active role ID: ${availableList}`,
+            `task_graph node '${node.id}' uses an unknown agent type '${node.subagent_type}'. Available agents: ${availableList}`,
+          ].join("\n"),
+          {
+            context: {
+              code: AgentErrorCode.UNKNOWN_AGENT_TYPE,
+              agentType: node.subagent_type,
+              availableAgentTypes: [...availableAgentTypes],
+              nodeId: node.id,
+              toolCallId: context.toolCallId,
+              toolName: "Agent",
+            },
+            recoverable: true,
+          },
+        );
+      }
+    }
   }
 
   if (!context.subagentPort) {

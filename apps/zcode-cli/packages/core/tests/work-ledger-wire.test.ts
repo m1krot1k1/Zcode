@@ -313,4 +313,104 @@ describe("work ledger wiring", () => {
       "/tmp/my project/file name.ts",
     ]);
   });
+
+  it("(k) извлекает Windows drive-путь с обоими разделителями в backticks и без", () => {
+    expect(extractTaskPaths("Правлю `C:/repo/src/a.ts`")).toEqual(["C:/repo/src/a.ts"]);
+    expect(extractTaskPaths("Правлю `C:\\repo\\src\\a.ts`")).toEqual(["C:/repo/src/a.ts"]);
+    // JSON/экранированный вид с двойными слэшами тоже нормализуется.
+    expect(extractTaskPaths("Правлю `C:\\\\repo\\\\src\\\\a.ts`")).toEqual(["C:/repo/src/a.ts"]);
+    expect(extractTaskPaths("Правлю C:/repo/src/a.ts сейчас")).toEqual(["C:/repo/src/a.ts"]);
+    expect(extractTaskPaths("Правлю C:\\repo\\src\\a.ts сейчас")).toEqual(["C:/repo/src/a.ts"]);
+    expect(extractTaskPaths("Смотри `C:\\repo\\src\\a.ts:12`")).toEqual(["C:/repo/src/a.ts"]);
+    // Drive-префикс не теряется: без него получился бы ложный absolute `/repo/src/a.ts`.
+    expect(extractTaskPaths("C:/repo/src/a.ts")).not.toContain("/repo/src/a.ts");
+    expect(extractTaskPaths("C:\\repo\\src\\a.ts")).not.toContain("/repo/src/a.ts");
+  });
+
+  it("(l) workspace с пробелами: backtick-путь целиком, bare-форма не даёт ложный хвост", () => {
+    const spaced = "/Users/x/Zcode Fork/repo/src/a.ts";
+    expect(extractTaskPaths(`Правлю \`${spaced}\` сейчас`)).toEqual([spaced]);
+    // Несколько пробельных разрывов в absolute-пути не рвут его на части.
+    const multiSpaced = "/Users/x/My Projects/Zcode Fork/repo/src/a.ts";
+    expect(extractTaskPaths(`Правлю \`${multiSpaced}\``)).toEqual([multiSpaced]);
+    // Windows-путь с пробелом в каталоге нормализуется целиком.
+    expect(
+      extractTaskPaths("Правлю `C:\\Users\\x\\Zcode Fork\\repo\\src\\a.ts`"),
+    ).toEqual(["C:/Users/x/Zcode Fork/repo/src/a.ts"]);
+
+    // Backtick-спан с хвостовым текстом не должен оставлять claim на префикс
+    // (`/Users/x/Zcode`) или relative-хвост (`Fork/repo/src/a.ts`).
+    const withTail = extractTaskPaths("Правлю `/Users/x/Zcode Fork/repo/src/a.ts (line 20)`");
+    expect(withTail).toEqual([]);
+
+    // Ограничение: голый путь с пробелами неоднозначен и не извлекается —
+    // но и не превращается в ложный relative-путь или claim на родительский каталог.
+    const bare = extractTaskPaths(`Правлю ${spaced} сейчас`);
+    expect(bare).toEqual([]);
+    expect(bare).not.toContain("Fork/repo/src/a.ts");
+    expect(bare).not.toContain("/Users/x/Zcode");
+
+    // Пунктуация завершает absolute-путь: следующий relative — отдельный файл.
+    expect(extractTaskPaths("Правлю /home/dev/project/src/a.ts, tests/b.ts")).toEqual([
+      "/home/dev/project/src/a.ts",
+      "tests/b.ts",
+    ]);
+  });
+
+  it("(m) второй writer с тем же Windows-путём получает write_claim_conflict", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+
+    const first = registry.registerSubagentTask(
+      task("win-a", {
+        childSessionId: createSessionId("win-child-a"),
+        prompt: "Правлю `C:\\repo\\src\\a.ts`",
+      }),
+      pending(),
+    );
+    expect(first.accepted).toBe(true);
+    expect(ledger.list({ workspacePath: WORKSPACE, agentId: "win-a" })[0]?.paths).toEqual([
+      "C:/repo/src/a.ts",
+    ]);
+
+    // Другая форма записи того же пути нормализуется к той же строке и конфликтует.
+    const second = registry.registerSubagentTask(
+      task("win-b", {
+        childSessionId: createSessionId("win-child-b"),
+        prompt: "Тоже правлю C:/repo/src/a.ts",
+      }),
+      pending(),
+    );
+    expect(second).toEqual({ accepted: false, reason: "write_claim_conflict" });
+    expect(registry.get("win-b")).toBeUndefined();
+    expect(ledger.list({ workspacePath: WORKSPACE, agentId: "win-b" })).toHaveLength(0);
+  });
+
+  it("(n) Windows workspace с пробелом: absolute и relative ссылки конфликтуют", () => {
+    const workspacePath = "C:\\Users\\x\\Zcode Fork\\repo";
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+
+    const first = registry.registerSubagentTask(
+      task("win-ws-a", {
+        childSessionId: createSessionId("win-ws-child-a"),
+        prompt: "Правлю `C:\\Users\\x\\Zcode Fork\\repo\\src\\a.ts`",
+        workspacePath,
+      }),
+      pending(),
+    );
+    expect(first.accepted).toBe(true);
+    // Путь внутри Windows workspace по-прежнему хранится relative.
+    expect(ledger.list({ workspacePath, agentId: "win-ws-a" })[0]?.paths).toEqual(["src/a.ts"]);
+
+    const second = registry.registerSubagentTask(
+      task("win-ws-b", {
+        childSessionId: createSessionId("win-ws-child-b"),
+        prompt: "Тоже правлю `src/a.ts`",
+        workspacePath,
+      }),
+      pending(),
+    );
+    expect(second).toEqual({ accepted: false, reason: "write_claim_conflict" });
+  });
 });

@@ -1,6 +1,7 @@
 import { createMessageId, type TraceContext } from "@zcode/contracts";
 import type { RuntimeAttachmentEntry, RuntimeMessageEntry } from "../../agent/message-history.js";
 import { collectAgentListingAttachment } from "../../subagent/listing.js";
+import { filterAgentTypesForCaller } from "../../subagent/profile.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { resolveRuntimeEmbeddedSearchEnabled } from "../methods/embedded-search-branch.js";
 import { resolveRuntimeDelegationToolNames } from "../methods/subagent.js";
@@ -24,8 +25,16 @@ export function collectRuntimeAgentListing(
   const listingTools = delegationToolNames.length
     ? [...tools, ...delegationToolNames.map((name) => ({ name }))]
     : tools;
+  // Каталог caller-scoped: start видит только orchestrator, orchestrator — worker-роли.
+  // Фильтр тот же, что у getAvailableAgentTypes, поэтому каталог и admission не расходятся.
+  const definitions = runtime.getAgentDefinitions();
   return collectAgentListingAttachment({
-    definitions: runtime.getAgentDefinitions(),
+    definitions: {
+      activeAgents: filterAgentTypesForCaller(
+        definitions.activeAgents,
+        runtime.config.agentType,
+      ),
+    },
     entries,
     tools: listingTools,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),

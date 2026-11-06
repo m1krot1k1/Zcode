@@ -50,10 +50,23 @@ const START_TOOLING_AND_NESTING_CONTRACT = [
   "Каждый уровень подтверждается только собственным вызовом Task в его транскрипте; скопированная строка из ответа ребёнка доказательством не является, и мелкий PASS не доказывает глубокий.",
   "Перед делегированием кратко зафиксируй: результат, ограничения, объём, уже данное разрешение и только те неизвестные, что блокируют действие.",
   "Каждому ребёнку выдай конверт: Branch ID, Parent ID, Level+1, remaining_spawns строго меньше твоего, max_parallel, непересекающиеся файлы, out-of-scope, критерий проверки и контракт завершения.",
-  "Независимые ветки запускай одним сообщением; фактическое число бери из конверта spawn, а не из фиксированного лимита: runtime считает параллелизм как max(1, min(nodeCount, requested max_parallel, remaining_spawns, activeCap − activeCount)). Для большой задачи с 5–8 независимыми областями используй эту ёмкость; если независимых областей меньше — не раздувай число агентов. Если веток больше max_parallel — партиями с join между партиями. Не создавай дублирующие или пересекающиеся ветки: скорость даёт параллелизм узких независимых ветвей, а не их количество.",
+  "Независимые ветки планирует orchestrator: ты передаёшь ему ёмкость и требования к веткам одним Task(orchestrator). Runtime считает параллелизм как max(1, min(nodeCount, requested max_parallel, remaining_spawns, activeCap − activeCount)). Для большой задачи с 5–8 независимыми областями зафиксируй это в конверте orchestrator; партиями с join между партиями управляет orchestrator, не start. Не создавай дублирующие или пересекающиеся ветки: скорость даёт параллелизм узких независимых ветвей, а не их количество.",
   "Никогда не вызывай Task(start) и не Task(orchestrator) без нового, более узкого конверта.",
   "Если Task недоступен или хост отказал — зафиксируй blocker с точной причиной и не подменяй делегирование собственной реализацией.",
   "Не изобретай гейты, approval-шаги и выбор тира; не заявляй о работе и проверке, которых не было.",
+].join("\n");
+
+// Routing architecture: start is a gateway, not a dispatcher. It has exactly one
+// delegation target (orchestrator) and never runs its own DAG. Orchestrator launches
+// the worker roles and never re-enters either router role.
+const START_ONLY_ORCHESTRATOR_CONTRACT = [
+  'Единственный маршрут start — Task(subagent_type: "orchestrator"). Worker-роли (researcher, reviewer, security-reviewer, test-engineer, evaluator, coder, frontend-coder, backend-coder, infra-coder, implementer, self-improver, knowledge-curator, subagent-factory) запускает orchestrator: start не вызывает их напрямую и не передаёт task_graph.',
+  "Если orchestrator вернул partial, blocked или timeout, start не обходит его и не берёт работу на себя: следующий wave — это новый Task(orchestrator) с накопленным контекстом (сделано, осталось, evidence) и остатком spawn-бюджета.",
+].join("\n");
+
+const ORCHESTRATOR_WORKER_ROUTING_CONTRACT = [
+  "Ветки запускает orchestrator: Task(researcher/reviewer/security-reviewer/test-engineer/evaluator/coder/frontend-coder/backend-coder/infra-coder/implementer/...) с непересекающимися файловыми областями. Никогда не вызывай Task(start) и не вызывай Task(orchestrator), включая самого себя.",
+  "Каждая ветка должна укладываться примерно в 10 минут. Если ветка вернула partial, blocked или timeout, верни partial с накопленным контекстом (сделано, осталось, evidence) и остатком бюджета, чтобы следующий wave orchestrator продолжил с этого места, а не начинал заново.",
 ].join("\n");
 
 // Routing gate: start/orchestrator маршрутизируют, root интегрирует. Правило должно быть
@@ -272,9 +285,10 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     systemPrompt: [
       "Ты профиль start в ZCode. Перед маршрутизацией кратко зафиксируй результат, границы и ограничения, объём работы, уже данное пользователем разрешение и только неизвестные факты, которые реально блокируют действие.",
       "Не спрашивай повторно то, что пользователь уже разрешил. Не придумывай сохранённую миссию и не обещай возобновление после перезапуска: такого владельца состояния у runtime нет.",
-      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам. Сразу маршрутизируй изменяющую работу специализированному исполнителю: production-код — coder, UI/renderer/design system — frontend-coder, services/runtime/protocol/data — backend-coder, build/release/CI/scripts/electron — infra-coder, тесты и проверки — test-engineer; ограниченный общий объём без явной специализации — implementer. Сложную многокомпонентную работу с независимыми ветками отдай orchestrator. Не превращай маршрутизацию в длинный read-only триаж: достаточно короткой проверки владельца и границ, затем делегируй. Read-only триаж (Read/Glob/Grep без записи) разрешён; изменяющие команды, тесты и правки — только делегат. Bash/Write/Edit недоступны тебе напрямую. Если устойчивого направления нет в каталоге, вызови subagent-factory вместо generic-роли. Если Task недоступен, зафиксируй blocker и не подменяй реализацию.",
+      "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам и не запускаешь worker-роли напрямую. У тебя ровно один маршрут делегирования — Task(subagent_type: \"orchestrator\"); orchestrator выбирает профильных исполнителей (researcher, reviewer, test-engineer, coder, frontend-coder, backend-coder, infra-coder, implementer и другие) и распределяет ветки. Не превращай маршрутизацию в длинный read-only триаж: достаточно короткой проверки владельца и границ, затем делегируй orchestrator. Read-only триаж (Read/Glob/Grep без записи) разрешён; изменяющие команды, тесты и правки — только через orchestrator. Если устойчивого направления нет в каталоге, его создаёт orchestrator через subagent-factory, а не start. Bash/Write/Edit недоступны тебе напрямую. Если Task недоступен, зафиксируй blocker и не подменяй реализацию.",
       "Не выдумывай состояние проекта и не заявляй о невыполненной проверке.",
       "Для аудита и самоанализа задай явный wall-clock budget (например 20–30 минут) и возвращай partial findings, а не жди двухчасовой root deadline. Полный unit, ремонт и build выноси в отдельную волну после анализа.",
+      START_ONLY_ORCHESTRATOR_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
       START_PRESENTATION_CONTRACT,
@@ -310,6 +324,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Если ветка превысила примерно 10 минут или не присылает прогресс, останови или раздели её и верни partial/blocker; не удерживай root до двухчасового deadline.",
       "После join сопоставь каждый запрос пользователя с фактическим результатом и перепроверь важные утверждения по источнику или выводу проверки. Отметь завершённое, неполное и заблокированное; не подменяй факты заявлениями агентов.",
       "Не заявляй о durable wave ledger или автоматическом resume после перезапуска: ZCode runtime этого не предоставляет.",
+      ORCHESTRATOR_WORKER_ROUTING_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
     ].join("\n"),
@@ -633,6 +648,89 @@ function isBuiltInAgentName(name: string): boolean {
 /** Read-only router roles may delegate worker capabilities without using them directly. */
 export function isDelegationRouterAgentType(agentType: string): boolean {
   return agentType === "start" || agentType === "orchestrator";
+}
+
+/** start has exactly one delegation target; everything else is owned by orchestrator. */
+export const START_ROUTING_TARGET_AGENT_TYPE = "orchestrator";
+
+function normalizeAgentTypeName(agentType: string | null | undefined): string {
+  return agentType?.trim().toLocaleLowerCase("en-US") ?? "";
+}
+
+const ROOT_CALLER_AGENT_TYPES = new Set(["", "main", "root", "zcode", "zcode-agent"]);
+
+function isSubagentCaller(caller: string): boolean {
+  return caller.length > 0 && !ROOT_CALLER_AGENT_TYPES.has(caller);
+}
+
+/**
+ * Admission predicate shared by the Agent/Task handler and the catalog filter.
+ * start -> orchestrator only; any other subagent caller -> any role except router roles;
+ * root/main (undefined) -> unrestricted.
+ */
+export function isAgentTypeAllowedForCaller(
+  agentType: string,
+  callerAgentType?: string | null,
+): boolean {
+  const caller = normalizeAgentTypeName(callerAgentType);
+  if (caller === "start") {
+    return normalizeAgentTypeName(agentType) === START_ROUTING_TARGET_AGENT_TYPE;
+  }
+  if (isSubagentCaller(caller)) {
+    return !isDelegationRouterAgentType(normalizeAgentTypeName(agentType));
+  }
+  return true;
+}
+
+/**
+ * Single caller-scoped catalog filter. collectRuntimeAgentListing and
+ * getAvailableAgentTypes both call it, so the visible catalog and admission cannot drift.
+ */
+export function filterAgentTypesForCaller<T extends Pick<AgentProfile, "name" | "source">>(
+  profiles: readonly T[],
+  callerAgentType?: string | null,
+): T[] {
+  const caller = normalizeAgentTypeName(callerAgentType);
+  if (caller === "start") {
+    return profiles.filter((profile) => isAgentTypeAllowedForCaller(profile.name, caller));
+  }
+  if (isSubagentCaller(caller)) {
+    return profiles.filter(
+      (profile) =>
+        isModelSelectableAgentProfile(profile) && isAgentTypeAllowedForCaller(profile.name, caller),
+    );
+  }
+  return [...profiles];
+}
+
+/** Mirrors the subagent runner's normalization so catalog admission keeps fuzzy names. */
+export function normalizeAgentTypeForMatch(agentType: string): string | undefined {
+  const normalized = agentType
+    .trim()
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\p{White_Space}\p{Pd}_]+/gu, "");
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+/**
+ * exact/normalized/ambiguous are resolvable by the runner's profile resolver;
+ * none must be rejected by the handler before a child runtime is spawned.
+ */
+export type AgentTypeCatalogMatch = "exact" | "normalized" | "ambiguous" | "none";
+
+export function matchAgentTypeInCatalog(
+  agentType: string,
+  availableAgentTypes: readonly string[],
+): AgentTypeCatalogMatch {
+  if (availableAgentTypes.includes(agentType)) return "exact";
+  const normalized = normalizeAgentTypeForMatch(agentType);
+  if (!normalized) return "none";
+  const matches = availableAgentTypes.filter(
+    (name) => normalizeAgentTypeForMatch(name) === normalized,
+  );
+  if (matches.length === 1) return "normalized";
+  return matches.length > 1 ? "ambiguous" : "none";
 }
 
 // general-purpose оставлен только для чтения старых пользовательских настроек; runtime больше

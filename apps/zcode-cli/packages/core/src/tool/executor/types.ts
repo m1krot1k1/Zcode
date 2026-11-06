@@ -76,6 +76,8 @@ export type ShouldEnqueueBackgroundTaskNotification = (
 
 export interface ToolExecutorOptions {
   getAvailableAgentTypes?: () => readonly string[];
+  /** Каноническая роль вызывающего runtime; root/main — undefined. */
+  callerAgentType?: string;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;
@@ -193,6 +195,8 @@ export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
 
 export interface ToolExecutorDeps {
   getAvailableAgentTypes?: () => readonly string[];
+  /** Каноническая роль вызывающего runtime; root/main — undefined. */
+  callerAgentType?: string;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;

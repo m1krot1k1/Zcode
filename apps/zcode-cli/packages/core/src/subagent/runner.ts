@@ -180,6 +180,13 @@ export interface ExploreSubagentPortOptions {
   resolveTerminalTaskCatalog?: (taskId: string) => Promise<RuntimeTaskSnapshot | undefined>;
   createAgentId?: () => string;
   getAllowedTools?: (profile: AgentProfile) => readonly string[];
+  /**
+   * Эффективная tool surface родителя (built-ins ∪ делегируемый набор).
+   * `undefined` сохраняет прежнее поведение: write-capability выводится только из профиля.
+   */
+  parentToolNames?: readonly string[];
+  /** Hard deadline конкретной задачи; undefined — без deadline. */
+  getTaskTimeoutMs?: (agentType: string) => number | undefined;
   inactivityTimeoutMs?: number;
   autoBackgroundMs?: number;
   logger?: Logger;
@@ -498,6 +505,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           spawnGrant: resolveSpawnGrant(request, runOptions, options, registry),
           // level 只记录层级；预算本身已从数学上限制树规模，不设硬深度上限。
           level: (runOptions?.level ?? 0) + 1,
+          // Эффективная поверхность родителя: профиль не может объявить запись,
+          // которой нет у фактического tool surface родителя.
+          parentToolNames: options.parentToolNames,
         }),
         taskAbort,
       );
@@ -510,6 +520,15 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         }
         throwOnSubagentAdmissionFailure(admission, request);
       }
+      // Hard deadline ставится после admission: taskAbort уже существует, а registry
+      // владеет терминальным состоянием. Timer очищается на каждом выходе из run.
+      const taskDeadline = createSubagentTaskDeadline({
+        lifecycle,
+        options,
+        registry,
+        request,
+        taskAbort,
+      });
       try {
         await writeAgentMetadataFile(lifecycle, request, "running");
         if (taskAbort.signal.aborted) {
@@ -537,6 +556,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             registry.remove(lifecycle.agentId);
           }
         } finally {
+          taskDeadline.clear();
           taskAbort.dispose();
           registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
           taskAbort.settle(registry.get(lifecycle.agentId));
@@ -649,6 +669,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               });
             })
             .finally(() => {
+              taskDeadline.clear();
               taskAbort.dispose();
               registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
               taskAbort.settle(registry.get(lifecycle.agentId));
@@ -658,6 +679,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         // A non-abort readiness rejection means setup/runtime failed on its own. Do not convert
         // that failure into cancellation; wait for settlement, then remove the unready admission.
         await completionPromise.catch(() => undefined);
+        taskDeadline.clear();
         taskAbort.dispose();
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
         registry.remove(lifecycle.agentId);
@@ -739,6 +761,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               });
             })
             .finally(() => {
+              // Задача продолжает жить после передачи в background, поэтому deadline
+              // снимается только вместе с её фактическим settlement.
+              taskDeadline.clear();
               taskAbort.dispose();
               registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
               taskAbort.settle(registry.get(lifecycle.agentId));
@@ -853,6 +878,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               });
             })
             .finally(() => {
+              taskDeadline.clear();
               taskAbort.dispose();
               registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
               taskAbort.settle(registry.get(lifecycle.agentId));
@@ -924,6 +950,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         activityWatchdog.stop();
         autoBackgroundTimer?.cancel();
         if (!runningInBackground) {
+          taskDeadline.clear();
           taskAbort.dispose();
           registry.releaseSubagentCancellationHandle(lifecycle.agentId, taskAbort);
           taskAbort.settle(registry.get(lifecycle.agentId));
@@ -951,6 +978,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           request,
           startedAt,
           status: "running",
+          parentToolNames: options.parentToolNames,
         }),
         taskAbort,
       );
@@ -959,6 +987,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         taskAbort.settle(registry.get(lifecycle.agentId));
         throwOnSubagentAdmissionFailure(admission, request);
       }
+      // Background start does not own a per-task deadline: the foreground run path
+      // enforces the router hard cap, while background lifecycle is controlled by
+      // its task owner and existing stop/finalization contract.
       try {
         await writeAgentMetadataFile(lifecycle, request, "running");
         if (taskAbort.signal.aborted) {
@@ -2199,6 +2230,208 @@ function createSubagentTaskAbortController(parentSignal?: AbortSignal): Subagent
     settled,
     signal: controller.signal,
   };
+}
+
+const SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE = "Subagent task deadline exceeded";
+
+interface SubagentTaskDeadlineHandle {
+  clear(): void;
+}
+
+/**
+ * Hard per-task deadline. Timer принадлежит задаче, а не вызывающему turn: foreground run,
+ * auto-background и explicit background start очищают его только вместе с settlement.
+ */
+function createSubagentTaskDeadline(input: {
+  lifecycle: SubagentLifecycle;
+  options: ExploreSubagentPortOptions;
+  registry: RuntimeTaskRegistry;
+  request: SubagentRunRequest;
+  taskAbort: SubagentTaskAbortHandle;
+}): SubagentTaskDeadlineHandle {
+  let timeoutMs: number | undefined;
+  try {
+    timeoutMs = input.options.getTaskTimeoutMs?.(input.request.agentType);
+  } catch (error) {
+    input.options.logger?.warn("Subagent task deadline resolution failed", {
+      ...traceContextToLogContext(input.lifecycle.runTraceContext),
+      agentId: input.lifecycle.agentId,
+      agentType: input.request.agentType,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "subagent.task.deadline_resolution_failed",
+      module: "core.subagent",
+    });
+    return { clear: () => {} };
+  }
+  if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return { clear: () => {} };
+  }
+  // Stalled setup тоже входит в deadline: отсчёт идёт от фактического старта задачи.
+  const remainingMs = Math.max(0, timeoutMs - (Date.now() - input.lifecycle.startedAt));
+  const timer = setTimeout(() => {
+    void failSubagentTaskOnDeadline({ ...input, timeoutMs }).catch((error: unknown) => {
+      input.options.logger?.warn("Subagent task deadline finalization failed", {
+        ...traceContextToLogContext(input.lifecycle.runTraceContext),
+        agentId: input.lifecycle.agentId,
+        agentType: input.request.agentType,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "subagent.task.deadline_finalization_failed",
+        module: "core.subagent",
+      });
+    });
+  }, remainingMs);
+  return { clear: () => clearTimeout(timer) };
+}
+
+async function failSubagentTaskOnDeadline(input: {
+  lifecycle: SubagentLifecycle;
+  options: ExploreSubagentPortOptions;
+  registry: RuntimeTaskRegistry;
+  request: SubagentRunRequest;
+  taskAbort: SubagentTaskAbortHandle;
+  timeoutMs: number;
+}): Promise<void> {
+  const { lifecycle, options, registry, request, taskAbort, timeoutMs } = input;
+  const error = createCoreError(
+    CoreErrorType.ToolTimeout,
+    SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
+    {
+      context: {
+        code: AgentErrorCode.CHILD_RUNTIME_FAILED,
+        agentId: lifecycle.agentId,
+        agentType: request.agentType,
+        parentToolCallId: request.parentToolCallId,
+        timeoutMs,
+      },
+      recoverable: true,
+      retryable: true,
+    },
+  );
+  options.logger?.warn("Subagent task deadline exceeded", {
+    ...traceContextToLogContext(lifecycle.runTraceContext),
+    agentId: lifecycle.agentId,
+    agentType: request.agentType,
+    event: "subagent.task.deadline_exceeded",
+    module: "core.subagent",
+    parentToolCallId: request.parentToolCallId,
+    status: "failed",
+    timeoutMs,
+  });
+  const current = registry.get(lifecycle.agentId);
+  if (!current || isTerminalRuntimeTask(current)) {
+    // Deadline сработал после терминального перехода: aborted child уже не нужен,
+    // но повторно писать terminal status нельзя.
+    taskAbort.abort(error);
+    return;
+  }
+  if (!registry.beginSubagentTaskFinalization(lifecycle.agentId)) {
+    // Другой финализатор уже владеет переходом; abort всё равно должен дойти до child.
+    taskAbort.abort(error);
+    return;
+  }
+  // Сначала фиксируем terminal failed, затем abort: даже child, игнорирующий signal,
+  // не оставляет задачу в running. Порядок не даёт abort-пути записать статус killed.
+  const completedAt = new Date();
+  const totalDurationMs = Math.max(0, completedAt.getTime() - current.startedAt.getTime());
+  const terminalTask = registry.update(lifecycle.agentId, (task) =>
+    isTerminalRuntimeTask(task)
+      ? task
+      : {
+          ...withoutRuntimeMessageState(task),
+          status: "failed",
+          completedAt,
+          error: SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
+          usage: { durationMs: totalDurationMs },
+        },
+  );
+  taskAbort.abort(error);
+  const ownsDeadlineTerminal =
+    terminalTask?.status === "failed" &&
+    terminalTask.error === SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE;
+  if (!ownsDeadlineTerminal) {
+    releaseTaskAbortHandle(registry, lifecycle.agentId, taskAbort);
+    return;
+  }
+  try {
+    await writeFailedAgentArtifacts(lifecycle, request, SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE);
+  } catch (artifactError) {
+    options.logger?.warn("Subagent deadline artifact write failed", {
+      ...traceContextToLogContext(lifecycle.runTraceContext),
+      agentId: lifecycle.agentId,
+      errorMessage: artifactError instanceof Error ? artifactError.message : String(artifactError),
+      event: "subagent.task.deadline_artifact_failed",
+      module: "core.subagent",
+    });
+  }
+  try {
+    await emitSubagentExecutionTerminal(
+      options,
+      registry,
+      terminalTask,
+      lifecycle.runTraceContext,
+    );
+    if (terminalTask.isBackgrounded) {
+      enqueueBackgroundNotification(
+        options,
+        registry,
+        lifecycle.agentId,
+        formatLocalAgentTaskNotification({
+          agentId: terminalTask.agentId,
+          agentType: request.agentType,
+          description: request.description,
+          error: SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
+          outputFile: lifecycle.outputFile,
+          parentToolCallId: String(request.parentToolCallId),
+          status: "failed",
+          totalDurationMs,
+        }),
+        lifecycle.runTraceContext,
+      );
+      await emitBackgroundTaskCompletedEvent(
+        options,
+        request,
+        lifecycle.runTraceContext,
+        terminalTask,
+      );
+    }
+    await emitSubagentEvent(
+      options,
+      SessionEventType.SubagentStopped,
+      request,
+      lifecycle.runTraceContext,
+      {
+        agentId: lifecycle.agentId,
+        agentType: request.agentType,
+        ...(terminalTask.isBackgrounded ? { background: true } : {}),
+        childSessionId: lifecycle.childSessionId,
+        parentToolCallId: request.parentToolCallId,
+        status: "failed",
+        ...(terminalTask.isBackgrounded ? { outputFile: lifecycle.outputFile } : {}),
+        totalDurationMs,
+        error: SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
+      },
+    );
+  } catch (eventError) {
+    options.logger?.warn("Subagent deadline event emit failed", {
+      ...traceContextToLogContext(lifecycle.runTraceContext),
+      agentId: lifecycle.agentId,
+      errorMessage: eventError instanceof Error ? eventError.message : String(eventError),
+      event: "subagent.task.deadline_event_failed",
+      module: "core.subagent",
+    });
+  } finally {
+    releaseTaskAbortHandle(registry, lifecycle.agentId, taskAbort);
+  }
+}
+
+function releaseTaskAbortHandle(
+  registry: RuntimeTaskRegistry,
+  taskId: string,
+  taskAbort: SubagentTaskAbortHandle,
+): void {
+  taskAbort.dispose();
+  registry.releaseSubagentCancellationHandle(taskId, taskAbort);
+  taskAbort.settle(registry.get(taskId));
 }
 
 function registerSubagentTask(
@@ -3446,6 +3679,8 @@ function createRuntimeTaskSnapshot(input: {
   spawnGrant?: number;
   /** 本任务的嵌套层级；仅记录。 */
   level?: number;
+  /** Эффективная tool surface родителя; undefined — legacy-поведение. */
+  parentToolNames?: readonly string[];
 }): RuntimeTaskSnapshot {
   return {
     taskId: input.lifecycle.agentId,
@@ -3468,9 +3703,9 @@ function createRuntimeTaskSnapshot(input: {
     turnId: input.request.turnId,
     // Область claim'а в work ledger: тот же workspace, что видит конверт ребёнка.
     workspacePath: input.request.workspaceRoot || input.request.workingDirectory,
-    // Write-capability берётся из фактического профиля, а не из текста prompt:
-    // read-only роли не создают claim'ы на упомянутые для чтения пути.
-    writeCapable: isAgentProfileWriteCapable(input.lifecycle.profile),
+    // Write-capability берётся из фактической поверхности профиля И родителя,
+    // а не из текста prompt: read-only роли не создают claim'ы на упомянутые для чтения пути.
+    writeCapable: isEffectiveWriteCapable(input.lifecycle.profile, input.parentToolNames),
     ...(input.spawnGrant === undefined ? {} : { spawnGrant: input.spawnGrant }),
     ...(input.level === undefined ? {} : { level: input.level }),
   };
@@ -3504,6 +3739,20 @@ export function isAgentProfileWriteCapable(
   return profile.tools.some(
     (tool) => (tool === "Write" || tool === "Edit") && disallowed?.has(tool) !== true,
   );
+}
+
+/**
+ * Эффективная write-capability задачи: профиль должен объявлять запись, а фактическая
+ * поверхность родителя — действительно выдавать Write/Edit. `parentToolNames === undefined`
+ * сохраняет прежнее поведение (классификация только по профилю) для старых вызывающих.
+ */
+export function isEffectiveWriteCapable(
+  profile: Pick<AgentProfile, "tools" | "disallowedTools">,
+  parentToolNames?: readonly string[],
+): boolean {
+  if (!isAgentProfileWriteCapable(profile)) return false;
+  if (parentToolNames === undefined) return true;
+  return parentToolNames.includes("Write") || parentToolNames.includes("Edit");
 }
 
 function withoutRuntimeMessageState(task: RuntimeTaskSnapshot): RuntimeTaskSnapshot {

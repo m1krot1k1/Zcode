@@ -607,7 +607,7 @@ function task(
   return {
     taskId,
     agentId: taskId,
-    agentType: "general-purpose",
+    agentType: "implementer",
     description: taskId,
     status: "running",
     startedAt: new Date(),
@@ -634,7 +634,7 @@ function makeTaskDagRequest(
     sessionId: createSessionId("spawn-budget-dag-session"),
     turnId: createTurnId("spawn-budget-dag-turn"),
     parentToolCallId: "spawn-budget-dag-tool-call",
-    agentType: "general-purpose",
+    agentType: "implementer",
     description: "Execute a dependency graph",
     prompt: "Complete the requested graph objective",
     nodes,
@@ -651,7 +651,7 @@ function dagNode(id: string) {
     id,
     description: `Task ${id}`,
     prompt: `Perform task ${id}`,
-    subagent_type: "general-purpose",
+    subagent_type: "implementer",
   };
 }
 
@@ -659,7 +659,7 @@ function completedDagOutput(agentId: string): AgentOutput {
   return {
     status: "completed",
     agentId,
-    agentType: "general-purpose",
+    agentType: "implementer",
     description: `Task ${agentId}`,
     prompt: `Perform task ${agentId}`,
     content: [{ type: "text", text: `Result for ${agentId}` }],

@@ -35,7 +35,7 @@ describe("Subagent 选择错误经过真实前后台 runner", () => {
       },
     });
     const request = {
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "selection failure",
       prompt: "unused",
       parentToolCallId: createToolCallId("selection-error-call"),

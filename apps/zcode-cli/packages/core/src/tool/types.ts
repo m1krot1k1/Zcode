@@ -138,8 +138,10 @@ export interface BackgroundTaskControlPort {
 }
 
 export interface ToolExecutionContext {
-  /** Точный список model-selectable ролей из snapshot текущего runtime-каталога. */
+  /** Роли, которые текущий caller может запускать (тот же фильтр, что у каталога). */
   availableAgentTypes?: readonly string[];
+  /** Каноническая роль вызывающего runtime; root/main — undefined. */
+  callerAgentType?: string;
   toolSearch?: ToolSearchExecutionContext;
   toolCallId: string;
   /**

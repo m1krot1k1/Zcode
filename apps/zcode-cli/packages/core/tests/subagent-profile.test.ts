@@ -13,6 +13,9 @@ import {
   WORKER_SUBAGENT_TOOL_NAMES,
   decideDelegationRoute,
   resolveSwarmParallelism,
+  filterAgentTypesForCaller,
+  isAgentTypeAllowedForCaller,
+  matchAgentTypeInCatalog,
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
@@ -791,21 +794,30 @@ describe("specialized worker roster", () => {
     expect(profile("infra-coder")?.systemPrompt).toContain("Linux");
   });
 
-  it("routes start to specialized owners instead of a long read-only triage", () => {
+  it("routes start exclusively through the orchestrator instead of direct workers", () => {
     const prompt = profile("start")?.systemPrompt ?? "";
 
-    for (const role of [
-      "coder",
-      "frontend-coder",
-      "backend-coder",
-      "infra-coder",
-      "test-engineer",
-    ]) {
-      expect(prompt, role).toContain(role);
-    }
-    expect(prompt).toContain("Не превращай маршрутизацию в длинный read-only триаж");
-    expect(prompt).toContain("subagent-factory");
-    expect(prompt).toContain("orchestrator");
+    expect(prompt).toContain('Task(subagent_type: "orchestrator")');
+    expect(prompt).toContain("запускает orchestrator");
+    expect(prompt).toContain("не запускаешь worker-роли напрямую");
+    expect(prompt).toContain("не передаёт task_graph");
+    expect(prompt).toContain("следующий wave");
+    expect(prompt).toContain("накопленным контекстом");
+    expect(prompt).not.toContain("production-код — coder");
+    expect(prompt).not.toContain("Сразу маршрутизируй изменяющую работу специализированному исполнителю");
+  });
+
+  it("forbids orchestrator recursion and requires partial context for the next wave", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Никогда не вызывай Task(start)");
+    expect(prompt).toContain("не вызывай Task(orchestrator)");
+    expect(prompt).toContain("Каждая ветка должна укладываться примерно в 10 минут");
+    expect(prompt).toContain("следующий wave");
+    expect(prompt).toContain("накопленным контекстом");
+    expect(prompt).toContain("researcher");
+    expect(prompt).toContain("test-engineer");
+    expect(prompt).toContain("coder");
   });
 
   it("takes orchestrator fan-out capacity from the spawn envelope, not a fixed 3-5 branches", () => {
@@ -944,6 +956,62 @@ describe("built-in role capability matrix", () => {
 
     expect(prompt).toContain("Твои инструменты: Read, Glob, Grep, Task и Skill");
     expect(prompt).toContain("Write, Edit и Bash недоступны");
+  });
+});
+
+// Routing architecture: one caller-scoped filter feeds both the visible catalog and
+// Agent/Task admission. start is a gateway, orchestrator is the only dispatcher.
+describe("caller-scoped agent catalog", () => {
+  const profiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
+  const namesFor = (caller?: string) =>
+    filterAgentTypesForCaller(profiles(), caller).map((profile) => profile.name);
+
+  it("gives start exactly one delegation target", () => {
+    expect(namesFor("start")).toEqual(["orchestrator"]);
+  });
+
+  it("gives orchestrator worker roles but not the router roles", () => {
+    const names = namesFor("orchestrator");
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "researcher",
+        "reviewer",
+        "security-reviewer",
+        "test-engineer",
+        "evaluator",
+        "implementer",
+        "coder",
+        "frontend-coder",
+        "backend-coder",
+        "infra-coder",
+        "subagent-factory",
+      ]),
+    );
+    expect(names).not.toContain("start");
+    expect(names).not.toContain("orchestrator");
+  });
+
+  it("leaves root and main sessions unrestricted", () => {
+    expect(filterAgentTypesForCaller(profiles(), undefined)).toEqual(profiles());
+    expect(filterAgentTypesForCaller(profiles(), "")).toEqual(profiles());
+    expect(namesFor(undefined)).toEqual(expect.arrayContaining(["start", "orchestrator", "coder"]));
+  });
+
+  it("shares the admission predicate with the catalog", () => {
+    expect(isAgentTypeAllowedForCaller("orchestrator", "start")).toBe(true);
+    expect(isAgentTypeAllowedForCaller("coder", "start")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("orchestrator", "orchestrator")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("start", "orchestrator")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("coder", "orchestrator")).toBe(true);
+    expect(isAgentTypeAllowedForCaller("coder", undefined)).toBe(true);
+  });
+
+  it("keeps runner-resolvable fuzzy role names admissible", () => {
+    expect(matchAgentTypeInCatalog("coder", ["coder", "researcher"])).toBe("exact");
+    expect(matchAgentTypeInCatalog("Coder", ["coder", "researcher"])).toBe("normalized");
+    expect(matchAgentTypeInCatalog("foo bar", ["foo-bar", "foo_bar"])).toBe("ambiguous");
+    expect(matchAgentTypeInCatalog("report.v2", ["report-v2"])).toBe("none");
   });
 });
 

@@ -578,7 +578,7 @@ describe("WorkResult claims ownership", () => {
         sessionId,
         turnId,
         parentToolCallId: "work-result-live-ledger-call",
-        agentType: "Explore",
+        agentType: "coder",
         description: "Изучить реестр",
         prompt: `Прочитай \`${claimPath}\``,
         callerCanReadOutputFile: true,

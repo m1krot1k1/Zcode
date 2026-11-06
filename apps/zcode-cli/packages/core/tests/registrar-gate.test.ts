@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   CoreErrorType,
   createCoreError,
@@ -17,6 +17,7 @@ import {
   WORK_LEDGER_SWEEP_INTERVAL_MS,
   createRuntimeTaskTerminalCatalogEntry,
   readRuntimeTaskTerminalCatalogRecord,
+  runtimeTaskOutputFile,
   runtimeTaskSnapshotFromTerminalCatalog,
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
@@ -25,6 +26,7 @@ import {
   createExploreSubagentPort,
   executeSubagentTaskDag,
   isAgentProfileWriteCapable,
+  isEffectiveWriteCapable,
   type ExploreSubagentRuntimeResult,
 } from "../src/subagent/runner.js";
 import { normalizeAgentProfiles } from "../src/subagent/profile.js";
@@ -764,6 +766,145 @@ describe("write-capability admission", () => {
     ).toBe(true);
     expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(1);
   });
+});
+
+describe("effective write-capability", () => {
+  const writerSurface = ["Read", "Write", "Edit", "Task"] as const;
+  const readOnlySurface = ["Read", "Glob", "Grep", "Task"] as const;
+
+  it("requires Write or Edit in the effective parent surface", () => {
+    expect(isEffectiveWriteCapable({ tools: ["Write"] }, readOnlySurface)).toBe(false);
+    expect(isEffectiveWriteCapable({ tools: ["Edit"] }, readOnlySurface)).toBe(false);
+    expect(isEffectiveWriteCapable({ tools: ["Write"] }, writerSurface)).toBe(true);
+    // Legacy-вызов без поверхности родителя сохраняет прежнюю классификацию.
+    expect(isEffectiveWriteCapable({ tools: ["Write"] }, undefined)).toBe(true);
+  });
+
+  it("keeps read-only built-in profiles non-writers even under a writer surface", () => {
+    const profiles = new Map(normalizeAgentProfiles([]).map((profile) => [profile.name, profile]));
+    for (const role of ["start", "orchestrator", "researcher", "reviewer", "evaluator"]) {
+      expect(isEffectiveWriteCapable(profiles.get(role)!, writerSurface), role).toBe(false);
+    }
+    expect(isEffectiveWriteCapable(profiles.get("coder")!, writerSurface)).toBe(true);
+    // Профиль пишет, но родитель не выдал Write/Edit — фактической записи нет.
+    expect(isEffectiveWriteCapable(profiles.get("coder")!, readOnlySurface)).toBe(false);
+  });
+
+  it("wires the effective parent surface into task registration", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "zcode-effective-write-"));
+    directories.push(directory);
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const traceId = createTraceId();
+    const sessionId = createSessionId("effective-write-parent");
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+    const profiles = normalizeAgentProfiles([
+      {
+        name: "plugin-writer",
+        description: "Custom profile with explicit write tools",
+        source: "project",
+        systemPrompt: "Edit files when the task requires it.",
+        tools: ["Write"],
+      },
+    ]);
+
+    const makeRun = (prefix: string, parentToolNames?: readonly string[]) => {
+      let sequence = 0;
+      const agentIds: string[] = [];
+      const port = createExploreSubagentPort({
+        outputRootDir: directory,
+        runtimeTaskRegistry: registry,
+        profiles,
+        ...(parentToolNames === undefined ? {} : { parentToolNames }),
+        createAgentId: () => {
+          const agentId = `${prefix}-${(sequence += 1)}`;
+          agentIds.push(agentId);
+          return agentId;
+        },
+        async emitParentEvent() {},
+        async runExploreAgent() {
+          return { response: "done", traceId, events: [] };
+        },
+      });
+      return {
+        agentIds,
+        run: (prompt: string) =>
+          port.run({
+            agentType: "plugin-writer",
+            description: "plugin writer task",
+            prompt,
+            sessionId,
+            trace: { traceId, sessionId },
+            workingDirectory: WORKSPACE,
+            workspaceRoot: WORKSPACE,
+          }),
+      };
+    };
+
+    const readOnlyParent = makeRun("effective-read-only", readOnlySurface);
+    expect((await readOnlyParent.run(`Правлю \`${path}\``)).status).toBe("completed");
+    expect(registry.get(readOnlyParent.agentIds[0]!)?.writeCapable).toBe(false);
+    expect(claimOf(ledger, readOnlyParent.agentIds[0]!)).toBeUndefined();
+
+    const writerParent = makeRun("effective-writer", writerSurface);
+    expect((await writerParent.run(`Правлю \`${path}\``)).status).toBe("completed");
+    expect(registry.get(writerParent.agentIds[0]!)?.writeCapable).toBe(true);
+    expect(claimOf(ledger, writerParent.agentIds[0]!)?.paths).toEqual([path]);
+
+    // Legacy-порт без parentToolNames продолжает считать такой профиль writer'ом.
+    const legacyParent = makeRun("effective-legacy");
+    const legacyPath = "apps/zcode-cli/packages/core/src/runtime/methods/subagent.ts";
+    expect((await legacyParent.run(`Правлю \`${legacyPath}\``)).status).toBe("completed");
+    expect(registry.get(legacyParent.agentIds[0]!)?.writeCapable).toBe(true);
+  });
+});
+
+describe("subagent task deadline", () => {
+  it("fails and releases a foreground task whose child never settles", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "zcode-deadline-"));
+    directories.push(directory);
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: memoryLedger() });
+    const traceId = createTraceId();
+    const sessionId = createSessionId("deadline-parent");
+    const agentId = "deadline-agent";
+    let childSignal: AbortSignal | undefined;
+    const port = createExploreSubagentPort({
+      outputRootDir: directory,
+      runtimeTaskRegistry: registry,
+      profiles: normalizeAgentProfiles([]),
+      parentToolNames: ["Read", "Glob", "Grep"],
+      createAgentId: () => agentId,
+      getTaskTimeoutMs: (agentType) => (agentType === "start" ? 10 : undefined),
+      async emitParentEvent() {},
+      runExploreAgent: (_request, options) => {
+        childSignal = options?.signal;
+        // Child никогда не завершается и не реагирует на abort: задача обязана
+        // стать terminal по deadline, а не остаться running.
+        return new Promise<ExploreSubagentRuntimeResult>(() => {});
+      },
+    });
+
+    const startedAt = Date.now();
+    await expect(
+      port.run({
+        agentType: "start",
+        description: "stalled router task",
+        prompt: "Route this task",
+        sessionId,
+        trace: { traceId, sessionId },
+        workingDirectory: WORKSPACE,
+        workspaceRoot: WORKSPACE,
+      }),
+    ).rejects.toThrow("Subagent task deadline exceeded");
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(childSignal?.aborted).toBe(true);
+    await expect(registry.waitForTerminal(agentId)).resolves.toMatchObject({
+      status: "failed",
+      error: "Subagent task deadline exceeded",
+    });
+  });
+
 });
 
 describe("DAG write-claim conflicts", () => {

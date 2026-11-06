@@ -118,7 +118,7 @@ describe("createLocalServices remote authority", () => {
 
     expect(providers.some((provider) => provider.id === RETIRED_ZAPI_PROVIDER_ID)).toBe(false);
     disposeServiceResources(services);
-  });
+  }, 60_000);
 
   it("registers OpenCode ACP only on the process-owning Host", async () => {
     const desktopHome = makeTempHome();

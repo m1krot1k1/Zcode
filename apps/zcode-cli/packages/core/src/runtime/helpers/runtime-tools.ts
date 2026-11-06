@@ -22,7 +22,7 @@ import {
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
-import { isModelSelectableAgentProfile } from "../../subagent/profile.js";
+import { filterAgentTypesForCaller } from "../../subagent/profile.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
 const EMPTY_RUNTIME_HOOK_CONFIG = {
@@ -192,11 +192,14 @@ function createRuntimeToolExecutor(
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
     skillPort: deps.skillPort,
     subagentPort: runtime.subagentPort,
+    // Каталог и admission читают один и тот же caller-scoped фильтр: start видит только
+    // orchestrator, orchestrator — worker-роли, root/main — все активные профили.
+    callerAgentType: runtime.config.agentType,
     getAvailableAgentTypes: () =>
-      runtime
-        .getAgentDefinitions()
-        .activeAgents.filter(isModelSelectableAgentProfile)
-        .map((profile) => profile.name),
+      filterAgentTypesForCaller(
+        runtime.getAgentDefinitions().activeAgents,
+        runtime.config.agentType,
+      ).map((profile) => profile.name),
     coordinatorResponsePort: deps.coordinatorResponsePort,
     workflowSubmitPort: deps.workflowSubmitPort,
     workflowEscalatePort: deps.workflowEscalatePort,

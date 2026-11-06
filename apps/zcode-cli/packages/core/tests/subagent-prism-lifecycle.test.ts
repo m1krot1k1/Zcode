@@ -80,7 +80,7 @@ describe("PRISM task lifecycle", () => {
       sessionId,
       turnId,
       parentToolCallId: "toolcall_prism_parent",
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "Run typecheck",
       prompt: "Run typecheck.",
       acceptanceCriteria: [
@@ -134,7 +134,7 @@ describe("PRISM task lifecycle", () => {
     const result = await port.run({
       sessionId,
       parentToolCallId: "toolcall_prism_no_criteria",
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "Unverified task",
       prompt: "Do a task without machine-verifiable criteria.",
       workingDirectory: outputRootDir,
@@ -172,7 +172,7 @@ describe("PRISM task lifecycle", () => {
           sessionId,
           turnId,
           parentToolCallId: "toolcall_prism_prestart_cancel",
-          agentType: "general-purpose",
+          agentType: "implementer",
           description: "Cancel before child start",
           prompt: "Run a check.",
           acceptanceCriteria: [
