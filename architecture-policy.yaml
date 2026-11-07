@@ -1026,3 +1026,10 @@ exceptions:
       - apps/zcode-cli/packages/contracts/src/tools/skill-marketplace.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/skill-marketplace.ts
     reason: skills.sh marketplace is an additive runtime extension inside the existing managed=false zcode-cli module; the three files add the public search/download client, the typed tool contract, and the handler, with a dedicated spec and adapter/core tests. Existing module boundaries and public contracts are unchanged; adopting the whole zcode-cli tree needs a separate boundary refactor.
+  - id: skills-marketplace-ui-service
+    rule: unmanaged-new-file
+    paths:
+      - packages/services/src/skills/skillMarketplace.ts
+      - packages/ui/src/hooks/useSkillsMarketplace.ts
+      - packages/ui/src/settings/SkillsMarketplacePanel.tsx
+    reason: The skills.sh UI/service extension lives in the existing managed=false services and ui trees; the files add a validated marketplace client, a hook, and a store panel, with service/UI tests and a spec. Existing ownership and dependency direction are unchanged; adopting the whole services/ui trees needs a separate boundary refactor.

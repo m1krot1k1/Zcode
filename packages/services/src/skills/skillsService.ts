@@ -24,11 +24,28 @@ import type {
   SkillsPromptContext,
   SkillsListResult,
   SkillsCapability,
+  MarketplaceSkillInfo,
+  InstallMarketplaceSkillRequest,
+  InstallMarketplaceSkillResult,
+  SkillInstallScope,
 } from "@zcode/shared";
 import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS } from "@zcode/shared";
 import type { ISkillsService } from "./skills.js";
+import {
+  collectInstalledSkillKeys,
+  downloadSkillsShSnapshot,
+  resolveMarketplaceSkillReference,
+  sanitizeMarketplaceDirectoryName,
+  searchSkillsSh,
+  SkillMarketplaceError,
+  toMarketplaceItems,
+  writeSkillSnapshotAtomically,
+} from "./skillMarketplace.js";
 import { SKILL_FILE_NAME, walkSkillMarkdownPaths } from "./skillDiscoveryWalk.js";
 import { readInstalledPluginRoots } from "#src/plugins/installedPluginRoots.js";
+import { createServiceLogger } from "#src/logger/serviceLogger.js";
+
+const logger = createServiceLogger("skills.service");
 
 interface DiscoverResult {
   skills: SkillSummary[];
@@ -1025,7 +1042,8 @@ function attachEnabledState(
 }
 
 export function createSkillsService(options?: SkillsServiceOptions): ISkillsService {
-  let writeQueue = Promise.resolve();
+  // 技能状态写与 marketplace 安装共用一个串行队列；Promise<unknown> 允许链上返回安装结果。
+  let writeQueue: Promise<unknown> = Promise.resolve();
 
   return {
     async list(params: {
@@ -1233,6 +1251,82 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
         recursive: true,
         force: true,
       });
+    },
+
+    async searchMarketplace(
+      query: string,
+      context?: { workspacePath?: string; workspaceIdentity?: string },
+    ): Promise<MarketplaceSkillInfo[]> {
+      const normalizedQuery = query.trim();
+      // 空查询不触网：UI 初始态只是本地输入，不应产生网络流量。
+      if (normalizedQuery.length === 0) {
+        return [];
+      }
+      const entries = await searchSkillsSh(normalizedQuery);
+      const capability = resolveCapabilities(options);
+      // 与 list 共用同一套根目录解析：workspace 沿 worktree 向上收集两个技能根，
+      // user 级只在 desktop-capable runtime 下参与 installed 判定。
+      const roots = context?.workspacePath
+        ? await resolveAncestorWorkspaceRoots(context.workspacePath)
+        : [];
+      if (capability.userScopeAvailable) {
+        roots.push(getUserZcodeSkillRoot(), getUserAgentsSkillRoot());
+      }
+      const installedKeys = await collectInstalledSkillKeys(dedupeRoots(roots));
+      return toMarketplaceItems(entries, installedKeys);
+    },
+
+    async installMarketplaceSkill(
+      request: InstallMarketplaceSkillRequest,
+    ): Promise<InstallMarketplaceSkillResult> {
+      if (!request || typeof request.name !== "string" || !request.name.trim()) {
+        throw new SkillMarketplaceError("invalid_input", "skill name is required");
+      }
+      const scope: SkillInstallScope = request.scope ?? "workspace";
+      if (scope !== "workspace" && scope !== "user") {
+        throw new SkillMarketplaceError("invalid_input", `unsupported skill scope: ${String(scope)}`);
+      }
+      const workspacePath = request.workspacePath?.trim();
+      if (scope === "workspace" && !workspacePath) {
+        throw new SkillMarketplaceError(
+          "invalid_input",
+          "workspacePath is required for workspace-scoped marketplace install",
+        );
+      }
+      const runInstall = async (): Promise<InstallMarketplaceSkillResult> => {
+        const reference = await resolveMarketplaceSkillReference(request.name);
+        const directoryName = sanitizeMarketplaceDirectoryName(reference.skillId);
+        const snapshot = await downloadSkillsShSnapshot(reference);
+        const root =
+          scope === "user" ? getUserAgentsSkillRoot() : getWorkspaceAgentsSkillRoot(workspacePath!);
+        const written = await writeSkillSnapshotAtomically({
+          root,
+          directoryName,
+          reference,
+          scope,
+          snapshot,
+        });
+        logger.info(undefined, "marketplace skill installed", {
+          name: written.installedName,
+          source: reference.source,
+          skillId: reference.skillId,
+          scope,
+        });
+        return { name: written.installedName, scope, path: written.path };
+      };
+      // 与 setEnabled 共用写队列：同一技能的并发安装/覆盖必须串行，避免 rename 竞争。
+      const queued = writeQueue.then(runInstall, runInstall);
+      writeQueue = queued.catch(() => {});
+      try {
+        return await queued;
+      } catch (error) {
+        logger.warn(undefined, "marketplace skill install failed", {
+          name: request.name,
+          scope,
+          code: error instanceof SkillMarketplaceError ? error.code : "unknown",
+        });
+        throw error;
+      }
     },
   };
 }

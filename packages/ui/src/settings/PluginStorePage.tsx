@@ -29,7 +29,7 @@ import {
   PluginWarningList,
 } from "@/settings/InstalledPluginManagement.js";
 import { AddMarketplaceSourceDialog } from "@/settings/AddMarketplaceSourceDialog.js";
-import { PluginStoreListView, type PluginStoreSegment } from "@/settings/PluginStoreListView.js";
+import { PluginStoreListView, type PluginStoreTab } from "@/settings/PluginStoreListView.js";
 import {
   PluginStoreAdvancedSection,
   PluginStoreDetailView,
@@ -136,7 +136,7 @@ export function PluginStorePage({
   }, [pluginManagementService, embedded, isWebRemoteControl, view]);
 
   const [detailPluginId, setDetailPluginId] = useState<string | null>(null);
-  const [segment, setSegment] = useState<PluginStoreSegment>("public");
+  const [segment, setSegment] = useState<PluginStoreTab>("public");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -798,6 +798,8 @@ export function PluginStorePage({
           }}
           segment={segment}
           onSegmentChange={setSegment}
+          workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
         />
       </div>
 

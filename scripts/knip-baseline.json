@@ -1793,6 +1793,7 @@
     "files\tpackages/ui/test/opencodeAgentSettingsPanel.test.tsx\tpackages/ui/test/opencodeAgentSettingsPanel.test.tsx",
     "files\tpackages/ui/test/previewPaneMediaContent.test.tsx\tpackages/ui/test/previewPaneMediaContent.test.tsx",
     "files\tpackages/ui/test/sessionPluginReferenceIconProvider.test.tsx\tpackages/ui/test/sessionPluginReferenceIconProvider.test.tsx",
+    "files\tpackages/ui/test/skillsMarketplacePanel.test.tsx\tpackages/ui/test/skillsMarketplacePanel.test.tsx",
     "files\tpackages/ui/test/subagentDrilldown.test.tsx\tpackages/ui/test/subagentDrilldown.test.tsx",
     "files\tpackages/ui/test/v4ConversationRowViewSwarmRun.test.tsx\tpackages/ui/test/v4ConversationRowViewSwarmRun.test.tsx",
     "files\tpackages/web/src/web-remote-control/contract.example.ts\tpackages/web/src/web-remote-control/contract.example.ts",

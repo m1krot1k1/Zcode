@@ -69,3 +69,58 @@ export interface SkillsPromptContext {
   prompt: string;
   activatedSkillNames: string[];
 }
+
+/** skills.sh 安装范围：写入工作区 `.agents/skills` 或用户 `~/.agents/skills`。 */
+export type SkillInstallScope = "workspace" | "user";
+
+/** skills.sh 搜索结果条目。`source` 为 `owner/repo`；安装引用为 `source/skillId`。 */
+export interface MarketplaceSkillInfo {
+  /** 展示名称；可能包含空格/冒号，不能直接作为安装引用。 */
+  name: string;
+  /** skills.sh 技能 slug；安装时与 source 组成 `owner/repo/skillId`。 */
+  skillId: string;
+  source: string;
+  installs: number;
+  installed: boolean;
+}
+
+/**
+ * 安装请求。`name` 接受 `owner/repo/skillId`（搜索结果 `source` + `name`）或裸技能名
+ * （裸名通过 skills.sh 搜索解析唯一来源）。
+ *
+ * `workspacePath`/`workspaceIdentity` 是兼容扩展：服务进程没有唯一的活动工作区，
+ * workspace scope 必须由调用方提供路径，否则无法判断写入哪个工作区。
+ */
+export interface InstallMarketplaceSkillRequest {
+  name: string;
+  scope: SkillInstallScope;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+}
+
+export interface InstallMarketplaceSkillResult {
+  /** SKILL.md frontmatter 中的实际名称；缺失时回退为目录名。 */
+  name: string;
+  scope: SkillInstallScope;
+  path: string;
+}
+
+/**
+ * @deprecated 使用 `MarketplaceSkillInfo`。保留仅为并行 UI 分支迁移期的导入兼容。
+ */
+export interface SkillMarketplaceItem extends MarketplaceSkillInfo {
+  id: string;
+}
+
+/** @deprecated 使用 `MarketplaceSkillInfo[]`。 */
+export interface SkillMarketplaceSearchResult {
+  query: string;
+  total: number;
+  items: SkillMarketplaceItem[];
+}
+
+/** @deprecated 使用 `InstallMarketplaceSkillRequest`。 */
+export type SkillMarketplaceInstallInput = InstallMarketplaceSkillRequest;
+
+/** @deprecated 使用 `InstallMarketplaceSkillResult`。 */
+export type SkillMarketplaceInstallResult = InstallMarketplaceSkillResult;

@@ -75,3 +75,79 @@ skillId, installs и hash для воспроизводимости.
   форматирование результатов, сообщение об установке, fail-closed без порта.
 - `subagent-profile`/`runtime-tool-allowlist`/`tool-contracts`:
   marketplace-инструменты не попадают к роутерам и review-ролям.
+
+## Сервисный слой (Desktop, `@zcode/services`)
+
+UI Marketplace ходит в `ISkillsService` (канал `skills`, `packages/shared/src/channels.ts`)
+и не вызывает skills.sh напрямую. Владелец состояния — `createSkillsService` в
+`packages/services/src/skills/skillsService.ts`; сеть и запись инкапсулированы в
+`packages/services/src/skills/skillMarketplace.ts`.
+
+### Контракт (`packages/shared/src/skills-types.ts`)
+
+- `type SkillInstallScope = "workspace" | "user"`.
+- `interface MarketplaceSkillInfo { name; source; installs; installed }`.
+- `interface InstallMarketplaceSkillRequest { name; scope; }` — плюс совместимые
+  необязательные `workspacePath`/`workspaceIdentity`: у Host нет единственного
+  активного workspace, поэтому для `scope: "workspace"` путь передаёт вызывающая сторона.
+- `interface InstallMarketplaceSkillResult { name; scope; path }`, где `name` — имя
+  из frontmatter `SKILL.md` (fallback — имя каталога).
+- `searchMarketplace(query: string, context?: { workspacePath?; workspaceIdentity? }):
+  Promise<MarketplaceSkillInfo[]>`; пустой/пробельный query → `[]` без сети.
+- `installMarketplaceSkill(request): Promise<InstallMarketplaceSkillResult>`.
+
+### Поиск
+
+- `GET https://skills.sh/api/search?q=<query>`; таймаут 15 с; не-200 → `http_error`,
+  сеть/таймаут → `network`, невалидный JSON → `invalid_response`.
+- `installed` вычисляется по существующим корням `.zcode/skills`/`.agents/skills`:
+  workspace-корни только при переданном `context.workspacePath`, user-корни — когда
+  runtime desktop-capable. Запись и кеш отсутствуют.
+
+### Установка
+
+- `name` — `owner/repo/skillId` или голое имя (разрешается через search, берётся
+  наиболее устанавливаемый точный матч). `GET https://skills.sh/api/download/<owner>/<repo>/<skillId>`,
+  таймаут 20 с; не-200 → `http_error`, сеть → `network`.
+- Payload: `{ files: [{ path, contents }], hash? }`; толерантно принимается
+  `content` вместо `contents` и `files` как объект `{ path: content }`.
+- Валидация до записи: только относительные пути; `\` нормализуется в `/`;
+  запрещены абсолютные пути, drive-letter, NUL, `..`, пустые/дублирующиеся пути.
+  Обязателен `SKILL.md` в корне. Лимиты: ≤ 500 файлов, ≤ 5 MiB на файл,
+  ≤ 10 MiB суммарно (`limit_exceeded`), нарушение путей → `unsafe_snapshot`.
+- Порядок событий: resolve → download → validate/limits → `mkdtemp` внутри
+  целевого skills-корня → запись файлов → `_meta.json` → `rename` в
+  `<корень>/<sanitized-skillId>`. При ошибке temp удаляется; частичного каталога
+  не остаётся. Запись не выходит за пределы skills-корня.
+- Каталоги: `<workspacePath>/.agents/skills/<name>` (`workspace`) и
+  `os.homedir()/.agents/skills/<name>` (`user`).
+- Существующий каталог заменяется только если `_meta.json` указывает на тот же
+  `source`/`skillId`; hand-written скилл → `write_conflict` и не изменяется.
+  Повторная установка идемпотентна: каталог заменяется целиком, обновляются
+  `hash`/`installedAt`. Конкурентные установки и `setEnabled` сериализуются общим
+  `writeQueue` сервиса.
+- `_meta.json`: `source`, `skillId`, `name`, `scope`, `hash`
+  (`sha256` по отсортированным относительным путям + байтам), `remoteHash`,
+  `installedAt`, `version` из frontmatter при наличии, `manager: "skills.sh"`.
+- Скачанный контент не исполняется и не логируется; логируются только имя,
+  source, skillId, scope и код ошибки.
+
+### RPC
+
+`ProxyChannel` автоматически публикует методы интерфейса: регистрация сервиса —
+`packages/services/src/node.ts` (`.register(ISkillsService, skillsService)`),
+диспетчеризация по имени метода — `packages/rpc/src/proxy-channel.ts`.
+Отдельный allowlist не нужен; новый Remote Host не создаётся.
+
+### Приёмочные сценарии
+
+- search: happy (маппинг + installed), пустой результат, пустой query без сети,
+  не-200, сетевая ошибка, невалидный JSON.
+- install: happy (файлы + `_meta.json` + фактическое имя), `files`-объект,
+  голое имя через search, user scope, повторная установка, не-200 без записи.
+- Отказы: path traversal, абсолютный/drive-letter путь, > 500 файлов,
+  > 5 MiB файл, > 10 MiB суммарно, отсутствие корневого `SKILL.md`,
+  перезапись hand-written скилла, workspace scope без `workspacePath`.
+
+Проверки: `packages/services/test/skillMarketplace.test.ts`
+(`pnpm vitest run packages/services/test/skillMarketplace.test.ts`).
