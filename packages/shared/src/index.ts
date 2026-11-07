@@ -368,6 +368,8 @@ export * from "./attachment-source.js";
 
 export * from "./channel-mention.js";
 
+export * from "./catalog/index.js";
+
 export {
   requestSecuritySensitiveHeaders,
   isRequestSecurityFailure,

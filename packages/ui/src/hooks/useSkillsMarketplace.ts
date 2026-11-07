@@ -11,6 +11,12 @@ import { logger } from "@/logger.js";
 /** 与 shared 契约保持一致，避免在 UI 层重复声明安装范围字面量。 */
 export type SkillInstallScope = InstallMarketplaceSkillRequest["scope"];
 
+/**
+ * 目录默认快照的检索词。skills.sh 的 `/api/search` 对空查询返回 HTTP 400（2026-11-07 实测），
+ * 因此用一个宽泛词拉取真实条目，再由 UI 按 installs 排序/筛选；不伪造排行榜数据。
+ */
+const SKILLS_CATALOG_SEED_QUERY = "skill";
+
 interface UseSkillsMarketplaceOptions {
   workspacePath?: string | null;
   workspaceIdentity?: string;
@@ -41,6 +47,10 @@ function marketplaceInstallName(item: MarketplaceSkillInfo): string {
 
 interface UseSkillsMarketplaceResult {
   items: MarketplaceSkillInfo[];
+  /** 默认目录快照：用宽泛检索词拉取一次，按真实 installs 排序后作为排行榜展示。 */
+  catalogItems: MarketplaceSkillInfo[];
+  catalogLoading: boolean;
+  catalogError: string | null;
   /** 当前工作区/用户目录下已安装的技能（skillsService.list 的服务端扫描事实）。 */
   installedSkills: SkillSummary[];
   installedLoading: boolean;
@@ -56,7 +66,11 @@ interface UseSkillsMarketplaceResult {
   search: (query: string) => Promise<void>;
   retry: () => Promise<void>;
   refreshInstalled: () => Promise<void>;
-  install: (item: MarketplaceSkillInfo, scope: SkillInstallScope) => Promise<void>;
+  refreshCatalog: () => Promise<void>;
+  install: (
+    item: MarketplaceSkillInfo,
+    scope: SkillInstallScope,
+  ) => Promise<void>;
 }
 
 /**
@@ -72,6 +86,9 @@ export function useSkillsMarketplace(
   const workspacePath = options.workspacePath?.trim() || undefined;
   const workspaceIdentity = options.workspaceIdentity?.trim() || undefined;
   const [items, setItems] = useState<MarketplaceSkillInfo[]>([]);
+  const [catalogItems, setCatalogItems] = useState<MarketplaceSkillInfo[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [installedSkills, setInstalledSkills] = useState<SkillSummary[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
   const [installedError, setInstalledError] = useState<string | null>(null);
@@ -80,10 +97,12 @@ export function useSkillsMarketplace(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [installingKey, setInstallingKey] = useState<string | null>(null);
-  const [installError, setInstallError] = useState<SkillsMarketplaceInstallError | null>(null);
+  const [installError, setInstallError] =
+    useState<SkillsMarketplaceInstallError | null>(null);
   const [installedNotice, setInstalledNotice] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
   const installedRequestSeqRef = useRef(0);
+  const catalogRequestSeqRef = useRef(0);
   const lastQueryRef = useRef("");
   const mountedRef = useRef(true);
 
@@ -120,7 +139,9 @@ export function useSkillsMarketplace(
     } catch (cause) {
       if (seq !== installedRequestSeqRef.current || !mountedRef.current) return;
       const message = cause instanceof Error ? cause.message : String(cause);
-      logger.warn("[useSkillsMarketplace] 加载已安装技能失败", { error: message });
+      logger.warn("[useSkillsMarketplace] 加载已安装技能失败", {
+        error: message,
+      });
       setInstalledSkills([]);
       setInstalledError(message);
       setInstalledLoading(false);
@@ -130,6 +151,38 @@ export function useSkillsMarketplace(
   useEffect(() => {
     void refreshInstalled();
   }, [refreshInstalled]);
+
+  /** 目录快照与搜索相互独立：打开面板即展示真实安装量排行，搜索只做本地过滤。 */
+  const refreshCatalog = useCallback(async () => {
+    const seq = ++catalogRequestSeqRef.current;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const result = await skillsService.searchMarketplace(
+        SKILLS_CATALOG_SEED_QUERY,
+        {
+          ...(workspacePath ? { workspacePath } : {}),
+          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        },
+      );
+      if (seq !== catalogRequestSeqRef.current || !mountedRef.current) return;
+      setCatalogItems(result);
+      setCatalogLoading(false);
+    } catch (cause) {
+      if (seq !== catalogRequestSeqRef.current || !mountedRef.current) return;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.warn("[useSkillsMarketplace] 加载 skills.sh 目录失败", {
+        error: message,
+      });
+      setCatalogItems([]);
+      setCatalogError(message);
+      setCatalogLoading(false);
+    }
+  }, [skillsService, workspaceIdentity, workspacePath]);
+
+  useEffect(() => {
+    void refreshCatalog();
+  }, [refreshCatalog]);
 
   const runSearch = useCallback(
     async (rawQuery: string) => {
@@ -161,7 +214,10 @@ export function useSkillsMarketplace(
       } catch (cause) {
         if (seq !== requestSeqRef.current || !mountedRef.current) return;
         const message = cause instanceof Error ? cause.message : String(cause);
-        logger.warn("[useSkillsMarketplace] 搜索 skills.sh 失败", { error: message, query });
+        logger.warn("[useSkillsMarketplace] 搜索 skills.sh 失败", {
+          error: message,
+          query,
+        });
         setItems([]);
         setError(message);
         setLoading(false);
@@ -211,8 +267,8 @@ export function useSkillsMarketplace(
         if (lastQueryRef.current) {
           await runSearch(lastQueryRef.current);
         }
-        // 搜索刷新只更新搜索标记；已安装列表必须独立重跑，安装成功后立即可见。
-        await refreshInstalled();
+        // 搜索/目录刷新只更新远端标记；已安装列表必须独立重跑，安装成功后立即可见。
+        await Promise.all([refreshCatalog(), refreshInstalled()]);
       } catch (cause) {
         if (!mountedRef.current) return;
         const message = cause instanceof Error ? cause.message : String(cause);
@@ -226,11 +282,21 @@ export function useSkillsMarketplace(
         if (mountedRef.current) setInstallingKey(null);
       }
     },
-    [refreshInstalled, runSearch, skillsService, workspaceIdentity, workspacePath],
+    [
+      refreshCatalog,
+      refreshInstalled,
+      runSearch,
+      skillsService,
+      workspaceIdentity,
+      workspacePath,
+    ],
   );
 
   return {
     items,
+    catalogItems,
+    catalogLoading,
+    catalogError,
     installedSkills,
     installedLoading,
     installedError,
@@ -244,6 +310,7 @@ export function useSkillsMarketplace(
     search,
     retry,
     refreshInstalled,
+    refreshCatalog,
     install,
   };
 }

@@ -24,6 +24,7 @@ import {
 } from "@/settings/pluginStoreListing.js";
 import { resolveMarketplaceDisplayName } from "@/settings/pluginSourceLabel.js";
 import { SkillsMarketplacePanel } from "@/settings/SkillsMarketplacePanel.js";
+import { PluginCatalogView } from "@/settings/PluginCatalogView.js";
 
 // 分类/市场分组手动收起后的展示数量；默认完整展示，避免较少的插件又被自动隐藏。
 const CATEGORY_VISIBLE_LIMIT = 6;
@@ -32,8 +33,8 @@ const RETIRED_STORE_PLUGIN_ID = `restore-legacy-sessions@${ZCODE_OFFICIAL_PLUGIN
 export type { PluginStoreSegment } from "@/settings/pluginStoreListing.js";
 import type { PluginStoreSegment } from "@/settings/pluginStoreListing.js";
 
-/** 商店页签：插件来源分段 + skills.sh 技能市场。 */
-export type PluginStoreTab = PluginStoreSegment | "skills";
+/** 商店页签：插件来源分段 + skills.sh 技能市场 + 统一插件目录。 */
+export type PluginStoreTab = PluginStoreSegment | "skills" | "catalog";
 
 export function PluginStoreListView({
   items: allItems,
@@ -76,7 +77,7 @@ export function PluginStoreListView({
 
   const segmentItems = useMemo(
     () =>
-      segment === "skills"
+      segment === "skills" || segment === "catalog"
         ? []
         : items.filter((item) => resolvePluginStoreSegment(item) === segment),
     [items, segment],
@@ -190,8 +191,14 @@ export function PluginStoreListView({
             label={intl.formatMessage({ id: "settings.plugins.store.segment.skills" })}
             onClick={() => onSegmentChange("skills")}
           />
+          <SegmentPill
+            active={segment === "catalog"}
+            testId="plugin-store-segment-catalog"
+            label={intl.formatMessage({ id: "settings.plugins.store.segment.catalog" })}
+            onClick={() => onSegmentChange("catalog")}
+          />
         </div>
-        {segment !== "skills" ? (
+        {segment !== "skills" && segment !== "catalog" ? (
           <SettingsSearchInput
             data-testid="plugin-store-search"
             containerClassName="ml-auto min-w-0 flex-[1_1_14rem] sm:max-w-xs"
@@ -205,7 +212,7 @@ export function PluginStoreListView({
         ) : null}
       </div>
 
-      {!keyword && segment !== "skills" && uiItems.length > 0 ? (
+      {!keyword && segment !== "skills" && segment !== "catalog" && uiItems.length > 0 ? (
         <section data-testid="plugin-store-ui-section">
           <div className="pb-2">
             <h2 className="text-ui-lg font-semibold">
@@ -227,7 +234,14 @@ export function PluginStoreListView({
         </section>
       ) : null}
 
-      {segment === "skills" ? (
+      {segment === "catalog" ? (
+        <PluginCatalogView
+          items={items}
+          actions={actions}
+          query={query}
+          onQueryChange={onQueryChange}
+        />
+      ) : segment === "skills" ? (
         <SkillsMarketplacePanel
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}
