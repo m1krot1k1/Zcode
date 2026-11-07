@@ -163,6 +163,10 @@ const originalDynamicWorkflowMode = process.env["ZCODE_DYNAMIC_WORKFLOW_MODE"];
 const originalZaiOAuthOrigin = process.env["ZAI_OAUTH_ORIGIN"];
 const originalZaiBusinessBaseUrl = process.env["ZAI_BUSINESS_BASE_URL"];
 const originalZaiOAuthClientId = process.env["ZAI_OAUTH_CLIENT_ID"];
+const originalCuaBundledHelperAppPath = process.env["ZCODE_CUA_BUNDLED_HELPER_APP_PATH"];
+const originalCuaHelperAllowUnsignedLocal = process.env["ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL"];
+const originalCuaProductHelper = process.env["ZCODE_CUA_PRODUCT_HELPER"];
+const originalZCodeHome = process.env["ZCODE_HOME"];
 const originalDesktopApplicationName = process.env["ZCODE_DESKTOP_APPLICATION_NAME"];
 const originalDesktopHomeDir = process.env["ZCODE_DESKTOP_HOME_DIR"];
 const originalDesktopUserDataDir = process.env["ZCODE_DESKTOP_USER_DATA_DIR"];
@@ -435,6 +439,12 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     delete process.env["ZCODE_BASE_URL"];
     delete process.env["ZCODE_ENDPOINT_ORIGIN"];
     delete process.env["ZCODE_DYNAMIC_WORKFLOW_MODE"];
+    // CUA dev-bundle assertions передают значения явно; ambient-переменные из
+    // запущенного приложения не должны перекрывать тестовый конверт.
+    delete process.env["ZCODE_CUA_BUNDLED_HELPER_APP_PATH"];
+    delete process.env["ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL"];
+    delete process.env["ZCODE_CUA_PRODUCT_HELPER"];
+    delete process.env["ZCODE_HOME"];
     productFlavorMock.value = "preview";
     process.chdir(originalCwd);
   });
@@ -445,6 +455,10 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     productFlavorMock.value = "preview";
     restoreEnvValue("NODE_ENV", originalNodeEnv);
     restoreEnvValue("ZCODE_RUNTIME_ENV", originalZCodeRuntimeEnv);
+    restoreEnvValue("ZCODE_CUA_BUNDLED_HELPER_APP_PATH", originalCuaBundledHelperAppPath);
+    restoreEnvValue("ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL", originalCuaHelperAllowUnsignedLocal);
+    restoreEnvValue("ZCODE_CUA_PRODUCT_HELPER", originalCuaProductHelper);
+    restoreEnvValue("ZCODE_HOME", originalZCodeHome);
     deleteAmbientHostEnv();
     for (const [key, value] of Object.entries(originalAmbientHostEnv)) {
       process.env[key] = value;
