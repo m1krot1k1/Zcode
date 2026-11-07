@@ -123,6 +123,8 @@ export interface SubagentRunRequest {
   agentType: string;
   description: string;
   prompt: string;
+  /** Exact write scope for the work ledger; absent keeps legacy prompt extraction. */
+  writePaths?: readonly string[];
   callerCanReadOutputFile?: boolean;
   workingDirectory: string;
   workspaceRoot: string;

@@ -66,6 +66,7 @@ const START_ONLY_ORCHESTRATOR_CONTRACT = [
 
 const ORCHESTRATOR_WORKER_ROUTING_CONTRACT = [
   "Ветки запускает orchestrator: Task(researcher/reviewer/security-reviewer/test-engineer/evaluator/coder/frontend-coder/backend-coder/infra-coder/implementer/...) с непересекающимися файловыми областями. Никогда не вызывай Task(start) и не вызывай Task(orchestrator), включая самого себя.",
+  "Каждая ветка обязана передать write_paths — точные файлы/каталоги, которые она будет менять; не копируй чужие пути в prompt. Read-only ветка передаёт write_paths: []. Это единственный write-scope для work ledger; текст промпта не должен создавать ложные пересечения.",
   "Каждая ветка должна укладываться примерно в 10 минут. Если ветка вернула partial, blocked или timeout, верни partial с накопленным контекстом (сделано, осталось, evidence) и остатком бюджета, чтобы следующий wave orchestrator продолжил с этого места, а не начинал заново.",
 ].join("\n");
 

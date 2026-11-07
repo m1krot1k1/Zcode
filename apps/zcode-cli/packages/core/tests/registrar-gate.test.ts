@@ -63,6 +63,7 @@ function task(
     turnId?: ReturnType<typeof createTurnId>;
     agentType?: string;
     writeCapable?: boolean;
+    writePaths?: readonly string[];
   },
 ): RuntimeTaskSnapshot {
   return {
@@ -79,6 +80,7 @@ function task(
     type: "local_agent",
     workspacePath: input.workspacePath ?? WORKSPACE,
     ...(input.writeCapable === undefined ? {} : { writeCapable: input.writeCapable }),
+    ...(input.writePaths === undefined ? {} : { writePaths: input.writePaths }),
   };
 }
 
@@ -135,6 +137,67 @@ describe("registrar work-claim hard gate", () => {
     expect(registry.get("agent-b")).toBeUndefined();
     expect(claimOf(ledger, "agent-b")).toBeUndefined();
     expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(1);
+  });
+
+  it("uses explicit writePaths instead of shared prompt paths", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    // Orchestrator часто копирует общий план веток в каждый prompt. Эти пути — контекст,
+    // а не write-intent; явный writePaths должен победить text extraction.
+    const sharedPlan =
+      "Общий план: UI правит `apps/zcode-cli/packages/ui/src/settings/Panel.tsx`, backend правит `apps/zcode-cli/packages/core/src/runtime/runner.ts`.";
+    const uiPath = "apps/zcode-cli/packages/ui/src/settings/Panel.tsx";
+    const backendPath = "apps/zcode-cli/packages/core/src/runtime/runner.ts";
+
+    const ui = registry.registerSubagentTask(
+      task("agent-ui", {
+        childSessionId: createSessionId("registrar-child-ui"),
+        prompt: sharedPlan,
+        writePaths: [uiPath],
+      }),
+      pending(),
+    );
+    const backend = registry.registerSubagentTask(
+      task("agent-backend", {
+        childSessionId: createSessionId("registrar-child-backend"),
+        prompt: sharedPlan,
+        writePaths: [backendPath],
+      }),
+      pending(),
+    );
+
+    expect(ui.accepted).toBe(true);
+    expect(backend.accepted).toBe(true);
+    expect(claimOf(ledger, "agent-ui")?.paths).toEqual([uiPath]);
+    expect(claimOf(ledger, "agent-backend")?.paths).toEqual([backendPath]);
+  });
+
+  it("still rejects overlapping explicit writePaths", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const path = "apps/zcode-cli/packages/core/src/runtime/runner.ts";
+
+    expect(
+      registry.registerSubagentTask(
+        task("agent-writer-a", {
+          childSessionId: createSessionId("registrar-child-writer-a"),
+          prompt: "Правлю writer A",
+          writePaths: [path],
+        }),
+        pending(),
+      ).accepted,
+    ).toBe(true);
+
+    expect(
+      registry.registerSubagentTask(
+        task("agent-writer-b", {
+          childSessionId: createSessionId("registrar-child-writer-b"),
+          prompt: "Правлю writer B",
+          writePaths: [path],
+        }),
+        pending(),
+      ),
+    ).toEqual({ accepted: false, reason: "write_claim_conflict" });
   });
 
   it("rejects a directory-overlap spawn", () => {

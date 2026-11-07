@@ -48,6 +48,8 @@ const AgentTaskGraphNodeSchema = z
     depends_on: z.array(z.string().min(1).max(128)).max(AGENT_TASK_GRAPH_MAX_NODES).optional(),
     // 修复依据：task graph 中缺失角色时 runner 会继承父角色，仍可能绕过节点级 profile 选择。
     subagent_type: z.string().min(1).max(128),
+    /** Exact write scope for the work ledger; absent keeps legacy text extraction. */
+    write_paths: z.array(z.string().min(1).max(260)).max(50).optional(),
     acceptance_criteria: z.array(AgentAcceptanceCriterionSchema).max(16).optional(),
   })
   .strict()
@@ -177,6 +179,18 @@ const AgentInputObjectSchema = z.object({
     .min(1)
     .max(128)
     .describe("Required exact ID of an active agent profile listed in the current conversation"),
+  /**
+   * Explicit write scope. The work ledger uses this list instead of extracting paths
+   * from the prompt, so a shared plan in the prompt cannot create a false conflict.
+   * An empty array means "this branch writes nothing"; absent keeps legacy extraction.
+   */
+  write_paths: z
+    .array(z.string().min(1).max(260))
+    .max(50)
+    .optional()
+    .describe(
+      "Exact workspace-relative or absolute files/directories this branch will write. The work ledger uses these paths instead of extracting them from the prompt. Use [] for a read-only branch.",
+    ),
   // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
   // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
   run_in_background: z

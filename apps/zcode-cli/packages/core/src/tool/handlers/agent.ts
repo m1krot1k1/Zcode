@@ -186,6 +186,7 @@ function buildAgentProviderDescription(
     "- Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.",
     "- Each agent type's model, reasoning effort, and tools come from its definition (`.zcode/agents/*.md` frontmatter).",
     "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes.",
+    "- For parallel branches, pass `write_paths` with the exact files/directories this branch will write; use `[]` for read-only. This prevents false work-claim conflicts when the prompt shares a common plan.",
     // 只保留「用户点名工作流」这一种情形：工作流一律由用户显式请求触发，与系统提示词其余
     // 部分一致。不能把「结果层层喂给下一步的多代理编排」也划给 CreateWorkflow，
     // 那等于让模型在用户没开口时自行选择工作流。
@@ -523,6 +524,7 @@ const agentHandler: ToolHandler = async (input, context) => {
       agentType,
       description: parsed.description,
       prompt: parsed.prompt,
+      ...(parsed.write_paths === undefined ? {} : { writePaths: parsed.write_paths }),
       ...(parsed.acceptance_criteria === undefined
         ? {}
         : { acceptanceCriteria: parsed.acceptance_criteria }),

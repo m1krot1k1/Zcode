@@ -131,6 +131,13 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
    * поэтому claim не создаётся и не проверяется на конфликты. `undefined` — legacy-поведение.
    */
   writeCapable?: boolean;
+  /**
+   * Explicit write scope declared by the caller. When present (including an empty
+   * array), the registrar uses it instead of extracting paths from the prompt.
+   * This prevents a shared orchestrator plan in the prompt from creating false
+   * cross-branch conflicts.
+   */
+  writePaths?: readonly string[];
 }
 
 export const MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS = 512;
@@ -2049,9 +2056,23 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 修复依据: text-derived кандидат, резолвящийся в корень, — не write-intent.
     // Фильтруем только производные текста; явный WorkLedger.claim({ paths: ["."] })
     // сохраняет прежнюю семантику "весь workspace".
-    const paths = extractTaskPaths(text).filter(
-      (path) => !resolvesToWorkspaceRoot(path, workspacePath),
-    );
+    //
+    // 根因 (3.17.91): orchestrator копирует общий план веток в каждый branch prompt;
+    // text extraction принимал чужие пути за write-intent, и независимые ветки
+    // падали с write_claim_conflict. Явный writePaths (включая []) — авторитетный
+    // scope; эвристика по тексту остаётся только для legacy-вызовов без поля.
+    const paths =
+      task.writePaths !== undefined
+        ? [
+            ...new Set(
+              task.writePaths
+                .map((path) => path.trim())
+                .filter((path) => path.length > 0 && !resolvesToWorkspaceRoot(path, workspacePath)),
+            ),
+          ]
+        : extractTaskPaths(text).filter(
+            (path) => !resolvesToWorkspaceRoot(path, workspacePath),
+          );
     if (paths.length > 0) {
       let conflicts: WorkConflict[];
       try {

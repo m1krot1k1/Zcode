@@ -116,6 +116,67 @@ describe("Agent/Task caller routing policy", () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards explicit write_paths to the subagent port", async () => {
+    const launch = vi.fn(async () => completedOutput("coder"));
+    await agentToolEntry.handler(
+      {
+        description: "delegate",
+        prompt: "implement",
+        subagent_type: "coder",
+        write_paths: ["apps/zcode-cli/packages/ui/src/settings/Panel.tsx"],
+      },
+      createContext({
+        callerAgentType: "coder",
+        availableAgentTypes: ["coder"],
+        subagentPort: { launch } as never,
+      }),
+    );
+
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        writePaths: ["apps/zcode-cli/packages/ui/src/settings/Panel.tsx"],
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("forwards task_graph node write_paths to runTaskDag", async () => {
+    const runTaskDag = vi.fn(async () => completedOutput("orchestrator"));
+    await agentToolEntry.handler(
+      {
+        description: "graph",
+        prompt: "run the graph",
+        subagent_type: "orchestrator",
+        task_graph: {
+          nodes: [
+            {
+              id: "alpha",
+              description: "UI branch",
+              prompt: "Implement the UI branch",
+              subagent_type: "coder",
+              write_paths: ["apps/zcode-cli/packages/ui/src/settings/Panel.tsx"],
+            },
+          ],
+        },
+      },
+      createContext({
+        availableAgentTypes: ["coder", "orchestrator"],
+        subagentPort: { runTaskDag } as never,
+      }),
+    );
+
+    expect(runTaskDag).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodes: [
+          expect.objectContaining({
+            write_paths: ["apps/zcode-cli/packages/ui/src/settings/Panel.tsx"],
+          }),
+        ],
+      }),
+      expect.anything(),
+    );
+  });
+
   it.each(["coder", "implementer"] as const)(
     "lets %s delegate bounded evidence to researcher",
     async (callerAgentType) => {

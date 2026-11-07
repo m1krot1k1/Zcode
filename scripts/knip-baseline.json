@@ -136,7 +136,7 @@
     "devDependencies\tpackages/web/package.json\ttailwindcss",
     "duplicates\tapps/zcode-cli/packages/adapters/src/exec/execution-command.ts\t[{\"name\":\"applyResolvedShellCommand\",\"line\":180,\"col\":17,\"pos\":4814},{\"name\":\"applyResolvedShellCommandForTest\",\"line\":207,\"col\":14,\"pos\":5387}]",
     "duplicates\tapps/zcode-cli/packages/adapters/src/model/anthropic-stream-compat.ts\t[{\"name\":\"createAnthropicCompatFetch\",\"line\":5,\"col\":17,\"pos\":122},{\"name\":\"createAnthropicStreamCompatFetch\",\"line\":12,\"col\":14,\"pos\":420}]",
-    "duplicates\tapps/zcode-cli/packages/contracts/src/tools/agent.ts\t[{\"name\":\"AgentInputSchema\",\"line\":231,\"col\":14,\"pos\":8022},{\"name\":\"TaskInputSchema\",\"line\":234,\"col\":14,\"pos\":8171}]",
+    "duplicates\tapps/zcode-cli/packages/contracts/src/tools/agent.ts\t[{\"name\":\"AgentInputSchema\",\"line\":245,\"col\":14,\"pos\":8756},{\"name\":\"TaskInputSchema\",\"line\":248,\"col\":14,\"pos\":8905}]",
     "duplicates\tapps/zcode-cli/packages/contracts/src/tools/create-workflow.ts\t[{\"name\":\"CREATE_WORKFLOW_GRAPH_MAX_PHASES\",\"line\":228,\"col\":14,\"pos\":8790},{\"name\":\"CREATE_WORKFLOW_GRAPH_MAX_HOLES\",\"line\":406,\"col\":14,\"pos\":15971}]",
     "duplicates\tapps/zcode-cli/packages/contracts/src/tools/target.ts\t[{\"name\":\"GOAL_COMPLETION_VERIFICATION_QUERY_SOURCE\",\"line\":19,\"col\":14,\"pos\":586},{\"name\":\"TARGET_COMPLETION_VERIFICATION_QUERY_SOURCE\",\"line\":405,\"col\":14,\"pos\":16378}]",
     "duplicates\tapps/zcode-cli/packages/contracts/src/tools/target.ts\t[{\"name\":\"GoalCompletionVerificationOutputSchema\",\"line\":103,\"col\":14,\"pos\":3072},{\"name\":\"TargetCompletionVerificationOutputSchema\",\"line\":418,\"col\":14,\"pos\":17093}]",

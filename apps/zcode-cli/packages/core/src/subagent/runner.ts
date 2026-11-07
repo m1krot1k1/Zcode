@@ -437,6 +437,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               agentType: node.subagent_type,
               description: node.description,
               prompt,
+              ...(node.write_paths === undefined ? {} : { writePaths: node.write_paths }),
               callerCanReadOutputFile: rawRequest.callerCanReadOutputFile,
               workingDirectory: rawRequest.workingDirectory,
               workspaceRoot: rawRequest.workspaceRoot,
@@ -3858,6 +3859,7 @@ function createRuntimeTaskSnapshot(input: {
     // Write-capability берётся из фактической поверхности профиля И родителя,
     // а не из текста prompt: read-only роли не создают claim'ы на упомянутые для чтения пути.
     writeCapable: isEffectiveWriteCapable(input.lifecycle.profile, input.parentToolNames),
+    ...(input.request.writePaths === undefined ? {} : { writePaths: input.request.writePaths }),
     ...(input.spawnGrant === undefined ? {} : { spawnGrant: input.spawnGrant }),
     ...(input.level === undefined ? {} : { level: input.level }),
   };
