@@ -6,7 +6,6 @@
       "source": "vercel-labs/skills",
       "skillId": "find-skills",
       "name": "find-skills",
-      "installs": 0,
       "hash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
     },
     {
@@ -14,7 +13,6 @@
       "source": "vercel-labs/agent-skills",
       "skillId": "vercel-react-native-skills",
       "name": "vercel-react-native-skills",
-      "installs": 0,
       "hash": "41d24eafa7c3d82e270439808f7cfbc4d51aeb2d14f2809a2267c16275784d06"
     },
     {
@@ -22,7 +20,6 @@
       "source": "vercel-labs/agent-skills",
       "skillId": "vercel-react-view-transitions",
       "name": "vercel-react-view-transitions",
-      "installs": 0,
       "hash": "fb654c297f52c2771ce64b22a4a18509d0412ef07e020bc09625441df18a750d"
     },
     {
@@ -30,7 +27,6 @@
       "source": "vercel-labs/agent-skills",
       "skillId": "web-design-guidelines",
       "name": "web-design-guidelines",
-      "installs": 0,
       "hash": "f3bc47f890f42a44db1007ab390709ec368e4b8c089baee6b0007182236ac474"
     },
     {
@@ -38,7 +34,6 @@
       "source": "anthropics/skills",
       "skillId": "frontend-design",
       "name": "frontend-design",
-      "installs": 0,
       "hash": "7e9c2af00fd5b3144f49ce6fb1b16037b392ab9c2f049423b0b6114d99381ba2"
     },
     {
@@ -46,7 +41,6 @@
       "source": "emilkowalski/skills",
       "skillId": "apple-design",
       "name": "apple-design",
-      "installs": 0,
       "hash": "79b75afd2538d394256f38f54b6b3815bb8e26bd5e3b33dbef8e858fd8ecbebf"
     },
     {
@@ -54,7 +48,6 @@
       "source": "emilkowalski/skills",
       "skillId": "emil-design-eng",
       "name": "emil-design-eng",
-      "installs": 0,
       "hash": "7ff4377666dee33b7dc894f10ea35b60dc0af9f59ab3b0dbe2179c3d531f2468"
     },
     {
@@ -62,7 +55,6 @@
       "source": "emilkowalski/skills",
       "skillId": "review-animations",
       "name": "review-animations",
-      "installs": 0,
       "hash": "31f3c6dd28d9e11d31a66ea040650cf7c23c599a4bba8d0a5f332e12cf4110fe"
     },
     {
@@ -70,7 +62,6 @@
       "source": "designed-by-ai/skills",
       "skillId": "design-mobile-apps",
       "name": "design-mobile-apps",
-      "installs": 0,
       "hash": "5d41481e5b701e288489426483e4c5d4ed9ae3bec87212c5f954c83c89e3e775"
     },
     {
@@ -78,7 +69,6 @@
       "source": "prisma/skills",
       "skillId": "prisma-client-api",
       "name": "prisma-client-api",
-      "installs": 0,
       "hash": "d27be3740bedb0195f607c039d276b6f891c9d70e5b4698e6b8aef079604ce37"
     },
     {
@@ -86,7 +76,6 @@
       "source": "google/agents-cli",
       "skillId": "google-agents-cli-adk-code",
       "name": "google-agents-cli-adk-code",
-      "installs": 0,
       "hash": "38719b6fa7220cab4992a697bd902d1e546dbde1527d48cb7574d9e81841b6d4"
     },
     {
@@ -94,7 +83,6 @@
       "source": "google/agents-cli",
       "skillId": "google-agents-cli-observability",
       "name": "google-agents-cli-observability",
-      "installs": 0,
       "hash": "e58665a62c51e1e4e71669fc8d51a828d05cdc63e696aababce14b903724efbb"
     },
     {
@@ -102,7 +90,6 @@
       "source": "google/agents-cli",
       "skillId": "google-agents-cli-scaffold",
       "name": "google-agents-cli-scaffold",
-      "installs": 0,
       "hash": "9733dbac0418158933bde0e9cefdca08936c53b0ec03ce541923b76287e76d66"
     },
     {
@@ -110,7 +97,6 @@
       "source": "mattpocock/skills",
       "skillId": "grill-with-docs",
       "name": "grill-with-docs",
-      "installs": 0,
       "hash": "6b1292031c4f38a11309b9dad9be1141c1921c6edf86d1ae6da8b048fa71a349"
     },
     {
@@ -118,7 +104,6 @@
       "source": "mattpocock/skills",
       "skillId": "triage",
       "name": "triage",
-      "installs": 0,
       "hash": "1ec33672b2ac2ca02c906f204b3bfb819c7f37bfe1df033871bffaaf222fb1f6"
     },
     {
@@ -126,7 +111,6 @@
       "source": "mattpocock/skills",
       "skillId": "diagnosing-bugs",
       "name": "diagnosing-bugs",
-      "installs": 0,
       "hash": "bccb1855753ec4d07a1c0df85476a383b5a89d33d7726e9bb5d8014121307874"
     },
     {
@@ -134,7 +118,6 @@
       "source": "mattpocock/skills",
       "skillId": "code-review",
       "name": "code-review",
-      "installs": 0,
       "hash": "03503c0416f951e0ad88a8e69e41176a73abe96bcf671d94d877fb08305c4363"
     },
     {
@@ -142,7 +125,6 @@
       "source": "mattpocock/skills",
       "skillId": "wayfinder",
       "name": "wayfinder",
-      "installs": 0,
       "hash": "87b6daa3b8428b01d16a2939f9364d06ce1901c12325507f66e8363c74efe02f"
     },
     {
@@ -150,7 +132,6 @@
       "source": "mattpocock/skills",
       "skillId": "wizard",
       "name": "wizard",
-      "installs": 0,
       "hash": "d5467ba49ab8e4b88be2932eb0343fc2f33e9dd916f6832038574a6a8922b660"
     }
   ]

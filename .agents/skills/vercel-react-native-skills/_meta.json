@@ -2,7 +2,6 @@
   "source": "vercel-labs/agent-skills",
   "skillId": "vercel-react-native-skills",
   "name": "vercel-react-native-skills",
-  "installs": 0,
   "hash": "41d24eafa7c3d82e270439808f7cfbc4d51aeb2d14f2809a2267c16275784d06",
   "installedAt": "2026-11-07T12:12:57.968Z",
   "manager": "skills.sh"

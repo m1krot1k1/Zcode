@@ -2,7 +2,6 @@
   "source": "anthropics/skills",
   "skillId": "frontend-design",
   "name": "frontend-design",
-  "installs": 0,
   "hash": "7e9c2af00fd5b3144f49ce6fb1b16037b392ab9c2f049423b0b6114d99381ba2",
   "installedAt": "2026-11-07T12:12:58.446Z",
   "manager": "skills.sh"

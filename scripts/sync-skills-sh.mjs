@@ -268,7 +268,7 @@ async function installSkill(dest, item, snapshot) {
         source: item.source,
         skillId: item.skillId,
         name: item.name,
-        installs: item.installs,
+        ...(item.installs > 0 ? { installs: item.installs } : {}),
         ...(snapshot.hash ? { hash: snapshot.hash } : {}),
         installedAt: new Date().toISOString(),
         manager: "skills.sh",
@@ -354,7 +354,7 @@ async function main() {
           source: item.source,
           skillId: item.skillId,
           name: item.name,
-          installs: item.installs,
+          ...(item.installs > 0 ? { installs: item.installs } : {}),
           ...(snapshot.hash ? { hash: snapshot.hash } : {}),
         },
       ];
