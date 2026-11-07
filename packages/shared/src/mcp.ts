@@ -434,6 +434,45 @@ export interface ClineMcpMarketplaceCatalog {
   rejectedEntryCount: number;
 }
 
+/** One installable transport from the Official MCP Registry. */
+export interface McpRegistryInstallOption {
+  kind: "stdio" | "remote";
+  command?: string;
+  args?: string[];
+  url?: string;
+  transport?: "http" | "sse";
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  requiredEnv?: {
+    name: string;
+    description?: string;
+    isSecret?: boolean;
+    required?: boolean;
+    default?: string;
+  }[];
+  requiredHeaders?: {
+    name: string;
+    description?: string;
+    isSecret?: boolean;
+    required?: boolean;
+  }[];
+  requiresAuth: boolean;
+}
+
+export interface McpRegistryMarketplaceEntry {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  repositoryUrl?: string;
+  options: McpRegistryInstallOption[];
+}
+
+export interface McpRegistryMarketplaceResult {
+  query: string;
+  entries: McpRegistryMarketplaceEntry[];
+}
+
 const MCP_MARKETPLACE_MAX_ENTRIES = 500;
 const MCP_MARKETPLACE_MAX_TAGS = 20;
 const MCP_MARKETPLACE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,127}$/u;
@@ -617,6 +656,18 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     args: ["-y", "@upstash/context7-mcp@4.4.1"],
     authRequirement: "none",
     sourceUrl: "https://www.npmjs.com/package/@upstash/context7-mcp",
+  },
+  {
+    id: "sequential-thinking",
+    name: "Sequential Thinking",
+    kind: "stdio",
+    packageName: "@modelcontextprotocol/server-sequential-thinking",
+    version: "2.1.1",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2.1.1"],
+    authRequirement: "none",
+    sourceUrl:
+      "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
   },
   {
     id: "chrome-devtools",

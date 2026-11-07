@@ -14,6 +14,7 @@ describe("community MCP presets", () => {
       "webflow",
       "apify",
       "context7",
+      "sequential-thinking",
       "chrome-devtools",
       "playwright",
       "duckduckgo-search",

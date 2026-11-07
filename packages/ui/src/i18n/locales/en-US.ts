@@ -3575,6 +3575,23 @@ const enUS: Record<string, string> = {
   "settings.mcp.create.open": "Add MCP server",
   "settings.mcp.import.open": "Import MCP servers from external agents",
   "settings.mcp.import.action": "Import",
+  "settings.mcp.registry.title": "Official MCP Registry",
+  "settings.mcp.registry.description":
+    "Search the public MCP registry; installs run locally after you review the command or URL.",
+  "settings.mcp.registry.searchPlaceholder": "Search MCP servers",
+  "settings.mcp.registry.clearSearch": "Clear search",
+  "settings.mcp.registry.search": "Search",
+  "settings.mcp.registry.loading": "Searching the Official MCP Registry…",
+  "settings.mcp.registry.empty": "No MCP servers match your search",
+  "settings.mcp.registry.error": "Could not load MCP servers from the Official MCP Registry.",
+  "settings.mcp.registry.retry": "Retry",
+  "settings.mcp.registry.configure": "Configure & install",
+  "settings.mcp.registry.stdio": "Local (stdio)",
+  "settings.mcp.registry.remote": "Remote",
+  "settings.mcp.registry.requiresAuth":
+    "Requires authentication; configure credentials in the next step.",
+  "settings.mcp.registry.requiredEnv": "Required environment",
+  "settings.mcp.registry.requiredHeaders": "Required headers",
   "settings.mcp.communityPresets.title": "Curated MCP catalog",
   "settings.mcp.communityPresets.description":
     "Add a reviewed server to this scope, or configure it first. Cline listings stay unverified until reviewed.",

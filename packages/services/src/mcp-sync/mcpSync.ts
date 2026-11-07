@@ -2,6 +2,7 @@ import type {
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
   ClineMcpMarketplaceCatalog,
+  McpRegistryMarketplaceResult,
   McpSyncCandidateListResult,
   McpSyncExportResult,
   McpSyncExportedServer,
@@ -19,6 +20,12 @@ import { createServiceDescriptor } from "../descriptors.js";
 export interface IMcpSyncService {
   /** Load untrusted, read-only MCP discovery metadata from the fixed Cline catalog. */
   loadMarketplaceCatalog(): Promise<ClineMcpMarketplaceCatalog>;
+  /**
+   * Search the Official MCP Registry (public, no credentials) for installable
+   * servers. Returns normalized stdio/remote options; installation is performed
+   * by the caller after explicit user approval.
+   */
+  searchMarketplace(query: string): Promise<McpRegistryMarketplaceResult>;
   loadMcpFromUserDirectory(
     request?: LoadCliMcpFromUserDirectoryRequest,
   ): Promise<LoadCliMcpFromUserDirectoryResult>;

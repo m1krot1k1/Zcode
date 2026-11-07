@@ -810,6 +810,16 @@ function PluginList({
               </ControlHintTooltip>
             ) : null}
             <SettingsResourceHeaderActions onRefresh={() => void refreshAfterPluginChange()} />
+            {configScope === "workspace" ? (
+              <Button
+                type="button"
+                variant="outline"
+                data-testid={TID_PLUGIN_STORE_BROWSE}
+                onClick={() => onOpenPluginStore()}
+              >
+                {intl.formatMessage({ id: "settings.plugin.plugins.browse" })}
+              </Button>
+            ) : null}
             {configScope === "user" ? (
               <>
                 <Button

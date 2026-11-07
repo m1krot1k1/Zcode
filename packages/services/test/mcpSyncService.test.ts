@@ -2,7 +2,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpSyncService } from "../src/mcp-sync/mcpSyncService.js";
 
 function makeHome() {
@@ -100,6 +100,99 @@ describe("mcp sync service", () => {
       rejectedEntryCount: 0,
     });
     expect(JSON.stringify(result)).not.toContain("echo unsafe");
+  });
+
+  it("searches the Official MCP Registry and normalizes local/remote install options", async () => {
+    let requestedUrl = "";
+    const service = createMcpSyncService({
+      fetchOfficialMcpRegistry: async (input) => {
+        requestedUrl = String(input);
+        return new Response(
+          JSON.stringify({
+            servers: [
+              {
+                server: {
+                  name: "io.modelcontextprotocol/sequential-thinking",
+                  description: "Structured sequential reasoning",
+                  version: "2025.1.0",
+                  repository: { url: "https://github.com/modelcontextprotocol/servers" },
+                  packages: [
+                    {
+                      registryType: "npm",
+                      identifier: "@modelcontextprotocol/server-sequential-thinking",
+                      version: "2025.1.0",
+                      runtimeHint: "npx",
+                      transport: { type: "stdio" },
+                      runtimeArguments: [{ type: "positional", value: "-y" }],
+                      environmentVariables: [
+                        { name: "MCP_API_KEY", description: "token", isRequired: true, isSecret: true },
+                      ],
+                    },
+                  ],
+                },
+              },
+              {
+                server: {
+                  name: "io.example/remote",
+                  remotes: [
+                    {
+                      type: "streamable-http",
+                      url: "https://example.com/mcp",
+                      headers: [{ name: "Authorization", isRequired: true, isSecret: true }],
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const result = await service.searchMarketplace("sequential");
+
+    expect(requestedUrl).toContain("https://registry.modelcontextprotocol.io/v0/servers");
+    expect(requestedUrl).toContain("search=sequential");
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0]).toMatchObject({
+      id: "io.modelcontextprotocol/sequential-thinking",
+      name: "io.modelcontextprotocol/sequential-thinking",
+      version: "2025.1.0",
+      repositoryUrl: "https://github.com/modelcontextprotocol/servers",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.1.0"],
+          requiresAuth: true,
+          requiredEnv: [{ name: "MCP_API_KEY", isSecret: true, required: true }],
+        },
+      ],
+    });
+    expect(result.entries[1]).toMatchObject({
+      id: "io.example/remote",
+      options: [
+        {
+          kind: "remote",
+          url: "https://example.com/mcp",
+          transport: "http",
+          requiresAuth: true,
+          requiredHeaders: [{ name: "Authorization", isSecret: true, required: true }],
+        },
+      ],
+    });
+  });
+
+  it("returns empty registry results for an empty query without network access", async () => {
+    const fetchOfficialMcpRegistry = vi.fn();
+    const service = createMcpSyncService({ fetchOfficialMcpRegistry });
+
+    await expect(service.searchMarketplace("   ")).resolves.toEqual({
+      query: "",
+      entries: [],
+    });
+    expect(fetchOfficialMcpRegistry).not.toHaveBeenCalled();
   });
 
   it("fails closed for non-JSON and oversized marketplace responses", async () => {

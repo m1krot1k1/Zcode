@@ -1789,6 +1789,7 @@
     "files\tpackages/ui/test/fixtures/workflow-notification-link.fixture.tsx\tpackages/ui/test/fixtures/workflow-notification-link.fixture.tsx",
     "files\tpackages/ui/test/fixtures/workflow-status.fixture.tsx\tpackages/ui/test/fixtures/workflow-status.fixture.tsx",
     "files\tpackages/ui/test/fixtures/workflow-summary-hover.fixture.tsx\tpackages/ui/test/fixtures/workflow-summary-hover.fixture.tsx",
+    "files\tpackages/ui/test/mcpRegistryMarketplace.test.tsx\tpackages/ui/test/mcpRegistryMarketplace.test.tsx",
     "files\tpackages/ui/test/openCodePermissionRow.test.tsx\tpackages/ui/test/openCodePermissionRow.test.tsx",
     "files\tpackages/ui/test/opencodeAgentSettingsPanel.test.tsx\tpackages/ui/test/opencodeAgentSettingsPanel.test.tsx",
     "files\tpackages/ui/test/previewPaneMediaContent.test.tsx\tpackages/ui/test/previewPaneMediaContent.test.tsx",

@@ -15,6 +15,8 @@ import {
   type ClineMcpMarketplaceCatalog,
   type ClineMcpMarketplaceEntry,
   type CommunityMcpPreset,
+  type McpRegistryInstallOption,
+  type McpRegistryMarketplaceEntry,
   type McpServerConfig,
 } from "@zcode/shared";
 import {
@@ -43,6 +45,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { logger } from "@/logger.js";
 import { McpServerForm } from "@/settings/McpServerForm.js";
+import { McpRegistryMarketplace } from "@/settings/McpRegistryMarketplace.js";
 import { McpServerList, McpStatusDot } from "@/settings/McpServerList.js";
 import {
   formToConfig,
@@ -828,6 +831,15 @@ interface McpSettingsSectionProps {
   showMarketplaceBreadcrumb?: boolean;
   unscopedServices?: IServiceAccessor;
   cacheAuthorityKey?: string;
+}
+
+function registryServerName(id: string): string {
+  const base = id.split("/").at(-1) ?? id;
+  const normalized = base
+    .replace(/[^A-Za-z0-9_.-]+/gu, "-")
+    .replace(/^[-.]+|[-.]+$/gu, "")
+    .slice(0, 80);
+  return normalized || "mcp-server";
 }
 
 export function McpSettingsSection({
@@ -1696,6 +1708,31 @@ export function McpSettingsSection({
     setShowForm(true);
   }
 
+  function handleConfigureRegistryEntry(
+    entry: McpRegistryMarketplaceEntry,
+    option: McpRegistryInstallOption,
+  ) {
+    setFormScopeKey(parentScopeKey);
+    onFormScopeKeyChange?.(parentScopeKey);
+    setEditingServer(null);
+    setPresetDraft({
+      id: "",
+      name: registryServerName(entry.id),
+      enabled: true,
+      source: "zcodeagentmcp",
+      scope: "user",
+      config: {
+        type: option.kind === "remote" ? (option.transport ?? "http") : "stdio",
+        ...(option.command ? { command: option.command } : {}),
+        ...(option.args ? { args: option.args } : {}),
+        ...(option.url ? { url: option.url } : {}),
+        ...(option.env ? { env: option.env } : {}),
+      },
+    });
+    setEditorMode("form");
+    setShowForm(true);
+  }
+
   async function handleInstallPreset(preset: CommunityMcpPreset) {
     if (installingPresetIdsRef.current.has(preset.id)) return;
     installingPresetIdsRef.current.add(preset.id);
@@ -1875,6 +1912,9 @@ export function McpSettingsSection({
             id: "settings.plugin.mcp.searchEmpty",
           })}
         />
+      ) : null}
+      {mcpProjectionReady ? (
+        <McpRegistryMarketplace onConfigure={handleConfigureRegistryEntry} />
       ) : null}
       <div
         className={!mcpProjectionReady || hasEmptySearchResult ? "hidden" : "space-y-6"}
