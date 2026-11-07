@@ -1,6 +1,6 @@
 import { Loader2, Search } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
-import type { MarketplaceSkillInfo } from "@zcode/shared";
+import type { MarketplaceSkillInfo, SkillSummary } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -42,7 +42,21 @@ export function SkillsMarketplacePanel({
   };
 
   const installing = marketplace.installingKey !== null;
-  const showIdle = !marketplace.hasSearched && !marketplace.loading && !marketplace.error;
+  // 已安装列表与搜索结果互斥渲染：空查询展示已安装事实，提交搜索后只展示搜索结果，
+  // 因此同一条技能不会以两份条目同时出现。
+  const showInstalled = marketplace.submittedQuery.length === 0;
+
+  const handleQueryChange = (value: string) => {
+    setDraftQuery(value);
+    if (!value.trim() && marketplace.submittedQuery) {
+      void marketplace.search("");
+    }
+  };
+
+  const handleClear = () => {
+    setDraftQuery("");
+    void marketplace.search("");
+  };
 
   return (
     <section
@@ -60,8 +74,8 @@ export function SkillsMarketplacePanel({
           data-testid="plugin-store-skills-search"
           containerClassName="min-w-0 flex-[1_1_16rem]"
           value={draftQuery}
-          onChange={(event) => setDraftQuery(event.target.value)}
-          onClear={() => setDraftQuery("")}
+          onChange={(event) => handleQueryChange(event.target.value)}
+          onClear={handleClear}
           clearLabel={intl.formatMessage({ id: "settings.plugins.store.skills.clearSearch" })}
           placeholder={intl.formatMessage({
             id: "settings.plugins.store.skills.searchPlaceholder",
@@ -166,14 +180,67 @@ export function SkillsMarketplacePanel({
         </p>
       ) : null}
 
-      {!marketplace.loading && !marketplace.error && showIdle ? (
-        <p className="rounded-xl border border-dashed border-border px-4 py-3 text-ui-base text-foreground-subtle">
-          {intl.formatMessage({ id: "settings.plugins.store.skills.idle" })}
-        </p>
+      {showInstalled ? (
+        <section className="space-y-2" aria-labelledby="plugin-store-skills-installed-title">
+          <h3
+            id="plugin-store-skills-installed-title"
+            className="text-ui-base font-medium text-foreground"
+          >
+            {intl.formatMessage({ id: "settings.plugins.store.skills.installedTitle" })}
+          </h3>
+          {marketplace.installedLoading ? (
+            <p
+              role="status"
+              data-testid="plugin-store-skills-installed-loading"
+              className="flex items-center gap-2 py-2 text-ui-base text-foreground-subtle"
+            >
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              {intl.formatMessage({ id: "settings.plugins.store.skills.installedLoading" })}
+            </p>
+          ) : null}
+          {marketplace.installedError ? (
+            <div
+              role="alert"
+              data-testid="plugin-store-skills-installed-error"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
+            >
+              <span>
+                {intl.formatMessage({ id: "settings.plugins.store.skills.installedError" })}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="plugin-store-skills-installed-retry"
+                onClick={() => void marketplace.refreshInstalled()}
+              >
+                {intl.formatMessage({ id: "settings.plugins.store.skills.retry" })}
+              </Button>
+            </div>
+          ) : null}
+          {!marketplace.installedLoading &&
+          !marketplace.installedError &&
+          marketplace.installedSkills.length === 0 ? (
+            <p
+              data-testid="plugin-store-skills-installed-empty"
+              className="rounded-xl border border-dashed border-border px-4 py-3 text-ui-base text-foreground-subtle"
+            >
+              {intl.formatMessage({ id: "settings.plugins.store.skills.installedEmpty" })}
+            </p>
+          ) : null}
+          {!marketplace.installedError && marketplace.installedSkills.length > 0 ? (
+            <ul className="space-y-2" data-testid="plugin-store-skills-installed-list">
+              {marketplace.installedSkills.map((skill) => (
+                <InstalledSkillRow key={skill.id} skill={skill} />
+              ))}
+            </ul>
+          ) : null}
+        </section>
       ) : null}
 
       {!marketplace.loading &&
       !marketplace.error &&
+      !showInstalled &&
       marketplace.hasSearched &&
       marketplace.items.length === 0 ? (
         <p
@@ -184,7 +251,7 @@ export function SkillsMarketplacePanel({
         </p>
       ) : null}
 
-      {marketplace.items.length > 0 && !marketplace.error ? (
+      {!showInstalled && marketplace.items.length > 0 && !marketplace.error ? (
         <ul className="space-y-2" data-testid="plugin-store-skills-results">
           {marketplace.items.map((item) => {
             const key = marketplaceSkillKey(item);
@@ -201,6 +268,42 @@ export function SkillsMarketplacePanel({
         </ul>
       ) : null}
     </section>
+  );
+}
+
+function InstalledSkillRow({ skill }: { skill: SkillSummary }) {
+  const { intl } = useZCodeIntl();
+  const scopeLabel =
+    skill.scope === "workspace"
+      ? intl.formatMessage({ id: "settings.plugins.store.skills.scope.workspace" })
+      : skill.scope === "user"
+        ? intl.formatMessage({ id: "settings.plugins.store.skills.scope.user" })
+        : skill.pluginName?.trim() ||
+          intl.formatMessage({ id: "settings.skills.scope.plugin" });
+  const statusLabel = intl.formatMessage({
+    id: skill.enabled
+      ? "settings.plugins.store.skills.enabled"
+      : "settings.plugins.store.skills.disabled",
+  });
+  return (
+    <li
+      data-testid={`plugin-store-skills-installed-item-${skill.id}`}
+      data-enabled={skill.enabled ? "true" : "false"}
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-card-border bg-card px-4 py-3"
+    >
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 truncate text-ui-base font-medium text-foreground">
+            {skill.name}
+          </span>
+          <Badge variant={skill.enabled ? "default" : "outline"}>{statusLabel}</Badge>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle">
+          <span>{scopeLabel}</span>
+          <span className="break-all font-mono">{skill.path}</span>
+        </div>
+      </div>
+    </li>
   );
 }
 

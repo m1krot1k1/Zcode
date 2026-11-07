@@ -111,8 +111,14 @@ export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefine
   return parts.join(" ");
 }
 
-/** Hard cap для router-задач: не даёт start/orchestrator висеть бесконечно. */
-const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 20 * 60_000;
+/**
+ * Hard cap для router-задач: не даёт start/orchestrator висеть бесконечно.
+ * Orchestrator обязан быть строго больше бюджета child (20 минут): дети стартуют
+ * позже родителя и получают собственный lifecycle.startedAt, поэтому равный
+ * бюджет заставлял orchestrator истекать одновременно с ними без времени на синтез.
+ * 30 минут оставляют synthesis headroom и остаются ниже start (45 минут).
+ */
+const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 30 * 60_000;
 // Start должен успеть получить partial от orchestrator и запустить следующий wave.
 const SUBAGENT_START_TASK_DEADLINE_MS = 45 * 60_000;
 // Review должен укладываться в короткую diff-first ветку; 10 минут — аварийный cap.
@@ -164,7 +170,8 @@ const SUBAGENT_ROLE_TASK_DEADLINE_MS: ReadonlyMap<string, number> = new Map<stri
 
 /**
  * Чистый резолвер hard deadline по роли. Контракт: start — 45 минут,
- * orchestrator/worker/custom — 20 минут, researcher — 15 минут,
+ * orchestrator — 30 минут (строго больше child-бюджета 20 минут),
+ * worker/custom — 20 минут, researcher — 15 минут,
  * reviewer/security-reviewer — 10 минут. Резолвер не бросает и не зависит от
  * состояния runtime, чтобы late/unknown профиль не оставлял задачу без таймера.
  */
@@ -233,8 +240,8 @@ export function createDefaultSubagentPort(
     get parentToolNames() {
       return getParentToolNames();
     },
-    // Per-role hard deadline: start 45m, orchestrator/worker/custom 20m,
-    // researcher/reviewer/security-reviewer 15m. Значение резолвится без throw.
+    // Per-role hard deadline: start 45m, orchestrator 30m, worker/custom 20m,
+    // researcher 15m, reviewer/security-reviewer 10m. Значение резолвится без throw.
     getTaskTimeoutMs: (agentType) => resolveSubagentTaskTimeoutMs(agentType),
     getChildEventCursor: (sessionId) => this.eventStore.getLatestSequenceNumber(sessionId),
     getChildEventsAfter: (sessionId, cursor) => this.eventStore.getEventsAfter(sessionId, cursor),

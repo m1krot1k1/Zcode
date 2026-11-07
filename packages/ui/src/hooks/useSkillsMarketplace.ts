@@ -3,6 +3,7 @@ import type {
   InstallMarketplaceSkillRequest,
   InstallMarketplaceSkillResult,
   MarketplaceSkillInfo,
+  SkillSummary,
 } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
@@ -40,6 +41,10 @@ function marketplaceInstallName(item: MarketplaceSkillInfo): string {
 
 interface UseSkillsMarketplaceResult {
   items: MarketplaceSkillInfo[];
+  /** 当前工作区/用户目录下已安装的技能（skillsService.list 的服务端扫描事实）。 */
+  installedSkills: SkillSummary[];
+  installedLoading: boolean;
+  installedError: string | null;
   submittedQuery: string;
   hasSearched: boolean;
   loading: boolean;
@@ -50,6 +55,7 @@ interface UseSkillsMarketplaceResult {
   installedNotice: string | null;
   search: (query: string) => Promise<void>;
   retry: () => Promise<void>;
+  refreshInstalled: () => Promise<void>;
   install: (item: MarketplaceSkillInfo, scope: SkillInstallScope) => Promise<void>;
 }
 
@@ -66,6 +72,9 @@ export function useSkillsMarketplace(
   const workspacePath = options.workspacePath?.trim() || undefined;
   const workspaceIdentity = options.workspaceIdentity?.trim() || undefined;
   const [items, setItems] = useState<MarketplaceSkillInfo[]>([]);
+  const [installedSkills, setInstalledSkills] = useState<SkillSummary[]>([]);
+  const [installedLoading, setInstalledLoading] = useState(false);
+  const [installedError, setInstalledError] = useState<string | null>(null);
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -74,6 +83,7 @@ export function useSkillsMarketplace(
   const [installError, setInstallError] = useState<SkillsMarketplaceInstallError | null>(null);
   const [installedNotice, setInstalledNotice] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
+  const installedRequestSeqRef = useRef(0);
   const lastQueryRef = useRef("");
   const mountedRef = useRef(true);
 
@@ -83,6 +93,43 @@ export function useSkillsMarketplace(
       mountedRef.current = false;
     };
   }, []);
+
+  /**
+   * 已安装列表是搜索之外的独立数据源：面板打开时就必须可见，
+   * 不能依赖用户先提交搜索。安装成功后同样重跑，避免只依赖本地乐观标记。
+   */
+  const refreshInstalled = useCallback(async () => {
+    if (!workspacePath) {
+      installedRequestSeqRef.current += 1;
+      setInstalledSkills([]);
+      setInstalledLoading(false);
+      setInstalledError(null);
+      return;
+    }
+    const seq = ++installedRequestSeqRef.current;
+    setInstalledLoading(true);
+    setInstalledError(null);
+    try {
+      const result = await skillsService.list({
+        workspacePath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      });
+      if (seq !== installedRequestSeqRef.current || !mountedRef.current) return;
+      setInstalledSkills(result.skills);
+      setInstalledLoading(false);
+    } catch (cause) {
+      if (seq !== installedRequestSeqRef.current || !mountedRef.current) return;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.warn("[useSkillsMarketplace] 加载已安装技能失败", { error: message });
+      setInstalledSkills([]);
+      setInstalledError(message);
+      setInstalledLoading(false);
+    }
+  }, [skillsService, workspaceIdentity, workspacePath]);
+
+  useEffect(() => {
+    void refreshInstalled();
+  }, [refreshInstalled]);
 
   const runSearch = useCallback(
     async (rawQuery: string) => {
@@ -96,6 +143,9 @@ export function useSkillsMarketplace(
         setItems([]);
         setLoading(false);
         setError(null);
+        setHasSearched(false);
+        // 清空查询回到已安装视图，同时刷新已安装事实。
+        void refreshInstalled();
         return;
       }
       setLoading(true);
@@ -117,7 +167,7 @@ export function useSkillsMarketplace(
         setLoading(false);
       }
     },
-    [skillsService, workspaceIdentity, workspacePath],
+    [refreshInstalled, skillsService, workspaceIdentity, workspacePath],
   );
 
   const search = useCallback(
@@ -161,6 +211,8 @@ export function useSkillsMarketplace(
         if (lastQueryRef.current) {
           await runSearch(lastQueryRef.current);
         }
+        // 搜索刷新只更新搜索标记；已安装列表必须独立重跑，安装成功后立即可见。
+        await refreshInstalled();
       } catch (cause) {
         if (!mountedRef.current) return;
         const message = cause instanceof Error ? cause.message : String(cause);
@@ -174,11 +226,14 @@ export function useSkillsMarketplace(
         if (mountedRef.current) setInstallingKey(null);
       }
     },
-    [runSearch, skillsService, workspaceIdentity, workspacePath],
+    [refreshInstalled, runSearch, skillsService, workspaceIdentity, workspacePath],
   );
 
   return {
     items,
+    installedSkills,
+    installedLoading,
+    installedError,
     submittedQuery,
     hasSearched,
     loading,
@@ -188,6 +243,7 @@ export function useSkillsMarketplace(
     installedNotice,
     search,
     retry,
+    refreshInstalled,
     install,
   };
 }

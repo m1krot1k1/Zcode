@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createSessionEvent,
   createSessionId,
   createTraceId,
   createTurnId,
@@ -22,7 +23,10 @@ const WORKSPACE = "/workspace/zcode";
 const REVIEWER_DEADLINE_MS = 10 * 60_000;
 const RESEARCHER_DEADLINE_MS = 15 * 60_000;
 const WORKER_DEADLINE_MS = 20 * 60_000;
+const ORCHESTRATOR_DEADLINE_MS = 30 * 60_000;
 const START_DEADLINE_MS = 45 * 60_000;
+// Synthesis headroom: orchestrator обязан иметь заметный запас сверх child-бюджета.
+const MIN_SYNTHESIS_HEADROOM_MS = 5 * 60_000;
 const DEADLINE_ERROR = "Subagent task deadline exceeded";
 
 const directories: string[] = [];
@@ -82,10 +86,16 @@ describe("subagent per-role task deadline", () => {
   it("maps built-in roles and unknown roles to the documented budgets", () => {
     expect(resolveSubagentTaskTimeoutMs("start")).toBe(START_DEADLINE_MS);
     expect(resolveSubagentTaskTimeoutMs("START")).toBe(START_DEADLINE_MS);
-    expect(resolveSubagentTaskTimeoutMs("orchestrator")).toBe(WORKER_DEADLINE_MS);
-    expect(resolveSubagentTaskTimeoutMs("orchestrator")).toBe(
+    expect(resolveSubagentTaskTimeoutMs("orchestrator")).toBe(ORCHESTRATOR_DEADLINE_MS);
+    // Контракт: orchestrator строго больше child-бюджета, иначе дети, стартовавшие
+    // позже родителя, не оставляют времени на синтез.
+    expect(resolveSubagentTaskTimeoutMs("orchestrator")).toBeGreaterThan(
       resolveSubagentTaskTimeoutMs("implementer"),
     );
+    expect(ORCHESTRATOR_DEADLINE_MS - WORKER_DEADLINE_MS).toBeGreaterThanOrEqual(
+      MIN_SYNTHESIS_HEADROOM_MS,
+    );
+    expect(ORCHESTRATOR_DEADLINE_MS).toBeLessThan(START_DEADLINE_MS);
 
     expect(resolveSubagentTaskTimeoutMs("researcher")).toBe(RESEARCHER_DEADLINE_MS);
     for (const role of ["reviewer", "security-reviewer"] as const) {
@@ -167,6 +177,84 @@ describe("subagent per-role task deadline", () => {
     await expect(port.stopTask?.(agentId)).resolves.toMatchObject({ status: "failed" });
     expect(stoppedEvents(emittedEvents)).toHaveLength(1);
     expect((stoppedEvents(emittedEvents)[0]!.payload as { status: string }).status).toBe("failed");
+  });
+
+  it("returns committed assistant text as a partial report when the deadline fires", async () => {
+    vi.useFakeTimers();
+    const directory = createTempDirectory();
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const sessionId = createSessionId("subagent-deadline-partial");
+    const turnId = createTurnId("subagent-deadline-partial-turn");
+    const agentId = "agent_deadline_partial";
+    const partialText = "collected child evidence and partial synthesis";
+    const emittedEvents: SessionEvent[] = [];
+    const childStarted = createDeferred<void>();
+    const terminalEmitted = createDeferred<void>();
+    const readCursors: Array<{ cursor: number; sessionId: SessionId }> = [];
+    const port = createExploreSubagentPort({
+      createAgentId: () => agentId,
+      emitParentEvent: async (event) => {
+        emittedEvents.push(event);
+        if (event.type === SessionEventType.SubagentStopped) terminalEmitted.resolve();
+      },
+      // Child events уже закоммичены к моменту deadline: partial обязан попасть в отчёт.
+      getChildEventsAfter: async (childSessionId, cursor) => {
+        readCursors.push({ cursor, sessionId: childSessionId });
+        return [
+          createSessionEvent(
+            SessionEventType.AssistantMessage,
+            childSessionId,
+            { content: partialText },
+            { turnId, traceId: createTraceId() },
+          ),
+        ];
+      },
+      inactivityTimeoutMs: 2 * 60 * 60_000,
+      outputRootDir: directory,
+      profiles: normalizeAgentProfiles([]),
+      runtimeTaskRegistry: registry,
+      getTaskTimeoutMs: () => 10_000,
+      runExploreAgent: () => {
+        childStarted.resolve();
+        // Child игнорирует abort: terminal-факт обязан появиться по deadline.
+        return new Promise(() => {});
+      },
+    });
+
+    const runPromise = port.run(makeRequest({ agentType: "orchestrator", sessionId, turnId }));
+    const rejection = runPromise.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await childStarted.promise;
+    await vi.advanceTimersByTimeAsync(10_000);
+    const rejected = await rejection;
+
+    // Parent Task получает canonical error вместе с уже собранным partial text.
+    expect(rejected).toBeInstanceOf(Error);
+    expect((rejected as Error).message).toContain(DEADLINE_ERROR);
+    expect((rejected as Error).message).toContain(`Partial report:\n${partialText}`);
+    expect(readCursors).toEqual([{ cursor: 0, sessionId: expect.any(String) as unknown as SessionId }]);
+    // Registry остаётся каноническим: partial не подменяет deadline-факт и не плодит финализаторов.
+    expect(registry.get(agentId)).toMatchObject({
+      error: DEADLINE_ERROR,
+      status: "failed",
+    });
+
+    // Abort доставляет rejection раньше artifact/terminal записи: ждём финализатор.
+    await terminalEmitted.promise;
+    // releaseTaskAbortHandle выполняется в finally после emit; даём континуации пройти.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(registry.isSubagentTaskFinalizing(agentId)).toBe(false);
+    const stopped = stoppedEvents(emittedEvents);
+    expect(stopped).toHaveLength(1);
+    expect((stopped[0]!.payload as { error: string }).error).toContain(
+      `Partial report:\n${partialText}`,
+    );
+    // Артефакт фиксирует тот же partial, что уходит в abort reason.
+    expect(
+      readFileSync(join(directory, sessionId, agentId, "output.txt"), "utf8"),
+    ).toContain(`Partial report:\n${partialText}`);
   });
 
   it("clears the deadline on successful completion and ignores a late timer", async () => {
@@ -375,7 +463,7 @@ describe("subagent per-role task deadline", () => {
     // Родитель продолжает работу до собственного бюджета.
     expect(registry.get(parentAgentId)?.status).toBe("running");
 
-    await vi.advanceTimersByTimeAsync(WORKER_DEADLINE_MS - REVIEWER_DEADLINE_MS);
+    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_DEADLINE_MS - REVIEWER_DEADLINE_MS);
     const parentError = await parentErrorPromise;
     expect(parentError).toBeInstanceOf(Error);
     expect((parentError as Error).message).toContain(DEADLINE_ERROR);
@@ -384,5 +472,20 @@ describe("subagent per-role task deadline", () => {
       status: "failed",
     });
     expect(stoppedEvents(emittedEvents)).toHaveLength(2);
+  });
+
+  it("instructs the orchestrator to synthesize a partial before its own hard deadline", () => {
+    const orchestrator = normalizeAgentProfiles([]).find(
+      (profile) => profile.name === "orchestrator",
+    );
+    expect(orchestrator).toBeDefined();
+    const prompt = orchestrator!.systemPrompt;
+    // Контракт финализации: partial из отчётов веток должен уйти до принудительного abort,
+    // иначе parent Task получает голое "deadline exceeded" без накопленного результата.
+    expect(prompt).toContain("hard deadline");
+    expect(prompt).toContain("partial");
+    expect(prompt).toContain("5 минут");
+    // Router остаётся routing-only: промпт не добавляет read/exec-capabilities.
+    expect(prompt).not.toMatch(/тебе доступн\w* (Read|Glob|Grep|Bash)/i);
   });
 });

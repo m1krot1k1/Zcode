@@ -2310,6 +2310,9 @@ function createSubagentTaskAbortController(parentSignal?: AbortSignal): Subagent
 }
 
 const SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE = "Subagent task deadline exceeded";
+// Partial report ограничен, чтобы deadline-артефакт и abort reason не раздувались
+// историей длинного assistant message.
+const SUBAGENT_DEADLINE_PARTIAL_REPORT_MAX_CHARS = 4_000;
 
 interface SubagentTaskDeadlineHandle {
   clear(): void;
@@ -2360,6 +2363,47 @@ function createSubagentTaskDeadline(input: {
   return { clear: () => clearTimeout(timer) };
 }
 
+/**
+ * Причина: при hard deadline parent Task получал только константную ошибку, хотя
+ * assistant text child-сессии уже закоммичен в event store. Читаем bounded-снимок
+ * через единственный публичный reader и возвращаем partial report, не меняя
+ * канонический registry status/error. Любая ошибка чтения — only canonical message.
+ */
+async function readSubagentDeadlinePartialReport(
+  lifecycle: Pick<SubagentLifecycle, "agentId" | "childSessionId" | "runTraceContext">,
+  options: ExploreSubagentPortOptions,
+): Promise<string | undefined> {
+  if (!options.getChildEventsAfter) return undefined;
+  try {
+    const events = await options.getChildEventsAfter(lifecycle.childSessionId, 0);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event?.type !== SessionEventType.AssistantMessage) continue;
+      const payload = event.payload as { content?: unknown } | undefined;
+      const content = typeof payload?.content === "string" ? payload.content.trim() : "";
+      if (!content) continue;
+      return content.length > SUBAGENT_DEADLINE_PARTIAL_REPORT_MAX_CHARS
+        ? `${content.slice(0, SUBAGENT_DEADLINE_PARTIAL_REPORT_MAX_CHARS)}\n[truncated]`
+        : content;
+    }
+    return undefined;
+  } catch (error) {
+    options.logger?.warn("Subagent deadline partial report read failed", {
+      ...traceContextToLogContext(lifecycle.runTraceContext),
+      agentId: lifecycle.agentId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "subagent.task.deadline_partial_report_failed",
+      module: "core.subagent",
+    });
+    return undefined;
+  }
+}
+
+function formatSubagentDeadlineFailureMessage(partialReport: string | undefined): string {
+  if (!partialReport) return SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE;
+  return `${SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE}\n\nPartial report:\n${partialReport}`;
+}
+
 async function failSubagentTaskOnDeadline(input: {
   lifecycle: SubagentLifecycle;
   options: ExploreSubagentPortOptions;
@@ -2369,10 +2413,8 @@ async function failSubagentTaskOnDeadline(input: {
   timeoutMs: number;
 }): Promise<void> {
   const { lifecycle, options, registry, request, taskAbort, timeoutMs } = input;
-  const error = createCoreError(
-    CoreErrorType.ToolTimeout,
-    SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
-    {
+  const createDeadlineError = (message: string) =>
+    createCoreError(CoreErrorType.ToolTimeout, message, {
       context: {
         code: AgentErrorCode.CHILD_RUNTIME_FAILED,
         agentId: lifecycle.agentId,
@@ -2382,8 +2424,8 @@ async function failSubagentTaskOnDeadline(input: {
       },
       recoverable: true,
       retryable: true,
-    },
-  );
+    });
+  const error = createDeadlineError(SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE);
   options.logger?.warn("Subagent task deadline exceeded", {
     ...traceContextToLogContext(lifecycle.runTraceContext),
     agentId: lifecycle.agentId,
@@ -2406,6 +2448,14 @@ async function failSubagentTaskOnDeadline(input: {
     taskAbort.abort(error);
     return;
   }
+  // Partial читается до terminal transition: registry остаётся на канонической строке,
+  // а расширенное сообщение уходит только в abort reason, artifacts и stopped payload.
+  const partialReport = await readSubagentDeadlinePartialReport(lifecycle, options);
+  const failureMessage = formatSubagentDeadlineFailureMessage(partialReport);
+  const abortError =
+    failureMessage === SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE
+      ? error
+      : createDeadlineError(failureMessage);
   // Сначала фиксируем terminal failed, затем abort: даже child, игнорирующий signal,
   // не оставляет задачу в running. Порядок не даёт abort-пути записать статус killed.
   const completedAt = new Date();
@@ -2421,7 +2471,7 @@ async function failSubagentTaskOnDeadline(input: {
           usage: { durationMs: totalDurationMs },
         },
   );
-  taskAbort.abort(error);
+  taskAbort.abort(abortError);
   const ownsDeadlineTerminal =
     terminalTask?.status === "failed" &&
     terminalTask.error === SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE;
@@ -2430,7 +2480,7 @@ async function failSubagentTaskOnDeadline(input: {
     return;
   }
   try {
-    await writeFailedAgentArtifacts(lifecycle, request, SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE);
+    await writeFailedAgentArtifacts(lifecycle, request, failureMessage);
   } catch (artifactError) {
     options.logger?.warn("Subagent deadline artifact write failed", {
       ...traceContextToLogContext(lifecycle.runTraceContext),
@@ -2456,7 +2506,7 @@ async function failSubagentTaskOnDeadline(input: {
           agentId: terminalTask.agentId,
           agentType: request.agentType,
           description: request.description,
-          error: SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
+          error: failureMessage,
           outputFile: lifecycle.outputFile,
           parentToolCallId: String(request.parentToolCallId),
           status: "failed",
@@ -2485,7 +2535,7 @@ async function failSubagentTaskOnDeadline(input: {
         status: "failed",
         ...(terminalTask.isBackgrounded ? { outputFile: lifecycle.outputFile } : {}),
         totalDurationMs,
-        error: SUBAGENT_TASK_DEADLINE_ERROR_MESSAGE,
+        error: failureMessage,
       },
     );
   } catch (eventError) {
