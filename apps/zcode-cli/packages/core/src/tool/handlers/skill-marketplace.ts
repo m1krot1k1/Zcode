@@ -30,7 +30,7 @@ function requireMarketplacePort(context: Parameters<ToolHandler>[1]) {
       CoreErrorType.ConfigurationError,
       "SkillPort is not configured for skill marketplace tools",
       {
-        context: { toolCallId: context.toolCallId, toolName: context.toolName },
+        context: { toolCallId: context.toolCallId },
         recoverable: false,
       },
     );
@@ -50,7 +50,7 @@ export const skillSearchHandler: ToolHandler = async (input, context) => {
       CoreErrorType.ConfigurationError,
       "Skill marketplace search is not available in this runtime",
       {
-        context: { toolCallId: context.toolCallId, toolName: context.toolName },
+        context: { toolCallId: context.toolCallId },
         recoverable: false,
       },
     );
@@ -84,7 +84,7 @@ export const skillInstallHandler: ToolHandler = async (input, context) => {
       CoreErrorType.ConfigurationError,
       "Skill marketplace installation is not available in this runtime",
       {
-        context: { toolCallId: context.toolCallId, toolName: context.toolName },
+        context: { toolCallId: context.toolCallId },
         recoverable: false,
       },
     );
@@ -140,6 +140,7 @@ Use this when the user asks for a capability that may already exist as a skill (
     sideEffectScope: "session",
     needsApproval: false,
     patternSources: ["input"],
+    denyPriority: "beforeAsk",
   },
   resultBudget: {
     maxInlineBytes: SEARCH_MAX_OUTPUT_BYTES,
@@ -193,6 +194,7 @@ Use the exact source and skillId returned by SkillSearch. The skill is validated
     sideEffectScope: "workspace",
     needsApproval: false,
     patternSources: ["input"],
+    denyPriority: "beforeAsk",
   },
   resultBudget: {
     maxInlineBytes: INSTALL_MAX_OUTPUT_BYTES,
