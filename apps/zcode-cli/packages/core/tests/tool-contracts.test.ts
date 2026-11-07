@@ -64,6 +64,9 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "SendMessage",
   "ReadSessionContext",
   "ReplyToChannel",
+  // Marketplace tools are local-only and therefore follow the shared provider partition.
+  "SkillSearch",
+  "SkillInstall",
   "CreateWorkflow",
   // 修订入口紧随 CreateWorkflow 注册（docs/dynamic-workflow/launch.md「The `AmendWorkflow` tool」）。
   "AmendWorkflow",
@@ -86,10 +89,8 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "ListModels",
 ] as const;
 
-const EMBEDDED_SEARCH_EXPECTED_PROVIDER_TOOL_ORDER =
-  DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER.filter(
-    (toolName) => toolName !== "Glob" && toolName !== "Grep",
-  );
+// Embedded Bash search complements Glob/Grep; the provider-visible order is unchanged.
+const EMBEDDED_SEARCH_EXPECTED_PROVIDER_TOOL_ORDER = DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER;
 
 const SOURCE_DERIVED_WEBFETCH_DESCRIPTION = [
   "Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.",
@@ -1110,8 +1111,10 @@ describe("tool contract declarations", () => {
 
     const byName = new Map(registry.toContracts().map((contract) => [contract.name, contract]));
 
-    expect(byName.has("Glob")).toBe(false);
-    expect(byName.has("Grep")).toBe(false);
+    // Embedded Bash search complements Glob/Grep instead of hiding them: child
+    // profiles explicitly allowlist both tools and must keep them visible.
+    expect(byName.has("Glob")).toBe(true);
+    expect(byName.has("Grep")).toBe(true);
 
     const bashDescription = byName.get("Bash")?.description ?? "";
     expect(bashDescription).toBe(

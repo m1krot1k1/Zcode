@@ -458,11 +458,15 @@ describe("built-in profile capability gate at the runtime boundary", () => {
   }
 
   it.each(["start", "orchestrator"])(
-    "%s cannot receive Write/Edit/Bash even when the parent exposes them",
+    "%s receives only Task even when the parent exposes read and write tools",
     (name) => {
       const allowlist = resolveChildAllowlist(name);
 
-      expect(allowlist).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task", "Skill"]));
+      expect(allowlist).toEqual(expect.arrayContaining(["Task"]));
+      expect(allowlist).not.toContain("Read");
+      expect(allowlist).not.toContain("Glob");
+      expect(allowlist).not.toContain("Grep");
+      expect(allowlist).not.toContain("Skill");
       expect(allowlist).not.toContain("Write");
       expect(allowlist).not.toContain("Edit");
       expect(allowlist).not.toContain("Bash");

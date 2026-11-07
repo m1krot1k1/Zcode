@@ -16,6 +16,7 @@ export * from "./grep.js";
 export * from "./webfetch.js";
 export * from "./agent.js";
 export * from "./skill.js";
+export * from "./skill-marketplace.js";
 export * from "./todo.js";
 export * from "./automation.js";
 export * from "./off-peak.js";

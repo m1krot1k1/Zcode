@@ -2,18 +2,28 @@
 // Node Skill Adapter
 // ============================================================
 
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { open, readFile, realpath, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type {
   SkillContent,
   SkillDiagnostic,
   SkillLoadOutcome,
+  SkillMarketplaceInstallRequest,
+  SkillMarketplaceInstallResult,
+  SkillMarketplaceSearchRequest,
+  SkillMarketplaceSearchResult,
   SkillMetadata,
   SkillOperationOptions,
   SkillPort,
   SkillRoot,
 } from "@zcode/contracts";
+import {
+  downloadSkillsShSnapshot,
+  resolveMarketplaceInstallRoot,
+  searchSkillsSh,
+  writeSkillSnapshot,
+} from "./marketplace.js";
 import { resolveDefaultSkillRoots, type SkillRootResolutionOptions } from "./roots.js";
 import { scanSkillFilesUnderRoot } from "./scan.js";
 
@@ -88,6 +98,75 @@ export class NodeSkillAdapter implements SkillPort {
       skills: Array.from(selected.values()).toSorted((a, b) => a.name.localeCompare(b.name)),
       diagnostics,
       totalDiscovered,
+    };
+  }
+
+  async searchMarketplace(
+    request: SkillMarketplaceSearchRequest,
+    options?: SkillOperationOptions,
+  ): Promise<SkillMarketplaceSearchResult> {
+    const workspaceRoot = resolveMarketplaceInstallRoot({
+      workingDirectory: request.workingDirectory,
+      scope: "workspace",
+      homeDirectory: this.options.homeDirectory,
+    });
+    const userRoot = resolveMarketplaceInstallRoot({
+      workingDirectory: request.workingDirectory,
+      scope: "user",
+      homeDirectory: this.options.homeDirectory,
+    });
+    const result = await searchSkillsSh(request, options);
+    return {
+      ...result,
+      items: result.items.map((item) => ({
+        ...item,
+        installed:
+          existsSync(join(workspaceRoot, item.skillId)) || existsSync(join(userRoot, item.skillId)),
+      })),
+    };
+  }
+
+  async installMarketplaceSkill(
+    request: SkillMarketplaceInstallRequest,
+    options?: SkillOperationOptions,
+  ): Promise<SkillMarketplaceInstallResult> {
+    const scope = request.scope ?? "workspace";
+    const root = resolveMarketplaceInstallRoot({
+      workingDirectory: request.workingDirectory,
+      scope,
+      homeDirectory: this.options.homeDirectory,
+    });
+    const snapshot = await downloadSkillsShSnapshot(
+      { source: request.source, skillId: request.skillId },
+      options,
+    );
+    const written = await writeSkillSnapshot({
+      root,
+      source: request.source,
+      skillId: request.skillId,
+      snapshot,
+      overwrite: request.overwrite === true,
+    });
+    const outcome = await this.discoverSkills(
+      { workingDirectory: request.workingDirectory },
+      options,
+    );
+    const installed = outcome.skills.find(
+      (skill) =>
+        skill.directory === written.path || skill.path.startsWith(`${written.path}${sep}`),
+    );
+    if (!installed) {
+      throw new Error(`Installed skill ${request.skillId} was not discoverable under ${written.path}`);
+    }
+    return {
+      name: installed.name,
+      source: request.source,
+      skillId: request.skillId,
+      path: written.path,
+      scope,
+      filesWritten: written.filesWritten,
+      ...(snapshot.hash ? { hash: snapshot.hash } : {}),
+      alreadyInstalled: written.alreadyInstalled,
     };
   }
 

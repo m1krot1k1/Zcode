@@ -1,0 +1,9 @@
+{
+  "source": "vercel-labs/agent-skills",
+  "skillId": "web-design-guidelines",
+  "name": "web-design-guidelines",
+  "installs": 0,
+  "hash": "f3bc47f890f42a44db1007ab390709ec368e4b8c089baee6b0007182236ac474",
+  "installedAt": "2026-11-07T12:12:58.141Z",
+  "manager": "skills.sh"
+}

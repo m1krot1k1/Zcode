@@ -117,6 +117,7 @@ Important:
 - Do not invoke a skill that is already running
 - Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
 - If you see a <command-name> tag in the current conversation turn, the skill has ALREADY been loaded - follow the instructions directly instead of calling this tool again
+- If no available skill matches, use SkillSearch to find one in the public skills.sh marketplace, SkillInstall to add it, then call Skill again
 `,
     readOnly: true,
     destructive: false,

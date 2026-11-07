@@ -1,0 +1,9 @@
+{
+  "source": "prisma/skills",
+  "skillId": "prisma-client-api",
+  "name": "prisma-client-api",
+  "installs": 0,
+  "hash": "d27be3740bedb0195f607c039d276b6f891c9d70e5b4698e6b8aef079604ce37",
+  "installedAt": "2026-11-07T12:13:02.333Z",
+  "manager": "skills.sh"
+}

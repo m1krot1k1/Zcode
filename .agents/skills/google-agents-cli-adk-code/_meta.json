@@ -1,0 +1,9 @@
+{
+  "source": "google/agents-cli",
+  "skillId": "google-agents-cli-adk-code",
+  "name": "google-agents-cli-adk-code",
+  "installs": 0,
+  "hash": "38719b6fa7220cab4992a697bd902d1e546dbde1527d48cb7574d9e81841b6d4",
+  "installedAt": "2026-11-07T12:13:02.659Z",
+  "manager": "skills.sh"
+}

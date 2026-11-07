@@ -23,6 +23,7 @@
 | 模块阅读包       | `pnpm architecture:context <module-id>`              |
 | 未使用依赖与导出 | `pnpm knip`                                          |
 | 导出引用查询     | `pnpm dep:refs --list-exports <file>`                |
+| 同步 skills.sh   | `pnpm skills:sync`（默认 20 个，`--dry-run` 预览）   |
 
 affected 使用 Vitest 官方选择，只运行选中的根 UT；选中整个套件时说明并跳过 UT，成功退出，不因此阻止 Push；不替代 CLI 测试或桌面 E2E。全量使用 `pnpm test` / `pnpm test:unit`，仅在用户明确要求时调用。范围与输出合同见 [pre-push 说明](docs/testing/pre-push-hook.md)。
 

@@ -39,6 +39,7 @@ import {
 } from "./agent.js";
 import { isSubagentDispatchToolName } from "../compat.js";
 import { skillToolEntry } from "./skill.js";
+import { skillInstallToolEntry, skillSearchToolEntry } from "./skill-marketplace.js";
 import { todoReadToolEntry, todoWriteToolEntry } from "./todo.js";
 import {
   cronCreateToolEntry,
@@ -115,6 +116,8 @@ export const builtInTools: ToolEntry[] = [
   agentToolEntry,
   taskToolEntry,
   skillToolEntry,
+  skillSearchToolEntry,
+  skillInstallToolEntry,
   jsToolEntry,
   createWorkflowToolEntry,
   amendWorkflowToolEntry,
@@ -233,7 +236,12 @@ export function registerBuiltInTools(
     if (isSubagentDispatchToolName(entry.metadata.name) && options.includeAgent !== true) {
       continue;
     }
-    if (entry.metadata.name === "Skill" && options.includeSkill === false) {
+    if (
+      (entry.metadata.name === "Skill" ||
+        entry.metadata.name === "SkillSearch" ||
+        entry.metadata.name === "SkillInstall") &&
+      options.includeSkill === false
+    ) {
       continue;
     }
     if (entry.metadata.name === "SendMessage" && options.includeSendMessage !== true) {

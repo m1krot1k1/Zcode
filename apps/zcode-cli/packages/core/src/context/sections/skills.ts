@@ -40,6 +40,8 @@ function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
   const lines = [
     "The following skills are available for use with the Skill tool:",
     "",
+    "If no available skill matches the task, use SkillSearch to search the public skills.sh marketplace; install a relevant, reputable result with SkillInstall, then load it with Skill.",
+    "",
   ];
 
   const sortedSkills = [...skills].sort((a, b) =>
