@@ -330,15 +330,43 @@ describe("v4 原生 queue 单项命令", () => {
 });
 
 describe("v4 普通 queue 自动消费 goal gate", () => {
-  it.each(["active", "paused", "budget_limited"] as const)(
+  it.each(["active", "budget_limited"] as const)(
     "target=%s 时即使 session ready 也不自动消费",
     (targetStatus) => {
       expect(
         shouldAutoDrainV4QueueHead({
           autoDrain: true,
           dispatchState: "queued",
+          kind: "sendText",
           sessionBusy: false,
           targetStatus,
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it("target=paused 时允许 явный user sendText автоматически отправиться", () => {
+    expect(
+      shouldAutoDrainV4QueueHead({
+        autoDrain: true,
+        dispatchState: "queued",
+        kind: "sendText",
+        sessionBusy: false,
+        targetStatus: "paused",
+      }),
+    ).toBe(true);
+  });
+
+  it.each(["sendGoalCommand", "compact"] as const)(
+    "target=paused 时 %s остаётся под goal gate",
+    (kind) => {
+      expect(
+        shouldAutoDrainV4QueueHead({
+          autoDrain: true,
+          dispatchState: "queued",
+          kind,
+          sessionBusy: false,
+          targetStatus: "paused",
         }),
       ).toBe(false);
     },
@@ -351,6 +379,7 @@ describe("v4 普通 queue 自动消费 goal gate", () => {
         shouldAutoDrainV4QueueHead({
           autoDrain: true,
           dispatchState: "queued",
+          kind: "sendText",
           sessionBusy: false,
           targetStatus,
         }),
