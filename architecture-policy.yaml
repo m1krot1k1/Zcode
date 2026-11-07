@@ -1038,3 +1038,12 @@ exceptions:
     paths:
       - packages/ui/src/settings/McpRegistryMarketplace.tsx
     reason: The Official MCP Registry search panel is an additive UI extension inside the existing managed=false ui tree; it only calls the existing mcpSyncService search method and opens the existing MCP form for explicit review, with a dedicated UI test. Ownership and dependency direction are unchanged; adopting the whole ui tree needs a separate boundary refactor.
+  - id: catalog-leaderboard-views
+    rule: unmanaged-new-file
+    paths:
+      - packages/shared/src/catalog/index.ts
+      - packages/ui/src/settings/PluginCatalogView.tsx
+      - packages/ui/src/settings/mcpRegistryCatalogView.ts
+      - packages/ui/src/settings/pluginCatalogView.ts
+      - packages/ui/src/settings/skillsMarketplaceCatalogView.ts
+    reason: Shared catalog sort, badge, and curated-rank helpers plus the Skills, MCP, and Plugin view adapters live in the existing managed=false shared and ui trees. They do not invent install metrics and do not change ownership; adopting the whole shared and ui trees needs a separate boundary refactor.
