@@ -116,6 +116,26 @@ describe("Agent/Task caller routing policy", () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["coder", "implementer"] as const)(
+    "lets %s delegate bounded evidence to researcher",
+    async (callerAgentType) => {
+      const launch = vi.fn(async () => completedOutput("researcher"));
+      await agentToolEntry.handler(
+        {
+          description: "collect evidence",
+          prompt: "inspect one call site",
+          subagent_type: "researcher",
+        },
+        createContext({
+          callerAgentType,
+          availableAgentTypes: ["researcher"],
+          subagentPort: { launch } as never,
+        }),
+      );
+      expect(launch).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("lets the root delegate to start", async () => {
     const launch = vi.fn(async () => completedOutput("start"));
     await agentToolEntry.handler(
@@ -153,6 +173,21 @@ describe("Agent/Task caller routing policy", () => {
         }),
       ),
     ).rejects.toThrow();
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("rejects reviewer -> test-engineer before spawn", async () => {
+    const launch = vi.fn();
+    await expect(
+      agentToolEntry.handler(
+        { description: "delegate", prompt: "run the tests", subagent_type: "test-engineer" },
+        createContext({
+          callerAgentType: "reviewer",
+          availableAgentTypes: ["researcher", "test-engineer"],
+          subagentPort: { launch } as never,
+        }),
+      ),
+    ).rejects.toThrow("not available to reviewer");
     expect(launch).not.toHaveBeenCalled();
   });
 

@@ -148,20 +148,32 @@ export function resolveServerProjectService(params: {
         .filter((entry) => entry.hostId === hostId)
         .flatMap((entry) =>
           entry.roots.length
-            ? entry.roots.map((root) => ({ workspacePath: root.rootPath }))
+            ? entry.roots.map((root) => ({
+                workspacePath: root.rootPath,
+                workspaceIdentity: buildServerRemoteWorkspaceIdentity({
+                  serverId: params.serverId,
+                  workspacePath: root.rootPath,
+                }),
+              }))
             : entry.legacyWorkspace
               ? [
                   {
                     workspacePath: entry.legacyWorkspace.workspacePath,
+                    workspaceIdentity:
+                      entry.legacyWorkspace.workspaceIdentity ??
+                      buildServerRemoteWorkspaceIdentity({
+                        serverId: params.serverId,
+                        workspacePath: entry.legacyWorkspace.workspacePath,
+                      }),
                     workspacePurpose: entry.legacyWorkspace.workspacePurpose,
                   },
                 ]
               : [],
         );
     },
-    readTasks: ({ workspacePath, kind }) => {
+    readTasks: ({ workspacePath, workspaceIdentity, kind }) => {
       const tasks = params.connectionServices.zcodeTaskService;
-      const scope = { workspacePath };
+      const scope = { workspacePath, ...(workspaceIdentity ? { workspaceIdentity } : {}) };
       return kind === "pinned"
         ? tasks.listPinnedTasks(scope)
         : kind === "archived"

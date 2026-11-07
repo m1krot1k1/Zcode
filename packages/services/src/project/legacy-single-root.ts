@@ -14,11 +14,16 @@ interface LegacyProjectReadPort {
   readSettings(): Promise<Pick<AppSettings, "lastWorkspaceSession" | "recentProjects">>;
   readTasks(input: {
     workspacePath: string;
+    workspaceIdentity?: string;
     kind: "active" | "pinned" | "archived";
   }): Promise<ZCodeTaskMeta[]>;
   ensureConversation(): Promise<string>;
   readKnownWorkspaces?(): Promise<
-    readonly { workspacePath: string; workspacePurpose?: "project" | "conversation" }[]
+    readonly {
+      workspacePath: string;
+      workspaceIdentity?: string;
+      workspacePurpose?: "project" | "conversation";
+    }[]
   >;
 }
 
@@ -40,19 +45,30 @@ export function createLegacySingleRootProjectService(
     const pathRules = info.platform === "win32" ? win32 : posix;
     const local = (settings.lastWorkspaceSession ?? []).filter((entry) => entry.kind === "local");
     const known = [...local, ...((await options.readKnownWorkspaces?.()) ?? [])];
+    const identityByPath = new Map<string, string>();
+    for (const entry of known) {
+      const workspaceIdentity =
+        "workspaceIdentity" in entry ? entry.workspaceIdentity?.trim() : undefined;
+      if (workspaceIdentity) identityByPath.set(entry.workspacePath, workspaceIdentity);
+    }
+    // 身份键优先于路径：同一 workspace 的 raw/canonical 路径只保留一行；
+    // 没有 identity 的本地条目继续按路径回退。
+    const workspaceKey = (workspacePath: string): string =>
+      identityByPath.get(workspacePath)?.trim() || workspacePath;
     const conversations = new Set(
       known
         .filter((entry) => entry.workspacePurpose === "conversation")
-        .map((entry) => entry.workspacePath),
+        .map((entry) => workspaceKey(entry.workspacePath)),
     );
     const paths = [
-      ...new Set([
-        ...known.map((entry) => entry.workspacePath),
-        ...(settings.recentProjects ?? []),
-      ]),
+      ...new Map(
+        [...known.map((entry) => entry.workspacePath), ...(settings.recentProjects ?? [])].map(
+          (workspacePath) => [workspaceKey(workspacePath), workspacePath] as const,
+        ),
+      ).values(),
     ];
     const projects: VirtualProject[] = paths
-      .filter((path) => !conversations.has(path))
+      .filter((path) => !conversations.has(workspaceKey(path)))
       .map((rootPath, position) => ({
         id:
           LEGACY_SINGLE_ROOT_PROJECT_PREFIX +
@@ -72,7 +88,7 @@ export function createLegacySingleRootProjectService(
         createdAt: 0,
         updatedAt: 0,
       }));
-    return { paths, projects };
+    return { paths, projects, identityByPath };
   };
   const service: IProjectService = {
     async readDirectory(params) {
@@ -95,10 +111,11 @@ export function createLegacySingleRootProjectService(
     },
     async readTree(params) {
       verifyHost(params?.hostId);
-      const { paths, projects } = await catalog();
+      const { paths, projects, identityByPath } = await catalog();
       const rows = await Promise.all(
         paths.map(async (workspacePath) => {
-          const scope = { workspacePath };
+          const workspaceIdentity = identityByPath.get(workspacePath);
+          const scope = { workspacePath, ...(workspaceIdentity ? { workspaceIdentity } : {}) };
           const [active, pinned, archived] = await Promise.all([
             options.readTasks({ ...scope, kind: "active" }),
             options.readTasks({ ...scope, kind: "pinned" }),

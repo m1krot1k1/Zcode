@@ -433,6 +433,18 @@ tools:
     }
   });
 
+  it("restricts router roles to Task so they cannot read or explore the repository", () => {
+    const swarmProfiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+    for (const name of ["start", "orchestrator"] as const) {
+      const profile = swarmProfiles.find((candidate) => candidate.name === name);
+      expect(profile?.tools, name).toEqual(["Task"]);
+      const prompt = profile?.systemPrompt ?? "";
+      expect(prompt, name).toContain("Твой единственный инструмент — Task");
+      expect(prompt, name).toContain("не исследу");
+      expect(prompt, name).not.toContain("Read-only триаж");
+    }
+  });
+
   it("uses explicit AGENTS.md injection defaults for built-in agents", () => {
     expect(createBuiltInExploreAgentProfile().injectAgentsMd).toBe(true);
   });
@@ -631,14 +643,14 @@ Review carefully.`,
       expect(orchestrator).toContain("не реализуй ветки сам");
     });
 
-    it("states the available tools and the L1-L4 nesting chain in the system prompt", () => {
+    it("states the single available tool and the L1-L4 nesting chain in the system prompt", () => {
       const prompt = startPrompt();
 
-      expect(prompt).toContain("Твои инструменты: Read, Glob, Grep, Task и Skill");
-      expect(prompt).toContain("Bash, Write, Edit");
+      expect(prompt).toContain("Твой единственный инструмент — Task");
+      expect(prompt).toContain("Read, Glob, Grep, Skill, Bash, Write, Edit");
       expect(prompt).toContain("недоступны");
       expect(prompt).not.toContain("включая Read, Glob, Grep, Write, Edit, Bash");
-      for (const tool of ["Read", "Glob", "Grep", "Task", "Skill"]) expect(prompt).toContain(tool);
+      for (const tool of ["Read", "Glob", "Grep", "Skill", "Task"]) expect(prompt).toContain(tool);
       for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
       expect(prompt).toContain("L4 — достаточная глубина для проверки вложенности");
       expect(prompt).toContain("Номер уровня — только запись, а не стоп-условие");
@@ -884,7 +896,7 @@ describe("built-in role capability matrix", () => {
   const toolsOf = (name: string): readonly string[] =>
     builtInProfiles().find((profile) => profile.name === name)?.tools ?? [];
 
-  const READ_ONLY_TOOLS = ["Read", "Glob", "Grep", "Task", "Skill"];
+  const ROUTER_TOOLS = ["Task"];
   const INSPECTION_TOOLS = [
     "Read",
     "Glob",
@@ -934,11 +946,15 @@ describe("built-in role capability matrix", () => {
   ];
 
   it.each(["start", "orchestrator"])(
-    "%s routes and reads without direct mutation tools",
+    "%s routes without reading or direct mutation tools",
     (name) => {
       const tools = toolsOf(name);
 
-      expect(tools).toEqual(READ_ONLY_TOOLS);
+      expect(tools).toEqual(ROUTER_TOOLS);
+      expect(tools).not.toContain("Read");
+      expect(tools).not.toContain("Glob");
+      expect(tools).not.toContain("Grep");
+      expect(tools).not.toContain("Skill");
       expect(tools).not.toContain("Write");
       expect(tools).not.toContain("Edit");
       expect(tools).not.toContain("Bash");
@@ -987,6 +1003,20 @@ describe("built-in role capability matrix", () => {
     expect(toolsOf(name)).toEqual(WORKER_TOOLS);
   });
 
+  it("keeps bounded parallel delegation on code-writing worker profiles", () => {
+    for (const name of [
+      "implementer",
+      "coder",
+      "frontend-coder",
+      "backend-coder",
+      "infra-coder",
+    ] as const) {
+      const prompt =
+        builtInProfiles().find((profile) => profile.name === name)?.systemPrompt ?? "";
+      expect(prompt, name).toContain("до двух worker/researcher-подагентов");
+    }
+  });
+
   it("covers every built-in swarm role without gaps or duplicates", () => {
     expect(builtInProfiles().map((profile) => profile.name)).toEqual([...SWARM_AGENT_TYPES]);
   });
@@ -1001,12 +1031,12 @@ describe("built-in role capability matrix", () => {
     }
   });
 
-  it("advertises the read-only toolset in the orchestrator prompt", () => {
+  it("advertises the Task-only router toolset in the orchestrator prompt", () => {
     const prompt =
       builtInProfiles().find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
 
-    expect(prompt).toContain("Твои инструменты: Read, Glob, Grep, Task и Skill");
-    expect(prompt).toContain("Write, Edit и Bash недоступны");
+    expect(prompt).toContain("Твой единственный инструмент — Task");
+    expect(prompt).toContain("Read, Glob, Grep, Skill, Write, Edit и Bash недоступны");
   });
 });
 
@@ -1101,6 +1131,16 @@ describe("caller-scoped agent catalog", () => {
     expect(names).not.toContain("orchestrator");
   });
 
+  it.each(["reviewer", "security-reviewer", "evaluator", "researcher"] as const)(
+    "gives %s only the model-selectable researcher entry",
+    (caller) => {
+      const visible = filterAgentTypesForCaller(profiles(), caller);
+
+      expect(visible.map((profile) => profile.name)).toEqual(["researcher"]);
+      expect(visible.every(isModelSelectableAgentProfile)).toBe(true);
+    },
+  );
+
   it("leaves root and main sessions unrestricted", () => {
     expect(filterAgentTypesForCaller(profiles(), undefined)).toEqual(profiles());
     expect(filterAgentTypesForCaller(profiles(), "")).toEqual(profiles());
@@ -1115,6 +1155,26 @@ describe("caller-scoped agent catalog", () => {
     expect(isAgentTypeAllowedForCaller("coder", "orchestrator")).toBe(true);
     expect(isAgentTypeAllowedForCaller("coder", undefined)).toBe(true);
   });
+
+  it.each(["reviewer", "security-reviewer", "evaluator", "researcher"] as const)(
+    "admits only researcher for inspection caller %s",
+    (caller) => {
+      const forbiddenTargets = [
+        "reviewer",
+        "security-reviewer",
+        "evaluator",
+        "coder",
+        "test-engineer",
+        "start",
+        "orchestrator",
+      ];
+
+      expect(isAgentTypeAllowedForCaller("researcher", caller)).toBe(true);
+      for (const target of forbiddenTargets) {
+        expect(isAgentTypeAllowedForCaller(target, caller), `${caller} -> ${target}`).toBe(false);
+      }
+    },
+  );
 
   it("keeps runner-resolvable fuzzy role names admissible", () => {
     expect(matchAgentTypeInCatalog("coder", ["coder", "researcher"])).toBe("exact");
