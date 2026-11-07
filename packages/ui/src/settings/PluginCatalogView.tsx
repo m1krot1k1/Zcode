@@ -7,6 +7,8 @@ import {
 } from "@/settings/PluginStoreCard.js";
 import { SettingsSearchInput } from "@/settings/SettingsSearchInput.js";
 import type { StorePluginItem } from "@/settings/pluginStoreListing.js";
+// 模型文件不能叫 pluginCatalogView：macOS 大小写不敏感，Vite 先匹配 .ts，
+// `PluginCatalogView.js` 会落到模型而不是本组件，渲染得到 undefined。
 import {
   PLUGIN_CATALOG_SORTS,
   PLUGIN_CATALOG_TABS,
@@ -14,7 +16,7 @@ import {
   type CatalogBadge,
   type PluginCatalogSort,
   type PluginCatalogTab,
-} from "@/settings/pluginCatalogView.js";
+} from "@/settings/pluginCatalogModel.js";
 
 const TAB_LABEL_IDS: Record<PluginCatalogTab, string> = {
   all: "catalog.tabs.all",

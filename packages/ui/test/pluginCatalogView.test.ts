@@ -26,7 +26,7 @@ vi.mock("@/settings/SettingsSearchInput.js", () => ({
 }));
 
 import { PluginCatalogView } from "../src/settings/PluginCatalogView.js";
-import { buildPluginCatalogView } from "../src/settings/pluginCatalogView.js";
+import { buildPluginCatalogView } from "../src/settings/pluginCatalogModel.js";
 
 const OFFICIAL = ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID;
 
