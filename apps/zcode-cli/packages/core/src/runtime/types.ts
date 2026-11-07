@@ -18,6 +18,7 @@ import type {
   ModelRequestDependencies,
   ModelSelection,
   PluginReferenceCatalog,
+  CodeIntelligencePort,
   ResolvedUserInstructions,
   ResolvedHarnessRule,
   ResolvedWorkspaceRule,
@@ -141,10 +142,14 @@ export interface AgentRuntimeConfig {
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
   maxTurns?: number;
   /**
-   * 整棵子 Agent 树的 spawn 次数上限，缺省 DEFAULT_SPAWN_BUDGET（32）。
+   * 整棵子 Agent 树的 spawn 次数上限，缺省 DEFAULT_SPAWN_BUDGET（128）。
    * 只限制 admission 次数，不改变 active task 上限或嵌套深度（level 仅记录）。
    */
   spawnBudget?: number;
+  /** 每个 root run 的并行上限；0/未设置由 registry 按机器可用 CPU 自适应。 */
+  subagentMaxParallel?: number;
+  /** 全部 subagent 的最短任务期限分钟数；0/未设置使用角色默认期限。 */
+  subagentTaskTimeoutMinutes?: number;
   permissionTimeoutMs?: number;
   compact?: AutoCompactPolicyConfig;
   targetCompletionVerification?: { enabled?: boolean };
@@ -427,6 +432,8 @@ export interface AgentRuntimeDeps {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  /** Read-only local code graph/search queries routed through the owning Host. */
+  codeIntelligencePort?: CodeIntelligencePort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

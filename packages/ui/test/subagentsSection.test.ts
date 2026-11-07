@@ -42,6 +42,13 @@ const mockSubagentsService = vi.hoisted(() => ({
   setBuiltInModelOverride: vi.fn(),
   setPluginAgentModelOverride: vi.fn(),
 }));
+const mockSkillsService = vi.hoisted(() => ({
+  list: vi.fn(async () => ({
+    skills: [],
+    capability: { userScopeAvailable: true },
+    diagnostics: [],
+  })),
+}));
 const mockRefreshLoadedSubagentsStoreForWorkspace = vi.hoisted(() => vi.fn(async () => {}));
 const mockUseModelProviders = vi.hoisted(() =>
   vi.fn(() => ({
@@ -333,6 +340,7 @@ vi.mock("@/hooks/useServices.js", () => ({
   useServices: () =>
     mockScopeRouting.context ?? {
       subagentsService: mockSubagentsService,
+      skillsService: mockSkillsService,
     },
 }));
 
@@ -497,6 +505,11 @@ describe("SubagentsSection", () => {
         userScopeReason: "desktop_only",
       },
     });
+    mockSkillsService.list.mockResolvedValue({
+      skills: [],
+      capability: { userScopeAvailable: true },
+      diagnostics: [],
+    });
     mockRefreshLoadedSubagentsStoreForWorkspace.mockResolvedValue(undefined);
   });
 
@@ -516,6 +529,7 @@ describe("SubagentsSection", () => {
       },
       pluginManagementService: {},
       modelSelectionService: {},
+      skillsService: mockSkillsService,
     });
     const local = makeServices();
     const remoteA = makeServices();

@@ -413,6 +413,30 @@ describe("dynamicWorkflowMode 设置（DWG-19）", () => {
   });
 });
 
+describe("subagent resource settings", () => {
+  it("persists bounded parallelism and timeout overrides, including adaptive defaults", () => {
+    expect(
+      appSettingsPatchSchema.parse({
+        subagentMaxParallel: 0,
+        subagentTaskTimeoutMinutes: 0,
+        spawnBudget: 128,
+      }),
+    ).toEqual({
+      subagentMaxParallel: 0,
+      subagentTaskTimeoutMinutes: 0,
+      spawnBudget: 128,
+    });
+    expect(
+      appSettingsSchema.parse({ subagentMaxParallel: 128, subagentTaskTimeoutMinutes: 180 }),
+    ).toMatchObject({ subagentMaxParallel: 128, subagentTaskTimeoutMinutes: 180 });
+    expect(appSettingsPatchSchema.safeParse({ subagentMaxParallel: 129 }).success).toBe(false);
+    expect(appSettingsPatchSchema.safeParse({ subagentTaskTimeoutMinutes: 181 }).success).toBe(
+      false,
+    );
+    expect(appSettingsPatchSchema.safeParse({ subagentMaxParallel: -1 }).success).toBe(false);
+  });
+});
+
 describe("远程介绍回滚兼容", () => {
   // 冻结 e147c3b79a 的相关字段合同；不能复用新版预处理，否则会掩盖旧版拒绝 3 的问题。
   const previousSettingsSchema = z.object({

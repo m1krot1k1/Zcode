@@ -4,6 +4,7 @@ import { ServiceProvider, useComposerClientNamespace } from "@/hooks/useServices
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import type { IServiceAccessor } from "@zcode/services";
+import { Workflow as WorkflowIcon } from "lucide-react";
 import {
   closestCenter,
   DndContext,
@@ -41,6 +42,7 @@ import { WhiteboardPane } from "@/WhiteboardPane.js";
 import { ModelTrajectoryPane } from "@/ModelTrajectoryPane.js";
 import { PluginStorePage } from "@/settings/PluginStorePage.js";
 import { DeveloperToolsPane } from "@/DeveloperToolsPane.js";
+import { AgentWorkbenchView } from "@/agent-workbench/index.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
 
@@ -90,6 +92,7 @@ import { useIsMobileTextInputViewport } from "@/lib/mobileTextInput.js";
 import { logger } from "@/logger.js";
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import {
+  createSubagentDirectorySidePaneTab,
   shouldMountSidePaneContent,
   shouldMountBrowserTabGuest,
   type BrowserSidePaneTab,
@@ -336,6 +339,7 @@ export function AnimatedSidePanePanel({
   onOpenBrowserPermissionSettings,
   onOpenWhiteboard: _onOpenWhiteboard,
   onOpenDeveloperTools,
+  onOpenAgentWorkbench,
   onOpenFileManager,
   onNavigateFileManager,
   onOpenPluginMarket,
@@ -426,6 +430,7 @@ export function AnimatedSidePanePanel({
   onOpenBrowserPermissionSettings?: (origin: string) => void;
   onOpenWhiteboard: () => void;
   onOpenDeveloperTools: () => void;
+  onOpenAgentWorkbench: () => void;
   onOpenFileManager: (target?: FileManagerTarget) => void;
   onNavigateFileManager: (tabId: string, source: CodeViewerSource) => void;
   onOpenPluginMarket?: () => void;
@@ -821,6 +826,13 @@ export function AnimatedSidePanePanel({
       icon: BugIcon,
       onOpen: onOpenDeveloperTools,
     },
+    "agent-workbench": {
+      id: "agent-workbench",
+      label: intl.formatMessage({ id: "agentWorkbench.title" }),
+      description: intl.formatMessage({ id: "sidePane.launcher.agent-workbench" }),
+      icon: WorkflowIcon,
+      onOpen: onOpenAgentWorkbench,
+    },
   };
   const openTabLauncherItems: OpenTabLauncherItem[] = resolveOpenTabLauncherItemIds({
     canOpenSelectionSideConversation,
@@ -946,6 +958,7 @@ export function AnimatedSidePanePanel({
         developerToolsTitle: intl.formatMessage({
           id: "developerTools.title",
         }),
+        agentWorkbenchTitle: intl.formatMessage({ id: "agentWorkbench.title" }),
         browserPermissionsTitle: intl.formatMessage({
           id: "browser.permission.settings",
         }),
@@ -1414,6 +1427,31 @@ export function AnimatedSidePanePanel({
                               workspaceIdentity={workspaceIdentity}
                               taskId={activeTaskId}
                               enabled={isVisible && tab.id === contentActiveTabId}
+                            />
+                          </ServiceProvider>
+                        ) : tab.type === "agent-workbench" ? (
+                          <ServiceProvider services={services}>
+                            <AgentWorkbenchView
+                              workspacePath={tab.workspacePath || workspaceAbsPath}
+                              workspaceIdentity={tab.workspaceIdentity ?? workspaceIdentity}
+                              workspaceName={workspaceAbsPath}
+                              remoteSessionId={tab.remoteSessionId ?? workspaceRemoteSessionId}
+                              runActivity={
+                                activeTaskId ? (
+                                  <SubagentDirectorySidePane
+                                    tab={createSubagentDirectorySidePaneTab({
+                                      workspaceKey,
+                                      workspacePath: tab.workspacePath || workspaceAbsPath,
+                                      workspaceIdentity: tab.workspaceIdentity ?? workspaceIdentity,
+                                      remoteSessionId:
+                                        tab.remoteSessionId ?? workspaceRemoteSessionId,
+                                      rootSessionId: activeTaskId,
+                                      parentSessionId: activeTaskId,
+                                    })}
+                                    onOpenSubagentSession={onOpenSubagentSession}
+                                  />
+                                ) : null
+                              }
                             />
                           </ServiceProvider>
                         ) : tab.type === "terminal" ? (

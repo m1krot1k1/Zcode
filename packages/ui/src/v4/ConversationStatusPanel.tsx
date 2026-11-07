@@ -1517,6 +1517,7 @@ function SubagentStatusSection({
               }
               data-background-task-kind="agent"
               data-child-session-id={subagent.childSessionId}
+              data-subagent-type={subagent.subagentType}
               data-work-id={subagent.controlWorkId}
               data-work-status="running"
               className={cn(
@@ -1540,8 +1541,13 @@ function SubagentStatusSection({
               ) : null}
               <BotIcon className="pointer-events-none relative z-[1] mt-0.5 size-4 shrink-0 text-[var(--color-foreground-subtle)]" />
               <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col gap-1.5">
-                <span className="line-clamp-2 text-ui-base leading-5 text-[var(--color-foreground)]">
-                  {subagent.title}
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-ui-xs text-[var(--color-foreground-subtle)]">
+                    {subagent.subagentType}
+                  </span>
+                  <span className="line-clamp-2 min-w-0 text-ui-base leading-5 text-[var(--color-foreground)]">
+                    {subagent.title}
+                  </span>
                 </span>
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-base">
                   <span className="text-ui-base tabular-nums text-[var(--color-foreground-subtle)]">

@@ -516,6 +516,8 @@ const appSettingsObjectSchema = z.object({
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
   // spawnBudget 允许 0（明确禁止 spawn），不能沿用 positive()。
   spawnBudget: z.number().int().min(0).safe().optional(),
+  subagentMaxParallel: z.number().int().min(0).max(128).optional(),
+  subagentTaskTimeoutMinutes: z.number().int().min(0).max(180).optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().default(false),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.default(
     DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
@@ -622,6 +624,8 @@ export const appSettingsPatchSchema = z.object({
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
   // spawnBudget 允许 0（明确禁止 spawn），不能沿用 positive()。
   spawnBudget: z.number().int().min(0).safe().optional(),
+  subagentMaxParallel: z.number().int().min(0).max(128).optional(),
+  subagentTaskTimeoutMinutes: z.number().int().min(0).max(180).optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().optional(),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.optional(),
   computerUseComposerEntryHidden: z.boolean().optional(),

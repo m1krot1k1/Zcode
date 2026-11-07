@@ -6,7 +6,8 @@ export type OpenTabLauncherItemId =
   | "review"
   | "terminal"
   | "browser"
-  | "developer-tools";
+  | "developer-tools"
+  | "agent-workbench";
 
 export function resolveOpenTabLauncherItemIds({
   developerToolsEnabled,
@@ -38,6 +39,8 @@ export function resolveOpenTabLauncherItemIds({
   if (developerToolsEnabled) {
     itemIds.push("developer-tools");
   }
+
+  itemIds.push("agent-workbench");
 
   return itemIds;
 }

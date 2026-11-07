@@ -4,6 +4,7 @@ import type {
   AutomationPort,
   BackgroundTaskCancelResult,
   BrowserControlPort,
+  CodeIntelligencePort,
   CollaborationMode,
   ContextSourcePort,
   DynamicWorkflowRunArtifact,
@@ -209,6 +210,8 @@ export interface ZCodeAppOptions {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  /** Only Host-attached runtimes receive the workspace-scoped local code index query port. */
+  codeIntelligencePort?: CodeIntelligencePort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
   /** Trusted embedder policy; workspace/project files cannot populate this field. */

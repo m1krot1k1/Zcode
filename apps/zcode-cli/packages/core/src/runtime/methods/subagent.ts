@@ -113,20 +113,18 @@ export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefine
 
 /**
  * Hard cap для router-задач: не даёт start/orchestrator висеть бесконечно.
- * Orchestrator обязан быть строго больше бюджета child (20 минут): дети стартуют
+ * Orchestrator обязан быть строго больше бюджета child (45 минут): дети стартуют
  * позже родителя и получают собственный lifecycle.startedAt, поэтому равный
  * бюджет заставлял orchestrator истекать одновременно с ними без времени на синтез.
- * 30 минут оставляют synthesis headroom и остаются ниже start (45 минут).
+ * 60 минут оставляют synthesis headroom и остаются ниже start (90 минут).
  */
-const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 30 * 60_000;
+const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 60 * 60_000;
 // Start должен успеть получить partial от orchestrator и запустить следующий wave.
-const SUBAGENT_START_TASK_DEADLINE_MS = 45 * 60_000;
-// Review должен укладываться в короткую diff-first ветку; 10 минут — аварийный cap.
-const SUBAGENT_REVIEW_TASK_DEADLINE_MS = 10 * 60_000;
-// Researcher может параллельно собирать evidence, но не превращается в долгий аудит.
-const SUBAGENT_RESEARCH_TASK_DEADLINE_MS = 15 * 60_000;
-// Worker-роли и custom-профили получают одинаковый дефолтный бюджет.
-const SUBAGENT_WORKER_TASK_DEADLINE_MS = 20 * 60_000;
+const SUBAGENT_START_TASK_DEADLINE_MS = 90 * 60_000;
+const SUBAGENT_REVIEW_TASK_DEADLINE_MS = 45 * 60_000;
+const SUBAGENT_RESEARCH_TASK_DEADLINE_MS = 45 * 60_000;
+const SUBAGENT_WORKER_TASK_DEADLINE_MS = 45 * 60_000;
+const SUBAGENT_ROUTER_HANDOFF_MS = 15 * 60_000;
 
 const SUBAGENT_REVIEW_ROLE_NAMES = new Set(
   ["reviewer", "security-reviewer"].map((role) => normalizeRoleName(role)),
@@ -169,18 +167,37 @@ const SUBAGENT_ROLE_TASK_DEADLINE_MS: ReadonlyMap<string, number> = new Map<stri
 ]);
 
 /**
- * Чистый резолвер hard deadline по роли. Контракт: start — 45 минут,
- * orchestrator — 30 минут (строго больше child-бюджета 20 минут),
- * worker/custom — 20 минут, researcher — 15 минут,
- * reviewer/security-reviewer — 10 минут. Резолвер не бросает и не зависит от
- * состояния runtime, чтобы late/unknown профиль не оставлял задачу без таймера.
+ * Чистый резолвер hard deadline по роли. Настройка поднимает минимальный срок,
+ * а router-ролям добавляется окно на сбор и синтез child results. Резолвер не бросает
+ * и не зависит от runtime state, чтобы unknown profile не остался без таймера.
  */
-export function resolveSubagentTaskTimeoutMs(agentType: string): number {
-  // Неизвестный, custom и compatibility-профиль получает worker-дефолт.
-  return (
-    SUBAGENT_ROLE_TASK_DEADLINE_MS.get(normalizeRoleName(agentType)) ??
-    SUBAGENT_WORKER_TASK_DEADLINE_MS
-  );
+export function resolveSubagentTaskTimeoutMs(
+  agentType: string,
+  minimumMinutes = 0,
+): number {
+  const configuredMinimum =
+    Number.isSafeInteger(minimumMinutes) && minimumMinutes > 0 && minimumMinutes <= 180
+      ? minimumMinutes * 60_000
+      : 0;
+  const role = normalizeRoleName(agentType);
+  const workerDeadline = Math.max(SUBAGENT_WORKER_TASK_DEADLINE_MS, configuredMinimum);
+  if (role === normalizeRoleName("orchestrator")) {
+    return Math.max(
+      SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS,
+      configuredMinimum,
+      workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS,
+    );
+  }
+  if (role === normalizeRoleName("start")) {
+    return Math.max(
+      SUBAGENT_START_TASK_DEADLINE_MS,
+      configuredMinimum,
+      workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS * 2,
+    );
+  }
+  const baseDeadline =
+    SUBAGENT_ROLE_TASK_DEADLINE_MS.get(role) ?? SUBAGENT_WORKER_TASK_DEADLINE_MS;
+  return Math.max(baseDeadline, configuredMinimum);
 }
 
 export function createDefaultSubagentPort(
@@ -200,6 +217,7 @@ export function createDefaultSubagentPort(
     logger: this.logger,
     // 根预算从这里进入端口；子任务由 runner 按 grant 推导后向下传递。
     spawnBudget: this.config.spawnBudget,
+    maxParallel: this.config.subagentMaxParallel,
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
     outputRootDir: this.config.subagents?.outputRootDir,
@@ -240,9 +258,9 @@ export function createDefaultSubagentPort(
     get parentToolNames() {
       return getParentToolNames();
     },
-    // Per-role hard deadline: start 45m, orchestrator 30m, worker/custom 20m,
-    // researcher 15m, reviewer/security-reviewer 10m. Значение резолвится без throw.
-    getTaskTimeoutMs: (agentType) => resolveSubagentTaskTimeoutMs(agentType),
+    // Per-role hard deadline; setting raises each role's minimum without shortening router headroom.
+    getTaskTimeoutMs: (agentType) =>
+      resolveSubagentTaskTimeoutMs(agentType, this.config.subagentTaskTimeoutMinutes),
     getChildEventCursor: (sessionId) => this.eventStore.getLatestSequenceNumber(sessionId),
     getChildEventsAfter: (sessionId, cursor) => this.eventStore.getEventsAfter(sessionId, cursor),
     emitParentEvent: async (event, traceContext) => {
@@ -617,6 +635,8 @@ export function createDefaultSubagentPort(
             toolScheduler: deps.toolScheduler ?? defaultScheduler,
             executionPort: deps.executionPort,
             fileSystemPort: deps.fileSystemPort,
+            // CodeIndex остаётся Host-owned: потомок получает только типизированный query-port.
+            codeIntelligencePort: deps.codeIntelligencePort,
             // Explore 子运行时会暴露 WebFetch，但之前没有继承主 runtime 的
             // HTTP client port，导致工具在真正发请求前抛出配置错误，而不是网络请求失败。
             httpClientPort: deps.httpClientPort,

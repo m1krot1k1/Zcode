@@ -654,6 +654,26 @@ describe("SettingsPage integrated terminal shell", () => {
     expect(localServices.settingService.update).not.toHaveBeenCalled();
   });
 
+  it("saves adaptive subagent concurrency and a configurable minimum task timeout", async () => {
+    const { SettingsPage } = await import("../src/SettingsPage.js");
+    renderToStaticMarkup(createElement(SettingsPage, {}));
+    const saveParallel = generalSectionCapture.props!.onSubagentMaxParallelChange as (
+      raw: string,
+    ) => Promise<"saved" | "empty" | "invalid">;
+    const saveTimeout = generalSectionCapture.props!.onSubagentTaskTimeoutMinutesChange as (
+      raw: string,
+    ) => Promise<"saved" | "empty" | "invalid">;
+    await expect(saveParallel("0")).resolves.toBe("saved");
+    expect(remoteServices.settingService.update).toHaveBeenCalledWith({ subagentMaxParallel: 0 });
+    await expect(saveTimeout("45")).resolves.toBe("saved");
+    expect(remoteServices.settingService.update).toHaveBeenCalledWith({
+      subagentTaskTimeoutMinutes: 45,
+    });
+    await expect(saveParallel("129")).resolves.toBe("invalid");
+    await expect(saveTimeout("181")).resolves.toBe("invalid");
+    expect(remoteServices.settingService.update).toHaveBeenCalledTimes(2);
+  });
+
   it("does not write anything when the spawn budget field is left blank", async () => {
     const { SettingsPage } = await import("../src/SettingsPage.js");
     renderToStaticMarkup(createElement(SettingsPage, {}));

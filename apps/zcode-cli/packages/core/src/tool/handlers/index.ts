@@ -1,4 +1,5 @@
 import { replyToChannelToolEntry } from "./reply-to-channel.js";
+import { codeIndexToolEntry } from "./code-index.js";
 // ============================================================
 // Built-in Tool Handlers
 // ============================================================
@@ -79,6 +80,7 @@ import { createToolRuleNameSet } from "../tool-visibility.js";
 // 统一隐藏 Glob/Grep，并通过 Bash find/grep 接管搜索。
 
 export const builtInTools: ToolEntry[] = [
+  codeIndexToolEntry,
   toolSearchToolEntry,
   deferredToolCallEntry,
   readToolEntry,
@@ -208,6 +210,8 @@ interface RegisterBuiltInToolsOptions {
   includeNodeRepl?: boolean;
   /** browser-use 说明和 agent.browsers 注入由官方 browser-use 插件 + 宿主 browser bridge 共同启用。 */
   includeBrowserUse?: boolean;
+  /** Host-provided, read-only local code graph/search capability. */
+  includeCodeIndex?: boolean;
   embeddedSearchEnabled?: boolean;
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
@@ -284,6 +288,9 @@ export function registerBuiltInTools(
       continue;
     }
     if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
+      continue;
+    }
+    if (entry.metadata.name === "CodeIndex" && options.includeCodeIndex !== true) {
       continue;
     }
     registry.register(resolveBuiltInToolEntryForBranch(entry, options), {

@@ -4,7 +4,11 @@ import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import {
   ZCODE_SPAWN_BUDGET_ENV_KEY,
+  ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY,
+  ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY,
   readSpawnBudget,
+  readSubagentMaxParallel,
+  readSubagentTaskTimeoutMinutes,
   type BuiltInSubagentModelSelectionOverrides,
 } from "@zcode/shared";
 import {
@@ -126,10 +130,18 @@ export function resolveAppRuntimeConfig(input: {
     bashTimeoutPolicy:
       options.runtimeConfig?.bashTimeoutPolicy ??
       resolveBashTimeoutPolicy(options.env ?? process.env),
-    // spawn 预算：设置页显式值优先，否则读 Host spawn env，最后 core 默认 32。
+    // Agent 资源设置：设置页 spawn 快照优先，其次 Host env，最后 Core 的安全默认值。
     spawnBudget:
       options.runtimeConfig?.spawnBudget ??
       readSpawnBudget((options.env ?? process.env)[ZCODE_SPAWN_BUDGET_ENV_KEY]),
+    subagentMaxParallel:
+      options.runtimeConfig?.subagentMaxParallel ??
+      readSubagentMaxParallel((options.env ?? process.env)[ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY]),
+    subagentTaskTimeoutMinutes:
+      options.runtimeConfig?.subagentTaskTimeoutMinutes ??
+      readSubagentTaskTimeoutMinutes(
+        (options.env ?? process.env)[ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY],
+      ),
     mode: options.runtimeConfig?.mode ?? persistedMode ?? configResult.config.permission.mode,
     modelSelection: initialModelSelection,
     // 仅接受显式传入的会话级工具面（ZCode Protocol session/create 或 CLI

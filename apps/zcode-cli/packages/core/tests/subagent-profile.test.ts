@@ -103,6 +103,7 @@ permissionMode: acceptEdits
 maxTurns: "7"
 background: "true"
 injectAgentsMd: "false"
+includeInSwarm: true
 mcpServers:
   - local-tools
 ---
@@ -118,6 +119,7 @@ mcpServers:
       disallowedTools: ["Edit", "Write"],
       maxTurns: 7,
       injectAgentsMd: false,
+      includeInSwarm: true,
       modelSelection: {
         providerId: "custom-openai",
         modelId: "reviewer-model",
@@ -276,6 +278,63 @@ tools:
     expect(createBuiltInExploreAgentProfile().color).toBe("cyan");
   });
 
+  it("adds only opted-in custom profiles with bounded tools to the swarm roster", () => {
+    const profiles = normalizeAgentProfiles([
+      {
+        name: "custom-debugger",
+        description: "Debug a focused issue",
+        source: "project",
+        systemPrompt: "Inspect evidence, reproduce the issue, and report the root cause.",
+        tools: ["Read", "Grep", "Bash"],
+        skills: ["zcode-verification"],
+        includeInSwarm: true,
+      },
+      {
+        name: "unbounded-debugger",
+        description: "Inherits every tool",
+        source: "project",
+        systemPrompt: "Unbounded",
+        tools: ["*"],
+        includeInSwarm: true,
+      },
+      {
+        name: "same-name-debugger",
+        description: "No explicit tool contract",
+        source: "project",
+        systemPrompt: "Unbounded by omission",
+        includeInSwarm: true,
+      },
+      {
+        name: "not-enabled-debugger",
+        description: "Not enabled for Swarm",
+        source: "project",
+        systemPrompt: "Regular profile only",
+        tools: ["Read"],
+      },
+      {
+        name: "REVIEWER",
+        description: "Cannot shadow a built-in role",
+        source: "project",
+        systemPrompt: "Shadow attempt",
+        tools: ["Read"],
+        includeInSwarm: true,
+      },
+    ]);
+
+    const swarmProfiles = getSwarmAgentProfiles(profiles);
+
+    expect(swarmProfiles.map(({ name }) => name)).toContain("custom-debugger");
+    expect(swarmProfiles.map(({ name }) => name)).not.toContain("unbounded-debugger");
+    expect(swarmProfiles.map(({ name }) => name)).not.toContain("same-name-debugger");
+    expect(swarmProfiles.map(({ name }) => name)).not.toContain("not-enabled-debugger");
+    expect(swarmProfiles.filter(({ name }) => name.toLowerCase() === "reviewer")).toHaveLength(1);
+    expect(swarmProfiles.find(({ name }) => name === "custom-debugger")).toMatchObject({
+      tools: ["Read", "Grep", "Bash"],
+      skills: ["zcode-verification"],
+      includeInSwarm: true,
+    });
+  });
+
   it("limits delegation to ZCode roles and rejects generic profile IDs", () => {
     const profiles = normalizeAgentProfiles([]);
     const swarmProfiles = getSwarmAgentProfiles(profiles);
@@ -420,8 +479,9 @@ tools:
     expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("reviewer");
     const reviewerPrompt =
       swarmProfiles.find(({ name }) => name === "reviewer")?.systemPrompt ?? "";
-    expect(reviewerPrompt).toContain("researcher-подагентов");
-    expect(reviewerPrompt).toContain("2–3 минуты");
+    expect(reviewerPrompt).toContain("до двух researcher-подагентов");
+    expect(reviewerPrompt).toContain("25 минут");
+    expect(reviewerPrompt).toContain("45 минут");
     expect(swarmProfiles.find(({ name }) => name === "evaluator")?.skills).toContain(
       "completion-gate",
     );
@@ -844,7 +904,7 @@ describe("specialized worker roster", () => {
 
     expect(prompt).toContain("Никогда не вызывай Task(start)");
     expect(prompt).toContain("не вызывай Task(orchestrator)");
-    expect(prompt).toContain("Каждая ветка должна укладываться примерно в 10 минут");
+    expect(prompt).toContain("Планируй для каждой ветки конечный объём, рассчитанный на 45 минут");
     expect(prompt).toContain("следующий wave");
     expect(prompt).toContain("накопленным контекстом");
     expect(prompt).toContain("researcher");
@@ -858,11 +918,11 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain(
       "min(nodeCount, requested max_parallel, remaining_spawns, activeCap",
     );
-    expect(prompt).toContain("5–8 независимыми областями");
-    expect(prompt).toContain("10 минут");
-    expect(prompt).toContain("большую ветку дели");
+    expect(prompt).toContain("Для 5–8 действительно независимых областей");
+    expect(prompt).toContain("45 минут");
+    expect(prompt).toContain("крупную тему раздели на независимые части");
     expect(prompt).toContain("subagent-factory");
-    expect(prompt).toContain("параллельные специализированные ветки");
+    expect(prompt).toContain("столько специализированных веток одним сообщением");
     expect(prompt).not.toContain("3–5 независимых веток");
   });
 

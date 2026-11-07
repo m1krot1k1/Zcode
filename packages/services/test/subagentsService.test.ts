@@ -354,6 +354,7 @@ describe("subagent markdown helpers", () => {
       tools: ["Read", "Grep", "Bash(git diff *)"],
       disallowedTools: ["Write"],
       skills: ["code-review"],
+      includeInSwarm: true,
       permissionMode: "acceptEdits",
       maxTurns: 7,
       background: true,
@@ -372,6 +373,7 @@ describe("subagent markdown helpers", () => {
     expect(markdown).toContain("maxTurns: 7");
     expect(markdown).toContain("background: true");
     expect(markdown).toContain("injectAgentsMd: false");
+    expect(markdown).toContain("includeInSwarm: true");
     expect(markdown).toContain("你是严格的代码审查员。");
   });
 
@@ -389,6 +391,7 @@ disallowedTools:
   - Write
 skills:
   - code-review
+includeInSwarm: true
 permissionMode: acceptEdits
 maxTurns: 7
 background: true
@@ -413,6 +416,7 @@ color: cyan
       tools: ["Read", "Bash(git diff *)"],
       disallowedTools: ["Write"],
       skills: ["code-review"],
+      includeInSwarm: true,
       permissionMode: "acceptEdits",
       maxTurns: 7,
       background: true,

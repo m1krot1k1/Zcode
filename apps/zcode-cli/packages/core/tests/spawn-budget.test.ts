@@ -18,6 +18,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SPAWN_BUDGET,
   InMemoryRuntimeTaskRegistry,
+  resolveAdaptiveSubagentMaxParallel,
+  resolveSubagentMaxParallel,
+  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
@@ -40,7 +43,7 @@ import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 
 describe("subagent spawn budget", () => {
-  it("defaults to 32 and rejects the next spawn once the root budget is exhausted (a)", async () => {
+  it("defaults to 128 and rejects the next spawn once the root budget is exhausted (a)", async () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const root = createSessionId("spawn-budget-root");
     const turnId = createTurnId("spawn-budget-turn");
@@ -71,6 +74,41 @@ describe("subagent spawn budget", () => {
     const snapshot = registry.getRootRunBudgetSnapshot(rootRunId);
     expect(snapshot?.spawnsUsed).toBe(DEFAULT_SPAWN_BUDGET);
     expect(snapshot?.remainingSpawnsBySession.get(root)).toBe(0);
+  });
+
+  it("captures a configured active concurrency limit and uses bounded adaptive defaults", () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("parallel-limit-root");
+    const turnId = createTurnId("parallel-limit-turn");
+    const rootRunId = `${root}:${turnId}`;
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, maxParallel: 2 });
+    expect(registry.getRootRunMaxParallel(rootRunId)).toBe(2);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.maxParallel).toBe(2);
+
+    expect(
+      registry.registerSubagentTask(
+        task("parallel-1", root, createSessionId("parallel-child-1"), turnId),
+        settled(),
+      ),
+    ).toMatchObject({ accepted: true });
+    expect(
+      registry.registerSubagentTask(
+        task("parallel-2", root, createSessionId("parallel-child-2"), turnId),
+        settled(),
+      ),
+    ).toMatchObject({ accepted: true });
+    expect(
+      registry.registerSubagentTask(
+        task("parallel-3", root, createSessionId("parallel-child-3"), turnId),
+        settled(),
+      ),
+    ).toEqual({ accepted: false, reason: "active_limit" });
+
+    expect(resolveAdaptiveSubagentMaxParallel(1)).toBe(32);
+    expect(resolveAdaptiveSubagentMaxParallel(8)).toBe(32);
+    expect(resolveAdaptiveSubagentMaxParallel(64)).toBe(SUBAGENT_ROOT_MAX_ACTIVE_TASKS);
+    expect(resolveSubagentMaxParallel(0)).toBeGreaterThanOrEqual(32);
+    expect(resolveSubagentMaxParallel(999)).toBe(SUBAGENT_ROOT_MAX_ACTIVE_TASKS);
   });
 
   it("keeps child budgets strictly smaller than the parent and conserves the sum (b)", async () => {

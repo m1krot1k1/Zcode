@@ -818,6 +818,39 @@ modules:
     layers: { adapters: . }
     owner: conversation
 
+  # code-intelligence：由 architecture:adopt 登记
+  - id: code-intelligence
+    roots:
+      - packages/services/src/code-intelligence
+    managed: true
+    requires:
+      - services
+      - shared
+      - sqlite-migrations
+    publicEntrypoints:
+      - packages/services/src/code-intelligence/index.ts
+      - packages/services/src/code-intelligence/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # agent-workbench：由 architecture:adopt 登记
+  - id: agent-workbench
+    roots:
+      - packages/ui/src/agent-workbench
+    managed: true
+    requires:
+      - code-intelligence
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/agent-workbench/index.ts
+      - packages/ui/src/agent-workbench/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。
@@ -880,6 +913,12 @@ exceptions:
     rule: unmanaged-new-file
     paths: [packages/shared/src/clientConfig.ts]
     reason: Existing upstream public config parser gains one validated recommendation field; ownership and module boundaries remain unchanged, and adopting the shared package is outside this change.
+  - id: subagent-profile-swarm-opt-in-unmanaged-edit
+    rule: unmanaged-new-file
+    paths:
+      - packages/shared/src/subagent-profile-parser.ts
+      - packages/shared/src/subagent-profile.ts
+    reason: Custom agent profiles gain an explicit swarm opt-in field in the existing public schema and Markdown parser; profile ownership and dependency boundaries remain unchanged, and adopting the entire shared package is outside this feature.
   - id: highspeed-fallback-snapshot-unmanaged-edit
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/runtime/methods/turn-execution-fallback.ts]
@@ -1026,6 +1065,13 @@ exceptions:
       - apps/zcode-cli/packages/contracts/src/tools/skill-marketplace.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/skill-marketplace.ts
     reason: skills.sh marketplace is an additive runtime extension inside the existing managed=false zcode-cli module; the three files add the public search/download client, the typed tool contract, and the handler, with a dedicated spec and adapter/core tests. Existing module boundaries and public contracts are unchanged; adopting the whole zcode-cli tree needs a separate boundary refactor.
+  - id: zcode-cli-code-intelligence-agent-tool
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/code-index-port.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/code-intelligence.port.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/code-index.ts
+    reason: GitNexus-inspired code-intelligence access is an additive runtime capability inside the existing managed=false zcode-cli module; the files add its typed service port, bootstrap protocol adapter, and CodeIndex handler, with a dedicated spec and contract/runtime tests. Existing module boundaries remain unchanged; adopting the whole zcode-cli tree needs a separate boundary refactor.
   - id: skills-marketplace-ui-service
     rule: unmanaged-new-file
     paths:

@@ -343,6 +343,9 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
   if (tab.type === "developer-tools") {
     return <BugIcon className="size-3.5" />;
   }
+  if (tab.type === "agent-workbench") {
+    return <WorkflowIcon className="size-3.5" />;
+  }
 
   if (tab.type === "terminal" || tab.type === "bash-output") {
     return <SquareTerminalIcon className="size-3.5" />;
@@ -557,6 +560,9 @@ export function getSidePaneTabTitle(
 
   if (tab.type === "developer-tools") {
     return formatMessage({ id: "developerTools.title" });
+  }
+  if (tab.type === "agent-workbench") {
+    return formatMessage({ id: "agentWorkbench.title" });
   }
 
   if (tab.type === "terminal" || tab.type === "bash-output") {

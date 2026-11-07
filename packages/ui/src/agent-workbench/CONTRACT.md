@@ -1,0 +1,12 @@
+# agent-workbench
+
+一页以内。只写类型与测试表达不了的三样：模块存在的意图、不变量、与其它模块的交集在哪个 hook 点处理。
+
+不变量：
+
+- Profiles 来自 `subagentsService.list`，роль, enabled state, source и skill names отображаются как read-only snapshot; editing remains in the existing subagent settings surface.
+- Code index lifecycle and graph/search facts come only from `codeIntelligenceService`; UI never reads SQLite, scans paths, or persists a second copy of service state.
+- The graph panel calls `search`, `getSymbolContext`, `getImpact`, and `trace`; omitted embedding endpoint values preserve stored settings, while a separate explicit action clears the configuration.
+- Workspace identity is passed unchanged to both services. A missing index service is an explicit unsupported state.
+- Live child lineage is still owned by the active conversation projection and existing subagent directory. This panel does not synthesize or cache run state.
+- The dashboard composes the existing subagent directory for the active task and reads capacity values through `useSettings`; it remains a read-only projection of those owners.

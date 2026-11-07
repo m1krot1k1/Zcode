@@ -1,0 +1,348 @@
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import { isIP } from "node:net";
+import { dirname, join } from "node:path";
+import type { SQLInputValue } from "node:sqlite";
+import type { CodeIndexStatus } from "./contract.js";
+import type { IndexedChunkRecord, IndexedFileRecord } from "./scanner.js";
+
+// Keep node:sqlite an external built-in. This matches the existing task-index storage boundary.
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof import("node:sqlite");
+
+export const MAX_SEARCH_LIMIT = 50;
+export const MAX_EMBED_BATCH = 32;
+export const MAX_DIAGNOSTICS = 12;
+const INDEX_SCHEMA = `
+  PRAGMA foreign_keys = ON;
+  CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS files (
+    path TEXT PRIMARY KEY, mtime_ms REAL NOT NULL, ctime_ms REAL NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL, fingerprint TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS symbols (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, path TEXT NOT NULL,
+    start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, signature TEXT NOT NULL,
+    exported INTEGER NOT NULL, FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS symbols_name_idx ON symbols(name);
+  CREATE INDEX IF NOT EXISTS symbols_path_idx ON symbols(path);
+  CREATE TABLE IF NOT EXISTS chunks (
+    id TEXT PRIMARY KEY, path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL,
+    content TEXT NOT NULL, embedding BLOB, embedding_model TEXT,
+    FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS chunks_path_idx ON chunks(path);
+  CREATE TABLE IF NOT EXISTS edges (
+    source_id TEXT NOT NULL, target_id TEXT NOT NULL, relation TEXT NOT NULL,
+    source_path TEXT NOT NULL, target_path TEXT NOT NULL,
+    PRIMARY KEY(source_id, target_id, relation),
+    FOREIGN KEY(source_path) REFERENCES files(path) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS edges_target_idx ON edges(target_id);
+  CREATE INDEX IF NOT EXISTS edges_target_path_idx ON edges(target_path);
+`;
+
+export interface CodeIntelligenceServiceOptions {
+  indexRootDir?: string;
+  fetch?: typeof fetch;
+}
+
+export interface Row extends Record<string, unknown> {
+  [key: string]: unknown;
+}
+
+export interface IndexProgress {
+  discoveredFiles: number;
+  indexedFiles: number;
+  state: "indexing" | "degraded";
+  diagnostics: string[];
+}
+
+export interface EmbeddingConfig {
+  endpoint?: string;
+  model?: string;
+}
+
+export function readText(db: CodeIndexDatabase, key: string): string | undefined {
+  const row = db.prepare("SELECT value FROM index_meta WHERE key = ?").get(key) as Row | undefined;
+  return typeof row?.value === "string" ? row.value : undefined;
+}
+
+export function writeText(db: CodeIndexDatabase, key: string, value: string): void {
+  db.prepare(
+    "INSERT INTO index_meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+  ).run(key, value);
+}
+
+export function workspaceIdentity(params: {
+  workspacePath: string;
+  workspaceIdentity?: string;
+}): string {
+  const identity = params.workspaceIdentity?.trim() || params.workspacePath.trim();
+  if (!identity) throw new Error("A workspace path or identity is required.");
+  return identity;
+}
+
+export function safeLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return 12;
+  return Math.max(1, Math.min(MAX_SEARCH_LIMIT, Math.floor(limit)));
+}
+
+export function tokenize(query: string): string[] {
+  return [...new Set(query.toLowerCase().match(/[\p{L}\p{N}_$-]{2,}/gu) ?? [])].slice(0, 20);
+}
+
+export function lexicalScore(queryTerms: string[], value: string): number {
+  const lower = value.toLowerCase();
+  let matched = 0;
+  for (const term of queryTerms) if (lower.includes(term)) matched += 1;
+  return matched / Math.max(queryTerms.length, 1);
+}
+
+export function safeExcerpt(value: string): string {
+  return value.replace(/\p{Cc}/gu, " ").slice(0, 360);
+}
+
+export function readEmbedding(blob: unknown): number[] | undefined {
+  if (!(blob instanceof Uint8Array) || blob.byteLength === 0 || blob.byteLength % 4 !== 0) return;
+  const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+  const values: number[] = [];
+  for (let offset = 0; offset < blob.byteLength; offset += 4)
+    values.push(view.getFloat32(offset, true));
+  return values.every(Number.isFinite) ? values : undefined;
+}
+
+export function writeEmbedding(values: number[]): Uint8Array {
+  const bytes = new Uint8Array(values.length * 4);
+  const view = new DataView(bytes.buffer);
+  values.forEach((value, index) => view.setFloat32(index * 4, value, true));
+  return bytes;
+}
+
+export function cosineSimilarity(left: number[], right: number[]): number {
+  if (left.length === 0 || left.length !== right.length) return 0;
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]!;
+    const b = right[index]!;
+    dot += a * b;
+    leftNorm += a * a;
+    rightNorm += b * b;
+  }
+  return leftNorm > 0 && rightNorm > 0 ? dot / Math.sqrt(leftNorm * rightNorm) : 0;
+}
+
+export function validateEmbeddingConfig(
+  endpointValue?: string | null,
+  modelValue?: string | null,
+): EmbeddingConfig {
+  const endpoint = endpointValue?.trim();
+  const model = modelValue?.trim();
+  if (!endpoint && !model) return {};
+  if (!endpoint || !model) throw new Error("Both local endpoint and model are required.");
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    throw new Error("Embedding endpoint must be a valid loopback HTTP URL.");
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  const loopback =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "::1";
+  if (
+    parsed.protocol !== "http:" ||
+    !loopback ||
+    (isIP(hostname.replace(/^\[|\]$/g, "")) === 4 && !hostname.startsWith("127.")) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    !/^[\p{L}\p{N}._:/-]{1,120}$/u.test(model)
+  ) {
+    throw new Error(
+      "Embedding configuration must use a credential-free loopback HTTP endpoint and a valid model name.",
+    );
+  }
+  return { endpoint: parsed.toString().replace(/\/$/, ""), model };
+}
+
+export function databaseFileFor(indexRootDir: string, identity: string): string {
+  const digest = createHash("sha256").update(identity).digest("hex").slice(0, 32);
+  return join(indexRootDir, `${digest}.sqlite3`);
+}
+
+export function openDatabase(filePath: string): CodeIndexDatabase {
+  const db = new DatabaseSync(filePath);
+  db.exec("PRAGMA busy_timeout = 5000");
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA synchronous = NORMAL");
+  db.exec(INDEX_SCHEMA);
+  const fileColumns = db.prepare("PRAGMA table_info(files)").all() as Row[];
+  if (!fileColumns.some((column) => column.name === "ctime_ms")) {
+    db.exec("ALTER TABLE files ADD COLUMN ctime_ms REAL NOT NULL DEFAULT 0");
+  }
+  return db;
+}
+
+export function count(
+  db: CodeIndexDatabase,
+  table: "files" | "chunks" | "symbols" | "edges",
+): number {
+  const row = db.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as Row;
+  return Number(row.value ?? 0);
+}
+
+export function getCounts(db: CodeIndexDatabase): CodeIndexStatus["counts"] {
+  return {
+    files: count(db, "files"),
+    chunks: count(db, "chunks"),
+    symbols: count(db, "symbols"),
+    edges: count(db, "edges"),
+  };
+}
+
+export function getEmbeddingConfig(db: CodeIndexDatabase): EmbeddingConfig {
+  const endpoint = readText(db, "embedding_endpoint");
+  const model = readText(db, "embedding_model");
+  return endpoint && model ? { endpoint, model } : {};
+}
+
+export function hasPartialCoverage(db: CodeIndexDatabase): boolean {
+  return readText(db, "index_partial") === "true" || readText(db, "index_state") === "degraded";
+}
+
+export function statusFromDb(db: CodeIndexDatabase, progress?: IndexProgress): CodeIndexStatus {
+  let diagnostics: string[] = [];
+  try {
+    const raw = readText(db, "diagnostics");
+    if (raw) diagnostics = JSON.parse(raw) as string[];
+  } catch {
+    diagnostics = ["Stored index diagnostics could not be read."];
+  }
+  const config = getEmbeddingConfig(db);
+  const storedModel = readText(db, "vectors_model");
+  const storedState = readText(db, "index_state");
+  const state =
+    progress?.state ??
+    (storedState === "degraded" ? "degraded" : readText(db, "generation") ? "ready" : "unindexed");
+  return {
+    state,
+    partial: hasPartialCoverage(db),
+    generation: Number(readText(db, "generation") ?? 0),
+    ...(readText(db, "updated_at") ? { updatedAt: Number(readText(db, "updated_at")) } : {}),
+    counts: getCounts(db),
+    ...(progress?.state === "indexing"
+      ? {
+          progress: {
+            discoveredFiles: progress.discoveredFiles,
+            indexedFiles: progress.indexedFiles,
+          },
+        }
+      : {}),
+    embedding: {
+      configured: Boolean(config.endpoint && config.model),
+      ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+      ...(config.model ? { model: config.model } : {}),
+      available: Boolean(config.model && storedModel === config.model),
+    },
+    diagnostics: [...diagnostics, ...(progress?.diagnostics ?? [])].slice(0, MAX_DIAGNOSTICS),
+  };
+}
+
+export function rows<T extends Row>(
+  db: CodeIndexDatabase,
+  sql: string,
+  ...parameters: SQLInputValue[]
+): T[] {
+  return db.prepare(sql).all(...parameters) as T[];
+}
+
+export function upsertFileRecord(db: CodeIndexDatabase, file: IndexedFileRecord): void {
+  db.prepare(
+    "INSERT INTO files(path, mtime_ms, ctime_ms, size, fingerprint) VALUES(?, ?, ?, ?, ?)",
+  ).run(file.path, file.mtimeMs, file.ctimeMs, file.size, file.fingerprint);
+  const addSymbol = db.prepare(
+    "INSERT INTO symbols(id, name, kind, path, start_line, end_line, signature, exported) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  for (const symbol of file.symbols)
+    addSymbol.run(
+      symbol.id,
+      symbol.name,
+      symbol.kind,
+      symbol.path,
+      symbol.startLine,
+      symbol.endLine,
+      symbol.signature,
+      symbol.exported,
+    );
+  const addChunk = db.prepare(
+    "INSERT INTO chunks(id, path, start_line, end_line, content, embedding, embedding_model) VALUES(?, ?, ?, ?, ?, ?, ?)",
+  );
+  for (const chunk of file.chunks)
+    addChunk.run(
+      chunk.id,
+      chunk.path,
+      chunk.startLine,
+      chunk.endLine,
+      chunk.content,
+      chunk.embedding ?? null,
+      chunk.embeddingModel ?? null,
+    );
+  const addEdge = db.prepare(
+    "INSERT OR IGNORE INTO edges(source_id, target_id, relation, source_path, target_path) VALUES(?, ?, ?, ?, ?)",
+  );
+  for (const edge of file.edges)
+    addEdge.run(edge.sourceId, edge.targetId, edge.relation, edge.sourcePath, edge.targetPath);
+}
+
+export async function requestEmbeddings(
+  config: EmbeddingConfig,
+  input: string[],
+  fetchImpl: typeof fetch,
+): Promise<number[][]> {
+  if (!config.endpoint || !config.model || input.length === 0) return [];
+  const vectors: number[][] = [];
+  for (let offset = 0; offset < input.length; offset += MAX_EMBED_BATCH) {
+    const response = await fetchImpl(config.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: config.model,
+        input: input.slice(offset, offset + MAX_EMBED_BATCH),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error("Local embedding endpoint returned an error.");
+    const payload: unknown = await response.json();
+    const embeddings =
+      payload && typeof payload === "object" && "embeddings" in payload
+        ? (payload as { embeddings?: unknown }).embeddings
+        : undefined;
+    if (
+      !Array.isArray(embeddings) ||
+      embeddings.length !== Math.min(MAX_EMBED_BATCH, input.length - offset)
+    ) {
+      throw new Error("Local embedding endpoint returned an invalid vector batch.");
+    }
+    for (const embedding of embeddings) {
+      if (
+        !Array.isArray(embedding) ||
+        embedding.length === 0 ||
+        !embedding.every((value) => typeof value === "number" && Number.isFinite(value))
+      ) {
+        throw new Error("Local embedding endpoint returned an invalid vector.");
+      }
+      vectors.push(embedding as number[]);
+    }
+  }
+  return vectors;
+}
+
+export type CodeIndexDatabase = InstanceType<typeof DatabaseSync>;

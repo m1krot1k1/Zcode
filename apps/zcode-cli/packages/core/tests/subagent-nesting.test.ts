@@ -18,9 +18,36 @@ import {
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
-import { executeSubagentTaskDag } from "../src/subagent/runner.js";
+import { executeSubagentTaskDag, resolveChildMaxParallel } from "../src/subagent/runner.js";
 
 describe("subagent root admission and ownership", () => {
+  it("reuses a foreground parent worker slot when computing nested fan-out", () => {
+    expect(
+      resolveChildMaxParallel({
+        activeCap: 6,
+        activeCount: 6,
+        parentOccupiesSlot: true,
+        remainingSpawns: 20,
+      }),
+    ).toBe(1);
+    expect(
+      resolveChildMaxParallel({
+        activeCap: 6,
+        activeCount: 5,
+        parentOccupiesSlot: false,
+        remainingSpawns: 20,
+      }),
+    ).toBe(1);
+    expect(
+      resolveChildMaxParallel({
+        activeCap: 6,
+        activeCount: 6,
+        parentOccupiesSlot: true,
+        remainingSpawns: 0,
+      }),
+    ).toBe(0);
+  });
+
   it("admits deep recursive nesting without a cumulative node cap and indexes lineage", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-unbounded-depth-root");
@@ -384,7 +411,7 @@ describe("subagent root admission and ownership", () => {
     expect(registry.get(task.taskId)).toBeUndefined();
   });
 
-  it("admits 24 active work items and rejects the 25th", () => {
+  it("admits work up to the 128-task safety ceiling and rejects the next item", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-active-budget-root");
     const turnId = createTurnId("subagent-active-budget-turn");
@@ -400,9 +427,9 @@ describe("subagent root admission and ownership", () => {
 
     const denied = registry.registerSubagentTask(
       createTask(
-        "agent_active_25",
+        "agent_active_overflow",
         rootSessionId,
-        createSessionId("agent_active_25_session"),
+        createSessionId("agent_active_overflow_session"),
         turnId,
       ),
       settledCancellation(),
@@ -426,6 +453,7 @@ describe("subagent root admission and ownership", () => {
     }
 
     const parent = registry.get("agent_foreground_slot_0")!;
+    expect(registry.isActiveSubagentWorkItem(parent.taskId)).toBe(true);
     const childAdmission = registry.registerSubagentTask(
       createTask(
         "agent_foreground_slot_nested",
@@ -436,6 +464,8 @@ describe("subagent root admission and ownership", () => {
       settledCancellation(),
     );
     expect(childAdmission.accepted).toBe(true);
+    expect(registry.isActiveSubagentWorkItem(parent.taskId)).toBe(false);
+    expect(registry.isActiveSubagentWorkItem("agent_foreground_slot_nested")).toBe(true);
 
     expect(registry.requestBackground("agent_foreground_slot_nested")).toBe(false);
     expect(registry.get("agent_foreground_slot_nested")?.isBackgrounded).not.toBe(true);
@@ -488,7 +518,7 @@ describe("subagent root admission and ownership", () => {
     expect(admission).toEqual({ accepted: false, reason: "active_limit" });
   });
 
-  it("applies the active ceiling across root runs from different turns", () => {
+  it("applies the safety ceiling across root runs from different turns", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-cross-turn-active-budget-root");
     const rootRunIds = new Set<string>();
@@ -512,17 +542,17 @@ describe("subagent root admission and ownership", () => {
     expect(
       registry.registerSubagentTask(
         createTask(
-          "agent_cross_turn_active_25",
+          "agent_cross_turn_active_overflow",
           rootSessionId,
-          createSessionId("agent_cross_turn_active_25_session"),
-          createTurnId("subagent-cross-turn-25"),
+          createSessionId("agent_cross_turn_active_overflow_session"),
+          createTurnId("subagent-cross-turn-overflow"),
         ),
         settledCancellation(),
       ),
     ).toEqual({ accepted: false, reason: "active_limit" });
   });
 
-  it("admits no more than 24 simultaneous nodes from concurrent requests", async () => {
+  it("admits no more than the 128-task safety ceiling from concurrent requests", async () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-concurrent-active-budget-root");
     const turnId = createTurnId("subagent-concurrent-active-budget-turn");

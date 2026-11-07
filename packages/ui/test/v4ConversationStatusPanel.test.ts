@@ -1670,6 +1670,26 @@ describe("ConversationStatusPanel", () => {
     });
   });
 
+  it("shows the exact agent role on each running child row", async () => {
+    const html = await renderStatusPanel({
+      gitSummary: null,
+      gitWorktreeChangeSummary: null,
+      summaryPanelVariantOverride: "panel",
+      runningSubagents: [
+        runningSubagent({
+          childSessionId: "child-backend-coder",
+          subagentType: "backend-coder",
+          title: "Implement the service layer",
+        }),
+      ],
+      agentSectionOpen: true,
+    });
+
+    expect(html).toContain('data-subagent-type="backend-coder"');
+    expect(html).toContain("backend-coder");
+    expect(html).toContain("Implement the service layer");
+  });
+
   it("bounds all six long status section types and keeps long Todos behind expansion", async () => {
     const todoItems = Array.from({ length: 8 }, (_, index) => ({
       id: `todo-${index + 1}`,

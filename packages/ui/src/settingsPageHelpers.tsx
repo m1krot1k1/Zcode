@@ -265,6 +265,8 @@ export function GeneralSectionContent({
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
   spawnBudget,
+  subagentMaxParallel,
+  subagentTaskTimeoutMinutes,
   defaultHomeDir,
   isDesktop,
   platform,
@@ -294,6 +296,8 @@ export function GeneralSectionContent({
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
   onSpawnBudgetChange = async (): Promise<RunLimitSaveResult> => "saved",
+  onSubagentMaxParallelChange = async (): Promise<RunLimitSaveResult> => "saved",
+  onSubagentTaskTimeoutMinutesChange = async (): Promise<RunLimitSaveResult> => "saved",
   onCloseToTrayOnWindowsChange,
   onKeepAwakeWhileRunningChange = async () => {},
   onDesktopChromiumHardwareAccelerationChange = async () => {},
@@ -333,6 +337,10 @@ export function GeneralSectionContent({
   httpProxyCaCertPath?: string;
   /** 单次 spawn 预算；undefined 表示沿用默认值 */
   spawnBudget?: number;
+  /** 每个 root run 的并行度；0/undefined 表示按机器适配。 */
+  subagentMaxParallel?: number;
+  /** 每个子代理的最短期限；0/undefined 表示使用 role default。 */
+  subagentTaskTimeoutMinutes?: number;
   defaultHomeDir: string;
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
@@ -371,6 +379,8 @@ export function GeneralSectionContent({
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
   onSpawnBudgetChange?: (raw: string) => Promise<RunLimitSaveResult>;
+  onSubagentMaxParallelChange?: (raw: string) => Promise<RunLimitSaveResult>;
+  onSubagentTaskTimeoutMinutesChange?: (raw: string) => Promise<RunLimitSaveResult>;
   onCloseToTrayOnWindowsChange: (enabled: boolean) => Promise<void>;
   onKeepAwakeWhileRunningChange?: (enabled: boolean) => Promise<void>;
   onDesktopChromiumHardwareAccelerationChange?: (enabled: boolean) => Promise<void>;
@@ -1051,6 +1061,24 @@ export function GeneralSectionContent({
           testId="settings-spawn-budget"
           value={spawnBudget}
           onSave={onSpawnBudgetChange}
+        />
+        <RunLimitSettingRow
+          labelId="settings.subagentMaxParallel"
+          descriptionId="settings.subagentMaxParallelDescription"
+          invalidId="settings.subagentMaxParallelInvalid"
+          placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
+          testId="settings-subagent-max-parallel"
+          value={subagentMaxParallel}
+          onSave={onSubagentMaxParallelChange}
+        />
+        <RunLimitSettingRow
+          labelId="settings.subagentTaskTimeoutMinutes"
+          descriptionId="settings.subagentTaskTimeoutMinutesDescription"
+          invalidId="settings.subagentTaskTimeoutMinutesInvalid"
+          placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
+          testId="settings-subagent-task-timeout"
+          value={subagentTaskTimeoutMinutes}
+          onSave={onSubagentTaskTimeoutMinutesChange}
         />
       </SettingsGroupCard>
 

@@ -67,6 +67,179 @@ function createSwarmTestSkillPort(loadedSkillNames: string[]): SkillPort {
 }
 
 describe("swarm planner to real AgentRuntime child sessions", () => {
+  it("routes an explicit Swarm leaf to the named orchestrator and keeps root synthesis tool-free", async () => {
+    const rootSessionId = createSessionId("runtime-swarm-leaf-orchestrator");
+    const eventStore = createTestSessionEventStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const sessionStore = (
+      await import("./subagent-test-store.js")
+    ).createRecordingSubagentSessionStore();
+    const workspace = await mkdtemp(join(tmpdir(), "zcode-swarm-leaf-orchestrator-"));
+    const rootSynthesisToolsets: string[][] = [];
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "build",
+        modelSelection: {
+          providerId: createModelProviderId("provider-swarm-leaf-test"),
+          modelId: createModelId("swarm-leaf-test-model"),
+        },
+        workingDirectory: workspace,
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+            const requestText = request.messages
+              .map((message) =>
+                typeof message.content === "string"
+                  ? message.content
+                  : JSON.stringify(message.content),
+              )
+              .join("\n");
+            if (sessionId === rootSessionId && requestText.includes("Decide whether this task")) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: JSON.stringify({ decision: "leaf", reason: "One specialist can handle it." }),
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            if (sessionId !== rootSessionId) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "ORCHESTRATOR_CHILD_RESULT_96d2",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            rootSynthesisToolsets.push((request.tools ?? []).map((tool) => tool.name));
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Root synthesized the orchestrator report.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+
+    try {
+      const result = await runtime.executeTurn(
+        "Coordinate the work and return the specialist's findings.",
+        undefined,
+        { intent: { orchestrationMode: "swarm" } },
+      );
+      const rootEvents = await eventStore.getEvents(rootSessionId);
+      const completedSwarm = rootEvents
+        .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
+        .map(
+          (event) =>
+            event.payload as {
+              status: string;
+              childAgentTypes?: Record<string, string>;
+              childSessionIds?: string[];
+            },
+        )
+        .find((event) => event.status === "completed");
+
+      expect(result).toBeDefined();
+      expect(rootSynthesisToolsets).toEqual([[]]);
+      expect(completedSwarm?.childSessionIds).toHaveLength(1);
+      expect(completedSwarm?.childAgentTypes).toEqual(
+        expect.objectContaining({ [completedSwarm?.childSessionIds?.[0] ?? ""]: "orchestrator" }),
+      );
+    } finally {
+      await runtime.closeBrowserSession();
+    }
+  }, 30_000);
+
+  it("fails an explicit Swarm when an invalid plan cannot be handed to the orchestrator", async () => {
+    const rootSessionId = createSessionId("runtime-swarm-invalid-plan-fallback-failure");
+    const eventStore = createTestSessionEventStore();
+    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+    const sessionStore = (
+      await import("./subagent-test-store.js")
+    ).createRecordingSubagentSessionStore();
+    const workspace = await mkdtemp(join(tmpdir(), "zcode-swarm-invalid-plan-fallback-failure-"));
+    let rootRegularRequestCount = 0;
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "build",
+        modelSelection: {
+          providerId: createModelProviderId("provider-swarm-fallback-failure-test"),
+          modelId: createModelId("swarm-fallback-failure-test-model"),
+        },
+        workingDirectory: workspace,
+      },
+      {
+        eventStore,
+        sessionStore,
+        runtimeTaskRegistry,
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (!sessionId) throw new Error("Expected a session-scoped model invocation");
+            const requestText = request.messages
+              .map((message) =>
+                typeof message.content === "string"
+                  ? message.content
+                  : JSON.stringify(message.content),
+              )
+              .join("\n");
+            if (sessionId === rootSessionId && requestText.includes("Decide whether this task")) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: JSON.stringify({ decision: "unknown" }),
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            if (sessionId !== rootSessionId) {
+              throw new Error("Fixture orchestrator provider failure.");
+            }
+            rootRegularRequestCount += 1;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "The root must not do the delegated work.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+
+    try {
+      const turnError = await runtime
+        .executeTurn("Coordinate work using the Swarm and report the result.", undefined, {
+          intent: { orchestrationMode: "swarm" },
+        })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      const rootEvents = await eventStore.getEvents(rootSessionId);
+      const failedSwarm = rootEvents
+        .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
+        .map((event) => event.payload as { status: string; summary?: string })
+        .find((event) => event.status === "failed");
+
+      expect(turnError).toBeDefined();
+      expect(turnError).toBeInstanceOf(Error);
+      expect(rootRegularRequestCount).toBe(0);
+      expect(failedSwarm?.summary).toContain("Orchestrator fallback завершился ошибкой");
+    } finally {
+      await runtime.closeBrowserSession();
+    }
+  }, 30_000);
+
   it("keeps answer-only root turns direct without creating an agent child", async () => {
     const rootSessionId = createSessionId("runtime-cursor-answer-only");
     const eventStore = createTestSessionEventStore();
@@ -247,6 +420,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
     const regularRequestCountBySession = new Map<SessionId, number>();
     const plannerWorkingDirectories: Array<string | undefined> = [];
     const plannerReasoningLevels: Array<string | undefined> = [];
+    const codeIndexQueries: string[] = [];
 
     const runtime = createTestAgentRuntime(
       rootSessionId,
@@ -263,6 +437,21 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
         eventStore,
         sessionStore,
         runtimeTaskRegistry,
+        codeIntelligencePort: {
+          async query(request) {
+            codeIndexQueries.push(request.action);
+            return {
+              action: "status" as const,
+              status: {
+                state: "unindexed" as const,
+                generation: 0,
+                counts: { files: 0, chunks: 0, symbols: 0, edges: 0 },
+                embedding: { configured: false, available: false },
+                diagnostics: [],
+              },
+            };
+          },
+        },
         skillPort: createSwarmTestSkillPort(loadedSkillNames),
         contextSourcePort: {
           async resolveContextSources(request) {
@@ -476,24 +665,34 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
               }
               if (description === "L4 alpha leaf") {
                 const availableTools = (request.tools ?? []).map((tool) => tool.name);
-                if (!availableTools.includes("Skill")) {
+                if (
+                  regularCallCount === 1 &&
+                  (!availableTools.includes("CodeIndex") || !availableTools.includes("Skill"))
+                ) {
                   throw new Error(
-                    `Level-four specialist cannot load skills; tools=${availableTools.join(",")}`,
+                    `Level-four specialist cannot use CodeIndex and Skill; tools=${availableTools.join(",")}`,
                   );
                 }
-                return {
-                  finishReason: "tool-calls",
-                  providerMetadata: undefined,
-                  text: "",
-                  toolCalls: [
-                    {
-                      id: "call_skill_swarm_level_four",
-                      name: "Skill",
-                      input: { name: "zcode-verification" },
-                    },
-                  ],
-                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-                };
+                if (regularCallCount === 1) {
+                  return {
+                    finishReason: "tool-calls",
+                    providerMetadata: undefined,
+                    text: "",
+                    toolCalls: [
+                      {
+                        id: "call_code_index_level_four",
+                        name: "CodeIndex",
+                        input: { action: "status" },
+                      },
+                      {
+                        id: "call_skill_swarm_level_four",
+                        name: "Skill",
+                        input: { name: "zcode-verification" },
+                      },
+                    ],
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  };
+                }
               }
             }
 
@@ -501,6 +700,9 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
               regularCallCount === 2 &&
               childDescriptionBySession.get(sessionId) === "L4 alpha leaf"
             ) {
+              if (!requestText.includes("unindexed")) {
+                throw new Error("Level-four specialist did not receive the CodeIndex result");
+              }
               if (!requestText.includes("NESTED_VERIFICATION_SKILL_BODY_539e")) {
                 throw new Error(
                   "Level-four specialist did not receive the skill loaded through SkillPort",
@@ -636,7 +838,8 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
         .filter(
           (event) =>
             event.type === SessionEventType.ToolCallScheduled ||
-            event.type === SessionEventType.ToolCallResult,
+            event.type === SessionEventType.ToolCallResult ||
+            event.type === SessionEventType.ToolCallError,
         );
       const synthesizedInput = await synthesisReceived.promise;
 
@@ -645,10 +848,12 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       expect(plannerReasoningLevels).toEqual(["high"]);
       expect(childSessionIds).toHaveLength(5);
       expect(levelFourCallCounts).toEqual([1, 2]);
+      expect(codeIndexQueries, JSON.stringify(toolEvents)).toEqual(["status"]);
       expect(nestedRoleRequests).toHaveLength(3);
       for (const nestedRequest of nestedRoleRequests) {
         expect(nestedRequest.system).toMatch(/Ты (?:оркестратор|исследователь|тест-инженер) ZCode/u);
         expect(nestedRequest.tools).toContain("Read");
+        expect(nestedRequest.tools).toContain("CodeIndex");
         expect(nestedRequest.tools).toContain("Task");
         expect(nestedRequest.tools).toContain("RespondToCoordinator");
       }
@@ -713,10 +918,10 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       );
       expect(
         toolEvents.filter((event) => event.type === SessionEventType.ToolCallScheduled),
-      ).toHaveLength(6);
+      ).toHaveLength(7);
       expect(
         toolEvents.filter((event) => event.type === SessionEventType.ToolCallResult),
-      ).toHaveLength(6);
+      ).toHaveLength(7);
       expect(loadedSkillNames).toEqual(["zcode-verification"]);
       expect(new Set(taskSnapshots.map((snapshot) => snapshot.rootRunId)).size).toBe(1);
       expect(taskSnapshots.every((snapshot) => typeof snapshot.rootRunId === "string")).toBe(true);

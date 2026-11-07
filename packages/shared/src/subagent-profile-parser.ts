@@ -100,6 +100,7 @@ export function parseAgentProfileFromMarkdown(input: {
       ...optionalList("skills", frontmatter.skills),
       ...optionalBoolean("background", frontmatter.background),
       ...optionalBoolean("injectAgentsMd", frontmatter.injectAgentsMd),
+      ...optionalBoolean("includeInSwarm", frontmatter.includeInSwarm),
       ...(mcpServers === undefined ? {} : { mcpServers }),
     },
   };
@@ -159,7 +160,7 @@ function optionalList(
 }
 
 function optionalBoolean(
-  key: "background" | "injectAgentsMd",
+  key: "background" | "injectAgentsMd" | "includeInSwarm",
   value: unknown,
 ): Partial<AgentProfile> {
   if (typeof value === "boolean") return { [key]: value };

@@ -41,6 +41,7 @@ import type { IPluginSyncService } from "./plugin-sync/pluginSync.js";
 import type { IPluginsService } from "./plugins/plugins.js";
 import type { IPluginManagementService } from "./plugins/pluginManagement.js";
 import type { ISubagentsService } from "./subagents/subagents.js";
+import type { CodeIntelligenceService } from "./code-intelligence/contract.js";
 import type { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/contract.js";
 import type { ICommandsService } from "./commands/commands.js";
 import type { IHooksService } from "./hooks/hooks.js";
@@ -115,6 +116,8 @@ export interface IServiceAccessor {
   /** 设置页插件管理（UI 不再直触 zcodeAgentService 的 plugins/* 面） */
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
+  /** Optional on hosts without local workspace filesystem access. */
+  readonly codeIntelligenceService?: CodeIntelligenceService;
   /** Available only on the explicitly opted-in window-scoped local Desktop Host. */
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;

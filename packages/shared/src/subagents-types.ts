@@ -57,6 +57,8 @@ export interface AgentSummary {
   modelSelectionOverride?: ModelSelection;
   tools?: string[];
   disallowedTools?: string[];
+  /** Custom profiles can be selected by the explicit Swarm planner only after opt-in. */
+  includeInSwarm?: boolean;
   injectAgentsMd?: boolean;
   skills?: string[];
   permissionMode?: AgentPermissionMode;
@@ -102,6 +104,8 @@ export interface SubAgentConfig {
   modelSelection?: ModelSelection;
   tools?: string[];
   disallowedTools?: string[];
+  /** Custom profiles can be selected by the explicit Swarm planner only after opt-in. */
+  includeInSwarm?: boolean;
   injectAgentsMd?: boolean;
   skills?: string[];
   permissionMode?: AgentPermissionMode;

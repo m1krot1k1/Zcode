@@ -6,6 +6,12 @@
 
 An in-place edit atomically replaces one Markdown profile. A cross-name rename is a small durable transaction because the profile file and the user-level disabled-ID state are separate files. A versioned journal lives beside the profile and stores only leaf filenames, old/new profile IDs, the intended Markdown content and hashes, and the prior enabled state. It never stores absolute paths or credentials.
 
+## Skills and Swarm roster
+
+The profile editor reads the installed skills for its selected workspace/user scope through that scope's `SkillsService`; it never scans profile or skill files from the renderer. A profile stores selected skill names in its existing `skills` frontmatter field. The child runtime resolves those names through its existing `SkillPort`, so marketplace installation and profile association remain separate operations. The editor can associate only installed, enabled skills; a previously saved missing skill remains visible as a stale reference and is not silently erased.
+
+Custom profiles are not offered to the explicit Swarm planner by default. `includeInSwarm: true` is a user opt-in stored in profile frontmatter. An opted-in profile enters the swarm roster only when it has a selectable non-generic name, does not collide with a built-in or earlier custom roster name, and has a non-empty explicit tool list that does not contain `*`. Canonical built-in roles remain available and cannot be replaced by custom profiles. The profile editor requires a concrete tool list before it allows swarm opt-in to be saved. Turning opt-in off removes the profile from future planner snapshots without changing its direct/manual availability.
+
 ## Rename order and recovery
 
 ```mermaid
@@ -36,6 +42,10 @@ Workspace rename validation accepts both the canonical profile ID and the existi
 
 ## Acceptance cases
 
+- Selecting one installed, enabled marketplace skill for a custom profile persists its name in Markdown and a spawned instance resolves it through `SkillPort`; disabling the profile's Swarm opt-in leaves direct/manual profile use intact.
+- A custom profile is absent from the explicit Swarm roster unless `includeInSwarm: true`; wildcard/inherited tools, a generic name, and collisions with built-in or earlier custom role names are excluded.
+- The profile form reads skills from the selected workspace/user target service, preserves missing saved skill names with a warning, and does not route a remote profile's skills request through the local Host.
+- Saving a Swarm-opted profile without a concrete explicit tool allowlist is disabled; saving a valid allowlist persists the opt-in and the profile appears in the next roster snapshot.
 - In-place update failure before atomic replacement leaves the previous valid content and profile identity.
 - Rename interruption at each durable step is recovered on the next service initialization; exactly one active profile remains and the original enabled/disabled choice is preserved.
 - A source file edited after journal creation is retained and disabled; the intended new profile is recovered without overwriting either file.

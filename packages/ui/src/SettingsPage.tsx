@@ -814,6 +814,10 @@ export function SettingsPage({
   const [httpProxyNoProxy, setHttpProxyNoProxy] = useState("");
   const [httpProxyCaCertPath, setHttpProxyCaCertPath] = useState("");
   const [spawnBudget, setSpawnBudget] = useState<number | undefined>(undefined);
+  const [subagentMaxParallel, setSubagentMaxParallel] = useState<number | undefined>(undefined);
+  const [subagentTaskTimeoutMinutes, setSubagentTaskTimeoutMinutes] = useState<number | undefined>(
+    undefined,
+  );
   const [embeddedBrowserAllowInsecureCertificates, setEmbeddedBrowserAllowInsecureCertificates] =
     useState(false);
   const [taskAutoArchiveEnabled, setTaskAutoArchiveEnabled] = useState(false);
@@ -950,6 +954,8 @@ export function SettingsPage({
         setTerminalInheritSystemProfile(settings.terminalInheritSystemProfile ?? true);
         setTerminalFontFamily(settings.terminalFontFamily ?? "");
         setSpawnBudget(settings.spawnBudget);
+        setSubagentMaxParallel(settings.subagentMaxParallel);
+        setSubagentTaskTimeoutMinutes(settings.subagentTaskTimeoutMinutes);
         setTaskAutoArchiveEnabled(settings.taskAutoArchiveEnabled ?? false);
         setTaskAutoArchiveOlderThanDays(settings.taskAutoArchiveOlderThanDays ?? 30);
       })
@@ -1019,6 +1025,46 @@ export function SettingsPage({
         },
       });
       setSpawnBudget(parsed);
+      return "saved";
+    },
+    [services.settingService],
+  );
+  const handleSubagentMaxParallelChange = useCallback(
+    async (raw: string): Promise<RunLimitSaveResult> => {
+      const parsed = parseRunLimitInput(raw, 0);
+      if (parsed === "empty" || parsed === "invalid" || parsed > 128) return "invalid";
+      await runSettingsActionAsync({
+        featureId: "settings.run_limits",
+        action: "save_subagent_max_parallel",
+        trigger: "button",
+        operation: () => services.settingService.update({ subagentMaxParallel: parsed }),
+        completed: {
+          resultSource: "setting_service",
+          configured: true,
+          valueAfter: String(parsed),
+        },
+      });
+      setSubagentMaxParallel(parsed);
+      return "saved";
+    },
+    [services.settingService],
+  );
+  const handleSubagentTaskTimeoutMinutesChange = useCallback(
+    async (raw: string): Promise<RunLimitSaveResult> => {
+      const parsed = parseRunLimitInput(raw, 0);
+      if (parsed === "empty" || parsed === "invalid" || parsed > 180) return "invalid";
+      await runSettingsActionAsync({
+        featureId: "settings.run_limits",
+        action: "save_subagent_task_timeout",
+        trigger: "button",
+        operation: () => services.settingService.update({ subagentTaskTimeoutMinutes: parsed }),
+        completed: {
+          resultSource: "setting_service",
+          configured: true,
+          valueAfter: String(parsed),
+        },
+      });
+      setSubagentTaskTimeoutMinutes(parsed);
       return "saved";
     },
     [services.settingService],
@@ -1904,6 +1950,13 @@ export function SettingsPage({
                               terminalInheritSystemProfile={terminalInheritSystemProfile}
                               terminalFontFamily={terminalFontFamily}
                               spawnBudget={spawnBudget}
+                              subagentMaxParallel={subagentMaxParallel}
+                              subagentTaskTimeoutMinutes={subagentTaskTimeoutMinutes}
+                              onSpawnBudgetChange={handleSpawnBudgetChange}
+                              onSubagentMaxParallelChange={handleSubagentMaxParallelChange}
+                              onSubagentTaskTimeoutMinutesChange={
+                                handleSubagentTaskTimeoutMinutesChange
+                              }
                               integratedTerminalShell={integratedTerminalShell}
                               integratedTerminalShellOptions={integratedTerminalShellOptions}
                               toolSearchMode={toolSearchMode}
@@ -1973,7 +2026,6 @@ export function SettingsPage({
                               onHttpProxyListChange={handleHttpProxyListChange}
                               onHttpProxyNoProxyChange={handleHttpProxyNoProxyChange}
                               onHttpProxyCaCertPathChange={handleHttpProxyCaCertPathChange}
-                              onSpawnBudgetChange={handleSpawnBudgetChange}
                               onCloseToTrayOnWindowsChange={handleCloseToTrayOnWindowsChange}
                               onKeepAwakeWhileRunningChange={handleKeepAwakeWhileRunningChange}
                               onDesktopChromiumHardwareAccelerationChange={

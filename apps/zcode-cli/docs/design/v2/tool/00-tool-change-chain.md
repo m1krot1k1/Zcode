@@ -1813,6 +1813,12 @@ UI 不变，桌面只从前驱块读 `status` / `name`，旧客户端不受新�
 
 ToolEntry 的 MCP pluginId 在执行准入时捕获，沿工具成功/失败事件、V4 tool.lifecycle、既有 agent_step 传递。保持 Skill 原字段兼容；普通 MCP 和未知归属留空，不从名字解析、不复制执行事件。仅增加可选 metadata，不改变工具执行、权限、存储和 continuous/replayable 交付。
 
+## CodeIndex agent tool
+
+`CodeIndex` 是只读 workspace 工具：模型输入经 strict `CodeIntelligencePort` schema → CLI Core handler → Bootstrap protocol client → Host 的严格 `code-intelligence/query` 请求 → 当前 Host workspace 的 `ICodeIntelligenceService` → 有界、相对路径结果返回工具执行链。CLI 不读 SQLite、不接收任意 workspace path，也不能触发建索引、改 endpoint 或删除数据。Actions: `search`, `context`, `impact`, `trace`; 每项校验输入和输出上限。协议传输错误按工具失败返回，不能伪装成空搜索结果。
+
+Acceptance: four actions round-trip to the Host service; absolute/traversal paths are rejected at the service boundary; remote sessions use the Host-bound workspace identity; calls remain read-only and nested agents receive the tool only when their effective tool allowlist admits `CodeIndex`. Tests cover schema, handler, client adapter, Host dispatch, tool registration/permissions, and live session tool projection.
+
 ## UI 插件后台首次创建
 
 成功 MCP UI 工具结果沿现有 V4 投影提交后，以 `v4/plugin-ui/tool-result` 通知本地桌面宿主，

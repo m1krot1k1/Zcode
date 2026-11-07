@@ -3,6 +3,7 @@ export * from "./provider-endpoint-routing.port.js";
 export * from "./execution.port.js";
 export * from "./file-system.port.js";
 export * from "./context-source.port.js";
+export * from "./code-intelligence.port.js";
 export * from "./http-client.port.js";
 export * from "./image-processor.port.js";
 export * from "./pdf-document.port.js";

@@ -395,6 +395,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
   handleOpenBrowserPermissionSettings,
   handleOpenWhiteboard,
   handleOpenDeveloperTools,
+  handleOpenAgentWorkbench,
   handleOpenFileManager,
   handleNavigateFileManager,
   handleOpenPluginMarket,
@@ -1877,6 +1878,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
       onOpenBrowserPermissionSettings={handleOpenBrowserPermissionSettings}
       onOpenWhiteboard={handleOpenWhiteboard}
       onOpenDeveloperTools={handleOpenDeveloperTools}
+      onOpenAgentWorkbench={handleOpenAgentWorkbench}
       onOpenFileManager={handleOpenFileManager}
       onNavigateFileManager={handleNavigateFileManager}
       onOpenPluginMarket={handleOpenPluginMarket}

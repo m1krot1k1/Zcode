@@ -10,6 +10,8 @@ export interface AgentProfile {
   color?: "red" | "blue" | "green" | "yellow" | "purple" | "orange" | "pink" | "cyan";
   description: string;
   disallowedTools?: readonly string[];
+  /** Custom profiles are eligible for explicit Swarm planning only after user opt-in. */
+  includeInSwarm?: boolean;
   injectAgentsMd?: boolean;
   maxTurns?: number;
   mcpServers?: readonly string[];
@@ -56,6 +58,7 @@ export const agentProfileSchema = z
     maxTurns: z.number().int().positive().optional(),
     tools: z.array(z.string()).readonly().optional(),
     disallowedTools: z.array(z.string()).readonly().optional(),
+    includeInSwarm: z.boolean().optional(),
     skills: z.array(z.string()).readonly().optional(),
     mcpServers: z.array(z.string()).readonly().optional(),
   })

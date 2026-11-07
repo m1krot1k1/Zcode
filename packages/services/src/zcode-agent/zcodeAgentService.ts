@@ -33,6 +33,7 @@ import {
 import { ensureIndependentPlanSupport } from "./independentPlanSupport.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createTopicResourceBridge } from "./topicResourceBridge.js";
+import type { CodeIntelligenceService } from "../code-intelligence/contract.js";
 import { uploadTopicResourceToClient } from "./topicResourceUpload.js";
 import {
   zcodeTopicResourceCancelParamsSchema,
@@ -60,6 +61,9 @@ import type { OffPeakClientConfig } from "#src/coding-plan-subscription/codingPl
 import {
   subagentRuntimeConfigSchema,
   zcodeSubagentsReadRuntimeConfigParamsSchema,
+  zcodeCodeIndexQueryParamsSchema,
+  zcodeCodeIndexQueryResultSchema,
+  type ZCodeCodeIndexResult,
   type SubagentRuntimeConfig,
   ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
   formatLogPrefix,
@@ -1065,6 +1069,8 @@ interface CreateZCodeAgentServiceOptions extends Omit<
     workspacePath: string;
     workspaceIdentity?: string;
   }) => Promise<SubagentRuntimeConfig>;
+  /** Host-owned index access; each request is bound to the connected workspace. */
+  codeIntelligenceService?: CodeIntelligenceService;
   sessionRuntimePreferencesAuthority?: "local" | "external";
   prepareProjectExecution?: (
     projectId: string,
@@ -3136,6 +3142,113 @@ export function createZCodeAgentService(
                 message: "OpenCode ACP Host bridge operation failed",
               })
               .catch(() => undefined);
+          });
+          return;
+        }
+        if (request.method === zcodeProtocolMethods.codeIndexQuery) {
+          void (async () => {
+            const parsed = zcodeCodeIndexQueryParamsSchema.safeParse(request.params);
+            if (!parsed.success) {
+              await client.respondError(request.id, {
+                code: -32602,
+                message: "Invalid code index query",
+              });
+              return;
+            }
+            const service = options?.codeIntelligenceService;
+            if (!service) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: "Local code index is unavailable on this Host",
+              });
+              return;
+            }
+            const workspaceRef = {
+              workspacePath: workspace.workspacePath,
+              ...(workspace.workspaceIdentity
+                ? { workspaceIdentity: workspace.workspaceIdentity }
+                : {}),
+            };
+            try {
+              let result: ZCodeCodeIndexResult;
+              switch (parsed.data.action) {
+                case "status": {
+                  const status = await service.getStatus(workspaceRef);
+                  result = {
+                    action: "status",
+                    status: {
+                      state: status.state,
+                      ...(status.partial === undefined ? {} : { partial: status.partial }),
+                      generation: status.generation,
+                      ...(status.updatedAt === undefined ? {} : { updatedAt: status.updatedAt }),
+                      counts: status.counts,
+                      ...(status.progress === undefined ? {} : { progress: status.progress }),
+                      embedding: {
+                        configured: status.embedding.configured,
+                        ...(status.embedding.model === undefined
+                          ? {}
+                          : { model: status.embedding.model }),
+                        available: status.embedding.available,
+                      },
+                      diagnostics: status.diagnostics,
+                    },
+                  };
+                  break;
+                }
+                case "search": {
+                  const search = await service.search({
+                    ...workspaceRef,
+                    query: parsed.data.query,
+                    limit: parsed.data.limit ?? 12,
+                  });
+                  result = { action: "search", ...search };
+                  break;
+                }
+                case "context":
+                  result = {
+                    action: "context",
+                    context: await service.getSymbolContext({
+                      ...workspaceRef,
+                      symbol: parsed.data.symbol,
+                    }),
+                  };
+                  break;
+                case "impact":
+                  result = {
+                    action: "impact",
+                    impact: await service.getImpact({
+                      ...workspaceRef,
+                      changedPaths: parsed.data.changedPaths,
+                    }),
+                  };
+                  break;
+                case "trace":
+                  result = {
+                    action: "trace",
+                    trace: await service.trace({
+                      ...workspaceRef,
+                      fromSymbol: parsed.data.fromSymbol,
+                      toSymbol: parsed.data.toSymbol,
+                    }),
+                  };
+                  break;
+              }
+              await client.respond(request.id, zcodeCodeIndexQueryResultSchema.parse(result));
+            } catch (error) {
+              logger.warn(undefined, "Local code index query failed", {
+                workspaceKey: resolveWorkspaceKey(workspace),
+                error: String(error),
+              });
+              await client.respondError(request.id, {
+                code: -32603,
+                message: "Code index query failed",
+              });
+            }
+          })().catch((error) => {
+            logger.warn(undefined, "Local code index response failed", {
+              workspaceKey: resolveWorkspaceKey(workspace),
+              error: String(error),
+            });
           });
           return;
         }

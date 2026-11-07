@@ -405,6 +405,7 @@ import { IPluginSyncService } from "./plugin-sync/pluginSync.js";
 import { IPluginsService } from "./plugins/plugins.js";
 import { IPluginManagementService } from "./plugins/pluginManagement.js";
 import { ISubagentsService } from "./subagents/subagents.js";
+import { ICodeIntelligenceService } from "./code-intelligence/contract.js";
 import { ICommandsService } from "./commands/commands.js";
 import { IHooksService } from "./hooks/hooks.js";
 import { IMemoryService } from "./memory/memory.js";
@@ -518,6 +519,7 @@ import { createPluginSyncService } from "./plugin-sync/pluginSyncService.js";
 import { createPluginsService } from "./plugins/pluginsService.js";
 import { createPluginManagementService } from "./plugins/pluginManagementService.js";
 import { createSubagentsService } from "./subagents/subagentsService.js";
+import { createCodeIntelligenceService } from "./code-intelligence/codeIntelligenceService.js";
 import { createCommandsService } from "./commands/commandsService.js";
 import { createHooksService } from "./hooks/hooksService.js";
 import { createMemoryService } from "./memory/memoryService.js";
@@ -1717,6 +1719,9 @@ export function createLocalServices(options: {
   const subagentsService = createSubagentsService({
     isDesktopRuntime: true,
   });
+  const codeIntelligenceService = createCodeIntelligenceService({
+    indexRootDir: join(projectDataRoot(), "code-intelligence"),
+  });
   const commandsService = createCommandsService({ isDesktopRuntime: true });
   const hooksService = createHooksService({
     grantWorkspaceHookTrust: (params) => zcodeAgentService.grantWorkspaceHookTrust(params),
@@ -2236,6 +2241,7 @@ export function createLocalServices(options: {
     workspaceIdentity: undefined,
   });
   const zcodeAgentService = createZCodeAgentService({
+    codeIntelligenceService,
     ...(openCodeAcpRuntime ? { openCodeAcpRuntime } : {}),
     ...(openCodeCliProviderCatalogSource
       ? { runtimeProviderCatalogSource: openCodeCliProviderCatalogSource }
@@ -2415,8 +2421,12 @@ export function createLocalServices(options: {
         // 把 host 解析出的权威 origin（含 settings 覆盖）下发给 agent，否则 agent 侧只按
         // env 推导，test env + 自定义端点时两侧信任判定的输入分叉、官方 MCP 整体 fail closed。
         ...buildAgentEndpointOriginEnv(await resolveCurrentZCodeEndpointOrigin()),
-        // spawn 预算走 spawn env：设置页有值就下发，缺省由 agent 用默认 32。
-        ...buildAgentRootRunBudgetEnv(settings.spawnBudget),
+        // Agent 资源设置走 spawn env 快照；设置缺省时由 runtime 采用自适应并发与角色期限。
+        ...buildAgentRootRunBudgetEnv(
+          settings.spawnBudget,
+          settings.subagentMaxParallel,
+          settings.subagentTaskTimeoutMinutes,
+        ),
         // broker 凭据（socket/token）注入 agent spawn env，让内置 zcode-cua plugin 的
         // computer-use MCP server 经 __zcode-plugin-host 恢复 token 后连上 broker。
         ...cuaProductHelperEnv,
@@ -2955,6 +2965,7 @@ export function createLocalServices(options: {
       }),
     )
     .register(ISubagentsService, subagentsService)
+    .register(ICodeIntelligenceService, codeIntelligenceService)
     .register(ICommandsService, createCommandsService({ isDesktopRuntime: true }))
     .register(
       IHooksService,

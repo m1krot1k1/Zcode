@@ -8,6 +8,7 @@ import type {
   CollaborationMode,
   AutomationPort,
   BrowserControlPort,
+  CodeIntelligencePort,
   CoordinatorResponsePort,
   DynamicWorkflowRunPort,
   DynamicWorkflowSnippetPort,
@@ -182,6 +183,7 @@ export interface ToolExecutionContext {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  codeIntelligencePort?: CodeIntelligencePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;

@@ -87,7 +87,7 @@ import {
 import {
   DEFAULT_SPAWN_BUDGET,
   InMemoryRuntimeTaskRegistry,
-  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+  resolveSubagentMaxParallel,
   isTerminalRuntimeTask,
   runtimeTaskOutputFile,
   type RuntimeTaskAdmissionResult,
@@ -176,6 +176,8 @@ export interface ExploreSubagentPortOptions {
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   /** 根 spawn 预算；runner 据此推导每个子任务的 grant，端口本身不扣减。 */
   spawnBudget?: number;
+  /** Root-run concurrency ceiling; zero/undefined resolves adaptively. */
+  maxParallel?: number;
   persistTerminalTaskCatalog?: (task: RuntimeTaskSnapshot) => Promise<boolean>;
   resolveTerminalTaskCatalog?: (taskId: string) => Promise<RuntimeTaskSnapshot | undefined>;
   createAgentId?: () => string;
@@ -215,7 +217,7 @@ export function resolveActualMaxParallel(input: {
   const nodeCount = Math.max(1, Math.floor(input.nodeCount));
   const requested =
     input.requestedMaxParallel === undefined
-      ? 8
+      ? (input.activeCap ?? 32)
       : Math.max(1, Math.floor(input.requestedMaxParallel));
   const candidates = [nodeCount, requested];
   if (input.remainingSpawns !== undefined) {
@@ -232,13 +234,17 @@ export function resolveChildMaxParallel(input: {
   remainingSpawns?: number;
   activeCount?: number;
   activeCap?: number;
+  parentOccupiesSlot?: boolean;
 }): number | undefined {
   if (input.remainingSpawns === undefined && input.activeCount === undefined) return undefined;
   const remaining = input.remainingSpawns ?? Number.POSITIVE_INFINITY;
   const freeSlots =
     input.activeCount === undefined || input.activeCap === undefined
       ? Number.POSITIVE_INFINITY
-      : Math.max(0, input.activeCap - input.activeCount);
+      : Math.max(
+          0,
+          input.activeCap - input.activeCount + (input.parentOccupiesSlot === true ? 1 : 0),
+        );
   return Math.max(0, Math.min(remaining, freeSlots));
 }
 
@@ -268,7 +274,8 @@ export function resolveSwarmParallelismWithCapacity(input: {
   }
   const decision = resolveSwarmParallelism({
     nodeCount: input.nodeCount,
-    ...(input.userMaxParallel === undefined ? {} : { userMaxParallel: input.userMaxParallel }),
+    userMaxParallel:
+      input.userMaxParallel ?? input.requestedMaxParallel ?? input.activeCap ?? 32,
     ...(input.requestedMaxParallel === undefined
       ? {}
       : { requestedMaxParallel: input.requestedMaxParallel }),
@@ -360,12 +367,15 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           ? undefined
           : registry.getRemainingSpawnBudget?.(rootRunId, rawRequest.sessionId);
       const activeCount = registry.getActiveSubagentWorkItemCount?.(rootSessionId);
+      const activeCap =
+        (rootRunId === undefined ? undefined : registry.getRootRunMaxParallel?.(rootRunId)) ??
+        resolveSubagentMaxParallel(options.maxParallel);
       const maxParallel = resolveActualMaxParallel({
         nodeCount: graph.nodes.length,
         ...(graph.max_parallel === undefined ? {} : { requestedMaxParallel: graph.max_parallel }),
         ...(remainingSpawns === undefined ? {} : { remainingSpawns }),
         ...(activeCount === undefined ? {} : { activeCount }),
-        activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+        activeCap,
       });
       // Swarm uses its own runtime correlation key. The legacy runner still needs an internal
       // parentCall-shaped key for task records, but it is never emitted as a provider ToolCall.
@@ -415,7 +425,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         // Значения передаются в scheduler, чтобы он пересчитал тот же кламп.
         ...(remainingSpawns === undefined ? {} : { internalRemainingSpawns: remainingSpawns }),
         ...(activeCount === undefined ? {} : { internalActiveCount: activeCount }),
-        internalActiveCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+        internalActiveCap: activeCap,
       };
       return executeSubagentTaskDag(
         {
@@ -3398,12 +3408,20 @@ async function runAgentToCompletion(
   };
   const taskSnapshot = registry.get(lifecycle.agentId);
   const rootSessionId = taskSnapshot?.rootSessionId ?? request.sessionId;
+  const activeCap =
+    (taskSnapshot?.rootRunId === undefined
+      ? undefined
+      : registry.getRootRunMaxParallel?.(taskSnapshot.rootRunId)) ??
+    resolveSubagentMaxParallel(options.maxParallel);
   const childMaxParallel = resolveChildMaxParallel({
     ...(taskSnapshot?.spawnGrant === undefined ? {} : { remainingSpawns: taskSnapshot.spawnGrant }),
     ...(registry.getActiveSubagentWorkItemCount === undefined
       ? {}
       : { activeCount: registry.getActiveSubagentWorkItemCount(rootSessionId) }),
-    activeCap: SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
+    ...(taskSnapshot === undefined
+      ? {}
+      : { parentOccupiesSlot: registry.isActiveSubagentWorkItem?.(lifecycle.agentId) === true }),
+    activeCap,
   });
   const childResult = await options.runExploreAgent(
     {

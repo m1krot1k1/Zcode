@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type {
   ModelUsage,
@@ -304,8 +305,20 @@ export type RuntimeTaskAdmissionResult =
         | "work_claim_unavailable";
     };
 
-/** Per-root-session worker ceiling: foreground children replace waiting parents; background children use another slot. */
-export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 24;
+/** Absolute safety ceiling; normal runs use their configured or adaptive maxParallel. */
+export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 128;
+
+/** Adaptive default grows with available CPU while retaining a bounded host-level ceiling. */
+export function resolveAdaptiveSubagentMaxParallel(cpuCount = availableParallelism()): number {
+  const safeCpuCount = Number.isSafeInteger(cpuCount) && cpuCount > 0 ? cpuCount : 8;
+  return Math.max(32, Math.min(SUBAGENT_ROOT_MAX_ACTIVE_TASKS, safeCpuCount * 4));
+}
+
+export function resolveSubagentMaxParallel(configured?: number): number {
+  if (configured === undefined || configured === 0) return resolveAdaptiveSubagentMaxParallel();
+  if (!Number.isSafeInteger(configured) || configured < 1) return resolveAdaptiveSubagentMaxParallel();
+  return Math.min(SUBAGENT_ROOT_MAX_ACTIVE_TASKS, configured);
+}
 
 export type PrismTaskContractInput = Omit<PrismTaskContract, "schema" | "contractSha256">;
 
@@ -1322,8 +1335,12 @@ export interface RuntimeTaskRegistry {
   getRootRunIdForSession(sessionId: SessionId, turnId?: TurnId): string | undefined;
   /** Остаток spawn-бюджета конкретного session в root run; undefined — root-run состояния нет. */
   getRemainingSpawnBudget?(rootRunId: string, sessionId: SessionId): number | undefined;
+  /** Разрешённая параллельность конкретного root run после settings/adaptive resolution. */
+  getRootRunMaxParallel?(rootRunId: string): number | undefined;
   /** Текущее число активных worker-слотов root session (для фактического maxParallel). */
   getActiveSubagentWorkItemCount?(rootSessionId: SessionId): number;
+  /** Возвращает, учитывается ли текущая роль как занятый слот в том же admission projection. */
+  isActiveSubagentWorkItem?(taskId: string): boolean;
   /** Останавливает process-level таймеры registry (periodic sweep ledger). */
   dispose?(): void;
   /** Продлевает claim'ы живых running local_agent задач (перед periodic sweep). */
@@ -1356,6 +1373,7 @@ export interface RuntimeTaskRegistry {
     startedAt?: number;
     deadlineMs?: number;
     spawnBudget?: number;
+    maxParallel?: number;
     onExhausted?: () => void;
   }): void;
   finishRootRunTurn(rootRunId: string): void;
@@ -1369,6 +1387,8 @@ interface RootRunBudgetState {
   turnId: TurnId;
   /** 本次 root run 的 spawn 总配额；0 表示禁止任何子任务。 */
   spawnBudget: number;
+  /** Immutable concurrency ceiling captured when this root run is admitted. */
+  maxParallel: number;
   /** 已准入的子任务数量（无论后续成败）。 */
   spawnsUsed: number;
   /** 每个 session 当前可继续 spawn 的次数；缺省回落到 spawnBudget。 */
@@ -1415,11 +1435,12 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
 ]);
 
 /**
- * 每棵子 Agent 树默认允许的 spawn 次数。
- * 32 足以覆盖常见的分层探索，同时把「模型递归开 Agent」的扇出从指数压到可控范围：
- * 每次准入至少消耗 1 个配额，配额耗尽即拒绝，不需要额外的硬深度上限。
+ * 每棵子 Agent 树默认允许的 spawn 次数。真实扇出由 maxParallel 限制，预算为大型任务保留
+ * 足够的分层探索空间，同时仍保证每次 admission 消耗一次预算且根任务总 deadline 有效。
  */
-export const DEFAULT_SPAWN_BUDGET = 32;
+export const DEFAULT_SPAWN_BUDGET = 128;
+/** Root deadline переживает максимальный worker deadline и время на synthesis. */
+export const DEFAULT_ROOT_RUN_DEADLINE_MS = 4 * 60 * 60 * 1000;
 
 /** Periodic materialization of stale work claims; lazy expiry stays authoritative. */
 export const WORK_LEDGER_SWEEP_INTERVAL_MS = Math.max(1_000, Math.floor(WORK_LEDGER_TTL_MS / 2));
@@ -1531,17 +1552,20 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     startedAt?: number;
     deadlineMs?: number;
     spawnBudget?: number;
+    maxParallel?: number;
     onExhausted?: () => void;
   }): void {
     if (this.rootRunBudgets.has(input.rootRunId)) return;
     this.finishedRootRunIds.delete(input.rootRunId);
-    const deadlineAt = (input.startedAt ?? Date.now()) + (input.deadlineMs ?? 2 * 60 * 60 * 1000);
+    const deadlineAt =
+      (input.startedAt ?? Date.now()) + (input.deadlineMs ?? DEFAULT_ROOT_RUN_DEADLINE_MS);
     this.rootRunBudgets.set(input.rootRunId, {
       rootRunId: input.rootRunId,
       deadlineAt,
       rootSessionId: input.rootSessionId,
       turnId: input.turnId,
       spawnBudget: input.spawnBudget ?? DEFAULT_SPAWN_BUDGET,
+      maxParallel: resolveSubagentMaxParallel(input.maxParallel),
       spawnsUsed: 0,
       remainingSpawnsBySession: new Map(),
       turnFinished: false,
@@ -1588,6 +1612,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   getRootRunBudgetSnapshot(rootRunId: string): {
     deadlineAt: number;
+    maxParallel: number;
     spawnBudget: number;
     spawnsUsed: number;
     remainingSpawnsBySession: ReadonlyMap<SessionId, number>;
@@ -1596,6 +1621,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return state
       ? {
           deadlineAt: state.deadlineAt,
+          maxParallel: state.maxParallel,
           spawnBudget: state.spawnBudget,
           spawnsUsed: state.spawnsUsed,
           remainingSpawnsBySession: state.remainingSpawnsBySession,
@@ -1773,7 +1799,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 修复依据：foreground Agent 调用会挂起父级，子级应接管该 worker slot，background child 则另计。
     const projectedActiveCount =
       activeWorkItems.length - (foregroundParentTransfersSlot ? 1 : 0);
-    if (projectedActiveCount >= SUBAGENT_ROOT_MAX_ACTIVE_TASKS) {
+    const activeLimit = rootBudget?.maxParallel ?? SUBAGENT_ROOT_MAX_ACTIVE_TASKS;
+    if (projectedActiveCount >= activeLimit) {
       return { accepted: false, reason: "active_limit" };
     }
 
@@ -2005,9 +2032,20 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return state.remainingSpawnsBySession.get(sessionId) ?? state.spawnBudget;
   }
 
+  getRootRunMaxParallel(rootRunId: string): number | undefined {
+    return this.rootRunBudgets.get(rootRunId)?.maxParallel;
+  }
+
   /** Число активных worker-слотов root session; основа фактического maxParallel. */
   getActiveSubagentWorkItemCount(rootSessionId: SessionId): number {
     return this.getActiveSubagentWorkItems(rootSessionId).length;
+  }
+
+  isActiveSubagentWorkItem(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    return task?.rootSessionId
+      ? this.getActiveSubagentWorkItems(task.rootSessionId).some((item) => item.taskId === taskId)
+      : false;
   }
 
   getRootRunIdForSession(sessionId: SessionId, turnId?: TurnId): string | undefined {
@@ -2294,7 +2332,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         ).length;
         // 根因：foreground→background 会唤醒父级继续执行，若只在 spawn 检查并发额度，转换会额外释放一个 worker。
         // 修复依据：用转换后的 registry 投影重新计数；超额时拒绝状态变更，waiter 继续等待 foreground child。
-        if (projectedActiveCount > SUBAGENT_ROOT_MAX_ACTIVE_TASKS) return false;
+        const activeLimit = task.rootRunId
+          ? (this.rootRunBudgets.get(task.rootRunId)?.maxParallel ??
+            SUBAGENT_ROOT_MAX_ACTIVE_TASKS)
+          : SUBAGENT_ROOT_MAX_ACTIVE_TASKS;
+        if (projectedActiveCount > activeLimit) return false;
       }
     }
     this.setTaskSnapshot(next);

@@ -287,6 +287,15 @@ export { IPluginManagementService, withPluginTelemetry } from "./plugins/pluginM
 
 // Subagents service — ISubagentsService is both a type (interface) and value (descriptor)
 export { ISubagentsService } from "./subagents/subagents.js";
+export {
+  ICodeIntelligenceService,
+  type CodeIntelligenceService,
+  type CodeImpactResult,
+  type CodeIndexStatus,
+  type CodeSearchResult,
+  type CodeSymbolContext,
+  type CodeTraceResult,
+} from "./code-intelligence/contract.js";
 export { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/index.js";
 export type {
   OpenCodeAcpConfigOption,

@@ -41,6 +41,7 @@ import {
   openWorkflowWorkspaceSidePane,
   openWorkflowArtifactSidePane,
   activateDeveloperToolsSidePane,
+  activateAgentWorkbenchSidePane,
   activatePluginMarketSidePane,
   activateNewTabSidePane,
   openBrowserSidePane,
@@ -883,6 +884,24 @@ export function useAppPanels(options: {
     });
   }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
 
+  const handleOpenAgentWorkbench = useCallback(() => {
+    revealSidePaneForCurrentOwner();
+    commitOpenedSidePaneState((current) =>
+      activateAgentWorkbenchSidePane(current, {
+        workspaceKey: workspaceIdentity?.trim() || workspaceAbsPath,
+        workspacePath: workspaceAbsPath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        ...(workspaceRemoteSessionId ? { remoteSessionId: workspaceRemoteSessionId } : {}),
+      }),
+    );
+  }, [
+    commitOpenedSidePaneState,
+    revealSidePaneForCurrentOwner,
+    workspaceAbsPath,
+    workspaceIdentity,
+    workspaceRemoteSessionId,
+  ]);
+
   const handleOpenTerminalTab = useCallback(() => {
     if (isOfficeMode) return;
     revealSidePaneForCurrentOwner();
@@ -1672,6 +1691,7 @@ export function useAppPanels(options: {
     handleOpenTreemapping,
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
+    handleOpenAgentWorkbench,
     handleOpenPluginMarket,
     handleOpenNewSidePaneTab,
     handleOpenTerminalTab,

@@ -117,7 +117,7 @@ sequenceDiagram
 7. Ни один профиль не рекламирует root-only инструменты и инструменты без child-обработчика.
 8. Roster содержит ровно 15 канонических ролей в стабильном порядке; `getSwarmAgentProfiles` возвращает их независимо от custom-каталога.
 9. Custom-профиль `start`/`implementer` не меняет built-in tools и systemPrompt; custom-профиль с уникальным именем добавляется в каталог и виден в model prompt.
-10. `subagent-factory` описывает формат `.zcode/agents/<kebab-name>.md`, worker-only tools, доступные skills, запрет секретов/generic/разовых задач и пометку про следующий turn. `start` называет специализированных владельцев, `orchestrator` требует 3–5 параллельных веток примерно до 10 минут и вызывает фабрику для отсутствующего устойчивого направления.
+10. `subagent-factory` описывает формат `.zcode/agents/<kebab-name>.md`, worker-only tools, доступные skills, запрет секретов/generic/разовых задач и пометку про следующий turn. `start` называет специализированных владельцев, `orchestrator` запускает независимые ветки в фактических пользовательских пределах параллельности, планирует до 45 минут на worker и вызывает фабрику для отсутствующего устойчивого направления.
 11. Review-промпты `reviewer`/`security-reviewer` содержат diff-first вход, запрет широкого повторного обхода при выданных путях, лимит 10 findings с форматом severity/`file:line`/impact/reproduction и явный partial/blocked при исчерпании deadline.
 12. `security-reviewer` ограничен security-sensitive поверхностями (auth, secrets, trust boundaries, network/input parsing, permissions); обычный review его не запрашивает. Параллелизм review-волны 2–3 зафиксирован как prompt/planner-политика, без отдельного runtime-губернатора.
 

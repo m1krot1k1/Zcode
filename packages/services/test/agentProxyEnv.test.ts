@@ -11,6 +11,7 @@ import {
   buildAgentNoProxyEnv,
   buildAgentProxyEnv,
   buildAgentRuntimeEnv,
+  buildAgentRootRunBudgetEnv,
   buildAgentWorkspaceIdentityEnv,
 } from "../src/runtime-tools/agentProxyEnv.js";
 
@@ -36,6 +37,18 @@ describe("buildAgentProxyEnv", () => {
 
   it("preserves an explicit scheme such as socks5", () => {
     expect(buildAgentProxyEnv("socks5://127.0.0.1:1080").ALL_PROXY).toBe("socks5://127.0.0.1:1080");
+  });
+});
+
+describe("buildAgentRootRunBudgetEnv", () => {
+  it("passes configured spawn, concurrency, and minimum task deadlines as a spawn snapshot", () => {
+    expect(buildAgentRootRunBudgetEnv(128, 0, 45)).toEqual({
+      ZCODE_SPAWN_BUDGET: "128",
+      ZCODE_SUBAGENT_MAX_PARALLEL: "0",
+      ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES: "45",
+    });
+    expect(buildAgentRootRunBudgetEnv(undefined, 129, 181)).toEqual({});
+    expect(buildAgentRootRunBudgetEnv(0)).toEqual({ ZCODE_SPAWN_BUDGET: "0" });
   });
 });
 

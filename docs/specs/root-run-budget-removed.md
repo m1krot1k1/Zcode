@@ -8,7 +8,7 @@
 
 ## 保留的护栏
 
-- spawn 预算（`spawnBudget`，缺省 32）：整棵子 Agent 树的 admission 上限；0 表示禁止 spawn。
+- spawn 预算（`spawnBudget`，缺省 128）：整棵子 Agent 树的 admission 上限；0 表示禁止 spawn。
 - idle 600s 与首个 token 90s 超时不变；`maxTurns` 与工具级超时不变。
 
 ## runaway 如何被覆盖
@@ -16,8 +16,14 @@
 真实 runaway 只有三种形态：无限 spawn、长时间无输出、无限 turn。分别由 spawn 预算、
 idle/首 token 超时、maxTurns 拦截；token 数量不再是准入条件，只作为 usage 统计保留。
 
+Root run также сохраняет отдельный wall-clock deadline как аварийную защиту. По умолчанию
+он равен 4 часам: больше максимального worker deadline (180 минут) и оставляет до 30 минут
+на синтез профилями `start`/`orchestrator`. Это не token budget и не ограничивает число
+модельных запросов до исчерпания wall-clock времени.
+
 ## 移除范围
 
 - 设置：`AppSettings.rootRunTokenLimit`、设置卡片中的 token 行、`ZCODE_ROOT_RUN_TOKEN_LIMIT` 环境变量。
 - Agent：`AgentRuntimeConfig.rootRunTokenLimit` 及其 token admission 预留（另一半提交）。
-- 不动 spawn 预算、deadline、usage 记账与 provider 结算逻辑。
+- 不动 spawn 预算、per-role deadline、usage 记账与 provider 结算逻辑. Root run wall-clock
+  deadline остаётся отдельной аварийной защитой.

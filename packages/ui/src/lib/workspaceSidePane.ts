@@ -126,6 +126,17 @@ export interface DeveloperToolsSidePaneTab {
   openedAt?: number;
 }
 
+export interface AgentWorkbenchSidePaneTab {
+  id: string;
+  type: "agent-workbench";
+  ownerTaskId?: null;
+  openedAt?: number;
+  workspaceKey: string;
+  workspacePath: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+}
+
 export interface TerminalSidePaneTab {
   id: string;
   type: "terminal";
@@ -575,6 +586,7 @@ export type WorkspaceSidePaneTab =
   | ModelTrajectorySidePaneTab
   | PluginMarketSidePaneTab
   | DeveloperToolsSidePaneTab
+  | AgentWorkbenchSidePaneTab
   | TerminalSidePaneTab
   | BrowserUseSidePaneTab
   | SubagentSessionSidePaneTab
@@ -1169,6 +1181,7 @@ export function isSidePaneTabVisibleInScope(
   switch (tab.type) {
     case "git":
     case "developer-tools":
+    case "agent-workbench":
     case "plugin-market":
     case "treemapping":
       return true;
@@ -1834,6 +1847,33 @@ export function activateDeveloperToolsSidePane(
   current: WorkspaceSidePaneState | null,
 ): WorkspaceSidePaneState {
   return activateSidePaneTab(current, createDeveloperToolsSidePaneTab());
+}
+
+export function activateAgentWorkbenchSidePane(
+  current: WorkspaceSidePaneState | null,
+  options: {
+    workspaceKey: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+    remoteSessionId?: string;
+  },
+): WorkspaceSidePaneState {
+  const nextTab: AgentWorkbenchSidePaneTab = {
+    id: `agent-workbench:${encodeSidePaneTabIdPart(options.workspaceKey)}`,
+    type: "agent-workbench",
+    ownerTaskId: null,
+    openedAt: Date.now(),
+    workspaceKey: options.workspaceKey,
+    workspacePath: options.workspacePath,
+    ...(options.workspaceIdentity ? { workspaceIdentity: options.workspaceIdentity } : {}),
+    ...(options.remoteSessionId ? { remoteSessionId: options.remoteSessionId } : {}),
+  };
+  const existing = current?.tabs.find(
+    (tab): tab is AgentWorkbenchSidePaneTab =>
+      tab.type === "agent-workbench" && tab.id === nextTab.id,
+  );
+  const tab: AgentWorkbenchSidePaneTab = existing ? { ...existing, ...nextTab } : nextTab;
+  return activateSidePaneTab(current, tab);
 }
 
 export function openTerminalSidePane(

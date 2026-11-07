@@ -5,9 +5,11 @@ export const ZCODE_HTTP_PROXY_LIST_ENV_KEY = "ZCODE_HTTP_PROXY_LIST";
 export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
 /**
  * Host 下发给 Agent 的 spawn 预算（整棵子 Agent 树可创建的任务数）。
- * 唯一来源是 AppSettings.spawnBudget；0 是合法值（禁止 spawn），未配置时按默认 32。
+ * 唯一来源是 AppSettings.spawnBudget；0 是合法值（禁止 spawn），未配置时按默认 128。
  */
 export const ZCODE_SPAWN_BUDGET_ENV_KEY = "ZCODE_SPAWN_BUDGET";
+export const ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY = "ZCODE_SUBAGENT_MAX_PARALLEL";
+export const ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY = "ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES";
 /** Desktop Host 只向 desktop-attached remote server 传递一次的网络配置。 */
 export const ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY =
   "ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY";
@@ -351,7 +353,7 @@ export function readZCodeProxyList(value: string | undefined): string[] {
 
 /**
  * 读取 Host 注入的 spawn 预算。
- * 非法值（非数字、负数、超出安全整数范围）返回 undefined，让 Agent 回落到默认 32；
+ * 非法值（非数字、负数、超出安全整数范围）返回 undefined，让 Agent 回落到默认 128；
  * 0 是合法值，表示禁止任何 spawn，不能被当成「未配置」。
  */
 export function readSpawnBudget(value: string | undefined): number | undefined {
@@ -360,4 +362,20 @@ export function readSpawnBudget(value: string | undefined): number | undefined {
   const parsed = Number(trimmed);
   if (!Number.isSafeInteger(parsed) || parsed < 0) return undefined;
   return parsed;
+}
+
+/** 读取并验证 Host 注入的并行上限；0 表示适应当前机器的 CPU 并发能力。 */
+export function readSubagentMaxParallel(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 128 ? parsed : undefined;
+}
+
+/** 读取 subagent 最短运行分钟数；0 表示按 profile 的 role deadline。 */
+export function readSubagentTaskTimeoutMinutes(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 180 ? parsed : undefined;
 }

@@ -2101,6 +2101,193 @@ export const zcodeSubagentsReadRuntimeConfigParamsSchema = z
   .object({ sessionId: nonEmptyString })
   .strict();
 
+const codeIndexRelativePathSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine(
+    (value) =>
+      !value.startsWith("/") &&
+      !/^[A-Za-z]:[\\/]/u.test(value) &&
+      !value.split(/[\\/]+/u).includes(".."),
+    "Code index paths must be workspace-relative.",
+  );
+const codeIndexSymbolRefSchema = z.string().trim().min(1).max(256);
+const codeIndexStatusSchema = z
+  .object({
+    state: z.enum(["unindexed", "indexing", "ready", "degraded"]),
+    partial: z.boolean().optional(),
+    generation: z.number().int().nonnegative(),
+    updatedAt: z.number().finite().optional(),
+    counts: z
+      .object({
+        files: z.number().int().nonnegative(),
+        chunks: z.number().int().nonnegative(),
+        symbols: z.number().int().nonnegative(),
+        edges: z.number().int().nonnegative(),
+      })
+      .strict(),
+    progress: z
+      .object({
+        discoveredFiles: z.number().int().nonnegative(),
+        indexedFiles: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+    embedding: z
+      .object({
+        configured: z.boolean(),
+        model: z.string().max(120).optional(),
+        available: z.boolean(),
+      })
+      .strict(),
+    diagnostics: z.array(z.string().max(256)).max(12),
+  })
+  .strict();
+const codeIndexSearchResultSchema = z
+  .object({
+    path: codeIndexRelativePathSchema,
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().positive(),
+    symbolName: z.string().max(256).optional(),
+    symbolKind: z.string().max(64).optional(),
+    excerpt: z.string().max(360),
+    match: z.enum(["lexical", "semantic"]),
+    score: z.number().finite().min(0).max(1),
+  })
+  .strict();
+const codeIndexRelatedSymbolSchema = z
+  .object({
+    name: z.string().max(256),
+    path: codeIndexRelativePathSchema,
+    startLine: z.number().int().positive(),
+  })
+  .strict();
+const codeIndexSymbolContextSchema = z
+  .object({
+    symbol: z
+      .object({
+        id: z.string().max(1200),
+        name: z.string().max(256),
+        kind: z.string().max(64),
+        path: codeIndexRelativePathSchema,
+        startLine: z.number().int().positive(),
+        endLine: z.number().int().positive(),
+      })
+      .strict(),
+    callers: z.array(codeIndexRelatedSymbolSchema).max(100),
+    dependencies: z.array(codeIndexRelatedSymbolSchema).max(100),
+    partial: z.boolean(),
+  })
+  .strict();
+const codeIndexImpactSchema = z
+  .object({
+    changedPaths: z.array(codeIndexRelativePathSchema).max(100),
+    affectedSymbols: z
+      .array(
+        codeIndexRelatedSymbolSchema.extend({ distance: z.number().int().positive() }).strict(),
+      )
+      .max(100),
+    partial: z.boolean(),
+  })
+  .strict();
+const codeIndexTraceSchema = z
+  .object({
+    found: z.boolean(),
+    path: z
+      .array(codeIndexRelatedSymbolSchema.extend({ relation: z.string().max(64) }).strict())
+      .max(256),
+    partial: z.boolean(),
+  })
+  .strict();
+
+const codeIndexQuerySchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("status") }).strict(),
+  z
+    .object({
+      action: z.literal("search"),
+      query: z.string().trim().min(1).max(500),
+      limit: z.number().int().min(1).max(12).optional(),
+    })
+    .strict(),
+  z.object({ action: z.literal("context"), symbol: codeIndexSymbolRefSchema }).strict(),
+  z
+    .object({
+      action: z.literal("impact"),
+      changedPaths: z.array(codeIndexRelativePathSchema).min(1).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("trace"),
+      fromSymbol: codeIndexSymbolRefSchema,
+      toSymbol: codeIndexSymbolRefSchema,
+    })
+    .strict(),
+]);
+export type ZCodeCodeIndexQuery = z.infer<typeof codeIndexQuerySchema>;
+export type ZCodeCodeIndexResult =
+  | { action: "status"; status: z.infer<typeof codeIndexStatusSchema> }
+  | {
+      action: "search";
+      results: z.infer<typeof codeIndexSearchResultSchema>[];
+      semantic: boolean;
+      partial: boolean;
+    }
+  | { action: "context"; context: z.infer<typeof codeIndexSymbolContextSchema> | null }
+  | { action: "impact"; impact: z.infer<typeof codeIndexImpactSchema> }
+  | { action: "trace"; trace: z.infer<typeof codeIndexTraceSchema> };
+export const zcodeCodeIndexQueryParamsSchema = z.discriminatedUnion("action", [
+  z.object({ sessionId: nonEmptyString, action: z.literal("status") }).strict(),
+  z
+    .object({
+      sessionId: nonEmptyString,
+      action: z.literal("search"),
+      query: z.string().trim().min(1).max(500),
+      limit: z.number().int().min(1).max(12).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      sessionId: nonEmptyString,
+      action: z.literal("context"),
+      symbol: codeIndexSymbolRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      sessionId: nonEmptyString,
+      action: z.literal("impact"),
+      changedPaths: z.array(codeIndexRelativePathSchema).min(1).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      sessionId: nonEmptyString,
+      action: z.literal("trace"),
+      fromSymbol: codeIndexSymbolRefSchema,
+      toSymbol: codeIndexSymbolRefSchema,
+    })
+    .strict(),
+]);
+export const zcodeCodeIndexQueryResultSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("status"), status: codeIndexStatusSchema }).strict(),
+  z
+    .object({
+      action: z.literal("search"),
+      results: z.array(codeIndexSearchResultSchema).max(12),
+      semantic: z.boolean(),
+      partial: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({ action: z.literal("context"), context: codeIndexSymbolContextSchema.nullable() })
+    .strict(),
+  z.object({ action: z.literal("impact"), impact: codeIndexImpactSchema }).strict(),
+  z.object({ action: z.literal("trace"), trace: codeIndexTraceSchema }).strict(),
+]);
+export const zcodeCodeIndexQueryTimeoutMs = 120_000;
+
 export const ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS = 15_000;
 
 export const zcodeSessionRequestRuntimePreferencesParamsSchema = z
@@ -4413,6 +4600,7 @@ export const zcodeProtocolMethods = {
   sessionSubagents: "session/subagents",
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   subagentsReadRuntimeConfig: "subagents/readRuntimeConfig",
+  codeIndexQuery: "code-index/query",
   sessionRead: "session/read",
   sessionMessages: "session/messages",
   sessionEvents: "session/events",
@@ -4549,6 +4737,10 @@ export const zcodeProtocolEmptyResultSchema = z.object({}).strict();
 // 最新 V4 主链已不再依赖旧版全量方法表；这里仅保留仍被兼容测试和 browser broker
 // 消费的最小契约集合，避免重新引入已移除的 legacy 方法。
 export const zcodeProtocolSessionMethodContracts = {
+  [zcodeProtocolMethods.codeIndexQuery]: {
+    params: zcodeCodeIndexQueryParamsSchema,
+    result: zcodeCodeIndexQueryResultSchema,
+  },
   [zcodeProtocolMethods.interactionRequestOpenCodeAgentRun]: {
     params: zcodeOpenCodeAgentRunRequestSchema,
     result: zcodeOpenCodeAgentRunResultSchema,

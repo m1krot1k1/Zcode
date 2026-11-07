@@ -15,6 +15,7 @@ import {
   type BuiltInSubagentName,
   type ModelSelection,
   type SubAgentConfig,
+  type SkillSummary,
 } from "@zcode/shared";
 import {
   TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
@@ -122,6 +123,8 @@ export interface SubagentFormInitialState {
   inheritAllTools: boolean;
   selectedTools: string[];
   preservedTools: string[];
+  skills: string[];
+  includeInSwarm: boolean;
   systemPrompt: string;
 }
 
@@ -304,6 +307,8 @@ export function createSubagentFormInitialState(
     | "color"
     | "modelSelection"
     | "tools"
+    | "skills"
+    | "includeInSwarm"
     | "systemPrompt"
     | "injectAgentsMd"
   >,
@@ -318,6 +323,8 @@ export function createSubagentFormInitialState(
     inheritAllTools: initial?.tools === undefined || initial.tools.length === 0,
     selectedTools: getKnownTools(initial?.tools),
     preservedTools: getPreservedTools(initial?.tools),
+    skills: initial?.skills ?? [],
+    includeInSwarm: initial?.includeInSwarm ?? false,
     systemPrompt: initial?.systemPrompt ?? "",
   };
 }
@@ -796,6 +803,10 @@ function SubagentForm({
   modelSelectionView,
   modelSelectionLoading,
   modelSelectGroups,
+  availableSkills,
+  skillsLoading,
+  skillsLoadError,
+  onReloadSkills,
   onManageModels,
   saving,
   onCancel,
@@ -809,6 +820,10 @@ function SubagentForm({
   modelSelectionView?: ModelSelectionView | null;
   modelSelectionLoading: boolean;
   modelSelectGroups: readonly ModelSelectGroup[];
+  availableSkills: readonly SkillSummary[];
+  skillsLoading: boolean;
+  skillsLoadError: string | null;
+  onReloadSkills: () => void;
   onManageModels?: () => void;
   saving: boolean;
   onCancel: () => void;
@@ -834,6 +849,8 @@ function SubagentForm({
   const [injectAgentsMd, setInjectAgentsMd] = useState(initialFormState.injectAgentsMd);
   const [inheritAllTools, setInheritAllTools] = useState(initialFormState.inheritAllTools);
   const [selectedTools, setSelectedTools] = useState<string[]>(initialFormState.selectedTools);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(initialFormState.skills);
+  const [includeInSwarm, setIncludeInSwarm] = useState(initialFormState.includeInSwarm);
   const [systemPrompt, setSystemPrompt] = useState(initialFormState.systemPrompt);
   const [nameError, setNameError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
@@ -893,6 +910,9 @@ function SubagentForm({
     modelAvailable &&
     !isSubagentThoughtLevelAvailable(thoughtLevelState, thoughtLevel),
   );
+  const swarmRosterInvalid =
+    includeInSwarm &&
+    (inheritAllTools || selectedTools.length === 0 || selectedTools.includes("*"));
   const trimmedName = name.trim();
   const canSave = Boolean(
     trimmedName.length >= 3 &&
@@ -901,7 +921,8 @@ function SubagentForm({
     description.trim() &&
     systemPrompt.trim() &&
     modelAvailable &&
-    !thoughtLevelInvalid,
+    !thoughtLevelInvalid &&
+    !swarmRosterInvalid,
   );
   const selectedColorIndex = Math.max(0, AGENT_COLORS.indexOf(color));
 
@@ -922,6 +943,8 @@ function SubagentForm({
     setInjectAgentsMd(nextInitialState.injectAgentsMd);
     setInheritAllTools(nextInitialState.inheritAllTools);
     setSelectedTools(nextInitialState.selectedTools);
+    setSelectedSkills(nextInitialState.skills);
+    setIncludeInSwarm(nextInitialState.includeInSwarm);
     setSystemPrompt(nextInitialState.systemPrompt);
     setNameError(null);
     setDescriptionError(null);
@@ -1024,7 +1047,8 @@ function SubagentForm({
         ? undefined
         : mergeTools(selectedTools, initialFormState.preservedTools),
       disallowedTools: initial?.disallowedTools,
-      skills: initial?.skills,
+      skills: selectedSkills,
+      includeInSwarm,
       permissionMode: initial?.permissionMode,
       ...(initial?.maxTurns ? { maxTurns: initial.maxTurns } : {}),
       ...(initial?.background !== undefined ? { background: initial.background } : {}),
@@ -1208,6 +1232,92 @@ function SubagentForm({
 
       <div className="space-y-1.5">
         <FormFieldLabel>
+          {intl.formatMessage({ id: "settings.subagents.form.skills.label" })}
+        </FormFieldLabel>
+        {skillsLoadError !== null ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
+            <span>
+              {skillsLoadError ||
+                intl.formatMessage({ id: "settings.subagents.form.skills.loadFailed" })}
+            </span>
+            <Button type="button" variant="ghost" size="sm" onClick={onReloadSkills}>
+              {intl.formatMessage({ id: "common.retry" })}
+            </Button>
+          </div>
+        ) : null}
+        {skillsLoading ? (
+          <p className="text-ui-base text-foreground-subtle">
+            {intl.formatMessage({ id: "common.loading" })}
+          </p>
+        ) : null}
+        {availableSkills.length === 0 && !skillsLoading && !skillsLoadError ? (
+          <p className="text-ui-base text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.subagents.form.skills.empty" })}
+          </p>
+        ) : null}
+        {availableSkills.length > 0 ? (
+          <div className="grid gap-2 rounded-lg border border-border bg-card p-3 sm:grid-cols-2">
+            {availableSkills.map((skill) => (
+              <label key={skill.id} className="flex min-w-0 items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={selectedSkills.includes(skill.name)}
+                  disabled={saving || skillsLoading || !skill.enabled}
+                  onChange={() =>
+                    setSelectedSkills((current) =>
+                      current.includes(skill.name)
+                        ? current.filter((name) => name !== skill.name)
+                        : [...current, skill.name],
+                    )
+                  }
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-ui-base text-foreground">{skill.name}</span>
+                  <span className="block line-clamp-2 text-ui-sm text-foreground-subtle">
+                    {skill.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        ) : null}
+        {selectedSkills.some(
+          (name) => !availableSkills.some((skill) => skill.name === name && skill.enabled),
+        ) ? (
+          <p className="text-ui-sm text-destructive">
+            {intl.formatMessage({ id: "settings.subagents.form.skills.unavailable" })}:{" "}
+            {selectedSkills
+              .filter(
+                (name) => !availableSkills.some((skill) => skill.name === name && skill.enabled),
+              )
+              .join(", ")}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-ui-base font-medium text-foreground">
+            {intl.formatMessage({ id: "settings.subagents.form.swarm.label" })}
+          </p>
+          <p className="text-ui-sm text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.subagents.form.swarm.description" })}
+          </p>
+        </div>
+        <Switch
+          checked={includeInSwarm}
+          onCheckedChange={setIncludeInSwarm}
+          aria-label={intl.formatMessage({ id: "settings.subagents.form.swarm.label" })}
+        />
+      </div>
+      {swarmRosterInvalid ? (
+        <p className="text-ui-sm text-destructive">
+          {intl.formatMessage({ id: "settings.subagents.form.swarm.toolsRequired" })}
+        </p>
+      ) : null}
+
+      <div className="space-y-1.5">
+        <FormFieldLabel>
           {intl.formatMessage({
             id: "settings.subagents.form.systemPrompt.label",
           })}
@@ -1294,7 +1404,13 @@ export function SubagentsSection({
   const [saving, setSaving] = useState(false);
   const [operatingAgentId, setOperatingAgentId] = useState<string | null>(null);
   const [loadedAgentTargetKey, setLoadedAgentTargetKey] = useState("");
+  const skillsRequestIdRef = useRef(0);
   const [selectedScopeKey, setSelectedScopeKey] = useState("user");
+  // Bug 原因：页面静态测试用固定 useState 槽模拟编辑状态；在旧槽前插入状态会把表单模拟成
+  // 技能加载状态并隐藏表单。把新状态放在既有页面状态之后，保留原有表单状态映射。
+  const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsLoadError, setSkillsLoadError] = useState<string | null>(null);
   const selectedWorkspace = workspaceTabs.find(
     (tab) => getPluginWorkspaceKey(tab) === selectedScopeKey,
   );
@@ -1340,7 +1456,8 @@ export function SubagentsSection({
   );
   // Bug 原因：Scope target 与 useServices() 的当前上下文可以属于不同远程 host，
   // 子智能体及插件投影必须统一使用 target-scoped services，连接恢复前暂停 RPC。
-  const { pluginManagementService, subagentsService } = targetServiceResolution.services;
+  const { pluginManagementService, subagentsService, skillsService } =
+    targetServiceResolution.services;
   const activeScope = selectedWorkspace ? "workspace" : "user";
   // Provider/Model 事实属于目标 Environment：内置模型覆盖必须读 Scope target 自己的
   // Registry 视图，等待远端连接期间不能回退到 Base Host 的模型列表。
@@ -1369,6 +1486,39 @@ export function SubagentsSection({
     });
   }, [intl, modelSelectionView]);
   const subagentModelSelectGroups = chatModelSelectGroups;
+  const loadSkills = useCallback(async () => {
+    if (!targetServiceResolution.rpcReady) return;
+    const requestId = ++skillsRequestIdRef.current;
+    setSkillsLoading(true);
+    setSkillsLoadError(null);
+    try {
+      const result = await skillsService.list({
+        workspacePath: targetWorkspacePath ?? "",
+        workspaceIdentity: targetWorkspaceIdentity,
+        provider: ZCODE_AGENT_PROVIDER,
+      });
+      if (requestId !== skillsRequestIdRef.current) return;
+      setAvailableSkills(result.skills);
+    } catch (loadError) {
+      if (requestId !== skillsRequestIdRef.current) return;
+      setAvailableSkills([]);
+      setSkillsLoadError(loadError instanceof Error ? loadError.message : "");
+    } finally {
+      if (requestId === skillsRequestIdRef.current) setSkillsLoading(false);
+    }
+  }, [
+    skillsService,
+    targetServiceResolution.rpcReady,
+    targetWorkspaceIdentity,
+    targetWorkspacePath,
+  ]);
+  useEffect(() => {
+    if (!showForm) return;
+    void loadSkills();
+    return () => {
+      skillsRequestIdRef.current += 1;
+    };
+  }, [loadSkills, showForm]);
   const loadAgents = useCallback(
     async (showBlockingLoading: boolean) => {
       if (!targetServiceResolution.rpcReady) return;
@@ -1730,6 +1880,10 @@ export function SubagentsSection({
               modelSelectionView={modelSelectionView}
               modelSelectionLoading={modelSelectionLoading}
               modelSelectGroups={subagentModelSelectGroups}
+              availableSkills={availableSkills}
+              skillsLoading={skillsLoading}
+              skillsLoadError={skillsLoadError}
+              onReloadSkills={() => void loadSkills()}
               onManageModels={onManageModels}
               saving={saving}
               onCancel={handleCancelForm}

@@ -5,6 +5,7 @@ import type {
   AutomationPort,
   BackgroundResultOriginMeta,
   BrowserControlPort,
+  CodeIntelligencePort,
   CollaborationMode,
   CoordinatorResponsePort,
   DynamicWorkflowRunPort,
@@ -112,6 +113,7 @@ export interface ToolExecutorOptions {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  codeIntelligencePort?: CodeIntelligencePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -231,6 +233,7 @@ export interface ToolExecutorDeps {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  codeIntelligencePort?: CodeIntelligencePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
