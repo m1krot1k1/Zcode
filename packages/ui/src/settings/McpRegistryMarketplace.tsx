@@ -34,8 +34,8 @@ const PRELOAD_BATCH_SIZE = 4;
 /** 精选目录按会话缓存：Registry 只支持 search，没有 browse/count 接口。 */
 let curatedPreload: Promise<McpRegistryMarketplaceEntry[]> | null = null;
 
-/** 仅供测试隔离模块级缓存。 */
-export function resetMcpRegistryCatalogPreloadForTests(): void {
+/** 清掉会话级精选缓存，让重新加载重新请求 Registry。 */
+function resetMcpRegistryCatalogPreloadForTests(): void {
   curatedPreload = null;
 }
 

@@ -28,7 +28,7 @@ export type McpCatalogSortMode = Extract<CatalogSortMode, "recommended" | "name"
  * Registry 条目 + 目录派生字段。`publishedAt` 只有在服务端确实透出真实发布时间时才会存在；
  * 当前 `McpRegistryMarketplaceEntry` 尚未携带该字段，因此这里只做结构化兼容，不补造日期。
  */
-export interface McpCatalogEntryLike extends McpRegistryMarketplaceEntry {
+interface McpCatalogEntryLike extends McpRegistryMarketplaceEntry {
   publishedAt?: string;
   curatedRank?: number;
 }
@@ -36,7 +36,7 @@ export interface McpCatalogEntryLike extends McpRegistryMarketplaceEntry {
 export const MCP_CATALOG_TABS: readonly McpCatalogTab[] = ["popular", "all"] as const;
 
 /** 给条目附加 curated rank；不在精选列表中的条目 rank 为 undefined。 */
-export function withMcpCuratedRank(
+function withMcpCuratedRank(
   entries: readonly McpRegistryMarketplaceEntry[],
 ): McpCatalogEntryLike[] {
   return entries.map((entry) => {
@@ -52,7 +52,7 @@ export function withMcpCuratedRank(
  *
  * Registry 响应没有 official/publisher 标记，所以这里不产出 `official` 徽章。
  */
-export function mcpCatalogBadges(
+function mcpCatalogBadges(
   entry: McpCatalogEntryLike,
   now: Date = new Date(),
 ): CatalogBadge[] {
@@ -63,7 +63,7 @@ export function mcpCatalogBadges(
 }
 
 /** 大小写不敏感的名称/描述/id 子串匹配，作为目录的本地过滤器。 */
-export function matchesMcpCatalogQuery(
+function matchesMcpCatalogQuery(
   entry: McpRegistryMarketplaceEntry,
   rawQuery: string,
 ): boolean {
@@ -88,14 +88,14 @@ export function mergeMcpRegistryEntries(
   return [...merged.values()];
 }
 
-export interface McpCatalogViewEntry {
+interface McpCatalogViewEntry {
   item: McpCatalogEntryLike;
   /** 当前展示顺序中的排名，从 1 开始。 */
   rank: number;
   badges: CatalogBadge[];
 }
 
-export interface McpCatalogViewInput {
+interface McpCatalogViewInput {
   entries: readonly McpRegistryMarketplaceEntry[];
   tab: McpCatalogTab;
   sort: McpCatalogSortMode;

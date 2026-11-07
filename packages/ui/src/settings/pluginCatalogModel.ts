@@ -43,7 +43,7 @@ export const PLUGIN_CATALOG_SORTS: readonly PluginCatalogSort[] = ["recommended"
  * 条目来源：`listing.publisherType` 是官方市场目录的唯一真实归属字段；
  * 旧目录未提供时按公开（official）处理，与 CONTEXT.md 的 Public Segment 规则一致。
  */
-export function resolvePluginCatalogSource(
+function resolvePluginCatalogSource(
   item: Pick<StorePluginItem, "listing">,
 ): PluginCatalogSource {
   return item.listing?.publisherType === "community" ? "community" : "official";
@@ -53,7 +53,7 @@ export function resolvePluginCatalogSource(
  * 徽章：来源徽章始终来自真实 publisherType；Featured 只在
  * `getPluginCuratedRank` 命中共享策展名单时出现，绝不表示安装量或热度。
  */
-export function resolvePluginCatalogBadges(
+function resolvePluginCatalogBadges(
   item: Pick<StorePluginItem, "id" | "listing">,
 ): CatalogBadge[] {
   const badges: CatalogBadge[] = [
@@ -63,7 +63,7 @@ export function resolvePluginCatalogBadges(
   return badges;
 }
 
-export interface PluginCatalogViewEntry {
+interface PluginCatalogViewEntry {
   item: StorePluginItem;
   /** 当前可见顺序中的排名，从 1 开始。 */
   rank: number;
@@ -71,7 +71,7 @@ export interface PluginCatalogViewEntry {
   badges: CatalogBadge[];
 }
 
-export interface PluginCatalogViewInput {
+interface PluginCatalogViewInput {
   items: readonly StorePluginItem[];
   tab: PluginCatalogTab;
   sort: PluginCatalogSort;

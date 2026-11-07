@@ -39,14 +39,14 @@ export function matchesCatalogQuery(
   );
 }
 
-export interface CatalogViewEntry {
+interface CatalogViewEntry {
   item: MarketplaceSkillInfo;
   /** 当前展示顺序中的排名，从 1 开始。 */
   rank: number;
   badges: CatalogBadge[];
 }
 
-export interface CatalogViewInput {
+interface CatalogViewInput {
   items: readonly MarketplaceSkillInfo[];
   tab: CatalogTab;
   sort: CatalogSortMode;
