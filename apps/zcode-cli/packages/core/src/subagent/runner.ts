@@ -65,7 +65,7 @@ import {
 } from "@zcode/contracts";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -4656,6 +4656,11 @@ function resolveAllowedTools(
 }
 
 async function writeTextFile(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const parentDir = dirname(path);
+  await mkdir(parentDir, { recursive: true, mode: 0o700 });
   await writeFile(path, content, { encoding: "utf8", mode: 0o600 });
+  // 根因：Node 的 mode 仅在创建时生效，a8959bd5 之前已存在的产物（0644/0755）重写后仍是全局可读。
+  // 修复依据：重写后显式收紧文件及其直接父目录，覆盖历史产物路径。
+  await chmod(path, 0o600);
+  await chmod(parentDir, 0o700);
 }
