@@ -539,7 +539,7 @@ export function rows<T extends Row>(
   return db.prepare(sql).all(...parameters) as T[];
 }
 
-export function insertFileSymbols(db: CodeIndexDatabase, file: IndexedFileRecord): void {
+function insertFileSymbols(db: CodeIndexDatabase, file: IndexedFileRecord): void {
   const addSymbol = db.prepare(
     "INSERT INTO symbols(id, name, kind, path, start_line, end_line, signature, exported) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
   );
@@ -607,7 +607,7 @@ export function upsertFileRecord(db: CodeIndexDatabase, file: IndexedFileRecord)
     addEdge.run(edge.sourceId, edge.targetId, edge.relation, edge.sourcePath, edge.targetPath);
 }
 
-export class EmbeddingHttpError extends Error {
+class EmbeddingHttpError extends Error {
   constructor(readonly status: number) {
     super(`Embedding endpoint returned HTTP ${status}.`);
     this.name = "EmbeddingHttpError";

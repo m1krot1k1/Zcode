@@ -49,3 +49,23 @@ test("ignores malformed entries and unknown types", () => {
 
   assert.deepEqual(keys, ["exports\tsrc/a.ts\tkept"]);
 });
+
+test("duplicate diagnostics stay stable when declarations move", () => {
+  const keys = collectIssueKeys({
+    issues: [
+      {
+        file: "src/agent.ts",
+        duplicates: [
+          [
+            { name: "AgentInputSchema", line: 236, col: 14, pos: 8319 },
+            { name: "TaskInputSchema", line: 239, col: 14, pos: 8468 },
+          ],
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(keys, [
+    'duplicates\tsrc/agent.ts\t[{"name":"AgentInputSchema"},{"name":"TaskInputSchema"}]',
+  ]);
+});

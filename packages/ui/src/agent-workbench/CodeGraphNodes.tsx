@@ -18,7 +18,7 @@ interface FlowNodeData extends Record<string, unknown> {
 }
 
 type FlowNode = Node<FlowNodeData, "codeSymbol">;
-export type GraphCopy = (id: string, values?: Record<string, string | number>) => string;
+type GraphCopy = (id: string, values?: Record<string, string | number>) => string;
 
 export const KIND_DOT_STYLES: Record<string, string> = {
   module: "bg-muted-foreground",

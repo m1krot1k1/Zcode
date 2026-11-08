@@ -2,7 +2,9 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "tags": ["-lintignore"],
   "workspaces": {
-    ".": {}
+    "packages/ui": {
+      "entry": ["test/**/*.test.tsx"]
+    }
   },
   "ignore": [".agents/**", ".claude/**", "docs/**", "packages/ui/src/components/**"],
   "ignoreDependencies": ["d3-path", "tailwind-scrollbar-hide"]

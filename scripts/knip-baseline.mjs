@@ -41,6 +41,15 @@ function issueName(issue) {
   if (issue && typeof issue === "object") {
     if (typeof issue.name === "string") return issue.name;
     if (typeof issue.symbol === "string") return issue.symbol;
+    // Duplicate diagnostics embed source positions; those are presentation details,
+    // so line movement must not create a new baseline issue.
+    return JSON.stringify(issue, (key, value) =>
+      ["line", "column", "col", "pos", "endLine", "endColumn", "endCol", "endPos"].includes(
+        key,
+      )
+        ? undefined
+        : value,
+    );
   }
   return JSON.stringify(issue);
 }
