@@ -519,7 +519,7 @@ import { createPluginSyncService } from "./plugin-sync/pluginSyncService.js";
 import { createPluginsService } from "./plugins/pluginsService.js";
 import { createPluginManagementService } from "./plugins/pluginManagementService.js";
 import { createSubagentsService } from "./subagents/subagentsService.js";
-import { createCodeIntelligenceService } from "./code-intelligence/codeIntelligenceService.js";
+import { createCodeIntelligenceService } from "./code-intelligence/index.js";
 import { createCommandsService } from "./commands/commandsService.js";
 import { createHooksService } from "./hooks/hooksService.js";
 import { createMemoryService } from "./memory/memoryService.js";
@@ -719,9 +719,11 @@ const taskAutoArchiveDisposers = new WeakMap<ServiceCollection, () => void>();
 // 与其它侧表一样按 ServiceCollection 登记并在 dispose 时统一 close。
 const sharedSqliteRepos = new WeakMap<ServiceCollection, ReadonlyArray<{ close(): void }>>();
 const accountRequestAuthServices = new WeakMap<ServiceCollection, IAccountRequestAuthService>();
-export type OffPeakRequestAuthBuilder = (
-  ticketId: string,
-) => Promise<{ apiKey: string; headers: Record<string, string>; accountScope?: string }>;
+export type OffPeakRequestAuthBuilder = (ticketId: string) => Promise<{
+  apiKey: string;
+  headers: Record<string, string>;
+  accountScope?: string;
+}>;
 const offPeakRequestAuthBuilders = new WeakMap<ServiceCollection, OffPeakRequestAuthBuilder>();
 
 /** Local Host 进程内能力；不会随 ServiceCollection 暴露到通用 RPC Channel。 */
@@ -1385,7 +1387,11 @@ export function createLocalServices(options: {
     isBusinessUnauthorizedRequest: (input, _headers) =>
       isOAuthBusinessRequest({ input, credentialService }),
     resolveBusinessCredentialValidationRequest: (input, headers) =>
-      resolveOAuthBusinessCredentialValidationRequest({ input, headers, credentialService }),
+      resolveOAuthBusinessCredentialValidationRequest({
+        input,
+        headers,
+        credentialService,
+      }),
     resolveZCodeEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
     resolveClientLanguage: options?.resolveClientLanguage,
   });
@@ -1419,7 +1425,9 @@ export function createLocalServices(options: {
           return false;
         }
         const hasRow = await hasAnyAgentSessionRow(sessionDbPath);
-        onboardingEvidenceLogger.debug("onboarding 会话证据源已查询", { hasRow });
+        onboardingEvidenceLogger.debug("onboarding 会话证据源已查询", {
+          hasRow,
+        });
         return hasRow;
       },
       resolveLegacyTaskSessionsDir: () => join(resolveAppConfigDir(), "sessions"),
@@ -1547,7 +1555,9 @@ export function createLocalServices(options: {
         }),
     },
     onZCodeBuiltinRefreshError: (error) => {
-      providerConfigLog.warn(undefined, "ZCode Built-in Config 远端刷新失败", { error });
+      providerConfigLog.warn(undefined, "ZCode Built-in Config 远端刷新失败", {
+        error,
+      });
     },
     onPersonalConfigRecovery: (event) => {
       providerConfigLog.warn(
@@ -1721,6 +1731,7 @@ export function createLocalServices(options: {
   });
   const codeIntelligenceService = createCodeIntelligenceService({
     indexRootDir: join(projectDataRoot(), "code-intelligence"),
+    credentialService,
   });
   const commandsService = createCommandsService({ isDesktopRuntime: true });
   const hooksService = createHooksService({
@@ -1814,7 +1825,9 @@ export function createLocalServices(options: {
             if (buffer.includes("\n")) {
               try {
                 const nl = buffer.indexOf("\n");
-                const reply = JSON.parse(buffer.slice(0, nl)) as { ok?: boolean };
+                const reply = JSON.parse(buffer.slice(0, nl)) as {
+                  ok?: boolean;
+                };
                 finish(reply.ok === true ? socketPath : null);
               } catch {
                 finish(null);
@@ -1885,7 +1898,10 @@ export function createLocalServices(options: {
       socketPath,
       exitLogPath: `${socketPath}.settings.exit.log`,
       ...(isCuaLocalDevelopmentRuntime(process.env)
-        ? { allowUnsignedLauncherLocalDev: true, allowExternalBrokerClientLocalDev: true }
+        ? {
+            allowUnsignedLauncherLocalDev: true,
+            allowExternalBrokerClientLocalDev: true,
+          }
         : {}),
     });
     try {
@@ -2214,11 +2230,17 @@ export function createLocalServices(options: {
       const hostIds = [...new Set(refs.map((task) => task.hostId))];
       const results = await Promise.all(
         hostIds.map(async (hostId) => {
-          const tree = await projectService.readTree({ hostId, includeDeletedTasks: true });
+          const tree = await projectService.readTree({
+            hostId,
+            includeDeletedTasks: true,
+          });
           const facts = new Map(
             [
               ...tree.tasks,
-              ...(tree.deletedTasks ?? []).map((task) => ({ ...task, deleted: true })),
+              ...(tree.deletedTasks ?? []).map((task) => ({
+                ...task,
+                deleted: true,
+              })),
             ].map((task) => [groupTaskKey(task), task]),
           );
           return refs
@@ -2254,8 +2276,12 @@ export function createLocalServices(options: {
         additionalDirectories: target.additionalDirectories,
       }).additionalDirectories,
     resolveSessionDirectories: async (target) =>
-      (await projectService.resolveSessionDirectories({ ...target, taskId: target.sessionId }))
-        .additionalDirectories,
+      (
+        await projectService.resolveSessionDirectories({
+          ...target,
+          taskId: target.sessionId,
+        })
+      ).additionalDirectories,
     ...(agentAccountProviderConfigSource
       ? { accountProviderConfigSource: agentAccountProviderConfigSource }
       : {}),
@@ -2730,7 +2756,10 @@ export function createLocalServices(options: {
         settingService,
         modelSelectionService: providerRuntime.modelSelection,
         remoteWorkspaceService: botRemoteWorkspaceService
-          ? { ...botRemoteWorkspaceService, resolveWorkspace: options?.resolveBotRemoteWorkspace }
+          ? {
+              ...botRemoteWorkspaceService,
+              resolveWorkspace: options?.resolveBotRemoteWorkspace,
+            }
           : undefined,
         // 远端与本地 Bot 都读取所属 Environment 的 Model Selection View。
         // 远端启动期不再轮询旧 Preset，避免重新制造一套模型候选事实。
@@ -2865,7 +2894,9 @@ export function createLocalServices(options: {
         const resolveHighspeedLoginHeaders = async (): Promise<Record<string, string>> => {
           const jwt = (await credentialService.load("zcodejwttoken"))?.trim() ?? "";
           if (!jwt) throw new Error("highspeed request requires zcode jwt");
-          return { Authorization: /^Bearer\s/i.test(jwt) ? jwt : `Bearer ${jwt}` };
+          return {
+            Authorization: /^Bearer\s/i.test(jwt) ? jwt : `Bearer ${jwt}`,
+          };
         };
         const transport = mockScenario
           ? createHighspeedMockTransport({ scenario: mockScenario })
@@ -3274,7 +3305,10 @@ export async function createServerHostServices(options: {
   providerProvisioningTargetEnabled?: boolean;
 }) {
   const projectStorageHostId = remoteHostIdFromWorkspaceIdentity(
-    buildServerRemoteWorkspaceIdentity({ serverId: options.sourceServerId, workspacePath: "/" }),
+    buildServerRemoteWorkspaceIdentity({
+      serverId: options.sourceServerId,
+      workspacePath: "/",
+    }),
   );
   if (!projectStorageHostId) throw new Error("Invalid Source Server storage identity");
   await migrateApplicationStorage(await createSettingService().get(), projectStorageHostId);
@@ -3282,7 +3316,10 @@ export async function createServerHostServices(options: {
   const workspaceIdentityMapper = new SourceServerWorkspaceIdentityMapper();
   const sourceServerWorkspaceService = createSourceServerWorkspaceService(workspaceAliasRepo, {
     defaultWorkspaceIdentity: (workspacePath) =>
-      buildServerRemoteWorkspaceIdentity({ serverId: options.sourceServerId, workspacePath }),
+      buildServerRemoteWorkspaceIdentity({
+        serverId: options.sourceServerId,
+        workspacePath,
+      }),
     onResolved: ({ workspacePath, canonicalWorkspaceKey }) => {
       workspaceIdentityMapper.register({
         stableIdentity: buildServerRemoteWorkspaceIdentity({

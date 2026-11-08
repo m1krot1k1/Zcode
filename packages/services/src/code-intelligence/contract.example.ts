@@ -6,7 +6,26 @@ export async function indexAndSearch(
   workspacePath: string,
 ): Promise<CodeSearchResult[]> {
   await service.indexWorkspace({ workspacePath });
-  const result = await service.search({ workspacePath, query: "workspace identity", limit: 8 });
+  const result = await service.search({
+    workspacePath,
+    query: "workspace identity",
+    limit: 8,
+  });
   // Results contain workspace-relative paths; the UI resolves them through the file service.
   return result.results;
+}
+
+/** Configure an OpenAI-compatible endpoint; secrets are entered separately at runtime. */
+export async function configureOpenAiCompatibleEmbeddings(
+  service: CodeIntelligenceService,
+  workspacePath: string,
+  endpoint: string,
+  model: string,
+): Promise<void> {
+  await service.setEmbeddingConfig({
+    workspacePath,
+    provider: "openai-compatible",
+    endpoint,
+    model,
+  });
 }

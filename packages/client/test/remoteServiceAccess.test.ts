@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IChannel, IChannelClient } from "@zcode/rpc";
-import { ISourceServerManagementService } from "@zcode/services";
+import { ICodeIntelligenceService, ISourceServerManagementService } from "@zcode/services";
 import { IOpenCodeAcpRuntime } from "@zcode/services";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
 
@@ -89,6 +89,28 @@ describe("RemoteServiceAccess optional channels", () => {
 
     expect(services.sourceServerManagementService).toBeUndefined();
     expect(getChannel).not.toHaveBeenCalledWith(ISourceServerManagementService.channelName);
+  });
+
+  it("constructs the code-index proxy only for an opted-in local Desktop Host", async () => {
+    const getChannel = vi.fn(
+      () =>
+        ({
+          call: vi.fn(async () => ({ state: "unindexed" })),
+          listen: vi.fn(),
+        }) as unknown as IChannel,
+    );
+    const defaultServices = new RemoteServiceAccess({ getChannel } as IChannelClient);
+    expect(defaultServices.codeIntelligenceService).toBeUndefined();
+    expect(getChannel).not.toHaveBeenCalledWith(ICodeIntelligenceService.channelName);
+
+    const services = new RemoteServiceAccess({ getChannel } as IChannelClient, {
+      codeIntelligenceService: true,
+    });
+    expect(services.codeIntelligenceService).toBeDefined();
+    await expect(
+      services.codeIntelligenceService!.getStatus({ workspacePath: "/workspace" }),
+    ).resolves.toMatchObject({ state: "unindexed" });
+    expect(getChannel).toHaveBeenCalledWith(ICodeIntelligenceService.channelName);
   });
 });
 

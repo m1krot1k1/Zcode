@@ -120,6 +120,9 @@ const requiredRuntimeModules = [
   "node-forge",
   // 与 tsup external 对齐，保留 ZIP 解包器的 CommonJS 运行时边界。
   "yauzl",
+  // Code Intelligence использует TypeScript compiler API как runtime-зависимость main/host.
+  // Его CommonJS dynamic require нельзя встраивать в ESM bundle.
+  "typescript",
   // Bugfix: 飞书 SDK 为了避开 Electron ESM 动态 require 崩溃会作为外部依赖保留，
   // 生产包必须显式校验 app.asar 中存在该 scoped 包。
   "@larksuiteoapi/node-sdk",

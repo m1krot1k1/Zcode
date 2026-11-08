@@ -1,0 +1,120 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  requestEmbeddings,
+  validateEmbeddingConfig,
+} from "../../src/code-intelligence/database.js";
+
+describe("embedding providers", () => {
+  it("allows Ollama only on a loopback HTTP endpoint", () => {
+    expect(
+      validateEmbeddingConfig("ollama", "http://127.0.0.1:11434/api/embed", "nomic-embed-text"),
+    ).toMatchObject({
+      provider: "ollama",
+      endpoint: "http://127.0.0.1:11434/api/embed",
+      model: "nomic-embed-text",
+    });
+    expect(() =>
+      validateEmbeddingConfig("ollama", "https://example.test/api/embed", "nomic-embed-text"),
+    ).toThrow();
+    expect(() =>
+      validateEmbeddingConfig("ollama", "http://example.test/api/embed", "nomic-embed-text"),
+    ).toThrow();
+  });
+
+  it("allows HTTPS OpenAI-compatible endpoints but rejects URL credentials and query strings", () => {
+    expect(
+      validateEmbeddingConfig(
+        "openai-compatible",
+        "https://openrouter.ai/api/v1/embeddings",
+        "openai/text-embedding-3-small",
+      ),
+    ).toMatchObject({ provider: "openai-compatible" });
+    expect(() =>
+      validateEmbeddingConfig(
+        "openai-compatible",
+        "https://user:secret@example.test/v1/embeddings",
+        "example/embed",
+      ),
+    ).toThrow();
+    expect(() =>
+      validateEmbeddingConfig(
+        "openai-compatible",
+        "https://example.test/v1/embeddings?token=secret",
+        "example/embed",
+      ),
+    ).toThrow();
+    expect(() =>
+      validateEmbeddingConfig(
+        "openai-compatible",
+        "http://example.test/v1/embeddings",
+        "example/embed",
+      ),
+    ).toThrow();
+  });
+
+  it("maps OpenAI-compatible response indexes back to input order and sends a bearer token", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-secret");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: "example/embed",
+        input: ["first", "second"],
+      });
+      return Response.json({
+        data: [
+          { object: "embedding", index: 1, embedding: [0, 1] },
+          { object: "embedding", index: 0, embedding: [1, 0] },
+        ],
+      });
+    });
+    const config = validateEmbeddingConfig(
+      "openai-compatible",
+      "https://example.test/v1/embeddings",
+      "example/embed",
+    );
+
+    await expect(
+      requestEmbeddings({ ...config, apiKey: "test-secret" }, ["first", "second"], fetchMock),
+    ).resolves.toEqual([
+      [1, 0],
+      [0, 1],
+    ]);
+  });
+
+  it("uses Ollama's embeddings response without authorization by default", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(new Headers(init?.headers).has("authorization")).toBe(false);
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: "nomic-embed-text",
+        input: ["text"],
+      });
+      return Response.json({ embeddings: [[0.25, 0.75]] });
+    });
+    const config = validateEmbeddingConfig(
+      "ollama",
+      "http://127.0.0.1:11434/api/embed",
+      "nomic-embed-text",
+    );
+
+    await expect(requestEmbeddings(config, ["text"], fetchMock)).resolves.toEqual([[0.25, 0.75]]);
+  });
+
+  it("rejects an OpenAI-compatible response with duplicate or missing indexes", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        data: [
+          { index: 0, embedding: [1] },
+          { index: 0, embedding: [0] },
+        ],
+      }),
+    );
+    const config = validateEmbeddingConfig(
+      "openai-compatible",
+      "https://example.test/v1/embeddings",
+      "example/embed",
+    );
+
+    await expect(requestEmbeddings(config, ["first", "second"], fetchMock)).rejects.toThrow(
+      "invalid vector order",
+    );
+  });
+});

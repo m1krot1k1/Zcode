@@ -12,6 +12,11 @@ import type {
 } from "./contract.js";
 import { scanWorkspace, type IndexedChunkRecord, type IndexedFileRecord } from "./scanner.js";
 import {
+  embeddingCredentialKey,
+  updateEmbeddingConfig,
+  type EmbeddingCredentialStore,
+} from "./embeddingSettings.js";
+import {
   MAX_DIAGNOSTICS,
   MAX_EMBED_BATCH,
   cosineSimilarity,
@@ -29,12 +34,10 @@ import {
   statusFromDb,
   tokenize,
   upsertFileRecord,
-  validateEmbeddingConfig,
   workspaceIdentity,
   writeEmbedding,
   writeText,
   type CodeIndexDatabase,
-  type EmbeddingConfig,
   type IndexProgress,
   type Row,
 } from "./database.js";
@@ -42,6 +45,7 @@ import {
 interface CodeIntelligenceServiceOptions {
   indexRootDir?: string;
   fetch?: typeof fetch;
+  credentialService?: EmbeddingCredentialStore;
 }
 
 export function createCodeIntelligenceService(
@@ -49,6 +53,7 @@ export function createCodeIntelligenceService(
 ): CodeIntelligenceService {
   const indexRootDir = options.indexRootDir ?? join(getZCodeDataRootDir(), "code-intelligence");
   const fetchImpl = options.fetch ?? fetch;
+  const credentialService = options.credentialService;
   const progressByIdentity = new Map<string, IndexProgress>();
   const activeIndexes = new Map<string, Promise<CodeIndexStatus>>();
   const diagnosticsByIdentity = new Map<string, string[]>();
@@ -184,18 +189,31 @@ export function createCodeIntelligenceService(
             }
           }
           const config = getEmbeddingConfig(db);
+          const modelIdentity = config.identity;
           let embeddingAvailable = false;
           const diagnostics = [...scan.diagnostics];
           const vectorsModel = readText(db, "vectors_model");
           const changedPaths = new Set(
             scan.files.filter((file) => file.changed || file.excluded).map((file) => file.path),
           );
-          const needsFullReembed = Boolean(config.model && vectorsModel !== config.model);
+          const needsFullReembed = Boolean(modelIdentity && vectorsModel !== modelIdentity);
           embeddingAvailable = Boolean(
-            config.endpoint && config.model && vectorsModel === config.model,
+            config.endpoint && config.model && modelIdentity && vectorsModel === modelIdentity,
           );
-          if (config.endpoint && config.model && (changedChunks.length > 0 || needsFullReembed)) {
+          if (
+            config.endpoint &&
+            config.model &&
+            modelIdentity &&
+            (changedChunks.length > 0 || needsFullReembed)
+          ) {
             try {
+              const storedApiKey = await credentialService?.load(
+                embeddingCredentialKey(workspace.key),
+              );
+              const requestConfig = {
+                ...config,
+                ...(storedApiKey?.trim() ? { apiKey: storedApiKey.trim() } : {}),
+              };
               // Network calls stay outside the main transaction. Existing vectors are staged in
               // a connection-local temp table so a model change never duplicates the whole index
               // in JavaScript memory and only a fully successful embedding pass is published.
@@ -209,13 +227,13 @@ export function createCodeIntelligenceService(
               for (let offset = 0; offset < changedChunks.length; offset += MAX_EMBED_BATCH) {
                 const batch = changedChunks.slice(offset, offset + MAX_EMBED_BATCH);
                 const embeddings = await requestEmbeddings(
-                  config,
+                  requestConfig,
                   batch.map((chunk) => chunk.content),
                   fetchImpl,
                 );
                 batch.forEach((chunk, index) => {
                   chunk.embedding = writeEmbedding(embeddings[index]!);
-                  chunk.embeddingModel = config.model;
+                  chunk.embeddingModel = modelIdentity;
                 });
               }
               if (needsFullReembed) {
@@ -226,13 +244,13 @@ export function createCodeIntelligenceService(
                     db,
                     "SELECT id, path, content FROM chunks WHERE id > ? AND (embedding_model IS NULL OR embedding_model <> ?) ORDER BY id LIMIT ?",
                     lastId,
-                    config.model,
+                    modelIdentity,
                     pageSize,
                   );
                   const eligible = page.filter((chunk) => !changedPaths.has(String(chunk.path)));
                   if (eligible.length > 0) {
                     const embeddings = await requestEmbeddings(
-                      config,
+                      requestConfig,
                       eligible.map((chunk) => String(chunk.content)),
                       fetchImpl,
                     );
@@ -253,7 +271,7 @@ export function createCodeIntelligenceService(
               db.exec("DELETE FROM temp.pending_embeddings");
               embeddingAvailable = false;
               diagnostics.push(
-                "The local embedding model was unavailable; the index was committed for lexical search.",
+                "The embedding endpoint was unavailable; the index was committed for lexical search.",
               );
             }
           }
@@ -313,10 +331,10 @@ export function createCodeIntelligenceService(
                 );
               }
             }
-            if (embeddingAvailable && config.model && needsFullReembed) {
+            if (embeddingAvailable && modelIdentity && needsFullReembed) {
               db.prepare(
                 "UPDATE chunks SET embedding = (SELECT embedding FROM temp.pending_embeddings WHERE pending_embeddings.id = chunks.id), embedding_model = ? WHERE id IN (SELECT id FROM temp.pending_embeddings)",
-              ).run(config.model);
+              ).run(modelIdentity);
             }
             const generation = Number(readText(db, "generation") ?? 0) + 1;
             const now = Date.now();
@@ -325,7 +343,11 @@ export function createCodeIntelligenceService(
             writeText(db, "index_partial", String(scan.partial));
             writeText(db, "updated_at", String(now));
             writeText(db, "diagnostics", JSON.stringify(diagnostics.slice(0, MAX_DIAGNOSTICS)));
-            writeText(db, "vectors_model", embeddingAvailable && config.model ? config.model : "");
+            writeText(
+              db,
+              "vectors_model",
+              embeddingAvailable && modelIdentity ? modelIdentity : "",
+            );
             db.exec("COMMIT");
             return { generation, diagnostics };
           } catch (error) {
@@ -435,9 +457,22 @@ export function createCodeIntelligenceService(
         }
         const config = getEmbeddingConfig(db);
         let semantic = false;
-        if (config.endpoint && config.model && readText(db, "vectors_model") === config.model) {
+        if (
+          config.endpoint &&
+          config.model &&
+          config.identity &&
+          readText(db, "vectors_model") === config.identity
+        ) {
           try {
-            const [queryVector] = await requestEmbeddings(config, [query], fetchImpl);
+            const workspace = resolveWorkspace(params);
+            const storedApiKey = await credentialService?.load(
+              embeddingCredentialKey(workspace.key),
+            );
+            const requestConfig = {
+              ...config,
+              ...(storedApiKey?.trim() ? { apiKey: storedApiKey.trim() } : {}),
+            };
+            const [queryVector] = await requestEmbeddings(requestConfig, [query], fetchImpl);
             if (queryVector) {
               semantic = true;
               const semanticCandidates: Array<{ id: string; score: number }> = [];
@@ -447,7 +482,7 @@ export function createCodeIntelligenceService(
                   db,
                   "SELECT id, embedding FROM chunks WHERE id > ? AND embedding_model = ? AND embedding IS NOT NULL ORDER BY id LIMIT 256",
                   lastId,
-                  config.model,
+                  config.identity,
                 );
                 if (page.length === 0) break;
                 for (const chunk of page) {
@@ -486,7 +521,7 @@ export function createCodeIntelligenceService(
           } catch {
             const workspace = resolveWorkspace(params);
             diagnosticsByIdentity.set(workspace.key, [
-              "Local semantic search is unavailable; showing lexical results.",
+              "Embedding search is unavailable; showing lexical results.",
             ]);
           }
         }
@@ -672,53 +707,16 @@ export function createCodeIntelligenceService(
       });
     },
     async setEmbeddingConfig(params) {
-      return withDb(params, (db) => {
-        const hasExplicitClear = params.endpoint === null || params.model === null;
-        const previousConfig = getEmbeddingConfig(db);
-        const nextEndpoint = hasExplicitClear
-          ? undefined
-          : params.endpoint === undefined
-            ? previousConfig.endpoint
-            : params.endpoint;
-        const nextModel = hasExplicitClear
-          ? undefined
-          : params.model === undefined
-            ? previousConfig.model
-            : params.model;
-        if (!hasExplicitClear && (!nextEndpoint?.trim() || !nextModel?.trim())) {
-          throw new Error(
-            "Both local embedding endpoint and model are required. Use null to clear the configuration.",
-          );
-        }
-        const config = hasExplicitClear ? {} : validateEmbeddingConfig(nextEndpoint, nextModel);
-        const previousModel = previousConfig.model;
-        db.exec("BEGIN IMMEDIATE");
-        try {
-          if (config.endpoint && config.model) {
-            writeText(db, "embedding_endpoint", config.endpoint);
-            writeText(db, "embedding_model", config.model);
-          } else {
-            db.prepare(
-              "DELETE FROM index_meta WHERE key IN ('embedding_endpoint','embedding_model','vectors_model')",
-            ).run();
-            db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
-          }
-          if (config.model && previousModel !== config.model) {
-            db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
-            writeText(db, "vectors_model", "");
-          }
-          db.exec("COMMIT");
-        } catch (error) {
-          db.exec("ROLLBACK");
-          throw error;
-        }
-        return statusFromDb(db);
-      });
+      const workspace = resolveWorkspace(params);
+      return withDb(params, (db) =>
+        updateEmbeddingConfig(db, params, embeddingCredentialKey(workspace.key), credentialService),
+      );
     },
     async clearIndex(params) {
       const workspace = resolveWorkspace(params);
       const active = activeIndexes.get(workspace.key);
       if (active) await active.catch(() => undefined);
+      await credentialService?.delete(embeddingCredentialKey(workspace.key));
       await rm(workspace.databasePath, { force: true });
       await rm(`${workspace.databasePath}-wal`, { force: true });
       await rm(`${workspace.databasePath}-shm`, { force: true });

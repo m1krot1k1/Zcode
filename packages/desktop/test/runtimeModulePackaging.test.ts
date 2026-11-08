@@ -38,6 +38,17 @@ describe("desktop runtime module packaging", () => {
     expect(verifiedModules.every((moduleName) => injectedModules.includes(moduleName))).toBe(true);
   });
 
+  it("keeps the external TypeScript compiler in both app.asar runtime lists", () => {
+    const injectedModules = readModuleList(
+      "electron-builder.config.js",
+      "const REQUIRED_ASAR_RUNTIME_MODULES =",
+    );
+    const verifiedModules = readModuleList("scripts/bundle.mjs", "const requiredRuntimeModules =");
+
+    expect(injectedModules).toContain("typescript");
+    expect(verifiedModules).toContain("typescript");
+  });
+
   it("finds package roots imported by external main and host bundles", () => {
     expect(
       collectExternalRuntimeModuleNames([

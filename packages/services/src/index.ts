@@ -290,8 +290,10 @@ export { ISubagentsService } from "./subagents/subagents.js";
 export {
   ICodeIntelligenceService,
   type CodeIntelligenceService,
+  type CodeWorkspaceRef,
   type CodeImpactResult,
   type CodeIndexStatus,
+  type EmbeddingProvider,
   type CodeSearchResult,
   type CodeSymbolContext,
   type CodeTraceResult,

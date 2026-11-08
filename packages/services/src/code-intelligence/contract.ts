@@ -3,6 +3,7 @@ import { createServiceDescriptor } from "../descriptors.js";
 
 export type CodeIndexState = "unindexed" | "indexing" | "ready" | "degraded";
 export type CodeIndexMatchKind = "lexical" | "semantic";
+export type EmbeddingProvider = "ollama" | "openai-compatible";
 
 export interface CodeWorkspaceRef {
   workspacePath: string;
@@ -16,7 +17,14 @@ export interface CodeIndexStatus {
   updatedAt?: number;
   counts: { files: number; chunks: number; symbols: number; edges: number };
   progress?: { discoveredFiles: number; indexedFiles: number };
-  embedding: { configured: boolean; endpoint?: string; model?: string; available: boolean };
+  embedding: {
+    configured: boolean;
+    provider?: EmbeddingProvider;
+    endpoint?: string;
+    model?: string;
+    apiKeyConfigured?: boolean;
+    available: boolean;
+  };
   diagnostics: string[];
 }
 
@@ -47,13 +55,23 @@ export interface CodeSymbolContext {
 
 export interface CodeImpactResult {
   changedPaths: string[];
-  affectedSymbols: Array<{ name: string; path: string; startLine: number; distance: number }>;
+  affectedSymbols: Array<{
+    name: string;
+    path: string;
+    startLine: number;
+    distance: number;
+  }>;
   partial: boolean;
 }
 
 export interface CodeTraceResult {
   found: boolean;
-  path: Array<{ name: string; path: string; startLine: number; relation: string }>;
+  path: Array<{
+    name: string;
+    path: string;
+    startLine: number;
+    relation: string;
+  }>;
   partial: boolean;
 }
 
@@ -65,9 +83,11 @@ export interface CodeIntelligenceService {
   indexWorkspace(params: CodeWorkspaceRef & { force?: boolean }): Promise<CodeIndexStatus>;
 
   /** Search indexed code; lexical search works offline, semantic ranking is optional. */
-  search(
-    params: CodeWorkspaceRef & { query: string; limit?: number },
-  ): Promise<{ results: CodeSearchResult[]; semantic: boolean; partial: boolean }>;
+  search(params: CodeWorkspaceRef & { query: string; limit?: number }): Promise<{
+    results: CodeSearchResult[];
+    semantic: boolean;
+    partial: boolean;
+  }>;
 
   /** Resolve one symbol and its locally known callers/dependencies. */
   getSymbolContext(
@@ -82,9 +102,15 @@ export interface CodeIntelligenceService {
     params: CodeWorkspaceRef & { fromSymbol: string; toSymbol: string },
   ): Promise<CodeTraceResult>;
 
-  /** Set/clear a local HTTP embedding endpoint and model; does not download models. */
+  /** Set/clear an embedding provider without returning or persisting API-key material in the index. */
   setEmbeddingConfig(
-    params: CodeWorkspaceRef & { endpoint?: string | null; model?: string | null },
+    params: CodeWorkspaceRef & {
+      provider?: EmbeddingProvider | null;
+      endpoint?: string | null;
+      model?: string | null;
+      /** Empty/omitted preserves a saved key; null removes it. */
+      apiKey?: string | null;
+    },
   ): Promise<CodeIndexStatus>;
 
   /** Delete only the identity-scoped local index for this workspace. */

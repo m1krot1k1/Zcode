@@ -2,11 +2,14 @@ import type { ReactNode } from "react";
 export { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
 export type { AgentSummary } from "@zcode/shared";
 export type {
+  CodeIntelligenceService,
   CodeImpactResult,
   CodeIndexStatus,
   CodeSearchResult,
   CodeSymbolContext,
   CodeTraceResult,
+  CodeWorkspaceRef,
+  EmbeddingProvider,
 } from "@zcode/services";
 
 export interface AgentWorkbenchViewProps {

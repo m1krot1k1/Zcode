@@ -16,6 +16,7 @@ import {
   type CodeSymbolContext,
   type CodeTraceResult,
 } from "./contract.js";
+import { EmbeddingProviderSettings } from "./EmbeddingProviderSettings.js";
 
 const EMPTY_STATUS: CodeIndexStatus = {
   state: "unindexed",
@@ -62,8 +63,6 @@ export function AgentWorkbenchView({
   const [toSymbol, setToSymbol] = useState("");
   const [trace, setTrace] = useState<CodeTraceResult | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
-  const [endpoint, setEndpoint] = useState("");
-  const [model, setModel] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const copy = useCallback(
     (id: string, _defaultMessage: string, values?: Record<string, string | number>) =>
@@ -116,11 +115,6 @@ export function AgentWorkbenchView({
     return () => window.clearInterval(timer);
   }, [busy, refreshStatus]);
 
-  useEffect(() => {
-    if (status.embedding.endpoint !== undefined) setEndpoint(status.embedding.endpoint);
-    if (status.embedding.model) setModel(status.embedding.model);
-  }, [status.embedding.endpoint, status.embedding.model]);
-
   const indexWorkspace = async () => {
     if (!codeIndex) return;
     setBusy(true);
@@ -151,51 +145,6 @@ export function AgentWorkbenchView({
       setSearchState("idle");
     } catch {
       setMessage(copy("agentWorkbench.clearFailed", "Could not clear this workspace index."));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const saveEmbeddingConfig = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!codeIndex) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const next = await codeIndex.setEmbeddingConfig({
-        ...workspaceRef,
-        endpoint: endpoint.trim(),
-        model: model.trim(),
-      });
-      setStatus(next);
-      setMessage(copy("agentWorkbench.embeddingSaved", "Local embedding settings saved."));
-    } catch {
-      setMessage(
-        copy(
-          "agentWorkbench.embeddingRejected",
-          "Use a credential-free loopback HTTP endpoint and a model name.",
-        ),
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const clearEmbeddingConfig = async () => {
-    if (!codeIndex) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      setStatus(
-        await codeIndex.setEmbeddingConfig({ ...workspaceRef, endpoint: null, model: null }),
-      );
-      setEndpoint("");
-      setModel("");
-      setMessage(copy("agentWorkbench.embeddingCleared", "Local embedding settings cleared."));
-    } catch {
-      setMessage(
-        copy("agentWorkbench.embeddingClearFailed", "Could not clear local embedding settings."),
-      );
     } finally {
       setBusy(false);
     }
@@ -738,47 +687,15 @@ export function AgentWorkbenchView({
         </div>
       </section>
 
-      <section
-        className="mb-4 rounded-xl border bg-card p-3"
-        aria-labelledby="embedding-config-heading"
-      >
-        <h3 id="embedding-config-heading" className="mb-2 text-ui-sm font-semibold">
-          {copy("agentWorkbench.embeddingConfig", "Local embeddings")}
-        </h3>
-        <form className="space-y-2" onSubmit={(event) => void saveEmbeddingConfig(event)}>
-          <Input
-            aria-label={copy("agentWorkbench.embeddingEndpoint", "Embedding endpoint")}
-            placeholder="http://127.0.0.1:11434/api/embed"
-            value={endpoint}
-            onChange={(event) => setEndpoint(event.target.value)}
-          />
-          <Input
-            aria-label={copy("agentWorkbench.embeddingModel", "Embedding model")}
-            placeholder="nomic-embed-text"
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-          />
-          <Button
-            type="submit"
-            size="sm"
-            variant="outline"
-            className="w-full"
-            disabled={!codeIndex || busy}
-          >
-            {copy("agentWorkbench.saveEmbedding", "Save local model settings")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="w-full"
-            disabled={!codeIndex || busy || !status.embedding.configured}
-            onClick={() => void clearEmbeddingConfig()}
-          >
-            {copy("agentWorkbench.clearEmbedding", "Clear embedding settings")}
-          </Button>
-        </form>
-      </section>
+      <EmbeddingProviderSettings
+        codeIndex={codeIndex}
+        workspaceRef={workspaceRef}
+        status={status}
+        setStatus={setStatus}
+        busy={busy}
+        setBusy={setBusy}
+        copy={copy}
+      />
       {message ? (
         <p role="status" className="mb-3 text-ui-xs text-muted-foreground">
           {message}

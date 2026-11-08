@@ -45,7 +45,7 @@ export interface IndexedEdgeRecord {
   targetPath: string;
 }
 
-export interface ScannedFileMeta {
+interface ScannedFileMeta {
   path: string;
   mtimeMs: number;
   ctimeMs: number;
@@ -56,7 +56,7 @@ export interface ScannedFileMeta {
   record?: IndexedFileRecord;
 }
 
-export interface WorkspaceScanResult {
+interface WorkspaceScanResult {
   files: ScannedFileMeta[];
   diagnostics: string[];
   truncated: boolean;
@@ -98,7 +98,7 @@ const DEFAULT_IGNORES = [
   "**/*secret*",
 ];
 
-export interface PreviousFileMeta {
+interface PreviousFileMeta {
   mtimeMs: number;
   ctimeMs: number;
   size: number;

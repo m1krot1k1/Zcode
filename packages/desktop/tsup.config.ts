@@ -243,6 +243,9 @@ function createMainDefines() {
 const desktopNodeRuntimeExternals = [
   "electron",
   "node-pty",
+  // TypeScript's compiler API uses CommonJS dynamic require("fs"). The code indexer runs in
+  // main/host, so keep the compiler as a packaged runtime module instead of inlining it into ESM.
+  "typescript",
   "ssh2",
   "undici",
   "@larksuiteoapi/node-sdk",

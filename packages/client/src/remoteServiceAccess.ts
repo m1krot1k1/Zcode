@@ -1,6 +1,7 @@
 import { IGenUiService } from "@zcode/services";
 import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
 import {
+  ICodeIntelligenceService,
   IFileService,
   IMediaPreviewService,
   IGitService,
@@ -58,6 +59,7 @@ import {
   IWindowRemoteProjectService,
   IWindowProjectChangesService,
   type WindowProjectDirectoryServices,
+  type CodeIntelligenceService,
   type IServiceAccessor,
 } from "@zcode/services";
 
@@ -118,6 +120,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly pluginsService: IPluginsService;
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
+  /** Optional local Host code index; never exposed by Web/remote transports by default. */
+  readonly codeIntelligenceService?: CodeIntelligenceService;
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
@@ -133,6 +137,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
       sourceServerManagementService?: boolean;
       windowProjectDirectory?: boolean;
       openCodeAcpRuntime?: boolean;
+      codeIntelligenceService?: boolean;
     } = {},
   ) {
     // 远端工作区的 project 必须保留 Source 语义；只有显式能力才创建完整窗口目录组。
@@ -296,6 +301,14 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
     );
+    // Code-index access is explicitly opted into only by the local Desktop Host attachment.
+    // Older server, Web, and mobile attachments keep the capability absent instead of creating
+    // a lazy proxy whose first call would fail after the dashboard has advertised it.
+    this.codeIntelligenceService = options.codeIntelligenceService
+      ? ProxyChannel.toService<CodeIntelligenceService>(
+          channelClient.getChannel(ICodeIntelligenceService.channelName),
+        )
+      : undefined;
     if (options.openCodeAcpRuntime) {
       this.openCodeAcpRuntime = ProxyChannel.toService<IOpenCodeAcpRuntime>(
         channelClient.getChannel(IOpenCodeAcpRuntime.channelName),

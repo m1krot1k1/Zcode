@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { isIP } from "node:net";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { SQLInputValue } from "node:sqlite";
-import type { CodeIndexStatus } from "./contract.js";
-import type { IndexedChunkRecord, IndexedFileRecord } from "./scanner.js";
+import type { CodeIndexStatus, EmbeddingProvider } from "./contract.js";
+import type { IndexedFileRecord } from "./scanner.js";
 
 // Keep node:sqlite an external built-in. This matches the existing task-index storage boundary.
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
 ) as typeof import("node:sqlite");
 
-export const MAX_SEARCH_LIMIT = 50;
+const MAX_SEARCH_LIMIT = 50;
 export const MAX_EMBED_BATCH = 32;
 export const MAX_DIAGNOSTICS = 12;
 const INDEX_SCHEMA = `
@@ -44,11 +44,6 @@ const INDEX_SCHEMA = `
   CREATE INDEX IF NOT EXISTS edges_target_path_idx ON edges(target_path);
 `;
 
-export interface CodeIntelligenceServiceOptions {
-  indexRootDir?: string;
-  fetch?: typeof fetch;
-}
-
 export interface Row extends Record<string, unknown> {
   [key: string]: unknown;
 }
@@ -60,9 +55,24 @@ export interface IndexProgress {
   diagnostics: string[];
 }
 
-export interface EmbeddingConfig {
+interface EmbeddingConfig {
+  provider?: EmbeddingProvider;
   endpoint?: string;
   model?: string;
+  identity?: string;
+  apiKeyConfigured?: boolean;
+  /** Request-only secret loaded from ICredentialService; never returned by getEmbeddingConfig. */
+  apiKey?: string;
+}
+
+function embeddingConfigIdentity(config: {
+  provider: EmbeddingProvider;
+  endpoint: string;
+  model: string;
+}): string {
+  return createHash("sha256")
+    .update(JSON.stringify([config.provider, config.endpoint, config.model]))
+    .digest("hex");
 }
 
 export function readText(db: CodeIndexDatabase, key: string): string | undefined {
@@ -137,40 +147,60 @@ export function cosineSimilarity(left: number[], right: number[]): number {
 }
 
 export function validateEmbeddingConfig(
+  providerValue: EmbeddingProvider | null | undefined,
   endpointValue?: string | null,
   modelValue?: string | null,
 ): EmbeddingConfig {
+  const provider = providerValue ?? "ollama";
   const endpoint = endpointValue?.trim();
   const model = modelValue?.trim();
   if (!endpoint && !model) return {};
-  if (!endpoint || !model) throw new Error("Both local endpoint and model are required.");
+  if (!endpoint || !model) throw new Error("Both embedding endpoint and model are required.");
+  if (provider !== "ollama" && provider !== "openai-compatible")
+    throw new Error("Unsupported embedding provider.");
   let parsed: URL;
   try {
     parsed = new URL(endpoint);
   } catch {
-    throw new Error("Embedding endpoint must be a valid loopback HTTP URL.");
+    throw new Error("Embedding endpoint must be a valid URL.");
   }
   const hostname = parsed.hostname.toLowerCase();
   const loopback =
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
     hostname === "[::1]" ||
-    hostname === "::1";
+    hostname === "::1" ||
+    (isIP(hostname.replace(/^\[|\]$/g, "")) === 4 && hostname.startsWith("127."));
+  const protocolAllowed =
+    provider === "ollama"
+      ? parsed.protocol === "http:" && loopback
+      : parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback);
   if (
-    parsed.protocol !== "http:" ||
-    !loopback ||
-    (isIP(hostname.replace(/^\[|\]$/g, "")) === 4 && !hostname.startsWith("127.")) ||
+    !protocolAllowed ||
     parsed.username ||
     parsed.password ||
     parsed.search ||
     parsed.hash ||
+    endpoint.includes("?") ||
+    endpoint.includes("#") ||
+    endpoint.length > 2048 ||
     !/^[\p{L}\p{N}._:/-]{1,120}$/u.test(model)
   ) {
     throw new Error(
-      "Embedding configuration must use a credential-free loopback HTTP endpoint and a valid model name.",
+      "Embedding configuration must use an allowed credential-free endpoint and a valid model name.",
     );
   }
-  return { endpoint: parsed.toString().replace(/\/$/, ""), model };
+  const normalizedEndpoint = parsed.toString().replace(/\/$/, "");
+  return {
+    provider,
+    endpoint: normalizedEndpoint,
+    model,
+    identity: embeddingConfigIdentity({
+      provider,
+      endpoint: normalizedEndpoint,
+      model,
+    }),
+  };
 }
 
 export function databaseFileFor(indexRootDir: string, identity: string): string {
@@ -191,15 +221,12 @@ export function openDatabase(filePath: string): CodeIndexDatabase {
   return db;
 }
 
-export function count(
-  db: CodeIndexDatabase,
-  table: "files" | "chunks" | "symbols" | "edges",
-): number {
+function count(db: CodeIndexDatabase, table: "files" | "chunks" | "symbols" | "edges"): number {
   const row = db.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as Row;
   return Number(row.value ?? 0);
 }
 
-export function getCounts(db: CodeIndexDatabase): CodeIndexStatus["counts"] {
+function getCounts(db: CodeIndexDatabase): CodeIndexStatus["counts"] {
   return {
     files: count(db, "files"),
     chunks: count(db, "chunks"),
@@ -211,7 +238,17 @@ export function getCounts(db: CodeIndexDatabase): CodeIndexStatus["counts"] {
 export function getEmbeddingConfig(db: CodeIndexDatabase): EmbeddingConfig {
   const endpoint = readText(db, "embedding_endpoint");
   const model = readText(db, "embedding_model");
-  return endpoint && model ? { endpoint, model } : {};
+  if (!endpoint || !model) return {};
+  // Older local settings predate the provider field and were Ollama endpoints.
+  const provider: EmbeddingProvider =
+    readText(db, "embedding_provider") === "openai-compatible" ? "openai-compatible" : "ollama";
+  return {
+    provider,
+    endpoint,
+    model,
+    identity: embeddingConfigIdentity({ provider, endpoint, model }),
+    apiKeyConfigured: readText(db, "embedding_api_key_configured") === "true",
+  };
 }
 
 export function hasPartialCoverage(db: CodeIndexDatabase): boolean {
@@ -248,9 +285,13 @@ export function statusFromDb(db: CodeIndexDatabase, progress?: IndexProgress): C
       : {}),
     embedding: {
       configured: Boolean(config.endpoint && config.model),
+      ...(config.provider ? { provider: config.provider } : {}),
       ...(config.endpoint ? { endpoint: config.endpoint } : {}),
       ...(config.model ? { model: config.model } : {}),
-      available: Boolean(config.model && storedModel === config.model),
+      ...(config.apiKeyConfigured !== undefined
+        ? { apiKeyConfigured: config.apiKeyConfigured }
+        : {}),
+      available: Boolean(config.identity && storedModel === config.identity),
     },
     diagnostics: [...diagnostics, ...(progress?.diagnostics ?? [])].slice(0, MAX_DIAGNOSTICS),
   };
@@ -312,24 +353,53 @@ export async function requestEmbeddings(
   for (let offset = 0; offset < input.length; offset += MAX_EMBED_BATCH) {
     const response = await fetchImpl(config.endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+      },
       body: JSON.stringify({
         model: config.model,
         input: input.slice(offset, offset + MAX_EMBED_BATCH),
       }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error("Local embedding endpoint returned an error.");
+    if (!response.ok) throw new Error("Embedding endpoint returned an error.");
     const payload: unknown = await response.json();
-    const embeddings =
-      payload && typeof payload === "object" && "embeddings" in payload
-        ? (payload as { embeddings?: unknown }).embeddings
-        : undefined;
-    if (
-      !Array.isArray(embeddings) ||
-      embeddings.length !== Math.min(MAX_EMBED_BATCH, input.length - offset)
-    ) {
-      throw new Error("Local embedding endpoint returned an invalid vector batch.");
+    const expectedCount = Math.min(MAX_EMBED_BATCH, input.length - offset);
+    let embeddings: unknown;
+    if (config.provider === "openai-compatible") {
+      const data =
+        payload && typeof payload === "object" && "data" in payload
+          ? (payload as { data?: unknown }).data
+          : undefined;
+      if (!Array.isArray(data) || data.length !== expectedCount) {
+        throw new Error("OpenAI-compatible embedding endpoint returned an invalid vector batch.");
+      }
+      const ordered: unknown[] = Array(expectedCount);
+      for (const item of data) {
+        if (!item || typeof item !== "object" || !("index" in item) || !("embedding" in item))
+          throw new Error("OpenAI-compatible embedding endpoint returned an invalid vector.");
+        const index = (item as { index?: unknown }).index;
+        if (
+          typeof index !== "number" ||
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= expectedCount ||
+          ordered[index] !== undefined
+        ) {
+          throw new Error("OpenAI-compatible embedding endpoint returned invalid vector order.");
+        }
+        ordered[index] = (item as { embedding: unknown }).embedding;
+      }
+      embeddings = ordered;
+    } else {
+      embeddings =
+        payload && typeof payload === "object" && "embeddings" in payload
+          ? (payload as { embeddings?: unknown }).embeddings
+          : undefined;
+    }
+    if (!Array.isArray(embeddings) || embeddings.length !== expectedCount) {
+      throw new Error("Embedding endpoint returned an invalid vector batch.");
     }
     for (const embedding of embeddings) {
       if (
@@ -337,7 +407,7 @@ export async function requestEmbeddings(
         embedding.length === 0 ||
         !embedding.every((value) => typeof value === "number" && Number.isFinite(value))
       ) {
-        throw new Error("Local embedding endpoint returned an invalid vector.");
+        throw new Error("Embedding endpoint returned an invalid vector.");
       }
       vectors.push(embedding as number[]);
     }
