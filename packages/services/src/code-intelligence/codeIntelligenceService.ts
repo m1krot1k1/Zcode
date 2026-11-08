@@ -3,14 +3,14 @@ import { access, mkdir, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getZCodeDataRootDir } from "../paths.js";
 import type {
-  CodeImpactResult,
+  CodeGraphOverview,
   CodeIndexStatus,
   CodeIntelligenceService,
   CodeSearchResult,
-  CodeSymbolContext,
-  CodeTraceResult,
+  EmbeddingTestResult,
 } from "./contract.js";
 import { scanWorkspace, type IndexedChunkRecord, type IndexedFileRecord } from "./scanner.js";
+import { readGraphOverview } from "./graphQueries.js";
 import {
   embeddingCredentialKey,
   updateEmbeddingConfig,
@@ -22,6 +22,10 @@ import {
   cosineSimilarity,
   databaseFileFor,
   getEmbeddingConfig,
+  getCounts,
+  readImpact,
+  readTrace,
+  readSymbolContext,
   hasPartialCoverage,
   lexicalScore,
   openDatabase,
@@ -33,6 +37,7 @@ import {
   safeLimit,
   statusFromDb,
   tokenize,
+  validateEmbeddingConfig,
   upsertFileRecord,
   workspaceIdentity,
   writeEmbedding,
@@ -41,6 +46,17 @@ import {
   type IndexProgress,
   type Row,
 } from "./database.js";
+import { createWorkspaceWatcherRegistry } from "./workspaceWatcher.js";
+
+type WorkspaceParams = { workspacePath: string; workspaceIdentity?: string };
+type ManagedCodeIntelligenceService = CodeIntelligenceService & {
+  disposeAll(): void;
+  disposeAllAndWait(): Promise<void>;
+};
+
+const WATCHER_DIAGNOSTIC =
+  "Workspace file watching is unavailable; refresh the local code index manually.";
+type Activation = { root: string; promise: Promise<void> };
 
 interface CodeIntelligenceServiceOptions {
   indexRootDir?: string;
@@ -50,13 +66,40 @@ interface CodeIntelligenceServiceOptions {
 
 export function createCodeIntelligenceService(
   options: CodeIntelligenceServiceOptions = {},
-): CodeIntelligenceService {
+): ManagedCodeIntelligenceService {
   const indexRootDir = options.indexRootDir ?? join(getZCodeDataRootDir(), "code-intelligence");
   const fetchImpl = options.fetch ?? fetch;
   const credentialService = options.credentialService;
   const progressByIdentity = new Map<string, IndexProgress>();
   const activeIndexes = new Map<string, Promise<CodeIndexStatus>>();
   const diagnosticsByIdentity = new Map<string, string[]>();
+  const activatedWorkspaceRoots = new Map<string, string>();
+  const activationPromises = new Map<string, Activation>();
+  const pendingWatcherRefreshes = new Map<string, WorkspaceParams>();
+  const clearingWorkspaces = new Set<string>();
+  let indexWorkspace: (params: WorkspaceParams & { force?: boolean }) => Promise<CodeIndexStatus>;
+
+  const watcherRegistry = createWorkspaceWatcherRegistry({
+    onChange(workspace) {
+      const resolved = resolveWorkspace(workspace);
+      pendingWatcherRefreshes.set(resolved.key, workspace);
+      flushWatcherRefresh(resolved.key);
+    },
+    onError(workspace) {
+      const resolved = resolveWorkspace(workspace);
+      const diagnostics = diagnosticsByIdentity.get(resolved.key) ?? [];
+      if (!diagnostics.includes(WATCHER_DIAGNOSTIC)) {
+        diagnosticsByIdentity.set(resolved.key, [...diagnostics, WATCHER_DIAGNOSTIC]);
+      }
+    },
+    onReady(workspace) {
+      const resolved = resolveWorkspace(workspace);
+      const diagnostics = diagnosticsByIdentity.get(resolved.key) ?? [];
+      const remaining = diagnostics.filter((item) => item !== WATCHER_DIAGNOSTIC);
+      if (remaining.length) diagnosticsByIdentity.set(resolved.key, remaining);
+      else diagnosticsByIdentity.delete(resolved.key);
+    },
+  });
 
   const resolveWorkspace = (params: { workspacePath: string; workspaceIdentity?: string }) => {
     const identity = workspaceIdentity(params);
@@ -81,6 +124,66 @@ export function createCodeIntelligenceService(
     }
   };
 
+  const armWatcher = async (params: WorkspaceParams): Promise<void> => {
+    const workspace = resolveWorkspace(params);
+    if (clearingWorkspaces.has(workspace.key)) {
+      throw new Error("The workspace code index is being cleared.");
+    }
+    await watcherRegistry.ensure(workspace.key, workspace.root, {
+      workspacePath: params.workspacePath,
+      ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+    });
+    if (clearingWorkspaces.has(workspace.key)) {
+      await watcherRegistry.stop(workspace.key);
+      throw new Error("The workspace code index is being cleared.");
+    }
+  };
+
+  const flushWatcherRefresh = (key: string): void => {
+    if (clearingWorkspaces.has(key) || activeIndexes.has(key)) return;
+    const params = pendingWatcherRefreshes.get(key);
+    if (!params) return;
+    pendingWatcherRefreshes.delete(key);
+    queueMicrotask(() => {
+      if (clearingWorkspaces.has(key)) return;
+      void indexWorkspace(params).catch(() => {});
+    });
+  };
+
+  const watchWorkspace = async (params: WorkspaceParams): Promise<void> => {
+    const workspace = resolveWorkspace(params);
+    if (clearingWorkspaces.has(workspace.key)) {
+      throw new Error("The workspace code index is being cleared.");
+    }
+    const existingActivation = activationPromises.get(workspace.key);
+    if (existingActivation) {
+      if (existingActivation.root === workspace.root) return existingActivation.promise;
+      await existingActivation.promise.catch(() => undefined);
+      return watchWorkspace(params);
+    }
+    if (activatedWorkspaceRoots.get(workspace.key) === workspace.root) {
+      await armWatcher(params);
+      return;
+    }
+    const activation = (async () => {
+      await armWatcher(params);
+      if (clearingWorkspaces.has(workspace.key)) return;
+      const status = await getStatus(params);
+      // Never build a first index implicitly. Existing indexes are reconciled once per Host
+      // activation so edits made while ZCode was closed are caught before the next query.
+      if (status.generation > 0) await indexWorkspace(params);
+      if (!clearingWorkspaces.has(workspace.key))
+        activatedWorkspaceRoots.set(workspace.key, workspace.root);
+    })();
+    const entry = { root: workspace.root, promise: activation };
+    activationPromises.set(workspace.key, entry);
+    try {
+      await activation;
+    } finally {
+      if (activationPromises.get(workspace.key) === entry) activationPromises.delete(workspace.key);
+    }
+  };
+
   const getStatus = async (params: {
     workspacePath: string;
     workspaceIdentity?: string;
@@ -101,7 +204,7 @@ export function createCodeIntelligenceService(
           state: "unindexed",
           generation: 0,
           counts: { files: 0, chunks: 0, symbols: 0, edges: 0 },
-          embedding: { configured: false, available: false },
+          embedding: { configured: false, available: false, phase: "not-configured" },
           diagnostics: [],
         };
       }
@@ -109,7 +212,7 @@ export function createCodeIntelligenceService(
         state: progress?.state ?? "degraded",
         generation: 0,
         counts: { files: 0, chunks: 0, symbols: 0, edges: 0 },
-        embedding: { configured: false, available: false },
+        embedding: { configured: false, available: false, phase: "not-configured" },
         diagnostics: ["The local code index could not be opened."],
         ...(progress?.state === "indexing"
           ? {
@@ -123,7 +226,7 @@ export function createCodeIntelligenceService(
     }
   };
 
-  const indexWorkspace = (params: {
+  const performIndexWorkspace = (params: {
     workspacePath: string;
     workspaceIdentity?: string;
     force?: boolean;
@@ -138,7 +241,11 @@ export function createCodeIntelligenceService(
         indexedFiles: 0,
         diagnostics: [],
       });
-      diagnosticsByIdentity.delete(workspace.key);
+      const watcherDiagnostic = diagnosticsByIdentity.get(workspace.key)?.filter(
+        (item) => item === WATCHER_DIAGNOSTIC,
+      ) ?? [];
+      if (watcherDiagnostic.length) diagnosticsByIdentity.set(workspace.key, watcherDiagnostic);
+      else diagnosticsByIdentity.delete(workspace.key);
       try {
         const rootStat = await import("node:fs/promises").then(({ stat: statPath }) =>
           statPath(workspace.root),
@@ -206,6 +313,21 @@ export function createCodeIntelligenceService(
             modelIdentity &&
             (changedChunks.length > 0 || needsFullReembed)
           ) {
+            let embeddingCompleted = 0;
+            const embeddingTotal = needsFullReembed
+              ? Math.max(changedChunks.length, getCounts(db).chunks)
+              : changedChunks.length;
+            const setEmbeddingProgress = () => {
+              const current = progressByIdentity.get(workspace.key);
+              if (current)
+                progressByIdentity.set(workspace.key, {
+                  ...current,
+                  embeddingPhase: "building",
+                  embeddingCompleted,
+                  embeddingTotal,
+                });
+            };
+            setEmbeddingProgress();
             try {
               const storedApiKey = await credentialService?.load(
                 embeddingCredentialKey(workspace.key),
@@ -235,6 +357,8 @@ export function createCodeIntelligenceService(
                   chunk.embedding = writeEmbedding(embeddings[index]!);
                   chunk.embeddingModel = modelIdentity;
                 });
+                embeddingCompleted += batch.length;
+                setEmbeddingProgress();
               }
               if (needsFullReembed) {
                 const pageSize = MAX_EMBED_BATCH;
@@ -257,6 +381,8 @@ export function createCodeIntelligenceService(
                     eligible.forEach((chunk, index) => {
                       stageEmbedding.run(String(chunk.id), writeEmbedding(embeddings[index]!));
                     });
+                    embeddingCompleted += eligible.length;
+                    setEmbeddingProgress();
                   }
                   if (page.length < pageSize) break;
                   lastId = String(page[page.length - 1]!.id);
@@ -276,6 +402,7 @@ export function createCodeIntelligenceService(
             }
           }
           progressByIdentity.set(workspace.key, {
+            ...progressByIdentity.get(workspace.key)!,
             state: "indexing",
             discoveredFiles: scan.files.length,
             indexedFiles: scan.files.length,
@@ -348,7 +475,19 @@ export function createCodeIntelligenceService(
               "vectors_model",
               embeddingAvailable && modelIdentity ? modelIdentity : "",
             );
+            if (!config.endpoint || !config.model) {
+              db.prepare("DELETE FROM index_meta WHERE key = 'embedding_phase'").run();
+            } else {
+              writeText(db, "embedding_phase", embeddingAvailable ? "ready" : "failed");
+            }
             db.exec("COMMIT");
+            const current = progressByIdentity.get(workspace.key);
+            if (current && config.endpoint && config.model) {
+              progressByIdentity.set(workspace.key, {
+                ...current,
+                embeddingPhase: embeddingAvailable ? "ready" : "failed",
+              });
+            }
             return { generation, diagnostics };
           } catch (error) {
             db.exec("ROLLBACK");
@@ -382,14 +521,85 @@ export function createCodeIntelligenceService(
     })();
     activeIndexes.set(workspace.key, work);
     void work.then(
-      () => activeIndexes.delete(workspace.key),
-      () => activeIndexes.delete(workspace.key),
+      () => {
+        activeIndexes.delete(workspace.key);
+        flushWatcherRefresh(workspace.key);
+      },
+      () => {
+        activeIndexes.delete(workspace.key);
+        flushWatcherRefresh(workspace.key);
+      },
     );
     return work;
   };
 
+  indexWorkspace = async (params) => {
+    // Arm first so events racing the initial scan become a queued incremental pass.
+    await armWatcher(params);
+    const workspace = resolveWorkspace(params);
+    if (clearingWorkspaces.has(workspace.key)) {
+      throw new Error("The workspace code index is being cleared.");
+    }
+    return performIndexWorkspace(params);
+  };
+
+  const testEmbeddingConfig = async (
+    params: WorkspaceParams & {
+      provider: "ollama" | "openai-compatible";
+      endpoint: string;
+      model: string;
+      apiKey?: string;
+    },
+  ): Promise<EmbeddingTestResult> => {
+    const startedAt = Date.now();
+    let config: ReturnType<typeof validateEmbeddingConfig>;
+    try {
+      config = validateEmbeddingConfig(params.provider, params.endpoint, params.model);
+    } catch {
+      return { ok: false, errorCode: "invalid-config", elapsedMs: Date.now() - startedAt };
+    }
+    try {
+      if (
+        params.apiKey &&
+        (params.apiKey.length > 4096 ||
+          params.apiKey.includes("\r") ||
+          params.apiKey.includes("\n") ||
+          params.apiKey.includes(String.fromCharCode(0)))
+      ) throw new Error("invalid credential");
+      const workspace = resolveWorkspace(params);
+      const savedApiKey = params.apiKey?.trim()
+        ? null
+        : await credentialService?.load(embeddingCredentialKey(workspace.key));
+      const vectors = await requestEmbeddings(
+        {
+          ...config,
+          ...(params.apiKey?.trim()
+            ? { apiKey: params.apiKey.trim() }
+            : savedApiKey?.trim()
+              ? { apiKey: savedApiKey.trim() }
+              : {}),
+        },
+        ["zcode local embedding connection check"],
+        fetchImpl,
+      );
+      const vector = vectors[0];
+      return vector
+        ? { ok: true, dimensions: vector.length, elapsedMs: Date.now() - startedAt }
+        : { ok: false, errorCode: "invalid-response", elapsedMs: Date.now() - startedAt };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const errorCode = /invalid vector|invalid.*batch|vector order/i.test(message)
+        ? "invalid-response"
+        : /timeout|timed out|abort/i.test(message)
+          ? "timeout"
+          : "request-failed";
+      return { ok: false, errorCode, elapsedMs: Date.now() - startedAt };
+    }
+  };
+
   const service: CodeIntelligenceService = {
     getStatus,
+    watchWorkspace,
     indexWorkspace,
     async search(params) {
       const query = params.query.trim();
@@ -531,181 +741,19 @@ export function createCodeIntelligenceService(
         return { results, semantic, partial: candidatesTruncated || hasPartialCoverage(db) };
       });
     },
-    async getSymbolContext(params): Promise<CodeSymbolContext | null> {
-      return withDb(params, (db) => {
-        const matches = rows<Row>(
-          db,
-          "SELECT id, name, kind, path, start_line AS startLine, end_line AS endLine FROM symbols WHERE id = ? OR name = ? ORDER BY exported DESC, start_line LIMIT 1",
-          params.symbol,
-          params.symbol,
-        );
-        const symbol = matches[0];
-        if (!symbol) return null;
-        const outgoing = rows<Row>(
-          db,
-          "SELECT e.target_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.target_id WHERE e.source_id = ? LIMIT 101",
-          String(symbol.id),
-        );
-        const incoming = rows<Row>(
-          db,
-          "SELECT e.source_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.source_id WHERE e.target_id = ? LIMIT 101",
-          String(symbol.id),
-        );
-        const related = (items: Row[]) =>
-          items.map((item) => ({
-            name: String(item.name ?? item.path ?? "module"),
-            path: String(item.path ?? ""),
-            startLine: Number(item.startLine ?? 1),
-          }));
-        return {
-          symbol: {
-            id: String(symbol.id),
-            name: String(symbol.name),
-            kind: String(symbol.kind),
-            path: String(symbol.path),
-            startLine: Number(symbol.startLine),
-            endLine: Number(symbol.endLine),
-          },
-          callers: related(incoming.slice(0, 100)),
-          dependencies: related(outgoing.slice(0, 100)),
-          partial: incoming.length > 100 || outgoing.length > 100 || hasPartialCoverage(db),
-        };
-      });
+    async getSymbolContext(params) {
+      return withDb(params, (db) => readSymbolContext(db, params.symbol));
     },
-    async getImpact(params): Promise<CodeImpactResult> {
-      return withDb(params, (db) => {
-        const normalized = [
-          ...new Set(
-            params.changedPaths.map((path) =>
-              path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, ""),
-            ),
-          ),
-        ].slice(0, 100);
-        const distance = new Map<string, number>();
-        const queue = normalized.map((path) => ({ path, depth: 0 }));
-        let partial = hasPartialCoverage(db);
-        for (let cursor = 0; cursor < queue.length; cursor += 1) {
-          const current = queue[cursor]!;
-          if (current.depth >= 4) continue;
-          const upstream = rows<Row>(
-            db,
-            "SELECT DISTINCT source_path AS sourcePath FROM edges WHERE target_path = ? LIMIT 501",
-            current.path,
-          );
-          if (upstream.length > 500) partial = true;
-          for (const edge of upstream.slice(0, 500)) {
-            if (distance.has(String(edge.sourcePath))) continue;
-            if (distance.size >= 1000) {
-              partial = true;
-              break;
-            }
-            const nextDepth = current.depth + 1;
-            distance.set(String(edge.sourcePath), nextDepth);
-            queue.push({ path: String(edge.sourcePath), depth: nextDepth });
-          }
-          if (distance.size >= 1000) break;
-        }
-        const affectedSymbols: CodeImpactResult["affectedSymbols"] = [];
-        for (const [path, depth] of [...distance].sort((left, right) => left[1] - right[1])) {
-          const found = rows<Row>(
-            db,
-            "SELECT name, path, start_line AS startLine FROM symbols WHERE path = ? ORDER BY exported DESC LIMIT 9",
-            path,
-          );
-          if (found.length > 8) partial = true;
-          for (const symbol of found)
-            affectedSymbols.push({
-              name: String(symbol.name),
-              path,
-              startLine: Number(symbol.startLine),
-              distance: depth,
-            });
-          if (affectedSymbols.length >= 100) {
-            partial = true;
-            break;
-          }
-        }
-        affectedSymbols.sort(
-          (left, right) => left.distance - right.distance || left.path.localeCompare(right.path),
-        );
-        return {
-          changedPaths: normalized,
-          affectedSymbols: affectedSymbols.slice(0, 100),
-          partial,
-        };
-      });
+    async getGraphOverview(params): Promise<CodeGraphOverview> {
+      return withDb(params, (db) => readGraphOverview(db, params));
     },
-    async trace(params): Promise<CodeTraceResult> {
-      return withDb(params, (db) => {
-        const from = rows<Row>(
-          db,
-          "SELECT id, name, path, start_line AS startLine FROM symbols WHERE id=? OR name=? ORDER BY exported DESC LIMIT 1",
-          params.fromSymbol,
-          params.fromSymbol,
-        )[0];
-        const to = rows<Row>(
-          db,
-          "SELECT id, name, path, start_line AS startLine FROM symbols WHERE id=? OR name=? ORDER BY exported DESC LIMIT 1",
-          params.toSymbol,
-          params.toSymbol,
-        )[0];
-        if (!from || !to) return { found: false, path: [], partial: hasPartialCoverage(db) };
-        const queue = [String(from.id)];
-        const previous = new Map<string, { id: string; relation: string }>();
-        const visited = new Set(queue);
-        let partial = hasPartialCoverage(db);
-        for (let cursor = 0; cursor < queue.length && !visited.has(String(to.id)); cursor += 1) {
-          const current = queue[cursor]!;
-          const outgoing = rows<Row>(
-            db,
-            "SELECT target_id AS targetId, relation FROM edges WHERE source_id = ? LIMIT 501",
-            current,
-          );
-          if (outgoing.length > 500) partial = true;
-          for (const edge of outgoing.slice(0, 500)) {
-            const target = String(edge.targetId);
-            if (visited.has(target)) continue;
-            if (visited.size >= 2000) {
-              partial = true;
-              break;
-            }
-            visited.add(target);
-            previous.set(target, { id: current, relation: String(edge.relation) });
-            queue.push(target);
-          }
-          if (visited.size >= 2000) break;
-        }
-        if (!visited.has(String(to.id))) return { found: false, path: [], partial };
-        const reversed: Array<{ id: string; relation: string }> = [
-          { id: String(to.id), relation: "target" },
-        ];
-        let cursor = String(to.id);
-        while (cursor !== String(from.id)) {
-          const item = previous.get(cursor);
-          if (!item) break;
-          reversed.push({ id: item.id, relation: item.relation });
-          cursor = item.id;
-        }
-        const ordered = reversed.reverse();
-        const symbolRows = rows<Row>(
-          db,
-          `SELECT id, name, path, start_line AS startLine FROM symbols WHERE id IN (${ordered.map(() => "?").join(",")})`,
-          ...ordered.map((item) => item.id),
-        );
-        const symbolById = new Map(symbolRows.map((symbol) => [String(symbol.id), symbol]));
-        const path = ordered.flatMap((item) => {
-          const symbol = symbolById.get(item.id);
-          if (!symbol) return [];
-          return {
-            name: String(symbol.name),
-            path: String(symbol.path),
-            startLine: Number(symbol.startLine),
-            relation: item.relation,
-          };
-        });
-        return { found: true, path, partial };
-      });
+    async getImpact(params) {
+      return withDb(params, (db) => readImpact(db, params.changedPaths));
     },
+    async trace(params) {
+      return withDb(params, (db) => readTrace(db, params.fromSymbol, params.toSymbol));
+    },
+    testEmbeddingConfig,
     async setEmbeddingConfig(params) {
       const workspace = resolveWorkspace(params);
       return withDb(params, (db) =>
@@ -714,15 +762,32 @@ export function createCodeIntelligenceService(
     },
     async clearIndex(params) {
       const workspace = resolveWorkspace(params);
-      const active = activeIndexes.get(workspace.key);
-      if (active) await active.catch(() => undefined);
-      await credentialService?.delete(embeddingCredentialKey(workspace.key));
-      await rm(workspace.databasePath, { force: true });
-      await rm(`${workspace.databasePath}-wal`, { force: true });
-      await rm(`${workspace.databasePath}-shm`, { force: true });
-      diagnosticsByIdentity.delete(workspace.key);
-      progressByIdentity.delete(workspace.key);
+      clearingWorkspaces.add(workspace.key);
+      try {
+        await watcherRegistry.stop(workspace.key);
+        const active = activeIndexes.get(workspace.key);
+        if (active) await active.catch(() => undefined);
+        pendingWatcherRefreshes.delete(workspace.key);
+        const activation = activationPromises.get(workspace.key);
+        if (activation) await activation.promise.catch(() => undefined);
+        activatedWorkspaceRoots.delete(workspace.key);
+        await credentialService?.delete(embeddingCredentialKey(workspace.key));
+        await rm(workspace.databasePath, { force: true });
+        await rm(`${workspace.databasePath}-wal`, { force: true });
+        await rm(`${workspace.databasePath}-shm`, { force: true });
+        diagnosticsByIdentity.delete(workspace.key);
+        progressByIdentity.delete(workspace.key);
+      } finally {
+        clearingWorkspaces.delete(workspace.key);
+      }
     },
   };
-  return service;
+  return Object.assign(service, {
+    disposeAll() {
+      watcherRegistry.disposeAll();
+    },
+    disposeAllAndWait() {
+      return watcherRegistry.disposeAllAndWait();
+    },
+  });
 }

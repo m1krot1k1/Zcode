@@ -16,13 +16,12 @@ import {
   type CodeSymbolContext,
   type CodeTraceResult,
 } from "./contract.js";
-import { EmbeddingProviderSettings } from "./EmbeddingProviderSettings.js";
 
 const EMPTY_STATUS: CodeIndexStatus = {
   state: "unindexed",
   generation: 0,
   counts: { files: 0, chunks: 0, symbols: 0, edges: 0 },
-  embedding: { configured: false, available: false },
+  embedding: { configured: false, available: false, phase: "not-configured" },
   diagnostics: [],
 };
 
@@ -687,15 +686,6 @@ export function AgentWorkbenchView({
         </div>
       </section>
 
-      <EmbeddingProviderSettings
-        codeIndex={codeIndex}
-        workspaceRef={workspaceRef}
-        status={status}
-        setStatus={setStatus}
-        busy={busy}
-        setBusy={setBusy}
-        copy={copy}
-      />
       {message ? (
         <p role="status" className="mb-3 text-ui-xs text-muted-foreground">
           {message}

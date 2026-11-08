@@ -1,4 +1,4 @@
-import type { CodeIntelligenceService, CodeSearchResult } from "./contract.js";
+import type { CodeGraphOverview, CodeIntelligenceService, CodeSearchResult } from "./contract.js";
 
 /** Create the workspace index and query it through the Host service contract. */
 export async function indexAndSearch(
@@ -13,6 +13,19 @@ export async function indexAndSearch(
   });
   // Results contain workspace-relative paths; the UI resolves them through the file service.
   return result.results;
+}
+
+/** Read a bounded graph overview or focus a workspace-relative search hit. */
+export async function inspectCodeGraph(
+  service: CodeIntelligenceService,
+  workspacePath: string,
+  focus?: { symbol?: string; path?: string; startLine?: number },
+): Promise<CodeGraphOverview> {
+  return service.getGraphOverview({
+    workspacePath,
+    ...(focus ? { focus } : {}),
+    limit: 60,
+  });
 }
 
 /** Configure an OpenAI-compatible endpoint; secrets are entered separately at runtime. */

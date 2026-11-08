@@ -189,6 +189,7 @@ vi.mock("@/chat-input-toolbar/modelSelection.js", () => ({
 
 vi.mock("@/store/TabStoreProvider.js", () => ({
   useTabStore: () => vi.fn(),
+  useOptionalTabStore: () => undefined,
 }));
 
 vi.mock("@/hooks/useProviderSettingsView.js", () => ({

@@ -3,8 +3,9 @@ import {
   CodingPlanUsagePanel,
   type CodingPlanUsageSource,
 } from "@/settings/usage-stats/CodingPlanUsagePanel.js";
+import { CodeGraphExplorer } from "@/agent-workbench/index.js";
 
-export type UsageStatsSectionTab = "app" | "codingPlan" | `codingPlan:${string}`;
+export type UsageStatsSectionTab = "app" | "codeGraph" | "codingPlan" | `codingPlan:${string}`;
 
 export function UsageStatsSection({
   activeTab,
@@ -21,6 +22,12 @@ export function UsageStatsSection({
 }) {
   if (activeTab === "app") {
     return <AppUsagePanel />;
+  }
+
+  if (activeTab === "codeGraph") {
+    return (
+      <CodeGraphExplorer workspaceIdentity={workspaceIdentity} workspacePath={workspacePath} />
+    );
   }
 
   return (

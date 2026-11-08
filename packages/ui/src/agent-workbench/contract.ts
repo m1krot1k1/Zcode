@@ -3,6 +3,8 @@ export { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
 export type { AgentSummary } from "@zcode/shared";
 export type {
   CodeIntelligenceService,
+  CodeGraphOverview,
+  CodeGraphNode,
   CodeImpactResult,
   CodeIndexStatus,
   CodeSearchResult,

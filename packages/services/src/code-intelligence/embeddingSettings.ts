@@ -111,13 +111,14 @@ export async function updateEmbeddingConfig(
       writeText(db, "embedding_api_key_configured", String(keyConfigured));
     } else {
       db.prepare(
-        "DELETE FROM index_meta WHERE key IN ('embedding_provider','embedding_endpoint','embedding_model','vectors_model','embedding_api_key_configured')",
+        "DELETE FROM index_meta WHERE key IN ('embedding_provider','embedding_endpoint','embedding_model','vectors_model','embedding_api_key_configured','embedding_phase')",
       ).run();
       db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
     }
     if (config.identity && previousConfig.identity !== config.identity) {
       db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
       writeText(db, "vectors_model", "");
+      writeText(db, "embedding_phase", "pending");
     }
     db.exec("COMMIT");
     transactionOpen = false;

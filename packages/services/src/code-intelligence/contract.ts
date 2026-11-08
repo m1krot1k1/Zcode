@@ -4,6 +4,7 @@ import { createServiceDescriptor } from "../descriptors.js";
 export type CodeIndexState = "unindexed" | "indexing" | "ready" | "degraded";
 export type CodeIndexMatchKind = "lexical" | "semantic";
 export type EmbeddingProvider = "ollama" | "openai-compatible";
+export type EmbeddingPhase = "not-configured" | "pending" | "building" | "ready" | "failed";
 
 export interface CodeWorkspaceRef {
   workspacePath: string;
@@ -16,7 +17,11 @@ export interface CodeIndexStatus {
   generation: number;
   updatedAt?: number;
   counts: { files: number; chunks: number; symbols: number; edges: number };
-  progress?: { discoveredFiles: number; indexedFiles: number };
+  progress?: {
+    discoveredFiles: number;
+    indexedFiles: number;
+    embedding?: { completed: number; total: number };
+  };
   embedding: {
     configured: boolean;
     provider?: EmbeddingProvider;
@@ -24,6 +29,7 @@ export interface CodeIndexStatus {
     model?: string;
     apiKeyConfigured?: boolean;
     available: boolean;
+    phase: EmbeddingPhase;
   };
   diagnostics: string[];
 }
@@ -53,6 +59,28 @@ export interface CodeSymbolContext {
   partial: boolean;
 }
 
+export interface CodeGraphNode {
+  id: string;
+  name: string;
+  kind: string;
+  path: string;
+  startLine: number;
+  degree: number;
+}
+
+export interface CodeGraphEdge {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+export interface CodeGraphOverview {
+  nodes: CodeGraphNode[];
+  edges: CodeGraphEdge[];
+  focusId?: string;
+  partial: boolean;
+}
+
 export interface CodeImpactResult {
   changedPaths: string[];
   affectedSymbols: Array<{
@@ -75,9 +103,19 @@ export interface CodeTraceResult {
   partial: boolean;
 }
 
+export interface EmbeddingTestResult {
+  ok: boolean;
+  errorCode?: "invalid-config" | "request-failed" | "timeout" | "invalid-response";
+  dimensions?: number;
+  elapsedMs: number;
+}
+
 export interface CodeIntelligenceService {
   /** Read the committed index state and any in-process progress for this workspace. */
   getStatus(params: CodeWorkspaceRef): Promise<CodeIndexStatus>;
+
+  /** Arm a Host-owned filesystem watcher and reconcile changes since the last activation. */
+  watchWorkspace(params: CodeWorkspaceRef): Promise<void>;
 
   /** Scan and atomically publish a complete generation; preserves the prior one on failure. */
   indexWorkspace(params: CodeWorkspaceRef & { force?: boolean }): Promise<CodeIndexStatus>;
@@ -94,6 +132,14 @@ export interface CodeIntelligenceService {
     params: CodeWorkspaceRef & { symbol: string },
   ): Promise<CodeSymbolContext | null>;
 
+  /** Return a bounded high-degree overview or one symbol's immediate neighborhood. */
+  getGraphOverview(
+    params: CodeWorkspaceRef & {
+      focus?: { symbol?: string; path?: string; startLine?: number };
+      limit?: number;
+    },
+  ): Promise<CodeGraphOverview>;
+
   /** Find symbols that depend on changed workspace-relative paths. */
   getImpact(params: CodeWorkspaceRef & { changedPaths: string[] }): Promise<CodeImpactResult>;
 
@@ -101,6 +147,17 @@ export interface CodeIntelligenceService {
   trace(
     params: CodeWorkspaceRef & { fromSymbol: string; toSymbol: string },
   ): Promise<CodeTraceResult>;
+
+  /** Probe a draft provider using one fixed string; does not save config or index content. */
+  testEmbeddingConfig(
+    params: CodeWorkspaceRef & {
+      provider: EmbeddingProvider;
+      endpoint: string;
+      model: string;
+      /** Omitted/empty uses the currently saved token; the draft is never persisted. */
+      apiKey?: string;
+    },
+  ): Promise<EmbeddingTestResult>;
 
   /** Set/clear an embedding provider without returning or persisting API-key material in the index. */
   setEmbeddingConfig(

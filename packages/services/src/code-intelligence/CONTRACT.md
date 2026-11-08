@@ -5,15 +5,18 @@
 ## Operations
 
 - `getStatus` reads committed generation metadata and process-local progress.
-- `indexWorkspace` performs ignore-aware JS/TS indexing and commits a new generation in one transaction.
+- `watchWorkspace` arms one Host-owned watcher for the workspace and incrementally reconciles changes missed while the Host was closed; it never creates the first index silently.
+- `indexWorkspace` arms the watcher before scanning, performs ignore-aware JS/TS indexing, and commits a new generation in one transaction.
 - `search` ranks local lexical matches, then optionally reranks with configured vectors. A changed provider, endpoint, or model causes the next index operation to embed all chunks that do not match the full embedding identity.
 - `getSymbolContext`, `getImpact`, and `trace` query symbols and dependency edges from the same generation.
+- `getGraphOverview` returns a bounded high-degree overview or one focused symbol neighborhood, with relative paths and an explicit partial flag; it never returns source excerpts.
 - `setEmbeddingConfig` configures or clears Ollama or an OpenAI-compatible endpoint/model and may save or clear an optional API key. It never installs or launches models.
+- `testEmbeddingConfig` probes one fixed non-source string with the draft provider config and saved/draft token. It never saves configuration or changes vectors, and returns only a sanitized outcome, dimensions, and elapsed time.
 - `clearIndex` closes and removes one identity-scoped database.
 
 ## State and failure behavior
 
-SQLite owns non-secret workspace embedding metadata and index data. `ICredentialService` owns the API key under a credential key derived from the workspace identity hash. In-process progress is ephemeral. An index failure rolls back all content changes, records a sanitized diagnostic separately, and leaves the previous committed generation queryable. Repeating a successful index against unchanged files is idempotent. A workspace identity is never inferred from display name. Omitted embedding settings preserve their saved values; null provider/endpoint/model explicitly clears the whole configuration, and `apiKey: null` clears only the key.
+SQLite owns non-secret workspace embedding metadata and index data. `ICredentialService` owns the API key under a credential key derived from the workspace identity hash. In-process indexing/embedding progress is ephemeral; the last embedding phase (`pending`, `ready`, or `failed`) is persisted so a restart cannot leave a false `building` status. An index failure rolls back all content changes, records a sanitized diagnostic separately, and leaves the previous committed generation queryable. Repeating a successful index against unchanged files is idempotent. A workspace identity is never inferred from display name. Omitted embedding settings preserve their saved values; null provider/endpoint/model explicitly clears the whole configuration, and `apiKey: null` clears only the key.
 
 ## Privacy and resource bounds
 

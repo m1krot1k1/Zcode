@@ -69,6 +69,8 @@ import {
 } from "@/lib/settingsNavigation.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { OpenCodeAgentSettingsPanel } from "@/opencode-agent-settings/index.js";
+import { EmbeddingProviderSettings } from "@/agent-workbench/index.js";
+import type { CodeWorkspaceRef } from "@zcode/services";
 
 export {
   fuzzyMatch,
@@ -238,12 +240,17 @@ export function resolveModelProviderSideSelectionKey(
  */
 export function ModelProviderSection({
   workspacePath = "",
+  codeIndexWorkspacePath,
+  codeIndexWorkspaceIdentity,
   connectivityWorkspacePath,
   connectivityWorkspaceRequired = false,
   pendingModelProviderTarget,
   onConsumePendingModelProviderTarget,
 }: {
   workspacePath?: string;
+  /** A local-only workspace ref for embeddings; never pass the remote workspace path here. */
+  codeIndexWorkspacePath?: string;
+  codeIndexWorkspaceIdentity?: string;
   connectivityWorkspacePath?: string;
   connectivityWorkspaceRequired?: boolean;
   pendingModelProviderTarget?: SettingsModelProviderTarget;
@@ -252,7 +259,18 @@ export function ModelProviderSection({
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const platform = usePlatform();
-  const { modelSelectionService, oauthService, credentialService } = useServices();
+  const { modelSelectionService, oauthService, credentialService, codeIntelligenceService } =
+    useServices();
+  const codeIndexWorkspaceRef = useMemo<CodeWorkspaceRef | undefined>(() => {
+    const path = codeIndexWorkspacePath?.trim();
+    if (!path) return undefined;
+    return {
+      workspacePath: path,
+      ...(codeIndexWorkspaceIdentity?.trim()
+        ? { workspaceIdentity: codeIndexWorkspaceIdentity.trim() }
+        : {}),
+    };
+  }, [codeIndexWorkspaceIdentity, codeIndexWorkspacePath]);
   const {
     modelProviders,
     providerTemplates,
@@ -1095,39 +1113,43 @@ export function ModelProviderSection({
 
   if (loadError) {
     return (
-      <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-ui-base">
-        <p className="text-destructive">{loadError.message}</p>
-        <Button type="button" variant="outline" onClick={reload}>
-          {intl.formatMessage({ id: "common.retry" })}
-        </Button>
+      <div className="space-y-4">
+        <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-ui-base">
+          <p className="text-destructive">{loadError.message}</p>
+          <Button type="button" variant="outline" onClick={reload}>
+            {intl.formatMessage({ id: "common.retry" })}
+          </Button>
+        </div>
+        <EmbeddingProviderSettings codeIndex={codeIntelligenceService} workspaceRef={codeIndexWorkspaceRef} />
       </div>
     );
   }
 
   return (
-    <ModelProviderSectionLayout
-      description={intl.formatMessage({ id: "settings.modelProviderDescription" })}
-      refreshLabel={intl.formatMessage({ id: "settings.modelProvider.refresh" })}
-      loadingLabel={intl.formatMessage({ id: "common.loading" })}
-      presetLoading={presetLoading}
-      customLoading={customLoading}
-      onRefresh={() => {
-        void refreshModelProviderSection({
-          refresh,
-          // 手动刷新设置页时也要同时刷新 Z.ai / BigModel Team Plan 快照；
-          // 原来只刷新 BigModel，Z.ai Team Plan 购买或订阅变化后会继续显示旧项目。
-          refreshTeamPlanProducts: refreshAuthenticatedEnterpriseProducts,
-        });
-        refreshCodingPlanEntitlements();
-      }}
-      addProviderLabel={intl.formatMessage({ id: "settings.modelProvider.addProviderAction" })}
-      onAddProvider={() => setTemplatePickerOpen(true)}
-      navigationGroups={navigationGroups}
-      selectedNodeKey={selectedNodeKey}
-      onSelectNavItem={handleSelectNavItem}
-      onReorderProviderIds={handleReorderProviderIds}
-      reorderableProviderIds={reorderableProviderIds}
-    >
+    <>
+      <ModelProviderSectionLayout
+        description={intl.formatMessage({ id: "settings.modelProviderDescription" })}
+        refreshLabel={intl.formatMessage({ id: "settings.modelProvider.refresh" })}
+        loadingLabel={intl.formatMessage({ id: "common.loading" })}
+        presetLoading={presetLoading}
+        customLoading={customLoading}
+        onRefresh={() => {
+          void refreshModelProviderSection({
+            refresh,
+            // 手动刷新设置页时也要同时刷新 Z.ai / BigModel Team Plan 快照；
+            // 原来只刷新 BigModel，Z.ai Team Plan 购买或订阅变化后会继续显示旧项目。
+            refreshTeamPlanProducts: refreshAuthenticatedEnterpriseProducts,
+          });
+          refreshCodingPlanEntitlements();
+        }}
+        addProviderLabel={intl.formatMessage({ id: "settings.modelProvider.addProviderAction" })}
+        onAddProvider={() => setTemplatePickerOpen(true)}
+        navigationGroups={navigationGroups}
+        selectedNodeKey={selectedNodeKey}
+        onSelectNavItem={handleSelectNavItem}
+        onReorderProviderIds={handleReorderProviderIds}
+        reorderableProviderIds={reorderableProviderIds}
+      >
       {(invalidProviderTarget || navigationUnavailable) && !templatePickerOpen ? (
         <p role="alert" className="mb-3 text-ui-base text-destructive">
           {intl.formatMessage({
@@ -1229,6 +1251,11 @@ export function ModelProviderSection({
           }}
         />
       )}
-    </ModelProviderSectionLayout>
+      </ModelProviderSectionLayout>
+      <EmbeddingProviderSettings
+        codeIndex={codeIntelligenceService}
+        workspaceRef={codeIndexWorkspaceRef}
+      />
+    </>
   );
 }

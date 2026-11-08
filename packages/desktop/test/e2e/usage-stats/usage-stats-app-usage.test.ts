@@ -45,8 +45,102 @@ describe("Usage Stats App Usage E2E", () => {
     await assertBodyIncludesAny(["4.5K", "4,510", "4510"]);
   });
 
+  it("US-CG-01: Usage Stats exposes an interactive local code graph", async function () {
+    this.timeout(60_000);
+    await openAppUsage();
+    await clickTestIdByDom(testId(TID_SETTINGS_USAGE_TAB, "codeGraph"), {
+      timeout: 10_000,
+      timeoutMsg: "Usage Stats Code Graph tab did not appear",
+    });
+
+    const graph = await $('[data-testid="usage-code-graph"]');
+    await graph.waitForDisplayed({ timeout: 15_000 });
+    const canvas = await $('[data-testid="usage-code-graph-canvas"]');
+    await canvas.waitForDisplayed({ timeout: 10_000 });
+
+    const callFilter = await findButtonByText(["Calls", "调用"]);
+    expect(await callFilter.getAttribute("aria-pressed")).toBe("true");
+    await callFilter.click();
+    await browser.waitUntil(
+      async () => (await callFilter.getAttribute("aria-pressed")) === "false",
+      {
+        timeout: 5_000,
+        timeoutMsg: "Code graph call filter did not toggle",
+      },
+    );
+  });
+
+  it("US-CI-01: composer index popover opens and routes to Code Graph", async function () {
+    this.timeout(60_000);
+    await waitForDefaultWorkspaceReady(60_000);
+    await clickTestIdByDom("composer-code-index-trigger", {
+      timeout: 20_000,
+      timeoutMsg: "Composer code index control did not appear",
+    });
+    await $('[data-testid="composer-code-index-popover"]').waitForDisplayed({ timeout: 10_000 });
+    await assertBodyIncludesAny(["Code index", "代码索引"]);
+
+    const search = await $('[data-testid="composer-code-index-search"]');
+    if (await search.isExisting()) {
+      await search.setValue("CodeIndexPopover");
+      await search.click();
+      await browser.keys("ENTER");
+      await browser.waitUntil(
+        async () =>
+          (await $('[data-testid="composer-code-index-results"]').isExisting()) ||
+          (await $('[data-testid="composer-code-index-popover"]').getText()).includes(
+            "No indexed code matches",
+          ) ||
+          (await $('[data-testid="composer-code-index-popover"]').getText()).includes(
+            "没有找到匹配",
+          ),
+        { timeout: 10_000, timeoutMsg: "Code index search did not return a result state" },
+      );
+    }
+
+    await clickButtonByText(["Open Code Graph", "打开代码图谱"]);
+    await $('[data-testid="usage-code-graph"]').waitForDisplayed({ timeout: 20_000 });
+    await assertBodyIncludesAny(["Workspace code graph", "工作区代码图谱"]);
+  });
+
+  it("US-CI-02: embedding Test clears the draft token without saving", async function () {
+    this.timeout(60_000);
+    await openAppUsage();
+    await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "modelProvider"), {
+      timeout: 10_000,
+      timeoutMsg: "Model settings section did not appear",
+    });
+    await clickTestIdByDom("model-settings-embeddings-toggle", {
+      timeout: 15_000,
+      timeoutMsg: "Embedding settings did not appear",
+    });
+
+    const endpoint = await $('[data-testid="agent-workbench-embedding-endpoint"]');
+    const model = await $('[data-testid="agent-workbench-embedding-model"]');
+    const apiKey = await $('[data-testid="agent-workbench-embedding-api-key"]');
+    await endpoint.setValue("http://127.0.0.1:1/api/embed");
+    await model.setValue("e2e-draft-embedding-model");
+    await apiKey.setValue("e2e-transient-token");
+    await clickTestIdByDom("agent-workbench-test-embedding");
+
+    const message = await $('[data-testid="agent-workbench-embedding-message"]');
+    await message.waitForDisplayed({ timeout: 15_000 });
+    await browser.waitUntil(async () => (await apiKey.getValue()) === "", {
+      timeout: 5_000,
+      timeoutMsg: "Transient embedding token was retained after Test",
+    });
+  });
+
   it("US-AU-01: usage facts 清空后显示确定空态", async function () {
     this.timeout(60_000);
+    await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "usage"), {
+      timeout: 10_000,
+      timeoutMsg: "Usage Stats section did not appear",
+    });
+    await clickTestIdByDom(testId(TID_SETTINGS_USAGE_TAB, "app"), {
+      timeout: 10_000,
+      timeoutMsg: "App Usage tab did not appear",
+    });
     clearAppUsageE2EFixture(getE2EAppDataPaths().homeDir);
     await clickButtonByText(["Refresh", "刷新"]);
     await browser.waitUntil(
@@ -88,6 +182,13 @@ async function clickButtonByText(labels: string[]): Promise<void> {
     }
   }
   throw new Error(`找不到按钮: ${labels.join("/")}`);
+}
+
+async function findButtonByText(labels: string[]) {
+  for (const button of await $$("button[aria-pressed]")) {
+    if (labels.includes((await button.getText()).trim())) return button;
+  }
+  throw new Error(`找不到筛选按钮: ${labels.join("/")}`);
 }
 
 async function assertPressedButton(labels: string[]): Promise<void> {

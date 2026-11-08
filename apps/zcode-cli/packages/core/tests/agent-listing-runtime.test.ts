@@ -129,6 +129,10 @@ describe("runtime agent listing", () => {
     expect(listingMessages(requests[0]!)).toHaveLength(1);
     const description = requests[0]!.tools?.find((tool) => tool.name === "Agent")?.description;
     expect(description).toContain("Available agent types are listed in <system-reminder>");
+    expect(description).toContain("if CodeIndex is available, check status");
+    expect(description).toContain("message begins with `Start`/`start` as a task label");
+    expect(description).toContain("the first tool action must invoke the exact `start` profile");
+    expect(description).toContain("Let start decide whether to delegate independent work to orchestrator");
     expect(description).not.toContain("Description A");
     const notices = listingMessages(requests[1]!);
     expect(notices).toHaveLength(2);

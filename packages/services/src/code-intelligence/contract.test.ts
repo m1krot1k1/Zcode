@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { configureOpenAiCompatibleEmbeddings, indexAndSearch } from "./contract.example.js";
+import {
+  configureOpenAiCompatibleEmbeddings,
+  indexAndSearch,
+  inspectCodeGraph,
+} from "./contract.example.js";
 import { codeIntelligenceModule } from "./module.js";
 import type { CodeIntelligenceService, CodeIndexStatus } from "./contract.js";
 
@@ -14,11 +18,14 @@ describe("code-intelligence contract", () => {
   it("keeps the Host surface bounded and status paths relative", () => {
     const operations: Array<keyof CodeIntelligenceService> = [
       "getStatus",
+      "watchWorkspace",
       "indexWorkspace",
       "search",
       "getSymbolContext",
+      "getGraphOverview",
       "getImpact",
       "trace",
+      "testEmbeddingConfig",
       "setEmbeddingConfig",
       "clearIndex",
     ];
@@ -26,10 +33,10 @@ describe("code-intelligence contract", () => {
       state: "unindexed",
       generation: 0,
       counts: { files: 0, chunks: 0, symbols: 0, edges: 0 },
-      embedding: { configured: false, available: false },
+      embedding: { configured: false, available: false, phase: "not-configured" },
       diagnostics: [],
     };
-    expect(operations).toHaveLength(8);
+    expect(operations).toHaveLength(11);
     expect(status.counts.files).toBe(0);
   });
 
@@ -40,6 +47,24 @@ describe("code-intelligence contract", () => {
     } as unknown as CodeIntelligenceService;
 
     await expect(indexAndSearch(service, "/workspace")).resolves.toEqual([]);
+  });
+
+  it("reads the bounded code graph through the Host contract", async () => {
+    const graph = { nodes: [], edges: [], partial: false };
+    const getGraphOverview = vi.fn(async () => graph);
+    const service = { getGraphOverview } as unknown as CodeIntelligenceService;
+
+    await expect(
+      inspectCodeGraph(service, "/workspace", {
+        path: "src/index.ts",
+        startLine: 8,
+      }),
+    ).resolves.toBe(graph);
+    expect(getGraphOverview).toHaveBeenCalledWith({
+      workspacePath: "/workspace",
+      focus: { path: "src/index.ts", startLine: 8 },
+      limit: 60,
+    });
   });
 
   it("configures an OpenAI-compatible endpoint without putting a key in the example", async () => {
@@ -54,6 +79,7 @@ describe("code-intelligence contract", () => {
         model: "example/embed-small",
         apiKeyConfigured: false,
         available: false,
+        phase: "pending" as const,
       },
       diagnostics: [],
     }));

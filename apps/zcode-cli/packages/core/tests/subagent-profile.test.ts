@@ -266,9 +266,9 @@ tools:
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
     expect(prompt).toContain("- reviewer:");
     expect(prompt).toContain(
-      "(Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, TodoRead",
+      "(Tools: CodeIndex, Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, TodoRead",
     );
-    expect(prompt).toContain("(Tools: Read, Glob, Grep, Write, Edit, Bash");
+    expect(prompt).toContain("(Tools: CodeIndex, Read, Glob, Grep, Write, Edit, Bash");
     expect(prompt).not.toContain("tools: Read");
     expect(prompt).not.toContain("background: true");
     expect(prompt).not.toContain("model:");
@@ -423,6 +423,10 @@ tools:
     const startPrompt = swarmProfiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
     expect(startPrompt).toContain("пользователем разрешение");
     expect(startPrompt).toContain("не обещай возобновление после перезапуска");
+    const implementerPrompt =
+      swarmProfiles.find(({ name }) => name === "implementer")?.systemPrompt ?? "";
+    expect(implementerPrompt).toContain("Для задачи о коде сначала вызови CodeIndex status");
+    expect(implementerPrompt).toContain("не дублируй это широким Explore/Grep обходом");
     const orchestratorPrompt =
       swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
     expect(orchestratorPrompt).toContain(
@@ -958,6 +962,7 @@ describe("built-in role capability matrix", () => {
 
   const ROUTER_TOOLS = ["Task"];
   const INSPECTION_TOOLS = [
+    "CodeIndex",
     "Read",
     "Glob",
     "Grep",
@@ -974,6 +979,7 @@ describe("built-in role capability matrix", () => {
     "TaskStop",
   ];
   const REVIEW_TOOLS = [
+    "CodeIndex",
     "Read",
     "Glob",
     "Grep",
@@ -989,6 +995,7 @@ describe("built-in role capability matrix", () => {
     "TaskStop",
   ];
   const WORKER_TOOLS = [
+    "CodeIndex",
     "Read",
     "Glob",
     "Grep",

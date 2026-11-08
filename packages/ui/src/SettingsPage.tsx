@@ -185,6 +185,10 @@ function SettingsUsageProviderTabs({
       id: "app" as const,
       label: intl.formatMessage({ id: "settings.usage.tab.appUsage" }),
     },
+    {
+      id: "codeGraph" as const,
+      label: intl.formatMessage({ id: "settings.usage.tab.codeGraph" }),
+    },
     ...codingPlanSources.map((source, index) => ({
       id: createSettingsUsageCodingPlanTabId(source.id),
       label: resolveSettingsUsageCodingPlanTabLabel({
@@ -669,6 +673,7 @@ export function SettingsPage({
   useEffect(() => {
     if (
       usageActiveTab === "app" ||
+      usageActiveTab === "codeGraph" ||
       usageActiveTab === "codingPlan" ||
       selectedUsageCodingPlanSource
     ) {
@@ -840,6 +845,7 @@ export function SettingsPage({
   const [hostPlatform, setHostPlatform] = useState("");
 
   useEffect(() => {
+    if (usageActiveTab === "codeGraph") return;
     if (
       !shouldFallbackSettingsUsageTabToApp({
         activeTab: usageActiveTab === "app" ? "app" : "codingPlan",
@@ -2212,6 +2218,14 @@ export function SettingsPage({
                               {/* 模型配置属于本机全局事实源；激活远端 workspace 时也不能注入远端 Host。 */}
                               <ModelProviderSection
                                 workspacePath={activeWorkspacePath ?? captionWorkspacePath ?? ""}
+                                codeIndexWorkspacePath={
+                                  isRemoteModelProviderWorkspace
+                                    ? undefined
+                                    : (activeWorkspacePath ?? captionWorkspacePath ?? undefined)
+                                }
+                                codeIndexWorkspaceIdentity={
+                                  isRemoteModelProviderWorkspace ? undefined : activeWorkspaceIdentity
+                                }
                                 connectivityWorkspacePath={
                                   localModelProviderConnectivityWorkspacePath
                                 }

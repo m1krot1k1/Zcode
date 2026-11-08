@@ -405,7 +405,10 @@ import { IPluginSyncService } from "./plugin-sync/pluginSync.js";
 import { IPluginsService } from "./plugins/plugins.js";
 import { IPluginManagementService } from "./plugins/pluginManagement.js";
 import { ISubagentsService } from "./subagents/subagents.js";
-import { ICodeIntelligenceService } from "./code-intelligence/contract.js";
+import {
+  ICodeIntelligenceService,
+  type CodeIntelligenceService,
+} from "./code-intelligence/contract.js";
 import { ICommandsService } from "./commands/commands.js";
 import { IHooksService } from "./hooks/hooks.js";
 import { IMemoryService } from "./memory/memory.js";
@@ -3193,6 +3196,9 @@ export function disposeServiceResources(services: ServiceCollection): void {
     services.getOptional(IFileWatcherService),
     services.getOptional(ISubagentsService),
     services.getOptional(IOffPeakTaskService),
+    services.getOptional(ICodeIntelligenceService) as
+      | (CodeIntelligenceService & { disposeAll?(): void })
+      | undefined,
   ].filter((service) => service !== undefined);
 
   for (const service of disposableServices) {
@@ -3234,6 +3240,9 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     services.getOptional(IFileWatcherService),
     services.getOptional(ISubagentsService),
     services.getOptional(IOffPeakTaskService),
+    services.getOptional(ICodeIntelligenceService) as
+      | (CodeIntelligenceService & { disposeAll?(): void; disposeAllAndWait?(): Promise<void> })
+      | undefined,
     services.getOptional(IOpenCodeAcpRuntime),
   ].filter((service) => service !== undefined);
 

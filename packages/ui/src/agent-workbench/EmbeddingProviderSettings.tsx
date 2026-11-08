@@ -1,5 +1,7 @@
-import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Check, ChevronDown, LoaderCircle, PlugZap } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.js";
 import { Input } from "@/components/ui/input.js";
 import {
   Select,
@@ -8,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type {
   CodeIndexStatus,
   CodeIntelligenceService,
@@ -17,223 +20,296 @@ import type {
 
 const LOCAL_ENDPOINT = "http://127.0.0.1:11434/api/embed";
 const OPENAI_ENDPOINT = "https://openrouter.ai/api/v1/embeddings";
-type Copy = (
-  id: string,
-  defaultMessage: string,
-  values?: Record<string, string | number>,
-) => string;
 
 export function EmbeddingProviderSettings({
   codeIndex,
   workspaceRef,
-  status,
-  setStatus,
-  busy,
-  setBusy,
-  copy,
 }: {
   codeIndex?: CodeIntelligenceService;
-  workspaceRef: CodeWorkspaceRef;
-  status: CodeIndexStatus;
-  setStatus: Dispatch<SetStateAction<CodeIndexStatus>>;
-  busy: boolean;
-  setBusy: (busy: boolean) => void;
-  copy: Copy;
+  workspaceRef?: CodeWorkspaceRef;
 }) {
+  const { intl } = useZCodeIntl();
+  const copy = useCallback((id: string, values?: Record<string, string | number>) =>
+    intl.formatMessage({ id }, values), [intl]);
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<CodeIndexStatus | null>(null);
   const [endpoint, setEndpoint] = useState("");
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState<EmbeddingProvider>("ollama");
   const [apiKey, setApiKey] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"test" | "save" | "clear-token" | "clear" | null>(null);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
-    setEndpoint(status.embedding.endpoint ?? "");
-    setModel(status.embedding.model ?? "");
-    setProvider(status.embedding.provider ?? "ollama");
-  }, [status.embedding.endpoint, status.embedding.model, status.embedding.provider]);
+    let cancelled = false;
+    if (!codeIndex || !workspaceRef) {
+      setStatus(null);
+      return;
+    }
+    void codeIndex.getStatus(workspaceRef).then((next) => {
+      if (cancelled) return;
+      setStatus(next);
+      setEndpoint(next.embedding.endpoint ?? "");
+      setModel(next.embedding.model ?? "");
+      setProvider(next.embedding.provider ?? "ollama");
+    }).catch(() => {
+      if (!cancelled)
+        setMessage({ text: copy("settings.embedding.statusFailed"), ok: false });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [codeIndex, copy, workspaceRef]);
 
-  const save = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!codeIndex) return;
-    setBusy(true);
+  if (!codeIndex || !workspaceRef) return null;
+
+  const updateStatus = async () => {
+    const next = await codeIndex.getStatus(workspaceRef);
+    setStatus(next);
+  };
+
+  const test = async () => {
+    setBusy("test");
     setMessage(null);
     try {
-      const next = await codeIndex.setEmbeddingConfig({
+      const result = await codeIndex.testEmbeddingConfig({
         ...workspaceRef,
         provider,
         endpoint: endpoint.trim(),
         model: model.trim(),
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
       });
-      setStatus(next);
-      setApiKey("");
-      setMessage(copy("agentWorkbench.embeddingSaved", "Embedding settings saved."));
+      setMessage({
+        ok: result.ok,
+        text: result.ok
+          ? copy("settings.embedding.testSuccess", {
+              dimensions: result.dimensions ?? 0,
+              ms: result.elapsedMs,
+            })
+          : copy(`settings.embedding.testError.${result.errorCode ?? "request-failed"}`),
+      });
     } catch {
-      setMessage(
-        copy(
-          "agentWorkbench.embeddingRejected",
-          "Use an allowed endpoint URL and a model name. Keep API tokens out of the URL.",
-        ),
-      );
+      setMessage({ text: copy("settings.embedding.testError.request-failed"), ok: false });
     } finally {
-      setBusy(false);
+      // Test credentials are transient; never retain them after the request completes.
+      setApiKey("");
+      setBusy(null);
+    }
+  };
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy("save");
+    setMessage(null);
+    try {
+      await codeIndex.setEmbeddingConfig({
+        ...workspaceRef,
+        provider,
+        endpoint: endpoint.trim(),
+        model: model.trim(),
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      });
+      setApiKey("");
+      await updateStatus();
+      setMessage({ text: copy("settings.embedding.saved"), ok: true });
+    } catch {
+      setMessage({ text: copy("settings.embedding.saveFailed"), ok: false });
+    } finally {
+      setBusy(null);
     }
   };
 
   const clearToken = async () => {
-    if (!codeIndex) return;
-    setBusy(true);
+    setBusy("clear-token");
     setMessage(null);
     try {
-      setStatus(await codeIndex.setEmbeddingConfig({ ...workspaceRef, apiKey: null }));
+      await codeIndex.setEmbeddingConfig({ ...workspaceRef, apiKey: null });
       setApiKey("");
-      setMessage(copy("agentWorkbench.embeddingTokenCleared", "Saved API token removed."));
+      await updateStatus();
+      setMessage({ text: copy("settings.embedding.tokenCleared"), ok: true });
     } catch {
-      setMessage(
-        copy("agentWorkbench.embeddingTokenClearFailed", "Could not remove the saved API token."),
-      );
+      setMessage({ text: copy("settings.embedding.saveFailed"), ok: false });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
   const clearConfig = async () => {
-    if (!codeIndex) return;
-    setBusy(true);
+    setBusy("clear");
     setMessage(null);
     try {
-      const next = await codeIndex.setEmbeddingConfig({
+      await codeIndex.setEmbeddingConfig({
         ...workspaceRef,
         provider: null,
         endpoint: null,
         model: null,
         apiKey: null,
       });
-      setStatus(next);
       setEndpoint("");
       setModel("");
       setProvider("ollama");
       setApiKey("");
-      setMessage(copy("agentWorkbench.embeddingCleared", "Embedding settings cleared."));
+      await updateStatus();
+      setMessage({ text: copy("settings.embedding.cleared"), ok: true });
     } catch {
-      setMessage(
-        copy("agentWorkbench.embeddingClearFailed", "Could not clear embedding settings."),
-      );
+      setMessage({ text: copy("settings.embedding.saveFailed"), ok: false });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
+  const configured = status?.embedding.configured === true;
+  const statusLabel = copy(`settings.embedding.phase.${status?.embedding.phase ?? "pending"}`);
+
   return (
-    <section
-      className="mb-4 rounded-xl border bg-card p-3"
-      aria-labelledby="embedding-config-heading"
-    >
-      <h3 id="embedding-config-heading" className="mb-2 text-ui-sm font-semibold">
-        {copy("agentWorkbench.embeddingConfig", "Embedding provider")}
-      </h3>
-      <form className="space-y-2" onSubmit={(event) => void save(event)}>
-        <Select
-          value={provider}
-          onValueChange={(value) => {
-            const next = value as EmbeddingProvider;
-            setProvider(next);
-            if (!endpoint.trim() || endpoint === LOCAL_ENDPOINT || endpoint === OPENAI_ENDPOINT) {
-              setEndpoint(next === "ollama" ? LOCAL_ENDPOINT : OPENAI_ENDPOINT);
-            }
-          }}
-          disabled={!codeIndex || busy}
-        >
-          <SelectTrigger
-            className="w-full"
-            aria-label={copy("agentWorkbench.embeddingProvider", "Embedding provider")}
-            data-testid="agent-workbench-embedding-provider"
+    <section className="overflow-hidden rounded-xl border border-border bg-card">
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left hover:bg-muted/40"
+            aria-label={copy("settings.embedding.title")}
+            data-testid="model-settings-embeddings-toggle"
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ollama">
-              {copy("agentWorkbench.embeddingOllama", "Local · Ollama")}
-            </SelectItem>
-            <SelectItem
-              value="openai-compatible"
-              data-testid="agent-workbench-openai-compatible-option"
-            >
-              {copy("agentWorkbench.embeddingOpenAiCompatible", "OpenAI-compatible API")}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          aria-label={copy("agentWorkbench.embeddingEndpoint", "Embedding endpoint")}
-          data-testid="agent-workbench-embedding-endpoint"
-          placeholder={provider === "ollama" ? LOCAL_ENDPOINT : OPENAI_ENDPOINT}
-          value={endpoint}
-          onChange={(event) => setEndpoint(event.target.value)}
-        />
-        <Input
-          aria-label={copy("agentWorkbench.embeddingModel", "Embedding model")}
-          data-testid="agent-workbench-embedding-model"
-          placeholder={provider === "ollama" ? "nomic-embed-text" : "openai/text-embedding-3-small"}
-          value={model}
-          onChange={(event) => setModel(event.target.value)}
-        />
-        <Input
-          type="password"
-          autoComplete="new-password"
-          aria-label={copy("agentWorkbench.embeddingApiKey", "Optional API token")}
-          data-testid="agent-workbench-embedding-api-key"
-          placeholder={
-            status.embedding.apiKeyConfigured
-              ? copy("agentWorkbench.embeddingTokenSaved", "Saved · leave blank to keep")
-              : copy("agentWorkbench.embeddingApiKey", "Optional API token")
-          }
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-        />
-        <p className="text-ui-xs text-muted-foreground">
-          {copy(
-            "agentWorkbench.embeddingPrivacy",
-            "Remote providers receive source chunks and search queries to create embeddings. Ollama keeps requests on this machine.",
-          )}
-        </p>
-        <Button
-          type="submit"
-          size="sm"
-          variant="outline"
-          className="w-full"
-          data-testid="agent-workbench-save-embedding"
-          disabled={!codeIndex || busy}
-        >
-          {copy("agentWorkbench.saveEmbedding", "Save embedding settings")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="w-full"
-          data-testid="agent-workbench-clear-embedding-token"
-          disabled={!codeIndex || busy || !status.embedding.apiKeyConfigured}
-          onClick={() => void clearToken()}
-        >
-          {copy("agentWorkbench.clearEmbeddingToken", "Forget saved API token")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="w-full"
-          data-testid="agent-workbench-clear-embedding-settings"
-          disabled={!codeIndex || busy || !status.embedding.configured}
-          onClick={() => void clearConfig()}
-        >
-          {copy("agentWorkbench.clearEmbedding", "Clear embedding settings and token")}
-        </Button>
-      </form>
-      {message ? (
-        <p role="status" className="mt-2 text-ui-xs text-muted-foreground">
-          {message}
-        </p>
-      ) : null}
+            <span className="flex min-w-0 items-center gap-2 text-ui-sm font-medium">
+              <PlugZap className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="truncate">{copy("settings.embedding.title")}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2 text-ui-xs text-muted-foreground">
+              {statusLabel}
+              <ChevronDown
+                className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </span>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t border-border px-4 py-3">
+            {status?.diagnostics[0] ? (
+              <p className="mb-2 line-clamp-2 text-ui-xs text-amber-600 dark:text-amber-400" title={status.diagnostics[0]}>
+                {status.diagnostics[0]}
+              </p>
+            ) : null}
+            <form className="space-y-2" onSubmit={(event) => void save(event)}>
+              <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
+                <Select
+                  value={provider}
+                  onValueChange={(value) => {
+                    const next = value as EmbeddingProvider;
+                    setProvider(next);
+                    if (!endpoint.trim() || endpoint === LOCAL_ENDPOINT || endpoint === OPENAI_ENDPOINT)
+                      setEndpoint(next === "ollama" ? LOCAL_ENDPOINT : OPENAI_ENDPOINT);
+                  }}
+                  disabled={busy !== null}
+                >
+                  <SelectTrigger aria-label={copy("settings.embedding.provider")} className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ollama">{copy("settings.embedding.ollama")}</SelectItem>
+                    <SelectItem value="openai-compatible">
+                      {copy("settings.embedding.openaiCompatible")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  aria-label={copy("settings.embedding.endpoint")}
+                  data-testid="agent-workbench-embedding-endpoint"
+                  className="h-9"
+                  placeholder={provider === "ollama" ? LOCAL_ENDPOINT : OPENAI_ENDPOINT}
+                  value={endpoint}
+                  onChange={(event) => setEndpoint(event.target.value)}
+                  disabled={busy !== null}
+                />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  aria-label={copy("settings.embedding.model")}
+                  data-testid="agent-workbench-embedding-model"
+                  className="h-9"
+                  placeholder={provider === "ollama" ? "nomic-embed-text" : "openai/text-embedding-3-small"}
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                  disabled={busy !== null}
+                />
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  aria-label={copy("settings.embedding.apiKey")}
+                  data-testid="agent-workbench-embedding-api-key"
+                  className="h-9"
+                  placeholder={status?.embedding.apiKeyConfigured
+                    ? copy("settings.embedding.tokenSaved")
+                    : copy("settings.embedding.apiKey")}
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  disabled={busy !== null}
+                />
+              </div>
+              <p className="text-ui-xs text-muted-foreground">
+                {copy("settings.embedding.privacy")}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="agent-workbench-test-embedding"
+                  disabled={busy !== null || !endpoint.trim() || !model.trim()}
+                  onClick={() => void test()}
+                >
+                  {busy === "test" ? <LoaderCircle className="mr-1 size-3.5 animate-spin" /> : null}
+                  {copy("settings.embedding.test")}
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  data-testid="agent-workbench-save-embedding"
+                  disabled={busy !== null || !endpoint.trim() || !model.trim()}
+                >
+                  {busy === "save" ? <LoaderCircle className="mr-1 size-3.5 animate-spin" /> : null}
+                  {copy("settings.embedding.save")}
+                </Button>
+                {status?.embedding.apiKeyConfigured ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="ml-auto text-ui-xs text-muted-foreground"
+                    disabled={busy !== null}
+                    onClick={() => void clearToken()}
+                  >
+                    {copy("settings.embedding.forgetToken")}
+                  </Button>
+                ) : null}
+                {configured ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-ui-xs text-muted-foreground"
+                    disabled={busy !== null}
+                    onClick={() => void clearConfig()}
+                  >
+                    {copy("settings.embedding.clear")}
+                  </Button>
+                ) : null}
+              </div>
+            </form>
+            {message ? (
+              <p
+                role="status"
+                className={`mt-2 flex items-center gap-1 text-ui-xs ${message.ok ? "text-emerald-600" : "text-destructive"}`}
+                data-testid="agent-workbench-embedding-message"
+              >
+                {message.ok ? <Check className="size-3.5" aria-hidden="true" /> : null}
+                {message.text}
+              </p>
+            ) : null}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </section>
   );
 }

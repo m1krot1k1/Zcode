@@ -290,6 +290,9 @@ export { ISubagentsService } from "./subagents/subagents.js";
 export {
   ICodeIntelligenceService,
   type CodeIntelligenceService,
+  type CodeGraphEdge,
+  type CodeGraphNode,
+  type CodeGraphOverview,
   type CodeWorkspaceRef,
   type CodeImpactResult,
   type CodeIndexStatus,
@@ -297,6 +300,8 @@ export {
   type CodeSearchResult,
   type CodeSymbolContext,
   type CodeTraceResult,
+  type EmbeddingPhase,
+  type EmbeddingTestResult,
 } from "./code-intelligence/contract.js";
 export { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/index.js";
 export type {
