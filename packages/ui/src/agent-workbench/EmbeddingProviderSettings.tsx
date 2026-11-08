@@ -86,7 +86,9 @@ export function EmbeddingProviderSettings({
               dimensions: result.dimensions ?? 0,
               ms: result.elapsedMs,
             })
-          : copy(`settings.embedding.testError.${result.errorCode ?? "request-failed"}`),
+          : copy(`settings.embedding.testError.${result.errorCode ?? "request-failed"}`, {
+              status: result.httpStatus ?? 0,
+            }),
       });
     } catch {
       setMessage({ text: copy("settings.embedding.testError.request-failed"), ok: false });
@@ -192,7 +194,7 @@ export function EmbeddingProviderSettings({
               </p>
             ) : null}
             <form className="space-y-2" onSubmit={(event) => void save(event)}>
-              <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
                 <Select
                   value={provider}
                   onValueChange={(value) => {
@@ -203,8 +205,12 @@ export function EmbeddingProviderSettings({
                   }}
                   disabled={busy !== null}
                 >
-                  <SelectTrigger aria-label={copy("settings.embedding.provider")} className="h-9">
-                    <SelectValue />
+                  <SelectTrigger
+                    aria-label={copy("settings.embedding.provider")}
+                    data-testid="agent-workbench-embedding-provider"
+                    className="h-9 min-w-0"
+                  >
+                    <SelectValue className="min-w-0 truncate" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ollama">{copy("settings.embedding.ollama")}</SelectItem>
@@ -216,7 +222,7 @@ export function EmbeddingProviderSettings({
                 <Input
                   aria-label={copy("settings.embedding.endpoint")}
                   data-testid="agent-workbench-embedding-endpoint"
-                  className="h-9"
+                  className="h-9 min-w-0"
                   placeholder={provider === "ollama" ? LOCAL_ENDPOINT : OPENAI_ENDPOINT}
                   value={endpoint}
                   onChange={(event) => setEndpoint(event.target.value)}
@@ -227,7 +233,7 @@ export function EmbeddingProviderSettings({
                 <Input
                   aria-label={copy("settings.embedding.model")}
                   data-testid="agent-workbench-embedding-model"
-                  className="h-9"
+                  className="h-9 min-w-0"
                   placeholder={provider === "ollama" ? "nomic-embed-text" : "openai/text-embedding-3-small"}
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
@@ -238,7 +244,7 @@ export function EmbeddingProviderSettings({
                   autoComplete="new-password"
                   aria-label={copy("settings.embedding.apiKey")}
                   data-testid="agent-workbench-embedding-api-key"
-                  className="h-9"
+                  className="h-9 min-w-0"
                   placeholder={status?.embedding.apiKeyConfigured
                     ? copy("settings.embedding.tokenSaved")
                     : copy("settings.embedding.apiKey")}

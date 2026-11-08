@@ -57,6 +57,12 @@ describe("Usage Stats App Usage E2E", () => {
     await graph.waitForDisplayed({ timeout: 15_000 });
     const canvas = await $('[data-testid="usage-code-graph-canvas"]');
     await canvas.waitForDisplayed({ timeout: 10_000 });
+    const stats = await $('[data-testid="usage-code-graph-stats"]');
+    await stats.waitForDisplayed({ timeout: 10_000 });
+    await browser.waitUntil(async () => (await stats.getAttribute("aria-busy")) === "false", {
+      timeout: 15_000,
+      timeoutMsg: "Code graph status remained in its loading state",
+    });
 
     const callFilter = await findButtonByText(["Calls", "调用"]);
     expect(await callFilter.getAttribute("aria-pressed")).toBe("true");
@@ -116,8 +122,18 @@ describe("Usage Stats App Usage E2E", () => {
     });
 
     const endpoint = await $('[data-testid="agent-workbench-embedding-endpoint"]');
+    const provider = await $('[data-testid="agent-workbench-embedding-provider"]');
     const model = await $('[data-testid="agent-workbench-embedding-model"]');
     const apiKey = await $('[data-testid="agent-workbench-embedding-api-key"]');
+    const providerLocation = await provider.getLocation();
+    const providerSize = await provider.getSize();
+    const endpointLocation = await endpoint.getLocation();
+    const endpointSize = await endpoint.getSize();
+    const fieldsDoNotOverlap =
+      providerLocation.x + providerSize.width <= endpointLocation.x ||
+      providerLocation.y + providerSize.height <= endpointLocation.y ||
+      endpointLocation.y + endpointSize.height <= providerLocation.y;
+    expect(fieldsDoNotOverlap).toBe(true);
     await endpoint.setValue("http://127.0.0.1:1/api/embed");
     await model.setValue("e2e-draft-embedding-model");
     await apiKey.setValue("e2e-transient-token");

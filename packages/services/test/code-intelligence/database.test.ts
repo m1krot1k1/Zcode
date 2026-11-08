@@ -117,4 +117,22 @@ describe("embedding providers", () => {
       "invalid vector order",
     );
   });
+
+  it("preserves only the HTTP status for provider failures, never the response body", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      new Response('{"error":"private provider detail"}', { status: 401 }),
+    );
+    const config = validateEmbeddingConfig(
+      "openai-compatible",
+      "https://example.test/v1/embeddings",
+      "example/embed",
+    );
+
+    await expect(requestEmbeddings(config, ["probe"], fetchMock)).rejects.toMatchObject({
+      name: "EmbeddingHttpError",
+      message: "Embedding endpoint returned HTTP 401.",
+      status: 401,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

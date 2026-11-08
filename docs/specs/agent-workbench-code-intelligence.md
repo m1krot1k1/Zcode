@@ -86,9 +86,12 @@ sequenceDiagram
 - Endpoint configuration rejects disallowed schemes, embedded credentials, URL query/fragment, and invalid model names; a failed embedding request leaves the previous committed generation searchable. Ollama and OpenAI-compatible responses are validated and mapped back to their input order. API keys never appear in status, SQLite records, or diagnostics.
 - Model settings can test an Ollama/local or OpenAI-compatible draft endpoint without saving it; a failed probe reports a sanitized, actionable error and never changes existing configuration or vectors.
 - The Workbench can configure Ollama locally or an OpenAI-compatible endpoint such as `https://openrouter.ai/api/v1/embeddings`, select a model, save an optional API key, and clear the key independently; lexical/symbol search continues to work without any model or key.
+- The embedding probe classifies HTTP authentication, missing model/route, rate-limit, and provider failures with the HTTP status, while never returning a provider response body, API key, or source content to the UI. Network failures and timeouts remain distinguishable.
 - Impact, context, and trace results identify the supporting symbols/files and return an explicit partial result when parser coverage is incomplete.
 - Code graph overview and focused neighborhoods return only bounded nodes/edges, use workspace-relative paths, include call/import relation types, and mark results partial when the stored parser coverage or response cap omits graph data.
 - The context-toolbar dialog keeps the active workspace identity unchanged, does not access SQLite from the renderer, and allows selecting a search result to center its callers and dependencies. Opening it does not trigger an initial build.
 - If a graph overview contains no connected symbols, the dialog explains that no local relationships were resolved and still offers indexed search; it does not report the graph as ready with an empty black canvas.
+- While the initial index status is unresolved, the graph dashboard shows an explicit loading state and does not present unknown counts as zero. If status loading fails, it stops spinning and offers a retry; a successful retry loads the graph.
+- The bounded overview uses a legible spread for up to 60 symbols, the controls and minimap follow the active theme, and the minimap does not dominate the graph canvas.
 - Dashboard rows use the authoritative Swarm run ID and role profile ID; profile edits affect later runs only.
 - Removing a workspace index deletes only that workspace's index artifacts.

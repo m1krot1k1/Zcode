@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   Background,
   BackgroundVariant,
@@ -112,14 +120,14 @@ function createGraphNodes(graph: CodeGraphOverview, selectedId: string | null): 
     for (const node of ordered) {
       if (!positions.has(node.id)) {
         positions.set(node.id, {
-          x: 190 * Math.cos(2.399 * positions.size),
-          y: 190 * Math.sin(2.399 * positions.size),
+          x: 260 * Math.cos(2.399 * positions.size),
+          y: 260 * Math.sin(2.399 * positions.size),
         });
       }
     }
   } else {
     ordered.forEach((node, index) => {
-      const radius = 30 * Math.sqrt(index);
+      const radius = 46 * Math.sqrt(index);
       const angle = index * 2.399963229728653;
       positions.set(node.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
     });
@@ -165,6 +173,7 @@ export function CodeGraphExplorer({
     [intl],
   );
   const [status, setStatus] = useState<CodeIndexStatus | null>(null);
+  const [statusLoadState, setStatusLoadState] = useState<"loading" | "ready" | "failed">("loading");
   const [graph, setGraph] = useState<CodeGraphOverview | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -175,6 +184,7 @@ export function CodeGraphExplorer({
   const [showCalls, setShowCalls] = useState(true);
   const [showImports, setShowImports] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const hasStatusRef = useRef(false);
   const workspaceRef = useMemo(
     () => ({
       workspacePath: workspacePath ?? "",
@@ -185,11 +195,16 @@ export function CodeGraphExplorer({
 
   const refreshStatus = useCallback(async () => {
     if (!codeIndex || !workspacePath) return;
+    if (!hasStatusRef.current) setStatusLoadState("loading");
     try {
       const next = await codeIndex.getStatus(workspaceRef);
       setStatus(next);
+      hasStatusRef.current = true;
+      setStatusLoadState("ready");
+      setMessage(null);
     } catch {
       setMessage(copy("codeGraph.statusFailed"));
+      if (!hasStatusRef.current) setStatusLoadState("failed");
     }
   }, [codeIndex, copy, workspacePath, workspaceRef]);
 
@@ -218,6 +233,8 @@ export function CodeGraphExplorer({
 
   useEffect(() => {
     setStatus(null);
+    hasStatusRef.current = false;
+    setStatusLoadState("loading");
     setGraph(null);
     setSelectedId(null);
     setResults([]);
@@ -233,7 +250,8 @@ export function CodeGraphExplorer({
   }, [codeIndex, copy, refreshStatus, workspacePath, workspaceRef]);
 
   useEffect(() => {
-    if (status?.state === "ready" && graph === null) void loadGraph();
+    if ((status?.state === "ready" || status?.state === "degraded") && graph === null)
+      void loadGraph();
   }, [graph, loadGraph, status?.state]);
 
   useEffect(() => {
@@ -336,17 +354,23 @@ export function CodeGraphExplorer({
       <header className="mb-3 flex flex-wrap items-center gap-2">
         <Workflow className="size-4 text-primary" />
         <h2 className="text-ui-base font-semibold">{copy("codeGraph.title")}</h2>
-        {status ? (
-          <span className="ml-auto rounded-full bg-muted px-2.5 py-1 text-ui-xs text-muted-foreground">
-            {copy(`codeGraph.state.${status.state}`)}
-          </span>
-        ) : null}
+        <span
+          role="status"
+          className={cn(
+            "ml-auto rounded-full bg-muted px-2.5 py-1 text-ui-xs text-muted-foreground",
+            statusLoadState === "failed" && "text-destructive",
+          )}
+        >
+          {status
+            ? copy(`codeGraph.state.${status.state}`)
+            : copy(statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading")}
+        </span>
         <Button
           type="button"
           variant="outline"
           size="sm"
           className="ml-auto gap-1.5"
-          disabled={loading || buildingIndex || status?.state === "indexing"}
+          disabled={loading || buildingIndex || statusLoadState !== "ready" || status?.state === "indexing"}
           onClick={() => void loadGraph()}
         >
           <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
@@ -355,15 +379,32 @@ export function CodeGraphExplorer({
       </header>
       <p className="mb-4 text-ui-xs text-muted-foreground">{copy("codeGraph.description")}</p>
 
-      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-ui-xs">
-        <span>{copy("codeGraph.files", { count: status?.counts.files ?? 0 })}</span>
-        <span>{copy("codeGraph.symbols", { count: status?.counts.symbols ?? 0 })}</span>
-        <span>{copy("codeGraph.links", { count: status?.counts.edges ?? 0 })}</span>
-        {status?.partial || graph?.partial ? (
-          <span className="ml-auto flex items-center gap-1 text-amber-600 dark:text-amber-400">
-            <AlertCircle className="size-3.5" /> {copy("codeGraph.partial")}
+      <div
+        className="mb-3 flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-ui-xs"
+        data-testid="usage-code-graph-stats"
+        aria-busy={statusLoadState === "loading"}
+      >
+        {status ? (
+          <>
+            <span>{copy("codeGraph.files", { count: status.counts.files })}</span>
+            <span>{copy("codeGraph.symbols", { count: status.counts.symbols })}</span>
+            <span>{copy("codeGraph.links", { count: status.counts.edges })}</span>
+            {status.partial || graph?.partial ? (
+              <span className="ml-auto flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="size-3.5" /> {copy("codeGraph.partial")}
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="flex items-center gap-2 text-muted-foreground">
+            {statusLoadState === "loading" ? (
+              <LoaderCircle className="size-3.5 animate-spin" />
+            ) : (
+              <AlertCircle className="size-3.5 text-destructive" />
+            )}
+            {copy(statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading")}
           </span>
-        ) : null}
+        )}
       </div>
 
       <form onSubmit={(event) => void runSearch(event)} className="relative mb-3 flex gap-2">
@@ -461,12 +502,22 @@ export function CodeGraphExplorer({
           className="relative min-w-0 overflow-hidden rounded-lg border border-border bg-background"
           data-testid="usage-code-graph-canvas"
         >
-          {loading || status === null ? (
-            <div className="flex h-[390px] items-center justify-center gap-2 text-ui-sm text-muted-foreground">
+          {statusLoadState === "loading" ||
+          loading ||
+          (status !== null && (status.state === "ready" || status.state === "degraded") && graph === null) ? (
+            <div className="flex h-[440px] items-center justify-center gap-2 text-ui-sm text-muted-foreground xl:h-[600px]">
               <LoaderCircle className="size-4 animate-spin" /> {copy("codeGraph.loading")}
             </div>
+          ) : statusLoadState === "failed" || status === null ? (
+            <div className="flex h-[440px] flex-col items-center justify-center gap-3 px-6 text-center xl:h-[600px]">
+              <AlertCircle className="size-7 text-destructive" />
+              <p className="max-w-sm text-ui-sm text-muted-foreground">{copy("codeGraph.statusFailed")}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => void refreshStatus()}>
+                <RefreshCw className="mr-1.5 size-3.5" /> {copy("codeGraph.retryStatus")}
+              </Button>
+            </div>
           ) : status.state === "indexing" || buildingIndex ? (
-            <div className="flex h-[390px] flex-col items-center justify-center gap-2 text-center text-ui-sm text-muted-foreground">
+            <div className="flex h-[440px] flex-col items-center justify-center gap-2 text-center text-ui-sm text-muted-foreground xl:h-[600px]">
               <LoaderCircle className="size-5 animate-spin text-primary" />
               <span>{copy("codeGraph.indexing")}</span>
               {status.progress ? (
@@ -476,7 +527,7 @@ export function CodeGraphExplorer({
               ) : null}
             </div>
           ) : status.counts.symbols === 0 ? (
-            <div className="flex h-[390px] flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="flex h-[440px] flex-col items-center justify-center gap-3 px-6 text-center xl:h-[600px]">
               <Database className="size-8 text-muted-foreground" />
               <div>
                 <h3 className="text-ui-sm font-medium">{copy("codeGraph.emptyTitle")}</h3>
@@ -490,7 +541,7 @@ export function CodeGraphExplorer({
               </Button>
             </div>
           ) : nodes.length === 0 ? (
-            <div className="flex h-[390px] flex-col items-center justify-center gap-2 px-6 text-center">
+            <div className="flex h-[440px] flex-col items-center justify-center gap-2 px-6 text-center xl:h-[600px]">
               <Database className="size-7 text-muted-foreground" />
               <h3 className="text-ui-sm font-medium">{copy("codeGraph.noResolvedGraph")}</h3>
               <p className="max-w-sm text-ui-xs text-muted-foreground">
@@ -501,13 +552,13 @@ export function CodeGraphExplorer({
               </Button>
             </div>
           ) : (
-            <div className="h-[390px] xl:h-[540px]">
+            <div className="h-[440px] xl:h-[600px]">
               <ReactFlow
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={nodeTypes}
                 fitView
-                fitViewOptions={{ padding: 0.25, minZoom: 0.12, maxZoom: 1.05 }}
+                fitViewOptions={{ padding: 0.3, minZoom: 0.18, maxZoom: 1.3 }}
                 minZoom={0.08}
                 maxZoom={1.6}
                 nodesConnectable={false}
@@ -517,16 +568,21 @@ export function CodeGraphExplorer({
                 proOptions={{ hideAttribution: true }}
               >
                 <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
-                <Controls position="bottom-left" showInteractive={false} />
+                <Controls
+                  position="bottom-left"
+                  showInteractive={false}
+                  className="overflow-hidden rounded-lg border border-border shadow-sm [&_.react-flow__controls-button]:!border-border [&_.react-flow__controls-button]:!bg-card [&_.react-flow__controls-button]:!text-foreground [&_.react-flow__controls-button>svg]:!fill-current [&_.react-flow__controls-button:hover]:!bg-muted"
+                />
                 <MiniMap
                   position="bottom-right"
                   pannable
                   zoomable
+                  style={{ width: 132, height: 88 }}
                   nodeColor={(node) =>
                     node.id === selectedId ? "var(--primary)" : "var(--muted-foreground)"
                   }
                   maskColor="color-mix(in srgb, var(--background) 76%, transparent)"
-                  className="!bg-card/80"
+                  className="!rounded-lg !border !border-border !bg-card/90 shadow-sm"
                 />
               </ReactFlow>
             </div>

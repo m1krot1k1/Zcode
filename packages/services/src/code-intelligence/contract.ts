@@ -105,7 +105,17 @@ export interface CodeTraceResult {
 
 export interface EmbeddingTestResult {
   ok: boolean;
-  errorCode?: "invalid-config" | "request-failed" | "timeout" | "invalid-response";
+  errorCode?:
+    | "invalid-config"
+    | "request-failed"
+    | "timeout"
+    | "invalid-response"
+    | "authentication"
+    | "not-found"
+    | "rate-limited"
+    | "provider-error";
+  /** Sanitized HTTP status only; provider response bodies are never returned. */
+  httpStatus?: number;
   dimensions?: number;
   elapsedMs: number;
 }

@@ -11,7 +11,7 @@
 - `getSymbolContext`, `getImpact`, and `trace` query symbols and dependency edges from the same generation.
 - `getGraphOverview` returns a bounded high-degree overview or one focused symbol neighborhood, with relative paths and an explicit partial flag; it never returns source excerpts.
 - `setEmbeddingConfig` configures or clears Ollama or an OpenAI-compatible endpoint/model and may save or clear an optional API key. It never installs or launches models.
-- `testEmbeddingConfig` probes one fixed non-source string with the draft provider config and saved/draft token. It never saves configuration or changes vectors, and returns only a sanitized outcome, dimensions, and elapsed time.
+- `testEmbeddingConfig` probes one fixed non-source string with the draft provider config and saved/draft token. It never saves configuration or changes vectors, and returns only a sanitized outcome, dimensions, elapsed time, and (for HTTP failures) the status code; it never returns a provider response body.
 - `clearIndex` closes and removes one identity-scoped database.
 
 ## State and failure behavior

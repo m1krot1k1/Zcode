@@ -71,6 +71,35 @@ describe("code intelligence embedding configuration", () => {
     expect((await service.getStatus({ workspacePath })).embedding.configured).toBe(false);
   });
 
+  it.each([
+    [401, "authentication"],
+    [403, "authentication"],
+    [404, "not-found"],
+    [429, "rate-limited"],
+    [503, "provider-error"],
+  ] as const)("reports sanitized HTTP %s failures from the embedding provider", async (httpStatus, errorCode) => {
+    const { workspacePath, root, credentialService } = await createTestService();
+    const privateBody = "provider response contains private diagnostics";
+    const probeService = createCodeIntelligenceService({
+      indexRootDir: join(root, "http-error-index"),
+      fetch: vi.fn(async () => new Response(privateBody, { status: httpStatus })) as typeof fetch,
+      credentialService,
+    });
+    services.push(probeService);
+
+    const result = await probeService.testEmbeddingConfig({
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "example/embed",
+      apiKey: "sk-transient-probe-token",
+    });
+
+    expect(result).toMatchObject({ ok: false, errorCode, httpStatus });
+    expect(JSON.stringify(result)).not.toContain(privateBody);
+    expect(JSON.stringify(result)).not.toContain("sk-transient-probe-token");
+  });
+
   it("keeps an optional API key in secure credentials and out of SQLite/status", async () => {
     const { workspacePath, indexRootDir, credentials, credentialService, service } =
       await createTestService();

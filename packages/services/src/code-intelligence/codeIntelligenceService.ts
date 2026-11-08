@@ -19,6 +19,8 @@ import {
 import {
   MAX_DIAGNOSTICS,
   MAX_EMBED_BATCH,
+  EmbeddingHttpError,
+  embeddingHttpErrorResult,
   cosineSimilarity,
   databaseFileFor,
   getEmbeddingConfig,
@@ -587,6 +589,9 @@ export function createCodeIntelligenceService(
         ? { ok: true, dimensions: vector.length, elapsedMs: Date.now() - startedAt }
         : { ok: false, errorCode: "invalid-response", elapsedMs: Date.now() - startedAt };
     } catch (error) {
+      if (error instanceof EmbeddingHttpError) {
+        return embeddingHttpErrorResult(error, Date.now() - startedAt);
+      }
       const message = error instanceof Error ? error.message : "";
       const errorCode = /invalid vector|invalid.*batch|vector order/i.test(message)
         ? "invalid-response"

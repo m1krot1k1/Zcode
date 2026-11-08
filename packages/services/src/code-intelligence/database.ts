@@ -10,6 +10,7 @@ import type {
   CodeTraceResult,
   EmbeddingPhase,
   EmbeddingProvider,
+  EmbeddingTestResult,
 } from "./contract.js";
 import type { IndexedFileRecord } from "./scanner.js";
 
@@ -488,6 +489,29 @@ export function upsertFileRecord(db: CodeIndexDatabase, file: IndexedFileRecord)
     addEdge.run(edge.sourceId, edge.targetId, edge.relation, edge.sourcePath, edge.targetPath);
 }
 
+export class EmbeddingHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Embedding endpoint returned HTTP ${status}.`);
+    this.name = "EmbeddingHttpError";
+  }
+}
+
+function embeddingHttpErrorCode(status: number): NonNullable<EmbeddingTestResult["errorCode"]> {
+  if (status === 401 || status === 403) return "authentication";
+  if (status === 404) return "not-found";
+  if (status === 429) return "rate-limited";
+  return "provider-error";
+}
+
+export function embeddingHttpErrorResult(error: EmbeddingHttpError, elapsedMs: number): EmbeddingTestResult {
+  return {
+    ok: false,
+    errorCode: embeddingHttpErrorCode(error.status),
+    httpStatus: error.status,
+    elapsedMs,
+  };
+}
+
 export async function requestEmbeddings(
   config: EmbeddingConfig,
   input: string[],
@@ -508,7 +532,7 @@ export async function requestEmbeddings(
       }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error("Embedding endpoint returned an error.");
+    if (!response.ok) throw new EmbeddingHttpError(response.status);
     const payload: unknown = await response.json();
     const expectedCount = Math.min(MAX_EMBED_BATCH, input.length - offset);
     let embeddings: unknown;
