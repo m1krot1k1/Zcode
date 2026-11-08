@@ -253,9 +253,11 @@ describe("code intelligence workspace lifecycle", () => {
     expect(failed.embedding.phase).toBe("failed");
   });
 
-  it("reconciles watched edits and deletions and rebinds the same identity to a new root", async () => {
+  it("reconciles watched nested edits and deletions and rebinds the same identity to a new root", async () => {
     const { root, workspacePath, service } = await createTestService();
-    const source = join(workspacePath, "sample.ts");
+    const nestedSourceDir = join(workspacePath, "src", "nested");
+    await mkdir(nestedSourceDir, { recursive: true });
+    const source = join(nestedSourceDir, "sample.ts");
     await writeFile(source, "export function beforeChange() { return 1; }", "utf8");
     await service.indexWorkspace({ workspacePath, workspaceIdentity: "stable-id" });
     await service.watchWorkspace({ workspacePath, workspaceIdentity: "stable-id" });

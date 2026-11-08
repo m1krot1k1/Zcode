@@ -1,5 +1,5 @@
-import { extname, relative, sep } from "node:path";
-import { watch, type FSWatcher } from "chokidar";
+import { extname, relative, resolve, sep } from "node:path";
+import { watch, type FSWatcher } from "node:fs";
 import type { CodeWorkspaceRef } from "./contract.js";
 
 const INDEXED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"]);
@@ -24,8 +24,6 @@ const WATCH_IGNORED_DIRECTORIES = new Set([
 interface WatchEntry {
   root: string;
   watcher: FSWatcher;
-  ready: Promise<void>;
-  resolveReady: () => void;
   failed: boolean;
   timer?: ReturnType<typeof setTimeout>;
 }
@@ -53,54 +51,54 @@ export function createWorkspaceWatcherRegistry(options: {
     );
   };
 
+  const shouldRefresh = (root: string, event: string, filename: string | Buffer | null) => {
+    // 修复依据：部分平台不会返回变更路径；保守刷新可以避免漏掉修改，现有防抖和索引合并会限制重复工作。
+    if (filename === null) return true;
+    const filePath = resolve(root, filename.toString());
+    if (isIndexInput(root, filePath)) return true;
+    if (event !== "rename") return false;
+
+    const localPath = relative(root, filePath).split(sep).join("/");
+    if (!localPath || localPath.startsWith("../") || localPath === "..") return false;
+    const segments = localPath.split("/");
+    if (segments.some((segment) => WATCH_IGNORED_DIRECTORIES.has(segment))) return false;
+    // 目录重命名可能新增或删除其中的索引文件，因此需要刷新。
+    return extname(segments.at(-1) ?? "") === "";
+  };
+
   const ensure = async (identityKey: string, root: string, workspace: CodeWorkspaceRef) => {
     const existing = entries.get(identityKey);
     if (existing && existing.root === root && !existing.failed) {
-      await existing.ready;
       return false;
     }
     if (existing) await stop(identityKey);
 
-    const watcher = watch(root, {
-      ignoreInitial: true,
-      persistent: true,
-      awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 50 },
-      ignored: (path) => {
-        const localPath = relative(root, path).split(sep).join("/");
-        return localPath
-          .split("/")
-          .some((segment) => WATCH_IGNORED_DIRECTORIES.has(segment));
-      },
-    });
-    let resolveReady!: () => void;
-    const entry: WatchEntry = {
-      root,
-      watcher,
-      ready: new Promise<void>((resolve) => {
-        resolveReady = resolve;
-      }),
-      resolveReady: () => resolveReady(),
-      failed: false,
-    };
+    let watcher: FSWatcher;
+    try {
+      // 根因：Chokidar 会遍历目录树并为每个目录打开 watcher；大型 workspace 因此触发 EMFILE 并阻塞 Host RPC。
+      // 修复：使用单个原生递归 watcher，不在注册前遍历整个目录树。
+      watcher = watch(root, { recursive: true, persistent: true }, (event, filename) => {
+        if (entry.failed || !shouldRefresh(root, event, filename)) return;
+        if (entry.timer) clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => {
+          entry.timer = undefined;
+          options.onChange(workspace);
+        }, options.debounceMs ?? 300);
+      });
+    } catch {
+      options.onError(workspace);
+      return false;
+    }
+    const entry: WatchEntry = { root, watcher, failed: false };
     entries.set(identityKey, entry);
-    watcher.on("all", (event, filePath) => {
-      if (event === "addDir" || event === "unlinkDir" || !isIndexInput(root, filePath)) return;
-      if (entry.timer) clearTimeout(entry.timer);
-      entry.timer = setTimeout(() => {
-        entry.timer = undefined;
-        options.onChange(workspace);
-      }, options.debounceMs ?? 300);
-    });
-    watcher.once("ready", () => {
-      if (!entry.failed) options.onReady?.(workspace);
-      resolveReady();
-    });
     watcher.on("error", () => {
       if (!entry.failed) options.onError(workspace);
       entry.failed = true;
-      resolveReady();
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = undefined;
+      entry.watcher.close();
     });
-    await entry.ready;
+    options.onReady?.(workspace);
     return true;
   };
 
@@ -108,7 +106,6 @@ export function createWorkspaceWatcherRegistry(options: {
     const entry = entries.get(identityKey);
     if (!entry) return;
     entries.delete(identityKey);
-    entry.resolveReady();
     if (entry.timer) clearTimeout(entry.timer);
     entry.timer = undefined;
     await entry.watcher.close();

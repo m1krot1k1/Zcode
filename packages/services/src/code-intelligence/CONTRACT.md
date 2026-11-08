@@ -5,8 +5,8 @@
 ## Operations
 
 - `getStatus` reads committed generation metadata and process-local progress.
-- `watchWorkspace` arms one Host-owned watcher for the workspace and incrementally reconciles changes missed while the Host was closed; it never creates the first index silently.
-- `indexWorkspace` arms the watcher before scanning, performs ignore-aware JS/TS indexing, and commits a new generation in one transaction.
+- `watchWorkspace` arms one Host-owned native recursive watcher without crawling the workspace tree, then incrementally reconciles changes missed while the Host was closed; it never creates the first index silently.
+- `indexWorkspace` arms the native watcher before scanning, performs ignore-aware JS/TS indexing, and commits a new generation in one transaction. Native watcher events are filtered and debounced; unidentifiable paths conservatively schedule a refresh.
 - `search` ranks local lexical matches, then optionally reranks with configured vectors. A changed provider, endpoint, or model causes the next index operation to embed all chunks that do not match the full embedding identity.
 - `getSymbolContext`, `getImpact`, and `trace` query symbols and dependency edges from the same generation.
 - `getGraphOverview` returns a bounded high-degree overview or one focused symbol neighborhood, with relative paths and an explicit partial flag; it never returns source excerpts.
@@ -21,3 +21,5 @@ SQLite owns non-secret workspace embedding metadata and index data. `ICredential
 ## Privacy and resource bounds
 
 Only JS/TS-family source files up to 1 MiB are considered. Root and nested Git ignore rules and `.zcodeignore` apply, along with built-in dependency/build/secret exclusions. Symlinks are skipped. Absolute paths, source-root paths, credentials, and source text are not written to status or diagnostics. Embedding requests send source chunks and search queries to the configured endpoint; Ollama is limited to loopback HTTP, while OpenAI-compatible remote calls require HTTPS except for loopback HTTP. Requests are batched and response order is validated. Search and graph traversals return bounded results without materializing embedding blobs or the entire graph in application memory.
+
+The workspace watcher uses one native recursive subscription rather than a per-directory recursive crawl. Unsupported or failed watcher creation is reported and leaves explicit manual refresh available; it does not fall back to a watcher per directory.
