@@ -105,6 +105,19 @@ function providerMessagesToText(messages: readonly { content?: unknown }[]): str
   return messages.map((message) => providerContentToText(message.content)).join("\n");
 }
 
+function createCompletedSwarmTaskDagOutput(text = "orchestrator completed the task") {
+  return {
+    status: "completed" as const,
+    agentId: "agent_orchestrator_fallback_dag",
+    agentType: "task-dag",
+    description: "orchestrator fallback",
+    prompt: "Run the original task",
+    content: [{ type: "text" as const, text }],
+    totalToolUseCount: 0,
+    totalDurationMs: 1,
+  };
+}
+
 async function publishTestModelNetworkStatus(
   observation: TestModelExecutionObservation,
   event: Record<string, unknown>,
@@ -3630,22 +3643,24 @@ describe("AgentRuntime tool loop", () => {
     expect(swarmEvents[3]?.childSessionIds).toEqual(["sess_swarm-child-a", "sess_swarm-child-b"]);
   });
 
-  it("routes a zero-capacity explicit swarm to integrate_inline without dispatching the DAG", async () => {
+  it("delegates an explicit swarm leaf to the orchestrator without a spawn budget", async () => {
     const sessionId = createSessionId("runtime-swarm-zero-capacity");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const launch = vi.fn();
+    const runTaskDag = vi.fn(async () =>
+      createCompletedSwarmTaskDagOutput("orchestrator handled the task"),
+    );
     const requestedPrompts: string[] = [];
     const runtime = createTestAgentRuntime(
       sessionId,
       {
         maxOutputTokens: 80,
         mode: "build",
-        spawnBudget: 0,
         modelSelection: createTestModelSelection("test/swarm-zero-capacity"),
       },
       {
         eventStore,
-        subagentPort: { runTaskDag } as never,
+        subagentPort: { launch, runTaskDag } as never,
         modelFactory: createTestModelFactory({
           async generateText(request) {
             const requestText = providerMessagesToText(request.messages);
@@ -3655,24 +3670,8 @@ describe("AgentRuntime tool loop", () => {
                 finishReason: "stop",
                 providerMetadata: undefined,
                 text: JSON.stringify({
-                  decision: "split",
-                  graph: {
-                    max_parallel: 2,
-                    nodes: [
-                      {
-                        id: "zero-a",
-                        description: "Inspect A",
-                        prompt: "Inspect A",
-                        subagent_type: "researcher",
-                      },
-                      {
-                        id: "zero-b",
-                        description: "Inspect B",
-                        prompt: "Inspect B",
-                        subagent_type: "implementer",
-                      },
-                    ],
-                  },
+                  decision: "leaf",
+                  reason: "The task is indivisible; hand it to the orchestrator.",
                 }),
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
@@ -3680,7 +3679,7 @@ describe("AgentRuntime tool loop", () => {
             return {
               finishReason: "stop",
               providerMetadata: undefined,
-              text: "inline answer after zero-capacity routing",
+              text: "Краткий итог делегированной задачи.",
               usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
             };
           },
@@ -3692,17 +3691,23 @@ describe("AgentRuntime tool loop", () => {
       intent: { orchestrationMode: "swarm" },
     });
 
-    // Planner — обычный inline model call, а не spawn: он строит граф до проверки
-    // ёмкости. При integrate_inline turn продолжается обычным inline-ответом.
-    expect(result.response).toBe("inline answer after zero-capacity routing");
+    expect(result.response).toBe("Краткий итог делегированной задачи.");
     expect(requestedPrompts).toHaveLength(2);
     expect(requestedPrompts[0]).toContain(
       "Decide whether this task needs independent parallel work",
     );
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(requestedPrompts[1]).toContain("orchestrator handled the task");
+    expect(requestedPrompts[1]).toContain("root is synthesis-only after child execution");
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
+    const dagRequest = runTaskDag.mock.calls[0]?.[0] as {
+      nodes?: Array<{ subagent_type?: string }>;
+      maxParallel?: number;
+    };
+    expect(dagRequest.nodes?.[0]?.subagent_type).toBe("orchestrator");
+    expect(dagRequest.maxParallel).toBe(1);
+    expect(launch).not.toHaveBeenCalled();
 
     const events = await eventStore.getEvents(sessionId);
-    expect(events.some((event) => event.type === SessionEventType.SubagentSpawned)).toBe(false);
     const swarmEvents = events
       .filter((event) => event.type === SessionEventType.SwarmRunUpdated)
       .map(
@@ -3713,10 +3718,10 @@ describe("AgentRuntime tool loop", () => {
             childSessionIds?: string[];
           },
       );
-    expect(swarmEvents.map((event) => event.status)).toEqual(["planning", "failed"]);
-    expect(swarmEvents[1]?.summary).toContain("План роя отклонён");
-    expect(swarmEvents[1]?.summary).toContain("no spawn budget");
-    expect(swarmEvents[1]?.childSessionIds).toEqual([]);
+    expect(swarmEvents.map((event) => event.status)).toEqual(["planning", "running", "completed"]);
+    expect(swarmEvents[1]?.summary).toContain("orchestrator");
+    expect(swarmEvents[2]?.summary).toContain("orchestrator");
+    expect(swarmEvents[2]?.childSessionIds).toEqual([]);
   }, 30_000);
 
   it("journals an accepted root swarm before projection and dispatch, then rejects duplicate input without redispatch", async () => {
@@ -4510,7 +4515,7 @@ describe("AgentRuntime tool loop", () => {
   it("continues an explicit swarm leaf as a regular answer without spawning agents", async () => {
     const sessionId = createSessionId("runtime-swarm-planner-leaf");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     const runtime = createTestAgentRuntime(
       sessionId,
       { mode: "build", modelSelection: createTestModelSelection("provider-test/swarm") },
@@ -4551,16 +4556,17 @@ describe("AgentRuntime tool loop", () => {
     });
 
     expect(result.response).toBe("ordinary answer for an indivisible task");
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
     expect(swarmEvents.map((event) => (event.payload as { status?: string }).status)).toEqual([
       "planning",
+      "running",
       "completed",
     ]);
-    expect(swarmEvents).toHaveLength(2);
-    expect(swarmEvents[1]?.payload).toMatchObject({ childSessionIds: [] });
+    expect(swarmEvents).toHaveLength(3);
+    expect(swarmEvents[2]?.payload).toMatchObject({ childSessionIds: [] });
   });
 
   it("does not plan repo work from an empty draft workspace", async () => {
@@ -4622,7 +4628,7 @@ describe("AgentRuntime tool loop", () => {
     });
   });
 
-  it("continues an explicit swarm leaf when the durable journal closes planning as completed", async () => {
+  it("does not dispatch an orchestrator fallback when its durable graph commit conflicts", async () => {
     const sessionId = createSessionId("runtime-swarm-journal-leaf");
     const eventStore = createTestSessionEventStore();
     const runTaskDag = vi.fn();
@@ -4699,15 +4705,16 @@ describe("AgentRuntime tool loop", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Ку", undefined, {
-      inputId: "accepted-leaf-command",
-      intent: { orchestrationMode: "swarm" },
-    });
+    await expect(
+      runtime.executeTurn("Ку", undefined, {
+        inputId: "accepted-leaf-command",
+        intent: { orchestrationMode: "swarm" },
+      }),
+    ).rejects.toThrow();
 
-    expect(result.response).toBe("ordinary answer after the journal handoff");
     expect(runTaskDag).not.toHaveBeenCalled();
-    expect(transitions).toEqual(["completed"]);
-    expect(status).toBe("completed");
+    expect(transitions).toEqual([]);
+    expect(status).toBe("planning");
   });
 
   it("sends ordinary OpenCode chat directly to the selected model without a planner request", async () => {
@@ -4801,7 +4808,7 @@ describe("AgentRuntime tool loop", () => {
   it("does not bypass Swarm planning when a list request also asks for implementation", async () => {
     const sessionId = createSessionId("runtime-swarm-list-plus-implementation");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -4846,11 +4853,11 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("ordinary answer after planning");
     expect(callCount).toBe(2);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "completed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
   });
 
   it("never sends an auto intent to the optional root planner", async () => {
@@ -4905,7 +4912,7 @@ describe("AgentRuntime tool loop", () => {
   it("continues an OpenCode swarm request when the planner refuses a self-referential probe", async () => {
     const sessionId = createSessionId("runtime-swarm-planner-refusal");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     let planningVisibleBeforePlanner = false;
     const runtime = createTestAgentRuntime(
@@ -4959,22 +4966,21 @@ describe("AgentRuntime tool loop", () => {
     expect(result.response).toContain("I can answer directly");
     expect(callCount).toBe(2);
     expect(planningVisibleBeforePlanner).toBe(true);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
-    expect(swarmEvents[1]?.payload).toMatchObject({
-      taskCount: 0,
-      childSessionIds: [],
-      summary: expect.stringContaining("План роя отклонён"),
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
+    expect(swarmEvents[2]?.payload).toMatchObject({
+      taskCount: 1,
+      summary: expect.stringContaining("orchestrator"),
     });
   });
 
   it("continues an explicit swarm as a regular turn when any provider planner refuses before spawn", async () => {
     const sessionId = createSessionId("runtime-swarm-planner-refusal-any-provider");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -5014,17 +5020,17 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("Обычный ответ после отказа планировщика.");
     expect(callCount).toBe(2);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
   });
 
   it("continues an explicit OpenCode swarm when the planner throws the self-referential probe error", async () => {
     const sessionId = createSessionId("runtime-opencode-swarm-planner-throws-probe-error");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -5066,27 +5072,25 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("Обычный ответ после ошибки планировщика OpenCode.");
     expect(callCount).toBe(2);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
-    expect(swarmEvents[1]?.payload).toMatchObject({
-      taskCount: 0,
-      childSessionIds: [],
-      summary: expect.stringContaining("Планировщик недоступен"),
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
+    expect(swarmEvents[2]?.payload).toMatchObject({
+      taskCount: 1,
+      summary: expect.stringContaining("orchestrator"),
     });
-    expect(swarmEvents[1]?.payload.summary).toContain("Orchestrator fallback недоступен");
   });
 
   it("falls back to orchestrator when the planner is unavailable", async () => {
     const sessionId = createSessionId("runtime-swarm-orchestrator-fallback");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
-    const launch = vi.fn(async () => ({
+    const launch = vi.fn();
+    const runTaskDag = vi.fn(async () => ({
       status: "completed" as const,
-      agentId: "agent_orchestrator_fallback",
-      agentType: "orchestrator",
+      agentId: "agent_orchestrator_fallback_dag",
+      agentType: "task-dag",
       description: "fallback",
       prompt: "Run the task",
       content: [{ type: "text" as const, text: "orchestrator completed the task" }],
@@ -5126,9 +5130,14 @@ describe("AgentRuntime tool loop", () => {
       intent: { orchestrationMode: "swarm" },
     });
 
-    expect(launch).toHaveBeenCalledTimes(1);
-    expect((launch.mock.calls[0]?.[0] as { agentType?: string }).agentType).toBe("orchestrator");
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
+    const dagRequest = runTaskDag.mock.calls[0]?.[0] as {
+      nodes?: Array<{ subagent_type?: string }>;
+      maxParallel?: number;
+    };
+    expect(dagRequest.nodes?.[0]?.subagent_type).toBe("orchestrator");
+    expect(dagRequest.maxParallel).toBe(1);
+    expect(launch).not.toHaveBeenCalled();
     expect(result.response).toContain("root synthesized orchestrator result");
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
@@ -5150,10 +5159,119 @@ describe("AgentRuntime tool loop", () => {
     });
   });
 
+  it("commits a durable orchestrator fallback graph before marking the run as running", async () => {
+    const sessionId = createSessionId("runtime-swarm-durable-orchestrator-fallback");
+    const eventStore = createTestSessionEventStore();
+    const order: string[] = [];
+    let graphCommitted = false;
+    let runRevision = 0;
+    const sessionStore = Object.assign(new RecordingSessionStore(), {
+      async admitSwarmRun(input: { runID: string }) {
+        order.push("admit");
+        return {
+          created: true,
+          run: { runID: input.runID, revision: 0, ownerEpoch: 0, status: "planning" as const },
+        };
+      },
+      async commitSwarmRunGraph() {
+        order.push("graph_saved");
+        graphCommitted = true;
+        runRevision += 1;
+        return true;
+      },
+      async transitionSwarmRun(input: { status: string; expectedRevision: number }) {
+        expect(input.expectedRevision).toBe(runRevision);
+        if (input.status === "running" && !graphCommitted) {
+          throw new Error("CHECK constraint failed: status != 'running' or graph_json is not null");
+        }
+        order.push(`run:${input.status}`);
+        runRevision += 1;
+        return true;
+      },
+      async reserveSwarmNodeAttempt() {
+        order.push("attempt_reserved");
+        return { created: true, attempt: { revision: 0 } };
+      },
+      async transitionSwarmNodeAttempt(input: { status: string }) {
+        order.push(`attempt:${input.status}`);
+        return true;
+      },
+    });
+    const launch = vi.fn();
+    const runTaskDag = vi.fn(async (_request: unknown, options: unknown) => {
+      order.push("dag_dispatch");
+      const persist = (options as {
+        persistSwarmNodeAttempt?: (fact: Record<string, unknown>) => Promise<void>;
+      }).persistSwarmNodeAttempt;
+      const identity = {
+        nodeID: "orchestrator-fallback",
+        attemptID: "attempt-orchestrator-fallback",
+        attemptNo: 1,
+        childSessionID: createSessionId("child-orchestrator-fallback"),
+      };
+      await persist?.({ phase: "reserved", ...identity });
+      await persist?.({ phase: "running", ...identity });
+      await persist?.({ phase: "completed", ...identity, resultText: "delegated" });
+      return {
+        status: "completed" as const,
+        agentId: "dag-orchestrator-fallback",
+        agentType: "task-dag",
+        description: "durable fallback",
+        prompt: "Run the task",
+        content: [{ type: "text" as const, text: "[completed] orchestrator-fallback" }],
+        totalToolUseCount: 0,
+        totalDurationMs: 1,
+      };
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        modelSelection: createTestModelSelection("test/swarm-durable-orchestrator-fallback"),
+      },
+      {
+        eventStore,
+        sessionStore,
+        subagentPort: { launch, runTaskDag } as never,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            if (
+              providerMessagesToText(request.messages).includes(
+                "Decide whether this task needs independent parallel work",
+              )
+            ) {
+              throw new Error("planner unavailable");
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Короткий итог после fallback.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run this task as a swarm", undefined, {
+      inputId: "accepted-durable-fallback-command",
+      intent: { orchestrationMode: "swarm" },
+    });
+
+    expect(result.response).toContain("Короткий итог после fallback.");
+    expect(launch).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
+    expect(order.indexOf("graph_saved")).toBeLessThan(order.indexOf("run:running"));
+    expect(order.indexOf("run:running")).toBeLessThan(order.indexOf("dag_dispatch"));
+    expect(order).toContain("attempt:completed");
+  });
+
   it("keeps an unjournaled swarm failed when its ordinary OpenCode fallback also fails", async () => {
     const sessionId = createSessionId("runtime-opencode-swarm-fallback-empty-response");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => {
+      throw new Error("orchestrator could not complete");
+    });
     const runtime = createTestAgentRuntime(
       sessionId,
       {
@@ -5184,12 +5302,16 @@ describe("AgentRuntime tool loop", () => {
       }),
     ).rejects.toThrow();
 
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
-    expect(swarmEvents[1]?.payload).toMatchObject({
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual([
+      "planning",
+      "running",
+      "failed",
+    ]);
+    expect(swarmEvents[2]?.payload).toMatchObject({
       taskCount: 0,
       childSessionIds: [],
       summary: expect.stringContaining("Планировщик недоступен"),
@@ -5199,7 +5321,7 @@ describe("AgentRuntime tool loop", () => {
   it("continues an OpenCode chat when the swarm planner exceeds its own deadline", async () => {
     const sessionId = createSessionId("runtime-swarm-planner-timeout");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
     let plannerSignal: AbortSignal | undefined;
     let callCount = 0;
@@ -5256,15 +5378,14 @@ describe("AgentRuntime tool loop", () => {
       // Два planner attempt после timeout + обычный model turn.
       expect(callCount).toBe(3);
       expect(plannerSignal?.aborted).toBe(true);
-      expect(runTaskDag).not.toHaveBeenCalled();
+      expect(runTaskDag).toHaveBeenCalledTimes(1);
       const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
         (event) => event.type === SessionEventType.SwarmRunUpdated,
       );
-      expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
-      expect(swarmEvents[1]?.payload).toMatchObject({
-        taskCount: 0,
-        childSessionIds: [],
-        summary: expect.stringContaining("Планировщик недоступен"),
+      expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
+      expect(swarmEvents[2]?.payload).toMatchObject({
+        taskCount: 1,
+        summary: expect.stringContaining("orchestrator"),
       });
     } finally {
       vi.restoreAllMocks();
@@ -5274,7 +5395,7 @@ describe("AgentRuntime tool loop", () => {
   it("continues an explicit swarm as a regular turn when a planner selects a stale profile", async () => {
     const sessionId = createSessionId("runtime-swarm-stale-profile");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -5329,17 +5450,17 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("ordinary answer after invalid swarm plan");
     expect(callCount).toBe(2);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
   });
 
   it("continues a swarm request when the planner omits a specialized role", async () => {
     const sessionId = createSessionId("runtime-swarm-missing-role");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -5387,17 +5508,17 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("ordinary answer after role-less swarm plan");
     expect(callCount).toBe(2);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
       (event) => event.type === SessionEventType.SwarmRunUpdated,
     );
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
   });
 
   it("continues a swarm request when the planner returns an invalid split", async () => {
     const sessionId = createSessionId("runtime-swarm-invalid-plan");
     const eventStore = createTestSessionEventStore();
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
     let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -5450,15 +5571,14 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("ordinary answer after invalid swarm plan");
     expect(callCount).toBe(2);
-    expect(runTaskDag).not.toHaveBeenCalled();
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
     const events = await eventStore.getEvents(sessionId);
     const swarmEvents = events.filter((event) => event.type === SessionEventType.SwarmRunUpdated);
-    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "failed"]);
-    expect(swarmEvents[1]?.payload).toMatchObject({
-      taskCount: 0,
-      summary: expect.stringContaining("План роя отклонён"),
+    expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
+    expect(swarmEvents[2]?.payload).toMatchObject({
+      taskCount: 1,
+      summary: expect.stringContaining("orchestrator"),
     });
-    expect(swarmEvents[1]?.payload.summary).toContain("две независимые задачи");
   });
 
   it("plain executeTurn does not run post-turn active target loop without opt-in", async () => {
@@ -15474,6 +15594,7 @@ describe("AgentRuntime tool loop", () => {
         addedTypes: [
           "backend-coder",
           "coder",
+          "debugger",
           "evaluator",
           "frontend-coder",
           "implementer",

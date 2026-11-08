@@ -4,6 +4,9 @@ import {
   isNewPublishedAt,
   type CatalogBadge,
   type CatalogSortMode,
+  type ClineMcpMarketplaceEntry,
+  type CommunityMcpPreset,
+  type McpServerConfig,
   type McpRegistryMarketplaceEntry,
 } from "@zcode/shared";
 
@@ -80,6 +83,148 @@ export function mergeMcpRegistryEntries(
     merged.set(entry.id, { ...merged.get(entry.id), ...entry });
   }
   return [...merged.values()];
+}
+
+function normalizeNpmPackageName(packageSpec: string): string | undefined {
+  const value = packageSpec.trim();
+  if (!value || value.startsWith("-")) return undefined;
+  const scopeEnd = value.startsWith("@") ? value.indexOf("/") : -1;
+  const versionSeparator =
+    scopeEnd >= 0 ? value.indexOf("@", scopeEnd + 1) : value.lastIndexOf("@");
+  const name = versionSeparator > 0 ? value.slice(0, versionSeparator) : value;
+  return /^[a-z0-9][a-z0-9._-]*$|^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/iu.test(name)
+    ? name.toLowerCase()
+    : undefined;
+}
+
+function getNpxPackageNames(args: readonly string[] | undefined): string[] {
+  const packages: string[] = [];
+  for (let index = 0; index < (args?.length ?? 0); index += 1) {
+    const argument = args?.[index]?.trim() ?? "";
+    if (argument === "-p" || argument === "--package") {
+      const packageName = normalizeNpmPackageName(args?.[index + 1] ?? "");
+      if (packageName) packages.push(packageName);
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--package=")) {
+      const packageName = normalizeNpmPackageName(argument.slice("--package=".length));
+      if (packageName) packages.push(packageName);
+      continue;
+    }
+    if (argument.startsWith("-")) continue;
+    const packageName = normalizeNpmPackageName(argument);
+    if (packageName) packages.push(packageName);
+    break;
+  }
+  return packages;
+}
+
+function normalizeHttpsEndpoint(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return undefined;
+    url.hash = "";
+    url.pathname = url.pathname.replace(/\/+$/u, "") || "/";
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return undefined;
+  }
+}
+
+/** 目录可能用不同 ID 返回同一服务；以安装目标去重，保留后续条目中的其他独立选项。 */
+function deduplicateMcpRegistryEntries(
+  entries: readonly McpRegistryMarketplaceEntry[],
+): McpRegistryMarketplaceEntry[] {
+  const seenPackages = new Set<string>();
+  const seenEndpoints = new Set<string>();
+
+  return entries.flatMap((entry) => {
+    const options = entry.options.filter((option) => {
+      if (option.kind === "remote") {
+        const endpoint = option.url ? normalizeHttpsEndpoint(option.url) : undefined;
+        if (!endpoint) return true;
+        if (seenEndpoints.has(endpoint)) return false;
+        seenEndpoints.add(endpoint);
+        return true;
+      }
+
+      const command = option.command?.toLowerCase();
+      if (command !== "npx" && command !== "uvx" && command !== "docker") return true;
+      // Registry-парсер добавляет npm identifier последним аргументом для каждого поддерживаемого runner.
+      const packageName = normalizeNpmPackageName(option.args?.at(-1) ?? "");
+      if (!packageName) return true;
+      if (seenPackages.has(packageName)) return false;
+      seenPackages.add(packageName);
+      return true;
+    });
+
+    return options.length > 0 ? [{ ...entry, options }] : [];
+  });
+}
+
+/** Hide Registry install variants already represented by a reviewed preset or saved MCP config. */
+export function removeReviewedMcpPresetDuplicates(
+  entries: readonly McpRegistryMarketplaceEntry[],
+  presets: readonly CommunityMcpPreset[],
+  configuredServers: readonly McpServerConfig[] = [],
+): McpRegistryMarketplaceEntry[] {
+  const reviewedPackages = new Set<string>(
+    presets.flatMap((preset) => {
+      if (preset.kind !== "stdio") return [];
+      const packageName = normalizeNpmPackageName(preset.packageName);
+      return packageName ? [packageName] : [];
+    }),
+  );
+  for (const server of configuredServers) {
+    if (server.command?.toLowerCase() !== "npx") continue;
+    for (const packageName of getNpxPackageNames(server.args)) reviewedPackages.add(packageName);
+  }
+  const reviewedEndpoints = new Set<string>(
+    presets.flatMap((preset) => {
+      if (preset.kind !== "hosted") return [];
+      const endpoint = normalizeHttpsEndpoint(preset.url);
+      return endpoint ? [endpoint] : [];
+    }),
+  );
+  for (const server of configuredServers) {
+    const endpoint = server.url ? normalizeHttpsEndpoint(server.url) : undefined;
+    if (endpoint) reviewedEndpoints.add(endpoint);
+  }
+
+  const filteredEntries = entries.flatMap((entry) => {
+    const options = entry.options.filter((option) => {
+      if (option.kind === "remote") {
+        const endpoint = option.url ? normalizeHttpsEndpoint(option.url) : undefined;
+        return !endpoint || !reviewedEndpoints.has(endpoint);
+      }
+      if (option.command?.toLowerCase() !== "npx") return true;
+      const packageNames = getNpxPackageNames(option.args);
+      return !packageNames.some((packageName) => reviewedPackages.has(packageName));
+    });
+    return options.length > 0 ? [{ ...entry, options }] : [];
+  });
+
+  return deduplicateMcpRegistryEntries(filteredEntries);
+}
+
+/** Remove reviewed presets already installed in the active settings scope from Add suggestions. */
+export function filterUninstalledMcpPresets(
+  presets: readonly CommunityMcpPreset[],
+  installedPresetIds: ReadonlySet<string>,
+): CommunityMcpPreset[] {
+  return presets.filter((preset) => !installedPresetIds.has(preset.id));
+}
+
+/** Hide an external Cline alias when its reviewed local preset is already shown for this query. */
+export function filterReviewedClinePresetDuplicates(
+  entries: readonly ClineMcpMarketplaceEntry[],
+  visiblePresets: readonly CommunityMcpPreset[],
+): ClineMcpMarketplaceEntry[] {
+  const visiblePresetIds = new Set(visiblePresets.map((preset) => preset.id));
+  return entries.filter(
+    (entry) => !entry.localPresetId || !visiblePresetIds.has(entry.localPresetId),
+  );
 }
 
 interface McpCatalogViewEntry {

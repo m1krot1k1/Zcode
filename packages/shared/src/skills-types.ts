@@ -80,7 +80,8 @@ export interface MarketplaceSkillInfo {
   /** skills.sh 技能 slug；安装时与 source 组成 `owner/repo/skillId`。 */
   skillId: string;
   source: string;
-  installs: number;
+  /** Actual skills.sh install count; omitted when the source does not provide a valid count. */
+  installs?: number;
   installed: boolean;
 }
 

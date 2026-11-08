@@ -80,7 +80,7 @@ export interface CodeGraphNode {
 export interface CodeGraphEdge {
   source: string;
   target: string;
-  relation: string;
+  relation: "calls" | "imports" | "contains";
 }
 
 export interface CodeGraphOverview {

@@ -61,6 +61,37 @@ describe("设置语言 System default E2E", () => {
       },
     );
   });
+
+  it("SL-02: Russian language selection renders Russian and survives an app restart", async function () {
+    this.timeout(90000);
+
+    await prepareEnglishPreference();
+    await skipOccupationOnboardingIfPresent();
+    await waitForDefaultWorkspaceReady(30000);
+    await waitForWorkspaceApp(DEFAULT_WORKSPACE, 30000);
+    await openGeneralSettings();
+
+    await selectLocalePreference("ru-RU");
+    await assertBodyTextIncludes(["Язык интерфейса", "Выберите язык интерфейса приложения."]);
+    await browser.waitUntil(
+      async () => {
+        const settings = await readSettings();
+        return settings.localePreference === "ru-RU" && settings.locale === "ru-RU";
+      },
+      {
+        timeout: 15000,
+        timeoutMsg: "Русский выбор языка не сохранился в настройках",
+      },
+    );
+
+    await quitElectronAppGracefully();
+    await browser.reloadSession();
+    await skipOccupationOnboardingIfPresent();
+    await waitForDefaultWorkspaceReady(30000);
+    await waitForWorkspaceApp(DEFAULT_WORKSPACE, 30000);
+    await openGeneralSettings();
+    await assertBodyTextIncludes(["Язык интерфейса", "Выберите язык интерфейса приложения."]);
+  });
 });
 
 async function prepareEnglishPreference() {
@@ -88,7 +119,7 @@ async function openGeneralSettings() {
   });
 }
 
-async function selectLocalePreference(preference: "system" | "zh-CN" | "en-US") {
+async function selectLocalePreference(preference: "system" | "zh-CN" | "en-US" | "ru-RU") {
   await clickTestIdByWebDriver(TID_SETTINGS_LOCALE_SELECT_TRIGGER, {
     timeout: 15000,
     timeoutMsg: "界面语言下拉触发器没有出现",

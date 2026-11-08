@@ -264,7 +264,6 @@ export function GeneralSectionContent({
   httpProxyList = "",
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
-  spawnBudget,
   subagentMaxParallel,
   subagentTaskTimeoutMinutes,
   defaultHomeDir,
@@ -295,7 +294,6 @@ export function GeneralSectionContent({
   onHttpProxyListChange = async () => {},
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
-  onSpawnBudgetChange = async (): Promise<RunLimitSaveResult> => "saved",
   onSubagentMaxParallelChange = async (): Promise<RunLimitSaveResult> => "saved",
   onSubagentTaskTimeoutMinutesChange = async (): Promise<RunLimitSaveResult> => "saved",
   onCloseToTrayOnWindowsChange,
@@ -335,8 +333,6 @@ export function GeneralSectionContent({
   httpProxyList?: string;
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
-  /** 单次 spawn 预算；undefined 表示沿用默认值 */
-  spawnBudget?: number;
   /** 每个 root run 的并行度；0/undefined 表示按机器适配。 */
   subagentMaxParallel?: number;
   /** 每个子代理的最短期限；0/undefined 表示使用 role default。 */
@@ -1057,17 +1053,8 @@ export function GeneralSectionContent({
         />
       </SettingsGroupCard>
 
-      {/* 运行预算由目标 Environment 的 settingService 持有；留空不回写设置。 */}
+      {/* 并行度只是可选的更低上限；0/空值使用主机可用并行度。 */}
       <SettingsGroupCard>
-        <RunLimitSettingRow
-          labelId="settings.spawnBudget"
-          descriptionId="settings.spawnBudgetDescription"
-          invalidId="settings.spawnBudgetInvalid"
-          placeholder={intl.formatMessage({ id: "settings.runLimitPlaceholder" })}
-          testId="settings-spawn-budget"
-          value={spawnBudget}
-          onSave={onSpawnBudgetChange}
-        />
         <RunLimitSettingRow
           labelId="settings.subagentMaxParallel"
           descriptionId="settings.subagentMaxParallelDescription"

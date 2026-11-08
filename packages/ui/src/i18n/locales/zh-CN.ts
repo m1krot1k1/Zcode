@@ -1,6 +1,7 @@
 import { requestSecurityMessagesZhCN } from "@/request-security-edition/messages.js";
 /** 中文翻译 */
 const zhCN: Record<string, string> = {
+  ...requestSecurityMessagesZhCN,
   "catalog.tabs.all": "全部",
   "catalog.tabs.allTime": "全部时间",
   "catalog.tabs.popular": "热门",
@@ -540,6 +541,9 @@ const zhCN: Record<string, string> = {
   "manualClaimPlan.banner.subtitle.oneTime": "{model} 一次性额度",
   "manualClaimPlan.claim.ticket.benefit": "{model} {amount} {unit}",
   "manualClaimPlan.claim.ticket.benefit.daily": "{model} 每日 {amount} {unit}",
+  "manualClaimPlan.banner.period.daily": "每日",
+  "manualClaimPlan.banner.period.oneTime": "一次性",
+  "manualClaimPlan.banner.bonus": "奖励",
   "manualClaimPlan.banner.close": "关闭活动",
   "manualClaimPlan.banner.claim": "领取",
   "manualClaimPlan.banner.dismissConfirm.title": "您将错过一次领取机会",
@@ -2991,6 +2995,7 @@ const zhCN: Record<string, string> = {
     "在工作区中保存并复用长期上下文，新会话生效。开启后可能增加模型调用和 Token 成本。",
   "settings.memory.viewer.localOnly":
     "记忆详情仅支持在本地桌面端查看，请前往本地桌面端的“记忆”设置。",
+  "settings.memory.viewer.disabled": "启用工作区记忆后即可查看已保存的记忆。",
   "settings.memory.viewer.title": "已保存的工作区记忆",
   "settings.memory.viewer.description": "查看此设备上按工作区保存的记忆。",
   "settings.memory.viewer.projectsDescription": "选择一个项目，查看该项目保存的全部记忆。",
@@ -3069,12 +3074,12 @@ const zhCN: Record<string, string> = {
   "settings.httpProxySavedHint": "网络代理设置已保存，重启应用后生效",
   "settings.spawnBudget": "子代理派生预算",
   "settings.spawnBudgetDescription":
-    "单次运行最多可派生多少个子代理。留空则使用默认值 128；填 0 表示禁止派生。",
-  "settings.spawnBudgetInvalid": "请填写不小于 0 的整数（0 表示禁止派生），或留空以使用默认值。",
+    "旧版设置。现在不再限制子代理总数，此值会被忽略。",
+  "settings.spawnBudgetInvalid": "此旧版设置已不再使用。",
   "settings.subagentMaxParallel": "子代理最大并行数",
   "settings.subagentMaxParallelDescription":
-    "每次运行同时活动的子代理上限（1–128）。填 0 会按可用 CPU 自适应（32–128）；新启动的 Agent 生效。",
-  "settings.subagentMaxParallelInvalid": "请输入 0 到 128 之间的整数。",
+    "可选的较低并发上限。留空或填 0 时使用主机可用的 CPU 容量；对新启动的 Agent 生效。",
+  "settings.subagentMaxParallelInvalid": "请输入非负整数，或留空。",
   "settings.subagentTaskTimeoutMinutes": "子代理最短运行时间（分钟）",
   "settings.subagentTaskTimeoutMinutesDescription":
     "延长角色 deadline，让 Agent 有时间调查和完成更大的任务。填 0 使用角色默认值，填 1–180 分钟；协调角色会额外保留结果汇总时间。",
@@ -3401,6 +3406,8 @@ const zhCN: Record<string, string> = {
   "settings.mcp.registry.error": "无法从官方 MCP Registry 加载 MCP 服务器。",
   "settings.mcp.registry.retry": "重试",
   "settings.mcp.registry.configure": "配置并安装",
+  "settings.mcp.registry.localLaunchNote":
+    "保存后将在本机运行。对于 npx 条目，npm 会从缓存中复用或下载固定版本的软件包；不会全局安装。",
   "settings.mcp.registry.stdio": "本地 (stdio)",
   "settings.mcp.registry.remote": "远程",
   "settings.mcp.registry.requiresAuth": "需要认证；请在下一步配置凭据。",
@@ -5131,6 +5138,7 @@ const zhCN: Record<string, string> = {
   "settings.plugins.marketplacePlugins.install": "安装",
   "settings.plugins.marketplacePlugins.installed": "已安装",
   "settings.plugins.marketplace.searchPlaceholder": "搜索插件、技能、MCP…",
+  "settings.plugins.marketplace.recommendTitle": "推荐",
   "settings.plugins.marketplace.claudeCodePlugins": "Claude Code 插件",
   "settings.plugins.marketplace.catalogLoading": "正在加载插件…",
   "settings.plugins.marketplace.sourceInfo.label": "发现页来源说明",
@@ -5811,12 +5819,12 @@ const zhCN: Record<string, string> = {
   "agentWorkbench.spawnBudget": "派生预算",
   "agentWorkbench.disabled": "已禁用",
   "agentWorkbench.parallelLimit": "并行智能体",
-  "agentWorkbench.adaptiveParallel": "自适应 · 按运行时 CPU · 上限 128",
+  "agentWorkbench.adaptiveParallel": "自适应 · 主机容量",
   "agentWorkbench.minimumRuntime": "任务最短运行时间",
   "agentWorkbench.roleDeadlines": "按角色设置的截止时间",
   "agentWorkbench.minimumRuntimeValue": "至少 {minutes} 分钟 · 保留路由余量",
   "agentWorkbench.capacitySettingsHint":
-    "这里显示当前设置；实际接纳也会受剩余预算和已占用并行槽影响。",
+    "这里显示当前设置；实际并行执行数量还取决于主机可用容量和已占用的并行槽。",
   "agentWorkbench.runActivity": "当前任务中的智能体",
   "agentWorkbench.noActiveTask": "打开一个任务即可查看正在运行和已完成的智能体分支。",
   "codeIndex.title": "代码索引",
@@ -5900,6 +5908,17 @@ const zhCN: Record<string, string> = {
   "codeGraph.noResolvedGraph": "未找到关系",
   "codeGraph.noResolvedGraphDescription": "索引中有符号，但此视图无法解析出关系。",
   "codeGraph.title": "工作区代码图谱",
+  "codeGraph.kind.module": "模块",
+  "codeGraph.kind.file": "文件",
+  "codeGraph.kind.class": "类",
+  "codeGraph.kind.function": "函数",
+  "codeGraph.kind.interface": "接口",
+  "codeGraph.kind.method": "方法",
+  "codeGraph.kind.property": "属性",
+  "codeGraph.kind.variable": "变量",
+  "codeGraph.kind.type": "类型",
+  "codeGraph.kind.enum": "枚举",
+  "codeGraph.contains": "结构",
   "codeGraph.description": "查看已索引的代码符号，以及本地调用和导入关系。",
   "codeGraph.refresh": "重新加载图谱",
   "codeGraph.statusFailed": "无法读取本地代码索引。",
@@ -5927,6 +5946,7 @@ const zhCN: Record<string, string> = {
   "codeGraph.imports": "导入",
   "codeGraph.nodeTypes": "节点类型",
   "codeGraph.noNodes": "此视图中没有符号",
+  "codeGraph.noVisibleNodesDescription": "调整关系筛选条件或搜索符号以显示图谱节点。",
   "codeGraph.legendHint": "选择节点查看路径和附近关系。可缩放并拖动图谱。",
   "codeGraph.loading": "正在加载代码图谱…",
   "codeGraph.indexing": "正在构建本地代码索引…",
@@ -7392,14 +7412,15 @@ const zhCN: Record<string, string> = {
   "zcode.error.providerBusiness.1005":
     "今日免费计划额度已用完。请升级账户、切换模型，或等待额度恢复。",
   "zcode.error.providerBusiness.3006": "当前模型不在可用范围内，请切换到允许的模型后重试。",
+  "zcode.error.providerBusiness.3007": "请求被网关安全校验拒绝，请稍后重试或联系支持。",
   "zcode.error.providerBusiness.3002": "请求过于频繁，请稍后重试。",
   "zcode.error.providerBusiness.3001": "请求参数错误，请检查输入后重试。",
   "zcode.error.providerBusiness.3008": "当前系统繁忙，请切换模型、升级账户，或稍后再试。",
   "zcode.error.providerBusiness.3009": "当前系统繁忙，请切换模型、升级账户，或稍后再试。",
   "zcode.error.providerBusiness.3010": "当前系统繁忙，请切换模型、升级账户，或稍后再试。",
   "zcode.error.providerBusiness.3102": "已超过单次最长运行时间，请创建新的闲时任务继续。",
-  "zcode.error.modelSuspiciousEmpty": "模型未返回任何内容。",
   "zcode.error.providerBusiness.2007": "上游服务暂时不可用，请稍后重试。",
+  "zcode.error.modelSuspiciousEmpty": "模型未返回内容（通常由令牌过期或套餐问题导致）。请重新发送。",
   "zcode.error.providerBusiness.429": "请求过于频繁，请稍后重试。",
 
   // 调试信息栏
@@ -8241,7 +8262,6 @@ const zhCN: Record<string, string> = {
     "我用 ZCode 高速卡节省了 {duration} 秒的时间，你也来试试吧。下载 ZCode https://zcode.z.ai",
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · 节省 {duration} 秒",
   "globalNotice.highspeed.close": "关闭加速分享卡片",
-  ...requestSecurityMessagesZhCN,
 };
 
 export default zhCN;

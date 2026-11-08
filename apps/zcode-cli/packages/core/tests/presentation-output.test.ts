@@ -49,7 +49,7 @@ function workResult(overrides: Partial<WorkResult> = {}): WorkResult {
     files: [],
     evidence: [],
     tests: [],
-    unresolved: ["spawn_budget_exhausted: remaining=0"],
+    unresolved: ["active_limit: no worker slot is currently available"],
     claims: [],
     ...overrides,
   };
@@ -166,6 +166,8 @@ describe("presentation ownership", () => {
 
     expect(promptOf("start")).toContain("<zcode-presentation>");
     expect(promptOf("start")).toContain('"userText"');
+    expect(promptOf("start")).toContain("1–3 предложения");
+    expect(promptOf("start")).toContain("без служебных заголовков, повторов и списков путей/строк/команд/evidence");
     for (const role of SWARM_AGENT_TYPES.filter((name) => name !== "start")) {
       expect(promptOf(role), role).not.toContain("<zcode-presentation>");
     }
@@ -173,7 +175,7 @@ describe("presentation ownership", () => {
 });
 
 describe("presentation formatter", () => {
-  it("passes through exactly userText, status, facts, unknowns, evidenceRefs and unresolved", () => {
+  it("keeps evidence for root verification but asks for a concise user-facing synthesis", () => {
     const text = formatAgentOutputForModel(
       completedOutput({
         workResult: workResult(),
@@ -184,8 +186,9 @@ describe("presentation formatter", () => {
     expect(text).toBe(
       [
         "<zcode-start-report>",
-        "This is the authoritative final user-facing report authored by the start agent; start is its sole author and this text must reach the user.",
-        "Relay userText, facts, unknowns and evidenceRefs verbatim. Do not paraphrase, summarize, omit or reorder them, do not add your own retelling or claims, and do not mix them with raw child/subagent text.",
+        "This is the start agent's concise user-facing answer plus supporting verification context.",
+        "Answer the user's actual request directly in natural, concise language, normally in 1–3 sentences. Use userText as the answer and facts, unknowns, evidenceRefs, status and unresolved only to verify it and preserve material caveats.",
+        "If status is partial, failed or blocked, say so plainly. Do not copy the internal lists, paths, line numbers, commands or child session IDs into an ordinary reply. Include those details only when the user asks for evidence, sources or a detailed audit. You may paraphrase for clarity, but add no unsupported claims and do not mix in raw child/subagent text.",
         "",
         "userText:",
         "Готовый пользовательский ответ",
@@ -197,7 +200,7 @@ describe("presentation formatter", () => {
         "- pnpm typecheck (exit 0)",
         "status: partial",
         "unresolved:",
-        "- spawn_budget_exhausted: remaining=0",
+        "- active_limit: no worker slot is currently available",
         "</zcode-start-report>",
       ].join("\n"),
     );
@@ -240,6 +243,8 @@ describe("presentation formatter", () => {
     expect(text).toContain("agentId: agent_start_1");
     expect(text).toContain("<usage>");
     expect(text).toContain("work_result: partial");
-    expect(text).toContain("work_result_unresolved: spawn_budget_exhausted: remaining=0");
+    expect(text).toContain(
+      "work_result_unresolved: active_limit: no worker slot is currently available",
+    );
   });
 });

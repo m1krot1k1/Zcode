@@ -289,12 +289,9 @@ export interface AppSettings {
   httpProxyNoProxy?: string;
   /** 自定义 PEM 根证书路径；下次启动 app/agent 时用于 renderer 校验与 agent NODE_EXTRA_CA_CERTS。 */
   httpProxyCaCertPath?: string;
-  /**
-   * 整棵子 Agent 树的 spawn 次数上限；Host 每次 spawn 扣减，用尽后拒绝新任务。
-   * 0 表示禁止 spawn；缺省为 128。改动后下次启动 agent 生效。
-   */
+  /** @deprecated Legacy persisted setting. Retained for compatibility; runtime ignores it. */
   spawnBudget?: number;
-  /** 每个 root run 可同时执行的 subagent 数；0/未设置表示按可用 CPU 自适应（最大 128）。 */
+  /** 每个 root run 的并行偏好上限；0/未设置表示由 CPU 和 Host 实际容量自适应。 */
   subagentMaxParallel?: number;
   /** 所有 subagent 的最短执行分钟数；0/未设置表示按角色默认值。 */
   subagentTaskTimeoutMinutes?: number;

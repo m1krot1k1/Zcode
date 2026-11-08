@@ -26,7 +26,7 @@ describe("runtimeEnv", () => {
     expect(readSpawnBudget("128")).toBe(128);
     expect(readSubagentMaxParallel("0")).toBe(0);
     expect(readSubagentMaxParallel("64")).toBe(64);
-    expect(readSubagentMaxParallel("129")).toBeUndefined();
+    expect(readSubagentMaxParallel("129")).toBe(129);
     expect(readSubagentMaxParallel("1.5")).toBeUndefined();
     expect(readSubagentTaskTimeoutMinutes("0")).toBe(0);
     expect(readSubagentTaskTimeoutMinutes("180")).toBe(180);

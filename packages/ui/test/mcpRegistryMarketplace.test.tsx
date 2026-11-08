@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IServiceAccessor } from "@zcode/services";
-import type { McpRegistryMarketplaceEntry } from "@zcode/shared";
+import {
+  COMMUNITY_MCP_PRESETS,
+  filterCommunityMcpPresets,
+  type McpServerConfig,
+  type McpRegistryMarketplaceEntry,
+} from "@zcode/shared";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import {
@@ -27,7 +33,9 @@ const sequential: McpRegistryMarketplaceEntry = {
     {
       kind: "stdio",
       command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.1.0"],
+      // Keep this search fixture distinct from the bundled preset package; the marketplace
+      // intentionally hides exact package duplicates from Registry results.
+      args: ["-y", "@example/server-sequential@2025.1.0"],
       requiresAuth: false,
     },
   ],
@@ -41,14 +49,37 @@ function renderPanel(
     query,
     entries: query.includes("sequential") ? [sequential] : [],
   }),
+  configuredServers: readonly McpServerConfig[] = [],
 ) {
   const searchMarketplace = vi.fn(searchImpl);
+  function SearchHarness({
+    onConfigure,
+  }: {
+    onConfigure: ComponentProps<typeof McpRegistryMarketplace>["onConfigure"];
+  }) {
+    const [query, setQuery] = useState("");
+    return (
+      <>
+        <input
+          data-testid="global-mcp-search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <McpRegistryMarketplace
+          query={query}
+          reviewedPresets={filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, query)}
+          configuredServers={configuredServers}
+          onConfigure={onConfigure}
+        />
+      </>
+    );
+  }
   const view = render(
     <ZCodeIntlProvider initialLocale="en-US">
       <ServiceProvider
         services={{ mcpSyncService: { searchMarketplace } } as unknown as IServiceAccessor}
       >
-        <McpRegistryMarketplace onConfigure={onConfigure} />
+        <SearchHarness onConfigure={onConfigure} />
       </ServiceProvider>
     </ZCodeIntlProvider>,
   );
@@ -57,18 +88,18 @@ function renderPanel(
 }
 
 describe("Official MCP Registry panel", () => {
-  it("searches and shows the exact local npx command", async () => {
+  it("uses the single settings search and shows the Registry npx command", async () => {
     const { searchMarketplace } = renderPanel();
 
-    fireEvent.change(screen.getByTestId("mcp-registry-search"), {
+    fireEvent.change(screen.getByTestId("global-mcp-search"), {
       target: { value: "sequential" },
     });
-    fireEvent.click(screen.getByTestId("mcp-registry-submit"));
 
     await screen.findByText("io.modelcontextprotocol/sequential-thinking");
     expect(searchMarketplace).toHaveBeenCalledWith("sequential");
+    expect(screen.queryByTestId("mcp-registry-search")).toBeNull();
     expect(
-      screen.getByText("npx -y @modelcontextprotocol/server-sequential-thinking@2025.1.0"),
+      screen.getByText("npx -y @example/server-sequential@2025.1.0"),
     ).toBeTruthy();
     const configureButton = screen.getByTestId(
       "mcp-registry-configure-io.modelcontextprotocol/sequential-thinking-0",
@@ -80,10 +111,9 @@ describe("Official MCP Registry panel", () => {
     const onConfigure = vi.fn();
     renderPanel(onConfigure);
 
-    fireEvent.change(screen.getByTestId("mcp-registry-search"), {
+    fireEvent.change(screen.getByTestId("global-mcp-search"), {
       target: { value: "sequential" },
     });
-    fireEvent.click(screen.getByTestId("mcp-registry-submit"));
     await screen.findByText("io.modelcontextprotocol/sequential-thinking");
     fireEvent.click(
       screen.getByTestId("mcp-registry-configure-io.modelcontextprotocol/sequential-thinking-0"),
@@ -115,14 +145,71 @@ describe("Official MCP Registry panel", () => {
       entries: query === "yandex" ? [uncurated] : [],
     }));
 
-    fireEvent.change(screen.getByTestId("mcp-registry-search"), {
+    fireEvent.change(screen.getByTestId("global-mcp-search"), {
       target: { value: "yandex" },
     });
-    fireEvent.click(screen.getByTestId("mcp-registry-submit"));
 
     await screen.findByText(uncurated.name);
-    expect(screen.getByTestId("mcp-registry-tab-all").getAttribute("data-state")).toBe("active");
     expect(searchMarketplace).toHaveBeenCalledWith("yandex");
+  });
+
+  it("hides an official Registry card already represented by the reviewed local preset", async () => {
+    const duplicate: McpRegistryMarketplaceEntry = {
+      id: "io.example/context7-copy",
+      name: "io.example/context7-copy",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@upstash/context7-mcp@9.9.9"],
+          requiresAuth: false,
+        },
+      ],
+    };
+    const { searchMarketplace } = renderPanel(vi.fn(), async (query) => ({
+      query,
+      entries: query === "context7" ? [duplicate] : [],
+    }));
+
+    fireEvent.change(screen.getByTestId("global-mcp-search"), {
+      target: { value: "context7" },
+    });
+    await waitFor(() => expect(searchMarketplace).toHaveBeenCalledWith("context7"));
+    await screen.findByText("No MCP servers match your search");
+    expect(screen.queryByTestId("mcp-registry-results")).toBeNull();
+  });
+
+  it("hides an exact package already configured in this MCP scope", async () => {
+    const installedDuplicate: McpRegistryMarketplaceEntry = {
+      id: "io.example/filesystem-copy",
+      name: "io.example/filesystem-copy",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@agent-infra/mcp-server-filesystem@5.0.0"],
+          requiresAuth: false,
+        },
+      ],
+    };
+    const searchMarketplace = vi.fn(async (query: string) => ({
+      query,
+      entries: query === "filesystem" ? [installedDuplicate] : [],
+    }));
+    renderPanel(vi.fn(), searchMarketplace, [
+      {
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@agent-infra/mcp-server-filesystem@latest"],
+      },
+    ]);
+
+    fireEvent.change(screen.getByTestId("global-mcp-search"), {
+      target: { value: "filesystem" },
+    });
+    await waitFor(() => expect(searchMarketplace).toHaveBeenCalledWith("filesystem"));
+    await screen.findByText("No MCP servers match your search");
+    expect(screen.queryByTestId("mcp-registry-results")).toBeNull();
   });
 
   it("ignores a failed search after the user clears the query", async () => {
@@ -140,13 +227,12 @@ describe("Official MCP Registry panel", () => {
     renderPanel(vi.fn(), searchMarketplace);
     await screen.findByText(sequential.name);
 
-    fireEvent.change(screen.getByTestId("mcp-registry-search"), {
+    fireEvent.change(screen.getByTestId("global-mcp-search"), {
       target: { value: "yandex" },
     });
-    fireEvent.click(screen.getByTestId("mcp-registry-submit"));
     await waitFor(() => expect(searchMarketplace).toHaveBeenCalledWith("yandex"));
 
-    fireEvent.click(screen.getByLabelText("Clear search"));
+    fireEvent.change(screen.getByTestId("global-mcp-search"), { target: { value: "" } });
     await act(async () => {
       rejectPendingSearch?.(new Error("stale search failure"));
       await Promise.resolve();

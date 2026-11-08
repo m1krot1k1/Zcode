@@ -115,6 +115,119 @@ describe("skills marketplace", () => {
     ]);
   });
 
+  it("unknown or invalid installs stay absent instead of becoming zero", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          skills: [
+            {
+              source: "acme/skills",
+              skillId: "missing-count",
+              name: "missing-count",
+            },
+            {
+              source: "acme/skills",
+              skillId: "string-count",
+              name: "string-count",
+              installs: "100",
+            },
+            {
+              source: "acme/skills",
+              skillId: "negative-count",
+              name: "negative-count",
+              installs: -1,
+            },
+            {
+              source: "acme/skills",
+              skillId: "known-zero",
+              name: "known-zero",
+              installs: 0,
+            },
+          ],
+        }),
+      ),
+    );
+    const service = await createService();
+
+    const result = await service.searchMarketplace("skills", { workspacePath });
+
+    expect(result).toEqual([
+      {
+        name: "missing-count",
+        skillId: "missing-count",
+        source: "acme/skills",
+        installed: false,
+      },
+      {
+        name: "string-count",
+        skillId: "string-count",
+        source: "acme/skills",
+        installed: false,
+      },
+      {
+        name: "negative-count",
+        skillId: "negative-count",
+        source: "acme/skills",
+        installed: false,
+      },
+      {
+        name: "known-zero",
+        skillId: "known-zero",
+        source: "acme/skills",
+        installs: 0,
+        installed: false,
+      },
+    ]);
+    expect(Object.hasOwn(result[0]!, "installs")).toBe(false);
+    expect(Object.hasOwn(result[3]!, "installs")).toBe(true);
+  });
+
+  it("orders missing installs after a measured zero when resolving a bare skill name", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          skills: [
+            {
+              source: "unknown/skill-repo",
+              skillId: "same-skill",
+              name: "same-skill",
+            },
+            {
+              source: "known/skill-repo",
+              skillId: "same-skill",
+              name: "same-skill",
+              installs: 0,
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              path: "SKILL.md",
+              contents: "---\nname: same-skill\ndescription: Demo\n---\n",
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = await createService();
+
+    await service.installMarketplaceSkill({
+      name: "same-skill",
+      scope: "workspace",
+      workspacePath,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+      "https://skills.sh/api/download/known/skill-repo/same-skill",
+    );
+  });
+
   it("搜索空结果返回空数组", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ skills: [] })));
     const service = await createService();

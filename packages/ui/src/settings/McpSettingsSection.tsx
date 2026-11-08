@@ -46,6 +46,10 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { logger } from "@/logger.js";
 import { McpServerForm } from "@/settings/McpServerForm.js";
 import { McpRegistryMarketplace } from "@/settings/McpRegistryMarketplace.js";
+import {
+  filterReviewedClinePresetDuplicates,
+  filterUninstalledMcpPresets,
+} from "@/settings/mcpRegistryCatalogView.js";
 import { McpServerList, McpStatusDot } from "@/settings/McpServerList.js";
 import {
   formToConfig,
@@ -56,11 +60,7 @@ import {
 import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
-import {
-  PluginInstallEmptyState,
-  PluginLoadingState,
-  PluginSearchEmptyState,
-} from "@/settings/PluginInstallEmptyState.js";
+import { PluginInstallEmptyState, PluginLoadingState } from "@/settings/PluginInstallEmptyState.js";
 import {
   buildPluginMcpServerItems,
   filterLocalMcpServers,
@@ -198,7 +198,7 @@ export function McpCommunityCatalog({
                   })}
                 </p>
                 {preset.usageLabel ? (
-                  <p className="text-ui-sm text-warning-surface-foreground">
+                  <p className="text-ui-sm text-foreground-subtle">
                     {intl.formatMessage({
                       id: `settings.mcp.communityPresets.usage.${preset.usageLabel}`,
                     })}
@@ -917,6 +917,7 @@ export function McpSettingsSection({
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
   const [installingPresetIds, setInstallingPresetIds] = useState<Set<string>>(() => new Set());
+  const [registryMcpResultCount, setRegistryMcpResultCount] = useState<number | null>(null);
   const installingPresetIdsRef = useRef(new Set<string>());
   const query = searchQuery;
   const [clineMarketplaceState, setClineMarketplaceState] = useState<"loading" | "ready" | "error">(
@@ -1476,9 +1477,9 @@ export function McpSettingsSection({
     () => filterLocalMcpServers(scopedServers, query),
     [query, scopedServers],
   );
-  const filteredCommunityMcpPresets = useMemo(
-    () => filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, query),
-    [query],
+  const configuredMcpConfigs = useMemo(
+    () => scopedServers.map((server) => server.config),
+    [scopedServers],
   );
   const presetScopeProjectPath = parentScopeKey === "user" ? undefined : activeWorkspacePath;
   const addedPresetIds = useMemo(
@@ -1493,9 +1494,21 @@ export function McpSettingsSection({
       ),
     [presetScopeProjectPath, servers],
   );
+  const matchingCommunityMcpPresets = useMemo(
+    () => filterCommunityMcpPresets(COMMUNITY_MCP_PRESETS, query),
+    [query],
+  );
+  const filteredCommunityMcpPresets = useMemo(
+    () => filterUninstalledMcpPresets(matchingCommunityMcpPresets, addedPresetIds),
+    [addedPresetIds, matchingCommunityMcpPresets],
+  );
   const filteredClineMarketplaceEntries = useMemo(
-    () => filterClineMcpMarketplaceEntries(clineMarketplaceCatalog?.entries ?? [], query),
-    [clineMarketplaceCatalog, query],
+    () =>
+      filterReviewedClinePresetDuplicates(
+        filterClineMcpMarketplaceEntries(clineMarketplaceCatalog?.entries ?? [], query),
+        matchingCommunityMcpPresets,
+      ),
+    [clineMarketplaceCatalog, matchingCommunityMcpPresets, query],
   );
   const connectedRemoteSyncTarget =
     shouldShowRemoteSyncActions({
@@ -1549,6 +1562,7 @@ export function McpSettingsSection({
     pluginMcpServers.length +
     filteredCommunityMcpPresets.length +
     filteredClineMarketplaceEntries.length;
+  const visibleMcpCount = filteredMcpCount + (registryMcpResultCount ?? 0);
   const pluginMcpGroups = useMemo(
     () => groupPluginMcpServersByPlugin(pluginMcpServers),
     [pluginMcpServers],
@@ -1556,7 +1570,8 @@ export function McpSettingsSection({
   const mcpProjectionReady =
     !activeWorkspacePath ||
     (mcpStoreMatchesActiveWorkspace && mcpConfigReadyWorkspaceKey === activeWorkspaceKey);
-  const hasEmptySearchResult = Boolean(query.trim()) && filteredMcpCount === 0;
+  const hasEmptySearchResult =
+    Boolean(query.trim()) && filteredMcpCount === 0 && registryMcpResultCount === 0;
   const installedServers = useMemo(
     () =>
       filteredServers
@@ -1577,8 +1592,8 @@ export function McpSettingsSection({
   );
   const hideInstalledGroup = Boolean(query.trim()) && installedServers.length === 0;
   useEffect(() => {
-    onVisibleCountChange?.(filteredMcpCount);
-  }, [filteredMcpCount, onVisibleCountChange]);
+    onVisibleCountChange?.(visibleMcpCount);
+  }, [visibleMcpCount, onVisibleCountChange]);
   const remoteMcpSyncTargetLabel = connectedRemoteSyncTarget
     ? formatRemoteSkillSyncTarget(connectedRemoteSyncTarget, activeWorkspacePath ?? "")
     : "";
@@ -1906,15 +1921,15 @@ export function McpSettingsSection({
 
       {!mcpProjectionReady ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
-      ) : hasEmptySearchResult ? (
-        <PluginSearchEmptyState
-          label={intl.formatMessage({
-            id: "settings.plugin.mcp.searchEmpty",
-          })}
-        />
       ) : null}
       {mcpProjectionReady ? (
-        <McpRegistryMarketplace onConfigure={handleConfigureRegistryEntry} />
+        <McpRegistryMarketplace
+          query={query}
+          reviewedPresets={matchingCommunityMcpPresets}
+          configuredServers={configuredMcpConfigs}
+          onConfigure={handleConfigureRegistryEntry}
+          onVisibleCountChange={setRegistryMcpResultCount}
+        />
       ) : null}
       <div
         className={!mcpProjectionReady || hasEmptySearchResult ? "hidden" : "space-y-6"}

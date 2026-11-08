@@ -12,12 +12,8 @@ import {
   BackgroundVariant,
   Controls,
   MarkerType,
-  MiniMap,
   ReactFlow,
   type Edge,
-  type Node,
-  type NodeProps,
-  type NodeTypes,
 } from "@xyflow/react";
 import { AlertCircle, Database, LoaderCircle, RefreshCw, Search, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
@@ -27,129 +23,21 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import type {
   CodeGraphOverview,
-  CodeGraphNode,
   CodeIndexStatus,
   CodeSearchResult,
 } from "./contract.js";
 import { CodeGraphInspector } from "./CodeGraphInspector.js";
+import {
+  CODE_GRAPH_NODE_TYPES,
+  countByKind,
+  createGraphNodes,
+  graphKindLabel,
+  KIND_DOT_STYLES,
+} from "./CodeGraphNodes.js";
 
 import "@xyflow/react/dist/style.css";
 
 const EMPTY_GRAPH: CodeGraphOverview = { nodes: [], edges: [], partial: false };
-
-interface FlowNodeData extends Record<string, unknown> {
-  name: string;
-  kind: string;
-  path: string;
-  startLine: number;
-  degree: number;
-  showLabel: boolean;
-}
-
-type FlowNode = Node<FlowNodeData, "codeSymbol">;
-
-const KIND_STYLES: Record<string, string> = {
-  class: "border-violet-500/60 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  function: "border-sky-500/60 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  interface: "border-fuchsia-500/60 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300",
-  method: "border-teal-500/60 bg-teal-500/10 text-teal-700 dark:text-teal-300",
-  file: "border-blue-500/60 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-};
-
-const KIND_DOT_STYLES: Record<string, string> = {
-  class: "bg-violet-500",
-  function: "bg-sky-500",
-  interface: "bg-fuchsia-500",
-  method: "bg-teal-500",
-  file: "bg-blue-500",
-};
-
-function CodeSymbolNode({ data, selected }: NodeProps<FlowNode>) {
-  const style = KIND_STYLES[data.kind.toLowerCase()] ?? "border-border bg-card text-foreground";
-  return (
-    <div
-      className={cn(
-        "flex min-h-7 max-w-40 items-center gap-1.5 rounded-md border px-2 py-1 text-ui-xs shadow-sm",
-        style,
-        selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-        data.showLabel ? "max-w-40" : "size-3 min-h-0 rounded-full border-2 p-0",
-      )}
-      title={`${data.name} · ${data.kind} · ${data.path}:${data.startLine} · ${data.degree} links`}
-    >
-      {data.showLabel ? (
-        <>
-          <span className="size-1.5 shrink-0 rounded-full bg-current opacity-70" />
-          <span className="max-w-32 truncate font-medium">{data.name}</span>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-const nodeTypes: NodeTypes = { codeSymbol: CodeSymbolNode };
-
-function createGraphNodes(graph: CodeGraphOverview, selectedId: string | null): FlowNode[] {
-  const ordered = [...graph.nodes].sort((left, right) => right.degree - left.degree);
-  const focusId = graph.focusId;
-  const positions = new Map<string, { x: number; y: number }>();
-
-  if (focusId && ordered.some((node) => node.id === focusId)) {
-    positions.set(focusId, { x: 0, y: 0 });
-    const incoming = graph.edges
-      .filter((edge) => edge.target === focusId && edge.source !== focusId)
-      .map((edge) => edge.source);
-    const outgoing = graph.edges
-      .filter((edge) => edge.source === focusId && edge.target !== focusId)
-      .map((edge) => edge.target);
-    const incomingIds = [...new Set(incoming)].filter((id) => !outgoing.includes(id));
-    const outgoingIds = [...new Set(outgoing)];
-    const positionColumn = (ids: string[], x: number) => {
-      ids.forEach((id, index) => {
-        positions.set(id, { x, y: (index - (ids.length - 1) / 2) * 64 });
-      });
-    };
-    positionColumn(incomingIds, -280);
-    positionColumn(outgoingIds, 280);
-    for (const node of ordered) {
-      if (!positions.has(node.id)) {
-        positions.set(node.id, {
-          x: 260 * Math.cos(2.399 * positions.size),
-          y: 260 * Math.sin(2.399 * positions.size),
-        });
-      }
-    }
-  } else {
-    ordered.forEach((node, index) => {
-      const radius = 46 * Math.sqrt(index);
-      const angle = index * 2.399963229728653;
-      positions.set(node.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-    });
-  }
-
-  return ordered.flatMap((node, index) => {
-    const position = positions.get(node.id);
-    if (!position) return [];
-    return [
-      {
-        id: node.id,
-        type: "codeSymbol",
-        position,
-        data: {
-          ...node,
-          showLabel: Boolean(focusId) || index < 10 || node.degree >= 8 || node.id === selectedId,
-        },
-        draggable: false,
-        selectable: true,
-      },
-    ];
-  });
-}
-
-function countByKind(nodes: CodeGraphNode[]): Array<[string, number]> {
-  const counts = new Map<string, number>();
-  for (const node of nodes) counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
-  return [...counts.entries()].sort((left, right) => right[1] - left[1]);
-}
 
 export function CodeGraphExplorer({
   workspacePath,
@@ -165,6 +53,7 @@ export function CodeGraphExplorer({
     (id: string, values?: Record<string, string | number>) => intl.formatMessage({ id }, values),
     [intl],
   );
+  const labelKind = useCallback((kind: string) => graphKindLabel(kind, copy), [copy]);
   const [status, setStatus] = useState<CodeIndexStatus | null>(null);
   const [statusLoadState, setStatusLoadState] = useState<"loading" | "ready" | "failed">("loading");
   const [graph, setGraph] = useState<CodeGraphOverview | null>(null);
@@ -172,10 +61,12 @@ export function CodeGraphExplorer({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CodeSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [graphLoadFailed, setGraphLoadFailed] = useState(false);
   const [searching, setSearching] = useState(false);
   const [buildingIndex, setBuildingIndex] = useState(false);
   const [showCalls, setShowCalls] = useState(true);
   const [showImports, setShowImports] = useState(true);
+  const [showContains, setShowContains] = useState(true);
   const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
@@ -218,6 +109,7 @@ export function CodeGraphExplorer({
       if (!codeIndex || !workspacePath) return;
       const request = ++graphRequestRef.current;
       setLoading(true);
+      setGraphLoadFailed(false);
       setMessage(null);
       setMessageIsError(false);
       try {
@@ -232,6 +124,8 @@ export function CodeGraphExplorer({
         setSelectedId(next.focusId ?? next.nodes[0]?.id ?? null);
       } catch {
         if (request !== graphRequestRef.current) return;
+        // 首次图谱请求失败时必须退出加载态，让画布提供可操作的重试入口。
+        setGraphLoadFailed(true);
         setMessage(copy("codeGraph.loadFailed"));
         setMessageIsError(true);
       } finally {
@@ -252,6 +146,7 @@ export function CodeGraphExplorer({
     setStatusLoadState("loading");
     setHiddenKinds(new Set());
     setGraph(null);
+    setGraphLoadFailed(false);
     setSelectedId(null);
     setResults([]);
     setMessage(null);
@@ -345,30 +240,42 @@ export function CodeGraphExplorer({
   const selectedNode = visibleNodes.find((node) => node.id === selectedId) ?? null;
   const visibleEdges = useMemo(
     () =>
-      (graph?.edges ?? []).filter((edge) => (edge.relation === "calls" ? showCalls : showImports)),
-    [graph, showCalls, showImports],
+      (graph?.edges ?? []).filter((edge) =>
+        edge.relation === "calls"
+          ? showCalls
+          : edge.relation === "imports"
+            ? showImports
+            : showContains,
+      ),
+    [graph, showCalls, showContains, showImports],
   );
   const flowNodes = useMemo(
-    () => createGraphNodes({ ...(graph ?? EMPTY_GRAPH), nodes: visibleNodes }, selectedId),
-    [graph, selectedId, visibleNodes],
+    () => createGraphNodes({ ...(graph ?? EMPTY_GRAPH), nodes: visibleNodes }, selectedId, copy),
+    [copy, graph, selectedId, visibleNodes],
   );
   const flowNodeIds = useMemo(() => new Set(flowNodes.map((node) => node.id)), [flowNodes]);
   const flowEdges = useMemo<Edge[]>(
     () =>
       visibleEdges
         .filter((edge) => flowNodeIds.has(edge.source) && flowNodeIds.has(edge.target))
-        .map((edge, index) => {
-          const color = edge.relation === "calls" ? "var(--primary)" : "var(--muted-foreground)";
+        .map((edge) => {
+          const selectedPath = edge.source === selectedId || edge.target === selectedId;
+          const color =
+            edge.relation === "calls"
+              ? "var(--primary)"
+              : edge.relation === "imports"
+                ? "var(--muted-foreground)"
+                : "var(--border)";
           return {
-            id: `${edge.source}:${edge.target}:${edge.relation}:${index}`,
+            id: `${edge.source}:${edge.target}:${edge.relation}`,
             source: edge.source,
             target: edge.target,
-            type: "smoothstep",
+            type: "default",
             markerEnd: { type: MarkerType.ArrowClosed, color },
             style: {
               stroke: color,
-              strokeWidth: edge.relation === "calls" ? 1.6 : 1,
-              opacity: 0.62,
+              strokeWidth: selectedPath ? 2 : edge.relation === "calls" ? 1.5 : 1,
+              opacity: selectedPath ? 0.85 : edge.relation === "contains" ? 0.24 : 0.42,
             },
             interactionWidth: 12,
           };
@@ -389,43 +296,52 @@ export function CodeGraphExplorer({
 
   return (
     <section
-      className="min-w-0 rounded-xl border border-border bg-card p-3 sm:p-4"
+      className="flex min-h-[min(620px,78vh)] min-w-0 flex-1 flex-col xl:h-full xl:min-h-0"
       data-testid="usage-code-graph"
+      data-layout="workspace"
     >
-      <header className="mb-3 flex flex-wrap items-center gap-2">
-        <Workflow className="size-4 text-primary" />
-        <h2 className="text-ui-base font-semibold">{copy("codeGraph.title")}</h2>
-        <span
-          role="status"
-          className={cn(
-            "ml-auto rounded-full bg-muted px-2.5 py-1 text-ui-xs text-muted-foreground",
-            statusLoadState === "failed" && "text-destructive",
-          )}
-        >
-          {status
-            ? copy(`codeGraph.state.${status.state}`)
-            : copy(
-                statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading",
-              )}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border pb-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card">
+          <Workflow className="size-4 text-primary" />
         </span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="ml-auto gap-1.5"
-          disabled={
-            loading || buildingIndex || statusLoadState !== "ready" || status?.state === "indexing"
-          }
-          onClick={() => void loadGraph()}
-        >
-          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
-          {copy("codeGraph.refresh")}
-        </Button>
+        <div className="min-w-0">
+          <h2 className="text-ui-base font-semibold">{copy("codeGraph.title")}</h2>
+          <p className="text-ui-xs text-muted-foreground">{copy("codeGraph.description")}</p>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <span
+            role="status"
+            className={cn(
+              "rounded-full bg-muted px-2.5 py-1 text-ui-xs text-muted-foreground",
+              statusLoadState === "failed" && "text-destructive",
+            )}
+          >
+            {status
+              ? copy(`codeGraph.state.${status.state}`)
+              : copy(
+                  statusLoadState === "failed"
+                    ? "codeGraph.statusFailed"
+                    : "codeGraph.statusLoading",
+                )}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={
+              loading || buildingIndex || statusLoadState !== "ready" || status?.state === "indexing"
+            }
+            onClick={() => void loadGraph()}
+          >
+            <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+            {copy("codeGraph.refresh")}
+          </Button>
+        </div>
       </header>
-      <p className="mb-4 text-ui-xs text-muted-foreground">{copy("codeGraph.description")}</p>
 
       <div
-        className="mb-3 flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-ui-xs"
+        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border py-2 text-ui-xs tabular-nums"
         data-testid="usage-code-graph-stats"
         aria-busy={statusLoadState === "loading"}
       >
@@ -454,7 +370,7 @@ export function CodeGraphExplorer({
         )}
       </div>
 
-      <form onSubmit={(event) => void runSearch(event)} className="relative mb-3 flex gap-2">
+      <form onSubmit={(event) => void runSearch(event)} className="relative z-10 flex shrink-0 gap-2 py-3">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -494,11 +410,11 @@ export function CodeGraphExplorer({
         ) : null}
       </form>
 
-      {message ? (
+      {message && !(graphLoadFailed && graph === null && message === copy("codeGraph.loadFailed")) ? (
         <p
           role="status"
           className={cn(
-            "mb-3 text-ui-xs",
+            "mb-2 shrink-0 text-ui-xs",
             messageIsError ? "text-destructive" : "text-muted-foreground",
           )}
         >
@@ -506,8 +422,8 @@ export function CodeGraphExplorer({
         </p>
       ) : null}
 
-      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[136px_minmax(0,1fr)_208px]">
-        <aside className="rounded-lg border border-border bg-background/60 p-2.5">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(168px,196px)_minmax(0,1fr)_minmax(256px,288px)] xl:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[208px_minmax(0,1fr)_320px]">
+        <aside className="order-2 min-h-40 min-w-0 overflow-y-auto rounded-lg border border-border bg-card/50 p-3 xl:order-none">
           <h3 className="mb-2 text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {copy("codeGraph.filters")}
           </h3>
@@ -523,6 +439,12 @@ export function CodeGraphExplorer({
               active={showImports}
               onClick={() => setShowImports((value) => !value)}
               color="bg-muted-foreground"
+            />
+            <FilterToggle
+              label={copy("codeGraph.contains")}
+              active={showContains}
+              onClick={() => setShowContains((value) => !value)}
+              color="bg-border"
             />
           </div>
           <div className="my-3 border-t border-border" />
@@ -560,7 +482,7 @@ export function CodeGraphExplorer({
                         KIND_DOT_STYLES[kind.toLowerCase()] ?? "bg-border",
                       )}
                     />
-                    <span className="truncate">{kind}</span>
+                    <span className="truncate">{labelKind(kind)}</span>
                   </span>
                   <span className="text-muted-foreground/80">{count}</span>
                 </button>
@@ -576,19 +498,20 @@ export function CodeGraphExplorer({
         </aside>
 
         <main
-          className="relative min-w-0 overflow-hidden rounded-lg border border-border bg-background"
+          className="order-1 relative min-h-[min(560px,64vh)] min-w-0 overflow-hidden rounded-lg border border-border bg-background xl:order-none xl:h-full xl:min-h-0"
           data-testid="usage-code-graph-canvas"
         >
           {statusLoadState === "loading" ||
           (loading && graph === null) ||
           (status !== null &&
             (status.state === "ready" || status.state === "degraded") &&
-            graph === null) ? (
-            <div className="flex h-[440px] items-center justify-center gap-2 text-ui-sm text-muted-foreground xl:h-[600px]">
+            graph === null &&
+            !graphLoadFailed) ? (
+            <div className="flex h-full items-center justify-center gap-2 text-ui-sm text-muted-foreground">
               <LoaderCircle className="size-4 animate-spin" /> {copy("codeGraph.loading")}
             </div>
           ) : statusLoadState === "failed" || status === null ? (
-            <div className="flex h-[440px] flex-col items-center justify-center gap-3 px-6 text-center xl:h-[600px]">
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <AlertCircle className="size-7 text-destructive" />
               <p className="max-w-sm text-ui-sm text-muted-foreground">
                 {copy("codeGraph.statusFailed")}
@@ -602,8 +525,18 @@ export function CodeGraphExplorer({
                 <RefreshCw className="mr-1.5 size-3.5" /> {copy("codeGraph.retryStatus")}
               </Button>
             </div>
+          ) : graphLoadFailed && graph === null ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <AlertCircle className="size-7 text-destructive" />
+              <p className="max-w-sm text-ui-sm text-muted-foreground">
+                {copy("codeGraph.loadFailed")}
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={() => void loadGraph()}>
+                <RefreshCw className="mr-1.5 size-3.5" /> {copy("codeGraph.retryStatus")}
+              </Button>
+            </div>
           ) : status.state === "indexing" || buildingIndex ? (
-            <div className="flex h-[440px] flex-col items-center justify-center gap-2 text-center text-ui-sm text-muted-foreground xl:h-[600px]">
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-ui-sm text-muted-foreground">
               <LoaderCircle className="size-5 animate-spin text-primary" />
               <span>{copy("codeGraph.indexing")}</span>
               {status.progress ? (
@@ -613,7 +546,7 @@ export function CodeGraphExplorer({
               ) : null}
             </div>
           ) : status.counts.symbols === 0 ? (
-            <div className="flex h-[440px] flex-col items-center justify-center gap-3 px-6 text-center xl:h-[600px]">
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <Database className="size-8 text-muted-foreground" />
               <div>
                 <h3 className="text-ui-sm font-medium">{copy("codeGraph.emptyTitle")}</h3>
@@ -627,7 +560,7 @@ export function CodeGraphExplorer({
               </Button>
             </div>
           ) : nodes.length === 0 ? (
-            <div className="flex h-[440px] flex-col items-center justify-center gap-2 px-6 text-center xl:h-[600px]">
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
               <Database className="size-7 text-muted-foreground" />
               <h3 className="text-ui-sm font-medium">{copy("codeGraph.noResolvedGraph")}</h3>
               <p className="max-w-sm text-ui-xs text-muted-foreground">
@@ -644,21 +577,21 @@ export function CodeGraphExplorer({
               </Button>
             </div>
           ) : filteredGraphEmpty || (visibleNodes.length > 0 && flowNodes.length === 0) ? (
-            <div className="flex h-[440px] flex-col items-center justify-center gap-2 px-6 text-center xl:h-[600px]">
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
               <Database className="size-7 text-muted-foreground" />
-              <h3 className="text-ui-sm font-medium">{copy("codeGraph.noVisibleNodes")}</h3>
+              <h3 className="text-ui-sm font-medium">{copy("codeGraph.noNodes")}</h3>
               <p className="max-w-sm text-ui-xs text-muted-foreground">
                 {copy("codeGraph.noVisibleNodesDescription")}
               </p>
             </div>
           ) : (
-            <div className="h-[440px] xl:h-[600px]">
+            <div className="h-full min-h-0">
               <ReactFlow
                 nodes={flowNodes}
                 edges={flowEdges}
-                nodeTypes={nodeTypes}
+                nodeTypes={CODE_GRAPH_NODE_TYPES}
                 fitView
-                fitViewOptions={{ padding: 0.3, minZoom: 0.18, maxZoom: 1.3 }}
+                fitViewOptions={{ padding: 0.22, minZoom: 0.16, maxZoom: 1.3 }}
                 minZoom={0.08}
                 maxZoom={1.6}
                 nodesConnectable={false}
@@ -673,17 +606,6 @@ export function CodeGraphExplorer({
                   showInteractive={false}
                   className="overflow-hidden rounded-lg border border-border shadow-sm [&_.react-flow__controls-button]:!border-border [&_.react-flow__controls-button]:!bg-card [&_.react-flow__controls-button]:!text-foreground [&_.react-flow__controls-button>svg]:!fill-current [&_.react-flow__controls-button:hover]:!bg-muted"
                 />
-                <MiniMap
-                  position="bottom-right"
-                  pannable
-                  zoomable
-                  style={{ width: 132, height: 88 }}
-                  nodeColor={(node) =>
-                    node.id === selectedId ? "var(--primary)" : "var(--muted-foreground)"
-                  }
-                  maskColor="color-mix(in srgb, var(--background) 76%, transparent)"
-                  className="!rounded-lg !border !border-border !bg-card/90 shadow-sm"
-                />
               </ReactFlow>
             </div>
           )}
@@ -696,11 +618,12 @@ export function CodeGraphExplorer({
           inbound={inbound}
           outbound={outbound}
           copy={copy}
+          labelKind={labelKind}
           onFocus={(symbol) => void loadGraph({ symbol })}
         />
       </div>
       {graph?.partial ? (
-        <p className="mt-3 text-ui-xs text-muted-foreground">{copy("codeGraph.boundedHint")}</p>
+        <p className="mt-2 shrink-0 text-ui-xs text-muted-foreground">{copy("codeGraph.boundedHint")}</p>
       ) : null}
     </section>
   );

@@ -2452,7 +2452,6 @@ export function createLocalServices(options: {
         ...buildAgentEndpointOriginEnv(await resolveCurrentZCodeEndpointOrigin()),
         // Agent 资源设置走 spawn env 快照；设置缺省时由 runtime 采用自适应并发与角色期限。
         ...buildAgentRootRunBudgetEnv(
-          settings.spawnBudget,
           settings.subagentMaxParallel,
           settings.subagentTaskTimeoutMinutes,
         ),

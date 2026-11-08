@@ -222,20 +222,16 @@ function formatWorkResultTests(tests: ReadonlyArray<{ command: string; status: s
     : joined;
 }
 
-/**
- * Авторитетная инструкция для корневого агента: Start — единственный автор готового
- * пользовательского отчёта, root лишь передаёт его дословно. Без этой рамки модель
- * склонна пересказывать tool result своими словами и смешивать его с сырым текстом child.
- */
+// 修复依据：旧指令要求 root 逐字输出所有事实、未知项和证据路径，导致普通追问也变成冗长审计报告。
 const PRESENTATION_AUTHORITY_INSTRUCTION = [
-  "This is the authoritative final user-facing report authored by the start agent; start is its sole author and this text must reach the user.",
-  "Relay userText, facts, unknowns and evidenceRefs verbatim. Do not paraphrase, summarize, omit or reorder them, do not add your own retelling or claims, and do not mix them with raw child/subagent text.",
+  "This is the start agent's concise user-facing answer plus supporting verification context.",
+  "Answer the user's actual request directly in natural, concise language, normally in 1–3 sentences. Use userText as the answer and facts, unknowns, evidenceRefs, status and unresolved only to verify it and preserve material caveats.",
+  "If status is partial, failed or blocked, say so plainly. Do not copy the internal lists, paths, line numbers, commands or child session IDs into an ordinary reply. Include those details only when the user asks for evidence, sources or a detailed audit. You may paraphrase for clarity, but add no unsupported claims and do not mix in raw child/subagent text.",
 ].join("\n");
 
 /**
- * Pass-through единственного презентера: Start уже сформировал пользовательский текст.
- * Никакого синтеза, сырого child content, agentId или usage здесь быть не должно.
- * Обёртка делает авторство и правило передачи явными для корневого агента.
+ * Передаёт ответ Start и supporting context root без сырого child content, agentId и usage.
+ * Root синтезирует естественный ответ; служебные evidence остаются для проверки.
  */
 function formatPresentationForModel(
   presentation: AgentPresentation,
@@ -512,7 +508,6 @@ const agentHandler: ToolHandler = async (input, context) => {
         description: parsed.description,
         prompt: parsed.prompt,
         nodes: parsed.task_graph.nodes,
-        ...(parsed.remaining_spawns === undefined ? {} : { spawnBudget: parsed.remaining_spawns }),
         ...(parsed.level === undefined ? {} : { level: parsed.level }),
         ...(parsed.task_graph.max_parallel === undefined
           ? {}
@@ -532,7 +527,6 @@ const agentHandler: ToolHandler = async (input, context) => {
       ...(parsed.acceptance_criteria === undefined
         ? {}
         : { acceptanceCriteria: parsed.acceptance_criteria }),
-      ...(parsed.remaining_spawns === undefined ? {} : { spawnBudget: parsed.remaining_spawns }),
       ...(parsed.level === undefined ? {} : { level: parsed.level }),
       runInBackground: parsed.run_in_background === true,
     },

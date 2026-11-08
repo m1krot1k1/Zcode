@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { McpRegistryMarketplaceEntry } from "@zcode/shared";
-import { buildMcpCatalogView } from "../src/settings/mcpRegistryCatalogView.js";
+import {
+  COMMUNITY_MCP_PRESETS,
+  type McpServerConfig,
+  type McpRegistryMarketplaceEntry,
+} from "@zcode/shared";
+import {
+  buildMcpCatalogView,
+  filterReviewedClinePresetDuplicates,
+  filterUninstalledMcpPresets,
+  removeReviewedMcpPresetDuplicates,
+} from "../src/settings/mcpRegistryCatalogView.js";
 
 const nonCurated: McpRegistryMarketplaceEntry = {
   id: "io.example/yandex-wordstat",
@@ -39,5 +48,161 @@ describe("MCP registry catalog view", () => {
     });
 
     expect(view).toEqual([]);
+  });
+
+  it("removes an official npm variant when a reviewed local preset uses the same package", () => {
+    const duplicate: McpRegistryMarketplaceEntry = {
+      id: "io.example/context7-copy",
+      name: "io.example/context7-copy",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@upstash/context7-mcp@9.9.9"],
+          requiresAuth: false,
+        },
+      ],
+    };
+    const alternative: McpRegistryMarketplaceEntry = {
+      ...nonCurated,
+      id: "io.example/filesystem-alternative",
+      name: "io.example/filesystem-alternative",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@example/filesystem-mcp@1.0.0"],
+          requiresAuth: false,
+        },
+      ],
+    };
+
+    expect(
+      removeReviewedMcpPresetDuplicates([duplicate, alternative], COMMUNITY_MCP_PRESETS).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual([alternative.id]);
+  });
+
+  it("removes exact npm and endpoint duplicates already configured in the current scope", () => {
+    const installedPackageDuplicate: McpRegistryMarketplaceEntry = {
+      id: "io.example/filesystem-installed-copy",
+      name: "io.example/filesystem-installed-copy",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@agent-infra/mcp-server-filesystem@3.2.1"],
+          requiresAuth: false,
+        },
+      ],
+    };
+    const installedEndpointDuplicate: McpRegistryMarketplaceEntry = {
+      id: "io.example/webflow-hosted-copy",
+      name: "io.example/webflow-hosted-copy",
+      options: [
+        {
+          kind: "remote",
+          url: "https://mcp.example.com/webflow/",
+          requiresAuth: true,
+        },
+      ],
+    };
+    const alternative: McpRegistryMarketplaceEntry = {
+      ...nonCurated,
+      id: "io.example/filesystem-alternative",
+      name: "io.example/filesystem-alternative",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@example/filesystem-mcp@1.0.0"],
+          requiresAuth: false,
+        },
+      ],
+    };
+    const configuredServers: McpServerConfig[] = [
+      { type: "stdio", command: "npx", args: ["-y", "@agent-infra/mcp-server-filesystem@latest"] },
+      { type: "http", url: "https://mcp.example.com/webflow" },
+    ];
+
+    expect(
+      removeReviewedMcpPresetDuplicates(
+        [installedPackageDuplicate, installedEndpointDuplicate, alternative],
+        [],
+        configuredServers,
+      ).map((entry) => entry.id),
+    ).toEqual([alternative.id]);
+  });
+
+  it("deduplicates Registry entries by package and normalized endpoint, not by entry ID", () => {
+    const first: McpRegistryMarketplaceEntry = {
+      id: "io.example/filesystem-one",
+      name: "Filesystem server one",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@example/filesystem-mcp@1.0.0"],
+          requiresAuth: false,
+        },
+        {
+          kind: "remote",
+          url: "https://mcp.example.com/filesystem/",
+          requiresAuth: false,
+        },
+      ],
+    };
+    const second: McpRegistryMarketplaceEntry = {
+      id: "io.other/filesystem-two",
+      name: "Filesystem server two",
+      options: [
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@example/filesystem-mcp@2.0.0"],
+          requiresAuth: false,
+        },
+        {
+          kind: "remote",
+          url: "https://mcp.example.com/filesystem#registry-alias",
+          requiresAuth: false,
+        },
+        {
+          kind: "stdio",
+          command: "npx",
+          args: ["-y", "@example/other-server@1.0.0"],
+          requiresAuth: false,
+        },
+      ],
+    };
+
+    const visible = removeReviewedMcpPresetDuplicates([first, second], []);
+
+    expect(visible.map((entry) => entry.id)).toEqual([first.id, second.id]);
+    expect(visible[1]?.options).toEqual([second.options[2]]);
+  });
+
+  it("keeps a preset out of Add suggestions after it is configured in the current scope", () => {
+    const context7 = COMMUNITY_MCP_PRESETS.find((preset) => preset.id === "context7");
+    if (!context7) throw new Error("Context7 preset is missing");
+
+    expect(filterUninstalledMcpPresets([context7], new Set(["context7"]))).toEqual([]);
+    expect(filterUninstalledMcpPresets([context7], new Set())).toEqual([context7]);
+  });
+
+  it("hides a Cline alias only while its reviewed preset is visible", () => {
+    const alias = {
+      id: "cline-context7",
+      name: "Context7",
+      tags: [],
+      localPresetId: "context7",
+    };
+    const unknown = { id: "cline-unknown", name: "Unknown", tags: [] };
+    const context7 = COMMUNITY_MCP_PRESETS.find((preset) => preset.id === "context7");
+    if (!context7) throw new Error("Context7 preset is missing");
+
+    expect(filterReviewedClinePresetDuplicates([alias, unknown], [context7])).toEqual([unknown]);
+    expect(filterReviewedClinePresetDuplicates([alias, unknown], [])).toEqual([alias, unknown]);
   });
 });

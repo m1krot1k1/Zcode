@@ -16,15 +16,9 @@ const CodeIndexInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("trace"), fromSymbol: symbolRef, toSymbol: symbolRef }).strict(),
 ]);
 
-const CodeIndexInputJsonSchema: JsonSchema = {
-  oneOf: [
-    { type: "object", properties: { action: { const: "status", type: "string" } }, required: ["action"], additionalProperties: false },
-    { type: "object", properties: { action: { const: "search", type: "string" }, query: { type: "string", minLength: 1, maxLength: 500 }, limit: { type: "integer", minimum: 1, maximum: 12 } }, required: ["action", "query"], additionalProperties: false },
-    { type: "object", properties: { action: { const: "context", type: "string" }, symbol: { type: "string", minLength: 1, maxLength: 256 } }, required: ["action", "symbol"], additionalProperties: false },
-    { type: "object", properties: { action: { const: "impact", type: "string" }, changedPaths: { type: "array", minItems: 1, maxItems: 20, items: { type: "string", minLength: 1, maxLength: 1024 } } }, required: ["action", "changedPaths"], additionalProperties: false },
-    { type: "object", properties: { action: { const: "trace", type: "string" }, fromSymbol: { type: "string", minLength: 1, maxLength: 256 }, toSymbol: { type: "string", minLength: 1, maxLength: 256 } }, required: ["action", "fromSymbol", "toSymbol"], additionalProperties: false },
-  ],
-};
+// Provider and runtime contracts share one source. Runtime-only path refinements remain in Zod;
+// JSON Schema communicates all representable constraints to the model.
+const CodeIndexInputJsonSchema = z.toJSONSchema(CodeIndexInputSchema) as JsonSchema;
 
 function unavailable(): ToolHandlerFailure {
   return {

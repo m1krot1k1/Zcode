@@ -57,7 +57,7 @@ export function SkillsMarketplacePanel({
   };
 
   const installing = marketplace.installingKey !== null;
-  // 已安装列表与搜索结果互斥渲染：空查询展示目录 + 已安装事实，提交搜索后只展示搜索结果，
+  // 已安装列表与搜索结果互斥渲染：空查询展示目录 + 已安装事实，输入查询后只展示远端结果，
   // 因此同一条技能不会以两份条目同时出现。
   const showInstalled = marketplace.submittedQuery.length === 0;
   const catalogView = useMemo(
@@ -85,9 +85,11 @@ export function SkillsMarketplacePanel({
 
   const handleQueryChange = (value: string) => {
     setDraftQuery(value);
-    if (!value.trim() && marketplace.submittedQuery) {
+    if (!value.trim()) {
       void marketplace.search("");
+      return;
     }
+    marketplace.scheduleSearch(value);
   };
 
   const handleClear = () => {
@@ -155,7 +157,7 @@ export function SkillsMarketplacePanel({
             variant="secondary"
             size="lg"
             className="h-9"
-            disabled={marketplace.loading || !draftQuery.trim()}
+            disabled={!draftQuery.trim()}
             data-testid="plugin-store-skills-submit"
           >
             <Search className="size-3.5" aria-hidden="true" />
@@ -548,12 +550,14 @@ function SkillMarketplaceRow({
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle">
             <span className="break-all font-mono">{item.source}</span>
-            <span>
-              {intl.formatMessage(
-                { id: "settings.plugins.store.skills.installs" },
-                { count: item.installs },
-              )}
-            </span>
+            {typeof item.installs === "number" && Number.isFinite(item.installs) && item.installs >= 0 ? (
+              <span>
+                {intl.formatMessage(
+                  { id: "settings.plugins.store.skills.installs" },
+                  { count: item.installs },
+                )}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

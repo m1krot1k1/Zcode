@@ -79,9 +79,9 @@ export interface RuntimeTaskMessageSink {
 }
 
 export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
-  /** Host 为准的 spawn 配额：本任务还能再开多少个子任务；模型声明值只能在此之下收紧。 */
+  /** @deprecated Legacy persisted value; it is read for compatibility but never gates or grants runtime work. */
   spawnGrant?: number;
-  /** 嵌套层级；仅记录，不参与准入判定（预算已限制树规模）。 */
+  /** 嵌套层级；仅记录，不参与准入判定。 */
   level?: number;
   /** UI may subscribe only after the child runtime has opened its session. */
   childSessionReady?: boolean;
@@ -293,7 +293,7 @@ export type RuntimeTaskAdmissionResult =
       reason:
         | "active_limit"
         | "root_run_budget_exceeded"
-        | "spawn_budget_exhausted"
+        | "root_run_finished"
         | "lineage_conflict"
         | "owner_closed"
         | "parent_stopped"
@@ -305,19 +305,19 @@ export type RuntimeTaskAdmissionResult =
         | "work_claim_unavailable";
     };
 
-/** Absolute safety ceiling; normal runs use their configured or adaptive maxParallel. */
-export const SUBAGENT_ROOT_MAX_ACTIVE_TASKS = 128;
-
-/** Adaptive default grows with available CPU while retaining a bounded host-level ceiling. */
+/** Current host capacity is the default concurrency; explicit user settings may cap it. */
 export function resolveAdaptiveSubagentMaxParallel(cpuCount = availableParallelism()): number {
-  const safeCpuCount = Number.isSafeInteger(cpuCount) && cpuCount > 0 ? cpuCount : 8;
-  return Math.max(32, Math.min(SUBAGENT_ROOT_MAX_ACTIVE_TASKS, safeCpuCount * 4));
+  const safeCpuCount = Number.isSafeInteger(cpuCount) && cpuCount > 0 ? cpuCount : availableParallelism();
+  return Math.max(1, safeCpuCount);
 }
 
 export function resolveSubagentMaxParallel(configured?: number): number {
-  if (configured === undefined || configured === 0) return resolveAdaptiveSubagentMaxParallel();
-  if (!Number.isSafeInteger(configured) || configured < 1) return resolveAdaptiveSubagentMaxParallel();
-  return Math.min(SUBAGENT_ROOT_MAX_ACTIVE_TASKS, configured);
+  const hostCapacity = resolveAdaptiveSubagentMaxParallel();
+  if (configured === undefined || configured === 0) return hostCapacity;
+  if (!Number.isSafeInteger(configured) || configured < 1) return hostCapacity;
+  // Настройка может только уменьшить фактическую ёмкость CPU, но не создавать
+  // параллелизм выше ресурсов хоста.
+  return Math.min(configured, hostCapacity);
 }
 
 export type PrismTaskContractInput = Omit<PrismTaskContract, "schema" | "contractSha256">;
@@ -1350,7 +1350,7 @@ export interface RuntimeTaskRegistry {
   getBranchGenerationForSession(sessionId: SessionId): number;
   setBranchGenerationForSession(sessionId: SessionId, generation: number): void;
   remove(id: string): void;
-  /** Returns false without changing state when backgrounding would exceed the root-session worker quota. */
+  /** Returns false without changing state when backgrounding would exceed root-session worker capacity. */
   requestBackground(id: string): boolean;
   setActiveBranchGeneration?(generation: number): void;
   update(
@@ -1372,6 +1372,7 @@ export interface RuntimeTaskRegistry {
     turnId: TurnId;
     startedAt?: number;
     deadlineMs?: number;
+    /** @deprecated Persisted legacy value is ignored for admission. */
     spawnBudget?: number;
     maxParallel?: number;
     onExhausted?: () => void;
@@ -1385,14 +1386,8 @@ interface RootRunBudgetState {
   deadlineAt: number;
   rootSessionId: SessionId;
   turnId: TurnId;
-  /** 本次 root run 的 spawn 总配额；0 表示禁止任何子任务。 */
-  spawnBudget: number;
   /** Immutable concurrency ceiling captured when this root run is admitted. */
   maxParallel: number;
-  /** 已准入的子任务数量（无论后续成败）。 */
-  spawnsUsed: number;
-  /** 每个 session 当前可继续 spawn 的次数；缺省回落到 spawnBudget。 */
-  remainingSpawnsBySession: Map<SessionId, number>;
   turnFinished: boolean;
   expired: boolean;
   deadlineTimer?: ReturnType<typeof setTimeout>;
@@ -1434,11 +1429,6 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
   "lost",
 ]);
 
-/**
- * 每棵子 Agent 树默认允许的 spawn 次数。真实扇出由 maxParallel 限制，预算为大型任务保留
- * 足够的分层探索空间，同时仍保证每次 admission 消耗一次预算且根任务总 deadline 有效。
- */
-export const DEFAULT_SPAWN_BUDGET = 128;
 /** Root deadline переживает максимальный worker deadline и время на synthesis. */
 export const DEFAULT_ROOT_RUN_DEADLINE_MS = 4 * 60 * 60 * 1000;
 
@@ -1551,6 +1541,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     turnId: TurnId;
     startedAt?: number;
     deadlineMs?: number;
+    /** @deprecated Persisted legacy value is ignored for admission. */
     spawnBudget?: number;
     maxParallel?: number;
     onExhausted?: () => void;
@@ -1564,10 +1555,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       deadlineAt,
       rootSessionId: input.rootSessionId,
       turnId: input.turnId,
-      spawnBudget: input.spawnBudget ?? DEFAULT_SPAWN_BUDGET,
       maxParallel: resolveSubagentMaxParallel(input.maxParallel),
-      spawnsUsed: 0,
-      remainingSpawnsBySession: new Map(),
       turnFinished: false,
       expired: false,
       onExhausted: input.onExhausted,
@@ -1613,18 +1601,12 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   getRootRunBudgetSnapshot(rootRunId: string): {
     deadlineAt: number;
     maxParallel: number;
-    spawnBudget: number;
-    spawnsUsed: number;
-    remainingSpawnsBySession: ReadonlyMap<SessionId, number>;
   } | undefined {
     const state = this.rootRunBudgets.get(rootRunId);
     return state
       ? {
           deadlineAt: state.deadlineAt,
           maxParallel: state.maxParallel,
-          spawnBudget: state.spawnBudget,
-          spawnsUsed: state.spawnsUsed,
-          remainingSpawnsBySession: state.remainingSpawnsBySession,
         }
       : undefined;
   }
@@ -1759,35 +1741,15 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       return { accepted: false, reason: "root_run_budget_exceeded" };
     }
 
-    // spawn 预算门禁：必须在 active-limit 与任何写入之前拒绝，保证被拒请求不留副作用。
-    // 没有 root-run 状态时（直接调用 registry 的旧路径）不做门禁，保持向后兼容.
+    // Старый terminal task может быть возобновлён только внутри нового активного root run.
     const rootBudget = this.rootRunBudgets.get(rootRunId);
-    // Resume of a terminal task after finishRootRunTurn: the root budget was deleted,
-    // so re-admission must fail closed instead of bypassing the spent spawn budget.
     if (
       !rootBudget &&
       existing?.rootRunId === rootRunId &&
       isTerminalRuntimeTask(existing) &&
       this.finishedRootRunIds.has(rootRunId)
     ) {
-      return { accepted: false, reason: "spawn_budget_exhausted" };
-    }
-    let parentRemainingSpawns: number | undefined;
-    let childSpawnGrant: number | undefined;
-    if (rootBudget) {
-      const remaining =
-        rootBudget.remainingSpawnsBySession.get(parentSessionId) ?? rootBudget.spawnBudget;
-      if (remaining <= 0) {
-        return { accepted: false, reason: "spawn_budget_exhausted" };
-      }
-      parentRemainingSpawns = remaining;
-      // 子级预算严格小于父级；模型声明的 remaining_spawns 只能收紧，不能抬高 hostGrant。
-      const hostGrant = remaining - 1;
-      const requestedGrant = task.spawnGrant;
-      childSpawnGrant =
-        requestedGrant === undefined
-          ? hostGrant
-          : Math.min(Math.max(0, Math.floor(requestedGrant)), hostGrant);
+      return { accepted: false, reason: "root_run_finished" };
     }
 
     const activeWorkItems = this.getActiveSubagentWorkItems(rootSessionId);
@@ -1799,13 +1761,16 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     // 修复依据：foreground Agent 调用会挂起父级，子级应接管该 worker slot，background child 则另计。
     const projectedActiveCount =
       activeWorkItems.length - (foregroundParentTransfersSlot ? 1 : 0);
-    const activeLimit = rootBudget?.maxParallel ?? SUBAGENT_ROOT_MAX_ACTIVE_TASKS;
+    const activeLimit = rootBudget?.maxParallel ?? resolveSubagentMaxParallel();
     if (projectedActiveCount >= activeLimit) {
       return { accepted: false, reason: "active_limit" };
     }
 
+    const { spawnGrant: legacySpawnGrant, ...taskWithoutLegacyGrant } = task;
+    // Persisted grants are obsolete; do not copy them into a fresh task attempt.
+    void legacySpawnGrant;
     const stamped: RuntimeTaskSnapshot = {
-      ...task,
+      ...taskWithoutLegacyGrant,
       // A node inherits its immediate owner session generation; descendants may rewind locally
       // without mutating the root generation or sibling branches.
       branchGeneration: this.branchGenerations.get(parentSessionId) ?? 0,
@@ -1813,10 +1778,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       rootSessionId,
       // 每次重新准入都生成新 attempt，防止旧 verifier receipt 命中相同 taskId 的新生命期。
       attemptId: randomUUID(),
-      ...(childSpawnGrant === undefined ? {} : { spawnGrant: childSpawnGrant }),
     };
-    // Registrar hard gate: findConflicts и claim выполняются до расхода бюджета и записи
-    // снапшота, чтобы отклонённый admission не оставлял ни задачи, ни claim'а.
+    // Registrar hard gate: findConflicts и claim выполняются до записи снапшота,
+    // чтобы отклонённый admission не оставлял ни задачи, ни claim'а.
     const claimAdmission = this.admitWorkClaim(stamped, parentTask?.agentId ?? null);
     if (!claimAdmission.accepted) return claimAdmission;
     try {
@@ -1825,17 +1789,6 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       // Claim уже записан; сбой записи снапшота не должен оставить «призрак» в ledger.
       if (claimAdmission.claimed) this.releaseWorkClaim(stamped.agentId);
       throw error;
-    }
-    // 修复依据：预算只能在快照成功写入后扣减。原来先扣预算再 setTaskSnapshot，抛错时
-    // claim откатывался, а spawn-бюджет оставался израсходованным.
-    // 重新读取状态：setTaskSnapshot 可能因 turnFinished 已经删掉 budget。
-    const committedBudget = this.rootRunBudgets.get(rootRunId);
-    if (committedBudget && parentRemainingSpawns !== undefined) {
-      committedBudget.remainingSpawnsBySession.set(parentSessionId, parentRemainingSpawns - 1);
-      if (task.childSessionId) {
-        committedBudget.remainingSpawnsBySession.set(task.childSessionId, childSpawnGrant ?? 0);
-      }
-      committedBudget.spawnsUsed += 1;
     }
     this.cancellationHandles.set(stamped.taskId, cancellation);
     // 终态清理结束后才允许同一 task id 开启新生命期、唤醒 terminal waiter。
@@ -2022,14 +1975,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     return this.findTaskByChildSession(sessionId)?.rootSessionId ?? sessionId;
   }
 
-  /**
-   * Остаток spawn-бюджета session внутри root run. `undefined` означает, что root-run
-   * состояния нет (legacy-вызов): вызывающий сохраняет старый fallback.
-   */
+  /** @deprecated Kept for old callers; task-count quotas have been removed. */
   getRemainingSpawnBudget(rootRunId: string, sessionId: SessionId): number | undefined {
-    const state = this.rootRunBudgets.get(rootRunId);
-    if (!state) return undefined;
-    return state.remainingSpawnsBySession.get(sessionId) ?? state.spawnBudget;
+    void rootRunId;
+    void sessionId;
+    return undefined;
   }
 
   getRootRunMaxParallel(rootRunId: string): number | undefined {
@@ -2332,10 +2282,9 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
         ).length;
         // 根因：foreground→background 会唤醒父级继续执行，若只在 spawn 检查并发额度，转换会额外释放一个 worker。
         // 修复依据：用转换后的 registry 投影重新计数；超额时拒绝状态变更，waiter 继续等待 foreground child。
-        const activeLimit = task.rootRunId
-          ? (this.rootRunBudgets.get(task.rootRunId)?.maxParallel ??
-            SUBAGENT_ROOT_MAX_ACTIVE_TASKS)
-          : SUBAGENT_ROOT_MAX_ACTIVE_TASKS;
+        const activeLimit =
+          (task.rootRunId ? this.rootRunBudgets.get(task.rootRunId)?.maxParallel : undefined) ??
+          resolveSubagentMaxParallel();
         if (projectedActiveCount > activeLimit) return false;
       }
     }

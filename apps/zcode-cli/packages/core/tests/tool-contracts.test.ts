@@ -4,7 +4,6 @@ import {
   AgentInputSchema,
   AgentTaskGraphSchema,
   AGENT_TASK_GRAPH_MAX_BYTES,
-  AGENT_TASK_GRAPH_MAX_NODES,
   BashInputJsonSchema,
   BashOutputJsonSchema,
   CoreErrorType,
@@ -1280,7 +1279,7 @@ describe("tool contract declarations", () => {
     ).toThrow();
   });
 
-  it("validates bounded Agent task graphs and rejects invalid dependency shapes", () => {
+  it("validates Agent task graphs, safe concurrency, and dependency shapes", () => {
     const node = (id: string, depends_on?: string[]) => ({
       id,
       description: `Work on ${id}`,
@@ -1342,13 +1341,18 @@ describe("tool contract declarations", () => {
     expect(parseGraph([node("scan"), node("implement", ["scan", "scan"])]).success).toBe(false);
     expect(parseGraph([node("first", ["second"]), node("second", ["first"])]).success).toBe(false);
     expect(parseGraph([node("scan")], 0).success).toBe(false);
-    expect(parseGraph([node("scan")], 25).success).toBe(false);
+    expect(parseGraph([node("scan")], 25).success).toBe(true);
+    expect(parseGraph([node("scan")], 256).success).toBe(true);
+    expect(parseGraph([node("scan")], Number.MAX_SAFE_INTEGER).success).toBe(true);
+    expect(parseGraph([node("scan")], Number.MAX_SAFE_INTEGER + 1).success).toBe(false);
     expect(parseGraph([node("scan")], 1.5).success).toBe(false);
+    const dependencyIds = Array.from({ length: 129 }, (_, index) => `dep-${index}`);
     expect(
       parseGraph(
-        Array.from({ length: AGENT_TASK_GRAPH_MAX_NODES + 1 }, (_, index) => node(`n${index}`)),
+        [...dependencyIds.map((id) => node(id)), node("join", dependencyIds)],
+        256,
       ).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(parseGraph([{ ...node("scan"), prompt: "x".repeat(20_001) }]).success).toBe(false);
     expect(
       parseGraph(
@@ -1360,7 +1364,7 @@ describe("tool contract declarations", () => {
     ).toBe(false);
     expect(AGENT_TASK_GRAPH_MAX_BYTES).toBe(120_000);
     const structureHeavyGraph = {
-      nodes: Array.from({ length: AGENT_TASK_GRAPH_MAX_NODES }, (_, nodeIndex) => ({
+      nodes: Array.from({ length: 128 }, (_, nodeIndex) => ({
         ...node(`heavy-${nodeIndex}`),
         acceptance_criteria: Array.from({ length: 16 }, (_, criterionIndex) => ({
           id: `criterion-${criterionIndex}`,

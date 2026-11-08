@@ -41,14 +41,13 @@ describe("buildAgentProxyEnv", () => {
 });
 
 describe("buildAgentRootRunBudgetEnv", () => {
-  it("passes configured spawn, concurrency, and minimum task deadlines as a spawn snapshot", () => {
-    expect(buildAgentRootRunBudgetEnv(128, 0, 45)).toEqual({
-      ZCODE_SPAWN_BUDGET: "128",
+  it("passes concurrency and timeout settings without a total spawn budget", () => {
+    expect(buildAgentRootRunBudgetEnv(0, 45)).toEqual({
       ZCODE_SUBAGENT_MAX_PARALLEL: "0",
       ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES: "45",
     });
-    expect(buildAgentRootRunBudgetEnv(undefined, 129, 181)).toEqual({});
-    expect(buildAgentRootRunBudgetEnv(0)).toEqual({ ZCODE_SPAWN_BUDGET: "0" });
+    expect(buildAgentRootRunBudgetEnv(undefined, 181)).toEqual({});
+    expect(buildAgentRootRunBudgetEnv(undefined, undefined)).toEqual({});
   });
 });
 

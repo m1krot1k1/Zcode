@@ -75,6 +75,8 @@ export class ApiProviderModelRuntime {
     const primary: Model = this.#createRegistryModel(provider, registryModel, target);
     const options = target.selection.options;
     if (options?.providerFallback === "disabled") return primary;
+    // 修复依据：OpenCode CLI 的免费额度和限流错误必须留在当前请求，不得经通用包装器切换 Provider。
+    if (provider.providerId === "opencode") return primary;
     const facts = this.#collectProviderFacts();
     const source = facts.find(
       (fact) => fact.providerId === provider.providerId && fact.modelId === registryModel.modelId,

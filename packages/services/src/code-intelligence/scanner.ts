@@ -41,7 +41,7 @@ export interface IndexedChunkRecord {
 export interface IndexedEdgeRecord {
   sourceId: string;
   targetId: string;
-  relation: "imports" | "calls";
+  relation: "imports" | "calls" | "contains";
   sourcePath: string;
   targetPath: string;
 }
@@ -225,6 +225,7 @@ function parseSourceFile(
   ctimeMs: number,
   size: number,
   knownPaths: Set<string>,
+  includeChunks = true,
 ): IndexedFileRecord {
   const sourceFile = ts.createSourceFile(
     filePath,
@@ -251,6 +252,17 @@ function parseSourceFile(
   const declarationByNode = new Map<ts.Node, IndexedSymbolRecord>();
   const namesToSymbols = new Map<string, IndexedSymbolRecord[]>();
   const importedBindings = new Map<string, { importedName: string; targetPath: string }>();
+  const edges: IndexedEdgeRecord[] = [];
+  const importedCalls: IndexedImportedCallRecord[] = [];
+  const findContainerSymbol = (node: ts.Node): IndexedSymbolRecord => {
+    let current: ts.Node | undefined = node.parent;
+    while (current) {
+      const found = declarationByNode.get(current);
+      if (found) return found;
+      current = current.parent;
+    }
+    return symbols[0]!;
+  };
 
   const collect = (node: ts.Node): void => {
     const name = declarationName(node);
@@ -269,6 +281,14 @@ function parseSourceFile(
         signature: safeSignature(sourceFile, node),
         exported: isExported(node) ? 1 : 0,
       };
+      const parent = findContainerSymbol(node);
+      edges.push({
+        sourceId: parent.id,
+        targetId: record.id,
+        relation: "contains",
+        sourcePath: relPath,
+        targetPath: relPath,
+      });
       symbols.push(record);
       declarationByNode.set(node, record);
       const named = namesToSymbols.get(name) ?? [];
@@ -303,17 +323,6 @@ function parseSourceFile(
     }
   }
 
-  const edges: IndexedEdgeRecord[] = [];
-  const importedCalls: IndexedImportedCallRecord[] = [];
-  const findContainerSymbol = (node: ts.Node): IndexedSymbolRecord => {
-    let current: ts.Node | undefined = node.parent;
-    while (current) {
-      const found = declarationByNode.get(current);
-      if (found) return found;
-      current = current.parent;
-    }
-    return symbols[0]!;
-  };
   const walk = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
       const targetPath = resolveImportPath(relPath, node.moduleSpecifier.text, knownPaths);
@@ -363,7 +372,7 @@ function parseSourceFile(
     size,
     fingerprint: createHash("sha256").update(content).digest("hex"),
     symbols,
-    chunks: makeChunks(relPath, content),
+    chunks: includeChunks ? makeChunks(relPath, content) : [],
     edges,
     importedCalls,
   };
@@ -416,6 +425,7 @@ export async function scanWorkspace(
   previousFiles: Map<string, PreviousFileMeta>,
   force: boolean,
   onProgress: (discoveredFiles: number, indexedFiles: number) => void,
+  options: { reparseUnchanged?: boolean } = {},
 ): Promise<WorkspaceScanResult> {
   const rootPath = resolve(workspacePath);
   const rules = await loadIgnoreRules(rootPath);
@@ -468,7 +478,7 @@ export async function scanWorkspace(
   const knownPaths = new Set(files.map((file) => file.path));
   let indexedFiles = 0;
   for (const file of files) {
-    if (file.changed) {
+    if (file.changed || options.reparseUnchanged) {
       const absolutePath = join(rootPath, file.path);
       const content = await readFile(absolutePath, "utf8");
       if (Buffer.byteLength(content, "utf8") > MAX_SOURCE_BYTES) {
@@ -481,6 +491,19 @@ export async function scanWorkspace(
         file.fingerprint = createHash("sha256").update(content).digest("hex");
         if (previousFiles.get(file.path)?.fingerprint === file.fingerprint) {
           file.changed = false;
+          if (options.reparseUnchanged) {
+            // 旧索引的图提取规则可能过期；只重建 symbols/edges，避免重建 chunks 和 embeddings。
+            file.record = parseSourceFile(
+              rootPath,
+              absolutePath,
+              content,
+              file.mtimeMs,
+              file.ctimeMs,
+              file.size,
+              knownPaths,
+              false,
+            );
+          }
         } else {
           file.record = parseSourceFile(
             rootPath,

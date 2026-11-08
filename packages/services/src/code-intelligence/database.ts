@@ -11,7 +11,6 @@ import type {
   EmbeddingErrorCode,
   EmbeddingPhase,
   EmbeddingProvider,
-  EmbeddingTestResult,
 } from "./contract.js";
 import type { IndexedFileRecord } from "./scanner.js";
 
@@ -342,14 +341,15 @@ export function readSymbolContext(
     symbolName,
   )[0];
   if (!symbol) return null;
+  // 结构 contains 边只连接文件与声明，不能把模块误报成真实调用者或依赖。
   const outgoing = rows<Row>(
     db,
-    "SELECT e.target_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.target_id WHERE e.source_id = ? LIMIT 101",
+    "SELECT e.target_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.target_id WHERE e.source_id = ? AND e.relation <> 'contains' LIMIT 101",
     String(symbol.id),
   );
   const incoming = rows<Row>(
     db,
-    "SELECT e.source_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.source_id WHERE e.target_id = ? LIMIT 101",
+    "SELECT e.source_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.source_id WHERE e.target_id = ? AND e.relation <> 'contains' LIMIT 101",
     String(symbol.id),
   );
   const related = (items: Row[]) =>
@@ -539,10 +539,7 @@ export function rows<T extends Row>(
   return db.prepare(sql).all(...parameters) as T[];
 }
 
-export function upsertFileRecord(db: CodeIndexDatabase, file: IndexedFileRecord): void {
-  db.prepare(
-    "INSERT INTO files(path, mtime_ms, ctime_ms, size, fingerprint) VALUES(?, ?, ?, ?, ?)",
-  ).run(file.path, file.mtimeMs, file.ctimeMs, file.size, file.fingerprint);
+export function insertFileSymbols(db: CodeIndexDatabase, file: IndexedFileRecord): void {
   const addSymbol = db.prepare(
     "INSERT INTO symbols(id, name, kind, path, start_line, end_line, signature, exported) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
   );
@@ -557,6 +554,39 @@ export function upsertFileRecord(db: CodeIndexDatabase, file: IndexedFileRecord)
       symbol.signature,
       symbol.exported,
     );
+}
+
+export function syncGraphFacts(
+  db: CodeIndexDatabase,
+  records: IndexedFileRecord[],
+  unchangedRecords: IndexedFileRecord[],
+  filePaths: Set<string>,
+): void {
+  for (const file of unchangedRecords) insertFileSymbols(db, file);
+
+  const insertEdge = db.prepare(
+    "INSERT OR IGNORE INTO edges(source_id, target_id, relation, source_path, target_path) VALUES(?, ?, ?, ?, ?)",
+  );
+  const insertImportedCall = db.prepare(
+    "INSERT INTO imported_calls(source_id, source_path, imported_name, target_path) VALUES(?, ?, ?, ?)",
+  );
+  for (const record of records) {
+    for (const edge of record.edges) {
+      if (!filePaths.has(edge.targetPath)) continue;
+      insertEdge.run(edge.sourceId, edge.targetId, edge.relation, edge.sourcePath, edge.targetPath);
+    }
+    for (const call of record.importedCalls ?? []) {
+      if (!filePaths.has(call.targetPath)) continue;
+      insertImportedCall.run(call.sourceId, call.sourcePath, call.importedName, call.targetPath);
+    }
+  }
+}
+
+export function upsertFileRecord(db: CodeIndexDatabase, file: IndexedFileRecord): void {
+  db.prepare(
+    "INSERT INTO files(path, mtime_ms, ctime_ms, size, fingerprint) VALUES(?, ?, ?, ?, ?)",
+  ).run(file.path, file.mtimeMs, file.ctimeMs, file.size, file.fingerprint);
+  insertFileSymbols(db, file);
   const addChunk = db.prepare(
     "INSERT INTO chunks(id, path, start_line, end_line, content, embedding, embedding_model) VALUES(?, ?, ?, ?, ?, ?, ?)",
   );

@@ -29,6 +29,7 @@ import {
   readTrace,
   readSymbolContext,
   hasPartialCoverage,
+  syncGraphFacts,
   lexicalScore,
   openDatabase,
   readEmbedding,
@@ -58,6 +59,7 @@ type ManagedCodeIntelligenceService = CodeIntelligenceService & {
 
 const WATCHER_DIAGNOSTIC =
   "Workspace file watching is unavailable; refresh the local code index manually.";
+const GRAPH_PARSER_VERSION = "3";
 type Activation = { root: string; promise: Promise<void> };
 
 interface CodeIntelligenceServiceOptions {
@@ -269,6 +271,8 @@ export function createCodeIntelligenceService(
               },
             ]),
           );
+          const graphRebuildRequired =
+            readText(db, "graph_parser_version") !== GRAPH_PARSER_VERSION;
           const scan = await scanWorkspace(
             workspace.root,
             previous,
@@ -282,6 +286,7 @@ export function createCodeIntelligenceService(
                   indexedFiles,
                 });
             },
+            { reparseUnchanged: graphRebuildRequired },
           );
           const filePaths = new Set(
             scan.files.filter((file) => !file.excluded).map((file) => file.path),
@@ -290,10 +295,10 @@ export function createCodeIntelligenceService(
           const changedChunks: IndexedChunkRecord[] = [];
           for (const file of scan.files) {
             if (file.excluded) continue;
-            if (file.changed) {
+            if (file.changed || graphRebuildRequired) {
               if (file.record) {
                 records.push(file.record);
-                changedChunks.push(...file.record.chunks);
+                if (file.changed) changedChunks.push(...file.record.chunks);
               }
             }
           }
@@ -395,8 +400,7 @@ export function createCodeIntelligenceService(
               }
               embeddingAvailable = true;
             } catch (error) {
-              // Only provider request failures may degrade to lexical-only indexing. Local DB
-              // staging failures must abort the generation instead of being mislabeled as API errors.
+              // Provider failures may fall back to lexical search; DB staging failures must abort indexing.
               if (!embeddingFailure) throw error;
               for (const chunk of changedChunks) {
                 chunk.embedding = null;
@@ -418,6 +422,10 @@ export function createCodeIntelligenceService(
           });
           db.exec("BEGIN IMMEDIATE");
           try {
+            if (graphRebuildRequired) {
+              // Старые поколения не содержат всех импортированных вызовов; пересобираем только графовые таблицы.
+              db.exec("DELETE FROM edges; DELETE FROM imported_calls; DELETE FROM symbols;");
+            }
             const existingPaths = oldFiles.map((file) => String(file.path));
             for (const existingPath of existingPaths) {
               if (!filePaths.has(existingPath)) {
@@ -450,31 +458,22 @@ export function createCodeIntelligenceService(
               const record = file.record;
               if (record) upsertFileRecord(db, record);
             }
-            // Write outgoing edges after all changed files are present, so file order cannot
-            // remove an edge just written by an earlier changed file in this same generation.
-            for (const record of records) {
-              for (const edge of record.edges) {
-                if (!filePaths.has(edge.targetPath)) continue;
-                db.prepare(
-                  "INSERT OR IGNORE INTO edges(source_id, target_id, relation, source_path, target_path) VALUES(?, ?, ?, ?, ?)",
-                ).run(
-                  edge.sourceId,
-                  edge.targetId,
-                  edge.relation,
-                  edge.sourcePath,
-                  edge.targetPath,
-                );
-              }
-              for (const call of record.importedCalls ?? []) {
-                if (!filePaths.has(call.targetPath)) continue;
-                db.prepare(
-                  "INSERT INTO imported_calls(source_id, source_path, imported_name, target_path) VALUES(?, ?, ?, ?)",
-                ).run(call.sourceId, call.sourcePath, call.importedName, call.targetPath);
-              }
-            }
+            // Write edges after changed files so later deletes cannot remove earlier writes.
+            syncGraphFacts(
+              db,
+              records,
+              graphRebuildRequired
+                ? scan.files.flatMap((file) =>
+                    !file.changed && !file.excluded && file.record ? [file.record] : [],
+                  )
+                : [],
+              filePaths,
+            );
             // Cross-file call links are derived from named imports. Rebuild them from persisted
             // import facts so editing either endpoint refreshes callers without rescanning sources.
-            db.prepare("DELETE FROM edges WHERE relation = 'calls' AND source_path <> target_path").run();
+            db.prepare(
+              "DELETE FROM edges WHERE relation = 'calls' AND source_path <> target_path",
+            ).run();
             db.prepare(
               `INSERT OR IGNORE INTO edges(source_id, target_id, relation, source_path, target_path)
                SELECT imported_calls.source_id, target.id, 'calls', imported_calls.source_path, imported_calls.target_path
@@ -497,6 +496,7 @@ export function createCodeIntelligenceService(
             const generation = Number(readText(db, "generation") ?? 0) + 1;
             const now = Date.now();
             writeText(db, "generation", String(generation));
+            writeText(db, "graph_parser_version", GRAPH_PARSER_VERSION);
             writeText(db, "index_state", "ready");
             writeText(db, "index_partial", String(scan.partial));
             writeText(db, "updated_at", String(now));

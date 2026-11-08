@@ -430,7 +430,7 @@ tools:
     const orchestratorPrompt =
       swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
     expect(orchestratorPrompt).toContain(
-      "Не создавай дублирующие или пересекающиеся по файлам ветки",
+      "не создавай дублирующие или пересекающиеся по файлам ветки",
     );
     expect(orchestratorPrompt).toContain("сопоставь каждый запрос пользователя");
     expect(orchestratorPrompt).toContain("не предоставляет");
@@ -483,7 +483,7 @@ tools:
     expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("reviewer");
     const reviewerPrompt =
       swarmProfiles.find(({ name }) => name === "reviewer")?.systemPrompt ?? "";
-    expect(reviewerPrompt).toContain("до двух researcher-подагентов");
+    expect(reviewerPrompt).toContain("researcher-подагентов в пределах доступных runtime-слотов");
     expect(reviewerPrompt).toContain("25 минут");
     expect(reviewerPrompt).toContain("45 минут");
     expect(swarmProfiles.find(({ name }) => name === "evaluator")?.skills).toContain(
@@ -717,7 +717,7 @@ Review carefully.`,
       for (const tool of ["Read", "Glob", "Grep", "Skill", "Task"]) expect(prompt).toContain(tool);
       for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
       expect(prompt).toContain("L4 — достаточная глубина для проверки вложенности");
-      expect(prompt).toContain("Номер уровня — только запись, а не стоп-условие");
+      expect(prompt).toContain("номер уровня — только запись, а не стоп-условие");
       expect(prompt).toContain("Каждый уровень подтверждается только собственным вызовом Task");
     });
 
@@ -814,14 +814,17 @@ describe("built-in profile precedence over custom profiles", () => {
   });
 });
 
-// 15 канонических ролей: специализированные исполнители плюс прежний roster.
+// 16 канонических ролей: специализированные исполнители, включая debugger.
 describe("specialized worker roster", () => {
   const profiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
   const profile = (name: string) => profiles().find((candidate) => candidate.name === name);
 
-  it("ships 15 canonical roles in a stable order", () => {
-    expect(SWARM_AGENT_TYPES).toHaveLength(15);
+  it("ships 16 canonical roles in a stable order, including a debugger", () => {
+    expect(SWARM_AGENT_TYPES).toHaveLength(16);
     expect(profiles().map(({ name }) => name)).toEqual([...SWARM_AGENT_TYPES]);
+    expect(SWARM_AGENT_TYPES).toContain("debugger");
+    expect(profile("debugger")?.description).toContain("первопричину");
+    expect(profile("debugger")?.systemPrompt).toContain("Сначала воспроизведи дефект");
   });
 
   it.each(["coder", "frontend-coder", "backend-coder", "infra-coder"])(
@@ -840,6 +843,7 @@ describe("specialized worker roster", () => {
 
   it("declares the requested skill allowlists", () => {
     expect(profile("coder")?.skills).toEqual([
+      "*",
       "code-craft",
       "zcode-test-driven-development",
       "zcode-verification",
@@ -849,6 +853,7 @@ describe("specialized worker roster", () => {
       "zcode-swarm",
     ]);
     expect(profile("frontend-coder")?.skills).toEqual([
+      "*",
       "frontend-design",
       "ui-craft",
       "ai-elements",
@@ -858,6 +863,7 @@ describe("specialized worker roster", () => {
       "zcode-swarm",
     ]);
     expect(profile("backend-coder")?.skills).toEqual([
+      "*",
       "codebase-design",
       "architecture-governance",
       "domain-modeling",
@@ -867,6 +873,7 @@ describe("specialized worker roster", () => {
       "zcode-swarm",
     ]);
     expect(profile("infra-coder")?.skills).toEqual([
+      "*",
       "electron",
       "dep-refs",
       "performance-tuning",
@@ -908,7 +915,9 @@ describe("specialized worker roster", () => {
 
     expect(prompt).toContain("Никогда не вызывай Task(start)");
     expect(prompt).toContain("не вызывай Task(orchestrator)");
-    expect(prompt).toContain("Планируй для каждой ветки конечный объём, рассчитанный на 45 минут");
+    expect(prompt).toContain("Планируй для каждой ветки конечный объём, рассчитанный на профильный timeout");
+    expect(prompt).toContain("Runtime ограничивает одновременно активные ветки доступной ёмкостью хоста и провайдера");
+    expect(prompt).toContain("Оставляй не менее 15 минут своего hard deadline на синтез");
     expect(prompt).toContain("следующий wave");
     expect(prompt).toContain("накопленным контекстом");
     expect(prompt).toContain("researcher");
@@ -916,18 +925,18 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("coder");
   });
 
-  it("takes orchestrator fan-out capacity from the spawn envelope, not a fixed 3-5 branches", () => {
+  it("plans useful fan-out without a total task-count budget", () => {
     const prompt = profile("orchestrator")?.systemPrompt ?? "";
 
-    expect(prompt).toContain(
-      "min(nodeCount, requested max_parallel, remaining_spawns, activeCap",
-    );
-    expect(prompt).toContain("Для 5–8 действительно независимых областей");
-    expect(prompt).toContain("45 минут");
-    expect(prompt).toContain("крупную тему раздели на независимые части");
+    expect(prompt).toContain("доступной ёмкостью хоста и провайдера, а не суммарным числом задач");
+    expect(prompt).toContain("выбирай debugger");
+    expect(prompt).toContain("с именами и описаниями установленных Skills из system-reminder");
+    expect(prompt).toContain("Планируй все полезные независимые ветки волнами");
+    expect(prompt).toContain("следующую волну после join");
     expect(prompt).toContain("subagent-factory");
-    expect(prompt).toContain("столько специализированных веток одним сообщением");
-    expect(prompt).not.toContain("3–5 независимых веток");
+    expect(prompt).toContain("Не раздувай число агентов");
+    expect(prompt).not.toContain("remaining_spawns");
+    expect(prompt).not.toContain("5–8 действительно независимых областей");
   });
 
   it("turns subagent-factory into a real profile author with catalog boundaries", () => {
@@ -1083,7 +1092,11 @@ describe("built-in role capability matrix", () => {
     ] as const) {
       const prompt =
         builtInProfiles().find((profile) => profile.name === name)?.systemPrompt ?? "";
-      expect(prompt, name).toContain("до двух worker/researcher-подагентов");
+      expect(prompt, name).toContain(
+        "worker/researcher-подагентов в пределах доступных runtime-слотов",
+      );
+      expect(prompt, name).toContain("Каждый подагент получает узкий deliverable");
+      expect(prompt, name).not.toContain("до двух worker/researcher-подагентов");
     }
   });
 
@@ -1151,7 +1164,9 @@ describe("review prompt contract", () => {
       expect(prompt).toContain("partial/blocked");
       expect(prompt).toContain("что просмотрено, что нет");
       expect(prompt).toContain("Не зависай");
-      expect(prompt).toContain("2–3 параллельных reviewer");
+      expect(prompt).toContain("reviewer-веткам в пределах доступных runtime-слотов");
+      expect(prompt).toContain("Не запускай несколько агентов на одинаковый diff или проверку");
+      expect(prompt).not.toContain("2–3 параллельных reviewer");
     },
   );
 
@@ -1290,28 +1305,22 @@ describe("delegation routing gate", () => {
     });
   });
 
-  it("clamps parallelism to the spawn budget and the user cap", () => {
+  it("uses workstream count and explicit concurrency preference, ignoring legacy task budgets", () => {
     expect(
       decideDelegationRoute({
         role: "start",
         independentWorkstreams: 6,
-        spawnBudget: 1,
         userMaxParallel: 8,
       }),
-    ).toMatchObject({ route: "delegate_single", maxParallel: 1 });
+    ).toMatchObject({ route: "orchestrate", maxParallel: 6 });
 
     expect(
       decideDelegationRoute({
         role: "root",
         independentWorkstreams: 6,
-        spawnBudget: 2,
-        userMaxParallel: 8,
+        userMaxParallel: 2,
       }),
     ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
-
-    expect(
-      decideDelegationRoute({ role: "start", independentWorkstreams: 6, spawnBudget: 0 }),
-    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
   });
 
   it("allows read-only triage in place and still delegates implementation", () => {
@@ -1335,16 +1344,10 @@ describe("delegation routing gate", () => {
 
   it("clamps the runtime swarm DAG parallelism through the routing gate", () => {
     expect(
-      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8, spawnBudget: 2 }),
-    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
+      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8 }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 6 });
     expect(
-      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8, spawnBudget: 1 }),
-    ).toMatchObject({ route: "delegate_single", maxParallel: 1 });
-    expect(
-      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8, spawnBudget: 0 }),
-    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
-    expect(
-      resolveSwarmParallelism({ nodeCount: 2, requestedMaxParallel: 8, spawnBudget: 8 }),
+      resolveSwarmParallelism({ nodeCount: 2, requestedMaxParallel: 8 }),
     ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
   });
 });

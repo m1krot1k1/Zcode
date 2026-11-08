@@ -1,6 +1,7 @@
 import type { CreateAiSdkModelOptions } from "@zcode/adapters/model";
 import { ModelErrorCode, ModelProtocolError, type Model } from "@zcode/contracts";
 import {
+  LocalAuthAccessConfig,
   ModelConfig,
   ModelOptionSpecsConfig,
   ModelPropertiesConfig,
@@ -116,6 +117,29 @@ describe("ApiProviderModelRuntime", () => {
     expect(created[0]?.options).not.toHaveProperty("maxOutputTokens");
     expect(created[0]?.providerConfig).toBe(registry.getProvider("api-provider")?.config);
     expect(created[0]?.modelConfig).toBe(registry.getModel("api-provider", "model-a")?.config);
+  });
+
+  it("OpenCode CLI 不生成通用配额回退模型，即使 Registry 中有同类 Go Provider", () => {
+    const openCodeProvider = provider(
+      "opencode",
+      new ProviderConfig({
+        group: "standard-personal",
+        access: new LocalAuthAccessConfig(),
+        api: new ProviderApiConfig({ type: "opencode-sdk" }),
+        builtinModelIds: ["model-a"],
+        personalModelIds: [],
+        visibility: "visible",
+      }),
+    );
+    const openCodeGoProvider = provider("opencode-go-responses");
+    const registry = new ProviderRegistry([openCodeProvider, openCodeGoProvider]);
+    const { created, expected, runtime } = captureRuntime(registry);
+
+    const model = runtime.modelFactory({ selection: selection("opencode") });
+
+    expect(model).toBe(expected);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.providerConfig).toBe(openCodeProvider.config);
   });
 
   it("Registry 更新只影响之后创建的 Model", () => {

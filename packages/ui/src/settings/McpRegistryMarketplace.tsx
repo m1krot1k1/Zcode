@@ -1,7 +1,9 @@
-import { Loader2, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MCP_CURATED_SERVERS,
+  type CommunityMcpPreset,
+  type McpServerConfig,
   type McpRegistryInstallOption,
   type McpRegistryMarketplaceEntry,
   type McpRegistryMarketplaceResult,
@@ -12,11 +14,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
-import { SettingsSearchInput } from "@/settings/SettingsSearchInput.js";
 import {
   buildMcpCatalogView,
   mergeMcpRegistryEntries,
   MCP_CATALOG_TABS,
+  removeReviewedMcpPresetDuplicates,
   type McpCatalogSortMode,
   type McpCatalogTab,
 } from "@/settings/mcpRegistryCatalogView.js";
@@ -66,25 +68,33 @@ async function loadCuratedEntries(
 
 export function McpRegistryMarketplace({
   onConfigure,
+  onVisibleCountChange,
+  query,
+  reviewedPresets,
+  configuredServers,
 }: {
   onConfigure: (entry: McpRegistryMarketplaceEntry, option: McpRegistryInstallOption) => void;
+  onVisibleCountChange?: (count: number | null) => void;
+  query: string;
+  reviewedPresets: readonly CommunityMcpPreset[];
+  configuredServers: readonly McpServerConfig[];
 }) {
   const { intl } = useZCodeIntl();
   const { mcpSyncService } = useServices();
-  const [query, setQuery] = useState("");
   const [catalogEntries, setCatalogEntries] = useState<McpRegistryMarketplaceEntry[]>([]);
   const [searchEntries, setSearchEntries] = useState<McpRegistryMarketplaceEntry[]>([]);
+  const [searchResultQuery, setSearchResultQuery] = useState("");
   const [tab, setTab] = useState<McpCatalogTab>("popular");
   const [sort, setSort] = useState<McpCatalogSortMode>("recommended");
   const [preloadLoading, setPreloadLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [preloadError, setPreloadError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
+  const searchRequestSeqRef = useRef(0);
+  const normalizedQuery = query.trim();
+  const hasSearched = Boolean(normalizedQuery);
   const loading = preloadLoading || searchLoading;
   const error = searchError ?? (hasSearched ? null : preloadError);
-  const tabBeforeSearchRef = useRef<McpCatalogTab>("popular");
-  const searchRequestSeqRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -114,6 +124,56 @@ export function McpRegistryMarketplace({
     };
   }, [mcpSyncService]);
 
+  const executeSearch = useCallback(
+    async (rawQuery: string) => {
+      const normalized = rawQuery.trim();
+      const requestSeq = ++searchRequestSeqRef.current;
+      if (!normalized) {
+        setSearchEntries([]);
+        setSearchResultQuery("");
+        setSearchError(null);
+        setSearchLoading(false);
+        return;
+      }
+      setSearchEntries([]);
+      setSearchResultQuery("");
+      setSearchError(null);
+      setSearchLoading(true);
+      try {
+        const result = await mcpSyncService.searchMarketplace(normalized);
+        if (requestSeq !== searchRequestSeqRef.current) return;
+        setSearchEntries(
+          removeReviewedMcpPresetDuplicates(result.entries, reviewedPresets, configuredServers),
+        );
+        setSearchResultQuery(normalized);
+      } catch (cause) {
+        if (requestSeq !== searchRequestSeqRef.current) return;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logger.warn("[McpRegistryMarketplace] Official MCP Registry search failed", {
+          error: message,
+          query: normalized,
+        });
+        setSearchError(message);
+      } finally {
+        if (requestSeq === searchRequestSeqRef.current) setSearchLoading(false);
+      }
+    },
+    [configuredServers, mcpSyncService, reviewedPresets],
+  );
+
+  useEffect(() => {
+    const normalized = query.trim();
+    setSearchEntries([]);
+    setSearchResultQuery("");
+    setSearchError(null);
+    setSearchLoading(Boolean(normalized));
+    const timer = window.setTimeout(() => void executeSearch(normalized), normalized ? 320 : 0);
+    return () => {
+      window.clearTimeout(timer);
+      searchRequestSeqRef.current += 1;
+    };
+  }, [executeSearch, query]);
+
   const reloadCurated = async () => {
     resetMcpRegistryCatalogPreloadForTests();
     setPreloadError(null);
@@ -131,56 +191,38 @@ export function McpRegistryMarketplace({
     }
   };
 
-  const search = async (rawQuery: string) => {
-    const normalized = rawQuery.trim();
-    const requestSeq = ++searchRequestSeqRef.current;
-    setQuery(rawQuery);
-    if (!hasSearched) tabBeforeSearchRef.current = tab;
-    setTab("all");
-    setHasSearched(true);
-    setSearchEntries([]);
-    setSearchError(null);
-    if (!normalized) {
-      setSearchLoading(false);
-      setHasSearched(false);
-      setTab(tabBeforeSearchRef.current);
-      return;
-    }
-    setSearchLoading(true);
-    try {
-      const result = await mcpSyncService.searchMarketplace(normalized);
-      if (requestSeq !== searchRequestSeqRef.current) return;
-      setSearchEntries(result.entries);
-    } catch (cause) {
-      if (requestSeq !== searchRequestSeqRef.current) return;
-      const message = cause instanceof Error ? cause.message : String(cause);
-      logger.warn("[McpRegistryMarketplace] Official MCP Registry search failed", {
-        error: message,
-        query: normalized,
-      });
-      setSearchError(message);
-    } finally {
-      if (requestSeq === searchRequestSeqRef.current) setSearchLoading(false);
-    }
-  };
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void search(query);
-  };
-
   const viewEntries = useMemo(
     () =>
       buildMcpCatalogView({
-        entries: hasSearched ? searchEntries : catalogEntries,
+        entries: hasSearched
+          ? searchResultQuery === normalizedQuery
+            ? searchEntries
+            : []
+          : removeReviewedMcpPresetDuplicates(catalogEntries, reviewedPresets, configuredServers),
         tab,
         sort,
-        filter: hasSearched ? "" : query,
+        filter: "",
         searchResults: hasSearched,
       }),
-    [catalogEntries, hasSearched, searchEntries, tab, sort, query],
+    [
+      catalogEntries,
+      configuredServers,
+      hasSearched,
+      searchEntries,
+      searchResultQuery,
+      normalizedQuery,
+      reviewedPresets,
+      tab,
+      sort,
+    ],
   );
-  const listReady = !searchLoading && (!preloadLoading || hasSearched);
+  const listReady = hasSearched
+    ? !searchLoading && searchResultQuery === normalizedQuery
+    : !preloadLoading;
+
+  useEffect(() => {
+    onVisibleCountChange?.(listReady ? viewEntries.length : null);
+  }, [listReady, normalizedQuery, onVisibleCountChange, viewEntries.length]);
 
   return (
     <section className="space-y-3" data-testid="mcp-registry-marketplace">
@@ -190,6 +232,9 @@ export function McpRegistryMarketplace({
         </h3>
         <p className="text-ui-sm text-foreground-subtle">
           {intl.formatMessage({ id: "settings.mcp.registry.description" })}
+        </p>
+        <p className="text-ui-xs text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.mcp.registry.localLaunchNote" })}
         </p>
       </div>
 
@@ -239,47 +284,6 @@ export function McpRegistryMarketplace({
         <span>{intl.formatMessage({ id: "catalog.officialRegistryNote" })}</span>
       </div>
 
-      <form role="search" className="flex flex-wrap items-center gap-2" onSubmit={handleSubmit}>
-        <SettingsSearchInput
-          data-testid="mcp-registry-search"
-          containerClassName="min-w-0 flex-[1_1_18rem]"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            if (hasSearched || searchLoading) {
-              searchRequestSeqRef.current += 1;
-              setHasSearched(false);
-              setSearchEntries([]);
-              setSearchLoading(false);
-              setTab(tabBeforeSearchRef.current);
-            }
-            setSearchError(null);
-          }}
-          onClear={() => {
-            searchRequestSeqRef.current += 1;
-            setQuery("");
-            setHasSearched(false);
-            setSearchEntries([]);
-            setSearchLoading(false);
-            setTab(tabBeforeSearchRef.current);
-            setSearchError(null);
-          }}
-          clearLabel={intl.formatMessage({ id: "settings.mcp.registry.clearSearch" })}
-          placeholder={intl.formatMessage({ id: "settings.mcp.registry.searchPlaceholder" })}
-        />
-        <Button
-          type="submit"
-          variant="secondary"
-          size="lg"
-          className="h-9"
-          disabled={searchLoading || !query.trim()}
-          data-testid="mcp-registry-submit"
-        >
-          <Search className="size-3.5" aria-hidden="true" />
-          {intl.formatMessage({ id: "settings.mcp.registry.search" })}
-        </Button>
-      </form>
-
       {loading ? (
         <p
           role="status"
@@ -301,7 +305,7 @@ export function McpRegistryMarketplace({
             variant="outline"
             size="sm"
             onClick={() => {
-              if (searchError && hasSearched && query.trim()) void search(query);
+              if (searchError && hasSearched) void executeSearch(normalizedQuery);
               else void reloadCurated();
             }}
           >

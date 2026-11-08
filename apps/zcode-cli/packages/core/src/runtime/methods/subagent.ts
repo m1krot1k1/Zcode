@@ -88,21 +88,18 @@ import {
 
 interface SpawnEnvelopeInput {
   level?: number;
-  spawnGrant?: number;
   /** Фактический parallel cap из registry; без него атрибут не печатается. */
   maxParallel?: number;
 }
 
 /**
- * Чистый builder конверта spawn. `max_parallel` — фактическая ёмкость, а не константа:
- * хардкод 8 скрывал остаток бюджета и свободные worker slots.
+ * Чистый builder конверта spawn. Здесь нет общего счётчика задач; только уровень
+ * рекурсии и доступная конкурентная ёмкость.
  */
 export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefined {
-  if (input.spawnGrant === undefined || !Number.isFinite(input.spawnGrant)) return undefined;
   const parts = [
     "<zcode-spawn-envelope",
     `level="${Math.max(0, Math.floor(input.level ?? 1))}"`,
-    `remaining_spawns="${Math.max(0, Math.floor(input.spawnGrant))}"`,
   ];
   if (input.maxParallel !== undefined && Number.isFinite(input.maxParallel)) {
     parts.push(`max_parallel="${Math.max(0, Math.floor(input.maxParallel))}"`);
@@ -215,8 +212,6 @@ export function createDefaultSubagentPort(
   ];
   return createExploreSubagentPort({
     logger: this.logger,
-    // 根预算从这里进入端口；子任务由 runner 按 grant 推导后向下传递。
-    spawnBudget: this.config.spawnBudget,
     maxParallel: this.config.subagentMaxParallel,
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
@@ -350,11 +345,9 @@ export function createDefaultSubagentPort(
           traceContext: request.traceContext,
           workspaceRoot: request.workspaceRoot,
         });
-        // Host 在 child 的 system prompt 中显式声明本层 spawn 约定：Level+1 已由 runner 记录，
-        // remaining_spawns 是 Host 签发的 grant, max_parallel — фактическая ёмкость registry.
+        // Host сообщает уровень рекурсии и конкурентную ёмкость, не ограничивая число задач.
         const spawnEnvelope = buildSpawnEnvelope({
           level: request.level,
-          spawnGrant: request.spawnGrant,
           maxParallel: request.maxParallel,
         });
         // Реестр работ: предупреждаем ребёнка, чем заняты другие агенты в том же workspace.
@@ -551,9 +544,6 @@ export function createDefaultSubagentPort(
             agentType: request.agentType,
             maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
             parentSessionId: this.sessionId,
-            // 子 runtime 的 spawn 预算必须等于 Host 签发的 grant，否则每层都会回落到根预算 32，
-            // 导致嵌套层级越深反而预算越大；无 grant 时沿用父配置（兼容旧调用）。
-            spawnBudget: request.spawnGrant ?? this.config.spawnBudget,
             taskType: "subagent_child",
             // Router-роль не использует Write/Edit/Bash сама, но должна передать
             // worker-возможности дальше. Набор наследуется только router-детьми;
@@ -1238,6 +1228,7 @@ class FilteredSkillPort implements SkillPort {
   private isAllowedSkill(skill: SkillContent["metadata"]): boolean {
     if (this.cuaPolicy.isOfficialSkill(skill)) return false;
     return (
+      this.allowedSkills?.has("*") === true ||
       this.allowedSkills === undefined ||
       this.allowedSkills.has(skill.name) ||
       (skill.qualifiedName !== undefined && this.allowedSkills.has(skill.qualifiedName))

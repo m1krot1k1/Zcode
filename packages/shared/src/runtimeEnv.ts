@@ -3,10 +3,7 @@ export const ZCODE_HTTP_PROXY_ENV_KEY = "ZCODE_HTTP_PROXY";
 /** Ordered model-provider proxy ring. One normalized endpoint per line. */
 export const ZCODE_HTTP_PROXY_LIST_ENV_KEY = "ZCODE_HTTP_PROXY_LIST";
 export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
-/**
- * Host 下发给 Agent 的 spawn 预算（整棵子 Agent 树可创建的任务数）。
- * 唯一来源是 AppSettings.spawnBudget；0 是合法值（禁止 spawn），未配置时按默认 128。
- */
+/** @deprecated Legacy environment key; current runtimes ignore total spawn budgets. */
 export const ZCODE_SPAWN_BUDGET_ENV_KEY = "ZCODE_SPAWN_BUDGET";
 export const ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY = "ZCODE_SUBAGENT_MAX_PARALLEL";
 export const ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY = "ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES";
@@ -351,11 +348,7 @@ export function readZCodeProxyList(value: string | undefined): string[] {
   return endpoints;
 }
 
-/**
- * 读取 Host 注入的 spawn 预算。
- * 非法值（非数字、负数、超出安全整数范围）返回 undefined，让 Agent 回落到默认 128；
- * 0 是合法值，表示禁止任何 spawn，不能被当成「未配置」。
- */
+/** @deprecated Parse a legacy persisted value for migration tools; runtime admission ignores it. */
 export function readSpawnBudget(value: string | undefined): number | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
@@ -364,12 +357,12 @@ export function readSpawnBudget(value: string | undefined): number | undefined {
   return parsed;
 }
 
-/** 读取并验证 Host 注入的并行上限；0 表示适应当前机器的 CPU 并发能力。 */
+/** 读取并验证可选并行偏好；0 表示按当前机器的 CPU 并发能力自适应。 */
 export function readSubagentMaxParallel(value: string | undefined): number | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 128 ? parsed : undefined;
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 /** 读取 subagent 最短运行分钟数；0 表示按 profile 的 role deadline。 */

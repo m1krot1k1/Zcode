@@ -3,7 +3,6 @@ import {
   ZCODE_HTTP_PROXY_ENV_KEY,
   ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
-  ZCODE_SPAWN_BUDGET_ENV_KEY,
   ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY,
   ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY,
   ZCODE_WORKSPACE_IDENTITY_ENV,
@@ -129,25 +128,18 @@ export function buildAgentWorkspaceIdentityEnv(
 }
 
 /**
- * 把设置里的 spawn 预算注入 agent 子进程。
- * 与代理/CA 一样是 spawn 时快照：0 是合法配额（禁止 spawn），未配置时不写这个键，
- * 由 agent 用默认 128。并行和单任务期限同样在 spawn 时快照传递。
+ * 把 Host 并行偏好和单任务期限注入 agent 子进程。
+ * 总任务数上限是弃用设置，不再注入或应用；实际并行仍由 runtime capacity 限制。
  */
 export function buildAgentRootRunBudgetEnv(
-  spawnBudget?: number,
   subagentMaxParallel?: number,
   subagentTaskTimeoutMinutes?: number,
 ): Record<string, string> {
   const env: Record<string, string> = {};
-  // 0 是合法配额（禁止 spawn），只过滤非法值；缺省不写，由 agent 用默认 128。
-  if (spawnBudget !== undefined && Number.isSafeInteger(spawnBudget) && spawnBudget >= 0) {
-    env[ZCODE_SPAWN_BUDGET_ENV_KEY] = String(spawnBudget);
-  }
   if (
     subagentMaxParallel !== undefined &&
     Number.isSafeInteger(subagentMaxParallel) &&
-    subagentMaxParallel >= 0 &&
-    subagentMaxParallel <= 128
+    subagentMaxParallel >= 0
   ) {
     env[ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY] = String(subagentMaxParallel);
   }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { createErrorResult } from "../src/tool/executor/errors.js";
 import { validateInitialModelToolInput, validateInput } from "../src/tool/executor/validation.js";
+import { codeIndexToolEntry } from "../src/tool/handlers/code-index.js";
 import { askUserQuestionToolEntry } from "../src/tool/handlers/ask-user-question.js";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { jsToolEntry } from "../src/tool/handlers/node-repl.js";
@@ -15,6 +17,54 @@ import { validateJsonSchemaValue } from "../src/tool/json-schema.js";
 import type { ToolEntry } from "../src/tool/types.js";
 
 describe("tool input validation provider content", () => {
+  it("derives CodeIndex provider schema from the runtime action contract", () => {
+    expect(codeIndexToolEntry.inputSchema).toEqual(
+      z.toJSONSchema(codeIndexToolEntry.runtimeInputSchema as z.ZodType),
+    );
+
+    const runtimeSchema = codeIndexToolEntry.runtimeInputSchema as z.ZodType;
+    const schema = codeIndexToolEntry.inputSchema as {
+      oneOf: Array<{ properties: { action: { const: string } } }>;
+    };
+    expect(schema.oneOf.map((variant) => variant.properties.action.const)).toEqual([
+      "status",
+      "search",
+      "context",
+      "impact",
+      "trace",
+    ]);
+
+    const validInputs = [
+      { action: "status" },
+      { action: "search", query: "embedding", limit: 5 },
+      { action: "context", symbol: "probeEmbeddingProvider" },
+      { action: "impact", changedPaths: ["packages/services/src/index.ts"] },
+      { action: "trace", fromSymbol: "caller", toSymbol: "callee" },
+    ];
+    for (const input of validInputs) {
+      expect(validateJsonSchemaValue(input, codeIndexToolEntry.inputSchema).valid).toBe(true);
+      expect(runtimeSchema.safeParse(input).success).toBe(true);
+    }
+
+    const absolutePathInput = { action: "impact", changedPaths: ["/private/source.ts"] };
+    expect(validateJsonSchemaValue(absolutePathInput, codeIndexToolEntry.inputSchema).valid).toBe(
+      true,
+    );
+    expect(runtimeSchema.safeParse(absolutePathInput).success).toBe(false);
+  });
+
+  it("returns actionable CodeIndex schema errors without echoing input values", () => {
+    const error = validateInitialModelToolInput(
+      { action: "lookup", query: "sensitive query text", token: "secret-value" },
+      codeIndexToolEntry,
+    );
+
+    expect(error?.message).toContain("CodeIndex input failed its action schema");
+    expect(error?.message).toContain("status, search, context, impact, or trace");
+    expect(error?.message).not.toContain("sensitive query text");
+    expect(error?.message).not.toContain("secret-value");
+  });
+
   it("formats missing, unexpected, and wrong-type issues in the required order", () => {
     const validation = validateJsonSchemaValue(
       {

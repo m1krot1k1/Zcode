@@ -156,4 +156,51 @@ describe("skills marketplace catalog view", () => {
 
     expect(view.map((item) => item.item.name)).toEqual(["yandex-wordstat"]);
   });
+
+  it("sorts unknown installs last and excludes them from seed Popular", () => {
+    const unknownCount: MarketplaceSkillInfo = {
+      name: "unknown-count",
+      skillId: "unknown-count",
+      source: "community/repo",
+      installed: false,
+    };
+    const byInstalls = buildCatalogView({
+      items: [unknownCount, catalog[2]!, catalog[0]!],
+      tab: "allTime",
+      sort: "installs",
+      filter: "",
+    });
+    expect(byInstalls.map((item) => item.item.name)).toEqual([
+      "middle-skill",
+      "low-skill",
+      "unknown-count",
+    ]);
+
+    const popular = buildCatalogView({
+      items: [unknownCount, catalog[0]!],
+      tab: "popular",
+      sort: "installs",
+      filter: "",
+    });
+    expect(popular.map((item) => item.item.name)).toEqual(["middle-skill"]);
+  });
+
+  it("keeps an explicit Popular search hit with unknown installs without a Popular badge", () => {
+    const unknownCount: MarketplaceSkillInfo = {
+      name: "unknown-count",
+      skillId: "unknown-count",
+      source: "community/repo",
+      installed: false,
+    };
+    const view = buildCatalogView({
+      items: [unknownCount],
+      tab: "popular",
+      sort: "installs",
+      filter: "",
+      searchResults: true,
+    });
+
+    expect(view.map((item) => item.item.name)).toEqual(["unknown-count"]);
+    expect(view[0]?.badges).not.toContain("popular");
+  });
 });

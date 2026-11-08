@@ -60,7 +60,9 @@ export function buildCatalogView(input: CatalogViewInput): CatalogViewEntry[] {
       (item) =>
         Boolean(input.searchResults) ||
         input.tab !== "popular" ||
-        item.installs >= SKILLS_POPULAR_MIN_INSTALLS,
+        (typeof item.installs === "number" &&
+          Number.isFinite(item.installs) &&
+          item.installs >= SKILLS_POPULAR_MIN_INSTALLS),
     )
     .filter((item) => matchesCatalogQuery(item, input.filter))
     .slice()

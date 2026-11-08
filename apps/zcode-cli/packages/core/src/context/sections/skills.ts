@@ -38,9 +38,9 @@ export function buildSkillsSection(options: SkillsSectionOptions): ContextSectio
 
 function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
   const lines = [
-    "The following skills are available for use with the Skill tool:",
+    "Installed skills currently available for this workspace:",
     "",
-    "If no available skill matches the task, use SkillSearch to search the public skills.sh marketplace; install a relevant, reputable result with SkillInstall, then load it with Skill.",
+    "Choose an exact listed skill name when it matches the task, and load it with Skill if that tool is available to your role.",
     "",
   ];
 

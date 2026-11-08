@@ -14,7 +14,6 @@ import {
   createPrismHostEvidenceReceipt,
   createPrismTaskContract,
   reducePrismTaskAcceptance,
-  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
   type RuntimeTaskCancellationHandle,
   type RuntimeTaskSnapshot,
 } from "../src/runtime-task/registry.js";
@@ -27,7 +26,6 @@ describe("subagent root admission and ownership", () => {
         activeCap: 6,
         activeCount: 6,
         parentOccupiesSlot: true,
-        remainingSpawns: 20,
       }),
     ).toBe(1);
     expect(
@@ -35,15 +33,13 @@ describe("subagent root admission and ownership", () => {
         activeCap: 6,
         activeCount: 5,
         parentOccupiesSlot: false,
-        remainingSpawns: 20,
       }),
     ).toBe(1);
     expect(
       resolveChildMaxParallel({
         activeCap: 6,
         activeCount: 6,
-        parentOccupiesSlot: true,
-        remainingSpawns: 0,
+        parentOccupiesSlot: false,
       }),
     ).toBe(0);
   });
@@ -52,13 +48,10 @@ describe("subagent root admission and ownership", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-unbounded-depth-root");
     const turnId = createTurnId("subagent-unbounded-depth-turn");
-    // 深度本身不设上限，但 spawn 预算仍需足够大；这里显式给 4096，
-    // 以免默认预算 32 把“无累积节点上限”的断言误变成预算断言。
     registry.beginRootRunBudget({
       rootRunId: `${rootSessionId}:${turnId}`,
       rootSessionId,
       turnId,
-      spawnBudget: 4096,
     });
     const depth = 512;
     let parentSessionId = rootSessionId;
@@ -411,12 +404,18 @@ describe("subagent root admission and ownership", () => {
     expect(registry.get(task.taskId)).toBeUndefined();
   });
 
-  it("admits work up to the 128-task safety ceiling and rejects the next item", () => {
+  it("uses configured active capacity without a cumulative task-count ceiling", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-active-budget-root");
     const turnId = createTurnId("subagent-active-budget-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${rootSessionId}:${turnId}`,
+      rootSessionId,
+      turnId,
+      maxParallel: 2,
+    });
 
-    for (let index = 0; index < SUBAGENT_ROOT_MAX_ACTIVE_TASKS; index += 1) {
+    for (let index = 0; index < 2; index += 1) {
       const taskId = `agent_active_${index}`;
       const admission = registry.registerSubagentTask(
         createTask(taskId, rootSessionId, createSessionId(`${taskId}_session`), turnId),
@@ -435,15 +434,21 @@ describe("subagent root admission and ownership", () => {
       settledCancellation(),
     );
     expect(denied).toEqual({ accepted: false, reason: "active_limit" });
-    expect(Object.keys(registry.all())).toHaveLength(SUBAGENT_ROOT_MAX_ACTIVE_TASKS);
+    expect(Object.keys(registry.all())).toHaveLength(2);
   });
 
   it("transfers a foreground worker slot from its waiting parent to the child", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-foreground-slot-root");
     const turnId = createTurnId("subagent-foreground-slot-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${rootSessionId}:${turnId}`,
+      rootSessionId,
+      turnId,
+      maxParallel: 2,
+    });
 
-    for (let index = 0; index < SUBAGENT_ROOT_MAX_ACTIVE_TASKS; index += 1) {
+    for (let index = 0; index < 2; index += 1) {
       const taskId = `agent_foreground_slot_${index}`;
       const admission = registry.registerSubagentTask(
         createTask(taskId, rootSessionId, createSessionId(`${taskId}_session`), turnId),
@@ -493,8 +498,14 @@ describe("subagent root admission and ownership", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-background-slot-root");
     const turnId = createTurnId("subagent-background-slot-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${rootSessionId}:${turnId}`,
+      rootSessionId,
+      turnId,
+      maxParallel: 2,
+    });
 
-    for (let index = 0; index < SUBAGENT_ROOT_MAX_ACTIVE_TASKS; index += 1) {
+    for (let index = 0; index < 2; index += 1) {
       const taskId = `agent_background_slot_${index}`;
       const admission = registry.registerSubagentTask(
         createTask(taskId, rootSessionId, createSessionId(`${taskId}_session`), turnId),
@@ -518,19 +529,26 @@ describe("subagent root admission and ownership", () => {
     expect(admission).toEqual({ accepted: false, reason: "active_limit" });
   });
 
-  it("applies the safety ceiling across root runs from different turns", () => {
+  it("applies active worker capacity across turns in the same root session", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-cross-turn-active-budget-root");
     const rootRunIds = new Set<string>();
 
-    for (let index = 0; index < SUBAGENT_ROOT_MAX_ACTIVE_TASKS; index += 1) {
+    for (let index = 0; index < 2; index += 1) {
+      const turnId = createTurnId(`subagent-cross-turn-${index}`);
+      registry.beginRootRunBudget({
+        rootRunId: `${rootSessionId}:${turnId}`,
+        rootSessionId,
+        turnId,
+        maxParallel: 2,
+      });
       const taskId = `agent_cross_turn_active_${index}`;
       const admission = registry.registerSubagentTask(
         createTask(
           taskId,
           rootSessionId,
           createSessionId(`${taskId}_session`),
-          createTurnId(`subagent-cross-turn-${index}`),
+          turnId,
         ),
         settledCancellation(),
       );
@@ -538,27 +556,40 @@ describe("subagent root admission and ownership", () => {
       if (admission.accepted) rootRunIds.add(admission.task.rootRunId!);
     }
 
-    expect(rootRunIds.size).toBe(SUBAGENT_ROOT_MAX_ACTIVE_TASKS);
+    expect(rootRunIds.size).toBe(2);
+    const overflowTurn = createTurnId("subagent-cross-turn-overflow");
+    registry.beginRootRunBudget({
+      rootRunId: `${rootSessionId}:${overflowTurn}`,
+      rootSessionId,
+      turnId: overflowTurn,
+      maxParallel: 2,
+    });
     expect(
       registry.registerSubagentTask(
         createTask(
           "agent_cross_turn_active_overflow",
           rootSessionId,
           createSessionId("agent_cross_turn_active_overflow_session"),
-          createTurnId("subagent-cross-turn-overflow"),
+          overflowTurn,
         ),
         settledCancellation(),
       ),
     ).toEqual({ accepted: false, reason: "active_limit" });
   });
 
-  it("admits no more than the 128-task safety ceiling from concurrent requests", async () => {
+  it("admits only the configured number of concurrent workers", async () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     const rootSessionId = createSessionId("subagent-concurrent-active-budget-root");
     const turnId = createTurnId("subagent-concurrent-active-budget-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${rootSessionId}:${turnId}`,
+      rootSessionId,
+      turnId,
+      maxParallel: 2,
+    });
 
     const admissions = await Promise.all(
-      Array.from({ length: SUBAGENT_ROOT_MAX_ACTIVE_TASKS + 1 }, (_, index) =>
+      Array.from({ length: 3 }, (_, index) =>
         Promise.resolve().then(() =>
           registry.registerSubagentTask(
             createTask(
@@ -573,13 +604,11 @@ describe("subagent root admission and ownership", () => {
       ),
     );
 
-    expect(admissions.filter((admission) => admission.accepted)).toHaveLength(
-      SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
-    );
+    expect(admissions.filter((admission) => admission.accepted)).toHaveLength(2);
     expect(admissions.filter((admission) => !admission.accepted)).toEqual([
       { accepted: false, reason: "active_limit" },
     ]);
-    expect(Object.keys(registry.all())).toHaveLength(SUBAGENT_ROOT_MAX_ACTIVE_TASKS);
+    expect(Object.keys(registry.all())).toHaveLength(2);
   });
 
   it("keeps a resumed task in its original root-run budget", () => {

@@ -9,6 +9,7 @@ export function CodeGraphInspector({
   inbound,
   outbound,
   copy,
+  labelKind,
   onFocus,
 }: {
   selectedNode: CodeGraphNode | null;
@@ -17,10 +18,11 @@ export function CodeGraphInspector({
   inbound: CodeGraphOverview["edges"];
   outbound: CodeGraphOverview["edges"];
   copy: (id: string, values?: Record<string, string | number>) => string;
+  labelKind: (kind: string) => string;
   onFocus: (symbol: string) => void;
 }) {
   return (
-    <aside className="min-h-48 rounded-lg border border-border bg-background/60 p-3">
+    <aside className="order-3 min-h-40 min-w-0 overflow-y-auto rounded-lg border border-border bg-card/50 p-3 xl:order-none xl:min-h-0">
       <div className="mb-3 flex items-center gap-2">
         <Focus className="size-4 text-primary" />
         <h3 className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -35,7 +37,7 @@ export function CodeGraphInspector({
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="rounded-md border border-border px-1.5 py-0.5 text-ui-xs">
-              {selectedNode.kind}
+              {labelKind(selectedNode.kind)}
             </span>
             <span className="rounded-md border border-border px-1.5 py-0.5 text-ui-xs">
               {copy("codeGraph.linkCount", { count: selectedNode.degree })}

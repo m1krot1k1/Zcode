@@ -3,7 +3,7 @@
  *
  * Verified public endpoints (no credentials):
  *   GET https://skills.sh/api/search?q=<query>
- *     -> { query, skills: [{ id, source, skillId, name, installs }] }
+ *     -> { query, skills: [{ id, source, skillId, name, installs? }] }
  *   GET https://skills.sh/api/download/<owner>/<repo>/<skillId>
  *     -> { files: [{ path, contents }], hash }
  *
@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { MarketplaceSkillInfo } from "@zcode/shared";
+import { compareCatalogEntries, type MarketplaceSkillInfo } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 
 const logger = createServiceLogger("skills.marketplace");
@@ -55,7 +55,7 @@ interface SkillsShSearchEntry {
   source: string;
   skillId: string;
   name: string;
-  installs: number;
+  installs?: number;
 }
 
 interface SkillsShSnapshotFile {
@@ -121,8 +121,16 @@ export async function searchSkillsSh(query: string): Promise<SkillsShSearchEntry
     const installs =
       typeof raw.installs === "number" && Number.isFinite(raw.installs) && raw.installs >= 0
         ? raw.installs
-        : 0;
-    return [{ id: `${source}/${skillId}`, source, skillId, name, installs }];
+        : undefined;
+    return [
+      {
+        id: `${source}/${skillId}`,
+        source,
+        skillId,
+        name,
+        ...(installs === undefined ? {} : { installs }),
+      },
+    ];
   });
 }
 
@@ -162,7 +170,7 @@ export async function resolveMarketplaceSkillReference(
         entry.skillId.toLowerCase() === normalized.toLowerCase() ||
         entry.name.toLowerCase() === normalized.toLowerCase(),
     )
-    .sort((left, right) => right.installs - left.installs);
+    .sort((left, right) => compareCatalogEntries(left, right, "installs"));
   const match = exact[0];
   if (!match) {
     throw new SkillMarketplaceError("not_found", `skill not found on skills.sh: ${normalized}`);
@@ -247,7 +255,7 @@ export function toMarketplaceItems(
     name: entry.name,
     skillId: entry.skillId,
     source: entry.source,
-    installs: entry.installs,
+    ...(entry.installs === undefined ? {} : { installs: entry.installs }),
     installed:
       installedKeys.has(entry.skillId.toLowerCase()) ||
       installedKeys.has(entry.name.toLowerCase()),

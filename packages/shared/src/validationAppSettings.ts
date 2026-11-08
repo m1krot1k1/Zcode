@@ -514,9 +514,9 @@ const appSettingsObjectSchema = z.object({
   httpProxyList: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
-  // spawnBudget 允许 0（明确禁止 spawn），不能沿用 positive()。
+  // Legacy-поле сохраняется при чтении старых настроек, но runtime его игнорирует.
   spawnBudget: z.number().int().min(0).safe().optional(),
-  subagentMaxParallel: z.number().int().min(0).max(128).optional(),
+  subagentMaxParallel: z.number().int().min(0).safe().optional(),
   subagentTaskTimeoutMinutes: z.number().int().min(0).max(180).optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().default(false),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.default(
@@ -622,9 +622,9 @@ export const appSettingsPatchSchema = z.object({
   httpProxyList: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
-  // spawnBudget 允许 0（明确禁止 spawn），不能沿用 positive()。
+  // Legacy-поле сохраняется при чтении старых настроек, но runtime его игнорирует.
   spawnBudget: z.number().int().min(0).safe().optional(),
-  subagentMaxParallel: z.number().int().min(0).max(128).optional(),
+  subagentMaxParallel: z.number().int().min(0).safe().optional(),
   subagentTaskTimeoutMinutes: z.number().int().min(0).max(180).optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().optional(),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.optional(),

@@ -85,7 +85,6 @@ import {
   withErrorPayloadRole,
 } from "../errors/error-payload.js";
 import {
-  DEFAULT_SPAWN_BUDGET,
   InMemoryRuntimeTaskRegistry,
   resolveSubagentMaxParallel,
   isTerminalRuntimeTask,
@@ -121,9 +120,7 @@ export interface ExploreSubagentRuntimeRequest {
   reportActivity?: () => void;
   resumeFromStore?: boolean;
   systemPrompt?: string;
-  /** Host 签发的 spawn 配额; только для system prompt envelope, admission решает registry. */
-  spawnGrant?: number;
-  /** Фактический параллелизм для envelope: remaining grant и свободные worker slots. */
+  /** Фактический параллелизм, рассчитанный по доступной ёмкости runtime. */
   maxParallel?: number;
   /** 本 child 的嵌套层级；仅记录，不设硬上限。 */
   level?: number;
@@ -174,8 +171,6 @@ export interface ExploreSubagentPortOptions {
     Record<"general-purpose" | "Explore", import("@zcode/shared").ModelSelection>
   >;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
-  /** 根 spawn 预算；runner 据此推导每个子任务的 grant，端口本身不扣减。 */
-  spawnBudget?: number;
   /** Root-run concurrency ceiling; zero/undefined resolves adaptively. */
   maxParallel?: number;
   persistTerminalTaskCatalog?: (task: RuntimeTaskSnapshot) => Promise<boolean>;
@@ -196,7 +191,6 @@ export interface ExploreSubagentPortOptions {
 
 /** Внутренние capacity-поля DAG run: не входят в публичный контракт SubagentRunOptions. */
 interface InternalDagParallelismOptions {
-  internalRemainingSpawns?: number;
   internalActiveCount?: number;
   internalActiveCap?: number;
 }
@@ -204,40 +198,33 @@ interface InternalDagParallelismOptions {
 type InternalDagRunOptions = SubagentRunOptions & InternalDagParallelismOptions;
 
 /**
- * Фактический параллелизм DAG: max(1, min(nodeCount, requested, remaining, freeSlots)).
+ * Фактический параллелизм DAG: max(1, min(nodeCount, requested, freeSlots)).
  * `max(1)` нужен, чтобы узел мог дойти до admission и вернуть видимую причину отказа.
  */
 export function resolveActualMaxParallel(input: {
   nodeCount: number;
   requestedMaxParallel?: number;
-  remainingSpawns?: number;
   activeCount?: number;
   activeCap?: number;
 }): number {
   const nodeCount = Math.max(1, Math.floor(input.nodeCount));
-  const requested =
-    input.requestedMaxParallel === undefined
-      ? (input.activeCap ?? 32)
-      : Math.max(1, Math.floor(input.requestedMaxParallel));
+  const requested = input.requestedMaxParallel === undefined
+    ? (input.activeCap ?? nodeCount)
+    : Math.max(1, Math.floor(input.requestedMaxParallel));
   const candidates = [nodeCount, requested];
-  if (input.remainingSpawns !== undefined) {
-    candidates.push(Math.max(1, Math.floor(input.remainingSpawns)));
-  }
   if (input.activeCount !== undefined && input.activeCap !== undefined) {
     candidates.push(Math.max(1, Math.floor(input.activeCap - input.activeCount)));
   }
   return Math.max(1, Math.min(...candidates));
 }
 
-/** Max_parallel конверта ребёнка: остаток его grant'а и свободные worker slots. */
+/** Max_parallel конверта ребёнка учитывает свободные worker slots, но не будущий объём задач. */
 export function resolveChildMaxParallel(input: {
-  remainingSpawns?: number;
   activeCount?: number;
   activeCap?: number;
   parentOccupiesSlot?: boolean;
 }): number | undefined {
-  if (input.remainingSpawns === undefined && input.activeCount === undefined) return undefined;
-  const remaining = input.remainingSpawns ?? Number.POSITIVE_INFINITY;
+  if (input.activeCount === undefined || input.activeCap === undefined) return undefined;
   const freeSlots =
     input.activeCount === undefined || input.activeCap === undefined
       ? Number.POSITIVE_INFINITY
@@ -245,19 +232,16 @@ export function resolveChildMaxParallel(input: {
           0,
           input.activeCap - input.activeCount + (input.parentOccupiesSlot === true ? 1 : 0),
         );
-  return Math.max(0, Math.min(remaining, freeSlots));
+  return Math.max(0, freeSlots);
 }
 
 /**
- * Обёртка над routing gate из profile.ts: подставляет registry remaining и active cap.
- * При нулевом бюджете или отсутствии свободных слотов возвращает integrate_inline.
+ * Обёртка над routing gate из profile.ts: учитывает текущую конкурентную ёмкость.
  */
 export function resolveSwarmParallelismWithCapacity(input: {
   nodeCount: number;
   requestedMaxParallel?: number;
-  spawnBudget?: number;
   userMaxParallel?: number;
-  remainingSpawns?: number;
   activeCount?: number;
   activeCap?: number;
 }): SwarmParallelismDecision {
@@ -265,21 +249,12 @@ export function resolveSwarmParallelismWithCapacity(input: {
     input.activeCount === undefined || input.activeCap === undefined
       ? undefined
       : Math.max(0, Math.floor(input.activeCap - input.activeCount));
-  const effectiveBudget = minDefinedNumber(input.spawnBudget, input.remainingSpawns);
-  if (effectiveBudget !== undefined && effectiveBudget <= 0) {
-    return { route: "integrate_inline", reason: "no spawn budget", maxParallel: 0 };
-  }
-  if (freeSlots !== undefined && freeSlots <= 0) {
-    return { route: "integrate_inline", reason: "no free worker slots", maxParallel: 0 };
-  }
   const decision = resolveSwarmParallelism({
     nodeCount: input.nodeCount,
-    userMaxParallel:
-      input.userMaxParallel ?? input.requestedMaxParallel ?? input.activeCap ?? 32,
+    userMaxParallel: input.userMaxParallel ?? input.requestedMaxParallel ?? input.activeCap,
     ...(input.requestedMaxParallel === undefined
       ? {}
       : { requestedMaxParallel: input.requestedMaxParallel }),
-    ...(effectiveBudget === undefined ? {} : { spawnBudget: effectiveBudget }),
   });
   if (decision.route === "integrate_inline") return decision;
   const maxParallel = Math.max(
@@ -293,15 +268,6 @@ export function resolveSwarmParallelismWithCapacity(input: {
         reason: `${decision.reason}; clamped by active capacity`,
         maxParallel,
       };
-}
-
-function minDefinedNumber(...values: Array<number | undefined>): number | undefined {
-  let result: number | undefined;
-  for (const value of values) {
-    if (value === undefined) continue;
-    result = result === undefined ? value : Math.min(result, value);
-  }
-  return result;
 }
 
 export function createExploreSubagentPort(options: ExploreSubagentPortOptions): SubagentPort {
@@ -355,17 +321,11 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         nodes: rawRequest.nodes,
         ...(rawRequest.maxParallel === undefined ? {} : { max_parallel: rawRequest.maxParallel }),
       });
-      // 根因：сырой request.maxParallel игнорировал остаток registry budget и свободные
-      // worker slots, поэтому DAG мог одновременно запустить больше детей, чем разрешено.
-      // 修复依据: фактический параллелизм считается по registry до создания задач.
+      // Ширина DAG-wave учитывает фактическую конкурентную ёмкость root-run.
       const rootSessionId = registry.getRootSessionIdForSession(rawRequest.sessionId);
       const rootRunId =
         runOptions?.internalSwarmRootRunId ??
         registry.getRootRunIdForSession(rawRequest.sessionId, rawRequest.turnId);
-      const remainingSpawns =
-        rootRunId === undefined
-          ? undefined
-          : registry.getRemainingSpawnBudget?.(rootRunId, rawRequest.sessionId);
       const activeCount = registry.getActiveSubagentWorkItemCount?.(rootSessionId);
       const activeCap =
         (rootRunId === undefined ? undefined : registry.getRootRunMaxParallel?.(rootRunId)) ??
@@ -373,7 +333,6 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       const maxParallel = resolveActualMaxParallel({
         nodeCount: graph.nodes.length,
         ...(graph.max_parallel === undefined ? {} : { requestedMaxParallel: graph.max_parallel }),
-        ...(remainingSpawns === undefined ? {} : { remainingSpawns }),
         ...(activeCount === undefined ? {} : { activeCount }),
         activeCap,
       });
@@ -410,20 +369,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       const dagRunOptions: InternalDagRunOptions = {
         ...runOptions,
         ...(parentTaskLevel === undefined ? {} : { level: parentTaskLevel }),
-        // 原因：runOptions 未携带 spawnBudget 时，executeSubagentTaskDag 回落到
-        // DEFAULT_SPAWN_BUDGET (32)。即使端口/root 配置了更大的预算，DAG 第一个
-        // 节点也只能拿到 31，串行 capability probe 在 D32 被截断。
-        // 修复依据：把端口 root spawnBudget 补进 DAG run options。显式的
-        // runOptions.spawnBudget 和 internalSpawnGrant 仍优先，registry 继续把实际
-        // grant 夹到每层剩余预算。
-        ...(runOptions?.spawnBudget === undefined && options.spawnBudget !== undefined
-          ? { spawnBudget: options.spawnBudget }
-          : {}),
         // План и admission должны сверяться с одним и тем же snapshot профилей,
         // даже если Host обновит список агентов во время параллельного запуска.
         internalAgentProfilesSnapshot: profileSnapshot,
         // Значения передаются в scheduler, чтобы он пересчитал тот же кламп.
-        ...(remainingSpawns === undefined ? {} : { internalRemainingSpawns: remainingSpawns }),
         ...(activeCount === undefined ? {} : { internalActiveCount: activeCount }),
         internalActiveCap: activeCap,
       };
@@ -434,7 +383,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           nodes: graph.nodes,
           maxParallel,
         },
-        (node, prompt, spawnGrant) =>
+        (node, prompt) =>
           port.run(
             {
               sessionId: rawRequest.sessionId,
@@ -458,8 +407,6 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
             },
             {
               ...dagRunOptions,
-              // DAG 节点预算来自父级的均分结果，节点自身不能再抬价.
-              ...(spawnGrant === undefined ? {} : { internalSpawnGrant: spawnGrant }),
               // Parent level is passed through; port.run owns the single +1 for the child.
               level: dagRunOptions.level ?? 0,
               // Причина: DAG-узел не должен формировать root presentation даже если его роль start.
@@ -512,10 +459,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           throw error;
         }
       }
-      // 根因：Agent handler 只把解析出的 level 写进 request，runOptions.level 始终为空，
-      // 因此每个嵌套 direct spawn 都被记录成 1。修复依据：父任务 registry snapshot 是
-      // level 的持久所有者（spawnGrant 已走同一条 snapshot 链）；显式 runOptions.level
-      // （DAG 节点）仍保持最高优先级。
+      // Уровень берётся из snapshot родителя, чтобы background/resume не сбрасывали
+      // рекурсивную защиту; он не ограничивает общее число задач.
       const admission = registerSubagentTask(
         registry,
         createRuntimeTaskSnapshot({
@@ -524,10 +469,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           request,
           startedAt,
           status: "running",
-          // Host 依据父级剩余配额推导子级 grant；模型 remaining_spawns 只能收紧。
-          // 没有 root-run 状态时 spawnGrant 仅记录，registry 不做门禁（向后兼容）。
-          spawnGrant: resolveSpawnGrant(request, runOptions, options, registry),
-          // level 只记录层级；预算本身已从数学上限制树规模，不设硬深度上限。
+          // level только защищает от циклической рекурсии и не задаёт лимит дерева.
           level: deriveChildTaskLevel(request, runOptions?.level, registry),
           // Эффективная поверхность родителя: профиль не может объявить запись,
           // которой нет у фактического tool surface родителя.
@@ -722,7 +664,6 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         event: "subagent.spawned",
         module: "core.subagent",
         parentToolCallId: request.parentToolCallId,
-        remainingSpawns: registry.get(lifecycle.agentId)?.spawnGrant,
         status: "started",
       });
       const guardedCompletionPromise = guardSubagentPromiseWithAbort(
@@ -1047,10 +988,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           request,
           startedAt,
           status: "running",
-          // 根因：Background snapshot 之前既不记录 level 也不记录 spawnGrant，导致后台子代理
-          // 的嵌套后代从 0 重新起算 level，并丢失模型 remaining_spawns 的收紧值。
-          // 修复依据：与 foreground snapshot 共用同一父级 registry 链推导 level/grant。
-          spawnGrant: resolveSpawnGrant(request, undefined, options, registry),
+          // 同一父级链推导 level，避免后台子代理丢失递归保护上下文。
           level: deriveChildTaskLevel(request, undefined, registry),
           parentToolNames: options.parentToolNames,
         }),
@@ -1804,7 +1742,6 @@ export async function executeSubagentTaskDag(
   runNode: (
     node: SubagentTaskDagRequest["nodes"][number],
     prompt: string,
-    spawnGrant?: number,
   ) => Promise<AgentOutput>,
   options?: InternalDagRunOptions,
 ): Promise<AgentCompletedOutput> {
@@ -1812,22 +1749,11 @@ export async function executeSubagentTaskDag(
   const maxParallel = resolveActualMaxParallel({
     nodeCount: request.nodes.length,
     ...(request.maxParallel === undefined ? {} : { requestedMaxParallel: request.maxParallel }),
-    ...(options?.internalRemainingSpawns === undefined
-      ? {}
-      : { remainingSpawns: options.internalRemainingSpawns }),
     ...(options?.internalActiveCount === undefined
       ? {}
       : { activeCount: options.internalActiveCount }),
     ...(options?.internalActiveCap === undefined ? {} : { activeCap: options.internalActiveCap }),
   });
-  // Cursor 公式：父级保留 keep 个配额自用，其余 pool 均分给本批 n 个节点，余数留给父级。
-  // 由此保证每个 child 的配额严格小于父级，且本批 child 配额总和不超过父级预算。
-  const parentSpawnBudget =
-    options?.internalSpawnGrant ?? options?.spawnBudget ?? DEFAULT_SPAWN_BUDGET;
-  const keep = Math.min(maxParallel, Math.max(1, Math.floor(parentSpawnBudget / 4)));
-  const nodeCount = Math.max(1, request.nodes.length);
-  const pool = Math.max(0, parentSpawnBudget - keep);
-  const nodeSpawnGrant = Math.floor(pool / nodeCount);
   const states = new Map<string, SubagentDagNodeResult>(
     request.nodes.map((node) => [node.id, { status: "pending" }]),
   );
@@ -1871,7 +1797,7 @@ export async function executeSubagentTaskDag(
       const prompt = buildSubagentDagNodePrompt(request, node, states);
       states.set(node.id, { status: "running" });
       const task = Promise.resolve()
-        .then(() => runNode(node, prompt, nodeSpawnGrant))
+        .then(() => runNode(node, prompt))
         .then(
           (output) => ({ nodeId: node.id, output }) satisfies SettledSubagentDagNode,
           (error: unknown) => ({ nodeId: node.id, error }) satisfies SettledSubagentDagNode,
@@ -2744,18 +2670,15 @@ function throwOnSubagentAdmissionFailure(
   admission: Extract<RuntimeTaskAdmissionResult, { accepted: false }>,
   request: SubagentRunRequest,
 ): never {
-  const isQuota = admission.reason === "active_limit";
-  const isSpawnBudget = admission.reason === "spawn_budget_exhausted";
+  const isCapacityLimit = admission.reason === "active_limit";
   const isWriteConflict = admission.reason === "write_claim_conflict";
   const isClaimUnavailable = admission.reason === "work_claim_unavailable";
-  const message = isSpawnBudget
-    ? "Spawn budget exhausted: this run cannot start more subagents. Finish the current tasks or continue in this session without spawning."
-    : isWriteConflict
+  const message = isWriteConflict
       ? "Work claim conflict: another agent holds an overlapping file path. Choose non-overlapping files, read the held path first, or wait for that agent to finish. The spawn was not started."
       : isClaimUnavailable
         ? "Work ledger is unavailable: the host could not reserve this agent's file claim, so the spawn was not started to avoid a silent write conflict."
-        : isQuota
-          ? "Subagent root-session active task quota reached."
+        : isCapacityLimit
+          ? "No worker slot is currently available for this root session; retry after active work finishes or reduce parallelism."
           : "The parent runtime no longer accepts subagent work.";
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
@@ -3173,10 +3096,7 @@ async function resumeTerminalAgentInBackground(
       pendingMessages: task.pendingMessages,
       startedAt,
       status: "running",
-      // 根因：Resume snapshot 之前同样不记录 level/spawnGrant，恢复后的代理会按根级重新起算，
-      // 其嵌套子级 level 被重置为 1，且自身 grant 丢失。修复依据：恢复保留 task 自身层级
-      // （legacy 无 level 时回落到 resumer 链推导），grant 沿用 task 记录值并由 registry 继续钳制。
-      ...(task.spawnGrant === undefined ? {} : { spawnGrant: task.spawnGrant }),
+      // Resume保留 level；旧 snapshot 中的 spawnGrant 是弃用字段，运行时不再恢复。
       level: task.level ?? deriveChildTaskLevel(resumeRequest, undefined, registry),
     }),
     taskAbort,
@@ -3414,7 +3334,6 @@ async function runAgentToCompletion(
       : registry.getRootRunMaxParallel?.(taskSnapshot.rootRunId)) ??
     resolveSubagentMaxParallel(options.maxParallel);
   const childMaxParallel = resolveChildMaxParallel({
-    ...(taskSnapshot?.spawnGrant === undefined ? {} : { remainingSpawns: taskSnapshot.spawnGrant }),
     ...(registry.getActiveSubagentWorkItemCount === undefined
       ? {}
       : { activeCount: registry.getActiveSubagentWorkItemCount(rootSessionId) }),
@@ -3447,7 +3366,6 @@ async function runAgentToCompletion(
       reportActivity: monitorOptions.reportActivity,
       resumeFromStore: executionOptions.resumeFromStore,
       systemPrompt: lifecycle.profile.systemPrompt,
-      ...(taskSnapshot?.spawnGrant === undefined ? {} : { spawnGrant: taskSnapshot.spawnGrant }),
       ...(childMaxParallel === undefined ? {} : { maxParallel: childMaxParallel }),
       ...(taskSnapshot?.level === undefined ? {} : { level: taskSnapshot.level }),
       workingDirectory: request.workingDirectory,
@@ -3790,36 +3708,6 @@ async function flushPendingMessages(
 }
 
 /**
- * 子级 grant 必须严格小于父级：父预算优先取 Host 签发的 internalSpawnGrant，
- * 其次父级自身记录值，最后回落到端口根预算。
- * 模型可在 hostGrant 之下收紧，但不能抬高；无父预算时不签发 grant（旧路径不做门禁）。
- */
-export function resolveSpawnGrant(
-  request: SubagentRunRequest,
-  runOptions: SubagentRunOptions | undefined,
-  options: ExploreSubagentPortOptions,
-  registry?: RuntimeTaskRegistry,
-): number | undefined {
-  const explicitParentBudget = runOptions?.internalSpawnGrant ?? runOptions?.spawnBudget;
-  let parentBudget = explicitParentBudget;
-  if (parentBudget === undefined && registry) {
-    // Root-run registry — владелец остатка; явные portal/root значения не должны его перекрывать.
-    const rootRunId =
-      runOptions?.internalSwarmRootRunId ??
-      registry.getRootRunIdForSession(request.sessionId, request.turnId);
-    if (rootRunId !== undefined) {
-      parentBudget = registry.getRemainingSpawnBudget?.(rootRunId, request.sessionId);
-    }
-  }
-  // Старый fallback допустим только когда root-run состояния нет.
-  if (parentBudget === undefined) parentBudget = options.spawnBudget;
-  if (parentBudget === undefined) return undefined;
-  const hostGrant = Math.max(0, Math.floor(parentBudget) - 1);
-  if (request.spawnBudget === undefined) return hostGrant;
-  return Math.min(Math.max(0, Math.floor(request.spawnBudget)), hostGrant);
-}
-
-/**
  * 子级 level 由“父级显式值 > 父任务 registry snapshot > 0”推导后加一。
  * foreground run 传入 runOptions.level（DAG 节点）、background start 无显式值，
  * resume 优先沿用自身 task.level；三者共用同一推导避免快照链在不同路径断开。
@@ -3846,8 +3734,6 @@ function createRuntimeTaskSnapshot(input: {
   pendingMessages?: RuntimeTaskPendingMessage[];
   startedAt: Date;
   status: RuntimeTaskSnapshot["status"];
-  /** Host 为本任务签发的 spawn 配额；模型声明值只能收紧。 */
-  spawnGrant?: number;
   /** 本任务的嵌套层级；仅记录。 */
   level?: number;
   /** Эффективная tool surface родителя; undefined — legacy-поведение. */
@@ -3878,7 +3764,6 @@ function createRuntimeTaskSnapshot(input: {
     // а не из текста prompt: read-only роли не создают claim'ы на упомянутые для чтения пути.
     writeCapable: isEffectiveWriteCapable(input.lifecycle.profile, input.parentToolNames),
     ...(input.request.writePaths === undefined ? {} : { writePaths: input.request.writePaths }),
-    ...(input.spawnGrant === undefined ? {} : { spawnGrant: input.spawnGrant }),
     ...(input.level === undefined ? {} : { level: input.level }),
   };
 }

@@ -12,7 +12,7 @@
 требуют Vercel OIDC:
 
 - `GET https://skills.sh/api/search?q=<query>[&owner=<owner>]`
-  → `{ skills: [{ source, skillId, name, installs }] }`
+  → `{ skills: [{ source, skillId, name, installs? }] }`
 - `GET https://skills.sh/api/download/<owner>/<repo>/<skillId>`
   → `{ files: [{ path, contents }], hash }`
 
@@ -86,7 +86,7 @@ UI Marketplace ходит в `ISkillsService` (канал `skills`, `packages/sh
 ### Контракт (`packages/shared/src/skills-types.ts`)
 
 - `type SkillInstallScope = "workspace" | "user"`.
-- `interface MarketplaceSkillInfo { name; source; installs; installed }`.
+- `interface MarketplaceSkillInfo { name; source; installs?; installed }`.
 - `interface InstallMarketplaceSkillRequest { name; scope; }` — плюс совместимые
   необязательные `workspacePath`/`workspaceIdentity`: у Host нет единственного
   активного workspace, поэтому для `scope: "workspace"` путь передаёт вызывающая сторона.
@@ -100,9 +100,25 @@ UI Marketplace ходит в `ISkillsService` (канал `skills`, `packages/sh
 
 - `GET https://skills.sh/api/search?q=<query>`; таймаут 15 с; не-200 → `http_error`,
   сеть/таймаут → `network`, невалидный JSON → `invalid_response`.
+- `installs` — необязательная метрика источника: только конечное неотрицательное число
+  сохраняется как count; отсутствующее или некорректное значение остаётся неизвестным
+  (`undefined`), никогда не превращается в `0`. UI не показывает числовой count для
+  неизвестного значения. Сортировка по installs помещает неизвестные значения после
+  измеренных, а Popular seed-фильтр не считает их популярными; явный удалённый поиск
+  по-прежнему показывает совпадения независимо от порога, без Popular-бейджа для unknown.
 - `installed` вычисляется по существующим корням `.zcode/skills`/`.agents/skills`:
   workspace-корни только при переданном `context.workspacePath`, user-корни — когда
   runtime desktop-capable. Запись и кеш отсутствуют.
+- В панели Marketplace ввод непустого запроса автоматически запускает удалённый
+  поиск skills.sh после 350 мс без ввода. Enter и кнопка Search выполняют текущий
+  запрос сразу и отменяют ожидающий debounce; очистка немедленно отменяет поиск
+  и возвращает каталог/установленные навыки. Пока удалённый запрос ожидает или
+  выполняется, локальный фильтр seed-снимка не показывается как результат поиска.
+- Удалённый ответ для текущего запроса авторитетен: он показывается целиком,
+  в том числе во вкладке Popular. Popular не применяет к явному запросу порог
+  `installs >= 1000`; порог используется только для локального seed-каталога.
+  Новое значение поля отменяет debounce и инвалидирует ответы предыдущих запросов;
+  устаревший ответ не заменяет состояние нового запроса.
 
 ### Установка
 

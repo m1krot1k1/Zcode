@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IServiceAccessor } from "@zcode/services";
 import type {
@@ -34,6 +34,14 @@ const legacyDeck: MarketplaceSkillInfo = {
   source: "acme/deck",
   installs: 7,
   installed: true,
+};
+
+const yandexWordstat: MarketplaceSkillInfo = {
+  name: "yandex-wordstat",
+  skillId: "yandex-wordstat",
+  source: "artwist-polyakov/polyakov-claude-skills",
+  installs: 309,
+  installed: false,
 };
 
 const createDeckInstallResult: InstallMarketplaceSkillResult = {
@@ -151,6 +159,77 @@ describe("Skills marketplace panel", () => {
     expect(
       screen.getByTestId("plugin-store-skills-install-legacy-deck").hasAttribute("disabled"),
     ).toBe(true);
+  });
+
+  it("does not render an unknown install count as zero", async () => {
+    const unknownCount: MarketplaceSkillInfo = {
+      name: "unknown-count",
+      skillId: "unknown-count",
+      source: "acme/skills",
+      installed: false,
+    };
+    renderPanel({
+      list: vi.fn().mockResolvedValue(emptyListResult),
+      searchMarketplace: vi.fn().mockResolvedValue([unknownCount]),
+      installMarketplaceSkill: vi.fn(),
+    });
+
+    await screen.findByText("No installed skills yet");
+    submitSearch("unknown");
+
+    const card = await screen.findByTestId("plugin-store-skills-item-unknown-count");
+    expect(within(card).getByText("acme/skills")).toBeTruthy();
+    expect(within(card).queryByText("Installs: 0")).toBeNull();
+    expect(within(card).queryByText(/^Installs:/)).toBeNull();
+  });
+
+  it("searches remotely while typing without submit and shows matches in Popular", async () => {
+    const searchMarketplace = vi.fn(async (query: string) =>
+      query === "yandex" ? [yandexWordstat] : [],
+    );
+    renderPanel({
+      list: vi.fn().mockResolvedValue(emptyListResult),
+      searchMarketplace,
+      installMarketplaceSkill: vi.fn(),
+    });
+
+    await screen.findByTestId("plugin-store-skills-catalog-empty");
+    fireEvent.click(screen.getByTestId("plugin-store-skills-tab-popular"));
+    expect(searchMarketplace).toHaveBeenCalledTimes(1);
+    expect(searchMarketplace).toHaveBeenCalledWith("skill", {
+      workspacePath: "/workspace/demo",
+    });
+
+    vi.useFakeTimers();
+    try {
+      const input = screen.getByTestId("plugin-store-skills-search");
+      fireEvent.change(input, { target: { value: "yan" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      fireEvent.change(input, { target: { value: "yandex" } });
+      expect(screen.getByTestId("plugin-store-skills-loading")).toBeTruthy();
+      expect(screen.queryByTestId("plugin-store-skills-catalog-empty")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(349);
+      });
+      expect(searchMarketplace).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      expect(searchMarketplace).toHaveBeenCalledTimes(2);
+      expect(searchMarketplace).toHaveBeenLastCalledWith("yandex", {
+        workspacePath: "/workspace/demo",
+      });
+      expect(screen.getByText("yandex-wordstat")).toBeTruthy();
+      expect(screen.getByText("Installs: 309")).toBeTruthy();
+      expect(screen.queryByTestId("plugin-store-skills-empty")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows per-item install loading and refreshes installed state after success", async () => {

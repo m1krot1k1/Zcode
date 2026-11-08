@@ -208,7 +208,12 @@ export function filterLocalMcpServers(servers: ZCodeMcpServer[], query: string):
     if (server.source !== "zcodeagentmcp") {
       return false;
     }
-    return normalizedQueryMatches(query, [server.name, server.config.url, server.config.command]);
+    return normalizedQueryMatches(query, [
+      server.name,
+      server.config.url,
+      server.config.command,
+      ...(server.config.args ?? []),
+    ]);
   });
 }
 

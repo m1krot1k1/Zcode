@@ -627,31 +627,11 @@ describe("SettingsPage integrated terminal shell", () => {
     expect(stateUpdates).not.toContain("stale Source font");
   });
 
-  it("saves an integer spawn budget through the target Environment setting service", async () => {
+  it("does not expose the legacy cumulative spawn budget in settings", async () => {
     const { SettingsPage } = await import("../src/SettingsPage.js");
     renderToStaticMarkup(createElement(SettingsPage, {}));
-    // 留空的输入框由 placeholder 表达默认值，state 里保持 undefined。
-    expect(generalSectionCapture.props?.spawnBudget).toBeUndefined();
-    const save = generalSectionCapture.props!.onSpawnBudgetChange as (
-      raw: string,
-    ) => Promise<"saved" | "empty" | "invalid">;
-    await expect(save(" 32 ")).resolves.toBe("saved");
-    expect(remoteServices.settingService.update).toHaveBeenCalledWith({
-      spawnBudget: 32,
-    });
-    expect(localServices.settingService.update).not.toHaveBeenCalled();
-  });
-
-  it("saves a zero spawn budget because 0 disables subagent spawning", async () => {
-    const { SettingsPage } = await import("../src/SettingsPage.js");
-    renderToStaticMarkup(createElement(SettingsPage, {}));
-    expect(generalSectionCapture.props?.spawnBudget).toBeUndefined();
-    const save = generalSectionCapture.props!.onSpawnBudgetChange as (
-      raw: string,
-    ) => Promise<"saved" | "empty" | "invalid">;
-    await expect(save("0")).resolves.toBe("saved");
-    expect(remoteServices.settingService.update).toHaveBeenCalledWith({ spawnBudget: 0 });
-    expect(localServices.settingService.update).not.toHaveBeenCalled();
+    expect(generalSectionCapture.props).not.toHaveProperty("spawnBudget");
+    expect(generalSectionCapture.props).not.toHaveProperty("onSpawnBudgetChange");
   });
 
   it("saves adaptive subagent concurrency and a configurable minimum task timeout", async () => {
@@ -669,33 +649,10 @@ describe("SettingsPage integrated terminal shell", () => {
     expect(remoteServices.settingService.update).toHaveBeenCalledWith({
       subagentTaskTimeoutMinutes: 45,
     });
-    await expect(saveParallel("129")).resolves.toBe("invalid");
+    // Runtime still clamps parallel workers to actual host capacity.
+    await expect(saveParallel("129")).resolves.toBe("saved");
+    expect(remoteServices.settingService.update).toHaveBeenCalledWith({ subagentMaxParallel: 129 });
     await expect(saveTimeout("181")).resolves.toBe("invalid");
-    expect(remoteServices.settingService.update).toHaveBeenCalledTimes(2);
+    expect(remoteServices.settingService.update).toHaveBeenCalledTimes(3);
   });
-
-  it("does not write anything when the spawn budget field is left blank", async () => {
-    const { SettingsPage } = await import("../src/SettingsPage.js");
-    renderToStaticMarkup(createElement(SettingsPage, {}));
-    const saveSpawn = generalSectionCapture.props!.onSpawnBudgetChange as (
-      raw: string,
-    ) => Promise<"saved" | "empty" | "invalid">;
-    await expect(saveSpawn("   ")).resolves.toBe("empty");
-    expect(remoteServices.settingService.update).not.toHaveBeenCalled();
-    expect(localServices.settingService.update).not.toHaveBeenCalled();
-  });
-
-  it.each(["2.5", "-5"])(
-    "rejects the non-integer spawn budget %s without writing settings",
-    async (raw) => {
-      const { SettingsPage } = await import("../src/SettingsPage.js");
-      renderToStaticMarkup(createElement(SettingsPage, {}));
-      const saveSpawn = generalSectionCapture.props!.onSpawnBudgetChange as (
-        value: string,
-      ) => Promise<"saved" | "empty" | "invalid">;
-      await expect(saveSpawn(raw)).resolves.toBe("invalid");
-      expect(remoteServices.settingService.update).not.toHaveBeenCalled();
-      expect(localServices.settingService.update).not.toHaveBeenCalled();
-    },
-  );
 });

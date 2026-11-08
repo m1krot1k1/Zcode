@@ -1,10 +1,13 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChannelClient, ChannelServer, ProxyChannel, createQueuePair } from "@zcode/rpc";
+import type { CodeIntelligenceService } from "../../src/code-intelligence/contract.js";
 import { createCodeIntelligenceService } from "../../src/code-intelligence/codeIntelligenceService.js";
-import { databaseFileFor } from "../../src/code-intelligence/database.js";
+import { databaseFileFor, openDatabase } from "../../src/code-intelligence/database.js";
 
 const temporaryRoots: string[] = [];
 const services: Array<ReturnType<typeof createCodeIntelligenceService>> = [];
@@ -72,6 +75,59 @@ describe("code intelligence embedding configuration", () => {
 
     expect(result).toMatchObject({ ok: true, dimensions: 2 });
     expect(requestSizes).toEqual([32]);
+  });
+
+  it("tests Ollama against a controlled loopback API without sending credentials off-device", async () => {
+    const { workspacePath, root } = await createTestService();
+    const requests: Array<{
+      authorization: string | null;
+      body: { model: string; input: string[] };
+    }> = [];
+    const server = createServer((request, response) => {
+      let rawBody = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk: string) => {
+        rawBody += chunk;
+      });
+      request.on("end", () => {
+        const body = JSON.parse(rawBody) as { model: string; input: string[] };
+        requests.push({ authorization: request.headers.authorization ?? null, body });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ embeddings: body.input.map(() => [0.25, 0.75]) }));
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Loopback server did not bind.");
+    const endpoint = `http://127.0.0.1:${address.port}/api/embed`;
+    const service = createCodeIntelligenceService({
+      indexRootDir: join(root, "ollama-probe-index"),
+    });
+    services.push(service);
+
+    try {
+      const result = await service.testEmbeddingConfig({
+        workspacePath,
+        provider: "ollama",
+        endpoint,
+        model: "nomic-embed-text",
+      });
+
+      expect(result).toMatchObject({ ok: true, dimensions: 2 });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        authorization: null,
+        body: { model: "nomic-embed-text" },
+      });
+      expect(requests[0]?.body.input).toHaveLength(32);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it("reports a safe bulk embedding failure even when the single-request probe passed", async () => {
@@ -251,6 +307,87 @@ describe("code intelligence embedding configuration", () => {
     expect(credentialService.delete).toHaveBeenCalledWith(key);
   });
 
+  it("reuses the Host-saved token after a successful transient probe over the service RPC", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-code-intelligence-rpc-credentials-"));
+    temporaryRoots.push(root);
+    const workspacePath = join(root, "workspace");
+    await mkdir(workspacePath, { recursive: true });
+    const credentials = new Map<string, string>();
+    const credentialService = {
+      load: vi.fn(async (key: string) => credentials.get(key) ?? null),
+      save: vi.fn(async (key: string, value: string) => {
+        credentials.set(key, value);
+      }),
+      delete: vi.fn(async (key: string) => {
+        credentials.delete(key);
+      }),
+    };
+    const authorizationHeaders: Array<string | null> = [];
+    const fetchMock = vi.fn(async (_input, init) => {
+      authorizationHeaders.push(new Headers(init?.headers).get("authorization"));
+      const body = JSON.parse(String(init?.body)) as { input: string[] };
+      return Response.json({
+        data: body.input.map((_, index) => ({ index, embedding: [1, 0] })),
+      });
+    }) as typeof fetch;
+    const service = createCodeIntelligenceService({
+      indexRootDir: join(root, "indexes"),
+      credentialService,
+      fetch: fetchMock,
+    });
+    services.push(service);
+
+    const [serverProtocol, clientProtocol] = createQueuePair();
+    const server = new ChannelServer(serverProtocol, "local-host");
+    const client = new ChannelClient(clientProtocol);
+    server.registerChannel("code-intelligence", ProxyChannel.fromService(service));
+    const hostService = ProxyChannel.toService<CodeIntelligenceService>(
+      client.getChannel("code-intelligence"),
+    );
+    const workspaceRef = { workspacePath, workspaceIdentity: "workspace-credential-test" };
+    const config = {
+      ...workspaceRef,
+      provider: "openai-compatible" as const,
+      endpoint: "https://embedding.example/v1/embeddings",
+      model: "example/embed-model",
+    };
+    const token = "test-only-transient-token";
+
+    try {
+      const firstProbe = await hostService.testEmbeddingConfig({ ...config, apiKey: token });
+      expect(firstProbe.ok, JSON.stringify(firstProbe)).toBe(true);
+      expect(credentials.size).toBe(0);
+
+      await expect(hostService.setEmbeddingConfig({ ...config, apiKey: token })).resolves.toMatchObject({
+        embedding: { apiKeyConfigured: true },
+      });
+      expect([...credentials.values()]).toEqual([token]);
+
+      credentialService.load.mockClear();
+      await expect(hostService.testEmbeddingConfig(config)).resolves.toMatchObject({ ok: true });
+      expect(credentialService.load).toHaveBeenCalledWith(
+        expect.stringMatching(/^code-intelligence:[a-f0-9]{32}:embedding-api-key$/u),
+      );
+      expect(authorizationHeaders).toEqual([`Bearer ${token}`, `Bearer ${token}`]);
+
+      const restartedService = createCodeIntelligenceService({
+        indexRootDir: join(root, "indexes"),
+        credentialService,
+        fetch: fetchMock,
+      });
+      services.push(restartedService);
+      await expect(restartedService.testEmbeddingConfig(config)).resolves.toMatchObject({ ok: true });
+      expect(authorizationHeaders).toEqual([
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+      ]);
+    } finally {
+      server.dispose();
+      client.dispose();
+    }
+  });
+
   it("removes workspace-scoped embedding credentials when the index is cleared", async () => {
     const { workspacePath, credentials, service } = await createTestService();
     const identity = "workspace-to-clear";
@@ -296,7 +433,10 @@ describe("code intelligence graph overview", () => {
     ).resolves.toMatchObject({
       symbol: { name: "probeEmbeddingProvider", path: "src/embeddingProbe.ts" },
       callers: [
-        expect.objectContaining({ name: "testEmbeddingConfig", path: "src/codeIntelligenceService.ts" }),
+        expect.objectContaining({
+          name: "testEmbeddingConfig",
+          path: "src/codeIntelligenceService.ts",
+        }),
       ],
     });
 
@@ -311,9 +451,96 @@ describe("code intelligence graph overview", () => {
       service.getSymbolContext({ workspacePath, symbol: "probeEmbeddingProvider" }),
     ).resolves.toMatchObject({
       callers: [
-        expect.objectContaining({ name: "testEmbeddingConfig", path: "src/codeIntelligenceService.ts" }),
+        expect.objectContaining({
+          name: "testEmbeddingConfig",
+          path: "src/codeIntelligenceService.ts",
+        }),
       ],
     });
+  });
+
+  it("backfills imported callers for an unchanged legacy index without rebuilding embeddings", async () => {
+    const { workspacePath, indexRootDir } = await createTestService();
+    const sourceDir = join(workspacePath, "src");
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "embeddingProbe.ts"),
+      "export async function probeEmbeddingProvider() { return true; }\n",
+      "utf8",
+    );
+    await writeFile(
+      join(sourceDir, "codeIntelligenceService.ts"),
+      'import { probeEmbeddingProvider } from "./embeddingProbe.js";\n' +
+        "export const testEmbeddingConfig = async (params: unknown) => {\n" +
+        "  return probeEmbeddingProvider(params);\n" +
+        "};\n",
+      "utf8",
+    );
+    const fetchImpl = vi.fn(async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { input: string[] };
+      return Response.json({
+        data: body.input.map((_, index) => ({ index, embedding: [0.25, 0.75] })),
+      });
+    }) as typeof fetch;
+    const indexedService = createCodeIntelligenceService({ indexRootDir, fetch: fetchImpl });
+    services.push(indexedService);
+    const embeddingConfig = {
+      workspacePath,
+      provider: "openai-compatible" as const,
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    };
+    await indexedService.setEmbeddingConfig(embeddingConfig);
+    await indexedService.indexWorkspace({ workspacePath });
+
+    const databasePath = databaseFileFor(indexRootDir, workspacePath);
+    const db = openDatabase(databasePath);
+    let vectorsBefore: Array<{ id: string; embedding: string | null }>;
+    try {
+      vectorsBefore = db
+        .prepare(
+          "SELECT id, hex(embedding) AS embedding FROM chunks WHERE embedding IS NOT NULL ORDER BY id",
+        )
+        .all() as typeof vectorsBefore;
+      // Simulate a pre-revision index: source fingerprints and chunks are current, graph facts are not.
+      db.exec("DELETE FROM edges; DELETE FROM imported_calls;");
+      db.prepare("INSERT OR REPLACE INTO index_meta(key, value) VALUES(?, ?)").run(
+        "graph_parser_version",
+        "1",
+      );
+    } finally {
+      db.close();
+    }
+    const embeddingRequestCount = fetchImpl.mock.calls.length;
+
+    await indexedService.indexWorkspace({ workspacePath });
+
+    await expect(
+      indexedService.getSymbolContext({ workspacePath, symbol: "probeEmbeddingProvider" }),
+    ).resolves.toMatchObject({
+      callers: [
+        expect.objectContaining({
+          name: "testEmbeddingConfig",
+          path: "src/codeIntelligenceService.ts",
+        }),
+      ],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(embeddingRequestCount);
+
+    const verifyDb = openDatabase(databasePath);
+    try {
+      const vectorsAfter = verifyDb
+        .prepare(
+          "SELECT id, hex(embedding) AS embedding FROM chunks WHERE embedding IS NOT NULL ORDER BY id",
+        )
+        .all() as typeof vectorsBefore;
+      expect(vectorsAfter).toEqual(vectorsBefore);
+      expect(
+        verifyDb.prepare("SELECT value FROM index_meta WHERE key = ?").get("graph_parser_version"),
+      ).toMatchObject({ value: "3" });
+    } finally {
+      verifyDb.close();
+    }
   });
 
   it("returns bounded relative-path nodes and focus neighborhoods from the local index", async () => {
@@ -358,6 +585,47 @@ describe("code intelligence graph overview", () => {
       ),
     ).toBe(true);
     expect(JSON.stringify(focused)).not.toContain(workspacePath);
+  });
+
+  it("keeps the overview inside one connected code neighborhood", async () => {
+    const { workspacePath, service } = await createTestService();
+    const sourceDir = join(workspacePath, "src");
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "alpha.ts"),
+      'import { beta } from "./beta.js";\nexport function alpha() { return beta(); }\n',
+      "utf8",
+    );
+    await writeFile(
+      join(sourceDir, "beta.ts"),
+      'import { alpha } from "./alpha.js";\nexport function beta() { return alpha(); }\n',
+      "utf8",
+    );
+    await writeFile(
+      join(sourceDir, "core.ts"),
+      [
+        "export function core() { return a() + b() + c() + d(); }",
+        "export function a() { return core(); }",
+        "export function b() { return core(); }",
+        "export function c() { return core(); }",
+        "export function d() { return core(); }",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await service.indexWorkspace({ workspacePath });
+    const overview = await service.getGraphOverview({ workspacePath, limit: 3 });
+
+    expect(overview.nodes.length).toBeGreaterThanOrEqual(3);
+    expect(overview.nodes.every((node) => node.path === "src/core.ts")).toBe(true);
+    expect(overview.edges.length).toBeGreaterThan(0);
+    expect(
+      overview.edges.every(
+        (edge) =>
+          overview.nodes.some((node) => node.id === edge.source) &&
+          overview.nodes.some((node) => node.id === edge.target),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -474,6 +742,73 @@ describe("code intelligence workspace lifecycle", () => {
       (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts
         .files,
     ).toBe(0);
+  });
+
+  it("indexes added and renamed files with fresh embeddings, then removes deleted vectors", async () => {
+    const { workspacePath, indexRootDir } = await createTestService();
+    const embeddedInputs: string[] = [];
+    const fetchImpl = vi.fn(async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { input: string[] };
+      embeddedInputs.push(...body.input);
+      return Response.json({
+        data: body.input.map((_, index) => ({ index, embedding: [0.5, 0.5] })),
+      });
+    }) as typeof fetch;
+    const indexedService = createCodeIntelligenceService({ indexRootDir, fetch: fetchImpl });
+    services.push(indexedService);
+    const identity = "watch-add-rename-delete";
+    await indexedService.setEmbeddingConfig({
+      workspacePath,
+      workspaceIdentity: identity,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    });
+    await indexedService.indexWorkspace({ workspacePath, workspaceIdentity: identity });
+    await indexedService.watchWorkspace({ workspacePath, workspaceIdentity: identity });
+
+    const databasePath = databaseFileFor(indexRootDir, identity);
+    const readChunkPaths = () => {
+      const db = openDatabase(databasePath);
+      try {
+        return db.prepare("SELECT path FROM chunks ORDER BY path").all() as Array<{ path: string }>;
+      } finally {
+        db.close();
+      }
+    };
+    const waitFor = async (condition: () => Promise<boolean>) => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (await condition()) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error("Timed out waiting for the code index watcher to reconcile a file change.");
+    };
+
+    const addedPath = join(workspacePath, "added.ts");
+    await writeFile(addedPath, "export function addedSemanticMarker() { return 1; }", "utf8");
+    await waitFor(async () => (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).counts.files === 1);
+    await waitFor(async () => readChunkPaths().some((chunk) => chunk.path === "added.ts"));
+    const firstVectorCount = readChunkPaths().length;
+    expect(embeddedInputs.some((content) => content.includes("addedSemanticMarker"))).toBe(true);
+    expect(firstVectorCount).toBeGreaterThan(0);
+    const firstGeneration = (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).generation;
+
+    const renamedPath = join(workspacePath, "renamed.ts");
+    await rename(addedPath, renamedPath);
+    await waitFor(async () => {
+      const paths = readChunkPaths().map((chunk) => chunk.path);
+      return paths.includes("renamed.ts") && !paths.includes("added.ts");
+    });
+    expect(embeddedInputs.some((content) => content.includes("addedSemanticMarker"))).toBe(true);
+    expect((await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).generation).toBeGreaterThan(firstGeneration);
+    await expect(
+      indexedService.getSymbolContext({ workspacePath, workspaceIdentity: identity, symbol: "addedSemanticMarker" }),
+    ).resolves.toMatchObject({ symbol: { path: "renamed.ts" } });
+
+    await rm(renamedPath);
+    await waitFor(async () => (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).counts.files === 0);
+    expect(readChunkPaths()).toEqual([]);
+    expect(fetchImpl.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("prevents an activation index from surviving clearIndex", async () => {

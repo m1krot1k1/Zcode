@@ -35,10 +35,6 @@ import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { toMcpToolName } from "../src/mcp/index.js";
 import { PermissionService } from "../src/permission/index.js";
 import { createExploreSubagentPort } from "../src/subagent/runner.js";
-import {
-  DEFAULT_SPAWN_BUDGET,
-  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
-} from "../src/runtime-task/registry.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import {
   createTestModelFactory,
@@ -753,24 +749,20 @@ describe("Explore subagent", () => {
       "WebSearch",
       RESPOND_TO_COORDINATOR_TOOL_NAME,
     ]);
-    // Host добавляет в child system prompt конверт spawn: level, выданный grant и
-    // фактическую ёмкость registry. Без явного spawnBudget root-run действует
-    // DEFAULT_SPAWN_BUDGET, а один активный child занимает один worker slot.
-    const expectedSpawnEnvelope = [
-      '<zcode-spawn-envelope level="1"',
-      `remaining_spawns="${DEFAULT_SPAWN_BUDGET - 1}"`,
-      `max_parallel="${SUBAGENT_ROOT_MAX_ACTIVE_TASKS - 1}" />`,
-    ].join(" ");
+    // Host передаёт уровень рекурсии и доступную конкурентную ёмкость; общего
+    // накопительного лимита на число запусков у дочерних агентов нет.
     // context-builder добавляет \n перед agentPrompt; ожидаемый второй system message
     // начинается с того же \n, поэтому конверт вставляется сразу после него.
-    expect(
-      childRequests[0].messages
-        .filter((message: any) => message.role === "system")
-        .map((message: any) => message.content),
-    ).toEqual([
-      exploreSystemMessages[0],
-      `\n${expectedSpawnEnvelope}\n\n${exploreSystemMessages[1].slice(1)}`,
-    ]);
+    const childSystemMessages = childRequests[0].messages
+      .filter((message: any) => message.role === "system")
+      .map((message: any) => message.content);
+    expect(childSystemMessages).toHaveLength(2);
+    expect(childSystemMessages[0]).toBe(exploreSystemMessages[0]);
+    expect(childSystemMessages[1]).toMatch(
+      /^\n<zcode-spawn-envelope level="1" max_parallel="\d+" \/>\n\n/,
+    );
+    expect(childSystemMessages[1]).toContain(exploreSystemMessages[1].slice(1));
+    expect(childSystemMessages[1]).not.toContain("remaining_spawns");
     expect(childRequests[0].messages[1].content).not.toContain(
       "You help the user with software engineering work in the current workspace.",
     );

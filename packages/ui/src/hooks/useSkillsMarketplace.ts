@@ -16,6 +16,7 @@ export type SkillInstallScope = InstallMarketplaceSkillRequest["scope"];
  * 因此用一个宽泛词拉取真实条目，再由 UI 按 installs 排序/筛选；不伪造排行榜数据。
  */
 const SKILLS_CATALOG_SEED_QUERY = "skill";
+const SEARCH_DEBOUNCE_MS = 350;
 
 interface UseSkillsMarketplaceOptions {
   workspacePath?: string | null;
@@ -63,6 +64,7 @@ interface UseSkillsMarketplaceResult {
   installingKey: string | null;
   installError: SkillsMarketplaceInstallError | null;
   installedNotice: string | null;
+  scheduleSearch: (query: string) => void;
   search: (query: string) => Promise<void>;
   retry: () => Promise<void>;
   refreshInstalled: () => Promise<void>;
@@ -101,6 +103,8 @@ export function useSkillsMarketplace(
     useState<SkillsMarketplaceInstallError | null>(null);
   const [installedNotice, setInstalledNotice] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
+  const searchDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlightQueryRef = useRef<string | null>(null);
   const installedRequestSeqRef = useRef(0);
   const catalogRequestSeqRef = useRef(0);
   const lastQueryRef = useRef("");
@@ -110,6 +114,10 @@ export function useSkillsMarketplace(
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (searchDebounceTimerRef.current !== null) {
+        clearTimeout(searchDebounceTimerRef.current);
+        searchDebounceTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -187,8 +195,13 @@ export function useSkillsMarketplace(
   const runSearch = useCallback(
     async (rawQuery: string) => {
       const query = rawQuery.trim();
+      if (searchDebounceTimerRef.current !== null) {
+        clearTimeout(searchDebounceTimerRef.current);
+        searchDebounceTimerRef.current = null;
+      }
       const seq = ++requestSeqRef.current;
       lastQueryRef.current = query;
+      inFlightQueryRef.current = null;
       setSubmittedQuery(query);
       setHasSearched(true);
       setInstallError(null);
@@ -203,6 +216,7 @@ export function useSkillsMarketplace(
       }
       setLoading(true);
       setError(null);
+      inFlightQueryRef.current = query;
       try {
         const result = await skillsService.searchMarketplace(query, {
           ...(workspacePath ? { workspacePath } : {}),
@@ -211,6 +225,7 @@ export function useSkillsMarketplace(
         if (seq !== requestSeqRef.current || !mountedRef.current) return;
         setItems(result);
         setLoading(false);
+        inFlightQueryRef.current = null;
       } catch (cause) {
         if (seq !== requestSeqRef.current || !mountedRef.current) return;
         const message = cause instanceof Error ? cause.message : String(cause);
@@ -221,6 +236,7 @@ export function useSkillsMarketplace(
         setItems([]);
         setError(message);
         setLoading(false);
+        inFlightQueryRef.current = null;
       }
     },
     [refreshInstalled, skillsService, workspaceIdentity, workspacePath],
@@ -229,9 +245,50 @@ export function useSkillsMarketplace(
   const search = useCallback(
     async (query: string) => {
       setInstalledNotice(null);
+      const normalized = query.trim();
+      // Enter/Search during an identical in-flight request should not duplicate it.
+      // When a debounce is still pending, runSearch cancels it and starts immediately.
+      if (
+        searchDebounceTimerRef.current === null &&
+        normalized &&
+        inFlightQueryRef.current === normalized
+      ) {
+        return;
+      }
       await runSearch(query);
     },
     [runSearch],
+  );
+
+  const scheduleSearch = useCallback(
+    (rawQuery: string) => {
+      const query = rawQuery.trim();
+      if (!query) {
+        void search("");
+        return;
+      }
+      if (searchDebounceTimerRef.current !== null) {
+        clearTimeout(searchDebounceTimerRef.current);
+      }
+      const seq = ++requestSeqRef.current;
+      lastQueryRef.current = query;
+      inFlightQueryRef.current = null;
+      setSubmittedQuery(query);
+      setHasSearched(true);
+      setItems([]);
+      setError(null);
+      setInstallError(null);
+      setInstalledNotice(null);
+      // Move to the remote-search state immediately so the seed snapshot cannot show a
+      // misleading local “no matches” result while this query is waiting for debounce.
+      setLoading(true);
+      searchDebounceTimerRef.current = setTimeout(() => {
+        if (seq !== requestSeqRef.current || !mountedRef.current) return;
+        searchDebounceTimerRef.current = null;
+        void runSearch(query);
+      }, SEARCH_DEBOUNCE_MS);
+    },
+    [runSearch, search],
   );
 
   const retry = useCallback(async () => {
@@ -307,6 +364,7 @@ export function useSkillsMarketplace(
     installingKey,
     installError,
     installedNotice,
+    scheduleSearch,
     search,
     retry,
     refreshInstalled,

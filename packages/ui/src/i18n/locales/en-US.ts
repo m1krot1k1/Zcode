@@ -1450,6 +1450,7 @@ const enUS: Record<string, string> = {
   "browser.permission.allowAlways": "Allow on this site",
   "browser.permission.blockAlways": "Block",
   "browser.permission.cancel": "Cancel",
+  "browser.permission.denyThisTime": "Deny this time",
   "browser.permission.share": "Share",
   "browser.permission.media": "camera and microphone",
   "browser.permission.mediaVideo": "camera",
@@ -3277,13 +3278,13 @@ const enUS: Record<string, string> = {
   "settings.httpProxySavedHint": "Network proxy settings saved. Restart the app to take effect.",
   "settings.spawnBudget": "Subagent spawn budget",
   "settings.spawnBudgetDescription":
-    "Maximum subagent spawns per run. Leave blank to use the default of 128; enter 0 to disable spawning.",
+    "Legacy setting. Spawn counts are no longer capped and this value is ignored.",
   "settings.spawnBudgetInvalid":
-    "Enter a whole number of at least 0 (0 disables spawning), or leave the field blank to use the default.",
+    "This legacy setting is no longer used.",
   "settings.subagentMaxParallel": "Maximum parallel subagents",
   "settings.subagentMaxParallelDescription":
-    "Maximum active subagents per run (1–128). Enter 0 for an adaptive limit based on available CPUs (32–128). Takes effect for newly started agents.",
-  "settings.subagentMaxParallelInvalid": "Enter a whole number from 0 to 128.",
+    "Optional lower concurrency limit. Leave blank or enter 0 to use the host's available CPU capacity. Takes effect for newly started agents.",
+  "settings.subagentMaxParallelInvalid": "Enter a non-negative whole number, or leave it blank.",
   "settings.subagentTaskTimeoutMinutes": "Minimum subagent runtime (minutes)",
   "settings.subagentTaskTimeoutMinutesDescription":
     "Raises role deadlines so agents can investigate and finish larger tasks. Enter 0 for role defaults, or 1–180 minutes; coordinators keep extra time to collect results.",
@@ -3623,7 +3624,7 @@ const enUS: Record<string, string> = {
   "settings.mcp.import.action": "Import",
   "settings.mcp.registry.title": "Official MCP Registry",
   "settings.mcp.registry.description":
-    "Search the public MCP registry; installs run locally after you review the command or URL.",
+    "Use the search above to filter local suggestions and search the official MCP Registry.",
   "settings.mcp.registry.searchPlaceholder": "Search MCP servers",
   "settings.mcp.registry.clearSearch": "Clear search",
   "settings.mcp.registry.search": "Search",
@@ -3631,7 +3632,9 @@ const enUS: Record<string, string> = {
   "settings.mcp.registry.empty": "No MCP servers match your search",
   "settings.mcp.registry.error": "Could not load MCP servers from the Official MCP Registry.",
   "settings.mcp.registry.retry": "Retry",
-  "settings.mcp.registry.configure": "Configure & install",
+  "settings.mcp.registry.configure": "Review launch settings",
+  "settings.mcp.registry.localLaunchNote":
+    "Commands run locally after you save. For npx entries, npm downloads or reuses the pinned package from its cache; this is not a global install.",
   "settings.mcp.registry.stdio": "Local (stdio)",
   "settings.mcp.registry.remote": "Remote",
   "settings.mcp.registry.requiresAuth":
@@ -6221,12 +6224,12 @@ const enUS: Record<string, string> = {
   "agentWorkbench.spawnBudget": "Spawn budget",
   "agentWorkbench.disabled": "Disabled",
   "agentWorkbench.parallelLimit": "Parallel agents",
-  "agentWorkbench.adaptiveParallel": "Adaptive · runtime CPU · max 128",
+  "agentWorkbench.adaptiveParallel": "Adaptive · host capacity",
   "agentWorkbench.minimumRuntime": "Minimum task runtime",
   "agentWorkbench.roleDeadlines": "Role-specific deadlines",
   "agentWorkbench.minimumRuntimeValue": "At least {minutes} min · role headroom retained",
   "agentWorkbench.capacitySettingsHint":
-    "These are the active Settings values; admission may also reflect remaining budget and currently occupied slots.",
+    "These are the active Settings values; actual parallel work also depends on available host capacity and occupied slots.",
   "agentWorkbench.runActivity": "Agents in current task",
   "agentWorkbench.noActiveTask": "Open a task to see its running and completed agent branches.",
   "codeIndex.title": "Code index",
@@ -6316,6 +6319,16 @@ const enUS: Record<string, string> = {
   "settings.embedding.phase.building": "Building",
   "settings.embedding.phase.ready": "Ready",
   "settings.embedding.phase.failed": "Failed",
+  "codeGraph.kind.module": "Module",
+  "codeGraph.kind.file": "File",
+  "codeGraph.kind.class": "Class",
+  "codeGraph.kind.function": "Function",
+  "codeGraph.kind.interface": "Interface",
+  "codeGraph.kind.method": "Method",
+  "codeGraph.kind.property": "Property",
+  "codeGraph.kind.variable": "Variable",
+  "codeGraph.kind.type": "Type",
+  "codeGraph.kind.enum": "Enumeration",
   "codeGraph.noResolvedGraph": "No relationships found",
   "codeGraph.noResolvedGraphDescription":
     "The index has symbols, but no relationships could be resolved in this view.",
@@ -6346,8 +6359,10 @@ const enUS: Record<string, string> = {
   "codeGraph.filters": "Relationships",
   "codeGraph.calls": "Calls",
   "codeGraph.imports": "Imports",
+  "codeGraph.contains": "Structure",
   "codeGraph.nodeTypes": "Node types",
   "codeGraph.noNodes": "No symbols in this view",
+  "codeGraph.noVisibleNodesDescription": "Change relationship filters or search for a symbol to show graph nodes.",
   "codeGraph.legendHint":
     "Select a node to inspect its path and nearby links. Use zoom and drag to explore.",
   "codeGraph.loading": "Loading code graph…",

@@ -43,7 +43,7 @@ Provider 返回配额耗尽（402/429/`FreeUsageLimitError`）时，adapter 仍�
 - 候选来自 Registry 中其它已配置、未隐藏且可执行的 Provider；
 - 模型必须同属一类：优先相同 `modelId`，否则能力不弱于当前模型（工具调用、JSON Schema、输入模态、上下文窗口），并支持当前 `reasoningLevel`；
 - 按 Registry 顺序选择，排除已失败 Provider；总尝试数不超过 Provider 数且最多 3 次；
-- 切换时记录 `provider_fallback { from, to, reason }`；成功切换不展示错误横幅，只显示一条「Provider X 不可用，已由 Y 回答」提示；
+- 切换时记录 `provider_fallback { from, to, reason }`；成功切换不展示错误横幅，只显示一条简短提示，明确这是额度耗尽、免费额度耗尽、余额不足或长时间限流，不得把 Provider 称为“不可用”；提示按当前 UI 语言本地化；
 - 全部失败时只抛一条 `PROVIDER_QUOTA_FALLBACK_EXHAUSTED`，列出尝试过的 Provider，不再重试。
 
 ## 4. 边界

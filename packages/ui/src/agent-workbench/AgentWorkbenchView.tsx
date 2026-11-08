@@ -224,7 +224,6 @@ export function AgentWorkbenchView({
     ready: copy("agentWorkbench.stateReady", "Ready"),
     degraded: copy("agentWorkbench.stateDegraded", "Needs attention"),
   }[status.state];
-  const spawnBudget = settings?.spawnBudget ?? 128;
   const parallelLimit = settings?.subagentMaxParallel;
   const minimumRuntime = settings?.subagentTaskTimeoutMinutes;
 
@@ -313,19 +312,11 @@ export function AgentWorkbenchView({
         <dl className="grid grid-cols-1 gap-1.5 text-ui-xs sm:grid-cols-2">
           <div className="flex justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5">
             <dt className="text-muted-foreground">
-              {copy("agentWorkbench.spawnBudget", "Spawn budget")}
-            </dt>
-            <dd className="font-medium">
-              {spawnBudget === 0 ? copy("agentWorkbench.disabled", "Disabled") : spawnBudget}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5">
-            <dt className="text-muted-foreground">
               {copy("agentWorkbench.parallelLimit", "Parallel agents")}
             </dt>
             <dd className="text-right font-medium">
               {parallelLimit == null || parallelLimit === 0
-                ? copy("agentWorkbench.adaptiveParallel", "Adaptive · runtime CPU · max 128")
+                ? copy("agentWorkbench.adaptiveParallel", "Adaptive · host capacity")
                 : parallelLimit}
             </dd>
           </div>

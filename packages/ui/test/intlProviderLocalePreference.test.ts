@@ -9,6 +9,9 @@ import {
   useZCodeIntl,
   ZCodeIntlProvider,
 } from "@/i18n/IntlProvider.js";
+import englishMessages from "@/i18n/locales/en-US.js";
+import chineseMessages from "@/i18n/locales/zh-CN.js";
+import russianMessages from "@/i18n/locales/ru-RU.json" with { type: "json" };
 import type { Locale } from "@zcode/shared";
 import type { BroadcastMessage } from "@zcode/services";
 
@@ -28,7 +31,11 @@ function LocalizedProbe() {
     "div",
     null,
     createElement("span", { "data-testid": "russian-label" }, intl.formatMessage({ id: "settings.locale.ru-RU" })),
-    createElement("span", { "data-testid": "english-fallback" }, intl.formatMessage({ id: "settings.appearance.codeTitle" })),
+    createElement(
+      "span",
+      { "data-testid": "unknown-label" },
+      intl.formatMessage({ id: "test.unknown.message" }),
+    ),
   );
 }
 
@@ -147,6 +154,12 @@ function createBroadcastService() {
   };
 }
 
+function formatArguments(message: string): string[] {
+  return [...message.matchAll(/\{\s*([\w.]+)\s*(?:,\s*(plural|selectordinal|select|number|date|time)\b)?/g)]
+    .map((match) => `${match[1]}:${match[2] ?? "value"}`)
+    .sort();
+}
+
 beforeEach(() => {
   installMemoryLocalStorage();
 });
@@ -158,6 +171,66 @@ afterEach(() => {
 });
 
 describe("IntlProvider locale preference sync", () => {
+  it("Russian and Simplified Chinese catalogs match English IDs and format arguments", () => {
+    const englishIds = Object.keys(englishMessages).sort();
+    for (const [locale, messages] of [
+      ["ru-RU", russianMessages],
+      ["zh-CN", chineseMessages],
+    ] as const) {
+      expect({ locale, missing: englishIds.filter((id) => !Object.hasOwn(messages, id)) }).toEqual({
+        locale,
+        missing: [],
+      });
+      expect({ locale, extra: Object.keys(messages).filter((id) => !Object.hasOwn(englishMessages, id)) }).toEqual({
+        locale,
+        extra: [],
+      });
+      const mismatchedArguments = englishIds.filter(
+        (id) =>
+          JSON.stringify(formatArguments(englishMessages[id]!)) !==
+          JSON.stringify(formatArguments(messages[id]!)),
+      );
+      expect({ locale, mismatchedArguments }).toEqual({ locale, mismatchedArguments: [] });
+    }
+  });
+
+  it("Russian settings and graph labels do not fall back to English", () => {
+    const messageIds = [
+      "settings.interfaceMode",
+      "settings.interfaceMode.office",
+      "settings.interfaceMode.coding",
+      "settings.interfaceMode.description",
+      "chat.officeSuggestions.setting",
+      "chat.officeSuggestions.settingDescription",
+      "settings.terminalProfile",
+      "settings.terminalProfileDescription",
+      "settings.terminalFontFamily",
+      "settings.terminalFontFamilyDescription",
+      "settings.terminalFontFamilyPlaceholder",
+      "settings.toolSearch",
+      "settings.toolSearchDescription",
+      "settings.toolSearchExperimentalNotice",
+      "settings.toolSearch.auto",
+      "settings.toolSearch.local",
+      "settings.toolSearch.off",
+      "settings.nativeSearchEnhancements",
+      "settings.nativeSearchEnhancementsDescription",
+      "codeGraph.kind.module",
+      "codeGraph.kind.file",
+      "codeGraph.kind.class",
+      "codeGraph.kind.function",
+      "codeGraph.kind.interface",
+      "codeGraph.kind.method",
+      "codeGraph.kind.property",
+    ];
+    const untranslated = messageIds.filter(
+      (messageId) =>
+        !Object.hasOwn(russianMessages, messageId) ||
+        russianMessages[messageId] === englishMessages[messageId],
+    );
+    expect(untranslated).toEqual([]);
+  });
+
   it.each([
     ["ru-RU", "ru-RU"],
     ["ru", "ru-RU"],
@@ -169,10 +242,10 @@ describe("IntlProvider locale preference sync", () => {
     expect(resolveSystemLocaleForLanguage(language)).toBe(expected);
   });
 
-  it("русская локаль показывает переведённые строки и подставляет английский для непереведённых", () => {
+  it("русская локаль показывает перевод и не маскирует неизвестный ключ", () => {
     render(createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocalizedProbe)));
     expect(screen.getByTestId("russian-label").textContent).toBe("Русский");
-    expect(screen.getByTestId("english-fallback").textContent).toBe("Code settings");
+    expect(screen.getByTestId("unknown-label").textContent).toBe("test.unknown.message");
   });
 
   it("русский выбор языка сохраняется и отправляется в синхронизацию окон", async () => {

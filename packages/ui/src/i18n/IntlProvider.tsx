@@ -124,8 +124,8 @@ function createIntl(locale: Locale): IntlInstance {
   const messages = MESSAGES[locale] ?? MESSAGES[DEFAULT_LOCALE]!;
   return {
     formatMessage({ id }, values) {
-      // 新语言采用逐条英文兜底；缺少翻译时也不能露出原始 message id。
-      let msg = messages[id] ?? enUS[id] ?? id;
+      // 缺少翻译是目录缺陷，不能静默显示英文；未登记的 ID 保留原值便于定位。
+      let msg = messages[id] ?? id;
       if (values) {
         for (const [key, val] of Object.entries(values)) {
           msg = msg.replaceAll(`{${key}}`, String(val));

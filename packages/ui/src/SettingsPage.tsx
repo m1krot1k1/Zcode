@@ -816,7 +816,6 @@ export function SettingsPage({
   const [httpProxyList, setHttpProxyList] = useState("");
   const [httpProxyNoProxy, setHttpProxyNoProxy] = useState("");
   const [httpProxyCaCertPath, setHttpProxyCaCertPath] = useState("");
-  const [spawnBudget, setSpawnBudget] = useState<number | undefined>(undefined);
   const [subagentMaxParallel, setSubagentMaxParallel] = useState<number | undefined>(undefined);
   const [subagentTaskTimeoutMinutes, setSubagentTaskTimeoutMinutes] = useState<number | undefined>(
     undefined,
@@ -956,7 +955,6 @@ export function SettingsPage({
         if (!active) return;
         setTerminalInheritSystemProfile(settings.terminalInheritSystemProfile ?? true);
         setTerminalFontFamily(settings.terminalFontFamily ?? "");
-        setSpawnBudget(settings.spawnBudget);
         setSubagentMaxParallel(settings.subagentMaxParallel);
         setSubagentTaskTimeoutMinutes(settings.subagentTaskTimeoutMinutes);
         setTaskAutoArchiveEnabled(settings.taskAutoArchiveEnabled ?? false);
@@ -1012,30 +1010,10 @@ export function SettingsPage({
     },
     [services.settingService],
   );
-  const handleSpawnBudgetChange = useCallback(
-    async (raw: string): Promise<RunLimitSaveResult> => {
-      const parsed = parseRunLimitInput(raw, 0);
-      if (parsed === "empty" || parsed === "invalid") return parsed;
-      await runSettingsActionAsync({
-        featureId: "settings.run_limits",
-        action: "save_spawn_budget",
-        trigger: "button",
-        operation: () => services.settingService.update({ spawnBudget: parsed }),
-        completed: {
-          resultSource: "setting_service",
-          configured: true,
-          valueAfter: String(parsed),
-        },
-      });
-      setSpawnBudget(parsed);
-      return "saved";
-    },
-    [services.settingService],
-  );
   const handleSubagentMaxParallelChange = useCallback(
     async (raw: string): Promise<RunLimitSaveResult> => {
       const parsed = parseRunLimitInput(raw, 0);
-      if (parsed === "empty" || parsed === "invalid" || parsed > 128) return "invalid";
+      if (parsed === "empty" || parsed === "invalid") return parsed;
       await runSettingsActionAsync({
         featureId: "settings.run_limits",
         action: "save_subagent_max_parallel",
@@ -1891,17 +1869,27 @@ export function SettingsPage({
                     </div>
                   </div>
                   <SettingsMachinesProvider servers={sourceManagementSnapshot?.servers ?? []}>
-                    <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+                    <main
+                      className={cn(
+                        "min-h-0 flex-1 [scrollbar-gutter:stable]",
+                        activeSection === "codeGraph"
+                          ? "overflow-y-auto xl:overflow-hidden"
+                          : "overflow-y-auto",
+                      )}
+                    >
                       <div
                         className={cn(
-                          SETTINGS_FRAME_CONTENT_CLASSNAME,
-                          "flex flex-col gap-8",
-                          isMacDesktop && "pt-0",
+                          activeSection === "codeGraph"
+                            ? "min-h-full w-full max-w-none px-3 pb-3 pt-0 xl:h-full"
+                            : SETTINGS_FRAME_CONTENT_CLASSNAME,
+                          "flex flex-col",
+                          activeSection === "codeGraph" ? "gap-0" : "gap-8",
+                          isMacDesktop && activeSection !== "codeGraph" && "pt-0",
                           // isWindowsDesktop && "pt-12",
                         )}
                       >
                         {/* 归档设置迁入后也需要公共页头，不能再因列表自带标题而隐藏页面标题。 */}
-                        <div>
+                        <div className={cn(activeSection === "codeGraph" && "hidden")}>
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex min-w-0 flex-wrap items-center gap-3">
                               {showActiveSectionTitle ? (
@@ -1929,7 +1917,13 @@ export function SettingsPage({
                             <GeneralSectionHeader localePreference={localePreference} />
                           ) : null}
                         </div>
-                        <div className="space-y-8">
+                        <div
+                          className={cn(
+                            activeSection === "codeGraph"
+                              ? "flex min-h-0 flex-1 flex-col"
+                              : "space-y-8",
+                          )}
+                        >
                           {activeSection === "general" ? (
                             <GeneralSectionContent
                               localePreference={localePreference}
@@ -1952,10 +1946,8 @@ export function SettingsPage({
                               dataBaseDir={dataBaseDir}
                               terminalInheritSystemProfile={terminalInheritSystemProfile}
                               terminalFontFamily={terminalFontFamily}
-                              spawnBudget={spawnBudget}
                               subagentMaxParallel={subagentMaxParallel}
                               subagentTaskTimeoutMinutes={subagentTaskTimeoutMinutes}
-                              onSpawnBudgetChange={handleSpawnBudgetChange}
                               onSubagentMaxParallelChange={handleSubagentMaxParallelChange}
                               onSubagentTaskTimeoutMinutesChange={
                                 handleSubagentTaskTimeoutMinutesChange
@@ -2312,10 +2304,12 @@ export function SettingsPage({
                               <ArchiveManagement />
                             </div>
                           ) : activeSection === "codeGraph" ? (
-                            <CodeGraphExplorer
-                              workspaceIdentity={activeWorkspaceIdentity}
-                              workspacePath={activeWorkspacePath ?? undefined}
-                            />
+                            <div className="flex min-h-0 flex-1 flex-col">
+                              <CodeGraphExplorer
+                                workspaceIdentity={activeWorkspaceIdentity}
+                                workspacePath={activeWorkspacePath ?? undefined}
+                              />
+                            </div>
                           ) : activeSection === "usage" ? (
                             <UsageStatsSection
                               activeTab={usageActiveTab}

@@ -13,12 +13,13 @@ export type {
   AgentProfileLoadResult,
 } from "@zcode/shared";
 
-// 15 канонических ролей. Порядок совпадает с BUILT_IN_SWARM_PROFILES и является
+// 16 канонических ролей. Порядок совпадает с BUILT_IN_SWARM_PROFILES и является
 // контрактом каталога: planner, admission и prompt-каталог читают один и тот же список.
 export const SWARM_AGENT_TYPES = [
   "start",
   "orchestrator",
   "researcher",
+  "debugger",
   "implementer",
   "coder",
   "frontend-coder",
@@ -46,11 +47,11 @@ const SUBAGENT_HANDOFF_CONTRACT = [
 const START_TOOLING_AND_NESTING_CONTRACT = [
   "Твой единственный инструмент — Task. Read, Glob, Grep, Skill, Bash, Write, Edit, WebFetch и WebSearch недоступны: маршрутизатор не читает репозиторий, не исследует код, не исполняет команды и не правит файлы. Root-only инструменты (Cron*, Workflow, EnterWorktree/ExitWorktree, ScheduleWakeup, TaskCreate/Get/List/Update) субагентам не выдаются. Не заявляй об инструменте, которого нет в текущем ответе хоста; если хост отклонил вызов, зафиксируй это и продолжи доступным способом.",
   "Вложенность измеряется глубиной цепочки Task: L1 — Task вызвал ты, L2 — Task вызвал твой ребёнок, L3 — его ребёнок, L4 — четвёртый уровень. L4 — достаточная глубина для проверки вложенности; глубже без прямой просьбы пользователя не ныряй.",
-  "Глубина сама по себе не ограничивает работу: ограничивают бюджет спавнов (remaining_spawns) и параллелизм (max_parallel). Номер уровня — только запись, а не стоп-условие.",
+  "Глубина сама по себе не ограничивает работу. Runtime ограничивает одновременный запуск доступными слотами, отменой и дедлайном; номер уровня — только запись, а не стоп-условие.",
   "Каждый уровень подтверждается только собственным вызовом Task в его транскрипте; скопированная строка из ответа ребёнка доказательством не является, и мелкий PASS не доказывает глубокий.",
   "Перед делегированием кратко зафиксируй: результат, ограничения, объём, уже данное разрешение и только те неизвестные, что блокируют действие.",
-  "Каждому ребёнку выдай конверт: Branch ID, Parent ID, Level+1, remaining_spawns строго меньше твоего, max_parallel, непересекающиеся файлы, out-of-scope, критерий проверки и контракт завершения.",
-  "Независимые ветки планирует orchestrator: ты передаёшь ему ёмкость и требования к веткам одним Task(orchestrator). Runtime считает параллелизм как max(1, min(nodeCount, requested max_parallel, remaining_spawns, activeCap − activeCount)). Для большой задачи с 5–8 независимыми областями зафиксируй это в конверте orchestrator; партиями с join между партиями управляет orchestrator, не start. Не создавай дублирующие или пересекающиеся ветки: скорость даёт параллелизм узких независимых ветвей, а не их количество.",
+  "Каждому ребёнку выдай конверт: Branch ID, Parent ID, Level+1, доступный max_parallel, непересекающиеся файлы, out-of-scope, критерий проверки и контракт завершения.",
+  "Независимые ветки планирует orchestrator: передай ему цель и требования одним Task(orchestrator). Runtime учитывает число узлов плана и фактически свободные слоты; при нехватке слотов orchestrator запускает следующие независимые ветки после освобождения ёмкости. Не создавай дублирующие или пересекающиеся ветки.",
   "Никогда не вызывай Task(start) и не Task(orchestrator) без нового, более узкого конверта.",
   "Если Task недоступен или хост отказал — зафиксируй blocker с точной причиной и не подменяй делегирование собственной реализацией.",
   "Не изобретай гейты, approval-шаги и выбор тира; не заявляй о работе и проверке, которых не было.",
@@ -60,14 +61,15 @@ const START_TOOLING_AND_NESTING_CONTRACT = [
 // delegation target (orchestrator) and never runs its own DAG. Orchestrator launches
 // the worker roles and never re-enters either router role.
 const START_ONLY_ORCHESTRATOR_CONTRACT = [
-  'Единственный маршрут start — Task(subagent_type: "orchestrator"). Worker-роли (researcher, reviewer, security-reviewer, test-engineer, evaluator, coder, frontend-coder, backend-coder, infra-coder, implementer, self-improver, knowledge-curator, subagent-factory) запускает orchestrator: start не вызывает их напрямую и не передаёт task_graph.',
-  "Если orchestrator вернул partial, blocked или timeout, start не обходит его и не берёт работу на себя: следующий wave — это новый Task(orchestrator) с накопленным контекстом (сделано, осталось, evidence) и остатком spawn-бюджета.",
+  'Единственный маршрут start — Task(subagent_type: "orchestrator"). Worker-роли (researcher, debugger, reviewer, security-reviewer, test-engineer, evaluator, coder, frontend-coder, backend-coder, infra-coder, implementer, self-improver, knowledge-curator, subagent-factory) запускает orchestrator: start не вызывает их напрямую и не передаёт task_graph.',
+  "Если orchestrator вернул partial, blocked или timeout, start не обходит его и не берёт работу на себя: следующий wave — новый Task(orchestrator) с накопленным контекстом (сделано, осталось, evidence).",
 ].join("\n");
 
 const ORCHESTRATOR_WORKER_ROUTING_CONTRACT = [
-  "Ветки запускает orchestrator: Task(researcher/reviewer/security-reviewer/test-engineer/evaluator/coder/frontend-coder/backend-coder/infra-coder/implementer/...) с непересекающимися файловыми областями. Никогда не вызывай Task(start) и не вызывай Task(orchestrator), включая самого себя.",
+  "Ветки запускает orchestrator: Task(researcher/debugger/reviewer/security-reviewer/test-engineer/evaluator/coder/frontend-coder/backend-coder/infra-coder/implementer/...) с непересекающимися файловыми областями. Для воспроизведения, локализации причины и минимального регрессионного исправления выбирай debugger; для написания кода — coder/implementer; для самостоятельного сбора фактов — researcher; для проверки — test-engineer. Никогда не вызывай Task(start) и не вызывай Task(orchestrator), включая самого себя.",
+  "Перед Task сопоставь цель с именами и описаниями установленных Skills из system-reminder. Если найден точный подходящий навык, добавь в prompt worker-а короткую инструкцию загрузить его по точному имени; выбирай профиль по задаче отдельно от навыка. Не выдумывай имя и не заявляй, что навык использован, пока worker это не подтвердил.",
   "Каждая ветка обязана передать write_paths — точные файлы/каталоги, которые она будет менять; не копируй чужие пути в prompt. Read-only ветка передаёт write_paths: []. Это единственный write-scope для work ledger; текст промпта не должен создавать ложные пересечения.",
-  "Планируй для каждой ветки конечный объём, рассчитанный на 45 минут. Если ветка вернула partial, blocked или timeout, верни partial с накопленным контекстом (сделано, осталось, evidence) и остатком бюджета, чтобы следующий wave orchestrator продолжил с этого места, а не начинал заново.",
+  "Планируй для каждой ветки конечный объём, рассчитанный на профильный timeout. Если ветка вернула partial, blocked или timeout, верни partial с накопленным контекстом (сделано, осталось, evidence), чтобы следующий wave продолжил с этого места, а не начинал заново.",
 ].join("\n");
 
 // 修复依据：review-ветки уходили в повторный обход репозитория и не ограничивали
@@ -80,20 +82,20 @@ const REVIEW_EXECUTION_CONTRACT = [
   "Максимум 10 подтверждённых findings. Каждый finding: severity, file:line, impact, reproduction/evidence. Неподтверждённые подозрения идут в раздел gaps, а не в findings.",
   "При исчерпании deadline или бюджета явно верни partial/blocked: что просмотрено, что нет и что осталось проверить. Не зависай и не выдавай частичный просмотр за полный.",
   "Планируй полноценную проверку на 25 минут; если к 35 минутам картина не закрыта, верни partial с gaps. Hard deadline по умолчанию 45 минут — аварийный, не целевое время.",
-  "Review-волна планируется на 2–3 параллельных reviewer'а. Runtime-губернатора конкурентности для ревью нет, поэтому граница задаётся промптом и планом вызывающего, а не отдельным механизмом.",
+  "Разделяй независимые review-вопросы по reviewer-веткам в пределах доступных runtime-слотов. Не запускай несколько агентов на одинаковый diff или проверку.",
 ].join("\n");
 
 // Review-тир может параллельно собирать evidence через researcher-ветки, но не
 // запускает другие review- или writer-роли: это исключает рекурсивный review-loop.
 const REVIEW_PARALLEL_RESEARCH_CONTRACT = [
-  "Для параллельного сбора доказательств можешь запустить до двух researcher-подагентов через Task. Не запускай reviewer/security-reviewer или writer-роли; researcher остаётся read-only.",
+  "Для независимого сбора доказательств можешь запускать researcher-подагентов в пределах доступных runtime-слотов. Не запускай reviewer/security-reviewer или writer-роли; researcher остаётся read-only.",
   "Каждый researcher получает один узкий вопрос и возвращает evidence; итоговый review и findings остаются за тобой.",
 ].join("\n");
 
 // Worker-роль может распараллелить независимые части своей области, но не может
 // подняться до router-ролей или расширить назначенную область.
 const WORKER_PARALLEL_DELEGATION_CONTRACT = [
-  "Если в назначенной области есть независимые части, можешь запустить до двух worker/researcher-подагентов через Task; не запускай start/orchestrator и не расширяй область.",
+  "Если в назначенной области есть независимые части, можешь запускать worker/researcher-подагентов в пределах доступных runtime-слотов; не запускай start/orchestrator и не расширяй область.",
   "Каждый подагент получает узкий deliverable, непересекающиеся файлы и критерий проверки; итог и проверки остаются за тобой.",
 ].join("\n");
 
@@ -115,11 +117,12 @@ const DELEGATION_ROUTING_CONTRACT = [
   "start и orchestrator никогда не выбирают integrate_inline для реализации: они делегируют. integrate_inline доступен только root-сессии для последовательной сборки и финальной проверки.",
   "Зафиксируй решение одной строкой: route, reason, owner, max_parallel. Если route = orchestrate, перечисли ветки и их файловые области.",
 ].join("\n");
-// Единственный презентер — start. Runtime парсит блок строго; formatter передаёт
-// userText без синтеза, а WorkResult.status/unresolved сохраняет видимость partial/blocked.
+// Start передаёт краткий ответ и ограниченный supporting context; root синтезирует
+// естественный ответ и раскрывает технические доказательства только по запросу.
 const START_PRESENTATION_CONTRACT = [
   'Финальный ответ заверши ровно одним блоком <zcode-presentation>{...}</zcode-presentation> со строгой JSON-схемой: {"userText": string, "facts": string[], "unknowns": string[], "evidenceRefs": string[]}. Лишние поля и отсутствующие массивы делают блок невалидным.',
-  "userText — только готовый пользовательский текст без новых claims: не добавляй утверждений о работе, которой нет в отчётах делегатов, и не обещай проверок, которых не было. facts — подтверждённые результаты с ссылкой на источник; unknowns — непроверенное, partial, blocked, budget_exhausted и repair-причины; evidenceRefs — пути файлов, команды/exit code и child session IDs.",
+  "userText — краткий готовый ответ на исходный запрос, на языке и в естественном тоне пользователя. Для обычного вопроса, уточнения или проверки состояния ответь в 1–3 предложениях без служебных заголовков, повторов и списков путей/строк/команд/evidence. Укажи только результат и существенную оговорку; технические детали и ссылки добавляй только по прямой просьбе о доказательствах, источниках или подробном аудите.",
+  "Не добавляй claims о работе, которой нет в отчётах делегатов, и не обещай невыполненных проверок. facts — только несколько существенных подтверждённых результатов; unknowns — только существенные непроверенные пункты и реальные partial/blocked/budget_exhausted/repair-причины; evidenceRefs — только самые полезные ссылки и подтверждения. Не повторяй один факт в нескольких полях. Эти поля — контекст для проверки root, а не секции, которые обязательно показывают пользователю.",
   "Не добавляй presentation-блок в ответы делегатов и не пересказывай их сырой текст как свой. Если делегирование не выполнялось, верни блок с пустыми массивами и честным unknowns.",
 ].join("\n");
 
@@ -225,9 +228,7 @@ export interface DelegationEnvelope {
   independentWorkstreams?: number;
   serialDependencies?: boolean;
   integrationOwnedByCaller?: boolean;
-  /** Remaining spawn budget for this turn; 0 means the caller must not spawn. */
-  spawnBudget?: number;
-  /** User/host parallelism cap; defaults to the adaptive baseline of 32. */
+  /** Optional explicit user concurrency preference; otherwise host capacity is used. */
   userMaxParallel?: number;
   /** Read-only triage may stay with the caller; implementation still delegates. */
   readOnly?: boolean;
@@ -254,12 +255,8 @@ export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationD
   }
 
   const workstreams = Math.max(1, envelope.independentWorkstreams ?? 1);
-  const spawnBudget = envelope.spawnBudget ?? Number.POSITIVE_INFINITY;
-  const userMaxParallel = Math.max(1, envelope.userMaxParallel ?? 32);
-  if (spawnBudget <= 0) {
-    return { route: "integrate_inline", reason: "no spawn budget", maxParallel: 0 };
-  }
-  const maxParallel = Math.max(1, Math.min(workstreams, userMaxParallel, spawnBudget));
+  const userMaxParallel = Math.max(1, envelope.userMaxParallel ?? workstreams);
+  const maxParallel = Math.max(1, Math.min(workstreams, userMaxParallel));
   if (workstreams >= 2 && maxParallel >= 2) {
     return {
       route: "orchestrate",
@@ -290,7 +287,6 @@ export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationD
 export interface SwarmParallelismInput {
   nodeCount: number;
   requestedMaxParallel?: number;
-  spawnBudget?: number;
   userMaxParallel?: number;
 }
 
@@ -301,8 +297,8 @@ export interface SwarmParallelismDecision {
 }
 
 /**
- * Runtime wiring for the routing gate: the swarm DAG parallelism is clamped by the
- * spawn budget and the user cap before it reaches the subagent runner.
+ * Runtime wiring for the routing gate: DAG width is clamped by requested parallelism;
+ * the registry applies the actual active-slot capacity immediately before admission.
  */
 export function resolveSwarmParallelism(
   input: SwarmParallelismInput,
@@ -310,9 +306,8 @@ export function resolveSwarmParallelism(
   return decideDelegationRoute({
     role: "orchestrator",
     independentWorkstreams: Math.max(1, input.nodeCount),
-    spawnBudget: input.spawnBudget,
     // The registry applies the actual per-run capacity immediately before admission.
-    userMaxParallel: input.userMaxParallel ?? input.requestedMaxParallel ?? 32,
+    userMaxParallel: input.userMaxParallel ?? input.requestedMaxParallel,
   });
 }
 
@@ -347,7 +342,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       "Не спрашивай повторно то, что пользователь уже разрешил. Не придумывай сохранённую миссию и не обещай возобновление после перезапуска: такого владельца состояния у runtime нет.",
       "Тривиальна только светская реплика без задачи: приветствие, благодарность, подтверждение — ответь сам. Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств, не тривиальна: ты не исполняешь её сам и не запускаешь worker-роли напрямую. У тебя ровно один маршрут делегирования — Task(subagent_type: \"orchestrator\"); orchestrator выбирает профильных исполнителей (researcher, reviewer, test-engineer, coder, frontend-coder, backend-coder, infra-coder, implementer и другие) и распределяет ветки. Не читай файлы и не исследуй репозиторий: Read/Glob/Grep/Explore тебе недоступны. Не превращай маршрутизацию в триаж: сразу переформулируй запрос в конверт и вызови Task(orchestrator). Изменяющие команды, тесты и правки — только через orchestrator. Если устойчивого направления нет в каталоге, его создаёт orchestrator через subagent-factory, а не start. Bash/Write/Edit недоступны тебе напрямую. Если Task недоступен, зафиксируй blocker и не подменяй реализацию.",
       "Не выдумывай состояние проекта и не заявляй о невыполненной проверке.",
-      "Бюджет, критерии проверки и требования к evidence перечисляй в конверте для orchestrator; сам findings не собирай и код не анализируй.",
+      "Критерии проверки и требования к evidence перечисляй в конверте для orchestrator; сам findings не собирай и код не анализируй.",
       START_ONLY_ORCHESTRATOR_CONTRACT,
       SUBAGENT_HANDOFF_CONTRACT,
       DELEGATION_ROUTING_CONTRACT,
@@ -357,6 +352,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...ROUTER_DELEGATION_TOOL_NAMES],
     skills: [
+      "*",
       "zcode-swarm",
       "zcode-verification",
       "anti-loop",
@@ -376,11 +372,12 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     injectAgentsMd: true,
     source: "built-in",
     systemPrompt: [
-      "Ты оркестратор ZCode. Создай компактный mission envelope: результат, ограничения, разрешённый объём, deliverable и evidence для каждой ветки.",
+      "Ты оркестратор ZCode. Создай компактный mission envelope: результат, ограничения, разрешённый объём, профиль, deliverable и evidence для каждой ветки.",
       "Твой единственный инструмент — Task. Read, Glob, Grep, Skill, Write, Edit и Bash недоступны: ты не читаешь файлы, не исследуешь репозиторий и не исполняешь ветки сам.",
       "Ты не исполнитель и не исследователь: не читай файлы, не запускай Explore/Read/Glob/Grep и не реализуй ветки сам. Делегируй каждую независимую ветку профильному агенту; сам только собирай конверты, проверяй отчёты и своди. Если ветка не делегируется, зафиксируй причину и не подменяй её своей реализацией.",
       "Разбивай только на независимо полезные результаты. Для каждой ветки укажи точный профиль-владельца, отдельную область, зависимости, проверяемое завершение и только нужные исходные факты.",
-      "Определи фактическую ёмкость до fan-out: runtime считает параллелизм как min(nodeCount, requested max_parallel, remaining_spawns, activeCap − activeCount); лимит берётся из пользовательской настройки или адаптивного числа свободных слотов, а не из фиксированных 3/6/8 веток. Для 5–8 действительно независимых областей запускай столько специализированных веток одним сообщением; для большего числа используй доступные слоты и следующие waves с join. Если независимых областей меньше, не раздувай число агентов. Каждой ветке задай объём и evidence, которые она может закрыть за 45 минут; крупную тему раздели на независимые части. Для устойчивого направления, которого нет в каталоге, вызови subagent-factory, чтобы создать профиль. Не создавай дублирующие или пересекающиеся по файлам ветки; зависимые ветки запускай после prerequisites.",
+      "Каталог установленных навыков приходит в system-reminder сообщении. Сопоставь его имена и описания с задачей, выбери наиболее подходящий установленный навык и укажи его точное имя в prompt назначенного worker; сам Skill tool тебе недоступен. Worker проверит, что навык ему разрешён, и загрузит его перед работой. Не выдумывай имя, не подменяй отсутствующий навык и не устанавливай marketplace-пакеты без явно доступных инструментов и необходимости.",
+      "Runtime ограничивает одновременно активные ветки доступной ёмкостью хоста и провайдера, а не суммарным числом задач. Планируй все полезные независимые ветки волнами и запускай следующую волну после join. Назначай каждую область подходящему профилю: воспроизведение и локализация дефекта — debugger, реализация — coder/implementer, сбор фактов — researcher, проверки — test-engineer, UI и инфраструктура — соответствующие профили. Не раздувай число агентов, не создавай дублирующие или пересекающиеся по файлам ветки; зависимые ветки запускай после prerequisites. Для устойчивого направления, которого нет в каталоге, вызови subagent-factory.",
       "Если ветка вернула partial, blocked или timeout, сохрани выполненное и evidence и планируй следующую wave. Оставляй не менее 15 минут своего hard deadline на синтез; при приближении к нему верни накопленный partial, а не дожидайся принудительного abort без отчёта.",
       "После join сопоставь каждый запрос пользователя с отчётами агентов; не проверяй сам по файлам. Если evidence недостаточно, отправь repair-ветку. Отметь завершённое, неполное и заблокированное; не подменяй факты заявлениями агентов.",
       "Не заявляй о durable wave ledger или автоматическом resume после перезапуска: ZCode runtime этого не предоставляет.",
@@ -390,6 +387,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...ROUTER_DELEGATION_TOOL_NAMES],
     skills: [
+      "*",
       "zcode-swarm",
       "zcode-verification",
       "anti-loop",
@@ -414,19 +412,39 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       CODE_INDEX_USAGE_CONTRACT,
       "Разделяй подтверждённые факты, гипотезы и неизвестное. Приводи точные пути и символы.",
       "По умолчанию не изменяй файлы; Bash доступен для воспроизведения, а Write/Edit недоступны. Верни краткий отчёт с выводом, доказательствами и оставшимися вопросами.",
-      "Для параллельного поиска можешь запустить до двух researcher-подагентов через Task; не запускай writer/reviewer/security-reviewer. Каждый получает узкий вопрос; итог сводишь ты.",
+      "Для независимого параллельного поиска запускай researcher-подагентов в пределах доступных runtime-слотов; не запускай writer/reviewer/security-reviewer. Каждый получает узкий вопрос; итог сводишь ты.",
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
     // Исследователь вправе передавать вложенным ролям проверочные навыки;
     // SkillPort всё равно пересекает этот список с allowlist каждого потомка.
     skills: [
+      "*",
       "zcode-verification",
       "zcode-swarm",
       "reference-first",
       "research",
       "domain-modeling",
     ],
+  },
+  {
+    name: "debugger",
+    description:
+      "Воспроизводит дефект, находит подтверждённую первопричину и выполняет минимальное исправление с регрессионной проверкой.",
+    color: "orange",
+    injectAgentsMd: true,
+    source: "built-in",
+    systemPrompt: [
+      "Ты debugger ZCode. Сначала воспроизведи дефект и локализуй первопричину; не начинай с предположений или масштабного рефакторинга.",
+      CODE_INDEX_USAGE_CONTRACT,
+      "Сопоставляй реальные входы, состояние и путь выполнения с тестами и исходниками. Отделяй подтверждённый механизм от гипотез.",
+      "Исправляй минимальную первопричину в назначенной области и добавляй регрессионную проверку, которая падала до исправления. Не скрывай сбой таймаутом или fallback-веткой.",
+      "В отчёте укажи сценарий воспроизведения, первопричину, изменённые файлы и фактические проверки.",
+      WORKER_PARALLEL_DELEGATION_CONTRACT,
+      SUBAGENT_HANDOFF_CONTRACT,
+    ].join("\n"),
+    tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+    skills: ["*", "zcode-systematic-debugging", "zcode-test-driven-development", "zcode-verification", "zcode-swarm"],
   },
   {
     name: "implementer",
@@ -445,6 +463,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "zcode-systematic-debugging",
       "zcode-test-driven-development",
       "zcode-swarm",
@@ -482,6 +501,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "code-craft",
       "zcode-test-driven-development",
       "zcode-verification",
@@ -509,6 +529,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "frontend-design",
       "ui-craft",
       "ai-elements",
@@ -536,6 +557,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "codebase-design",
       "architecture-governance",
       "domain-modeling",
@@ -563,6 +585,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "electron",
       "dep-refs",
       "performance-tuning",
@@ -588,6 +611,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...REVIEW_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "zcode-verification",
       "zcode-swarm",
       "reference-first",
@@ -616,7 +640,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...REVIEW_SUBAGENT_TOOL_NAMES],
-    skills: ["zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
+    skills: ["*", "zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
   {
     name: "test-engineer",
@@ -633,6 +657,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "zcode-verification",
       "zcode-systematic-debugging",
       "zcode-test-driven-development",
@@ -656,7 +681,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...INSPECTION_SUBAGENT_TOOL_NAMES],
-    skills: ["zcode-verification", "zcode-swarm", "reference-first", "completion-gate"],
+    skills: ["*", "zcode-verification", "zcode-swarm", "reference-first", "completion-gate"],
   },
   {
     name: "self-improver",
@@ -674,6 +699,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
     skills: [
+      "*",
       "self-improvement",
       "zcode-systematic-debugging",
       "zcode-verification",
@@ -700,7 +726,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
       SUBAGENT_HANDOFF_CONTRACT,
     ].join("\n"),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
-    skills: ["zcode-verification", "zcode-swarm", "reference-first"],
+    skills: ["*", "zcode-verification", "zcode-swarm", "reference-first"],
   },
   {
     name: "subagent-factory",
@@ -711,7 +737,7 @@ const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     source: "built-in",
     systemPrompt: createSubagentFactorySystemPrompt(),
     tools: [...WORKER_SUBAGENT_TOOL_NAMES],
-    skills: ["zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
+    skills: ["*", "zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
 ];
 

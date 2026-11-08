@@ -3,10 +3,8 @@ import { GEN_UI_OUTPUT_ROOT_ENV } from "@zcode/shared/node";
 import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode/provider";
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import {
-  ZCODE_SPAWN_BUDGET_ENV_KEY,
   ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY,
   ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY,
-  readSpawnBudget,
   readSubagentMaxParallel,
   readSubagentTaskTimeoutMinutes,
   type BuiltInSubagentModelSelectionOverrides,
@@ -130,10 +128,7 @@ export function resolveAppRuntimeConfig(input: {
     bashTimeoutPolicy:
       options.runtimeConfig?.bashTimeoutPolicy ??
       resolveBashTimeoutPolicy(options.env ?? process.env),
-    // Agent 资源设置：设置页 spawn 快照优先，其次 Host env，最后 Core 的安全默认值。
-    spawnBudget:
-      options.runtimeConfig?.spawnBudget ??
-      readSpawnBudget((options.env ?? process.env)[ZCODE_SPAWN_BUDGET_ENV_KEY]),
+    // 保留 AppSettings.spawnBudget 的存储兼容，但不再把旧任务总数上限传入 runtime。
     subagentMaxParallel:
       options.runtimeConfig?.subagentMaxParallel ??
       readSubagentMaxParallel((options.env ?? process.env)[ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY]),

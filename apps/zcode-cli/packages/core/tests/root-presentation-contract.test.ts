@@ -29,7 +29,7 @@ function completedOutput(overrides: CompletedOverrides = {}): AgentCompletedOutp
 }
 
 describe("root presentation contract", () => {
-  it("marks the presentation as the authoritative start report and keeps userText exact", () => {
+  it("asks root for a concise answer while retaining supporting evidence", () => {
     const text = formatAgentOutputForModel(
       completedOutput({
         workResult: {
@@ -38,7 +38,7 @@ describe("root presentation contract", () => {
           files: [],
           evidence: [],
           tests: [],
-          unresolved: ["spawn_budget_exhausted: remaining=0"],
+          unresolved: ["active_limit: no worker slot is currently available"],
           claims: [],
         },
         presentation: PRESENTATION,
@@ -46,18 +46,19 @@ describe("root presentation contract", () => {
     );
 
     expect(text).toContain("<zcode-start-report>");
-    expect(text).toContain(
-      "authoritative final user-facing report authored by the start agent; start is its sole author",
-    );
-    expect(text).toContain(
-      "Relay userText, facts, unknowns and evidenceRefs verbatim. Do not paraphrase, summarize, omit or reorder them, do not add your own retelling or claims, and do not mix them with raw child/subagent text.",
-    );
+    expect(text).toContain("Answer the user's actual request directly in natural, concise language, normally in 1–3 sentences.");
+    expect(text).toContain("If status is partial, failed or blocked, say so plainly.");
+    expect(text).toContain("Do not copy the internal lists, paths, line numbers, commands or child session IDs into an ordinary reply.");
+    expect(text).toContain("Include those details only when the user asks for evidence, sources or a detailed audit.");
+    expect(text).not.toContain("Relay userText");
     expect(text).toContain(PRESENTATION.userText);
     for (const fact of PRESENTATION.facts) expect(text).toContain(`- ${fact}`);
     for (const unknown of PRESENTATION.unknowns) expect(text).toContain(`- ${unknown}`);
     for (const ref of PRESENTATION.evidenceRefs) expect(text).toContain(`- ${ref}`);
     expect(text).toContain("status: partial");
-    expect(text).toContain("unresolved:\n- spawn_budget_exhausted: remaining=0");
+    expect(text).toContain(
+      "unresolved:\n- active_limit: no worker slot is currently available",
+    );
     expect(text).toContain("</zcode-start-report>");
 
     // Сырой ответ ребёнка не подменяет пользовательский отчёт.
@@ -90,7 +91,7 @@ describe("root presentation contract", () => {
           files: ["src/a.ts"],
           evidence: ["command:pnpm typecheck"],
           tests: [{ command: "pnpm typecheck", status: "passed" }],
-          unresolved: ["spawn_budget_exhausted: remaining=0"],
+          unresolved: ["active_limit: no worker slot is currently available"],
           claims: [],
         },
       }),
@@ -100,7 +101,9 @@ describe("root presentation contract", () => {
     expect(text).toContain("agentId: agent_start_1");
     expect(text).toContain("<usage>");
     expect(text).toContain("work_result: partial");
-    expect(text).toContain("work_result_unresolved: spawn_budget_exhausted: remaining=0");
+    expect(text).toContain(
+      "work_result_unresolved: active_limit: no worker slot is currently available",
+    );
     expect(text).not.toContain("<zcode-start-report>");
     expect(text).not.toContain("authoritative final user-facing report");
     expect(text).not.toContain("userText:");

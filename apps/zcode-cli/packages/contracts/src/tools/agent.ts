@@ -36,8 +36,6 @@ const AgentAcceptanceCriterionSchema = z
   })
   .strict();
 
-export const AGENT_TASK_GRAPH_MAX_NODES = 128;
-export const AGENT_TASK_GRAPH_MAX_PARALLEL = 24;
 export const AGENT_TASK_GRAPH_MAX_BYTES = 120_000;
 
 const AgentTaskGraphNodeSchema = z
@@ -45,7 +43,7 @@ const AgentTaskGraphNodeSchema = z
     id: z.string().min(1).max(128),
     description: z.string().min(1).max(500),
     prompt: z.string().min(1).max(20_000),
-    depends_on: z.array(z.string().min(1).max(128)).max(AGENT_TASK_GRAPH_MAX_NODES).optional(),
+    depends_on: z.array(z.string().min(1).max(128)).optional(),
     // 修复依据：task graph 中缺失角色时 runner 会继承父角色，仍可能绕过节点级 profile 选择。
     subagent_type: z.string().min(1).max(128),
     /** Exact write scope for the work ledger; absent keeps legacy text extraction. */
@@ -69,8 +67,13 @@ const AgentTaskGraphNodeSchema = z
 
 export const AgentTaskGraphSchema = z
   .object({
-    nodes: z.array(AgentTaskGraphNodeSchema).min(1).max(AGENT_TASK_GRAPH_MAX_NODES),
-    max_parallel: z.number().int().min(1).max(AGENT_TASK_GRAPH_MAX_PARALLEL).optional(),
+    nodes: z.array(AgentTaskGraphNodeSchema).min(1),
+    max_parallel: z
+      .number()
+      .int()
+      .min(1)
+      .refine(Number.isSafeInteger, { message: "max_parallel must be a safe integer" })
+      .optional(),
   })
   .strict()
   .superRefine((graph, context) => {
@@ -198,18 +201,6 @@ const AgentInputObjectSchema = z.object({
     .optional()
     .describe(
       "Set to true to run this agent in the background. You will be notified when it completes.",
-    ),
-  /**
-   * 模型对本子树剩余可 spawn 次数的声明。只是建议值：Host 会用自身配额取 min，
-   * 模型无法借此抬高预算；缺省时 Host 按父预算分配。
-   */
-  remaining_spawns: z
-    .number()
-    .int()
-    .min(0)
-    .optional()
-    .describe(
-      "Optional advisory count of further subagent spawns this subtree may request. The Host clamps it to its own remaining budget; it never increases the budget.",
     ),
   /** 当前 Agent 在 spawn 树中的层级记录；仅供提示与诊断，不构成深度上限。 */
   level: z
