@@ -8,6 +8,7 @@ import type {
   CodeIndexStatus,
   CodeSymbolContext,
   CodeTraceResult,
+  EmbeddingErrorCode,
   EmbeddingPhase,
   EmbeddingProvider,
   EmbeddingTestResult,
@@ -50,6 +51,12 @@ const INDEX_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS edges_target_idx ON edges(target_id);
   CREATE INDEX IF NOT EXISTS edges_target_path_idx ON edges(target_path);
+  CREATE TABLE IF NOT EXISTS imported_calls (
+    source_id TEXT NOT NULL, source_path TEXT NOT NULL, imported_name TEXT NOT NULL,
+    target_path TEXT NOT NULL,
+    FOREIGN KEY(source_path) REFERENCES files(path) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS imported_calls_target_idx ON imported_calls(target_path, imported_name);
 `;
 
 export interface Row extends Record<string, unknown> {
@@ -266,25 +273,32 @@ export function hasPartialCoverage(db: CodeIndexDatabase): boolean {
   return readText(db, "index_partial") === "true" || readText(db, "index_state") === "degraded";
 }
 
-export function readImpact(
-  db: CodeIndexDatabase,
-  changedPaths: string[],
-): CodeImpactResult {
-  const normalized = [...new Set(changedPaths.map((path) =>
-    path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, ""),
-  ))].slice(0, 100);
+export function readImpact(db: CodeIndexDatabase, changedPaths: string[]): CodeImpactResult {
+  const normalized = [
+    ...new Set(
+      changedPaths.map((path) =>
+        path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, ""),
+      ),
+    ),
+  ].slice(0, 100);
   const distance = new Map<string, number>();
   const queue = normalized.map((path) => ({ path, depth: 0 }));
   let partial = hasPartialCoverage(db);
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const current = queue[cursor]!;
     if (current.depth >= 4) continue;
-    const upstream = rows<Row>(db,
-      "SELECT DISTINCT source_path AS sourcePath FROM edges WHERE target_path = ? LIMIT 501", current.path);
+    const upstream = rows<Row>(
+      db,
+      "SELECT DISTINCT source_path AS sourcePath FROM edges WHERE target_path = ? LIMIT 501",
+      current.path,
+    );
     if (upstream.length > 500) partial = true;
     for (const edge of upstream.slice(0, 500)) {
       if (distance.has(String(edge.sourcePath))) continue;
-      if (distance.size >= 1000) { partial = true; break; }
+      if (distance.size >= 1000) {
+        partial = true;
+        break;
+      }
       const nextDepth = current.depth + 1;
       distance.set(String(edge.sourcePath), nextDepth);
       queue.push({ path: String(edge.sourcePath), depth: nextDepth });
@@ -293,38 +307,65 @@ export function readImpact(
   }
   const affectedSymbols: CodeImpactResult["affectedSymbols"] = [];
   for (const [path, depth] of [...distance].sort((left, right) => left[1] - right[1])) {
-    const found = rows<Row>(db,
-      "SELECT name, path, start_line AS startLine FROM symbols WHERE path = ? ORDER BY exported DESC LIMIT 9", path);
+    const found = rows<Row>(
+      db,
+      "SELECT name, path, start_line AS startLine FROM symbols WHERE path = ? ORDER BY exported DESC LIMIT 9",
+      path,
+    );
     if (found.length > 8) partial = true;
-    for (const symbol of found) affectedSymbols.push({
-      name: String(symbol.name), path, startLine: Number(symbol.startLine), distance: depth,
-    });
-    if (affectedSymbols.length >= 100) { partial = true; break; }
+    for (const symbol of found)
+      affectedSymbols.push({
+        name: String(symbol.name),
+        path,
+        startLine: Number(symbol.startLine),
+        distance: depth,
+      });
+    if (affectedSymbols.length >= 100) {
+      partial = true;
+      break;
+    }
   }
-  affectedSymbols.sort((left, right) => left.distance - right.distance || left.path.localeCompare(right.path));
+  affectedSymbols.sort(
+    (left, right) => left.distance - right.distance || left.path.localeCompare(right.path),
+  );
   return { changedPaths: normalized, affectedSymbols: affectedSymbols.slice(0, 100), partial };
 }
 
-export function readSymbolContext(db: CodeIndexDatabase, symbolName: string): CodeSymbolContext | null {
-  const symbol = rows<Row>(db,
+export function readSymbolContext(
+  db: CodeIndexDatabase,
+  symbolName: string,
+): CodeSymbolContext | null {
+  const symbol = rows<Row>(
+    db,
     "SELECT id, name, kind, path, start_line AS startLine, end_line AS endLine FROM symbols WHERE id = ? OR name = ? ORDER BY exported DESC, start_line LIMIT 1",
-    symbolName, symbolName)[0];
+    symbolName,
+    symbolName,
+  )[0];
   if (!symbol) return null;
-  const outgoing = rows<Row>(db,
+  const outgoing = rows<Row>(
+    db,
     "SELECT e.target_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.target_id WHERE e.source_id = ? LIMIT 101",
-    String(symbol.id));
-  const incoming = rows<Row>(db,
+    String(symbol.id),
+  );
+  const incoming = rows<Row>(
+    db,
     "SELECT e.source_id AS id, e.relation, s.name, s.path, s.start_line AS startLine FROM edges e LEFT JOIN symbols s ON s.id=e.source_id WHERE e.target_id = ? LIMIT 101",
-    String(symbol.id));
-  const related = (items: Row[]) => items.map((item) => ({
-    name: String(item.name ?? item.path ?? "module"),
-    path: String(item.path ?? ""),
-    startLine: Number(item.startLine ?? 1),
-  }));
+    String(symbol.id),
+  );
+  const related = (items: Row[]) =>
+    items.map((item) => ({
+      name: String(item.name ?? item.path ?? "module"),
+      path: String(item.path ?? ""),
+      startLine: Number(item.startLine ?? 1),
+    }));
   return {
     symbol: {
-      id: String(symbol.id), name: String(symbol.name), kind: String(symbol.kind),
-      path: String(symbol.path), startLine: Number(symbol.startLine), endLine: Number(symbol.endLine),
+      id: String(symbol.id),
+      name: String(symbol.name),
+      kind: String(symbol.kind),
+      path: String(symbol.path),
+      startLine: Number(symbol.startLine),
+      endLine: Number(symbol.endLine),
     },
     callers: related(incoming.slice(0, 100)),
     dependencies: related(outgoing.slice(0, 100)),
@@ -337,23 +378,37 @@ export function readTrace(
   fromSymbol: string,
   toSymbol: string,
 ): CodeTraceResult {
-  const from = rows<Row>(db,
-    "SELECT id FROM symbols WHERE id=? OR name=? ORDER BY exported DESC LIMIT 1", fromSymbol, fromSymbol)[0];
-  const to = rows<Row>(db,
-    "SELECT id FROM symbols WHERE id=? OR name=? ORDER BY exported DESC LIMIT 1", toSymbol, toSymbol)[0];
+  const from = rows<Row>(
+    db,
+    "SELECT id FROM symbols WHERE id=? OR name=? ORDER BY exported DESC LIMIT 1",
+    fromSymbol,
+    fromSymbol,
+  )[0];
+  const to = rows<Row>(
+    db,
+    "SELECT id FROM symbols WHERE id=? OR name=? ORDER BY exported DESC LIMIT 1",
+    toSymbol,
+    toSymbol,
+  )[0];
   if (!from || !to) return { found: false, path: [], partial: hasPartialCoverage(db) };
   const queue = [String(from.id)];
   const previous = new Map<string, { id: string; relation: string }>();
   const visited = new Set(queue);
   let partial = hasPartialCoverage(db);
   for (let cursor = 0; cursor < queue.length && !visited.has(String(to.id)); cursor += 1) {
-    const outgoing = rows<Row>(db,
-      "SELECT target_id AS targetId, relation FROM edges WHERE source_id = ? LIMIT 501", queue[cursor]!);
+    const outgoing = rows<Row>(
+      db,
+      "SELECT target_id AS targetId, relation FROM edges WHERE source_id = ? LIMIT 501",
+      queue[cursor]!,
+    );
     if (outgoing.length > 500) partial = true;
     for (const edge of outgoing.slice(0, 500)) {
       const target = String(edge.targetId);
       if (visited.has(target)) continue;
-      if (visited.size >= 2000) { partial = true; break; }
+      if (visited.size >= 2000) {
+        partial = true;
+        break;
+      }
       visited.add(target);
       previous.set(target, { id: queue[cursor]!, relation: String(edge.relation) });
       queue.push(target);
@@ -370,13 +425,24 @@ export function readTrace(
     cursor = item.id;
   }
   const ordered = reversed.reverse();
-  const symbols = rows<Row>(db,
+  const symbols = rows<Row>(
+    db,
     `SELECT id, name, path, start_line AS startLine FROM symbols WHERE id IN (${ordered.map(() => "?").join(",")})`,
-    ...ordered.map((item) => item.id));
+    ...ordered.map((item) => item.id),
+  );
   const byId = new Map(symbols.map((symbol) => [String(symbol.id), symbol]));
   const path = ordered.flatMap((item) => {
     const symbol = byId.get(item.id);
-    return symbol ? [{ name: String(symbol.name), path: String(symbol.path), startLine: Number(symbol.startLine), relation: item.relation }] : [];
+    return symbol
+      ? [
+          {
+            name: String(symbol.name),
+            path: String(symbol.path),
+            startLine: Number(symbol.startLine),
+            relation: item.relation,
+          },
+        ]
+      : [];
   });
   return { found: true, path, partial };
 }
@@ -397,12 +463,31 @@ export function statusFromDb(db: CodeIndexDatabase, progress?: IndexProgress): C
   const storedEmbeddingPhase = readText(db, "embedding_phase");
   const embeddingPhase: EmbeddingPhase = !configured
     ? "not-configured"
-    : progress?.embeddingPhase ??
-      (available
-        ? "ready"
-        : storedEmbeddingPhase === "failed"
-          ? "failed"
-          : "pending");
+    : (progress?.embeddingPhase ??
+      (available ? "ready" : storedEmbeddingPhase === "failed" ? "failed" : "pending"));
+  const storedEmbeddingErrorCode = readText(db, "embedding_error_code");
+  const embeddingErrorCodes: readonly EmbeddingErrorCode[] = [
+    "request-failed",
+    "timeout",
+    "invalid-response",
+    "authentication",
+    "not-found",
+    "rate-limited",
+    "provider-error",
+  ];
+  const storedEmbeddingHttpStatus = Number(readText(db, "embedding_http_status"));
+  const lastEmbeddingError = embeddingErrorCodes.includes(
+    storedEmbeddingErrorCode as EmbeddingErrorCode,
+  )
+    ? {
+        code: storedEmbeddingErrorCode as EmbeddingErrorCode,
+        ...(Number.isInteger(storedEmbeddingHttpStatus) &&
+        storedEmbeddingHttpStatus >= 100 &&
+        storedEmbeddingHttpStatus <= 599
+          ? { httpStatus: storedEmbeddingHttpStatus }
+          : {}),
+      }
+    : undefined;
   const state =
     progress?.state ??
     (storedState === "degraded" ? "degraded" : readText(db, "generation") ? "ready" : "unindexed");
@@ -438,6 +523,9 @@ export function statusFromDb(db: CodeIndexDatabase, progress?: IndexProgress): C
         : {}),
       available,
       phase: embeddingPhase,
+      ...(embeddingPhase === "failed" && lastEmbeddingError
+        ? { lastError: lastEmbeddingError }
+        : {}),
     },
     diagnostics: [...diagnostics, ...(progress?.diagnostics ?? [])].slice(0, MAX_DIAGNOSTICS),
   };
@@ -496,20 +584,40 @@ export class EmbeddingHttpError extends Error {
   }
 }
 
-function embeddingHttpErrorCode(status: number): NonNullable<EmbeddingTestResult["errorCode"]> {
+function embeddingHttpErrorCode(status: number): EmbeddingErrorCode {
   if (status === 401 || status === 403) return "authentication";
   if (status === 404) return "not-found";
   if (status === 429) return "rate-limited";
   return "provider-error";
 }
 
-export function embeddingHttpErrorResult(error: EmbeddingHttpError, elapsedMs: number): EmbeddingTestResult {
-  return {
-    ok: false,
-    errorCode: embeddingHttpErrorCode(error.status),
-    httpStatus: error.status,
-    elapsedMs,
-  };
+export function embeddingFailureFromError(error: unknown): {
+  code: EmbeddingErrorCode;
+  httpStatus?: number;
+} {
+  if (error instanceof EmbeddingHttpError) {
+    return {
+      code: embeddingHttpErrorCode(error.status),
+      httpStatus: error.status,
+    };
+  }
+  const message = error instanceof Error ? error.message : "";
+  if (/invalid vector|invalid.*batch|vector order/i.test(message))
+    return { code: "invalid-response" };
+  if (/timeout|timed out|abort/i.test(message)) return { code: "timeout" };
+  return { code: "request-failed" };
+}
+
+function retryDelayMs(response: Response, retryIndex: number): number | null {
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    const parsed = Number.isFinite(seconds)
+      ? Math.max(0, seconds * 1000)
+      : Math.max(0, Date.parse(retryAfter) - Date.now());
+    if (Number.isFinite(parsed)) return parsed <= 30_000 ? parsed : null;
+  }
+  return Math.min(500 * 2 ** retryIndex, 2_000);
 }
 
 export async function requestEmbeddings(
@@ -520,19 +628,28 @@ export async function requestEmbeddings(
   if (!config.endpoint || !config.model || input.length === 0) return [];
   const vectors: number[][] = [];
   for (let offset = 0; offset < input.length; offset += MAX_EMBED_BATCH) {
-    const response = await fetchImpl(config.endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: config.model,
-        input: input.slice(offset, offset + MAX_EMBED_BATCH),
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new EmbeddingHttpError(response.status);
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fetchImpl(config.endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: config.model,
+          input: input.slice(offset, offset + MAX_EMBED_BATCH),
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (response.ok) break;
+      const retryable = response.status === 429 || response.status >= 500;
+      if (!retryable || attempt === 2) throw new EmbeddingHttpError(response.status);
+      const delayMs = retryDelayMs(response, attempt);
+      if (delayMs === null) throw new EmbeddingHttpError(response.status);
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    if (!response?.ok) throw new EmbeddingHttpError(response?.status ?? 0);
     const payload: unknown = await response.json();
     const expectedCount = Math.min(MAX_EMBED_BATCH, input.length - offset);
     let embeddings: unknown;

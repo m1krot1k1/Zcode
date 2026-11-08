@@ -83,20 +83,32 @@ function submitSearch(value = "deck") {
 describe("Skills marketplace panel", () => {
   it("renders installed skills immediately without any search query", async () => {
     const list = vi.fn().mockResolvedValue(installedSkillsResult(installedDeckSkill));
-    renderPanel({ list, searchMarketplace: vi.fn(), installMarketplaceSkill: vi.fn() });
+    renderPanel({
+      list,
+      searchMarketplace: vi.fn().mockResolvedValue([]),
+      installMarketplaceSkill: vi.fn(),
+    });
 
-    const row = await screen.findByTestId("plugin-store-skills-installed-item-acme/deck/create-deck");
+    const row = await screen.findByTestId(
+      "plugin-store-skills-installed-item-acme/deck/create-deck",
+    );
     expect(row.getAttribute("data-enabled")).toBe("true");
     expect(within(row).getByText("create-deck")).toBeTruthy();
     expect(within(row).getByText("This workspace")).toBeTruthy();
     expect(within(row).getByText("Enabled")).toBeTruthy();
-    expect(within(row).getByText("/workspace/demo/.agents/skills/create-deck/SKILL.md")).toBeTruthy();
+    expect(
+      within(row).getByText("/workspace/demo/.agents/skills/create-deck/SKILL.md"),
+    ).toBeTruthy();
     expect(list).toHaveBeenCalledWith({ workspacePath: "/workspace/demo" });
   });
 
   it("shows the installed empty state when no skills are installed", async () => {
     const list = vi.fn().mockResolvedValue(emptyListResult);
-    renderPanel({ list, searchMarketplace: vi.fn(), installMarketplaceSkill: vi.fn() });
+    renderPanel({
+      list,
+      searchMarketplace: vi.fn().mockResolvedValue([]),
+      installMarketplaceSkill: vi.fn(),
+    });
 
     expect(await screen.findByText("No installed skills yet")).toBeTruthy();
     expect(screen.getByTestId("plugin-store-skills-installed-empty")).toBeTruthy();
@@ -122,22 +134,23 @@ describe("Skills marketplace panel", () => {
     expect(skillsService.searchMarketplace).toHaveBeenCalledWith("deck", {
       workspacePath: "/workspace/demo",
     });
+    expect(skillsService.searchMarketplace).toHaveBeenNthCalledWith(1, "skill", {
+      workspacePath: "/workspace/demo",
+    });
     expect(screen.getAllByText("acme/deck")).toHaveLength(2);
     expect(screen.getByText("Installs: 1200")).toBeTruthy();
     expect(
-      screen
-        .getByTestId("plugin-store-skills-item-legacy-deck")
-        .getAttribute("data-installed"),
+      screen.getByTestId("plugin-store-skills-item-legacy-deck").getAttribute("data-installed"),
     ).toBe("true");
     expect(
       screen.getByTestId("plugin-store-skills-item-create-deck").getAttribute("data-installed"),
     ).toBe("false");
-    expect(screen.getByTestId("plugin-store-skills-install-create-deck").hasAttribute("disabled")).toBe(
-      false,
-    );
-    expect(screen.getByTestId("plugin-store-skills-install-legacy-deck").hasAttribute("disabled")).toBe(
-      true,
-    );
+    expect(
+      screen.getByTestId("plugin-store-skills-install-create-deck").hasAttribute("disabled"),
+    ).toBe(false);
+    expect(
+      screen.getByTestId("plugin-store-skills-install-legacy-deck").hasAttribute("disabled"),
+    ).toBe(true);
   });
 
   it("shows per-item install loading and refreshes installed state after success", async () => {
@@ -150,8 +163,10 @@ describe("Skills marketplace panel", () => {
     );
     const searchMarketplace = vi
       .fn()
-      .mockResolvedValueOnce([createDeck])
-      .mockResolvedValueOnce([installedDeck]);
+      .mockResolvedValueOnce([]) // initial catalogue snapshot
+      .mockResolvedValueOnce([createDeck]) // submitted search
+      .mockResolvedValueOnce([installedDeck]) // refresh the submitted search
+      .mockResolvedValueOnce([installedDeck]); // refresh the catalogue snapshot
     const list = vi
       .fn()
       .mockResolvedValueOnce(emptyListResult)
@@ -175,13 +190,16 @@ describe("Skills marketplace panel", () => {
     resolveInstall?.(createDeckInstallResult);
 
     await waitFor(() =>
-      expect(screen.getByTestId("plugin-store-skills-install-create-deck").hasAttribute("disabled")).toBe(
-        true,
-      ),
+      expect(
+        screen.getByTestId("plugin-store-skills-install-create-deck").hasAttribute("disabled"),
+      ).toBe(true),
     );
     expect(screen.getByText("create-deck installed")).toBeTruthy();
-    expect(searchMarketplace).toHaveBeenCalledTimes(2);
-    expect(searchMarketplace).toHaveBeenLastCalledWith("deck", {
+    expect(searchMarketplace).toHaveBeenCalledTimes(4);
+    expect(searchMarketplace).toHaveBeenNthCalledWith(2, "deck", {
+      workspacePath: "/workspace/demo",
+    });
+    expect(searchMarketplace).toHaveBeenNthCalledWith(3, "deck", {
       workspacePath: "/workspace/demo",
     });
     expect(
@@ -201,6 +219,7 @@ describe("Skills marketplace panel", () => {
   it("shows a retryable error and recovers to the empty state", async () => {
     const searchMarketplace = vi
       .fn()
+      .mockResolvedValueOnce([]) // initial catalogue snapshot
       .mockRejectedValueOnce(new Error("network down"))
       .mockResolvedValueOnce([]);
     renderPanel({
@@ -216,7 +235,7 @@ describe("Skills marketplace panel", () => {
 
     fireEvent.click(screen.getByTestId("plugin-store-skills-retry"));
     await screen.findByText("No skills match your search");
-    expect(searchMarketplace).toHaveBeenCalledTimes(2);
+    expect(searchMarketplace).toHaveBeenCalledTimes(3);
     expect(searchMarketplace).toHaveBeenLastCalledWith("deck", {
       workspacePath: "/workspace/demo",
     });

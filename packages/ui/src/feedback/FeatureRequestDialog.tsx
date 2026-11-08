@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { XIcon } from "lucide-react";
+import { toLegacyBilingualLocale } from "@zcode/shared";
 import type { IFeedbackService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog.js";
@@ -135,7 +136,7 @@ export const FeatureRequestDialog = memo(function FeatureRequestDialogComponent(
         ticketSeverity: "P3-低",
         ticketModule: "其它",
         modelContext: {},
-        locale,
+        locale: toLegacyBilingualLocale(locale),
         copy,
         formatMessage: intl.formatMessage,
         onCompleted: (ticketId) => {

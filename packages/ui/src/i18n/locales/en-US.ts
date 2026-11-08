@@ -3392,9 +3392,11 @@ const enUS: Record<string, string> = {
   "settings.locale.system": "System default",
   "settings.locale.zh-CN": "中文简体",
   "settings.locale.en-US": "English",
+  "settings.locale.ru-RU": "Русский",
   "sidebar.settings.systemDefault": "System default",
   "sidebar.settings.locale.en-US": "English",
   "sidebar.settings.locale.zh-CN": "中文简体",
+  "sidebar.settings.locale.ru-RU": "Русский",
   "sidebar.settings.interfaceZoom": "Interface zoom",
   "sidebar.settings.theme.light": "Light theme",
   "sidebar.settings.theme.zai-light": "Light theme",
@@ -5037,6 +5039,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
   "settings.modelProvider.customTitle": "Custom API providers for Composer",
   "settings.modelProvider.agentIntegrationsTitle": "Local CLI providers",
+  "settings.modelProvider.workspaceIntelligenceTitle": "Workspace intelligence",
   "settings.modelProvider.legacyOpenCodeTitle": "Older OpenCode API configurations",
   "settings.modelProvider.openCodeCli": "OpenCode CLI",
   "settings.modelProvider.refresh": "Refresh",
@@ -5350,6 +5353,7 @@ const enUS: Record<string, string> = {
   "settings.plugin.skills.installed": "Installed",
   "settings.plugin.skills.emptyInstalledDescription":
     "Create a skill or import one from an external agent.",
+  "settings.plugin.skills.browse": "Browse skill marketplace",
   "settings.plugin.skills.newSkill": "New skill",
   "settings.plugin.skills.searchEmpty": "No skills match your search",
   "settings.plugin.commands.installed": "Installed",
@@ -6238,12 +6242,29 @@ const enUS: Record<string, string> = {
   "codeIndex.embeddingPhase.building": "Building",
   "codeIndex.embeddingPhase.ready": "Ready",
   "codeIndex.embeddingPhase.failed": "Failed",
+  "codeIndex.embeddingError.request-failed":
+    "Could not reach the embedding provider. Local lexical search remains available.",
+  "codeIndex.embeddingError.timeout":
+    "The embedding provider timed out. Refresh the index to retry.",
+  "codeIndex.embeddingError.invalid-response":
+    "The provider returned an unexpected embedding batch. Check model and API compatibility.",
+  "codeIndex.embeddingError.authentication":
+    "The provider rejected the token or model access (HTTP {status}).",
+  "codeIndex.embeddingError.not-found":
+    "The provider could not find the endpoint or model (HTTP {status}).",
+  "codeIndex.embeddingError.rate-limited":
+    "The provider rate-limited the batch (HTTP {status}). Check quota, then refresh the index.",
+  "codeIndex.embeddingError.provider-error":
+    "The provider returned HTTP {status}. Check its status, then refresh the index.",
   "codeIndex.indexing": "Building the local index…",
   "codeIndex.progress": "Indexed {indexed} of {discovered} files",
   "codeIndex.embeddingProgress": "Embeddings {completed} of {total}",
   "codeIndex.updated": "Updated {date}",
   "codeIndex.neverUpdated": "Never",
-  "codeIndex.partial": "Coverage is partial",
+  "codeIndex.partial": "Some content is not indexed",
+  "codeIndex.details": "Index details",
+  "codeIndex.coverageDetails":
+    "Some files are omitted by workspace filters, safety rules, or size limits. Search still works across the indexed files.",
   "codeIndex.build": "Build local index",
   "codeIndex.refresh": "Refresh index",
   "codeIndex.retry": "Retry indexing",
@@ -6255,6 +6276,7 @@ const enUS: Record<string, string> = {
   "codeIndex.noMatches": "No indexed code matches this search.",
   "codeIndex.openGraph": "Open Code Graph",
   "settings.embedding.title": "Embedding provider",
+  "settings.embedding.navigationLabel": "Embeddings",
   "settings.embedding.provider": "Embedding provider",
   "settings.embedding.ollama": "Local · Ollama",
   "settings.embedding.openaiCompatible": "OpenAI-compatible API",
@@ -6262,17 +6284,25 @@ const enUS: Record<string, string> = {
   "settings.embedding.model": "Embedding model",
   "settings.embedding.apiKey": "Optional API token",
   "settings.embedding.tokenSaved": "Saved · leave blank to keep",
-  "settings.embedding.privacy": "Remote providers receive code chunks and search queries. Ollama sends requests to your local service.",
+  "settings.embedding.privacy":
+    "Remote providers receive code chunks and search queries. Ollama sends requests to your local service.",
   "settings.embedding.test": "Test connection",
   "settings.embedding.testSuccess": "Connected · {dimensions} dimensions in {ms} ms",
-  "settings.embedding.testError.invalid-config": "Check the endpoint, model, and provider settings.",
-  "settings.embedding.testError.request-failed": "Could not complete the probe. Check the network, endpoint, and token.",
+  "settings.embedding.testError.invalid-config":
+    "Check the endpoint, model, and provider settings.",
+  "settings.embedding.testError.request-failed":
+    "Could not complete the probe. Check the network, endpoint, and token.",
   "settings.embedding.testError.timeout": "The embedding request timed out.",
-  "settings.embedding.testError.invalid-response": "The provider returned an invalid embedding response.",
-  "settings.embedding.testError.authentication": "The provider rejected the API token or model access (HTTP {status}). Check the token and account access.",
-  "settings.embedding.testError.not-found": "The provider could not find this endpoint or model (HTTP {status}). Check the URL and model ID.",
-  "settings.embedding.testError.rate-limited": "The provider rate-limited this test (HTTP {status}). Check its quota or try again later.",
-  "settings.embedding.testError.provider-error": "The provider returned HTTP {status}. Check its status and request requirements.",
+  "settings.embedding.testError.invalid-response":
+    "The provider returned an invalid embedding response.",
+  "settings.embedding.testError.authentication":
+    "The provider rejected the API token or model access (HTTP {status}). Check the token and account access.",
+  "settings.embedding.testError.not-found":
+    "The provider could not find this endpoint or model (HTTP {status}). Check the URL and model ID.",
+  "settings.embedding.testError.rate-limited":
+    "The provider rate-limited this test (HTTP {status}). Check its quota or try again later.",
+  "settings.embedding.testError.provider-error":
+    "The provider returned HTTP {status}. Check its status and request requirements.",
   "settings.embedding.save": "Save settings",
   "settings.embedding.saved": "Embedding settings saved.",
   "settings.embedding.saveFailed": "Could not update embedding settings.",
@@ -6287,7 +6317,8 @@ const enUS: Record<string, string> = {
   "settings.embedding.phase.ready": "Ready",
   "settings.embedding.phase.failed": "Failed",
   "codeGraph.noResolvedGraph": "No relationships found",
-  "codeGraph.noResolvedGraphDescription": "The index has symbols, but no relationships could be resolved in this view.",
+  "codeGraph.noResolvedGraphDescription":
+    "The index has symbols, but no relationships could be resolved in this view.",
   "codeGraph.title": "Workspace code graph",
   "codeGraph.description": "Explore indexed symbols and their local call and import relationships.",
   "codeGraph.refresh": "Reload graph",
@@ -7503,7 +7534,13 @@ const enUS: Record<string, string> = {
   "chat.error.noAvailableModel": "No model available. Upgrade or set a custom model.",
   "chat.error.providerQuotaFallbackExhausted":
     "All providers have exhausted their quota. Check your balance or choose another model.",
-  "chat.providerFallback.notice": "Provider {from} is unavailable; answering with {to}.",
+  "chat.providerFallback.notice": "Quota for {from} is exhausted; continuing with {to}.",
+  "chat.providerFallback.freeUsageLimit":
+    "Free usage limit reached for {from}; continuing with {to}.",
+  "chat.providerFallback.insufficientBalance":
+    "Balance or quota for {from} is exhausted; continuing with {to}.",
+  "chat.providerFallback.retryAfterExceeded":
+    "{from} is in a long rate-limit wait; continuing with {to}.",
   "chat.error.remoteNoAvailableModel":
     "This remote device has no available model yet. Configure models on this computer first; they will sync to the remote device automatically after you save.",
   "chat.error.sendFailed": "Failed to send. Try again later.",

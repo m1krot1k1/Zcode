@@ -74,7 +74,17 @@ export interface SystemInfo {
 }
 
 /** 支持的语言 */
-export type Locale = "zh-CN" | "en-US";
+export type Locale = "zh-CN" | "en-US" | "ru-RU";
+
+/**
+ * 部分尚未支持俄语的第三方页面和服务仍只接受中英语言标记。
+ * 只在这些集成边界调用，避免把应用自身的俄语 locale 降级。
+ */
+export type LegacyBilingualLocale = "zh-CN" | "en-US";
+
+export function toLegacyBilingualLocale(locale: Locale): LegacyBilingualLocale {
+  return locale === "zh-CN" ? "zh-CN" : "en-US";
+}
 
 /** 界面语言偏好；system 表示跟随当前运行端系统语言。 */
 export type LocalePreference = "system" | Locale;

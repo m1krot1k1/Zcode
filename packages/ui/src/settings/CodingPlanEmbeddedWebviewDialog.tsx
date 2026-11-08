@@ -31,6 +31,7 @@ import {
 import {
   CodingPlanWebviewChannels,
   type CodingPlanPurchaseCompletePayload,
+  toLegacyBilingualLocale,
   ZCODE_ENV,
   ZCODE_VERSION,
 } from "@zcode/shared";
@@ -92,8 +93,8 @@ export function CodingPlanEmbeddedWebviewDialog({
   const webviewRef = useRef<ElectronWebviewTag | null>(null);
   const onOpenResultRef = useRef(onOpenResult);
   onOpenResultRef.current = onOpenResult;
-  // 当前 locale 作为 webview 语言 hint / 注入值；Locale 与 CodingPlanWebviewLocale 同构。
-  const webviewLocale = locale;
+  // 官网 webview 目前只接受中英；俄语只保留在 ZCode 外层界面。
+  const webviewLocale = toLegacyBilingualLocale(locale);
   const webviewCleanupRef = useRef<(() => void) | null>(null);
   // webview 是否已 dom-ready：executeJavaScript 只在 ready 后调用，
   // 否则会抛 "WebView must be attached to the DOM and dom-ready emitted"。

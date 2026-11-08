@@ -12,24 +12,18 @@ import type { MarketplaceSkillInfo } from "@zcode/shared";
  * name, installs }] }`，2026-11-07 实测 HTTP 200）。没有 published/date 字段，也没有 trending/period
  * 参数或 endpoint，因此此处不伪造“New”徽章或 Trending 页签。
  *
- * 该文件是 Skills 市场的视图模型：tab 过滤、搜索过滤、排序与排名。徽章/排序/阈值全部来自
- * `@zcode/shared` 的 catalog 模块，UI 不重复实现共享规则。
+ * 该文件是 Skills 市场的视图模型：目录快照使用 tab/本地搜索过滤；提交后的远端搜索结果
+ * 保留完整来源集合，不再被 Popular 阈值二次筛掉。徽章/排序/阈值来自共享 catalog 模块。
  */
 export type { CatalogBadge, CatalogSortMode } from "@zcode/shared";
 
 export type CatalogTab = "allTime" | "popular";
 
 /** 没有 trending 数据源，页签固定为 All Time / Popular。 */
-export const CATALOG_TABS: readonly CatalogTab[] = [
-  "allTime",
-  "popular",
-] as const;
+export const CATALOG_TABS: readonly CatalogTab[] = ["allTime", "popular"] as const;
 
 /** 大小写不敏感的名称/slug/来源匹配，作为目录的本地过滤器。 */
-export function matchesCatalogQuery(
-  entry: MarketplaceSkillInfo,
-  rawQuery: string,
-): boolean {
+export function matchesCatalogQuery(entry: MarketplaceSkillInfo, rawQuery: string): boolean {
   const query = rawQuery.trim().toLowerCase();
   if (!query) return true;
   return (
@@ -51,6 +45,8 @@ interface CatalogViewInput {
   tab: CatalogTab;
   sort: CatalogSortMode;
   filter: string;
+  /** A submitted marketplace search is an authoritative source result, not the seed snapshot. */
+  searchResults?: boolean;
 }
 
 /**
@@ -62,7 +58,9 @@ export function buildCatalogView(input: CatalogViewInput): CatalogViewEntry[] {
   return input.items
     .filter(
       (item) =>
-        input.tab !== "popular" || item.installs >= SKILLS_POPULAR_MIN_INSTALLS,
+        Boolean(input.searchResults) ||
+        input.tab !== "popular" ||
+        item.installs >= SKILLS_POPULAR_MIN_INSTALLS,
     )
     .filter((item) => matchesCatalogQuery(item, input.filter))
     .slice()

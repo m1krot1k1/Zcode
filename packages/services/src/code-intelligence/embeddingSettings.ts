@@ -111,7 +111,7 @@ export async function updateEmbeddingConfig(
       writeText(db, "embedding_api_key_configured", String(keyConfigured));
     } else {
       db.prepare(
-        "DELETE FROM index_meta WHERE key IN ('embedding_provider','embedding_endpoint','embedding_model','vectors_model','embedding_api_key_configured','embedding_phase')",
+        "DELETE FROM index_meta WHERE key IN ('embedding_provider','embedding_endpoint','embedding_model','vectors_model','embedding_api_key_configured','embedding_phase','embedding_error_code','embedding_http_status')",
       ).run();
       db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
     }
@@ -119,6 +119,9 @@ export async function updateEmbeddingConfig(
       db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
       writeText(db, "vectors_model", "");
       writeText(db, "embedding_phase", "pending");
+      db.prepare(
+        "DELETE FROM index_meta WHERE key IN ('embedding_error_code','embedding_http_status')",
+      ).run();
     }
     db.exec("COMMIT");
     transactionOpen = false;

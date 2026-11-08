@@ -1,5 +1,5 @@
 import { Loader2, Search } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   MCP_CURATED_SERVERS,
   type McpRegistryInstallOption,
@@ -35,7 +35,7 @@ const PRELOAD_BATCH_SIZE = 4;
 let curatedPreload: Promise<McpRegistryMarketplaceEntry[]> | null = null;
 
 /** 清掉会话级精选缓存，让重新加载重新请求 Registry。 */
-function resetMcpRegistryCatalogPreloadForTests(): void {
+export function resetMcpRegistryCatalogPreloadForTests(): void {
   curatedPreload = null;
 }
 
@@ -45,12 +45,17 @@ async function loadCuratedEntries(
   search: (query: string) => Promise<McpRegistryMarketplaceResult>,
 ): Promise<McpRegistryMarketplaceEntry[]> {
   const collected: McpRegistryMarketplaceEntry[] = [];
+  let failedSearches = 0;
   for (let index = 0; index < MCP_CURATED_SERVERS.length; index += PRELOAD_BATCH_SIZE) {
     const batch = MCP_CURATED_SERVERS.slice(index, index + PRELOAD_BATCH_SIZE);
     const results = await Promise.allSettled(batch.map((name) => search(name)));
     for (const result of results) {
       if (result.status === "fulfilled") collected.push(...result.value.entries);
+      else failedSearches += 1;
     }
+  }
+  if (failedSearches === MCP_CURATED_SERVERS.length) {
+    throw new Error("All curated MCP Registry searches failed.");
   }
   // Popular 只展示真实命中的精选条目；未命中的名字不生成占位卡片。
   return mergeMcpRegistryEntries(
@@ -67,35 +72,42 @@ export function McpRegistryMarketplace({
   const { intl } = useZCodeIntl();
   const { mcpSyncService } = useServices();
   const [query, setQuery] = useState("");
-  const [entries, setEntries] = useState<McpRegistryMarketplaceEntry[]>([]);
+  const [catalogEntries, setCatalogEntries] = useState<McpRegistryMarketplaceEntry[]>([]);
+  const [searchEntries, setSearchEntries] = useState<McpRegistryMarketplaceEntry[]>([]);
   const [tab, setTab] = useState<McpCatalogTab>("popular");
   const [sort, setSort] = useState<McpCatalogSortMode>("recommended");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [preloadLoading, setPreloadLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [preloadError, setPreloadError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const loading = preloadLoading || searchLoading;
+  const error = searchError ?? (hasSearched ? null : preloadError);
+  const tabBeforeSearchRef = useRef<McpCatalogTab>("popular");
+  const searchRequestSeqRef = useRef(0);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    setPreloadLoading(true);
     const task =
-      curatedPreload ??
-      loadCuratedEntries((name) => mcpSyncService.searchMarketplace(name));
+      curatedPreload ?? loadCuratedEntries((name) => mcpSyncService.searchMarketplace(name));
     curatedPreload = task;
     task
       .then((loaded) => {
         if (!active || loaded.length === 0) return;
-        setEntries((current) => mergeMcpRegistryEntries(current, loaded));
+        setCatalogEntries((current) => mergeMcpRegistryEntries(current, loaded));
       })
       .catch((cause: unknown) => {
         if (!active) return;
+        if (curatedPreload === task) curatedPreload = null;
         const message = cause instanceof Error ? cause.message : String(cause);
         logger.warn("[McpRegistryMarketplace] curated registry preload failed", {
           error: message,
         });
-        setError(message);
+        setPreloadError(message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setPreloadLoading(false);
       });
     return () => {
       active = false;
@@ -104,43 +116,51 @@ export function McpRegistryMarketplace({
 
   const reloadCurated = async () => {
     resetMcpRegistryCatalogPreloadForTests();
-    setError(null);
-    setLoading(true);
+    setPreloadError(null);
+    setPreloadLoading(true);
     try {
       const loaded = await loadCuratedEntries((name) => mcpSyncService.searchMarketplace(name));
       curatedPreload = Promise.resolve(loaded);
-      setEntries((current) => mergeMcpRegistryEntries(current, loaded));
+      setCatalogEntries((current) => mergeMcpRegistryEntries(current, loaded));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       logger.warn("[McpRegistryMarketplace] curated registry reload failed", { error: message });
-      setError(message);
+      setPreloadError(message);
     } finally {
-      setLoading(false);
+      setPreloadLoading(false);
     }
   };
 
   const search = async (rawQuery: string) => {
     const normalized = rawQuery.trim();
+    const requestSeq = ++searchRequestSeqRef.current;
     setQuery(rawQuery);
+    if (!hasSearched) tabBeforeSearchRef.current = tab;
+    setTab("all");
     setHasSearched(true);
-    setError(null);
+    setSearchEntries([]);
+    setSearchError(null);
     if (!normalized) {
-      setLoading(false);
+      setSearchLoading(false);
+      setHasSearched(false);
+      setTab(tabBeforeSearchRef.current);
       return;
     }
-    setLoading(true);
+    setSearchLoading(true);
     try {
       const result = await mcpSyncService.searchMarketplace(normalized);
-      setEntries((current) => mergeMcpRegistryEntries(current, result.entries));
+      if (requestSeq !== searchRequestSeqRef.current) return;
+      setSearchEntries(result.entries);
     } catch (cause) {
+      if (requestSeq !== searchRequestSeqRef.current) return;
       const message = cause instanceof Error ? cause.message : String(cause);
       logger.warn("[McpRegistryMarketplace] Official MCP Registry search failed", {
         error: message,
         query: normalized,
       });
-      setError(message);
+      setSearchError(message);
     } finally {
-      setLoading(false);
+      if (requestSeq === searchRequestSeqRef.current) setSearchLoading(false);
     }
   };
 
@@ -150,9 +170,17 @@ export function McpRegistryMarketplace({
   };
 
   const viewEntries = useMemo(
-    () => buildMcpCatalogView({ entries, tab, sort, filter: query }),
-    [entries, tab, sort, query],
+    () =>
+      buildMcpCatalogView({
+        entries: hasSearched ? searchEntries : catalogEntries,
+        tab,
+        sort,
+        filter: hasSearched ? "" : query,
+        searchResults: hasSearched,
+      }),
+    [catalogEntries, hasSearched, searchEntries, tab, sort, query],
   );
+  const listReady = !searchLoading && (!preloadLoading || hasSearched);
 
   return (
     <section className="space-y-3" data-testid="mcp-registry-marketplace">
@@ -216,11 +244,25 @@ export function McpRegistryMarketplace({
           data-testid="mcp-registry-search"
           containerClassName="min-w-0 flex-[1_1_18rem]"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (hasSearched || searchLoading) {
+              searchRequestSeqRef.current += 1;
+              setHasSearched(false);
+              setSearchEntries([]);
+              setSearchLoading(false);
+              setTab(tabBeforeSearchRef.current);
+            }
+            setSearchError(null);
+          }}
           onClear={() => {
+            searchRequestSeqRef.current += 1;
             setQuery("");
             setHasSearched(false);
-            setError(null);
+            setSearchEntries([]);
+            setSearchLoading(false);
+            setTab(tabBeforeSearchRef.current);
+            setSearchError(null);
           }}
           clearLabel={intl.formatMessage({ id: "settings.mcp.registry.clearSearch" })}
           placeholder={intl.formatMessage({ id: "settings.mcp.registry.searchPlaceholder" })}
@@ -230,7 +272,7 @@ export function McpRegistryMarketplace({
           variant="secondary"
           size="lg"
           className="h-9"
-          disabled={loading || !query.trim()}
+          disabled={searchLoading || !query.trim()}
           data-testid="mcp-registry-submit"
         >
           <Search className="size-3.5" aria-hidden="true" />
@@ -259,7 +301,7 @@ export function McpRegistryMarketplace({
             variant="outline"
             size="sm"
             onClick={() => {
-              if (hasSearched && query.trim()) void search(query);
+              if (searchError && hasSearched && query.trim()) void search(query);
               else void reloadCurated();
             }}
           >
@@ -268,13 +310,13 @@ export function McpRegistryMarketplace({
         </div>
       ) : null}
 
-      {!loading && !error && viewEntries.length === 0 ? (
+      {listReady && !error && viewEntries.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-4 py-3 text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.mcp.registry.empty" })}
         </p>
       ) : null}
 
-      {!loading && !error && viewEntries.length > 0 ? (
+      {listReady && !error && viewEntries.length > 0 ? (
         <ul className="space-y-2" data-testid="mcp-registry-results">
           {viewEntries.map(({ item: entry, rank, badges }) => (
             <li
@@ -287,10 +329,7 @@ export function McpRegistryMarketplace({
                   <Badge
                     variant="outline"
                     className="font-mono tabular-nums"
-                    aria-label={intl.formatMessage(
-                      { id: "catalog.rankLabel" },
-                      { rank },
-                    )}
+                    aria-label={intl.formatMessage({ id: "catalog.rankLabel" }, { rank })}
                     data-testid={`mcp-registry-rank-${entry.id}`}
                   >
                     #{rank}

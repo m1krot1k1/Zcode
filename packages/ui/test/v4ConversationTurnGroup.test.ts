@@ -2286,6 +2286,31 @@ describe("ConversationTurnGroup assistant history status", () => {
 });
 
 describe("ConversationTurnGroup ChatLoading lifecycle", () => {
+  it("说明触发回退的是额度限制，而不是把原 Provider 误报为不可用", () => {
+    const html = renderUnit(
+      baseUnit({ isRunning: true, assistantHistoryDefaultOpen: true }),
+      {
+        locale: "en-US",
+        apiRetry: {
+          attempt: 1,
+          maxAttempts: 1,
+          nextRetryAt: 1_700_000_001_000,
+          reasonCode: "provider_fallback",
+          providerFallback: {
+            from: "opencode",
+            to: "opencode-go-responses",
+            reason: "free_usage_limit",
+          },
+        },
+      },
+    );
+
+    expect(html).toContain(
+      "Free usage limit reached for opencode; continuing with opencode-go-responses.",
+    );
+    expect(html).not.toContain("opencode is unavailable");
+  });
+
   it("第三次 retry 才替换当前 turn 底部的通用 loading，并保留 3/10 计数口径", () => {
     const html = renderUnit(
       baseUnit({

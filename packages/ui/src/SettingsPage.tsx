@@ -70,6 +70,7 @@ import {
 } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 import { ArchiveManagement, useOptionalProjectDirectory } from "@/project-sidebar/index.js";
+import { CodeGraphExplorer } from "@/agent-workbench/index.js";
 import { resolveRecentRemoteProjectPreference } from "@/project-sidebar/remote-project-connection.js";
 import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
@@ -184,10 +185,6 @@ function SettingsUsageProviderTabs({
     {
       id: "app" as const,
       label: intl.formatMessage({ id: "settings.usage.tab.appUsage" }),
-    },
-    {
-      id: "codeGraph" as const,
-      label: intl.formatMessage({ id: "settings.usage.tab.codeGraph" }),
     },
     ...codingPlanSources.map((source, index) => ({
       id: createSettingsUsageCodingPlanTabId(source.id),
@@ -544,7 +541,9 @@ export function SettingsPage({
   );
   const [usageActiveTab, setUsageActiveTab] = useState<UsageStatsSectionTab>(() => {
     const pendingTab = consumePendingSettingsUsageTab();
-    return pendingTab === "codingPlan" ? "codingPlan" : (pendingTab ?? "app");
+    // Старые ссылки открывали Code Graph как вкладку Usage; теперь это отдельный раздел.
+    if (pendingTab === "codeGraph") return "app";
+    return pendingTab ?? "app";
   });
   const usagePersonalCodingPlanSources = useMemo(() => {
     const sources: CodingPlanUsageSource[] = [];
@@ -673,7 +672,6 @@ export function SettingsPage({
   useEffect(() => {
     if (
       usageActiveTab === "app" ||
-      usageActiveTab === "codeGraph" ||
       usageActiveTab === "codingPlan" ||
       selectedUsageCodingPlanSource
     ) {
@@ -845,7 +843,6 @@ export function SettingsPage({
   const [hostPlatform, setHostPlatform] = useState("");
 
   useEffect(() => {
-    if (usageActiveTab === "codeGraph") return;
     if (
       !shouldFallbackSettingsUsageTabToApp({
         activeTab: usageActiveTab === "app" ? "app" : "codingPlan",
@@ -883,7 +880,7 @@ export function SettingsPage({
           section === "remoteDevices" && detail?.sourceServerDetails === true,
         );
         if (section === "usage" && detail?.usageTab) {
-          setUsageActiveTab(detail.usageTab);
+          setUsageActiveTab(detail.usageTab === "codeGraph" ? "app" : detail.usageTab);
         }
         if (resolveSettingsSection(section) === "plugin" && detail?.pluginTab) {
           setPluginTab(detail.pluginTab);
@@ -1537,7 +1534,7 @@ export function SettingsPage({
         });
         return;
       }
-      if (value === "zh-CN" || value === "en-US") {
+      if (value === "zh-CN" || value === "en-US" || value === "ru-RU") {
         runUserAction({
           input: { featureId: "settings.locale", action: "change_locale", trigger: "select" },
           operation: () => setLocalePreference(value as Locale),
@@ -2224,7 +2221,9 @@ export function SettingsPage({
                                     : (activeWorkspacePath ?? captionWorkspacePath ?? undefined)
                                 }
                                 codeIndexWorkspaceIdentity={
-                                  isRemoteModelProviderWorkspace ? undefined : activeWorkspaceIdentity
+                                  isRemoteModelProviderWorkspace
+                                    ? undefined
+                                    : activeWorkspaceIdentity
                                 }
                                 connectivityWorkspacePath={
                                   localModelProviderConnectivityWorkspacePath
@@ -2312,13 +2311,16 @@ export function SettingsPage({
                               />
                               <ArchiveManagement />
                             </div>
+                          ) : activeSection === "codeGraph" ? (
+                            <CodeGraphExplorer
+                              workspaceIdentity={activeWorkspaceIdentity}
+                              workspacePath={activeWorkspacePath ?? undefined}
+                            />
                           ) : activeSection === "usage" ? (
                             <UsageStatsSection
                               activeTab={usageActiveTab}
                               providerSourcesLoading={usageProviderSettingsLoading}
                               selectedCodingPlanSource={selectedUsageCodingPlanSource}
-                              workspaceIdentity={activeWorkspaceIdentity}
-                              workspacePath={activeWorkspacePath ?? undefined}
                             />
                           ) : activeSection === "subagents" ? (
                             <SubagentsSection

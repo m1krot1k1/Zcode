@@ -125,6 +125,20 @@ describe("model provider navigation i18n", () => {
       }),
     });
 
+    renderStart();
+    const embeddingsResult = useModelProviderNavigation({
+      ...commonOptions,
+      codeIntelligenceAvailable: true,
+      selectedNodeKey: "workspace-intelligence:embeddings",
+      intl: createIntl({
+        "settings.modelProvider.customTitle": "Custom API providers for Composer",
+        "settings.modelProvider.agentIntegrationsTitle": "Local CLI providers",
+        "settings.modelProvider.workspaceIntelligenceTitle": "Workspace intelligence",
+        "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
+        "settings.embedding.navigationLabel": "Embeddings",
+      }),
+    });
+
     expect(zhResult.navigationGroups.find((group) => group.id === "custom")?.title).toBe(
       "Composer 自定义 API 供应商",
     );
@@ -148,5 +162,18 @@ describe("model provider navigation i18n", () => {
     expect(
       enResult.navigationGroups.find((group) => group.id === "agent-integrations")?.items[0]?.label,
     ).toBe("OpenCode CLI · no API key");
+    expect(
+      embeddingsResult.navigationGroups.find((group) => group.id === "workspace-intelligence"),
+    ).toMatchObject({
+      title: "Workspace intelligence",
+      items: [
+        {
+          key: "workspace-intelligence:embeddings",
+          type: "codeIntelligence",
+          label: "Embeddings",
+        },
+      ],
+    });
+    expect(embeddingsResult.selectedNavItem).toMatchObject({ type: "codeIntelligence" });
   });
 });

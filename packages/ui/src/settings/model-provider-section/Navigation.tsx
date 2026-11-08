@@ -442,7 +442,9 @@ export function ModelProviderSectionNavigation({
               {group.id === "legacy-opencode" &&
               collapsedGroups.has(group.id) &&
               !group.items.some((item) => item.key === selectedNodeKey) ? null : group.id ===
-                  "preset" || group.id === "agent-integrations" ? (
+                  "preset" ||
+                group.id === "agent-integrations" ||
+                group.id === "workspace-intelligence" ? (
                 <PresetProviderCardNavigation
                   group={group}
                   selectedNodeKey={selectedNodeKey}

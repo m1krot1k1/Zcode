@@ -98,6 +98,41 @@ describe("embedding providers", () => {
     await expect(requestEmbeddings(config, ["text"], fetchMock)).resolves.toEqual([[0.25, 0.75]]);
   });
 
+  it("retries bounded 429 and 5xx batch responses before returning vectors", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      calls += 1;
+      if (calls === 1) return new Response("{}", { status: 503, headers: { "retry-after": "0" } });
+      if (calls === 2) return new Response("{}", { status: 429, headers: { "retry-after": "0" } });
+      return Response.json({ data: [{ index: 0, embedding: [0.25, 0.75] }] });
+    });
+    const config = validateEmbeddingConfig(
+      "openai-compatible",
+      "https://example.test/v1/embeddings",
+      "example/embed",
+    );
+
+    await expect(requestEmbeddings(config, ["text"], fetchMock)).resolves.toEqual([[0.25, 0.75]]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a rate limit whose Retry-After exceeds the bounded wait", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response("{}", { status: 429, headers: { "retry-after": "60" } }),
+    );
+    const config = validateEmbeddingConfig(
+      "openai-compatible",
+      "https://example.test/v1/embeddings",
+      "example/embed",
+    );
+
+    await expect(requestEmbeddings(config, ["text"], fetchMock)).rejects.toMatchObject({
+      name: "EmbeddingHttpError",
+      status: 429,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects an OpenAI-compatible response with duplicate or missing indexes", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json({
@@ -119,8 +154,8 @@ describe("embedding providers", () => {
   });
 
   it("preserves only the HTTP status for provider failures, never the response body", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response('{"error":"private provider detail"}', { status: 401 }),
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response('{"error":"private provider detail"}', { status: 401 }),
     );
     const config = validateEmbeddingConfig(
       "openai-compatible",

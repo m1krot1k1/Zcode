@@ -1084,6 +1084,12 @@ exceptions:
     paths:
       - packages/ui/src/settings/McpRegistryMarketplace.tsx
     reason: The Official MCP Registry search panel is an additive UI extension inside the existing managed=false ui tree; it only calls the existing mcpSyncService search method and opens the existing MCP form for explicit review, with a dedicated UI test. Ownership and dependency direction are unchanged; adopting the whole ui tree needs a separate boundary refactor.
+  - id: russian-marketing-legacy-locale-bridge
+    rule: unmanaged-new-file
+    paths:
+      - packages/ui/src/components/marketing-touch/MarketingDialogs.tsx
+      - packages/ui/src/components/marketing-touch/MarketingTouchProvider.tsx
+    reason: Keep the Russian ZCode shell locale while mapping only existing campaign/resource contracts to their supported English/Chinese locale at the integration edge; behavior ownership and module boundaries stay unchanged, and adopting the full legacy UI tree is a separate refactor.
   - id: catalog-leaderboard-views
     rule: unmanaged-new-file
     paths:

@@ -2,7 +2,12 @@ import { PluginUiWorkspaceProvider } from "@/plugin-ui/index.js";
 /* eslint-disable max-lines -- App 当前集中编排 workspace 级状态、导航、Git 派生数据和 shell wiring；已将新增 side pane memory 桥接抽出，剩余拆分需要按 shell 边界单独重构。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { resolveWorkspaceKey, type GitChangeSourceId, type WorkspacePurpose } from "@zcode/shared";
+import {
+  resolveWorkspaceKey,
+  toLegacyBilingualLocale,
+  type GitChangeSourceId,
+  type WorkspacePurpose,
+} from "@zcode/shared";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { getVisibleTaskMetas, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { useTaskQueryCacheStore } from "@/store/taskQueryCacheStore.js";
@@ -831,7 +836,7 @@ export function App({
       },
       getTheme: () => theme,
       setTheme,
-      getLocale: () => locale,
+      getLocale: () => toLegacyBilingualLocale(locale),
       setLocale,
       setChatMessages: (messages) => {
         setTestMessages([...messages]);

@@ -224,6 +224,14 @@ function TurnChatLoadingSlot({
   const visibleRetryStatus =
     retryStatus && retryStatus.attempt >= MIN_VISIBLE_API_RETRY_ATTEMPT ? retryStatus : null;
   const providerFallback = apiRetry?.providerFallback;
+  const fallbackMessageId =
+    providerFallback?.reason === "free_usage_limit"
+      ? "chat.providerFallback.freeUsageLimit"
+      : providerFallback?.reason === "insufficient_balance"
+        ? "chat.providerFallback.insufficientBalance"
+        : providerFallback?.reason === "retry_after_exceeded"
+          ? "chat.providerFallback.retryAfterExceeded"
+          : "chat.providerFallback.notice";
   if (!visibleRetryStatus && !eligible && !providerFallback) return null;
   return (
     <div data-zcode-chat-loading-slot="true" className="min-h-5">
@@ -232,7 +240,7 @@ function TurnChatLoadingSlot({
           <ChatLoading loading data-testid={TID_CHAT_LOADING} size="sm" />
           <span>
             {intl.formatMessage(
-              { id: "chat.providerFallback.notice" },
+              { id: fallbackMessageId },
               { from: providerFallback.from, to: providerFallback.to },
             )}
           </span>

@@ -1,4 +1,4 @@
-import { mobilePluginDiscoveryTelemetrySchema } from "@zcode/shared";
+import { mobilePluginDiscoveryTelemetrySchema, toLegacyBilingualLocale } from "@zcode/shared";
 import {
   sessionCreateTelemetrySchema,
   type RendererTelemetryEventPayload,
@@ -323,17 +323,18 @@ function renderWebAuthCallbackPage(): void {
 async function renderConversationSharePage(): Promise<void> {
   // 页面语言跟随路径前缀：/cn/share 中文，裸 /share 英文。
   const routeLocale = resolveConversationShareRouteLocale(window.location.pathname);
+  const shareLocale = toLegacyBilingualLocale(routeLocale);
   // index.html 固定 lang="en"；不同步会让中文分享页对无障碍与浏览器翻译都报错语言。
-  document.documentElement.lang = routeLocale;
+  document.documentElement.lang = shareLocale;
   // 分享页必须设置 title：否则浏览器标签只显示 index.html 的通用标题。
   // 会话标题要等 preview 加载完，先给一个语言正确的兜底。
-  document.title = routeLocale === "zh-CN" ? "ZCode 会话分享" : "ZCode Conversation Share";
+  document.title = shareLocale === "zh-CN" ? "ZCode 会话分享" : "ZCode Conversation Share";
   const shareCode = resolveConversationShareCodeFromPath(window.location.pathname);
   if (!shareCode) {
     root.render(
       <ConversationShareLandingStatus
         state={{ kind: "error", error: "invalid_contract" }}
-        locale={routeLocale}
+        locale={shareLocale}
       />,
     );
     return;
@@ -387,7 +388,7 @@ async function renderConversationSharePage(): Promise<void> {
         });
       }}
       onLogout={onLogout}
-      locale={routeLocale}
+      locale={shareLocale}
       theme={resolveWebThemePreference("zai-light")}
     />,
   );

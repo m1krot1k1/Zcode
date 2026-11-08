@@ -5,6 +5,14 @@ export type CodeIndexState = "unindexed" | "indexing" | "ready" | "degraded";
 export type CodeIndexMatchKind = "lexical" | "semantic";
 export type EmbeddingProvider = "ollama" | "openai-compatible";
 export type EmbeddingPhase = "not-configured" | "pending" | "building" | "ready" | "failed";
+export type EmbeddingErrorCode =
+  | "request-failed"
+  | "timeout"
+  | "invalid-response"
+  | "authentication"
+  | "not-found"
+  | "rate-limited"
+  | "provider-error";
 
 export interface CodeWorkspaceRef {
   workspacePath: string;
@@ -30,6 +38,7 @@ export interface CodeIndexStatus {
     apiKeyConfigured?: boolean;
     available: boolean;
     phase: EmbeddingPhase;
+    lastError?: { code: EmbeddingErrorCode; httpStatus?: number };
   };
   diagnostics: string[];
 }
@@ -105,15 +114,7 @@ export interface CodeTraceResult {
 
 export interface EmbeddingTestResult {
   ok: boolean;
-  errorCode?:
-    | "invalid-config"
-    | "request-failed"
-    | "timeout"
-    | "invalid-response"
-    | "authentication"
-    | "not-found"
-    | "rate-limited"
-    | "provider-error";
+  errorCode?: "invalid-config" | EmbeddingErrorCode;
   /** Sanitized HTTP status only; provider response bodies are never returned. */
   httpStatus?: number;
   dimensions?: number;

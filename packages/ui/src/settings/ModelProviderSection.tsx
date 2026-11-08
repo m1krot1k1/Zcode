@@ -20,6 +20,7 @@ import {
   resolveModelProviderFamilyIdByProviderId,
   resolveModelProviderFamilySpecByProviderId,
   resolveProviderFamilyDomainFromOAuthProvider,
+  toLegacyBilingualLocale,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -719,6 +720,7 @@ export function ModelProviderSection({
       familyConnectionSettingsFailed,
       selectedNodeKey,
       setSelectedNodeKey,
+      codeIntelligenceAvailable: Boolean(codeIntelligenceService && codeIndexWorkspaceRef),
       intl,
     });
   const selectedPlanAccessKey =
@@ -1020,7 +1022,10 @@ export function ModelProviderSection({
     async (input: { templateId?: string; providerName?: string }) => {
       setCreatingProvider(true);
       try {
-        const created = await createPersonalProvider({ ...input, locale });
+        const created = await createPersonalProvider({
+          ...input,
+          locale: toLegacyBilingualLocale(locale),
+        });
         setPendingCreatedProviderId(created.providerId);
         setSelectedNodeKey(createCustomProviderNodeKey(created.providerId));
         setTemplatePickerOpen(false);
@@ -1111,20 +1116,6 @@ export function ModelProviderSection({
   const presetLoading = loading || modelProvidersRefreshing;
   const customLoading = loading || modelProvidersRefreshing;
 
-  if (loadError) {
-    return (
-      <div className="space-y-4">
-        <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-ui-base">
-          <p className="text-destructive">{loadError.message}</p>
-          <Button type="button" variant="outline" onClick={reload}>
-            {intl.formatMessage({ id: "common.retry" })}
-          </Button>
-        </div>
-        <EmbeddingProviderSettings codeIndex={codeIntelligenceService} workspaceRef={codeIndexWorkspaceRef} />
-      </div>
-    );
-  }
-
   return (
     <>
       <ModelProviderSectionLayout
@@ -1171,6 +1162,11 @@ export function ModelProviderSection({
             return handleCreateProvider({ providerName: label });
           }}
         />
+      ) : selectedNavItem?.type === "codeIntelligence" ? (
+        <EmbeddingProviderSettings
+          codeIndex={codeIntelligenceService}
+          workspaceRef={codeIndexWorkspaceRef}
+        />
       ) : selectedNavItem?.type === "agentIntegration" ? (
         <OpenCodeAgentSettingsPanel
           enabled={sharedSettings?.openCodeCliEnabled === true}
@@ -1190,6 +1186,13 @@ export function ModelProviderSection({
             }
           }}
         />
+      ) : loadError ? (
+        <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-ui-base">
+          <p className="text-destructive">{loadError.message}</p>
+          <Button type="button" variant="outline" onClick={reload}>
+            {intl.formatMessage({ id: "common.retry" })}
+          </Button>
+        </div>
       ) : (
         <ModelProviderSectionDetail
           connectionSelections={effectiveConnectionSelections}
@@ -1252,10 +1255,6 @@ export function ModelProviderSection({
         />
       )}
       </ModelProviderSectionLayout>
-      <EmbeddingProviderSettings
-        codeIndex={codeIntelligenceService}
-        workspaceRef={codeIndexWorkspaceRef}
-      />
     </>
   );
 }

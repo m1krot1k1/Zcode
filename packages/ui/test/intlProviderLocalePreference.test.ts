@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type ReactNode } from "react";
 import {
   resolveLocalePreferenceFromSettings,
+  resolveSystemLocaleForLanguage,
   shouldApplyLocaleBroadcastMessage,
   useZCodeIntl,
   ZCodeIntlProvider,
@@ -18,6 +19,16 @@ function LocaleProbe() {
     null,
     createElement("span", { "data-testid": "locale" }, locale),
     createElement("span", { "data-testid": "localePreference" }, localePreference),
+  );
+}
+
+function LocalizedProbe() {
+  const { intl } = useZCodeIntl();
+  return createElement(
+    "div",
+    null,
+    createElement("span", { "data-testid": "russian-label" }, intl.formatMessage({ id: "settings.locale.ru-RU" })),
+    createElement("span", { "data-testid": "english-fallback" }, intl.formatMessage({ id: "settings.appearance.codeTitle" })),
   );
 }
 
@@ -41,6 +52,14 @@ function LocaleControls() {
         onClick: () => setLocalePreference("en-US"),
       },
       "en-US",
+    ),
+    createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setLocalePreference("ru-RU"),
+      },
+      "ru-RU",
     ),
     createElement(LocaleProbe),
   );
@@ -139,6 +158,45 @@ afterEach(() => {
 });
 
 describe("IntlProvider locale preference sync", () => {
+  it.each([
+    ["ru-RU", "ru-RU"],
+    ["ru", "ru-RU"],
+    ["zh-Hans-CN", "zh-CN"],
+    ["en-GB", "en-US"],
+    ["fr-FR", "en-US"],
+    [undefined, "en-US"],
+  ] as const)("системный язык %s разрешается в %s", (language, expected) => {
+    expect(resolveSystemLocaleForLanguage(language)).toBe(expected);
+  });
+
+  it("русская локаль показывает переведённые строки и подставляет английский для непереведённых", () => {
+    render(createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocalizedProbe)));
+    expect(screen.getByTestId("russian-label").textContent).toBe("Русский");
+    expect(screen.getByTestId("english-fallback").textContent).toBe("Code settings");
+  });
+
+  it("русский выбор языка сохраняется и отправляется в синхронизацию окон", async () => {
+    const broadcastService = createBroadcastService();
+    const settingService = renderIntlProvider({
+      settings: { locale: "zh-CN", localePreference: "zh-CN" },
+      broadcastService,
+      children: createElement(LocaleControls),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ru-RU" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("locale").textContent).toBe("ru-RU");
+      expect(settingService.update).toHaveBeenCalledWith({
+        locale: "ru-RU",
+        localePreference: "ru-RU",
+      });
+      expect(broadcastService.send).toHaveBeenCalledWith({
+        channel: "state:locale",
+        payload: { preference: "ru-RU", resolvedLocale: "ru-RU" },
+      });
+    });
+  });
+
   it("手机远控以桌面 settingService locale 覆盖手机本地偏好", () => {
     expect(
       resolveLocalePreferenceFromSettings({

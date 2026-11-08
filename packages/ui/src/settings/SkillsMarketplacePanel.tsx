@@ -63,7 +63,7 @@ export function SkillsMarketplacePanel({
   const catalogView = useMemo(
     () =>
       buildCatalogView({
-        items: marketplace.catalogItems,
+        items: marketplace.catalogItems ?? [],
         tab,
         sort: sortMode,
         filter: draftQuery,
@@ -74,12 +74,13 @@ export function SkillsMarketplacePanel({
   const searchView = useMemo(
     () =>
       buildCatalogView({
-        items: marketplace.items,
+        items: marketplace.items ?? [],
         tab,
         sort: sortMode,
         filter: "",
+        searchResults: marketplace.hasSearched,
       }),
-    [marketplace.items, tab, sortMode],
+    [marketplace.items, marketplace.hasSearched, tab, sortMode],
   );
 
   const handleQueryChange = (value: string) => {
@@ -123,16 +124,10 @@ export function SkillsMarketplacePanel({
         />
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
-            <span
-              id={scopeLabelId}
-              className="text-ui-xs text-foreground-subtle"
-            >
+            <span id={scopeLabelId} className="text-ui-xs text-foreground-subtle">
               {scopeLabel}
             </span>
-            <Select
-              value={scope}
-              onValueChange={(value) => setScope(value as SkillInstallScope)}
-            >
+            <Select value={scope} onValueChange={(value) => setScope(value as SkillInstallScope)}>
               <SelectTrigger
                 size="lg"
                 aria-labelledby={scopeLabelId}
@@ -189,10 +184,7 @@ export function SkillsMarketplacePanel({
               onClick={() => setTab(catalogTab)}
             >
               {intl.formatMessage({
-                id:
-                  catalogTab === "allTime"
-                    ? "catalog.tabs.allTime"
-                    : "catalog.tabs.popular",
+                id: catalogTab === "allTime" ? "catalog.tabs.allTime" : "catalog.tabs.popular",
               })}
             </Button>
           ))}
@@ -201,10 +193,7 @@ export function SkillsMarketplacePanel({
           <span id={sortLabelId} className="text-ui-xs text-foreground-subtle">
             {intl.formatMessage({ id: "catalog.sort.label" })}
           </span>
-          <Select
-            value={sortMode}
-            onValueChange={(value) => setSortMode(value as CatalogSortMode)}
-          >
+          <Select value={sortMode} onValueChange={(value) => setSortMode(value as CatalogSortMode)}>
             <SelectTrigger
               size="lg"
               aria-labelledby={sortLabelId}
@@ -227,10 +216,7 @@ export function SkillsMarketplacePanel({
           </Select>
         </div>
       </div>
-      <p
-        data-testid="plugin-store-skills-source"
-        className="text-ui-xs text-foreground-subtle"
-      >
+      <p data-testid="plugin-store-skills-source" className="text-ui-xs text-foreground-subtle">
         {intl.formatMessage({ id: "catalog.source.installs" })}
         {" · "}
         {intl.formatMessage({ id: "catalog.source.skillsSh" })}
@@ -275,9 +261,7 @@ export function SkillsMarketplacePanel({
           data-testid="plugin-store-skills-error"
           className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
         >
-          <span>
-            {intl.formatMessage({ id: "settings.plugins.store.skills.error" })}
-          </span>
+          <span>{intl.formatMessage({ id: "settings.plugins.store.skills.error" })}</span>
           <Button
             type="button"
             variant="outline"
@@ -302,10 +286,7 @@ export function SkillsMarketplacePanel({
       ) : null}
 
       {showInstalled ? (
-        <section
-          className="space-y-2"
-          aria-labelledby="plugin-store-skills-installed-title"
-        >
+        <section className="space-y-2" aria-labelledby="plugin-store-skills-installed-title">
           <h3
             id="plugin-store-skills-installed-title"
             className="text-ui-base font-medium text-foreground"
@@ -362,12 +343,8 @@ export function SkillsMarketplacePanel({
               })}
             </p>
           ) : null}
-          {!marketplace.installedError &&
-          marketplace.installedSkills.length > 0 ? (
-            <ul
-              className="space-y-2"
-              data-testid="plugin-store-skills-installed-list"
-            >
+          {!marketplace.installedError && marketplace.installedSkills.length > 0 ? (
+            <ul className="space-y-2" data-testid="plugin-store-skills-installed-list">
               {marketplace.installedSkills.map((skill) => (
                 <InstalledSkillRow key={skill.id} skill={skill} />
               ))}
@@ -377,10 +354,7 @@ export function SkillsMarketplacePanel({
       ) : null}
 
       {showInstalled ? (
-        <section
-          className="space-y-2"
-          data-testid="plugin-store-skills-catalog"
-        >
+        <section className="space-y-2" data-testid="plugin-store-skills-catalog">
           {marketplace.catalogLoading ? (
             <p
               role="status"
@@ -417,9 +391,7 @@ export function SkillsMarketplacePanel({
               </Button>
             </div>
           ) : null}
-          {!marketplace.catalogLoading &&
-          !marketplace.catalogError &&
-          catalogView.length === 0 ? (
+          {!marketplace.catalogLoading && !marketplace.catalogError && catalogView.length === 0 ? (
             <p
               data-testid="plugin-store-skills-catalog-empty"
               className="rounded-xl border border-dashed border-border px-4 py-3 text-ui-base text-foreground-subtle"
@@ -430,10 +402,7 @@ export function SkillsMarketplacePanel({
             </p>
           ) : null}
           {catalogView.length > 0 ? (
-            <ul
-              className="space-y-2"
-              data-testid="plugin-store-skills-catalog-list"
-            >
+            <ul className="space-y-2" data-testid="plugin-store-skills-catalog-list">
               {catalogView.map(({ item, rank, badges }) => {
                 const key = marketplaceSkillKey(item);
                 return (
@@ -497,8 +466,7 @@ function InstalledSkillRow({ skill }: { skill: SkillSummary }) {
         })
       : skill.scope === "user"
         ? intl.formatMessage({ id: "settings.plugins.store.skills.scope.user" })
-        : skill.pluginName?.trim() ||
-          intl.formatMessage({ id: "settings.skills.scope.plugin" });
+        : skill.pluginName?.trim() || intl.formatMessage({ id: "settings.skills.scope.plugin" });
   const statusLabel = intl.formatMessage({
     id: skill.enabled
       ? "settings.plugins.store.skills.enabled"
@@ -515,9 +483,7 @@ function InstalledSkillRow({ skill }: { skill: SkillSummary }) {
           <span className="min-w-0 truncate text-ui-base font-medium text-foreground">
             {skill.name}
           </span>
-          <Badge variant={skill.enabled ? "default" : "outline"}>
-            {statusLabel}
-          </Badge>
+          <Badge variant={skill.enabled ? "default" : "outline"}>{statusLabel}</Badge>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle">
           <span>{scopeLabel}</span>
@@ -556,10 +522,7 @@ function SkillMarketplaceRow({
         {rank ? (
           <span
             data-testid={`plugin-store-skills-rank-${item.name}`}
-            aria-label={intl.formatMessage(
-              { id: "catalog.rankLabel" },
-              { rank },
-            )}
+            aria-label={intl.formatMessage({ id: "catalog.rankLabel" }, { rank })}
             className="shrink-0 pt-0.5 font-mono text-ui-xs text-foreground-subtle tabular-nums"
           >
             #{rank}
@@ -571,10 +534,7 @@ function SkillMarketplaceRow({
               {item.name}
             </span>
             {badges?.map((badge) => (
-              <Badge
-                key={badge}
-                variant={badge === "official" ? "secondary" : "outline"}
-              >
+              <Badge key={badge} variant={badge === "official" ? "secondary" : "outline"}>
                 {intl.formatMessage({ id: `catalog.badge.${badge}` })}
               </Badge>
             ))}
@@ -605,9 +565,7 @@ function SkillMarketplaceRow({
         disabled={item.installed || installDisabled}
         onClick={onInstall}
       >
-        {installing ? (
-          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-        ) : null}
+        {installing ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
         {item.installed
           ? intl.formatMessage({
               id: "settings.plugins.store.skills.installed",

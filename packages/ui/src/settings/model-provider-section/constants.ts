@@ -224,13 +224,19 @@ export type ModelProviderNavItem =
       type: "agentIntegration";
       integrationId: "opencode-cli";
       label: string;
+    }
+  | {
+      key: string;
+      type: "codeIntelligence";
+      label: string;
     };
 
 export type ModelProviderNavGroupId =
   | "preset"
   | "custom"
   | "legacy-opencode"
-  | "agent-integrations";
+  | "agent-integrations"
+  | "workspace-intelligence";
 
 export interface ModelProviderNavGroup {
   id: ModelProviderNavGroupId;

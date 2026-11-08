@@ -7,6 +7,7 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
 } from "react";
 import {
+  toLegacyBilingualLocale,
   type FeedbackTicketModule,
   type FeedbackTicketSeverity,
   type FeedbackTicketType,
@@ -266,7 +267,7 @@ export function FeedbackSubmitForm({
         ticketSeverity,
         ticketModule,
         modelContext,
-        locale,
+        locale: toLegacyBilingualLocale(locale),
         copy: submissionCopy,
         formatMessage: intl.formatMessage,
         onTicketCreated: shouldCloseOnTicketCreated

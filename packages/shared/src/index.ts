@@ -20,6 +20,7 @@ export type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
   Locale,
+  LegacyBilingualLocale,
   LocalePreference,
   ZCodeInteractionBehavior,
   TabId,
@@ -35,6 +36,7 @@ export type {
 } from "./protocol.js";
 export type { WorkspacePurpose } from "./workspacePurpose.js";
 export { DEFAULT_LOCALE } from "./protocol.js";
+export { toLegacyBilingualLocale } from "./protocol.js";
 export { ZCODE_VERSION, ZCODE_COMMIT, ZCODE_BUILD_TIME } from "./version.js";
 export type { HelloMessage, HelloAckMessage } from "./handshake.js";
 export type { ArmsRumEnv, ZCodeEnv, ZCodeProductFlavor } from "./env.js";

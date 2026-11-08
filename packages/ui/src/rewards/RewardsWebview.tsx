@@ -5,6 +5,7 @@ import {
   isTrustedRewardsUrl,
   REWARDS_PARTITION,
   resolveRewardsOrigin,
+  toLegacyBilingualLocale,
   ZCODE_ENV,
   ZCODE_OFFLINE_PREVIEW,
   type RewardsContext,
@@ -83,7 +84,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
           createRewardsInjectionScript(
             {
               theme: latest.current.theme,
-              locale: latest.current.locale,
+              locale: toLegacyBilingualLocale(latest.current.locale),
               auth: {
                 status: "anonymous",
                 provider: null,
@@ -120,7 +121,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
       }
       const snapshot: RewardsContext = {
         theme: latest.current.theme,
-        locale: latest.current.locale,
+        locale: toLegacyBilingualLocale(latest.current.locale),
         auth: {
           provider,
           status: identity && (oauth || jwt) ? "ready" : "anonymous",
@@ -184,7 +185,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
               createRewardsInjectionScript(
                 {
                   theme: latest.current.theme,
-                  locale: latest.current.locale,
+                  locale: toLegacyBilingualLocale(latest.current.locale),
                   auth: {
                     status: "anonymous",
                     provider: null,
@@ -223,7 +224,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
           createRewardsInjectionScript(
             {
               theme,
-              locale,
+              locale: toLegacyBilingualLocale(locale),
               auth: { status: "anonymous", provider: null, revision: generation.current },
             },
             {},

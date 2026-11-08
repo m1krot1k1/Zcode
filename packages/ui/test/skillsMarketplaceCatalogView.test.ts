@@ -78,9 +78,7 @@ describe("skills marketplace catalog view", () => {
       filter: "",
     });
     expect(byInstalls[0]?.item.name).toBe("top-skill");
-    expect(
-      compareCatalogEntries(catalog[0]!, catalog[1]!, "installs"),
-    ).toBeGreaterThan(0);
+    expect(compareCatalogEntries(catalog[0]!, catalog[1]!, "installs")).toBeGreaterThan(0);
   });
 
   it("only exposes All Time and Popular tabs and derives badges from real fields", () => {
@@ -88,12 +86,10 @@ describe("skills marketplace catalog view", () => {
     expect(CATALOG_TABS).not.toContain("trending");
 
     // 共享契约接收 publisher/installs；UI 的 source 字段在视图模型里映射为 publisher。
-    expect(
-      skillsBadges({ publisher: "vercel-labs/agent-skills", installs: 1 }),
-    ).toEqual(["official"]);
-    expect(skillsBadges({ installs: SKILLS_POPULAR_MIN_INSTALLS })).toEqual([
-      "popular",
+    expect(skillsBadges({ publisher: "vercel-labs/agent-skills", installs: 1 })).toEqual([
+      "official",
     ]);
+    expect(skillsBadges({ installs: SKILLS_POPULAR_MIN_INSTALLS })).toEqual(["popular"]);
     // 搜索 API 没有发布日期，因此不存在 New 徽章。
     expect(skillsBadges({ installs: 1 })).toEqual([]);
     // 目录行实际产出的徽章也只来自真实字段。
@@ -103,12 +99,11 @@ describe("skills marketplace catalog view", () => {
       sort: "installs",
       filter: "",
     });
-    expect(view.find((item) => item.item.name === "top-skill")?.badges).toEqual(
-      ["official", "popular"],
-    );
-    expect(view.find((item) => item.item.name === "low-skill")?.badges).toEqual(
-      [],
-    );
+    expect(view.find((item) => item.item.name === "top-skill")?.badges).toEqual([
+      "official",
+      "popular",
+    ]);
+    expect(view.find((item) => item.item.name === "low-skill")?.badges).toEqual([]);
   });
 
   it("filters the catalog case-insensitively and preserves installed state", () => {
@@ -142,8 +137,23 @@ describe("skills marketplace catalog view", () => {
       "middle-skill",
       "popular-skill",
     ]);
-    expect(
-      view.every((item) => item.item.installs >= SKILLS_POPULAR_MIN_INSTALLS),
-    ).toBe(true);
+    expect(view.every((item) => item.item.installs >= SKILLS_POPULAR_MIN_INSTALLS)).toBe(true);
+  });
+
+  it("keeps explicit search results even when installs are below the Popular threshold", () => {
+    const lowInstallMatch = entry({
+      name: "yandex-wordstat",
+      source: "community/seo-skills",
+      installs: 309,
+    });
+    const view = buildCatalogView({
+      items: [lowInstallMatch],
+      tab: "popular",
+      sort: "recommended",
+      filter: "",
+      searchResults: true,
+    });
+
+    expect(view.map((item) => item.item.name)).toEqual(["yandex-wordstat"]);
   });
 });

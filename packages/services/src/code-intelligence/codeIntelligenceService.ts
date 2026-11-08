@@ -7,6 +7,7 @@ import type {
   CodeIndexStatus,
   CodeIntelligenceService,
   CodeSearchResult,
+  EmbeddingErrorCode,
   EmbeddingTestResult,
 } from "./contract.js";
 import { scanWorkspace, type IndexedChunkRecord, type IndexedFileRecord } from "./scanner.js";
@@ -19,8 +20,7 @@ import {
 import {
   MAX_DIAGNOSTICS,
   MAX_EMBED_BATCH,
-  EmbeddingHttpError,
-  embeddingHttpErrorResult,
+  embeddingFailureFromError,
   cosineSimilarity,
   databaseFileFor,
   getEmbeddingConfig,
@@ -39,7 +39,6 @@ import {
   safeLimit,
   statusFromDb,
   tokenize,
-  validateEmbeddingConfig,
   upsertFileRecord,
   workspaceIdentity,
   writeEmbedding,
@@ -48,6 +47,7 @@ import {
   type IndexProgress,
   type Row,
 } from "./database.js";
+import { probeEmbeddingProvider } from "./embeddingProbe.js";
 import { createWorkspaceWatcherRegistry } from "./workspaceWatcher.js";
 
 type WorkspaceParams = { workspacePath: string; workspaceIdentity?: string };
@@ -243,9 +243,9 @@ export function createCodeIntelligenceService(
         indexedFiles: 0,
         diagnostics: [],
       });
-      const watcherDiagnostic = diagnosticsByIdentity.get(workspace.key)?.filter(
-        (item) => item === WATCHER_DIAGNOSTIC,
-      ) ?? [];
+      const watcherDiagnostic =
+        diagnosticsByIdentity.get(workspace.key)?.filter((item) => item === WATCHER_DIAGNOSTIC) ??
+        [];
       if (watcherDiagnostic.length) diagnosticsByIdentity.set(workspace.key, watcherDiagnostic);
       else diagnosticsByIdentity.delete(workspace.key);
       try {
@@ -300,6 +300,7 @@ export function createCodeIntelligenceService(
           const config = getEmbeddingConfig(db);
           const modelIdentity = config.identity;
           let embeddingAvailable = false;
+          let embeddingFailure: { code: EmbeddingErrorCode; httpStatus?: number } | undefined;
           const diagnostics = [...scan.diagnostics];
           const vectorsModel = readText(db, "vectors_model");
           const changedPaths = new Set(
@@ -338,6 +339,14 @@ export function createCodeIntelligenceService(
                 ...config,
                 ...(storedApiKey?.trim() ? { apiKey: storedApiKey.trim() } : {}),
               };
+              const embedBatch = async (input: string[]) => {
+                try {
+                  return await requestEmbeddings(requestConfig, input, fetchImpl);
+                } catch (error) {
+                  embeddingFailure = embeddingFailureFromError(error);
+                  throw error;
+                }
+              };
               // Network calls stay outside the main transaction. Existing vectors are staged in
               // a connection-local temp table so a model change never duplicates the whole index
               // in JavaScript memory and only a fully successful embedding pass is published.
@@ -350,11 +359,7 @@ export function createCodeIntelligenceService(
               );
               for (let offset = 0; offset < changedChunks.length; offset += MAX_EMBED_BATCH) {
                 const batch = changedChunks.slice(offset, offset + MAX_EMBED_BATCH);
-                const embeddings = await requestEmbeddings(
-                  requestConfig,
-                  batch.map((chunk) => chunk.content),
-                  fetchImpl,
-                );
+                const embeddings = await embedBatch(batch.map((chunk) => chunk.content));
                 batch.forEach((chunk, index) => {
                   chunk.embedding = writeEmbedding(embeddings[index]!);
                   chunk.embeddingModel = modelIdentity;
@@ -375,10 +380,8 @@ export function createCodeIntelligenceService(
                   );
                   const eligible = page.filter((chunk) => !changedPaths.has(String(chunk.path)));
                   if (eligible.length > 0) {
-                    const embeddings = await requestEmbeddings(
-                      requestConfig,
+                    const embeddings = await embedBatch(
                       eligible.map((chunk) => String(chunk.content)),
-                      fetchImpl,
                     );
                     eligible.forEach((chunk, index) => {
                       stageEmbedding.run(String(chunk.id), writeEmbedding(embeddings[index]!));
@@ -391,15 +394,18 @@ export function createCodeIntelligenceService(
                 }
               }
               embeddingAvailable = true;
-            } catch {
+            } catch (error) {
+              // Only provider request failures may degrade to lexical-only indexing. Local DB
+              // staging failures must abort the generation instead of being mislabeled as API errors.
+              if (!embeddingFailure) throw error;
               for (const chunk of changedChunks) {
                 chunk.embedding = null;
                 chunk.embeddingModel = null;
               }
               db.exec("DELETE FROM temp.pending_embeddings");
               embeddingAvailable = false;
-              diagnostics.push(
-                "The embedding endpoint was unavailable; the index was committed for lexical search.",
+              diagnostics.unshift(
+                "Embedding generation failed; the local lexical index remains available.",
               );
             }
           }
@@ -459,7 +465,30 @@ export function createCodeIntelligenceService(
                   edge.targetPath,
                 );
               }
+              for (const call of record.importedCalls ?? []) {
+                if (!filePaths.has(call.targetPath)) continue;
+                db.prepare(
+                  "INSERT INTO imported_calls(source_id, source_path, imported_name, target_path) VALUES(?, ?, ?, ?)",
+                ).run(call.sourceId, call.sourcePath, call.importedName, call.targetPath);
+              }
             }
+            // Cross-file call links are derived from named imports. Rebuild them from persisted
+            // import facts so editing either endpoint refreshes callers without rescanning sources.
+            db.prepare("DELETE FROM edges WHERE relation = 'calls' AND source_path <> target_path").run();
+            db.prepare(
+              `INSERT OR IGNORE INTO edges(source_id, target_id, relation, source_path, target_path)
+               SELECT imported_calls.source_id, target.id, 'calls', imported_calls.source_path, imported_calls.target_path
+               FROM imported_calls
+               JOIN symbols AS source ON source.id = imported_calls.source_id
+               JOIN symbols AS target
+                 ON target.path = imported_calls.target_path
+                AND target.name = imported_calls.imported_name
+                AND target.exported = 1
+               WHERE (SELECT COUNT(*) FROM symbols AS candidate
+                      WHERE candidate.path = imported_calls.target_path
+                        AND candidate.name = imported_calls.imported_name
+                        AND candidate.exported = 1) = 1`,
+            ).run();
             if (embeddingAvailable && modelIdentity && needsFullReembed) {
               db.prepare(
                 "UPDATE chunks SET embedding = (SELECT embedding FROM temp.pending_embeddings WHERE pending_embeddings.id = chunks.id), embedding_model = ? WHERE id IN (SELECT id FROM temp.pending_embeddings)",
@@ -478,9 +507,21 @@ export function createCodeIntelligenceService(
               embeddingAvailable && modelIdentity ? modelIdentity : "",
             );
             if (!config.endpoint || !config.model) {
-              db.prepare("DELETE FROM index_meta WHERE key = 'embedding_phase'").run();
+              db.prepare(
+                "DELETE FROM index_meta WHERE key IN ('embedding_phase','embedding_error_code','embedding_http_status')",
+              ).run();
             } else {
               writeText(db, "embedding_phase", embeddingAvailable ? "ready" : "failed");
+              if (embeddingAvailable) {
+                db.prepare(
+                  "DELETE FROM index_meta WHERE key IN ('embedding_error_code','embedding_http_status')",
+                ).run();
+              } else if (embeddingFailure) {
+                writeText(db, "embedding_error_code", embeddingFailure.code);
+                if (embeddingFailure.httpStatus !== undefined)
+                  writeText(db, "embedding_http_status", String(embeddingFailure.httpStatus));
+                else db.prepare("DELETE FROM index_meta WHERE key = 'embedding_http_status'").run();
+              }
             }
             db.exec("COMMIT");
             const current = progressByIdentity.get(workspace.key);
@@ -553,53 +594,13 @@ export function createCodeIntelligenceService(
       apiKey?: string;
     },
   ): Promise<EmbeddingTestResult> => {
-    const startedAt = Date.now();
-    let config: ReturnType<typeof validateEmbeddingConfig>;
-    try {
-      config = validateEmbeddingConfig(params.provider, params.endpoint, params.model);
-    } catch {
-      return { ok: false, errorCode: "invalid-config", elapsedMs: Date.now() - startedAt };
-    }
-    try {
-      if (
-        params.apiKey &&
-        (params.apiKey.length > 4096 ||
-          params.apiKey.includes("\r") ||
-          params.apiKey.includes("\n") ||
-          params.apiKey.includes(String.fromCharCode(0)))
-      ) throw new Error("invalid credential");
-      const workspace = resolveWorkspace(params);
-      const savedApiKey = params.apiKey?.trim()
-        ? null
-        : await credentialService?.load(embeddingCredentialKey(workspace.key));
-      const vectors = await requestEmbeddings(
-        {
-          ...config,
-          ...(params.apiKey?.trim()
-            ? { apiKey: params.apiKey.trim() }
-            : savedApiKey?.trim()
-              ? { apiKey: savedApiKey.trim() }
-              : {}),
-        },
-        ["zcode local embedding connection check"],
-        fetchImpl,
-      );
-      const vector = vectors[0];
-      return vector
-        ? { ok: true, dimensions: vector.length, elapsedMs: Date.now() - startedAt }
-        : { ok: false, errorCode: "invalid-response", elapsedMs: Date.now() - startedAt };
-    } catch (error) {
-      if (error instanceof EmbeddingHttpError) {
-        return embeddingHttpErrorResult(error, Date.now() - startedAt);
-      }
-      const message = error instanceof Error ? error.message : "";
-      const errorCode = /invalid vector|invalid.*batch|vector order/i.test(message)
-        ? "invalid-response"
-        : /timeout|timed out|abort/i.test(message)
-          ? "timeout"
-          : "request-failed";
-      return { ok: false, errorCode, elapsedMs: Date.now() - startedAt };
-    }
+    const workspace = resolveWorkspace(params);
+    return probeEmbeddingProvider(
+      params,
+      embeddingCredentialKey(workspace.key),
+      credentialService,
+      fetchImpl,
+    );
   };
 
   const service: CodeIntelligenceService = {

@@ -52,10 +52,7 @@ function withMcpCuratedRank(
  *
  * Registry 响应没有 official/publisher 标记，所以这里不产出 `official` 徽章。
  */
-function mcpCatalogBadges(
-  entry: McpCatalogEntryLike,
-  now: Date = new Date(),
-): CatalogBadge[] {
+function mcpCatalogBadges(entry: McpCatalogEntryLike, now: Date = new Date()): CatalogBadge[] {
   const badges: CatalogBadge[] = [];
   if (getMcpCuratedRank(entry.name) !== undefined) badges.push("curated");
   if (isNewPublishedAt(entry.publishedAt, 30, now)) badges.push("new");
@@ -63,10 +60,7 @@ function mcpCatalogBadges(
 }
 
 /** 大小写不敏感的名称/描述/id 子串匹配，作为目录的本地过滤器。 */
-function matchesMcpCatalogQuery(
-  entry: McpRegistryMarketplaceEntry,
-  rawQuery: string,
-): boolean {
+function matchesMcpCatalogQuery(entry: McpRegistryMarketplaceEntry, rawQuery: string): boolean {
   const query = rawQuery.trim().toLowerCase();
   if (!query) return true;
   return (
@@ -100,11 +94,13 @@ interface McpCatalogViewInput {
   tab: McpCatalogTab;
   sort: McpCatalogSortMode;
   filter: string;
+  /** An explicit Registry search must not be hidden by the curated-only tab. */
+  searchResults?: boolean;
   now?: Date;
 }
 
 /**
- * 单一派生入口：tab 过滤（Popular 仅精选）→ 搜索过滤 → 排序 → 排名与徽章。
+ * 单一派生入口：普通浏览时 Popular 仅精选；显式搜索使用 Registry 返回集合，随后排序、排名与徽章。
  *
  * `recommended` 使用共享比较器：curated rank 升序，未收录条目排在其后，再按 name；
  * `name` 按 localeCompare。排名基于当前可见列表，因此筛选/排序后仍然连续。
@@ -112,7 +108,9 @@ interface McpCatalogViewInput {
 export function buildMcpCatalogView(input: McpCatalogViewInput): McpCatalogViewEntry[] {
   const ranked = withMcpCuratedRank(input.entries);
   return ranked
-    .filter((entry) => input.tab === "all" || entry.curatedRank !== undefined)
+    .filter(
+      (entry) => input.searchResults || input.tab === "all" || entry.curatedRank !== undefined,
+    )
     .filter((entry) => matchesMcpCatalogQuery(entry, input.filter))
     .slice()
     .sort((left, right) => compareCatalogEntries(left, right, input.sort))

@@ -807,11 +807,26 @@ export function SkillsSection({
       ) : loading || !projectionMatchesTarget ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
       ) : hasEmptySearchResult ? (
-        <PluginSearchEmptyState
-          label={intl.formatMessage({
-            id: "settings.plugin.skills.searchEmpty",
-          })}
-        />
+        <div className="space-y-2">
+          <PluginSearchEmptyState
+            label={intl.formatMessage({
+              id: "settings.plugin.skills.searchEmpty",
+            })}
+          />
+          {onOpenPluginStore ? (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onOpenPluginStore}
+                data-testid="skills-open-marketplace"
+              >
+                {intl.formatMessage({ id: "settings.plugin.skills.browse" })}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <div className="space-y-6">
           <section className={hideInstalledGroup ? "hidden" : "space-y-4"}>
@@ -854,6 +869,17 @@ export function SkillsSection({
                         id: "settings.skills.import.action",
                       })}
                     </Button>
+                    {onOpenPluginStore ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        onClick={onOpenPluginStore}
+                        data-testid="skills-open-marketplace"
+                      >
+                        {intl.formatMessage({ id: "settings.plugin.skills.browse" })}
+                      </Button>
+                    ) : null}
                   </>
                 }
               />

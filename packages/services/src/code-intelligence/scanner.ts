@@ -14,6 +14,7 @@ export interface IndexedFileRecord {
   symbols: IndexedSymbolRecord[];
   chunks: IndexedChunkRecord[];
   edges: IndexedEdgeRecord[];
+  importedCalls?: IndexedImportedCallRecord[];
 }
 
 export interface IndexedSymbolRecord {
@@ -42,6 +43,13 @@ export interface IndexedEdgeRecord {
   targetId: string;
   relation: "imports" | "calls";
   sourcePath: string;
+  targetPath: string;
+}
+
+export interface IndexedImportedCallRecord {
+  sourceId: string;
+  sourcePath: string;
+  importedName: string;
   targetPath: string;
 }
 
@@ -189,8 +197,18 @@ function resolveImportPath(
 ): string | null {
   if (!specifier.startsWith(".")) return null;
   const base = posix.normalize(posix.join(posix.dirname(sourcePath), specifier));
+  const runtimeExtension = extname(base).toLowerCase();
+  const sourceExtensionMap: Record<string, string[]> = {
+    ".js": [".ts", ".tsx", ".mts", ".cts"],
+    ".jsx": [".tsx", ".ts"],
+    ".mjs": [".mts", ".ts"],
+    ".cjs": [".cts", ".ts"],
+  };
+  const sourceExtensions = sourceExtensionMap[runtimeExtension];
+  const stem = sourceExtensions ? base.slice(0, -runtimeExtension.length) : base;
   const candidates = [
     base,
+    ...(sourceExtensions ?? []).map((extension) => `${stem}${extension}`),
     ...[".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"].map(
       (extension) => `${base}${extension}`,
     ),
@@ -232,6 +250,7 @@ function parseSourceFile(
   ];
   const declarationByNode = new Map<ts.Node, IndexedSymbolRecord>();
   const namesToSymbols = new Map<string, IndexedSymbolRecord[]>();
+  const importedBindings = new Map<string, { importedName: string; targetPath: string }>();
 
   const collect = (node: ts.Node): void => {
     const name = declarationName(node);
@@ -260,7 +279,32 @@ function parseSourceFile(
   };
   collect(sourceFile);
 
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    // 修复依据：TypeScript 对 moduleSpecifier 暴露为 Expression，只有字符串字面量才是本地模块路径。
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const clause = statement.importClause;
+    if (
+      !clause ||
+      clause.isTypeOnly ||
+      !clause.namedBindings ||
+      !ts.isNamedImports(clause.namedBindings)
+    ) {
+      continue;
+    }
+    const targetPath = resolveImportPath(relPath, statement.moduleSpecifier.text, knownPaths);
+    if (!targetPath) continue;
+    for (const specifier of clause.namedBindings.elements) {
+      if (specifier.isTypeOnly) continue;
+      importedBindings.set(specifier.name.text, {
+        importedName: specifier.propertyName?.text ?? specifier.name.text,
+        targetPath,
+      });
+    }
+  }
+
   const edges: IndexedEdgeRecord[] = [];
+  const importedCalls: IndexedImportedCallRecord[] = [];
   const findContainerSymbol = (node: ts.Node): IndexedSymbolRecord => {
     let current: ts.Node | undefined = node.parent;
     while (current) {
@@ -296,6 +340,16 @@ function parseSourceFile(
             targetPath: relPath,
           });
         }
+      } else if (candidates.length === 0) {
+        const imported = importedBindings.get(node.expression.text);
+        if (imported) {
+          importedCalls.push({
+            sourceId: findContainerSymbol(node).id,
+            sourcePath: relPath,
+            importedName: imported.importedName,
+            targetPath: imported.targetPath,
+          });
+        }
       }
     }
     ts.forEachChild(node, walk);
@@ -311,6 +365,7 @@ function parseSourceFile(
     symbols,
     chunks: makeChunks(relPath, content),
     edges,
+    importedCalls,
   };
 }
 

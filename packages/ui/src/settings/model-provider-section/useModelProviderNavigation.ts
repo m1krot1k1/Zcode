@@ -69,6 +69,7 @@ interface UseModelProviderNavigationOptions {
   familyConnectionSettingsFailed?: boolean;
   subscribedTeamProducts?: EnterpriseCodingPlanProductDisplay[];
   showPurchasedTeamPlanFallback?: boolean;
+  codeIntelligenceAvailable?: boolean;
   selectedNodeKey: string | null;
   setSelectedNodeKey: (key: string | null) => void;
   intl: ReturnType<typeof useZCodeIntl>["intl"];
@@ -88,6 +89,7 @@ export function useModelProviderNavigation({
   familyConnectionSettingsFailed = false,
   subscribedTeamProducts = [],
   showPurchasedTeamPlanFallback = false,
+  codeIntelligenceAvailable = false,
   selectedNodeKey,
   setSelectedNodeKey,
   intl,
@@ -269,11 +271,29 @@ export function useModelProviderNavigation({
           },
         ],
       },
+      ...(codeIntelligenceAvailable
+        ? [
+            {
+              id: "workspace-intelligence" as const,
+              title: intl.formatMessage({
+                id: "settings.modelProvider.workspaceIntelligenceTitle",
+              }),
+              items: [
+                {
+                  key: "workspace-intelligence:embeddings",
+                  type: "codeIntelligence" as const,
+                  label: intl.formatMessage({ id: "settings.embedding.navigationLabel" }),
+                },
+              ],
+            },
+          ]
+        : []),
     ];
 
     return groups;
   }, [
     customProviders,
+    codeIntelligenceAvailable,
     legacyOpenCodeProviders,
     regularCustomProviders,
     codingPlanItems,
@@ -430,7 +450,7 @@ export function resolveFallbackModelProviderNodeKey({
   >;
 }): string | null {
   const defaultProviderItems = selectableNavigationItems.filter(
-    (item) => item.type !== "agentIntegration",
+    (item) => item.type !== "agentIntegration" && item.type !== "codeIntelligence",
   );
   const initialConnectionItem = pickInitialConnectionNavigationItem(defaultProviderItems);
   const initialSideNodeKey = initialConnectionItem
@@ -611,7 +631,12 @@ export function connectionSelectionMatchesNavigationItem(
   selection: ProviderFamilyConnectionSelection,
   item: Exclude<ModelProviderNavGroup["items"][number], { type: "codingPlanLoading" }>,
 ): boolean {
-  if (item.type === "custom" || item.type === "agentIntegration") return false;
+  if (
+    item.type === "custom" ||
+    item.type === "agentIntegration" ||
+    item.type === "codeIntelligence"
+  )
+    return false;
   const familySpec = resolveModelProviderFamilySpecByProviderId(item.presetId ?? "");
   if (familySpec?.id !== family) return false;
   if (selection.kind === "start-plan") {

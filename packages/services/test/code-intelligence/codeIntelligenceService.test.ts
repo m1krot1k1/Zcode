@@ -48,21 +48,106 @@ async function createTestService() {
 }
 
 describe("code intelligence embedding configuration", () => {
+  it("probes the same maximum batch size used by indexing", async () => {
+    const { workspacePath, root } = await createTestService();
+    const requestSizes: number[] = [];
+    const probeService = createCodeIntelligenceService({
+      indexRootDir: join(root, "batch-probe-index"),
+      fetch: vi.fn(async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { input: string[] };
+        requestSizes.push(body.input.length);
+        return Response.json({
+          data: body.input.map((_, index) => ({ index, embedding: [1, 0] })),
+        });
+      }) as typeof fetch,
+    });
+    services.push(probeService);
+
+    const result = await probeService.testEmbeddingConfig({
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    });
+
+    expect(result).toMatchObject({ ok: true, dimensions: 2 });
+    expect(requestSizes).toEqual([32]);
+  });
+
+  it("reports a safe bulk embedding failure even when the single-request probe passed", async () => {
+    const { workspacePath, root } = await createTestService();
+    await writeFile(join(workspacePath, "embed.ts"), "export const indexed = true;", "utf8");
+    let requestCount = 0;
+    const providerBody = "private provider response must not escape";
+    const indexService = createCodeIntelligenceService({
+      indexRootDir: join(root, "bulk-error-index"),
+      fetch: vi.fn(async (_input, init) => {
+        requestCount += 1;
+        if (requestCount > 1) return new Response(providerBody, { status: 429 });
+        const body = JSON.parse(String(init?.body)) as { input: string[] };
+        return Response.json({
+          data: body.input.map((_, index) => ({ index, embedding: [1, 0] })),
+        });
+      }) as typeof fetch,
+    });
+    services.push(indexService);
+    const config = {
+      workspacePath,
+      provider: "openai-compatible" as const,
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    };
+    await indexService.setEmbeddingConfig(config);
+    expect(await indexService.testEmbeddingConfig(config)).toMatchObject({ ok: true });
+
+    const status = await indexService.indexWorkspace({ workspacePath });
+
+    expect(status.embedding).toMatchObject({
+      phase: "failed",
+      lastError: { code: "rate-limited", httpStatus: 429 },
+    });
+    expect(JSON.stringify(status)).not.toContain(providerBody);
+
+    const restartedService = createCodeIntelligenceService({
+      indexRootDir: join(root, "bulk-error-index"),
+    });
+    services.push(restartedService);
+    await expect(restartedService.getStatus({ workspacePath })).resolves.toMatchObject({
+      embedding: {
+        phase: "failed",
+        lastError: { code: "rate-limited", httpStatus: 429 },
+      },
+    });
+  });
+
   it("sanitizes invalid probe inputs and credential-store failures without saving draft settings", async () => {
     const { workspacePath, service, credentialService } = await createTestService();
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] })));
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] })),
+    );
     const probeService = createCodeIntelligenceService({
       indexRootDir: join(workspacePath, "probe-index"),
       fetch: fetchImpl as typeof fetch,
-      credentialService: { ...credentialService, load: vi.fn(async () => { throw new Error("secret backend detail"); }) },
+      credentialService: {
+        ...credentialService,
+        load: vi.fn(async () => {
+          throw new Error("secret backend detail");
+        }),
+      },
     });
     services.push(probeService);
 
     const invalid = await service.testEmbeddingConfig({
-      workspacePath, provider: "openai-compatible", endpoint: "not a url", model: "m",
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "not a url",
+      model: "m",
     });
     const credentialFailure = await probeService.testEmbeddingConfig({
-      workspacePath, provider: "openai-compatible", endpoint: "https://example.com/v1/embeddings", model: "m",
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "m",
     });
     expect(invalid).toMatchObject({ ok: false, errorCode: "invalid-config" });
     expect(credentialFailure).toMatchObject({ ok: false, errorCode: "request-failed" });
@@ -77,28 +162,39 @@ describe("code intelligence embedding configuration", () => {
     [404, "not-found"],
     [429, "rate-limited"],
     [503, "provider-error"],
-  ] as const)("reports sanitized HTTP %s failures from the embedding provider", async (httpStatus, errorCode) => {
-    const { workspacePath, root, credentialService } = await createTestService();
-    const privateBody = "provider response contains private diagnostics";
-    const probeService = createCodeIntelligenceService({
-      indexRootDir: join(root, "http-error-index"),
-      fetch: vi.fn(async () => new Response(privateBody, { status: httpStatus })) as typeof fetch,
-      credentialService,
-    });
-    services.push(probeService);
+  ] as const)(
+    "reports sanitized HTTP %s failures from the embedding provider",
+    async (httpStatus, errorCode) => {
+      const { workspacePath, root, credentialService } = await createTestService();
+      const privateBody = "provider response contains private diagnostics";
+      const probeService = createCodeIntelligenceService({
+        indexRootDir: join(root, "http-error-index"),
+        fetch: vi.fn(
+          async () =>
+            new Response(privateBody, {
+              status: httpStatus,
+              ...(httpStatus === 429 || httpStatus >= 500
+                ? { headers: { "retry-after": "0" } }
+                : {}),
+            }),
+        ) as typeof fetch,
+        credentialService,
+      });
+      services.push(probeService);
 
-    const result = await probeService.testEmbeddingConfig({
-      workspacePath,
-      provider: "openai-compatible",
-      endpoint: "https://example.com/v1/embeddings",
-      model: "example/embed",
-      apiKey: "sk-transient-probe-token",
-    });
+      const result = await probeService.testEmbeddingConfig({
+        workspacePath,
+        provider: "openai-compatible",
+        endpoint: "https://example.com/v1/embeddings",
+        model: "example/embed",
+        apiKey: "sk-transient-probe-token",
+      });
 
-    expect(result).toMatchObject({ ok: false, errorCode, httpStatus });
-    expect(JSON.stringify(result)).not.toContain(privateBody);
-    expect(JSON.stringify(result)).not.toContain("sk-transient-probe-token");
-  });
+      expect(result).toMatchObject({ ok: false, errorCode, httpStatus });
+      expect(JSON.stringify(result)).not.toContain(privateBody);
+      expect(JSON.stringify(result)).not.toContain("sk-transient-probe-token");
+    },
+  );
 
   it("keeps an optional API key in secure credentials and out of SQLite/status", async () => {
     const { workspacePath, indexRootDir, credentials, credentialService, service } =
@@ -178,6 +274,48 @@ describe("code intelligence embedding configuration", () => {
 });
 
 describe("code intelligence graph overview", () => {
+  it("resolves named imported calls to the exported symbol across workspace files", async () => {
+    const { workspacePath, service } = await createTestService();
+    const sourceDir = join(workspacePath, "src");
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, "embeddingProbe.ts"),
+      "export async function probeEmbeddingProvider() { return true; }\n",
+      "utf8",
+    );
+    await writeFile(
+      join(sourceDir, "codeIntelligenceService.ts"),
+      'import { probeEmbeddingProvider as probe } from "./embeddingProbe.js";\nexport async function testEmbeddingConfig() { return probe(); }\n',
+      "utf8",
+    );
+
+    await service.indexWorkspace({ workspacePath });
+
+    await expect(
+      service.getSymbolContext({ workspacePath, symbol: "probeEmbeddingProvider" }),
+    ).resolves.toMatchObject({
+      symbol: { name: "probeEmbeddingProvider", path: "src/embeddingProbe.ts" },
+      callers: [
+        expect.objectContaining({ name: "testEmbeddingConfig", path: "src/codeIntelligenceService.ts" }),
+      ],
+    });
+
+    await writeFile(
+      join(sourceDir, "embeddingProbe.ts"),
+      "// moved in the file\nexport async function probeEmbeddingProvider() { return true; }\n",
+      "utf8",
+    );
+    await service.indexWorkspace({ workspacePath });
+
+    await expect(
+      service.getSymbolContext({ workspacePath, symbol: "probeEmbeddingProvider" }),
+    ).resolves.toMatchObject({
+      callers: [
+        expect.objectContaining({ name: "testEmbeddingConfig", path: "src/codeIntelligenceService.ts" }),
+      ],
+    });
+  });
+
   it("returns bounded relative-path nodes and focus neighborhoods from the local index", async () => {
     const { workspacePath, service } = await createTestService();
     const sourceDir = join(workspacePath, "src");
@@ -226,16 +364,29 @@ describe("code intelligence graph overview", () => {
 describe("code intelligence workspace lifecycle", () => {
   it("reports embedding phases from pending through committed ready or failed", async () => {
     const { workspacePath, root } = await createTestService();
-    await writeFile(join(workspacePath, "embed.ts"), "export function embedMe() { return 1; }", "utf8");
+    await writeFile(
+      join(workspacePath, "embed.ts"),
+      "export function embedMe() { return 1; }",
+      "utf8",
+    );
     const service = createCodeIntelligenceService({
       indexRootDir: join(root, "phase-index"),
-      fetch: vi.fn(async () => new Response(JSON.stringify({
-        data: [{ index: 0, embedding: [1, 0] }],
-      }), { status: 200 })) as typeof fetch,
+      fetch: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [{ index: 0, embedding: [1, 0] }],
+            }),
+            { status: 200 },
+          ),
+      ) as typeof fetch,
     });
     services.push(service);
     const configured = await service.setEmbeddingConfig({
-      workspacePath, provider: "openai-compatible", endpoint: "https://example.com/v1/embeddings", model: "embed-model",
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
     });
     expect(configured.embedding.phase).toBe("pending");
     const indexed = await service.indexWorkspace({ workspacePath });
@@ -247,7 +398,10 @@ describe("code intelligence workspace lifecycle", () => {
     });
     services.push(failing);
     await failing.setEmbeddingConfig({
-      workspacePath, provider: "openai-compatible", endpoint: "https://example.com/v1/embeddings", model: "embed-model",
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
     });
     const failed = await failing.indexWorkspace({ workspacePath });
     expect(failed.embedding.phase).toBe("failed");
@@ -264,27 +418,73 @@ describe("code intelligence workspace lifecycle", () => {
     await service.watchWorkspace({ workspacePath, workspaceIdentity: "stable-id" });
     await writeFile(source, "export function afterChange() { return 2; }", "utf8");
     for (let i = 0; i < 100; i += 1) {
-      if ((await service.search({ workspacePath, workspaceIdentity: "stable-id", query: "afterChange" })).results.length) break;
+      if (
+        (
+          await service.search({
+            workspacePath,
+            workspaceIdentity: "stable-id",
+            query: "afterChange",
+          })
+        ).results.length
+      )
+        break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    expect((await service.search({ workspacePath, workspaceIdentity: "stable-id", query: "beforeChange" })).results).toHaveLength(0);
-    expect((await service.search({ workspacePath, workspaceIdentity: "stable-id", query: "afterChange" })).results.length).toBeGreaterThan(0);
+    expect(
+      (
+        await service.search({
+          workspacePath,
+          workspaceIdentity: "stable-id",
+          query: "beforeChange",
+        })
+      ).results,
+    ).toHaveLength(0);
+    expect(
+      (
+        await service.search({
+          workspacePath,
+          workspaceIdentity: "stable-id",
+          query: "afterChange",
+        })
+      ).results.length,
+    ).toBeGreaterThan(0);
 
     const movedRoot = join(root, "moved-workspace");
     await mkdir(movedRoot);
-    await writeFile(join(movedRoot, "replacement.ts"), "export function movedRootSymbol() {}", "utf8");
+    await writeFile(
+      join(movedRoot, "replacement.ts"),
+      "export function movedRootSymbol() {}",
+      "utf8",
+    );
     await service.watchWorkspace({ workspacePath: movedRoot, workspaceIdentity: "stable-id" });
-    expect((await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts.files).toBe(1);
+    expect(
+      (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts
+        .files,
+    ).toBe(1);
     await rm(join(movedRoot, "replacement.ts"));
-    for (let i = 0; i < 100 && (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts.files; i += 1)
+    for (
+      let i = 0;
+      i < 100 &&
+      (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts
+        .files;
+      i += 1
+    )
       await new Promise((resolve) => setTimeout(resolve, 50));
-    expect((await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts.files).toBe(0);
+    expect(
+      (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts
+        .files,
+    ).toBe(0);
   });
 
   it("prevents an activation index from surviving clearIndex", async () => {
     const { workspacePath } = await createTestService();
     let release!: (response: Response) => void;
-    const fetchImpl = vi.fn(() => new Promise<Response>((resolve) => { release = resolve; }));
+    const fetchImpl = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
     const root = temporaryRoots.at(-1)!;
     const service = createCodeIntelligenceService({
       indexRootDir: join(root, "race-index"),
@@ -294,8 +494,11 @@ describe("code intelligence workspace lifecycle", () => {
     await writeFile(join(workspacePath, "race.ts"), "export function raceSymbol() {}", "utf8");
     await service.indexWorkspace({ workspacePath, workspaceIdentity: "clear-race" });
     await service.setEmbeddingConfig({
-      workspacePath, workspaceIdentity: "clear-race", provider: "openai-compatible",
-      endpoint: "https://example.com/v1/embeddings", model: "embed-model",
+      workspacePath,
+      workspaceIdentity: "clear-race",
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
     });
     const activation = service.watchWorkspace({ workspacePath, workspaceIdentity: "clear-race" });
     for (let i = 0; i < 100 && !fetchImpl.mock.calls.length; i += 1)
@@ -304,6 +507,8 @@ describe("code intelligence workspace lifecycle", () => {
     const clearing = service.clearIndex({ workspacePath, workspaceIdentity: "clear-race" });
     release(new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 }));
     await Promise.all([clearing, activation.catch(() => undefined)]);
-    expect((await service.getStatus({ workspacePath, workspaceIdentity: "clear-race" })).state).toBe("unindexed");
+    expect(
+      (await service.getStatus({ workspacePath, workspaceIdentity: "clear-race" })).state,
+    ).toBe("unindexed");
   });
 });

@@ -40,6 +40,23 @@ describe("code-intelligence contract", () => {
     expect(status.counts.files).toBe(0);
   });
 
+  it("exposes only a sanitized embedding failure category and HTTP status", () => {
+    const status: CodeIndexStatus = {
+      state: "ready",
+      generation: 1,
+      counts: { files: 1, chunks: 2, symbols: 1, edges: 0 },
+      embedding: {
+        configured: true,
+        available: false,
+        phase: "failed",
+        lastError: { code: "rate-limited", httpStatus: 429 },
+      },
+      diagnostics: [],
+    };
+    expect(JSON.stringify(status)).not.toMatch(/api.?key|response.?body|source.?text/i);
+    expect(status.embedding.lastError).toEqual({ code: "rate-limited", httpStatus: 429 });
+  });
+
   it("demonstrates index-then-search using the Host contract", async () => {
     const service = {
       indexWorkspace: async () => undefined,

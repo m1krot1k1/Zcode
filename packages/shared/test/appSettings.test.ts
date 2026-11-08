@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { appSettingsPatchSchema, appSettingsSchema } from "#src/validationAppSettings.js";
+import { toLegacyBilingualLocale } from "#src/protocol.js";
 
 describe("app settings", () => {
+  it("accepts Russian as a persisted locale and language preference", () => {
+    expect(appSettingsSchema.parse({ locale: "ru-RU" }).locale).toBe("ru-RU");
+    expect(appSettingsPatchSchema.parse({ localePreference: "ru-RU" }).localePreference).toBe(
+      "ru-RU",
+    );
+  });
+
+  it.each([
+    ["zh-CN", "zh-CN"],
+    ["en-US", "en-US"],
+    ["ru-RU", "en-US"],
+  ] as const)("maps legacy bilingual integration locale %s to %s", (locale, expected) => {
+    expect(toLegacyBilingualLocale(locale)).toBe(expected);
+  });
+
   it("自动归档默认关闭并保留 30 天，已有天数不覆盖", () => {
     expect(appSettingsSchema.parse({})).toMatchObject({
       taskAutoArchiveEnabled: false,

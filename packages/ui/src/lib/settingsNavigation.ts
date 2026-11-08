@@ -15,6 +15,7 @@ export type SettingsSectionId =
   | "plugins"
   | "archives"
   | "usage"
+  | "codeGraph"
   | "subagents"
   | "commands"
   | "hooks"
@@ -78,6 +79,7 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "plugins" ||
     value === "archives" ||
     value === "usage" ||
+    value === "codeGraph" ||
     value === "subagents" ||
     value === "commands" ||
     value === "hooks" ||
@@ -198,7 +200,8 @@ export function setPendingSettingsUsageCodingPlanIntent(): void {
 }
 
 export function setPendingSettingsUsageCodeGraphIntent(): void {
-  setPendingSettingsSectionIntent("usage", { usageTab: "codeGraph" });
+  // The full graph now has its own settings section next to Usage Stats.
+  setPendingSettingsSectionIntent("codeGraph");
 }
 
 export function setPendingSettingsPluginIntent(

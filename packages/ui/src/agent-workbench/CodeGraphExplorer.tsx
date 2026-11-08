@@ -19,15 +19,7 @@ import {
   type NodeProps,
   type NodeTypes,
 } from "@xyflow/react";
-import {
-  AlertCircle,
-  Database,
-  Focus,
-  LoaderCircle,
-  RefreshCw,
-  Search,
-  Workflow,
-} from "lucide-react";
+import { AlertCircle, Database, LoaderCircle, RefreshCw, Search, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { useServices } from "@/hooks/useServices.js";
@@ -39,6 +31,7 @@ import type {
   CodeIndexStatus,
   CodeSearchResult,
 } from "./contract.js";
+import { CodeGraphInspector } from "./CodeGraphInspector.js";
 
 import "@xyflow/react/dist/style.css";
 
@@ -155,7 +148,7 @@ function createGraphNodes(graph: CodeGraphOverview, selectedId: string | null): 
 function countByKind(nodes: CodeGraphNode[]): Array<[string, number]> {
   const counts = new Map<string, number>();
   for (const node of nodes) counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
-  return [...counts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 5);
+  return [...counts.entries()].sort((left, right) => right[1] - left[1]);
 }
 
 export function CodeGraphExplorer({
@@ -183,8 +176,15 @@ export function CodeGraphExplorer({
   const [buildingIndex, setBuildingIndex] = useState(false);
   const [showCalls, setShowCalls] = useState(true);
   const [showImports, setShowImports] = useState(true);
+  const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
   const hasStatusRef = useRef(false);
+  const statusRequestRef = useRef(0);
+  const graphRequestRef = useRef(0);
+  const searchRequestRef = useRef(0);
+  const buildRequestRef = useRef(0);
+  const graphGenerationRef = useRef<number | null>(null);
   const workspaceRef = useMemo(
     () => ({
       workspacePath: workspacePath ?? "",
@@ -195,15 +195,20 @@ export function CodeGraphExplorer({
 
   const refreshStatus = useCallback(async () => {
     if (!codeIndex || !workspacePath) return;
+    const request = ++statusRequestRef.current;
     if (!hasStatusRef.current) setStatusLoadState("loading");
     try {
       const next = await codeIndex.getStatus(workspaceRef);
+      if (request !== statusRequestRef.current) return;
       setStatus(next);
       hasStatusRef.current = true;
       setStatusLoadState("ready");
       setMessage(null);
+      setMessageIsError(false);
     } catch {
+      if (request !== statusRequestRef.current) return;
       setMessage(copy("codeGraph.statusFailed"));
+      setMessageIsError(true);
       if (!hasStatusRef.current) setStatusLoadState("failed");
     }
   }, [codeIndex, copy, workspacePath, workspaceRef]);
@@ -211,48 +216,67 @@ export function CodeGraphExplorer({
   const loadGraph = useCallback(
     async (focus?: { symbol?: string; path?: string; startLine?: number }) => {
       if (!codeIndex || !workspacePath) return;
+      const request = ++graphRequestRef.current;
       setLoading(true);
       setMessage(null);
+      setMessageIsError(false);
       try {
         const next = await codeIndex.getGraphOverview({
           ...workspaceRef,
           ...(focus ? { focus } : {}),
           limit: 60,
         });
+        if (request !== graphRequestRef.current) return;
         setGraph(next);
+        graphGenerationRef.current = status?.generation ?? null;
         setSelectedId(next.focusId ?? next.nodes[0]?.id ?? null);
       } catch {
-        setGraph(EMPTY_GRAPH);
+        if (request !== graphRequestRef.current) return;
         setMessage(copy("codeGraph.loadFailed"));
+        setMessageIsError(true);
       } finally {
-        setLoading(false);
+        if (request === graphRequestRef.current) setLoading(false);
       }
     },
-    [codeIndex, copy, workspacePath, workspaceRef],
+    [codeIndex, copy, status?.generation, workspacePath, workspaceRef],
   );
 
   useEffect(() => {
+    statusRequestRef.current += 1;
+    graphRequestRef.current += 1;
+    searchRequestRef.current += 1;
+    buildRequestRef.current += 1;
+    graphGenerationRef.current = null;
     setStatus(null);
     hasStatusRef.current = false;
     setStatusLoadState("loading");
+    setHiddenKinds(new Set());
     setGraph(null);
     setSelectedId(null);
     setResults([]);
     setMessage(null);
+    setMessageIsError(false);
     void refreshStatus();
   }, [refreshStatus]);
 
   useEffect(() => {
     if (!codeIndex || !workspacePath) return;
-    void codeIndex.watchWorkspace(workspaceRef).then(refreshStatus).catch(() => {
-      setMessage(copy("codeIndex.watchFailed"));
-    });
+    void codeIndex
+      .watchWorkspace(workspaceRef)
+      .then(refreshStatus)
+      .catch(() => {
+        setMessage(copy("codeIndex.watchFailed"));
+        setMessageIsError(true);
+      });
   }, [codeIndex, copy, refreshStatus, workspacePath, workspaceRef]);
 
   useEffect(() => {
-    if ((status?.state === "ready" || status?.state === "degraded") && graph === null)
+    if (
+      (status?.state === "ready" || status?.state === "degraded") &&
+      graphGenerationRef.current !== status.generation
+    )
       void loadGraph();
-  }, [graph, loadGraph, status?.state]);
+  }, [loadGraph, status?.generation, status?.state]);
 
   useEffect(() => {
     if (status?.state !== "indexing" && !buildingIndex) return;
@@ -262,33 +286,48 @@ export function CodeGraphExplorer({
 
   const buildIndex = async () => {
     if (!codeIndex || !workspacePath) return;
+    const request = ++buildRequestRef.current;
     setBuildingIndex(true);
     setMessage(null);
+    setMessageIsError(false);
     try {
-      setStatus(await codeIndex.indexWorkspace(workspaceRef));
+      const nextStatus = await codeIndex.indexWorkspace(workspaceRef);
+      if (request !== buildRequestRef.current) return;
+      setStatus(nextStatus);
       await loadGraph();
     } catch {
+      if (request !== buildRequestRef.current) return;
       setMessage(copy("codeGraph.indexFailed"));
+      setMessageIsError(true);
     } finally {
-      setBuildingIndex(false);
-      await refreshStatus();
+      if (request === buildRequestRef.current) {
+        setBuildingIndex(false);
+        await refreshStatus();
+      }
     }
   };
 
   const runSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!codeIndex || !query.trim()) return;
+    const request = ++searchRequestRef.current;
     setSearching(true);
     setMessage(null);
+    setMessageIsError(false);
     try {
       const response = await codeIndex.search({ ...workspaceRef, query: query.trim(), limit: 12 });
+      if (request !== searchRequestRef.current) return;
       setResults(response.results);
-      if (response.results.length === 0) setMessage(copy("codeGraph.noMatches"));
+      if (response.results.length === 0) {
+        setMessage(copy("codeGraph.noMatches"));
+      }
     } catch {
+      if (request !== searchRequestRef.current) return;
       setResults([]);
       setMessage(copy("codeGraph.searchFailed"));
+      setMessageIsError(true);
     } finally {
-      setSearching(false);
+      if (request === searchRequestRef.current) setSearching(false);
     }
   };
 
@@ -302,15 +341,16 @@ export function CodeGraphExplorer({
   };
 
   const nodes = graph?.nodes ?? [];
-  const selectedNode = nodes.find((node) => node.id === selectedId) ?? null;
+  const visibleNodes = nodes.filter((node) => !hiddenKinds.has(node.kind));
+  const selectedNode = visibleNodes.find((node) => node.id === selectedId) ?? null;
   const visibleEdges = useMemo(
     () =>
       (graph?.edges ?? []).filter((edge) => (edge.relation === "calls" ? showCalls : showImports)),
     [graph, showCalls, showImports],
   );
   const flowNodes = useMemo(
-    () => createGraphNodes(graph ?? EMPTY_GRAPH, selectedId),
-    [graph, selectedId],
+    () => createGraphNodes({ ...(graph ?? EMPTY_GRAPH), nodes: visibleNodes }, selectedId),
+    [graph, selectedId, visibleNodes],
   );
   const flowNodeIds = useMemo(() => new Set(flowNodes.map((node) => node.id)), [flowNodes]);
   const flowEdges = useMemo<Edge[]>(
@@ -336,8 +376,9 @@ export function CodeGraphExplorer({
     [flowNodeIds, visibleEdges],
   );
   const kindCounts = useMemo(() => countByKind(nodes), [nodes]);
-  const inbound = graph?.edges.filter((edge) => edge.target === selectedId) ?? [];
-  const outbound = graph?.edges.filter((edge) => edge.source === selectedId) ?? [];
+  const filteredGraphEmpty = nodes.length > 0 && visibleNodes.length === 0;
+  const inbound = visibleEdges.filter((edge) => edge.target === selectedId);
+  const outbound = visibleEdges.filter((edge) => edge.source === selectedId);
 
   if (!workspacePath) {
     return <GraphMessage icon={<Workflow />} text={copy("codeGraph.workspaceRequired")} />;
@@ -363,14 +404,18 @@ export function CodeGraphExplorer({
         >
           {status
             ? copy(`codeGraph.state.${status.state}`)
-            : copy(statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading")}
+            : copy(
+                statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading",
+              )}
         </span>
         <Button
           type="button"
           variant="outline"
           size="sm"
           className="ml-auto gap-1.5"
-          disabled={loading || buildingIndex || statusLoadState !== "ready" || status?.state === "indexing"}
+          disabled={
+            loading || buildingIndex || statusLoadState !== "ready" || status?.state === "indexing"
+          }
           onClick={() => void loadGraph()}
         >
           <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
@@ -390,8 +435,8 @@ export function CodeGraphExplorer({
             <span>{copy("codeGraph.symbols", { count: status.counts.symbols })}</span>
             <span>{copy("codeGraph.links", { count: status.counts.edges })}</span>
             {status.partial || graph?.partial ? (
-              <span className="ml-auto flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                <AlertCircle className="size-3.5" /> {copy("codeGraph.partial")}
+              <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                {copy("codeGraph.partial")}
               </span>
             ) : null}
           </>
@@ -402,7 +447,9 @@ export function CodeGraphExplorer({
             ) : (
               <AlertCircle className="size-3.5 text-destructive" />
             )}
-            {copy(statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading")}
+            {copy(
+              statusLoadState === "failed" ? "codeGraph.statusFailed" : "codeGraph.statusLoading",
+            )}
           </span>
         )}
       </div>
@@ -412,7 +459,11 @@ export function CodeGraphExplorer({
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => {
+              searchRequestRef.current += 1;
+              setSearching(false);
+              setQuery(event.currentTarget.value);
+            }}
             placeholder={copy("codeGraph.searchPlaceholder")}
             className="pl-9"
             aria-label={copy("codeGraph.searchPlaceholder")}
@@ -444,7 +495,13 @@ export function CodeGraphExplorer({
       </form>
 
       {message ? (
-        <p role="status" className="mb-3 text-ui-xs text-amber-600">
+        <p
+          role="status"
+          className={cn(
+            "mb-3 text-ui-xs",
+            messageIsError ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
           {message}
         </p>
       ) : null}
@@ -475,7 +532,27 @@ export function CodeGraphExplorer({
           <div className="space-y-1.5">
             {kindCounts.length ? (
               kindCounts.map(([kind, count]) => (
-                <div key={kind} className="flex items-center justify-between gap-1 text-ui-xs">
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={!hiddenKinds.has(kind)}
+                  onClick={() => {
+                    const hiding = !hiddenKinds.has(kind);
+                    if (hiding && selectedNode?.kind === kind) {
+                      setSelectedId(visibleNodes.find((node) => node.kind !== kind)?.id ?? null);
+                    }
+                    setHiddenKinds((current) => {
+                      const next = new Set(current);
+                      if (hiding) next.add(kind);
+                      else next.delete(kind);
+                      return next;
+                    });
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-1 rounded px-1 py-1 text-ui-xs hover:bg-accent",
+                    hiddenKinds.has(kind) && "opacity-50",
+                  )}
+                >
                   <span className="flex min-w-0 items-center gap-1.5 truncate text-muted-foreground">
                     <span
                       className={cn(
@@ -486,7 +563,7 @@ export function CodeGraphExplorer({
                     <span className="truncate">{kind}</span>
                   </span>
                   <span className="text-muted-foreground/80">{count}</span>
-                </div>
+                </button>
               ))
             ) : (
               <p className="text-ui-xs text-muted-foreground">{copy("codeGraph.noNodes")}</p>
@@ -503,16 +580,25 @@ export function CodeGraphExplorer({
           data-testid="usage-code-graph-canvas"
         >
           {statusLoadState === "loading" ||
-          loading ||
-          (status !== null && (status.state === "ready" || status.state === "degraded") && graph === null) ? (
+          (loading && graph === null) ||
+          (status !== null &&
+            (status.state === "ready" || status.state === "degraded") &&
+            graph === null) ? (
             <div className="flex h-[440px] items-center justify-center gap-2 text-ui-sm text-muted-foreground xl:h-[600px]">
               <LoaderCircle className="size-4 animate-spin" /> {copy("codeGraph.loading")}
             </div>
           ) : statusLoadState === "failed" || status === null ? (
             <div className="flex h-[440px] flex-col items-center justify-center gap-3 px-6 text-center xl:h-[600px]">
               <AlertCircle className="size-7 text-destructive" />
-              <p className="max-w-sm text-ui-sm text-muted-foreground">{copy("codeGraph.statusFailed")}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => void refreshStatus()}>
+              <p className="max-w-sm text-ui-sm text-muted-foreground">
+                {copy("codeGraph.statusFailed")}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void refreshStatus()}
+              >
                 <RefreshCw className="mr-1.5 size-3.5" /> {copy("codeGraph.retryStatus")}
               </Button>
             </div>
@@ -547,9 +633,23 @@ export function CodeGraphExplorer({
               <p className="max-w-sm text-ui-xs text-muted-foreground">
                 {copy("codeGraph.noResolvedGraphDescription")}
               </p>
-              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void loadGraph()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onClick={() => void loadGraph()}
+              >
                 {copy("codeGraph.refresh")}
               </Button>
+            </div>
+          ) : filteredGraphEmpty || (visibleNodes.length > 0 && flowNodes.length === 0) ? (
+            <div className="flex h-[440px] flex-col items-center justify-center gap-2 px-6 text-center xl:h-[600px]">
+              <Database className="size-7 text-muted-foreground" />
+              <h3 className="text-ui-sm font-medium">{copy("codeGraph.noVisibleNodes")}</h3>
+              <p className="max-w-sm text-ui-xs text-muted-foreground">
+                {copy("codeGraph.noVisibleNodesDescription")}
+              </p>
             </div>
           ) : (
             <div className="h-[440px] xl:h-[600px]">
@@ -589,61 +689,15 @@ export function CodeGraphExplorer({
           )}
         </main>
 
-        <aside className="min-h-48 rounded-lg border border-border bg-background/60 p-3">
-          <div className="mb-3 flex items-center gap-2">
-            <Focus className="size-4 text-primary" />
-            <h3 className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {copy("codeGraph.inspector")}
-            </h3>
-          </div>
-          {selectedNode ? (
-            <>
-              <p className="break-words text-ui-sm font-semibold">{selectedNode.name}</p>
-              <p className="mt-1 break-all text-ui-xs text-muted-foreground">
-                {selectedNode.path}:{selectedNode.startLine}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="rounded-md border border-border px-1.5 py-0.5 text-ui-xs">
-                  {selectedNode.kind}
-                </span>
-                <span className="rounded-md border border-border px-1.5 py-0.5 text-ui-xs">
-                  {copy("codeGraph.linkCount", { count: selectedNode.degree })}
-                </span>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="mt-3 w-full gap-1.5"
-                disabled={loading}
-                onClick={() => void loadGraph({ symbol: selectedNode.id })}
-              >
-                <Focus className="size-3.5" /> {copy("codeGraph.focusNode")}
-              </Button>
-              <div className="my-3 border-t border-border" />
-              <RelatedSymbols
-                title={copy("codeGraph.incoming")}
-                empty={copy("codeGraph.noRelations")}
-                edges={inbound}
-                nodes={nodes}
-                direction="incoming"
-                onSelect={(node) => void loadGraph({ symbol: node.id })}
-              />
-              <RelatedSymbols
-                title={copy("codeGraph.outgoing")}
-                empty={copy("codeGraph.noRelations")}
-                edges={outbound}
-                nodes={nodes}
-                direction="outgoing"
-                onSelect={(node) => void loadGraph({ symbol: node.id })}
-              />
-            </>
-          ) : (
-            <p className="text-ui-xs leading-relaxed text-muted-foreground">
-              {copy("codeGraph.selectNode")}
-            </p>
-          )}
-        </aside>
+        <CodeGraphInspector
+          selectedNode={selectedNode}
+          loading={loading}
+          visibleNodes={visibleNodes}
+          inbound={inbound}
+          outbound={outbound}
+          copy={copy}
+          onFocus={(symbol) => void loadGraph({ symbol })}
+        />
       </div>
       {graph?.partial ? (
         <p className="mt-3 text-ui-xs text-muted-foreground">{copy("codeGraph.boundedHint")}</p>
@@ -676,53 +730,6 @@ function FilterToggle({
       <span className={cn("size-2 shrink-0 rounded-full", color)} />
       <span className="truncate">{label}</span>
     </button>
-  );
-}
-
-function RelatedSymbols({
-  title,
-  empty,
-  edges,
-  nodes,
-  direction,
-  onSelect,
-}: {
-  title: string;
-  empty: string;
-  edges: CodeGraphOverview["edges"];
-  nodes: CodeGraphNode[];
-  direction: "incoming" | "outgoing";
-  onSelect: (node: CodeGraphNode) => void;
-}) {
-  const relatedIds = [
-    ...new Set(edges.map((edge) => (direction === "incoming" ? edge.source : edge.target))),
-  ].filter(Boolean);
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const related = relatedIds.flatMap((id) => {
-    const node = nodeById.get(id);
-    return node ? [node] : [];
-  });
-  return (
-    <section className="mb-3 last:mb-0">
-      <h4 className="mb-1 text-ui-xs font-medium">{title}</h4>
-      {related.length ? (
-        <div className="max-h-32 space-y-0.5 overflow-y-auto">
-          {related.slice(0, 8).map((node) => (
-            <button
-              key={node.id}
-              type="button"
-              className="block w-full truncate rounded px-1.5 py-1 text-left text-ui-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-              title={`${node.path}:${node.startLine}`}
-              onClick={() => onSelect(node)}
-            >
-              {node.name}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="text-ui-xs text-muted-foreground">{empty}</p>
-      )}
-    </section>
   );
 }
 
