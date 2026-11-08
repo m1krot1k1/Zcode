@@ -430,7 +430,7 @@ describe("dynamicWorkflowMode 设置（DWG-19）", () => {
 });
 
 describe("subagent resource settings", () => {
-  it("persists bounded parallelism and timeout overrides, including adaptive defaults", () => {
+  it("persists adaptive parallelism preferences and bounded timeout overrides", () => {
     expect(
       appSettingsPatchSchema.parse({
         subagentMaxParallel: 0,
@@ -443,9 +443,19 @@ describe("subagent resource settings", () => {
       spawnBudget: 128,
     });
     expect(
-      appSettingsSchema.parse({ subagentMaxParallel: 128, subagentTaskTimeoutMinutes: 180 }),
-    ).toMatchObject({ subagentMaxParallel: 128, subagentTaskTimeoutMinutes: 180 });
-    expect(appSettingsPatchSchema.safeParse({ subagentMaxParallel: 129 }).success).toBe(false);
+      appSettingsSchema.parse({
+        subagentMaxParallel: Number.MAX_SAFE_INTEGER,
+        subagentTaskTimeoutMinutes: 180,
+      }),
+    ).toMatchObject({
+      subagentMaxParallel: Number.MAX_SAFE_INTEGER,
+      subagentTaskTimeoutMinutes: 180,
+    });
+    expect(appSettingsPatchSchema.safeParse({ subagentMaxParallel: 129 }).success).toBe(true);
+    expect(
+      appSettingsPatchSchema.safeParse({ subagentMaxParallel: Number.MAX_SAFE_INTEGER + 1 })
+        .success,
+    ).toBe(false);
     expect(appSettingsPatchSchema.safeParse({ subagentTaskTimeoutMinutes: 181 }).success).toBe(
       false,
     );
