@@ -1260,7 +1260,7 @@ describe("ContextBuilder meta user context", () => {
     );
     expect(metaAttachment(result, "skills_listing")).not.toContain("<system-reminder>");
     expect(metaAttachment(result, "skills_listing")).toContain(
-      "The following skills are available",
+      "Installed skills currently available for this workspace:",
     );
     expect(metaAttachment(result, "skills_listing")).toContain("demo-skill");
     expect(metaAttachment(result, "context_prefix")).toContain("# currentDate");

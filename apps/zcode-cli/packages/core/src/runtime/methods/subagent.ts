@@ -53,7 +53,6 @@ import {
   mirrorSubagentToolEvent,
 } from "../../subagent/tool-event-mirror.js";
 import {
-  SWARM_AGENT_TYPES,
   isBuiltInExploreAgentProfile,
   isDelegationRouterAgentType,
   normalizeAgentTypeForMatch,
@@ -108,93 +107,41 @@ export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefine
   return parts.join(" ");
 }
 
-/**
- * Hard cap для router-задач: не даёт start/orchestrator висеть бесконечно.
- * Orchestrator обязан быть строго больше бюджета child (45 минут): дети стартуют
- * позже родителя и получают собственный lifecycle.startedAt, поэтому равный
- * бюджет заставлял orchestrator истекать одновременно с ними без времени на синтез.
- * 60 минут оставляют synthesis headroom и остаются ниже start (90 минут).
- */
-const SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS = 60 * 60_000;
-// Start должен успеть получить partial от orchestrator и запустить следующий wave.
-const SUBAGENT_START_TASK_DEADLINE_MS = 90 * 60_000;
-const SUBAGENT_REVIEW_TASK_DEADLINE_MS = 45 * 60_000;
-const SUBAGENT_RESEARCH_TASK_DEADLINE_MS = 45 * 60_000;
-const SUBAGENT_WORKER_TASK_DEADLINE_MS = 45 * 60_000;
+// Deadline включается только явной настройкой subagentTaskTimeoutMinutes. Router-ролям
+// добавляется окно на сбор и синтез child results; базовые ролевые константы больше
+// не задают неявный таймер, поэтому задача выполняется до собственного завершения.
 const SUBAGENT_ROUTER_HANDOFF_MS = 15 * 60_000;
 
-const SUBAGENT_REVIEW_ROLE_NAMES = new Set(
-  ["reviewer", "security-reviewer"].map((role) => normalizeRoleName(role)),
-);
-const SUBAGENT_RESEARCH_ROLE_NAMES = new Set(
-  ["researcher"].map((role) => normalizeRoleName(role)),
-);
-const SUBAGENT_INSPECTION_ROLE_NAMES = new Set([
-  ...SUBAGENT_REVIEW_ROLE_NAMES,
-  ...SUBAGENT_RESEARCH_ROLE_NAMES,
-]);
-
-// Встроенные worker-роли берутся из единого реестра профилей, а не дублируются строкой:
-// добавление роли в SWARM_AGENT_TYPES автоматически включает её в deadline-контракт.
-const SUBAGENT_WORKER_ROLE_NAMES = new Set(
-  SWARM_AGENT_TYPES.filter(
-    (role) =>
-      !isDelegationRouterAgentType(role) &&
-      !SUBAGENT_INSPECTION_ROLE_NAMES.has(normalizeRoleName(role)),
-  ).map((role) => normalizeRoleName(role)),
-);
-
 function normalizeRoleName(role: string): string {
-  // normalizeAgentTypeForMatch не бросает; пустое имя попадает в worker-дефолт.
+  // normalizeAgentTypeForMatch не бросает; пустое имя попадает в нейтральную ветку.
   return normalizeAgentTypeForMatch(role) ?? "";
 }
 
-const SUBAGENT_ROLE_TASK_DEADLINE_MS: ReadonlyMap<string, number> = new Map<string, number>([
-  [normalizeRoleName("start"), SUBAGENT_START_TASK_DEADLINE_MS],
-  ...[...SUBAGENT_REVIEW_ROLE_NAMES].map(
-    (role) => [role, SUBAGENT_REVIEW_TASK_DEADLINE_MS] as const,
-  ),
-  ...[...SUBAGENT_RESEARCH_ROLE_NAMES].map(
-    (role) => [role, SUBAGENT_RESEARCH_TASK_DEADLINE_MS] as const,
-  ),
-  ...[...SUBAGENT_WORKER_ROLE_NAMES].map(
-    (role) => [role, SUBAGENT_WORKER_TASK_DEADLINE_MS] as const,
-  ),
-  [normalizeRoleName("orchestrator"), SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS],
-]);
-
 /**
- * Чистый резолвер hard deadline по роли. Настройка поднимает минимальный срок,
- * а router-ролям добавляется окно на сбор и синтез child results. Резолвер не бросает
- * и не зависит от runtime state, чтобы unknown profile не остался без таймера.
+ * Opt-in hard deadline по роли. Без явной настройки (`minimumMinutes <= 0`)
+ * возвращает undefined: задача выполняется до завершения, Stop или остановки runtime.
+ * Настройка `subagentTaskTimeoutMinutes` задаёт единый минимум для всех ролей; router-ролям
+ * добавляется окно на сбор и синтез child results. Резолвер не бросает и не зависит
+ * от runtime state, чтобы конфигурация не ломала spawn.
  */
 export function resolveSubagentTaskTimeoutMs(
   agentType: string,
   minimumMinutes = 0,
-): number {
+): number | undefined {
   const configuredMinimum =
     Number.isSafeInteger(minimumMinutes) && minimumMinutes > 0 && minimumMinutes <= 180
       ? minimumMinutes * 60_000
       : 0;
+  if (configuredMinimum === 0) return undefined;
   const role = normalizeRoleName(agentType);
-  const workerDeadline = Math.max(SUBAGENT_WORKER_TASK_DEADLINE_MS, configuredMinimum);
+  const workerDeadline = configuredMinimum;
   if (role === normalizeRoleName("orchestrator")) {
-    return Math.max(
-      SUBAGENT_ORCHESTRATOR_TASK_DEADLINE_MS,
-      configuredMinimum,
-      workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS,
-    );
+    return workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS;
   }
   if (role === normalizeRoleName("start")) {
-    return Math.max(
-      SUBAGENT_START_TASK_DEADLINE_MS,
-      configuredMinimum,
-      workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS * 2,
-    );
+    return workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS * 2;
   }
-  const baseDeadline =
-    SUBAGENT_ROLE_TASK_DEADLINE_MS.get(role) ?? SUBAGENT_WORKER_TASK_DEADLINE_MS;
-  return Math.max(baseDeadline, configuredMinimum);
+  return workerDeadline;
 }
 
 export function createDefaultSubagentPort(
@@ -279,16 +226,17 @@ export function createDefaultSubagentPort(
     runExploreAgent: async (request, options) => {
       const offPeak = getOffPeakExecution(this);
       const childBinding = offPeak?.createChildBinding();
-      if (offPeak && !offPeak.lifecycle.terminal) {
-        const selection = offPeak.lifecycle.ownedByUser
-          ? this.getSessionModelSelection()
-          : offPeak.selection;
+      // Idle-выбор принадлежит исполнению до явного takeover. После завершения основной
+      // фазы ticket binding уже недоступен, но возобновлённый SendMessage ребёнок обязан
+      // остаться на idle-модели: selectionForChild отдаёт её без нового билета.
+      if (offPeak) {
+        const selection = offPeak.selectionForChild(this.getSessionModelSelection());
         if (selection)
           options = {
             ...options,
             modelOverride: {
               selection,
-              requestDependencies: childBinding?.requestDependencies,
+              ...(childBinding ? { requestDependencies: childBinding.requestDependencies } : {}),
               background: "allow",
             },
           };
@@ -693,10 +641,13 @@ export function createDefaultSubagentPort(
         );
 
         const resumesExistingChild = request.resumeFromStore === true;
-        if (childBinding)
+        // Idle-модель не должна закрепляться в истории child: persist возвращает
+        // пользовательский выбор. Это не зависит от ticket binding, потому что защита
+        // нужна и для resume завершённого ребёнка, где новый билет уже не выдаётся.
+        if (offPeak)
           markTemporaryRuntimeSelection(
             childRuntime as unknown as AgentRuntimeInternal,
-            offPeak?.ordinarySelection,
+            offPeak.ordinarySelection,
           );
         let previousSelection: ModelSelection | undefined;
         if (resumesExistingChild) {

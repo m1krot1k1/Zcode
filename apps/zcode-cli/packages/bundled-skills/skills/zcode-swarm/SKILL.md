@@ -13,17 +13,18 @@ When the user explicitly asks only to verify recursive `Task` nesting, do not se
 
 1. D1, D2, D3, and D4 each call `Task` exactly once for the next depth, using an exact active profile ID that has `Task` in its current toolset.
 2. Each hop carries only the next-depth instruction and a unique depth marker. D5 is a leaf: it reports its marker and calls no tools.
-3. Do not add an orchestrator, parallel siblings, or repeated branches. A capability measurement needs one lineage, not an exponential task tree.
+3. For this isolation probe, do not add an orchestrator or parallel siblings: a capability measurement needs one lineage, not an exponential task tree.
 4. Report the observed `Task` calls, child session IDs, parent/root lineage, and leaf result. If the runtime cannot expose one of these, label it unverified instead of claiming the depth passed.
 
-For normal requests, continue using the plan below: delegate only independent deliverables with distinct scopes and useful results.
+For normal requests, continue using the plan below: delegate independent deliverables with distinct scopes and useful results.
 
 ## Plan
 
-1. Split the request into concrete deliverables. Delegate only work that is independent and has a clear result.
+1. Split the request into concrete deliverables. Delegate every independent deliverable that has a clear result; do not split one deliverable into duplicate agents.
 2. Give each child a narrow task, relevant context, expected output, and a distinct file or investigation scope. Avoid concurrent edits to the same file.
 3. Keep dependencies explicit. Start independent branches together; wait for prerequisites before dependent work.
-4. Follow runtime budgets, active-task limits, deadlines, cancellation, and profile permissions. Do not promise unlimited parallelism or depth.
+4. Respect runtime capacity: start as many independent branches as the actual free slots allow and schedule further waves after each join. Do not invent a fixed agent count, time budget, or deadline; work continues until it finishes, the user stops it, or the runtime ends the task.
+5. Pick the capability that fits the job: an installed skill, a marketplace skill via `SkillSearch`/`SkillInstall`, or an existing MCP server/plugin. An install is justified only when the task needs that capability; verify the source and never widen permissions.
 
 ## Join and report
 

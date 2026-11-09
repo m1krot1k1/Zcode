@@ -146,15 +146,16 @@ sequenceDiagram
   Core->>Tasks: cancel root subtree and await settlement
 ```
 
-## Жёсткие per-role deadline дочерних задач
+## Deadline дочерних задач (opt-in)
 
-- Владелец deadline — `SubagentPort` конкретного runtime. `createDefaultSubagentPort` передаёт runner'у чистый резолвер `resolveSubagentTaskTimeoutMs(agentType)`; ошибка резолвера не пробрасывается в child и не отменяет задачу без terminal-факта.
-- Отсчёт начинается от фактического старта задачи (`lifecycle.startedAt`), поэтому в бюджет входит не только model turn, но и stalled setup/resume до первого события child. Один admitted task получает ровно один таймер.
-- Базовые бюджеты: `start` — 90 минут; `orchestrator` — 60 минут; `reviewer`, `security-reviewer`, `researcher` и worker-роли из `SWARM_AGENT_TYPES` — 45 минут; неизвестные/custom/compatibility-профили (включая `Explore`) получают 45 минут. Настройка `subagentTaskTimeoutMinutes` — минимальный per-role deadline: `0` или пустое поле сохраняет профильные значения; `1..180` поднимает срок каждой роли до выбранного минимума. `start` остаётся дольше своих workers, а `orchestrator` сохраняет 15 минут на синтез даже при явном минимуме. Root-run deadline в 2 часа остаётся общим пределом дерева.
+- Владелец deadline — `SubagentPort` конкретного runtime. `createDefaultSubagentPort` передаёт runner'у чистый резолвер `resolveSubagentTaskTimeoutMs(agentType, minimumMinutes)`. По умолчанию дедлайна нет: задача выполняется до собственного завершения, отмены пользователем или исчерпания ресурсов. Ошибка резолвера не пробрасывается в child и не отменяет задачу без terminal-факта.
+- `subagentTaskTimeoutMinutes` — единственный способ включить per-role deadline: `0`/пусто означает отсутствие таймера, `1..180` задаёт минимальный срок каждой роли. Явная настройка не может отключить аварийный стоп-механизм пользователя; Stop всегда доступен.
+- Когда deadline включён, отсчёт начинается от фактического старта задачи (`lifecycle.startedAt`), поэтому в бюджет входит не только model turn, но и stalled setup/resume до первого события child. Один admitted task получает ровно один таймер.
 - Terminal-переход делает deadline finalizer. Он первым захватывает финализацию через `beginSubagentTaskFinalization`, пишет failed artifacts, переводит registry-запись в `failed` с причиной `Subagent task deadline exceeded`, abort-ит child signal, публикует `SubagentExecutionTerminal`, `SubagentStopped` и background notification/`BackgroundTaskCompleted` для background-задачи, затем освобождает cancellation handle и settle-ит waiter. Если финализацией уже владеет success/stop/другой finalizer, deadline только abort-ит child и не пишет второй terminal.
 - Timer очищается на успешном completion, startup-ошибке, non-abort ошибке выполнения, stop/abort, передаче в auto-background (только после фактического settlement) и в explicit `start()`. Success path очищает timer до захвата финализации, поэтому поздний deadline не может перезаписать `completed` в `failed`. Повторный terminal event после успешного completion не публикуется.
-- Явный background `start()` использует тот же per-role deadline, что и foreground `run()`; передача в background не снимает и не продлевает бюджет. Владение финализацией, остановка и registry-инварианты остаются прежними: при гонке пользовательского Stop и deadline terminal пишет только первый владелец, второй не дублирует artifacts/events/notification.
-- Вложенность не ослабляет бюджеты: каждый child runtime создаёт собственный `SubagentPort`, поэтому таймер роли ставится на каждом уровне независимо. Истечение deadline потомка не завершает родителя; родитель продолжает до собственного бюджета. Внешний root-run deadline (2 часа) остаётся границей всего дерева и по-прежнему может отменить его целиком.
+- Явный background `start()` использует тот же opt-in deadline, что и foreground `run()`. Владение финализацией, остановка и registry-инварианты остаются прежними: при гонке пользовательского Stop и deadline terminal пишет только первый владелец, второй не дублирует artifacts/events/notification.
+- Вложенность не ослабляет бюджеты: каждый child runtime создаёт собственный `SubagentPort`, поэтому таймер роли ставится на каждом уровне независимо. Истечение deadline потомка не завершает родителя; родитель продолжает до собственного бюджета или завершения.
+- Root-run wall-clock deadline не задаётся по умолчанию: root turn выполняется до завершения, отмены пользователем или остановки runtime. Явный `deadlineMs` в `beginRootRunBudget` остаётся доступным для вызывающего кода и тестов. Watchdog бездействия субагента также выключен по умолчанию (`inactivityTimeoutMs` не задан) и включается только явной настройкой; `Stop` и `maxTurns` остаются обязательными пользовательскими границами.
 
 ```mermaid
 sequenceDiagram
@@ -163,7 +164,11 @@ sequenceDiagram
   participant Child as Child runtime
   participant UI as Parent events
   Runner->>Runner: admission + lifecycle.startedAt
-  Runner->>Runner: setTimeout(role deadline)
+  alt deadline configured
+    Runner->>Runner: setTimeout(role deadline)
+  else no deadline (default)
+    Runner->>Runner: run until completion or explicit stop
+  end
   alt success / stop before deadline
     Runner->>Runner: clearTimeout + own finalization
     Runner->>Registry: terminal completed/killed
@@ -238,8 +243,8 @@ sequenceDiagram
 | SWARM-47 | Start вернул финальный ответ с валидным `<zcode-presentation>` | Runtime парсит последний блок и прикладывает `presentation` к `AgentCompletedOutput`; formatter выводит `<zcode-start-report>` с userText, supporting fields, status и unresolved, просит краткий естественный ответ без полного дампа evidence по умолчанию и не добавляет сырой child text. |
 | SWARM-48 | Presentation невалиден/отсутствует или его вернула worker-роль/DAG-узел | Presentation не прикладывается; worker/DAG не парсятся; formatter использует прежний вывод: сырой ответ, `work_result`, usage, acceptance. |
 | SWARM-49 | `WorkResult.status` = `partial`/`failed`/`blocked`, а `unresolved` содержит `spawn_budget_exhausted` или repair-причину | Model-текст показывает фактический status и unresolved; успешный lifecycle не скрывает partial/blocked и не подменяет status на `completed`. |
-| SWARM-50 | Роль не завершается до своего профильного или пользовательского минимального срока | Deadline finalizer переводит задачу в terminal `failed` с `Subagent task deadline exceeded`, abort-ит child signal, пишет failed artifact, публикует один terminal/stopped event и освобождает cancellation handle; waiter получает `failed`, задача не остаётся running. |
-| SWARM-51 | Worker/custom-роль, `orchestrator` или `start` завершается успешно до своего бюджета | Таймер снят до финализации: registry остаётся `completed`, поздний deadline не публикует второй terminal и не перезаписывает результат. По умолчанию действуют role deadlines 45–90 минут; минимальный срок можно увеличить через настройку. |
+| SWARM-50 | Роль не завершается до своего профильного или пользовательского минимального срока (настройка включена) | Deadline finalizer переводит задачу в terminal `failed` с `Subagent task deadline exceeded`, abort-ит child signal, пишет failed artifact, публикует один terminal/stopped event и освобождает cancellation handle; waiter получает `failed`, задача не остаётся running. Без явной настройки таймер не создаётся. |
+| SWARM-51 | Worker/custom-роль, `orchestrator` или `start` завершается успешно до своего бюджета | Таймер снят до финализации: registry остаётся `completed`, поздний deadline не публикует второй terminal и не перезаписывает результат. По умолчанию role deadline не действует; `subagentTaskTimeoutMinutes` включает единый минимум для всех ролей. |
 | SWARM-52 | Явный background `start()` превысил per-role deadline | Задача terminal `failed` по тому же finalizer-контракту, с background notification; при гонке с пользовательским Stop terminal пишет только первый владелец, второй не дублирует события, registry и cancellation handle освобождены. |
 | SWARM-53 | Вложенный child достигает deadline своей роли, пока родитель ещё работает | Потомок на своём уровне получает terminal `failed`; родитель продолжает выполнение до собственного per-role бюджета. Deadline каждого уровня ставится портом соответствующего runtime. |
 
@@ -277,8 +282,8 @@ sequenceDiagram
 - Core unit: `parsePresentationBlock` принимает только строгую схему и последний валидный блок; formatter с presentation сохраняет userText/status/facts/unknowns/evidenceRefs/unresolved как supporting context, инструктирует root отвечать кратко и естественно, не печатать внутренние списки без запроса и не добавлять claims; сырой child text отсутствует. Без presentation сохраняется прежний Branch B вывод.
 - Core unit: presentation парсится только у `agentType === "start"`; worker-роль и DAG-узел (`internalSwarmNodeID`) её игнорируют. Start prompt содержит presentation-инструкцию, worker-промпты — нет.
 - Core unit: partial/blocked status и unresolved-строки (`spawn_budget_exhausted`, repair) остаются видимыми в model-тексте при наличии и отсутствии presentation.
-- Core unit: `resolveSubagentTaskTimeoutMs` возвращает 45 минут для reviewer/researcher/worker/custom ролей, 60 минут для `orchestrator`, 90 минут для `start`; имена нормализуются, резолвер не бросает.
-- Core unit: foreground `reviewer` с истёкшим deadline terminal-`failed` в registry, child signal aborted, waiter resolved, cancellation handle released; успешный task снимает таймер и не публикует поздний terminal.
+- Core unit: `resolveSubagentTaskTimeoutMs` возвращает `undefined` без явной настройки для всех ролей; при `subagentTaskTimeoutMinutes > 0` возвращает заданный минимум для каждой роли; имена нормализуются, резолвер не бросает.
+- Core unit: foreground `reviewer` с явно включённым deadline terminal-`failed` в registry, child signal aborted, waiter resolved, cancellation handle released; успешный task снимает таймер и не публикует поздний terminal; без настройки таймер не создаётся.
 - Core unit: explicit background `start()` с истёкшим deadline terminal-`failed`, notification и registry-факт согласованы; гонка deadline со `stopTask` даёт ровно один terminal без дублирующих событий.
 - Core unit: вложенный reviewer получает deadline на своём уровне, пока родительский orchestrator остаётся running, затем завершается по собственному бюджету.
 - Acceptance case проверяется текущим case lifecycle; ручной/pending E2E не объявляется завершённым, пока не replayed/promoted согласно `e2e-case-lifecycle`.

@@ -22,10 +22,10 @@ Review the requested scope without editing it.
 - Distinguish confirmed bugs from questions and coverage gaps. Do not report style preferences as defects.
 - If no issue is found, say what was reviewed and what could not be verified.
 
-## Deadline and budget
+## Capacity
 
-- Review waves are planned with 2-3 parallel reviewers; there is no dedicated runtime concurrency governor, so keep the wave small by plan and prompt.
-- On deadline or budget exhaustion, return explicitly as `partial` or `blocked`: list what was reviewed, what was not, and what remains. Never hang and never present a partial review as complete.
+- Review waves are planned by the number of independent review questions within the actual free slots; there is no dedicated runtime concurrency governor. Do not invent a fixed reviewer count, time budget, or deadline.
+- Return `partial` or `blocked` only when continuing is objectively impossible (no access, context exhausted, user stopped the work): list what was reviewed, what was not, and what remains. Never present a partial review as complete.
 
 ## Security-reviewer scoping
 

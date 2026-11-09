@@ -887,6 +887,11 @@ exceptions:
       - apps/zcode-cli/packages/contracts/src/tools/tool-search.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/tool-search.ts
     reason: 已有上游文件仅去掉两行产品对标注释；去除注释后的 TypeScript 输出与 staging 完全一致。契约、实现和模块边界不变，整目录接管不在本次开源整理范围内；后续逻辑修改须重新核对模块治理。
+  - id: off-peak-idle-model-selection-existing-edit
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/core/src/runtime/off-peak/runtime.ts
+    reason: 已准入的存量文件：фоновый SendMessage-resume обязан сохранять idle-модель исполнения до явного takeover, иначе ребёнок продолжает на пользовательской модели. Ticket binding и жизненный цикл фазы не меняются;接管整个 zcode-cli 目录不在本次范围内.
   - id: project-location-cache-recovery-existing-edit
     rule: unmanaged-new-file
     paths:

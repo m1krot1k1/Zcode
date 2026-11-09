@@ -322,14 +322,14 @@ export function AgentWorkbenchView({
           </div>
           <div className="flex justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5 sm:col-span-2">
             <dt className="text-muted-foreground">
-              {copy("agentWorkbench.minimumRuntime", "Minimum task runtime")}
+              {copy("agentWorkbench.minimumRuntime", "Task time limit")}
             </dt>
             <dd className="text-right font-medium">
               {minimumRuntime == null || minimumRuntime === 0
-                ? copy("agentWorkbench.roleDeadlines", "Role-specific deadlines")
+                ? copy("agentWorkbench.roleDeadlines", "No limit · runs until done")
                 : copy(
                     "agentWorkbench.minimumRuntimeValue",
-                    "At least {minutes} min · role headroom retained",
+                    "{minutes} min · role headroom retained",
                     { minutes: minimumRuntime },
                   )}
             </dd>

@@ -350,7 +350,11 @@ describe("output-token continuation with Compact", () => {
 
     expect(result.response).toBe("done");
     expect(requests).toHaveLength(4);
-    expect(requests[2]).not.toContain("[Old tool result content cleared]");
+    // Порог microcompact зависит от размера system prompt, поэтому точный индекс,
+    // на котором он срабатывает, не является контрактом. Контракт: ранние запросы
+    // ещё не очищены, а к запросу-продолжению очистка применена и не персистится.
+    expect(requests[0]).not.toContain("[Old tool result content cleared]");
+    expect(requests[1]).not.toContain("[Old tool result content cleared]");
     expect(requests[3]).toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
     expect(requests[3]).toContain("[Old tool result content cleared]");
     expect(requests[3]).toContain(oldOutputStylePrompt);

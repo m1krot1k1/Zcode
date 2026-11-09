@@ -83,54 +83,38 @@ function stoppedEvents(events: readonly SessionEvent[]): SessionEvent[] {
 }
 
 describe("subagent per-role task deadline", () => {
-  it("maps built-in roles and unknown roles to the documented budgets", () => {
-    expect(resolveSubagentTaskTimeoutMs("start")).toBe(START_DEADLINE_MS);
-    expect(resolveSubagentTaskTimeoutMs("START")).toBe(START_DEADLINE_MS);
-    expect(resolveSubagentTaskTimeoutMs("orchestrator")).toBe(ORCHESTRATOR_DEADLINE_MS);
-    // Контракт: orchestrator строго больше child-бюджета, иначе дети, стартовавшие
-    // позже родителя, не оставляют времени на синтез.
-    expect(resolveSubagentTaskTimeoutMs("orchestrator")).toBeGreaterThan(
-      resolveSubagentTaskTimeoutMs("implementer"),
-    );
-    expect(ORCHESTRATOR_DEADLINE_MS - WORKER_DEADLINE_MS).toBeGreaterThanOrEqual(
-      MIN_SYNTHESIS_HEADROOM_MS,
-    );
-    expect(ORCHESTRATOR_DEADLINE_MS).toBeLessThan(START_DEADLINE_MS);
-
-    expect(resolveSubagentTaskTimeoutMs("researcher")).toBe(RESEARCHER_DEADLINE_MS);
-    for (const role of ["reviewer", "security-reviewer"] as const) {
-      expect(resolveSubagentTaskTimeoutMs(role)).toBe(REVIEWER_DEADLINE_MS);
-    }
-    // Резолвер нормализует имя роли так же, как admission каталога.
-    expect(resolveSubagentTaskTimeoutMs("Security Reviewer")).toBe(REVIEWER_DEADLINE_MS);
-
+  it("creates no deadline unless subagentTaskTimeoutMinutes is explicitly set", () => {
     for (const role of [
+      "start",
+      "orchestrator",
+      "researcher",
+      "reviewer",
+      "security-reviewer",
       "implementer",
       "coder",
-      "frontend-coder",
-      "backend-coder",
-      "infra-coder",
-      "test-engineer",
-      "evaluator",
-      "self-improver",
-      "knowledge-curator",
-      "subagent-factory",
+      "custom-reviewer",
+      "Explore",
+      "",
     ] as const) {
-      expect(resolveSubagentTaskTimeoutMs(role)).toBe(WORKER_DEADLINE_MS);
-    }
-
-    // Unknown/custom и compatibility-профили получают worker-дефолт и не бросают.
-    for (const role of ["custom-reviewer", "plugin-writer", "Explore", ""] as const) {
       expect(() => resolveSubagentTaskTimeoutMs(role)).not.toThrow();
-      expect(resolveSubagentTaskTimeoutMs(role)).toBe(WORKER_DEADLINE_MS);
+      expect(resolveSubagentTaskTimeoutMs(role)).toBeUndefined();
     }
+    // Ноль и невалидные значения не включают таймер.
+    expect(resolveSubagentTaskTimeoutMs("coder", 0)).toBeUndefined();
+    expect(resolveSubagentTaskTimeoutMs("coder", -5)).toBeUndefined();
+    expect(resolveSubagentTaskTimeoutMs("coder", 181)).toBeUndefined();
+    expect(resolveSubagentTaskTimeoutMs("coder", 1.5)).toBeUndefined();
   });
 
-  it("raises role deadlines without removing coordinator handoff headroom", () => {
+  it("applies the configured minimum to every role and keeps router handoff headroom", () => {
+    // Настройка — единый минимум для всех ролей; router-ролям добавляется окно синтеза.
     expect(resolveSubagentTaskTimeoutMs("coder", 50)).toBe(50 * 60_000);
+    expect(resolveSubagentTaskTimeoutMs("reviewer", 50)).toBe(50 * 60_000);
     expect(resolveSubagentTaskTimeoutMs("orchestrator", 50)).toBe(65 * 60_000);
-    expect(resolveSubagentTaskTimeoutMs("start", 50)).toBe(90 * 60_000);
-    expect(resolveSubagentTaskTimeoutMs("coder", 181)).toBe(WORKER_DEADLINE_MS);
+    expect(resolveSubagentTaskTimeoutMs("start", 50)).toBe(80 * 60_000);
+    // Имена нормализуются так же, как admission каталога.
+    expect(resolveSubagentTaskTimeoutMs("Security Reviewer", 50)).toBe(50 * 60_000);
+    expect(resolveSubagentTaskTimeoutMs("START", 50)).toBe(80 * 60_000);
   });
 
   it("terminal-fails a reviewer at its configured role deadline, aborts the child and releases the handle", async () => {
@@ -153,7 +137,7 @@ describe("subagent per-role task deadline", () => {
       outputRootDir: directory,
       profiles: normalizeAgentProfiles([]),
       runtimeTaskRegistry: registry,
-      getTaskTimeoutMs: (agentType) => resolveSubagentTaskTimeoutMs(agentType),
+      getTaskTimeoutMs: (agentType) => resolveSubagentTaskTimeoutMs(agentType, 45),
       runExploreAgent: (_request, options) => {
         childSignal = options?.signal;
         childStarted.resolve();
@@ -426,7 +410,7 @@ describe("subagent per-role task deadline", () => {
       outputRootDir: directory,
       profiles: normalizeAgentProfiles([]),
       runtimeTaskRegistry: registry,
-      getTaskTimeoutMs: (agentType) => resolveSubagentTaskTimeoutMs(agentType),
+      getTaskTimeoutMs: (agentType) => resolveSubagentTaskTimeoutMs(agentType, 45),
       runExploreAgent: (request, options) => {
         if (request.agentType === "reviewer") {
           childSignal = options?.signal;
@@ -481,17 +465,18 @@ describe("subagent per-role task deadline", () => {
     expect(stoppedEvents(emittedEvents)).toHaveLength(2);
   });
 
-  it("instructs the orchestrator to synthesize a partial before its own hard deadline", () => {
+  it("requires the orchestrator to surface partial context without inventing a deadline", () => {
     const orchestrator = normalizeAgentProfiles([]).find(
       (profile) => profile.name === "orchestrator",
     );
     expect(orchestrator).toBeDefined();
     const prompt = orchestrator!.systemPrompt;
-    // Контракт финализации: partial из отчётов веток должен уйти до принудительного abort,
-    // иначе parent Task получает голое "deadline exceeded" без накопленного результата.
-    expect(prompt).toContain("hard deadline");
+    // Контракт: partial из отчётов веток возвращается с накопленным контекстом, но
+    // собственный тайм-бюджет или deadline агентом не вводится.
     expect(prompt).toContain("partial");
-    expect(prompt).toContain("5 минут");
+    expect(prompt).toContain("Не задавай веткам собственный тайм-бюджет");
+    expect(prompt).not.toContain("hard deadline");
+    expect(prompt).not.toContain("5 минут");
     // Router остаётся routing-only: промпт не добавляет read/exec-capabilities.
     expect(prompt).not.toMatch(/тебе доступн\w* (Read|Glob|Grep|Bash)/i);
   });

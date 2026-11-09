@@ -52,6 +52,7 @@ export function buildExploreAgentPrompt(options: ExploreAgentPromptOptions): str
     "- Reading and analyzing file contents",
     "",
     "Guidelines:",
+    "- If CodeIndex is available, start with `status` and a targeted `search`; use `context`/`impact`/`trace` for relationships, then Read only the indicated sources and nearby tests. Fall back to Glob/Grep when the index is unavailable, empty, stale, or the question needs exact source text.",
     ...searchGuidelines,
     "- Use Read when you know the specific file path you need to read",
     `- Use Bash ONLY for read-only operations (${bashReadOnlyCommands})`,

@@ -9,7 +9,6 @@ import {
   AgentErrorCode,
   AgentTaskGraphSchema,
   CoreErrorType,
-  DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS,
   SessionEventType,
   createChildTraceContext,
   createCoreError,
@@ -534,13 +533,15 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (hasForegroundModelOverride) {
         borrowedForegroundAgentIds.add(lifecycle.agentId);
       }
+      // Watchdog бездействия — opt-in: по умолчанию субагент живёт до завершения или Stop.
+      // Транспортный stream idle timeout адаптера остаётся отдельной сетевой защитой.
       const activityWatchdog = createSubagentActivityWatchdog({
         abort: taskAbort.abort,
         lifecycle,
         logger: options.logger,
         request,
         signal: taskAbort.signal,
-        timeoutMs: options.inactivityTimeoutMs ?? DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS,
+        timeoutMs: options.inactivityTimeoutMs ?? 0,
       });
       const readyGate = createSubagentSessionReadyGate();
       let sessionReady = false;

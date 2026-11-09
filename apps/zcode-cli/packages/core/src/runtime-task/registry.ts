@@ -1383,7 +1383,8 @@ export interface RuntimeTaskRegistry {
 
 interface RootRunBudgetState {
   rootRunId: string;
-  deadlineAt: number;
+  /** undefined — срок не задан; root выполняется до Stop или завершения turn. */
+  deadlineAt: number | undefined;
   rootSessionId: SessionId;
   turnId: TurnId;
   /** Immutable concurrency ceiling captured when this root run is admitted. */
@@ -1429,8 +1430,8 @@ const TERMINAL_STATUSES = new Set<RuntimeTaskSnapshot["status"]>([
   "lost",
 ]);
 
-/** Root deadline переживает максимальный worker deadline и время на synthesis. */
-export const DEFAULT_ROOT_RUN_DEADLINE_MS = 4 * 60 * 60 * 1000;
+/** Root-run deadline больше не включается по умолчанию: задача выполняется до Stop или завершения. */
+export const DEFAULT_ROOT_RUN_DEADLINE_MS: number | undefined = undefined;
 
 /** Periodic materialization of stale work claims; lazy expiry stays authoritative. */
 export const WORK_LEDGER_SWEEP_INTERVAL_MS = Math.max(1_000, Math.floor(WORK_LEDGER_TTL_MS / 2));
@@ -1548,8 +1549,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   }): void {
     if (this.rootRunBudgets.has(input.rootRunId)) return;
     this.finishedRootRunIds.delete(input.rootRunId);
+    // Без явного deadlineMs root-run не получает wall-clock таймер: пользовательская
+    // остановка и завершение turn остаются единственными границами.
+    const deadlineMs = input.deadlineMs ?? DEFAULT_ROOT_RUN_DEADLINE_MS;
     const deadlineAt =
-      (input.startedAt ?? Date.now()) + (input.deadlineMs ?? DEFAULT_ROOT_RUN_DEADLINE_MS);
+      deadlineMs === undefined ? undefined : (input.startedAt ?? Date.now()) + deadlineMs;
     this.rootRunBudgets.set(input.rootRunId, {
       rootRunId: input.rootRunId,
       deadlineAt,
@@ -1560,6 +1564,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       expired: false,
       onExhausted: input.onExhausted,
     });
+    if (deadlineAt === undefined) return;
     const state = this.rootRunBudgets.get(input.rootRunId)!;
     state.deadlineTimer = setTimeout(() => {
       if (!this.rootRunBudgets.has(input.rootRunId)) return;
@@ -1595,11 +1600,14 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   isRootRunBudgetExpired(rootRunId: string): boolean {
     const state = this.rootRunBudgets.get(rootRunId);
-    return state !== undefined && (state.expired || Date.now() >= state.deadlineAt);
+    return (
+      state !== undefined &&
+      (state.expired || (state.deadlineAt !== undefined && Date.now() >= state.deadlineAt))
+    );
   }
 
   getRootRunBudgetSnapshot(rootRunId: string): {
-    deadlineAt: number;
+    deadlineAt: number | undefined;
     maxParallel: number;
   } | undefined {
     const state = this.rootRunBudgets.get(rootRunId);

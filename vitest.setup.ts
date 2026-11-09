@@ -1,4 +1,4 @@
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeAll, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -44,4 +44,23 @@ vi.mock("node:os", async (importOriginal) => {
       return envHome && envHome.length > 0 ? envHome : actual.homedir();
     },
   };
+});
+
+// Bugfix (Node >= 25): глобаль `localStorage` попадает в jsdom-окружение как
+// undefined-заглушка Node и перекрывает рабочий window.localStorage; UI-тесты падают
+// на `localStorage.clear is not a function`. Setup выполняется до установки jsdom,
+// поэтому восстанавливаем реализацию в beforeAll, когда window уже доступен.
+beforeAll(() => {
+  if (typeof globalThis.window === "undefined") return;
+  if (typeof globalThis.localStorage !== "undefined") return;
+  // globalThis === window в jsdom, поэтому обращение к window.localStorage из
+  // геттера globalThis — бесконечная рекурсия. jsdom держит реализацию в
+  // собственном поле `_localStorage`; берём её оттуда, если оно есть.
+  const backing = (globalThis as { _localStorage?: Storage })._localStorage;
+  if (!backing) return;
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    writable: true,
+    value: backing,
+  });
 });

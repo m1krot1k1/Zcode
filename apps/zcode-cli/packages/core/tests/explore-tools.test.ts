@@ -6,9 +6,12 @@ import {
 
 describe("Explore tool policy", () => {
   it("keeps direct and embedded-search Explore tool lists in sync with provider-visible text", () => {
+    // CodeIndex входит в обе ветки: индекс — основной вход для навигации по символам,
+    // Glob/Grep/Bash остаются fallback при недоступном или неполном индексе.
     expect(buildExploreAllowedTools()).toEqual([
       "ToolSearch",
       "DeferredToolCall",
+      "CodeIndex",
       "Bash",
       "Glob",
       "Grep",
@@ -18,12 +21,13 @@ describe("Explore tool policy", () => {
       "TodoWrite",
     ]);
     expect(formatExploreAllowedToolsForAgentDescription()).toBe(
-      "Glob, Grep, Read, Bash, WebFetch, WebSearch, TodoWrite",
+      "CodeIndex, Glob, Grep, Read, Bash, WebFetch, WebSearch, TodoWrite",
     );
 
     expect(buildExploreAllowedTools({ embeddedSearchEnabled: true })).toEqual([
       "ToolSearch",
       "DeferredToolCall",
+      "CodeIndex",
       "Bash",
       "Read",
       "WebFetch",
@@ -31,7 +35,7 @@ describe("Explore tool policy", () => {
       "TodoWrite",
     ]);
     expect(formatExploreAllowedToolsForAgentDescription({ embeddedSearchEnabled: true })).toBe(
-      "Read, Bash, WebFetch, WebSearch, TodoWrite",
+      "CodeIndex, Read, Bash, WebFetch, WebSearch, TodoWrite",
     );
   });
 });

@@ -41,6 +41,7 @@ function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
     "Installed skills currently available for this workspace:",
     "",
     "Choose an exact listed skill name when it matches the task, and load it with Skill if that tool is available to your role.",
+    "If no available skill matches the task, use SkillSearch to search the public skills.sh marketplace; install a relevant, reputable result with SkillInstall, then load it with Skill.",
     "",
   ];
 

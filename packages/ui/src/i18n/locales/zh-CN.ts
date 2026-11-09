@@ -3080,9 +3080,9 @@ const zhCN: Record<string, string> = {
   "settings.subagentMaxParallelDescription":
     "可选的较低并发上限。留空或填 0 时使用主机可用的 CPU 容量；对新启动的 Agent 生效。",
   "settings.subagentMaxParallelInvalid": "请输入非负整数，或留空。",
-  "settings.subagentTaskTimeoutMinutes": "子代理最短运行时间（分钟）",
+  "settings.subagentTaskTimeoutMinutes": "子代理运行时限（分钟）",
   "settings.subagentTaskTimeoutMinutesDescription":
-    "延长角色 deadline，让 Agent 有时间调查和完成更大的任务。填 0 使用角色默认值，填 1–180 分钟；协调角色会额外保留结果汇总时间。",
+    "默认关闭：Agent 持续运行直到完成或你按下 Stop。填 1–180 分钟可为每个 Agent 设定运行上限；协调角色会额外保留结果汇总时间。填 0 关闭限制。",
   "settings.subagentTaskTimeoutMinutesInvalid": "请输入 0 到 180 之间的整数。",
   "settings.runLimitPlaceholder": "默认值",
   "settings.desktopChromiumHardwareAcceleration": "Chrome 硬件加速",
@@ -5820,9 +5820,9 @@ const zhCN: Record<string, string> = {
   "agentWorkbench.disabled": "已禁用",
   "agentWorkbench.parallelLimit": "并行智能体",
   "agentWorkbench.adaptiveParallel": "自适应 · 主机容量",
-  "agentWorkbench.minimumRuntime": "任务最短运行时间",
-  "agentWorkbench.roleDeadlines": "按角色设置的截止时间",
-  "agentWorkbench.minimumRuntimeValue": "至少 {minutes} 分钟 · 保留路由余量",
+  "agentWorkbench.minimumRuntime": "任务运行时限",
+  "agentWorkbench.roleDeadlines": "不限制 · 运行至完成",
+  "agentWorkbench.minimumRuntimeValue": "{minutes} 分钟 · 保留路由余量",
   "agentWorkbench.capacitySettingsHint":
     "这里显示当前设置；实际并行执行数量还取决于主机可用容量和已占用的并行槽。",
   "agentWorkbench.runActivity": "当前任务中的智能体",

@@ -61,6 +61,7 @@ Your strengths:
 - Reading and analyzing file contents
 
 Guidelines:
+- If CodeIndex is available, start with \`status\` and a targeted \`search\`; use \`context\`/\`impact\`/\`trace\` for relationships, then Read only the indicated sources and nearby tests. Fall back to Glob/Grep when the index is unavailable, empty, stale, or the question needs exact source text.
 - Use \`find\` via Bash for broad file pattern matching
 - Use \`grep\` via Bash for searching file contents with regex
 - Use Read when you know the specific file path you need to read
@@ -781,6 +782,7 @@ describe("Explore subagent", () => {
     expect(spawnPayload.allowedTools).toEqual([
       "ToolSearch",
       "DeferredToolCall",
+      "CodeIndex",
       "Bash",
       "Read",
       "WebFetch",

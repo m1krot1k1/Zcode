@@ -914,7 +914,10 @@ describe("AgentRuntime trace propagation", () => {
 
     expect(requests[1]?.filter((message) => message.role === "system")).toHaveLength(3);
     const secondRequestText = providerMessagesToText(requests[1]);
-    expect(secondRequestText).not.toContain("# Session-specific guidance");
+    // Agent guidance включён намеренно: runtime с Agent-инструментом обязан сообщить
+    // модели, что многокомпонентную работу можно делегировать.
+    expect(secondRequestText).toContain("# Session-specific guidance");
+    expect(secondRequestText).toContain("delegate them with Agent");
     expect(secondRequestText).not.toContain("`! <command>`");
     expect(secondRequestText).not.toContain(
       "Otherwise use `find` or `grep` via the Bash tool directly.",
@@ -1048,7 +1051,7 @@ describe("AgentRuntime trace propagation", () => {
     expect(dynamicSystem).toMatch(/^\n\n# Communicating with the user/);
     expect(dynamicSystem).toContain("Write code that reads like the surrounding code");
     expect(dynamicSystem).toContain("For actions that are hard to reverse");
-    expect(dynamicSystem).not.toContain("# Session-specific guidance");
+    expect(dynamicSystem).toContain("# Session-specific guidance");
     expect(dynamicSystem).not.toContain("`! <command>`");
     expect(dynamicSystem).toContain("# Environment");
     expect(dynamicSystem).toContain("# Context management");
@@ -1223,7 +1226,7 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[2]?.content.indexOf("For actions that are hard to reverse")).toBeLessThan(
       requests[0]?.[2]?.content.indexOf("# Environment") ?? -1,
     );
-    expect(requests[0]?.[2]?.content).not.toContain("# Session-specific guidance");
+    expect(requests[0]?.[2]?.content).toContain("# Session-specific guidance");
     expect(requests[0]?.[2]?.content).not.toContain("`! <command>`");
     expect(requests[0]?.[2]?.content).not.toContain("# Language");
     expect(requests[0]?.[2]?.content).not.toContain("# Function Result Clearing");

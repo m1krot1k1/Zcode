@@ -3285,9 +3285,9 @@ const enUS: Record<string, string> = {
   "settings.subagentMaxParallelDescription":
     "Optional lower concurrency limit. Leave blank or enter 0 to use the host's available CPU capacity. Takes effect for newly started agents.",
   "settings.subagentMaxParallelInvalid": "Enter a non-negative whole number, or leave it blank.",
-  "settings.subagentTaskTimeoutMinutes": "Minimum subagent runtime (minutes)",
+  "settings.subagentTaskTimeoutMinutes": "Subagent time limit (minutes)",
   "settings.subagentTaskTimeoutMinutesDescription":
-    "Raises role deadlines so agents can investigate and finish larger tasks. Enter 0 for role defaults, or 1–180 minutes; coordinators keep extra time to collect results.",
+    "Off by default: agents run until they finish or you press Stop. Enter 1–180 minutes to cap every agent's runtime; coordinators keep extra time to collect results. Enter 0 to disable the limit.",
   "settings.subagentTaskTimeoutMinutesInvalid": "Enter a whole number from 0 to 180.",
   "settings.runLimitPlaceholder": "Default",
   "settings.desktopChromiumHardwareAcceleration": "Chrome hardware acceleration",
@@ -6225,9 +6225,9 @@ const enUS: Record<string, string> = {
   "agentWorkbench.disabled": "Disabled",
   "agentWorkbench.parallelLimit": "Parallel agents",
   "agentWorkbench.adaptiveParallel": "Adaptive · host capacity",
-  "agentWorkbench.minimumRuntime": "Minimum task runtime",
-  "agentWorkbench.roleDeadlines": "Role-specific deadlines",
-  "agentWorkbench.minimumRuntimeValue": "At least {minutes} min · role headroom retained",
+  "agentWorkbench.minimumRuntime": "Task time limit",
+  "agentWorkbench.roleDeadlines": "No limit · runs until done",
+  "agentWorkbench.minimumRuntimeValue": "{minutes} min · role headroom retained",
   "agentWorkbench.capacitySettingsHint":
     "These are the active Settings values; actual parallel work also depends on available host capacity and occupied slots.",
   "agentWorkbench.runActivity": "Agents in current task",

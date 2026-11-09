@@ -200,9 +200,21 @@ export class OffPeakRuntimeExecution {
   }
 
   createChildBinding(): OffPeakModelBinding | undefined {
+    // Ticket binding действителен только для живого idle-исполнения: retainIdleModelRound
+    // бросает после завершения фазы. Resume завершённого ребёнка получает модель через
+    // idleSelectionForChild ниже, а не через новый билет.
     return this.lifecycle.ownedByUser || this.lifecycle.terminal
       ? undefined
       : this.authority.createBinding();
+  }
+
+  /**
+   * Модель для дочерней сессии без нового ticket binding. Возвращает idle-выбор,
+   * пока владение не передано пользователю, даже если основная фаза уже завершена:
+   * возобновлённый через SendMessage ребёнок остаётся частью idle-исполнения.
+   */
+  selectionForChild(fallback: ModelSelection | undefined): ModelSelection | undefined {
+    return this.lifecycle.ownedByUser ? fallback : this.selection;
   }
   replaceTicket(
     executionId: string,

@@ -62,6 +62,9 @@ export const codeIndexToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     needsApproval: false,
+    // CodeIndex не resident: без shouldDefer он попадает в provider-visible список
+    // вместе с полной схемой, ломая контракт ToolSearch «resident или deferred».
+    shouldDefer: true,
   },
   handler: codeIndexHandler,
   inputSchema: CodeIndexInputJsonSchema,

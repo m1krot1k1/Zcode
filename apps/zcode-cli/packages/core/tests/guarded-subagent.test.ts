@@ -11,11 +11,13 @@ import { createTestModelFactory } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 
 describe("guarded real subagent ingress", () => {
+  // general-purpose удалён из каталога как generic-роль; вместо него проверяем
+  // реальные встроенные роли, которые наследуют родительский permission service.
   it.each([
     ["Explore", false],
-    ["general-purpose", false],
+    ["researcher", false],
     ["custom", false],
-    ["general-purpose", true],
+    ["researcher", true],
   ] as const)(
     "%s routes a real pending request to its parent (background=%s)",
     async (agentType, background) => {

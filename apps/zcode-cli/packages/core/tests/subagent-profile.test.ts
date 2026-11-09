@@ -266,7 +266,7 @@ tools:
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
     expect(prompt).toContain("- reviewer:");
     expect(prompt).toContain(
-      "(Tools: CodeIndex, Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, TodoRead",
+      "(Tools: CodeIndex, Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, SkillSearch",
     );
     expect(prompt).toContain("(Tools: CodeIndex, Read, Glob, Grep, Write, Edit, Bash");
     expect(prompt).not.toContain("tools: Read");
@@ -430,9 +430,8 @@ tools:
     const orchestratorPrompt =
       swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
     expect(orchestratorPrompt).toContain(
-      "не создавай дублирующие или пересекающиеся по файлам ветки",
-    );
-    expect(orchestratorPrompt).toContain("сопоставь каждый запрос пользователя");
+      "Не создавай дублирующие или пересекающиеся по файлам ветки",
+    );    expect(orchestratorPrompt).toContain("сопоставь каждый запрос пользователя");
     expect(orchestratorPrompt).toContain("не предоставляет");
     expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
       "zcode-systematic-debugging",
@@ -484,8 +483,8 @@ tools:
     const reviewerPrompt =
       swarmProfiles.find(({ name }) => name === "reviewer")?.systemPrompt ?? "";
     expect(reviewerPrompt).toContain("researcher-подагентов в пределах доступных runtime-слотов");
-    expect(reviewerPrompt).toContain("25 минут");
-    expect(reviewerPrompt).toContain("45 минут");
+    expect(reviewerPrompt).not.toContain("25 минут");
+    expect(reviewerPrompt).not.toContain("45 минут");
     expect(swarmProfiles.find(({ name }) => name === "evaluator")?.skills).toContain(
       "completion-gate",
     );
@@ -589,7 +588,7 @@ Review carefully.`,
     expect(prompt).toContain(
       "- Explore: Custom mutable explorer (Tools: Write, mcp__local-tools__query)",
     );
-    expect(prompt).not.toContain("Tools: Read, Bash, WebFetch, WebSearch, TodoWrite");
+    expect(prompt).not.toContain("Tools: CodeIndex, Read, Bash, WebFetch, WebSearch, TodoWrite");
   });
 
   it("leaves built-in Explore on inherited model by default", () => {
@@ -642,7 +641,7 @@ Review carefully.`,
     const compatibilityLine = formatAgentProfileForPrompt(createBuiltInExploreAgentProfile(), {
       embeddedSearchEnabled: true,
     });
-    expect(compatibilityLine).toContain("Tools: Read, Bash, WebFetch, WebSearch, TodoWrite");
+    expect(compatibilityLine).toContain("Tools: CodeIndex, Read, Bash, WebFetch, WebSearch, TodoWrite");
     expect(compatibilityLine).not.toContain("Glob");
     expect(compatibilityLine).not.toContain("Grep");
   });
@@ -915,9 +914,10 @@ describe("specialized worker roster", () => {
 
     expect(prompt).toContain("Никогда не вызывай Task(start)");
     expect(prompt).toContain("не вызывай Task(orchestrator)");
-    expect(prompt).toContain("Планируй для каждой ветки конечный объём, рассчитанный на профильный timeout");
+    expect(prompt).toContain("Планируй для каждой ветки конечный проверяемый объём");
+    expect(prompt).toContain("не задавай искусственный тайм-бюджет или deadline");
     expect(prompt).toContain("Runtime ограничивает одновременно активные ветки доступной ёмкостью хоста и провайдера");
-    expect(prompt).toContain("Оставляй не менее 15 минут своего hard deadline на синтез");
+    expect(prompt).not.toContain("15 минут своего hard deadline");
     expect(prompt).toContain("следующий wave");
     expect(prompt).toContain("накопленным контекстом");
     expect(prompt).toContain("researcher");
@@ -934,7 +934,7 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("Планируй все полезные независимые ветки волнами");
     expect(prompt).toContain("следующую волну после join");
     expect(prompt).toContain("subagent-factory");
-    expect(prompt).toContain("Не раздувай число агентов");
+    expect(prompt).toContain("не дроби один deliverable на несколько агентов ради количества");
     expect(prompt).not.toContain("remaining_spawns");
     expect(prompt).not.toContain("5–8 действительно независимых областей");
   });
@@ -981,6 +981,7 @@ describe("built-in role capability matrix", () => {
     "Task",
     "Skill",
     "SkillSearch",
+    "SkillInstall",
     "TodoRead",
     "TodoWrite",
     "AskUserQuestion",
@@ -997,6 +998,8 @@ describe("built-in role capability matrix", () => {
     "WebSearch",
     "Task",
     "Skill",
+    "SkillSearch",
+    "SkillInstall",
     "TodoRead",
     "TodoWrite",
     "AskUserQuestion",
@@ -1157,13 +1160,13 @@ describe("review prompt contract", () => {
   );
 
   it.each(["reviewer", "security-reviewer"])(
-    "%s returns explicit partial/blocked on deadline exhaustion",
+    "%s returns explicit partial/blocked only on real blockage",
     (name) => {
       const prompt = promptOf(name);
 
-      expect(prompt).toContain("partial/blocked");
+      expect(prompt).toContain("partial или blocked");
       expect(prompt).toContain("что просмотрено, что нет");
-      expect(prompt).toContain("Не зависай");
+      expect(prompt).toContain("Не вводи собственный тайм-бюджет");
       expect(prompt).toContain("reviewer-веткам в пределах доступных runtime-слотов");
       expect(prompt).toContain("Не запускай несколько агентов на одинаковый diff или проверку");
       expect(prompt).not.toContain("2–3 параллельных reviewer");

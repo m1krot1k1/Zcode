@@ -8,7 +8,7 @@ import {
 } from "../src/runtime-task/registry.js";
 
 describe("RootRun deadline budget", () => {
-  it("defaults to four hours so the longest configured role deadline can report back", () => {
+  it("has no wall-clock deadline by default and keeps the run until it finishes", () => {
     vi.useFakeTimers();
     try {
       const registry = new InMemoryRuntimeTaskRegistry();
@@ -18,10 +18,37 @@ describe("RootRun deadline budget", () => {
       const startedAt = new Date("2026-11-08T00:00:00.000Z");
       registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, startedAt: startedAt.getTime() });
 
+      // По умолчанию срок не задан: root выполняется до завершения или Stop.
+      expect(DEFAULT_ROOT_RUN_DEADLINE_MS).toBeUndefined();
+      expect(registry.getRootRunBudgetSnapshot(rootRunId)?.deadlineAt).toBeUndefined();
+      expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+      // Даже спустя много часов без явного deadline run остаётся живым.
+      vi.advanceTimersByTime(24 * 60 * 60_000);
+      expect(registry.isRootRunBudgetExpired(rootRunId)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("honours an explicit deadline when the caller supplies one", () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new InMemoryRuntimeTaskRegistry();
+      const root = createSessionId("root-budget-explicit-deadline");
+      const turnId = createTurnId("root-budget-explicit-deadline-turn");
+      const rootRunId = `${root}:${turnId}`;
+      const startedAt = new Date("2026-11-08T00:00:00.000Z");
+      registry.beginRootRunBudget({
+        rootRunId,
+        rootSessionId: root,
+        turnId,
+        startedAt: startedAt.getTime(),
+        deadlineMs: 60 * 60_000,
+      });
+
       expect(registry.getRootRunBudgetSnapshot(rootRunId)?.deadlineAt).toBe(
-        startedAt.getTime() + DEFAULT_ROOT_RUN_DEADLINE_MS,
+        startedAt.getTime() + 60 * 60_000,
       );
-      expect(DEFAULT_ROOT_RUN_DEADLINE_MS).toBe(4 * 60 * 60_000);
     } finally {
       vi.useRealTimers();
     }

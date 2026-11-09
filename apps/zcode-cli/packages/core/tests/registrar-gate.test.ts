@@ -248,13 +248,15 @@ describe("registrar work-claim hard gate", () => {
     ).toBe(true);
   });
 
-  it("does not consume spawn budget on a rejected conflict", () => {
+  // Spawn-бюджет удалён (docs/specs/root-run-budget-removed.md): отклонённый по
+  // write-claim конфликту admission не должен оставлять в registry второй задачи.
+  it("does not register a task on a rejected write-claim conflict", () => {
     const ledger = memoryLedger();
     const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
     const root = createSessionId("registrar-root");
     const turnId = createTurnId("registrar-budget-turn");
     const rootRunId = `${root}:${turnId}`;
-    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId, spawnBudget: 4 });
+    registry.beginRootRunBudget({ rootRunId, rootSessionId: root, turnId });
     const prompt = "Правлю `apps/zcode-cli/packages/core/src/runtime-task/registry.ts`";
 
     expect(
@@ -280,9 +282,10 @@ describe("registrar work-claim hard gate", () => {
       ),
     ).toEqual({ accepted: false, reason: "write_claim_conflict" });
 
-    const snapshot = registry.getRootRunBudgetSnapshot(rootRunId);
-    expect(snapshot?.spawnsUsed).toBe(1);
-    expect(snapshot?.remainingSpawnsBySession.get(root)).toBe(3);
+    // Отклонённый admission не создаёт задачу и не оставляет claim'а.
+    expect(registry.get("budget-b")).toBeUndefined();
+    expect(Object.keys(registry.all())).toEqual(["budget-a"]);
+    expect(registry.getRootRunBudgetSnapshot(rootRunId)?.maxParallel).toBeGreaterThan(0);
   });
 
   it.each(["failed", "cancelled", "killed", "stopped", "lost"] as const)(

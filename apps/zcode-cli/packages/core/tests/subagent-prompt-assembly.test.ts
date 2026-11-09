@@ -91,6 +91,13 @@ function systemContents(request: any): string[] {
   return systemMessages(request).map((message: any) => message.content);
 }
 
+/** Host ставит <zcode-spawn-envelope> первым блоком тела; тело роли идёт сразу после него. */
+const SPAWN_ENVELOPE_PREFIX = /^\n<zcode-spawn-envelope [^>]*\/>\n\n/u;
+
+function bodyWithoutSpawnEnvelope(systemBody: string): string {
+  return systemBody.replace(SPAWN_ENVELOPE_PREFIX, "\n");
+}
+
 function systemMessages(request: any): any[] {
   return request.messages.filter((message: any) => message.role === "system");
 }
@@ -236,7 +243,7 @@ describe("subagent provider-visible prompt assembly", () => {
     const systems = systemContents(childRequests[0]);
     expect(systems.map((content) => content.endsWith("\n"))).toEqual([false, false]);
     expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
-    expect(systems[1]).toMatch(/^\nYou are ZCode Explore/u);
+    expect(systems[1]).toMatch(/^\n<zcode-spawn-envelope [^>]*\/>\n\nYou are ZCode Explore/u);
     expect(systems[1]).toContain("READ-ONLY MODE");
     expect(systems[1]).toContain("\n\nNotes:");
     expect(systems[1]).toContain("Agent threads always have their cwd reset between bash calls");
@@ -439,7 +446,7 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems).toHaveLength(2);
     expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
     expect(systems[1]).toMatch(
-      /^\nYou are a focused code researcher\. Return concise findings\.\n\nNotes:/u,
+      /^\n<zcode-spawn-envelope [^>]*\/>\n\nYou are a focused code researcher\. Return concise findings\.\n\nNotes:/u,
     );
     expect(systems[1]).toContain("Is directory a git repo: No");
     expectInjectedAgentsMd(childRequests[0], "Research the custom profile path.");
@@ -638,9 +645,9 @@ describe("subagent provider-visible prompt assembly", () => {
         rootDir: memoryRoot,
         scope,
       });
-      expect(systemContents(childRequests[0])[1]?.split("\n\nNotes:")[0]).toBe(
-        `\n${expectedMemoryPrompt}`,
-      );
+      expect(
+        bodyWithoutSpawnEnvelope(systemContents(childRequests[0])[1] ?? "").split("\n\nNotes:")[0],
+      ).toBe(`\n${expectedMemoryPrompt}`);
       const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
       expect(childToolNames).toContain("Write");
       expect(childToolNames).not.toContain("Edit");

@@ -23,10 +23,7 @@ import { MemoryFileSystem } from "./memory-test-utils.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
-import {
-  InMemoryRuntimeTaskRegistry,
-  SUBAGENT_ROOT_MAX_ACTIVE_TASKS,
-} from "../src/runtime-task/registry.js";
+import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
 
 describe("subagent tool event projection", () => {
   it("runs a DAG in real child sessions and waits for every dependency", async () => {
@@ -363,7 +360,9 @@ describe("subagent tool event projection", () => {
     }
   });
 
-  it("accounts durable child usage against only its root and blocks the next provider call", async () => {
+  // Токен-бюджет удалён (docs/specs/root-run-budget-removed.md): usage дочерней сессии
+  // учитывается как статистика и не блокирует следующий provider-вызов root-run.
+  it("accounts durable child usage without blocking the next provider call", async () => {
     const rootSessionId = createSessionId("runtime-subagent-budget-root");
     const independentSessionId = createSessionId("runtime-subagent-budget-independent");
     const eventStore = createTestSessionEventStore();
@@ -428,7 +427,7 @@ describe("subagent tool event projection", () => {
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
-                text: "This request must not be reached after child usage exhausts the root.",
+                text: "Root synthesized the child result after durable usage accounting.",
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
@@ -495,7 +494,8 @@ describe("subagent tool event projection", () => {
             (event.payload as { usage?: { totalTokens?: number } }).usage?.totalTokens === 500_001,
         ),
       ).toBe(true);
-      expect(requestCount.get(rootSessionId)).toBe(1);
+      // Root делает второй запрос для синтеза: usage ребёнка не блокирует admission.
+      expect(requestCount.get(rootSessionId)).toBe(2);
       expect(requestCount.get(childSessionId!)).toBe(1);
       expect(requestCount.get(independentSessionId)).toBe(1);
       const rootEvents = await eventStore.getEvents(rootSessionId);
@@ -511,7 +511,7 @@ describe("subagent tool event projection", () => {
       expect(terminal?.payload).toMatchObject({
         childSessionId,
       });
-      expect(terminalPayload?.terminalStatus).not.toBe("completed");
+      expect(terminalPayload?.terminalStatus).toBe("completed");
       expect(
         (await eventStore.getEvents(independentSessionId)).some(
           (event) => event.type === SessionEventType.TurnComplete,
@@ -777,7 +777,9 @@ describe("subagent tool event projection", () => {
     const eventStore = createTestSessionEventStore();
     const sessionStore = createRecordingSubagentSessionStore();
     const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
-    const targetDepth = SUBAGENT_ROOT_MAX_ACTIVE_TASKS + 1;
+    // Квоты активных задач больше нет; глубина задаётся тестом явно и должна
+    // оставаться конечной, чтобы проверка не превращалась в бесконечную рекурсию.
+    const targetDepth = 4;
     const depthBySession = new Map<SessionId, number>([[rootSessionId, 0]]);
     const lastStageBySession = new Map<SessionId, string>();
     const taskIdsByChildSession = new Map<SessionId, string>();
@@ -1044,7 +1046,7 @@ describe("subagent tool event projection", () => {
                       input: {
                         description: "Ask from child",
                         prompt: "Ask the user which path to take.",
-                        subagent_type: "general-purpose",
+                        subagent_type: "researcher",
                       },
                     },
                   ],

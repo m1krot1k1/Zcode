@@ -5318,13 +5318,15 @@ describe("AgentRuntime tool loop", () => {
     });
   });
 
-  it("continues an OpenCode chat when the swarm planner exceeds its own deadline", async () => {
-    const sessionId = createSessionId("runtime-swarm-planner-timeout");
+  // Planner больше не имеет собственного wall-clock deadline: задача идёт до ответа
+  // модели. Проверяем, что отмена пользователем прерывает planner и turn завершается
+  // штатной отменой, не дожидаясь никакого внутреннего таймера.
+  it("cancels a pending swarm planner only through explicit turn abort", async () => {
+    const sessionId = createSessionId("runtime-swarm-planner-abort");
     const eventStore = createTestSessionEventStore();
     const runTaskDag = vi.fn(async () => createCompletedSwarmTaskDagOutput());
-    const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const abortController = new AbortController();
     let plannerSignal: AbortSignal | undefined;
-    let callCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
       {
@@ -5336,7 +5338,6 @@ describe("AgentRuntime tool loop", () => {
         subagentPort: { runTaskDag } as never,
         modelFactory: createTestModelFactory({
           async generateText(request) {
-            callCount += 1;
             if (
               providerMessagesToText(request.messages).includes(
                 "Decide whether this task needs independent parallel work",
@@ -5345,51 +5346,25 @@ describe("AgentRuntime tool loop", () => {
               const signal = request.abortSignal;
               plannerSignal = signal;
               if (!signal) throw new Error("planner request has no abort signal");
-              await new Promise<never>((_resolve, reject) => {
-                if (signal.aborted) {
-                  reject(signal.reason);
-                  return;
-                }
-                signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-              });
+              // Planner висит до внешней отмены: собственного таймера больше нет.
+              abortController.abort(new Error("user cancelled"));
+              await Promise.resolve();
+              throw signal.reason ?? new Error("aborted");
             }
-            return {
-              finishReason: "stop",
-              providerMetadata: undefined,
-              text: "ordinary answer after planner timeout",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-            };
+            throw new Error("planner must not fall through to a normal turn after abort");
           },
         } as never),
       },
     );
 
-    // Root cancellation остаётся внешним владельцем; сокращаем planner attempt deadline
-    // (30 s) до 1 ms, сохраняя остальные таймеры turn без изменений.
-    vi.spyOn(AbortSignal, "timeout").mockImplementation((delay) =>
-      originalTimeout(delay === 30_000 ? 1 : delay),
-    );
-    try {
-      const result = await runtime.executeTurn("Split this independent task", undefined, {
+    await expect(
+      runtime.executeTurn("Split this independent task", undefined, {
         intent: { orchestrationMode: "swarm" },
-      });
-
-      expect(result.response).toBe("ordinary answer after planner timeout");
-      // Два planner attempt после timeout + обычный model turn.
-      expect(callCount).toBe(3);
-      expect(plannerSignal?.aborted).toBe(true);
-      expect(runTaskDag).toHaveBeenCalledTimes(1);
-      const swarmEvents = (await eventStore.getEvents(sessionId)).filter(
-        (event) => event.type === SessionEventType.SwarmRunUpdated,
-      );
-      expect(swarmEvents.map((event) => event.payload.status)).toEqual(["planning", "running", "completed"]);
-      expect(swarmEvents[2]?.payload).toMatchObject({
-        taskCount: 1,
-        summary: expect.stringContaining("orchestrator"),
-      });
-    } finally {
-      vi.restoreAllMocks();
-    }
+        abortSignal: abortController.signal,
+      } as never),
+    ).rejects.toThrow();
+    expect(plannerSignal?.aborted).toBe(true);
+    expect(runTaskDag).not.toHaveBeenCalled();
   });
 
   it("continues an explicit swarm as a regular turn when a planner selects a stale profile", async () => {
