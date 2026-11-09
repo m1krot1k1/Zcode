@@ -213,27 +213,9 @@ const AgentInputObjectSchema = z.object({
     ),
 });
 
-function withAgentInputConstraints<T extends z.ZodObject<any>>(schema: T) {
-  return schema.superRefine((input, context) => {
-    if (input.task_graph && input.run_in_background === true) {
-      context.addIssue({
-        code: "custom",
-        path: ["run_in_background"],
-        message: "task_graph cannot be combined with run_in_background:true",
-      });
-    }
-    if (input.task_graph && input.acceptance_criteria !== undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["acceptance_criteria"],
-        message:
-          "task_graph nodes own acceptance criteria; top-level acceptance_criteria is not allowed",
-      });
-    }
-  });
-}
-
-export const AgentInputSchema = withAgentInputConstraints(AgentInputObjectSchema);
+// 修复依据：跨字段限制在入口 schema 中执行时，start 的错误 DAG 会在路由前
+// 被拒绝，导致模型反复重试。角色相关的限制由 Core handler 在 admission 前检查。
+export const AgentInputSchema = AgentInputObjectSchema;
 
 /** Task and Agent share one exact-profile dispatch contract. */
 export const TaskInputSchema = AgentInputSchema;

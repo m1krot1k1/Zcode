@@ -30,7 +30,11 @@ function LocalizedProbe() {
   return createElement(
     "div",
     null,
-    createElement("span", { "data-testid": "russian-label" }, intl.formatMessage({ id: "settings.locale.ru-RU" })),
+    createElement(
+      "span",
+      { "data-testid": "russian-label" },
+      intl.formatMessage({ id: "settings.locale.ru-RU" }),
+    ),
     createElement(
       "span",
       { "data-testid": "unknown-label" },
@@ -155,7 +159,11 @@ function createBroadcastService() {
 }
 
 function formatArguments(message: string): string[] {
-  return [...message.matchAll(/\{\s*([\w.]+)\s*(?:,\s*(plural|selectordinal|select|number|date|time)\b)?/g)]
+  return [
+    ...message.matchAll(
+      /\{\s*([\w.]+)\s*(?:,\s*(plural|selectordinal|select|number|date|time)\b)?/g,
+    ),
+  ]
     .map((match) => `${match[1]}:${match[2] ?? "value"}`)
     .sort();
 }
@@ -181,7 +189,10 @@ describe("IntlProvider locale preference sync", () => {
         locale,
         missing: [],
       });
-      expect({ locale, extra: Object.keys(messages).filter((id) => !Object.hasOwn(englishMessages, id)) }).toEqual({
+      expect({
+        locale,
+        extra: Object.keys(messages).filter((id) => !Object.hasOwn(englishMessages, id)),
+      }).toEqual({
         locale,
         extra: [],
       });
@@ -231,6 +242,113 @@ describe("IntlProvider locale preference sync", () => {
     expect(untranslated).toEqual([]);
   });
 
+  it("language switch, warnings, and code graph labels are Russian", () => {
+    const messageIds = [
+      "locale.switchLanguage",
+      "settings.locale",
+      "settings.localeDescription",
+      "settings.locale.system",
+      "sidebar.settings.systemDefault",
+      "codeIndex.watchFailed",
+      "codeGraph.kind.module",
+      "codeGraph.kind.file",
+      "codeGraph.kind.class",
+      "codeGraph.kind.function",
+      "codeGraph.kind.interface",
+      "codeGraph.kind.method",
+      "codeGraph.kind.property",
+      "codeGraph.kind.variable",
+      "codeGraph.kind.type",
+      "codeGraph.kind.enum",
+      "codeGraph.noResolvedGraph",
+      "codeGraph.noResolvedGraphDescription",
+      "codeGraph.title",
+      "codeGraph.description",
+      "codeGraph.refresh",
+      "codeGraph.statusFailed",
+      "codeGraph.statusLoading",
+      "codeGraph.retryStatus",
+      "codeGraph.loadFailed",
+      "codeGraph.indexFailed",
+      "codeGraph.searchFailed",
+      "codeGraph.noMatches",
+      "codeGraph.workspaceRequired",
+      "codeGraph.unavailable",
+      "codeGraph.state.unindexed",
+      "codeGraph.state.indexing",
+      "codeGraph.state.ready",
+      "codeGraph.state.degraded",
+      "codeGraph.files",
+      "codeGraph.symbols",
+      "codeGraph.links",
+      "codeGraph.partial",
+      "codeGraph.boundedHint",
+      "codeGraph.searchPlaceholder",
+      "codeGraph.search",
+      "codeGraph.filters",
+      "codeGraph.calls",
+      "codeGraph.imports",
+      "codeGraph.contains",
+      "codeGraph.nodeTypes",
+      "codeGraph.noNodes",
+      "codeGraph.noVisibleNodesDescription",
+      "codeGraph.legendHint",
+      "codeGraph.loading",
+      "codeGraph.indexing",
+      "codeGraph.emptyTitle",
+      "codeGraph.emptyDescription",
+      "codeGraph.buildIndex",
+      "codeGraph.inspector",
+      "codeGraph.linkCount",
+      "codeGraph.focusNode",
+      "codeGraph.incoming",
+      "codeGraph.outgoing",
+      "codeGraph.noRelations",
+      "codeGraph.selectNode",
+      "settings.plugins.detail.warnings",
+      "settings.mcp.remoteSync.warningTitle",
+      "settings.mcp.remoteSync.warningDescription",
+      "settings.plugins.remoteSync.warningTitle",
+      "settings.plugins.remoteSync.warningDescription",
+      "settings.mcpServers.import.warning.secretsOmittedForProjectScope",
+      "settings.mcpServers.import.warning.clineOAuthReauthenticationRequired",
+      "settings.mcpServers.import.warning.clinePortablePresetApplied",
+      "settings.mcpServers.import.warning.clineCommandMayNotBePortable",
+      "settings.skills.remoteSync.warningTitle",
+      "settings.skills.remoteSync.warningDescription",
+      "settings.skills.diagnostics.summary",
+      "conversationShare.warning.summary",
+      "conversationShare.warning.artifactSkipped",
+      "conversationShare.warning.inputAttachmentSkipped",
+      "conversationShare.warning.inputAttachmentUnavailable",
+      "conversationShare.warning.artifactTypeSkipped",
+      "conversationShare.warning.artifactChangedSkipped",
+      "offPeak.edit.peakHoursWarning",
+      "offPeak.form.permissionWarning",
+      "browser.resizeDuringOperationWarning",
+      "wsl.rootWarning",
+      "settings.skills.remoteSync.filteredEmpty",
+      "settings.mcpServers.import.scope.project",
+      "settings.plugins.import.scope.project",
+    ];
+    const untranslated = messageIds.filter((messageId) => {
+      const value = russianMessages[messageId];
+      return !value || value === englishMessages[messageId] || !/[А-Яа-яЁё]/.test(value);
+    });
+    expect(untranslated).toEqual([]);
+  });
+
+  it("пустой фильтр навыков предлагает показать навыки, которые уже есть на удалённом хосте", () => {
+    const value = russianMessages["settings.skills.remoteSync.filteredEmpty"];
+    // Подпись переключателя в каталоге без ё: «удаленные».
+    const toggleTitle = russianMessages["settings.skills.remoteSync.showExisting"].replaceAll(
+      "удаленные",
+      "удалённые",
+    );
+    expect(value).toContain("уже есть на удалённом хосте");
+    expect(value).toContain(toggleTitle);
+  });
+
   it.each([
     ["ru-RU", "ru-RU"],
     ["ru", "ru-RU"],
@@ -243,7 +361,9 @@ describe("IntlProvider locale preference sync", () => {
   });
 
   it("русская локаль показывает перевод и не маскирует неизвестный ключ", () => {
-    render(createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocalizedProbe)));
+    render(
+      createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocalizedProbe)),
+    );
     expect(screen.getByTestId("russian-label").textContent).toBe("Русский");
     expect(screen.getByTestId("unknown-label").textContent).toBe("test.unknown.message");
   });

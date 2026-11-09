@@ -99,10 +99,20 @@ describe("Usage Stats App Usage E2E", () => {
       width: window.innerWidth,
       height: window.innerHeight,
     }));
-    if (wideSize.width >= 1280) {
-      expect((await canvas.getSize()).width).toBeGreaterThanOrEqual(
-        (await graph.getSize()).width * 0.5,
+    const graphSize = await graph.getSize();
+    if (graphSize.width >= 700) {
+      const graphLocation = await graph.getLocation();
+      const canvasLocation = await canvas.getLocation();
+      const canvasSize = await canvas.getSize();
+      const filterLocation = await callFilter.getLocation();
+      // 修复验收：宽内容区中画布应位于筛选与检查器之间，并占至少一半宽度。
+      expect(canvasLocation.x).toBeGreaterThan(graphLocation.x + 100);
+      expect(canvasLocation.x + canvasSize.width).toBeLessThan(
+        graphLocation.x + graphSize.width - 100,
       );
+      expect(canvasSize.width).toBeGreaterThanOrEqual(graphSize.width / 2);
+      expect(filterLocation.x).toBeLessThan(canvasLocation.x);
+      expect(filterLocation.y).toBeLessThan(canvasLocation.y + canvasSize.height);
     }
     try {
       await setRendererViewport(Math.min(wideSize.width, 1000), Math.min(wideSize.height, 760));
@@ -146,7 +156,11 @@ describe("Usage Stats App Usage E2E", () => {
 
     await clickButtonByText(["Open Code Graph", "Открыть граф кода", "打开代码图谱"]);
     await $('[data-testid="usage-code-graph"]').waitForDisplayed({ timeout: 20_000 });
-    await assertBodyIncludesAny(["Workspace code graph", "Граф кода рабочей области", "工作区代码图谱"]);
+    await assertBodyIncludesAny([
+      "Workspace code graph",
+      "Граф кода рабочей области",
+      "工作区代码图谱",
+    ]);
   });
 
   it("US-CI-02: embedding Test keeps the draft token until Save persists it", async function () {
@@ -159,7 +173,7 @@ describe("Usage Stats App Usage E2E", () => {
     await clickTestIdByDom(
       testId(TID_MODEL_PROVIDER_NAV_ITEM, "workspace-intelligence:embeddings"),
       {
-      timeout: 15_000,
+        timeout: 15_000,
         timeoutMsg: "Model settings do not expose the workspace embeddings entry",
       },
     );
@@ -196,8 +210,10 @@ describe("Usage Stats App Usage E2E", () => {
     });
     await browser.waitUntil(
       async () =>
-        ["Saved · leave blank to keep", "Сохранён. Оставьте поле пустым, чтобы не менять его."]
-          .includes((await apiKey.getAttribute("placeholder")) ?? ""),
+        [
+          "Saved · leave blank to keep",
+          "Сохранён. Оставьте поле пустым, чтобы не менять его.",
+        ].includes((await apiKey.getAttribute("placeholder")) ?? ""),
       {
         timeout: 5_000,
         timeoutMsg: "Saved embedding token was not reflected in the password field",
@@ -208,8 +224,10 @@ describe("Usage Stats App Usage E2E", () => {
     await message.waitForDisplayed({ timeout: 15_000 });
     await browser.waitUntil(
       async () =>
-        ["Saved · leave blank to keep", "Сохранён. Оставьте поле пустым, чтобы не менять его."]
-          .includes((await apiKey.getAttribute("placeholder")) ?? ""),
+        [
+          "Saved · leave blank to keep",
+          "Сохранён. Оставьте поле пустым, чтобы не менять его.",
+        ].includes((await apiKey.getAttribute("placeholder")) ?? ""),
       {
         timeout: 5_000,
         timeoutMsg: "A repeated Test lost the saved-token state",
@@ -258,8 +276,7 @@ async function openAppUsage(): Promise<void> {
     timeoutMsg: "App Usage tab 没有出现",
   });
   await browser.waitUntil(
-    async () =>
-      /Token activity|Активность по токенам|Token 活动/i.test(await $("body").getText()),
+    async () => /Token activity|Активность по токенам|Token 活动/i.test(await $("body").getText()),
     { timeout: 30_000, timeoutMsg: "App Usage 数据没有完成加载" },
   );
 }

@@ -7,25 +7,14 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  MarkerType,
-  ReactFlow,
-  type Edge,
-} from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, ReactFlow, type Edge } from "@xyflow/react";
 import { AlertCircle, Database, LoaderCircle, RefreshCw, Search, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
-import type {
-  CodeGraphOverview,
-  CodeIndexStatus,
-  CodeSearchResult,
-} from "./contract.js";
+import type { CodeGraphOverview, CodeIndexStatus, CodeSearchResult } from "./contract.js";
 import { CodeGraphInspector } from "./CodeGraphInspector.js";
 import {
   CODE_GRAPH_NODE_TYPES,
@@ -70,12 +59,21 @@ export function CodeGraphExplorer({
   const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const [dragRevision, setDragRevision] = useState(0);
   const hasStatusRef = useRef(false);
   const statusRequestRef = useRef(0);
   const graphRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
   const buildRequestRef = useRef(0);
   const graphGenerationRef = useRef<number | null>(null);
+  const dragPositions = useRef(new Map<string, { x: number; y: number }>());
+  const layoutKeyRef = useRef("");
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const workspaceRef = useMemo(
     () => ({
       workspacePath: workspacePath ?? "",
@@ -122,6 +120,7 @@ export function CodeGraphExplorer({
         setGraph(next);
         graphGenerationRef.current = status?.generation ?? null;
         setSelectedId(next.focusId ?? next.nodes[0]?.id ?? null);
+        setSpotlightId(next.focusId ?? null);
       } catch {
         if (request !== graphRequestRef.current) return;
         // 首次图谱请求失败时必须退出加载态，让画布提供可操作的重试入口。
@@ -148,6 +147,8 @@ export function CodeGraphExplorer({
     setGraph(null);
     setGraphLoadFailed(false);
     setSelectedId(null);
+    setSpotlightId(null);
+    setHoverId(null);
     setResults([]);
     setMessage(null);
     setMessageIsError(false);
@@ -249,38 +250,58 @@ export function CodeGraphExplorer({
       ),
     [graph, showCalls, showContains, showImports],
   );
-  const flowNodes = useMemo(
-    () => createGraphNodes({ ...(graph ?? EMPTY_GRAPH), nodes: visibleNodes }, selectedId, copy),
-    [copy, graph, selectedId, visibleNodes],
-  );
+  const layoutKey = visibleNodes
+    .map((node) => node.id)
+    .sort()
+    .join("\0");
+  if (layoutKeyRef.current !== layoutKey) {
+    layoutKeyRef.current = layoutKey;
+    dragPositions.current = new Map();
+  }
+  const flowNodes = useMemo(() => {
+    const placed = createGraphNodes(
+      { ...(graph ?? EMPTY_GRAPH), nodes: visibleNodes },
+      selectedId,
+      copy,
+      hoverId ?? spotlightId,
+    );
+    return placed.map((node) => {
+      const dragged = dragPositions.current.get(node.id);
+      return dragged ? { ...node, position: dragged } : node;
+    });
+  }, [copy, dragRevision, graph, hoverId, selectedId, spotlightId, visibleNodes]);
   const flowNodeIds = useMemo(() => new Set(flowNodes.map((node) => node.id)), [flowNodes]);
   const flowEdges = useMemo<Edge[]>(
     () =>
       visibleEdges
         .filter((edge) => flowNodeIds.has(edge.source) && flowNodeIds.has(edge.target))
         .map((edge) => {
-          const selectedPath = edge.source === selectedId || edge.target === selectedId;
+          const focusId = hoverId ?? spotlightId;
+          const incident = focusId !== null && (edge.source === focusId || edge.target === focusId);
+          const dimmed = focusId !== null && !incident;
+          // 主题令牌是 --color-*。裸 --primary / --border 写进 SVG stroke 后无效，边会消失。
           const color =
             edge.relation === "calls"
-              ? "var(--primary)"
+              ? "var(--color-terminal-bright-cyan)"
               : edge.relation === "imports"
-                ? "var(--muted-foreground)"
-                : "var(--border)";
+                ? "var(--color-terminal-bright-magenta)"
+                : "var(--color-foreground-subtle)";
           return {
             id: `${edge.source}:${edge.target}:${edge.relation}`,
             source: edge.source,
             target: edge.target,
             type: "default",
-            markerEnd: { type: MarkerType.ArrowClosed, color },
+            animated: incident && !reduceMotion,
+            zIndex: incident ? 2 : 0,
             style: {
               stroke: color,
-              strokeWidth: selectedPath ? 2 : edge.relation === "calls" ? 1.5 : 1,
-              opacity: selectedPath ? 0.85 : edge.relation === "contains" ? 0.24 : 0.42,
+              strokeWidth: incident ? 1.8 : 1,
+              opacity: dimmed ? 0.16 : incident ? 0.95 : 0.42,
             },
             interactionWidth: 12,
           };
         }),
-    [flowNodeIds, visibleEdges],
+    [flowNodeIds, hoverId, reduceMotion, spotlightId, visibleEdges],
   );
   const kindCounts = useMemo(() => countByKind(nodes), [nodes]);
   const filteredGraphEmpty = nodes.length > 0 && visibleNodes.length === 0;
@@ -296,11 +317,11 @@ export function CodeGraphExplorer({
 
   return (
     <section
-      className="flex min-h-[min(620px,78vh)] min-w-0 flex-1 flex-col xl:h-full xl:min-h-0"
+      className="@container/code-graph flex min-h-[min(620px,78vh)] w-full min-w-0 flex-1 flex-col lg:h-full lg:min-h-0 lg:overflow-hidden"
       data-testid="usage-code-graph"
       data-layout="workspace"
     >
-      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border pb-3">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-2">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card">
           <Workflow className="size-4 text-primary" />
         </span>
@@ -330,7 +351,10 @@ export function CodeGraphExplorer({
             size="sm"
             className="gap-1.5"
             disabled={
-              loading || buildingIndex || statusLoadState !== "ready" || status?.state === "indexing"
+              loading ||
+              buildingIndex ||
+              statusLoadState !== "ready" ||
+              status?.state === "indexing"
             }
             onClick={() => void loadGraph()}
           >
@@ -341,7 +365,7 @@ export function CodeGraphExplorer({
       </header>
 
       <div
-        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border py-2 text-ui-xs tabular-nums"
+        className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border py-1.5 text-ui-xs tabular-nums"
         data-testid="usage-code-graph-stats"
         aria-busy={statusLoadState === "loading"}
       >
@@ -370,7 +394,10 @@ export function CodeGraphExplorer({
         )}
       </div>
 
-      <form onSubmit={(event) => void runSearch(event)} className="relative z-10 flex shrink-0 gap-2 py-3">
+      <form
+        onSubmit={(event) => void runSearch(event)}
+        className="relative z-20 flex shrink-0 gap-2 py-2"
+      >
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -410,7 +437,8 @@ export function CodeGraphExplorer({
         ) : null}
       </form>
 
-      {message && !(graphLoadFailed && graph === null && message === copy("codeGraph.loadFailed")) ? (
+      {message &&
+      !(graphLoadFailed && graph === null && message === copy("codeGraph.loadFailed")) ? (
         <p
           role="status"
           className={cn(
@@ -422,8 +450,8 @@ export function CodeGraphExplorer({
         </p>
       ) : null}
 
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(168px,196px)_minmax(0,1fr)_minmax(256px,288px)] xl:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[208px_minmax(0,1fr)_320px]">
-        <aside className="order-2 min-h-40 min-w-0 overflow-y-auto rounded-lg border border-border bg-card/50 p-3 xl:order-none">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 @min-[700px]/code-graph:grid-cols-[120px_minmax(0,1fr)_168px] @min-[700px]/code-graph:grid-rows-[minmax(0,1fr)] @min-[960px]/code-graph:grid-cols-[180px_minmax(0,1fr)_260px] @min-[1200px]/code-graph:grid-cols-[208px_minmax(0,1fr)_300px]">
+        <aside className="relative z-10 order-2 min-h-40 min-w-0 overflow-y-auto rounded-lg border border-border bg-card/50 p-3 @min-[700px]/code-graph:order-none @min-[700px]/code-graph:min-h-0">
           <h3 className="mb-2 text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {copy("codeGraph.filters")}
           </h3>
@@ -498,7 +526,7 @@ export function CodeGraphExplorer({
         </aside>
 
         <main
-          className="order-1 relative min-h-[min(560px,64vh)] min-w-0 overflow-hidden rounded-lg border border-border bg-background xl:order-none xl:h-full xl:min-h-0"
+          className="relative z-0 order-1 h-[28rem] min-w-0 overflow-hidden rounded-lg border border-border bg-background @min-[700px]/code-graph:order-none @min-[700px]/code-graph:h-full @min-[700px]/code-graph:min-h-0"
           data-testid="usage-code-graph-canvas"
         >
           {statusLoadState === "loading" ||
@@ -585,22 +613,38 @@ export function CodeGraphExplorer({
               </p>
             </div>
           ) : (
-            <div className="h-full min-h-0">
+            <div className="code-graph-constellation absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--color-card),var(--color-background))]">
               <ReactFlow
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={CODE_GRAPH_NODE_TYPES}
+                className="h-full w-full"
                 fitView
-                fitViewOptions={{ padding: 0.22, minZoom: 0.16, maxZoom: 1.3 }}
-                minZoom={0.08}
-                maxZoom={1.6}
+                fitViewOptions={{ padding: 0.18 }}
+                minZoom={0.12}
+                maxZoom={2.2}
                 nodesConnectable={false}
-                nodesDraggable={false}
+                nodesDraggable
+                nodesFocusable
                 elementsSelectable
-                onNodeClick={(_event, node) => setSelectedId(node.id)}
+                onNodeClick={(_event, node) => {
+                  setSelectedId(node.id);
+                  setSpotlightId(node.id);
+                }}
+                onNodeMouseEnter={(_event, node) => setHoverId(node.id)}
+                onNodeMouseLeave={() => setHoverId(null)}
+                onNodeDragStop={(_event, node) => {
+                  dragPositions.current.set(node.id, { x: node.position.x, y: node.position.y });
+                  setDragRevision((revision) => revision + 1);
+                }}
                 proOptions={{ hideAttribution: true }}
               >
-                <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={26}
+                  size={1}
+                  color="var(--color-foreground-subtle)"
+                />
                 <Controls
                   position="bottom-left"
                   showInteractive={false}
@@ -623,7 +667,9 @@ export function CodeGraphExplorer({
         />
       </div>
       {graph?.partial ? (
-        <p className="mt-2 shrink-0 text-ui-xs text-muted-foreground">{copy("codeGraph.boundedHint")}</p>
+        <p className="mt-2 shrink-0 text-ui-xs text-muted-foreground">
+          {copy("codeGraph.boundedHint")}
+        </p>
       ) : null}
     </section>
   );

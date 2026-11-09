@@ -185,6 +185,7 @@ function buildAgentProviderDescription(
     "For repository/code tasks, if CodeIndex is available, check status and run a targeted search before broad file reads. Use context/impact/trace for relationships; after useful hits, read only the relevant source and nearby tests. Do not repeat an index-backed lookup with a broad Explore/Grep sweep. Fall back to normal search if the index is unavailable, empty, stale, partial for the question, or exact source text is needed.",
     "",
     "If the user's message begins with `Start`/`start` as a task label, or explicitly asks to use the named profile, the first tool action must invoke the exact `start` profile through Agent/Task before any repository read, search, CodeIndex call, or command. Let start decide whether to delegate independent work to orchestrator; do not silently do the same work from root before or alongside it. If invocation fails or the profile is unavailable, report that blocker instead of taking over.",
+    "When you are the start profile, call Task once with subagent_type: \"orchestrator\", a short description and the full user task in prompt. Do not send task_graph; the orchestrator owns worker planning. Top-level acceptance_criteria are optional.",
     "",
     "- The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters.",
     "- Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.",
@@ -330,15 +331,36 @@ const agentHandler: ToolHandler = async (input, context) => {
   const parsed = AgentInputSchema.parse(input) as AgentInput;
   const agentType = parsed.subagent_type;
   const callerAgentType = context.callerAgentType;
-
-  // start is a gateway: it owns no DAG and never dispatches worker roles itself.
-  if (
-    parsed.task_graph &&
-    callerAgentType?.trim().toLocaleLowerCase("en-US") === "start"
-  ) {
+  const isStart = callerAgentType?.trim().toLocaleLowerCase("en-US") === "start";
+  if (isStart && parsed.task_graph !== undefined && parsed.acceptance_criteria === undefined) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,
       "start must use Task(orchestrator), not task_graph",
+      {
+        context: {
+          code: AgentErrorCode.TASK_DAG_UNAVAILABLE,
+          agentType,
+          callerAgentType,
+          toolCallId: context.toolCallId,
+          toolName: "Agent",
+        },
+        recoverable: true,
+      },
+    );
+  }
+  // 修复依据：仅当 start 把 DAG 和顶层验收条件一起传入时忽略该 DAG。
+  // orchestrator 按完整 prompt 和这些条件自行规划，避免反复 schema 失败。
+  const taskGraph =
+    isStart && parsed.task_graph !== undefined && parsed.acceptance_criteria !== undefined
+      ? undefined
+      : parsed.task_graph;
+
+  if (taskGraph && (parsed.run_in_background === true || parsed.acceptance_criteria !== undefined)) {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      parsed.run_in_background === true
+        ? "task_graph cannot be combined with run_in_background:true"
+        : "task_graph nodes own acceptance criteria; top-level acceptance_criteria is not allowed",
       {
         context: {
           code: AgentErrorCode.TASK_DAG_UNAVAILABLE,
@@ -404,8 +426,8 @@ const agentHandler: ToolHandler = async (input, context) => {
   // task_graph bypasses the top-level subagent_type check: every node picks its own
   // profile. Apply the same caller policy and catalog to nodes before runTaskDag can
   // resolve them against the shared snapshot.
-  if (parsed.task_graph) {
-    for (const node of parsed.task_graph.nodes) {
+  if (taskGraph) {
+    for (const node of taskGraph.nodes) {
       if (!isAgentTypeAllowedForCaller(node.subagent_type, callerAgentType)) {
         throw createCoreError(
           CoreErrorType.ToolExecutionFailed,
@@ -486,7 +508,7 @@ const agentHandler: ToolHandler = async (input, context) => {
     ...(context.subagentModelOverride ? { modelOverride: context.subagentModelOverride } : {}),
   };
 
-  if (parsed.task_graph) {
+  if (taskGraph) {
     if (!context.subagentPort.runTaskDag) {
       throw createCoreError(
         CoreErrorType.ConfigurationError,
@@ -507,11 +529,11 @@ const agentHandler: ToolHandler = async (input, context) => {
         agentType,
         description: parsed.description,
         prompt: parsed.prompt,
-        nodes: parsed.task_graph.nodes,
+        nodes: taskGraph.nodes,
         ...(parsed.level === undefined ? {} : { level: parsed.level }),
-        ...(parsed.task_graph.max_parallel === undefined
+        ...(taskGraph.max_parallel === undefined
           ? {}
-          : { maxParallel: parsed.task_graph.max_parallel }),
+          : { maxParallel: taskGraph.max_parallel }),
       },
       options,
     );

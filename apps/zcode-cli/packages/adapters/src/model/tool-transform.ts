@@ -4,7 +4,12 @@
 
 import { anthropic } from "@ai-sdk/anthropic";
 import { jsonSchema, tool, type ToolSet } from "ai";
-import { ModelErrorCode, type JsonSchema, type ModelToolContract } from "@zcode/contracts";
+import {
+  ModelErrorCode,
+  normalizeToolJsonSchema,
+  type JsonSchema,
+  type ModelToolContract,
+} from "@zcode/contracts";
 import { AiSdkModelAdapterError } from "./errors.js";
 import { isAnthropicFirstPartyModelId, toStrictToolSchema } from "./strict-tool-schema.js";
 
@@ -98,10 +103,86 @@ function normalizeToolInputSchema(
   schema: JsonSchema,
   options: AiSdkToolTransformOptions,
 ): JsonSchema {
-  if (!options.requiresMfjsToolSchema) {
-    return schema;
+  // OpenCode Go Responses 的严格工具编译器拒绝 propertyNames，带上它整次请求会失败；
+  // Record 的值约束留在 additionalProperties。删除会改写入参，先深拷贝，避免改写调用方 contract。
+  const copy = structuredClone(schema);
+  if (options.requiresMfjsToolSchema) {
+    normalizeToolJsonSchemaKeepingLocalRefs(copy);
+    return hoistLocalJsonSchemaRefsToDefs(toolName, copy);
   }
-  return hoistLocalJsonSchemaRefsToDefs(toolName, schema);
+  deletePropertyNames(copy);
+  return copy;
+}
+
+function deletePropertyNames(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) deletePropertyNames(item);
+    return;
+  }
+  const record = asPlainRecord(value);
+  if (!record) return;
+  delete record.propertyNames;
+  for (const child of Object.values(record)) {
+    deletePropertyNames(child);
+  }
+}
+
+function normalizeToolJsonSchemaKeepingLocalRefs(schema: JsonSchema): JsonSchema {
+  // K3 提升要改写本地 $ref。normalizeToolJsonSchema 会删掉 $ref 和 $defs，先摘下再归一化，否则提升看不到引用。
+  const defs = detachSchemaRecord(schema, "$defs");
+  const definitions = detachSchemaRecord(schema, "definitions");
+  const refs = detachLocalRefs(schema);
+  normalizeToolJsonSchema(schema);
+  for (const ref of refs) {
+    ref.parent.$ref = ref.value;
+  }
+  if (defs) {
+    normalizeDetachedSchemaMap(defs);
+    schema.$defs = defs;
+  }
+  if (definitions) {
+    normalizeDetachedSchemaMap(definitions);
+    schema.definitions = definitions;
+  }
+  return schema;
+}
+
+function detachSchemaRecord(
+  schema: JsonSchema,
+  key: "$defs" | "definitions",
+): Record<string, unknown> | undefined {
+  const record = asPlainRecord(schema[key]);
+  if (key in schema) delete schema[key];
+  return record;
+}
+
+function normalizeDetachedSchemaMap(record: Record<string, unknown>): void {
+  for (const child of Object.values(record)) {
+    const schema = asPlainRecord(child);
+    if (schema) normalizeToolJsonSchemaKeepingLocalRefs(schema);
+  }
+}
+
+interface DetachedLocalRef {
+  parent: Record<string, unknown>;
+  value: unknown;
+}
+
+function detachLocalRefs(value: unknown, refs: DetachedLocalRef[] = []): DetachedLocalRef[] {
+  if (Array.isArray(value)) {
+    for (const item of value) detachLocalRefs(item, refs);
+    return refs;
+  }
+  const record = asPlainRecord(value);
+  if (!record) return refs;
+  if ("$ref" in record) {
+    refs.push({ parent: record, value: record.$ref });
+    delete record.$ref;
+  }
+  for (const child of Object.values(record)) {
+    detachLocalRefs(child, refs);
+  }
+  return refs;
 }
 
 function hoistLocalJsonSchemaRefsToDefs(toolName: string, schema: JsonSchema): JsonSchema {

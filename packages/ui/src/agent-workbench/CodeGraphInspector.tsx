@@ -22,7 +22,7 @@ export function CodeGraphInspector({
   onFocus: (symbol: string) => void;
 }) {
   return (
-    <aside className="order-3 min-h-40 min-w-0 overflow-y-auto rounded-lg border border-border bg-card/50 p-3 xl:order-none xl:min-h-0">
+    <aside className="relative z-10 order-3 min-h-40 min-w-0 overflow-y-auto rounded-lg border border-border bg-card/50 p-3 @min-[700px]/code-graph:order-none @min-[700px]/code-graph:min-h-0">
       <div className="mb-3 flex items-center gap-2">
         <Focus className="size-4 text-primary" />
         <h3 className="text-ui-xs font-semibold uppercase tracking-wide text-muted-foreground">

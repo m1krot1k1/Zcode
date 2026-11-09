@@ -299,27 +299,79 @@ describe("Agent/Task caller routing policy", () => {
   it.each([
     ["Agent", agentToolEntry],
     ["Task", taskToolEntry],
-  ] as const)("%s rejects task_graph from start with the routing message", async (_name, entry) => {
-    const launch = vi.fn();
+  ] as const)("%s routes start's extra task_graph to one orchestrator", async (_name, entry) => {
+    const launch = vi.fn(async () => completedOutput("orchestrator"));
     const runTaskDag = vi.fn();
 
-    await expect(
-      entry.handler(
+    await entry.handler(
         {
           description: "orchestrate",
           prompt: "run the graph",
           subagent_type: "orchestrator",
           task_graph: TASK_GRAPH,
+          acceptance_criteria: [],
         },
         createContext({
           callerAgentType: "start",
           availableAgentTypes: ["orchestrator"],
           subagentPort: { launch, runTaskDag } as never,
         }),
-      ),
-    ).rejects.toThrow("start must use Task(orchestrator), not task_graph");
+      );
     expect(runTaskDag).not.toHaveBeenCalled();
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(launch.mock.calls[0]?.[0]).toMatchObject({
+      agentType: "orchestrator",
+      prompt: "run the graph",
+      acceptanceCriteria: [],
+    });
+  });
+
+  it.each([
+    ["Agent", agentToolEntry],
+    ["Task", taskToolEntry],
+  ] as const)(
+    "%s rejects start task_graph without acceptance criteria",
+    async (_name, entry) => {
+      const launch = vi.fn();
+      const runTaskDag = vi.fn();
+
+      await expect(
+        entry.handler(
+          {
+            description: "orchestrate",
+            prompt: "run the graph",
+            subagent_type: "orchestrator",
+            task_graph: TASK_GRAPH,
+          },
+          createContext({
+            callerAgentType: "start",
+            availableAgentTypes: ["orchestrator"],
+            subagentPort: { launch, runTaskDag } as never,
+          }),
+        ),
+      ).rejects.toThrow("start must use Task(orchestrator), not task_graph");
+      expect(launch).not.toHaveBeenCalled();
+      expect(runTaskDag).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects combined graph and top-level criteria outside start before dispatch", async () => {
+    const launch = vi.fn();
+    const runTaskDag = vi.fn();
+    await expect(
+      agentToolEntry.handler(
+        {
+          description: "orchestrate",
+          prompt: "run the graph",
+          subagent_type: "coder",
+          task_graph: TASK_GRAPH,
+          acceptance_criteria: [],
+        },
+        createContext({ subagentPort: { launch, runTaskDag } as never }),
+      ),
+    ).rejects.toThrow("task_graph nodes own acceptance criteria");
     expect(launch).not.toHaveBeenCalled();
+    expect(runTaskDag).not.toHaveBeenCalled();
   });
 
   it.each([undefined, "orchestrator"])(

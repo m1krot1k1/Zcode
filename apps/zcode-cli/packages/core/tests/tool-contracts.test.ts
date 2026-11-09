@@ -1416,8 +1416,9 @@ describe("tool contract declarations", () => {
     };
 
     expect(AgentInputSchema.safeParse(input).success).toBe(true);
-    expect(AgentInputSchema.safeParse({ ...input, run_in_background: true }).success).toBe(false);
-    expect(AgentInputSchema.safeParse({ ...input, acceptance_criteria: [] }).success).toBe(false);
+    // 修复依据：角色相关的组合限制在 handler 检查，以便 start 能纠正误传的 DAG。
+    expect(AgentInputSchema.safeParse({ ...input, run_in_background: true }).success).toBe(true);
+    expect(AgentInputSchema.safeParse({ ...input, acceptance_criteria: [] }).success).toBe(true);
     expect(AgentInputSchema.safeParse({ ...input, run_in_background: false }).success).toBe(true);
   });
 
@@ -1915,7 +1916,7 @@ function scanProviderSchema(value: unknown, path: string, issues: string[]): voi
 
   if (!isRecord(value)) return;
 
-  for (const key of ["$id", "$ref", "$defs", "definitions", "anyOf"]) {
+  for (const key of ["$id", "$ref", "$defs", "definitions", "anyOf", "propertyNames"]) {
     if (key in value) {
       issues.push(`${path} contains provider-internal key ${key}`);
     }
@@ -1929,21 +1930,34 @@ function scanProviderSchema(value: unknown, path: string, issues: string[]): voi
   if (
     typeValues.includes("object") &&
     !isRecord(value.properties) &&
-    value.additionalProperties === undefined &&
-    value.propertyNames === undefined
+    value.additionalProperties === undefined
   ) {
     issues.push(`${path} is an object schema without properties`);
   }
 
-  if (isRecord(value.properties)) {
-    for (const [key, child] of Object.entries(value.properties)) {
-      scanProviderSchema(child, `${path}.properties.${key}`, issues);
-    }
-  }
+  scanSchemaMap(value.properties, `${path}.properties`, issues);
+  scanSchemaMap(value.patternProperties, `${path}.patternProperties`, issues);
+  scanSchemaMap(value.dependentSchemas, `${path}.dependentSchemas`, issues);
   scanProviderSchema(value.items, `${path}.items`, issues);
+  scanProviderSchema(value.prefixItems, `${path}.prefixItems`, issues);
   scanProviderSchema(value.additionalProperties, `${path}.additionalProperties`, issues);
+  scanProviderSchema(value.additionalItems, `${path}.additionalItems`, issues);
+  scanProviderSchema(value.unevaluatedProperties, `${path}.unevaluatedProperties`, issues);
+  scanProviderSchema(value.unevaluatedItems, `${path}.unevaluatedItems`, issues);
+  scanProviderSchema(value.contains, `${path}.contains`, issues);
+  scanProviderSchema(value.not, `${path}.not`, issues);
+  scanProviderSchema(value.if, `${path}.if`, issues);
+  scanProviderSchema(value.then, `${path}.then`, issues);
+  scanProviderSchema(value.else, `${path}.else`, issues);
   scanProviderSchema(value.oneOf, `${path}.oneOf`, issues);
   scanProviderSchema(value.allOf, `${path}.allOf`, issues);
+}
+
+function scanSchemaMap(value: unknown, path: string, issues: string[]): void {
+  if (!isRecord(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    scanProviderSchema(child, `${path}.${key}`, issues);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

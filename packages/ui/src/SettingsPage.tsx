@@ -1873,14 +1873,14 @@ export function SettingsPage({
                       className={cn(
                         "min-h-0 flex-1 [scrollbar-gutter:stable]",
                         activeSection === "codeGraph"
-                          ? "overflow-y-auto xl:overflow-hidden"
+                          ? "overflow-y-auto lg:overflow-hidden"
                           : "overflow-y-auto",
                       )}
                     >
                       <div
                         className={cn(
                           activeSection === "codeGraph"
-                            ? "min-h-full w-full max-w-none px-3 pb-3 pt-0 xl:h-full"
+                            ? "min-h-full w-full max-w-none px-3 pb-3 pt-0 lg:h-full"
                             : SETTINGS_FRAME_CONTENT_CLASSNAME,
                           "flex flex-col",
                           activeSection === "codeGraph" ? "gap-0" : "gap-8",
@@ -2304,7 +2304,7 @@ export function SettingsPage({
                               <ArchiveManagement />
                             </div>
                           ) : activeSection === "codeGraph" ? (
-                            <div className="flex min-h-0 flex-1 flex-col">
+                            <div className="@container/code-graph flex min-h-0 flex-1 flex-col">
                               <CodeGraphExplorer
                                 workspaceIdentity={activeWorkspaceIdentity}
                                 workspacePath={activeWorkspacePath ?? undefined}

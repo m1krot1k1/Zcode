@@ -2277,3 +2277,36 @@ html[data-document-hidden] *::after {
   [data-sidebar-divider-extension] {
   display: none;
 }
+
+/* 代码图星座：节点换位时滑过去，选中节点轻轻发光。平移画布不走这条过渡。 */
+.code-graph-constellation .react-flow__node {
+  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.code-graph-constellation .react-flow__edge-path {
+  transition:
+    stroke-opacity 220ms ease,
+    stroke-width 220ms ease;
+}
+
+.code-graph-constellation .react-flow__node.is-hot {
+  z-index: 4;
+  animation: code-graph-node-glow 2.6s ease-in-out infinite;
+}
+
+@keyframes code-graph-node-glow {
+  50% {
+    filter: drop-shadow(0 0 10px var(--color-terminal-bright-cyan));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-graph-constellation .react-flow__node,
+  .code-graph-constellation .react-flow__edge-path {
+    transition: none;
+  }
+
+  .code-graph-constellation .react-flow__node.is-hot {
+    animation: none;
+  }
+}

@@ -777,6 +777,7 @@ Browser use 虽由 `js` REPL 驱动，但其 capability manifest、模型文档�
 - provider-native/server-side tool 是否按 provider kind 和 model capability 映射，不支持时 fail-closed 或不投影。
 - Anthropic-compatible 不等于 Anthropic-native；WebSearch 只能对已确认支持服务端搜索的 Anthropic baseURL host 单独 allowlist。
 - provider 不支持的 schema 关键字、字段名、blocked/allowed 规则是否在 adapter 层归一化或报错。
+- `toAiSdkTools` 向任何 provider 发送工具 schema 前先深拷贝，只去掉各层 `propertyNames` 并保留 `additionalProperties` 与 `$ref`/`$defs`/`definitions`；需要 MFJS 时才对副本做保留本地 `$ref` 的 `normalizeToolJsonSchema` 再做既有提升，拷贝是因为删除会改写入参，不能改调用方 contract。
 - Anthropic-compatible JSON 响应可能返回缺少 `signature` / `redactedData`
   的 `thinking` block。修复原因：AI SDK 会按 Anthropic 原生 schema
   校验 thinking 完整性，缺签名会让 WebFetch 这类内部非流式

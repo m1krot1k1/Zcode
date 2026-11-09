@@ -1113,6 +1113,25 @@ function ConversationComposerImpl({
     workspaceKey,
   ]);
 
+  // 根因：updateText 的身份跟着 onTextChange 变。恢复 effect 若把 updateText、
+  // updateComposerContent、replaceComposerDraft 等不稳定回调放进依赖，父组件还没把超前键入
+  // 回写进 composerDraft 时，一次只换回调的重渲染会用旧草稿覆盖编辑器，丢掉这些键入。
+  // 回调放进 ref，依赖只留 scope / workspace：恢复仍只发生在挂载和这三项变化时。
+  const draftRestoreRef = useRef({
+    replaceComposerDraft,
+    requestComposerFocus,
+    snapshotDraftOfEditor,
+    updateComposerContent,
+    updateText,
+  });
+  draftRestoreRef.current = {
+    replaceComposerDraft,
+    requestComposerFocus,
+    snapshotDraftOfEditor,
+    updateComposerContent,
+    updateText,
+  };
+
   // scope 切换：先落旧 scope 草稿，再恢复新 scope（editorStateJson 优先，退纯文本）。
   useEffect(() => {
     const previousTarget = draftTargetRef.current;
@@ -1126,7 +1145,7 @@ function ConversationComposerImpl({
         window.clearTimeout(draftPersistTimerRef.current);
         draftPersistTimerRef.current = null;
       }
-      const previousDraft = snapshotDraftOfEditor();
+      const previousDraft = draftRestoreRef.current.snapshotDraftOfEditor();
       const shouldTransferDraft =
         previousTarget.scopeId.startsWith(V4_DRAFT_SCOPE_ROOT) &&
         draftScopeId.startsWith(V4_DRAFT_SCOPE_ROOT) &&
@@ -1138,7 +1157,7 @@ function ConversationComposerImpl({
         });
       if (shouldTransferDraft) {
         // 项目解绑只改变草稿的 cwd；输入正文、mention editor state 和组件内附件继续保留。
-        replaceComposerDraft({
+        draftRestoreRef.current.replaceComposerDraft({
           ...ownerDraftRef.current.draft,
           ...previousDraft,
         });
@@ -1154,6 +1173,7 @@ function ConversationComposerImpl({
 
     const draft = transferredDraft ?? composerDraft;
     const restoreDraftInto = (api: LexicalChatInputHandle) => {
+      const { updateText } = draftRestoreRef.current;
       if (!draft) {
         if (textRef.current) {
           api.clear();
@@ -1195,12 +1215,12 @@ function ConversationComposerImpl({
             return;
           }
           inputApiRef.current?.clear();
-          updateText("");
-          updateComposerContent({ text: "" });
+          draftRestoreRef.current.updateText("");
+          draftRestoreRef.current.updateComposerContent({ text: "" });
         },
       );
       // 草稿恢复后把光标交还输入框（切会话/切草稿/挂载）；连接中会话待可编辑后兑现。
-      requestComposerFocus();
+      draftRestoreRef.current.requestComposerFocus();
     };
     // Lexical root 可能晚一帧就绪；draft 恢复排到下一帧（与旧 initialValue 回填同款时序）。
     if (typeof requestAnimationFrame === "function") {
@@ -1212,18 +1232,8 @@ function ConversationComposerImpl({
     }
     applyDraft();
     return () => unsubscribeSettled?.();
-    // 依赖收敛到 scope/workspace：draft 恢复只应发生在 scope 切换或 workspace 切换。
-  }, [
-    draftScopeId,
-    persistDraftNow,
-    requestComposerFocus,
-    snapshotDraftOfEditor,
-    updateText,
-    updateComposerContent,
-    workspaceIdentity,
-    workspacePath,
-    replaceComposerDraft,
-  ]);
+    // 依赖只含 scope/workspace。见上方 draftRestoreRef：回调身份变化不得重放草稿。
+  }, [draftScopeId, workspaceIdentity, workspacePath]);
 
   useEffect(() => {
     ownerDraftRef.current = {

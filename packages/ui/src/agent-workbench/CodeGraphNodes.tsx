@@ -1,51 +1,105 @@
 import { cn } from "@/components/lib/utils.js";
-import {
-  type Node,
-  type NodeProps,
-  type NodeTypes,
-} from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps, type NodeTypes } from "@xyflow/react";
 import type { CodeGraphNode, CodeGraphOverview } from "./contract.js";
 
 interface FlowNodeData extends Record<string, unknown> {
   name: string;
+  shortLabel: string;
   kind: string;
   kindLabel: string;
   path: string;
   startLine: number;
   degree: number;
   linksLabel: string;
-  showLabel: boolean;
+  dimmed: boolean;
+  accent: string;
+  moduleLike: boolean;
 }
 
 type FlowNode = Node<FlowNodeData, "codeSymbol">;
 type GraphCopy = (id: string, values?: Record<string, string | number>) => string;
+type Point = { x: number; y: number };
+
+const MODULE_WIDTH = 92;
+const MODULE_HEIGHT = 78;
+const PILL_HEIGHT = 34;
 
 export const KIND_DOT_STYLES: Record<string, string> = {
-  module: "bg-muted-foreground",
-  file: "bg-blue-500",
-  class: "bg-violet-500",
-  function: "bg-sky-500",
-  interface: "bg-fuchsia-500",
-  method: "bg-teal-500",
-  property: "bg-amber-500",
+  module: "bg-cyan-400",
+  file: "bg-cyan-400",
+  class: "bg-fuchsia-400",
+  function: "bg-cyan-400",
+  interface: "bg-fuchsia-400",
+  method: "bg-sky-400",
+  property: "bg-emerald-400",
 };
 
+const KIND_ACCENT: Record<string, string> = {
+  module: "var(--color-terminal-bright-cyan)",
+  file: "var(--color-terminal-bright-cyan)",
+  class: "var(--color-icon-purple)",
+  function: "var(--color-terminal-bright-cyan)",
+  interface: "var(--color-icon-purple)",
+  method: "var(--color-terminal-bright-blue)",
+  property: "var(--color-terminal-bright-green)",
+};
+
+function shortLabel(name: string): string {
+  const slash = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\"));
+  return slash >= 0 ? name.slice(slash + 1) : name;
+}
+
+function accentFor(kind: string): string {
+  return KIND_ACCENT[kind.toLowerCase()] ?? "var(--color-terminal-bright-cyan)";
+}
+
 function CodeSymbolNode({ data, selected }: NodeProps<FlowNode>) {
-  const dot = KIND_DOT_STYLES[data.kind.toLowerCase()] ?? "bg-muted-foreground";
+  const description = `${data.name}, ${data.kindLabel}, ${data.path}:${data.startLine}, ${data.linksLabel}`;
+  const glow = selected
+    ? `0 0 0 4px color-mix(in oklab, ${data.accent} 32%, transparent), 0 0 22px ${data.accent}`
+    : `0 0 14px color-mix(in oklab, ${data.accent} 55%, transparent)`;
   return (
     <div
       className={cn(
-        "group relative flex size-4 items-center justify-center rounded-full border-2 border-background shadow-sm",
-        dot,
-        selected && "z-20 ring-2 ring-primary ring-offset-2 ring-offset-background",
+        "relative flex h-full w-full items-center justify-center transition-opacity duration-300",
+        data.moduleLike ? "flex-col gap-1" : "",
+        data.dimmed ? "opacity-25" : "opacity-100",
       )}
-      title={`${data.name} · ${data.kindLabel} · ${data.path}:${data.startLine} · ${data.linksLabel}`}
+      title={description}
+      aria-label={description}
     >
-      {data.showLabel ? (
-        <span className="pointer-events-none absolute left-4 top-1/2 z-10 max-w-48 -translate-y-1/2 truncate rounded-md border border-border bg-card px-1.5 py-0.5 text-ui-xs font-medium text-foreground shadow-sm">
-          {data.name}
-        </span>
-      ) : null}
+      {/* 自定义节点若不画出 Handle，React Flow 没有可见端点，边也会没有着落。 */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!size-2 !border !border-background !bg-foreground"
+      />
+      {data.moduleLike ? (
+        <>
+          <div
+            className="size-11 rounded-full border bg-background/80 backdrop-blur-sm"
+            style={{ borderColor: data.accent, boxShadow: glow }}
+          />
+          <span
+            className="max-w-full truncate text-[10px] font-medium tracking-tight"
+            style={{ color: data.accent }}
+          >
+            {data.shortLabel}
+          </span>
+        </>
+      ) : (
+        <div
+          className="flex h-8 w-full items-center justify-center rounded-full border bg-background/80 px-3 text-ui-xs font-medium tracking-tight backdrop-blur-sm"
+          style={{ borderColor: data.accent, boxShadow: glow, color: data.accent }}
+        >
+          <span className="max-w-full truncate">{data.shortLabel}</span>
+        </div>
+      )}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!size-2 !border !border-background !bg-foreground"
+      />
     </div>
   );
 }
@@ -58,102 +112,221 @@ export function graphKindLabel(kind: string, copy: GraphCopy): string {
   return label === id ? kind : label;
 }
 
+function clusterKey(node: CodeGraphNode): string {
+  const path = node.path.replaceAll("\\", "/");
+  const slash = path.lastIndexOf("/");
+  return slash > 0 ? path.slice(0, slash) : path || node.kind;
+}
+
+function hashId(id: string): number {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 33 + id.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function bounds(positions: Map<string, Point>) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of positions.values()) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+function constellationPositions(
+  nodes: CodeGraphNode[],
+  edges: CodeGraphOverview["edges"],
+): Map<string, Point> {
+  const positions = new Map<string, Point>();
+  if (!nodes.length) return positions;
+  if (nodes.length === 1) {
+    positions.set(nodes[0]!.id, { x: 0, y: 0 });
+    return positions;
+  }
+
+  // 网格把符号排成表格。同目录先落在一圈上，再做有限次斥力/引力，
+  // 最后拉开到标签和曲线边都读得清的画布。
+  const groups = new Map<string, CodeGraphNode[]>();
+  for (const node of nodes) {
+    const key = clusterKey(node);
+    const list = groups.get(key);
+    if (list) list.push(node);
+    else groups.set(key, [node]);
+  }
+  const groupKeys = [...groups.keys()].sort();
+  const ring = 260 + groupKeys.length * 48;
+  groupKeys.forEach((key, groupIndex) => {
+    const members = groups.get(key) ?? [];
+    const groupAngle = (groupIndex / groupKeys.length) * Math.PI * 2;
+    const originX = Math.cos(groupAngle) * ring;
+    const originY = Math.sin(groupAngle) * ring;
+    members.forEach((node, memberIndex) => {
+      const angle = (memberIndex / members.length) * Math.PI * 2 + groupIndex * 0.4;
+      const radius = 96 + (memberIndex % 4) * 28;
+      const jitter = (hashId(node.id) % 17) - 8;
+      positions.set(node.id, {
+        x: originX + Math.cos(angle) * radius + jitter,
+        y: originY + Math.sin(angle) * radius - jitter,
+      });
+    });
+  });
+
+  const ids = nodes.map((node) => node.id);
+  const present = new Set(ids);
+  const links = edges.filter(
+    (edge) => present.has(edge.source) && present.has(edge.target) && edge.source !== edge.target,
+  );
+  const repulsion = 8400;
+  const attraction = 0.02;
+  const ideal = 168;
+  const iterations = 72;
+  for (let step = 0; step < iterations; step += 1) {
+    const shift = new Map<string, Point>(ids.map((id) => [id, { x: 0, y: 0 }]));
+    for (let left = 0; left < ids.length; left += 1) {
+      for (let right = left + 1; right < ids.length; right += 1) {
+        const a = positions.get(ids[left]!)!;
+        const b = positions.get(ids[right]!)!;
+        let dx = a.x - b.x;
+        let dy = a.y - b.y;
+        let distance = Math.hypot(dx, dy);
+        if (distance < 1) {
+          dx = ((left + 1) * 0.37) % 2 === 0 ? 1 : -1;
+          dy = right + 1;
+          distance = Math.hypot(dx, dy);
+        }
+        const force = repulsion / (distance * distance);
+        const ux = (dx / distance) * force;
+        const uy = (dy / distance) * force;
+        const da = shift.get(ids[left]!)!;
+        const db = shift.get(ids[right]!)!;
+        da.x += ux;
+        da.y += uy;
+        db.x -= ux;
+        db.y -= uy;
+      }
+    }
+    for (const edge of links) {
+      const a = positions.get(edge.source)!;
+      const b = positions.get(edge.target)!;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      const force = attraction * (distance - ideal);
+      const ux = (dx / distance) * force;
+      const uy = (dy / distance) * force;
+      const da = shift.get(edge.source)!;
+      const db = shift.get(edge.target)!;
+      da.x += ux;
+      da.y += uy;
+      db.x -= ux;
+      db.y -= uy;
+    }
+    const temperature = 48 * (1 - step / iterations);
+    for (const id of ids) {
+      const point = positions.get(id)!;
+      const delta = shift.get(id)!;
+      const magnitude = Math.hypot(delta.x, delta.y) || 1;
+      const stepLength = Math.min(magnitude, temperature);
+      point.x += (delta.x / magnitude) * stepLength;
+      point.y += (delta.y / magnitude) * stepLength;
+    }
+  }
+
+  let box = bounds(positions);
+  if (box.maxX - box.minX < 140 || box.maxY - box.minY < 100) {
+    ids.forEach((id, index) => {
+      const turn = index * 0.7;
+      const radius = 90 + index * 42;
+      positions.set(id, { x: Math.cos(turn) * radius, y: Math.sin(turn) * radius });
+    });
+    box = bounds(positions);
+  }
+  const width = Math.max(box.maxX - box.minX, 1);
+  const height = Math.max(box.maxY - box.minY, 1);
+  const targetWidth = Math.max(980, nodes.length * 42);
+  const targetHeight = Math.max(640, nodes.length * 28);
+  for (const point of positions.values()) {
+    point.x = ((point.x - box.minX) / width) * targetWidth;
+    point.y = ((point.y - box.minY) / height) * targetHeight;
+  }
+
+  const occupied = new Set<string>();
+  for (const point of positions.values()) {
+    let key = `${Math.round(point.x)}:${Math.round(point.y)}`;
+    let bump = 0;
+    while (occupied.has(key)) {
+      bump += 1;
+      point.x += 36;
+      point.y += 22 * bump;
+      key = `${Math.round(point.x)}:${Math.round(point.y)}`;
+    }
+    occupied.add(key);
+  }
+  return positions;
+}
+
+function neighborhood(
+  nodes: CodeGraphNode[],
+  edges: CodeGraphOverview["edges"],
+  focusId: string | null,
+): Set<string> | null {
+  if (!focusId) return null;
+  const hot = new Set<string>([focusId]);
+  const present = new Set(nodes.map((node) => node.id));
+  if (!present.has(focusId)) return null;
+  for (const edge of edges) {
+    if (!present.has(edge.source) || !present.has(edge.target)) continue;
+    if (edge.source === focusId) hot.add(edge.target);
+    if (edge.target === focusId) hot.add(edge.source);
+  }
+  return hot;
+}
+
 export function createGraphNodes(
   graph: CodeGraphOverview,
   selectedId: string | null,
   copy: GraphCopy,
+  focusId?: string | null,
 ): FlowNode[] {
-  const ordered = [...graph.nodes].sort((left, right) => right.degree - left.degree);
-  const positions = new Map<string, { x: number; y: number }>();
-  if (!ordered.length) return [];
-
-  const nodeIndex = new Map(ordered.map((node, index) => [node.id, index]));
-  const centerId = graph.focusId ?? ordered[0]!.id;
-  const centerIndex = nodeIndex.get(centerId) ?? 0;
-  const initial = ordered.map((_, index) => {
-    const angle = index * 2.399963229728653;
-    const radius = index === centerIndex ? 0 : 170 + 28 * Math.sqrt(index + 1);
-    return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
-  });
-  const velocity = ordered.map(() => ({ x: 0, y: 0 }));
-  const forces = ordered.map(() => ({ x: 0, y: 0 }));
-  const connectedEdges = graph.edges.flatMap((edge) => {
-    const source = nodeIndex.get(edge.source);
-    const target = nodeIndex.get(edge.target);
-    return source === undefined || target === undefined ? [] : [[source, target] as const];
-  });
-  const idealLength = Math.max(96, Math.min(168, 620 / Math.sqrt(ordered.length)));
-
-  for (let iteration = 0; iteration < 64; iteration += 1) {
-    for (const force of forces) {
-      force.x = 0;
-      force.y = 0;
-    }
-    for (let left = 0; left < ordered.length; left += 1) {
-      for (let right = left + 1; right < ordered.length; right += 1) {
-        let dx = initial[left]!.x - initial[right]!.x;
-        let dy = initial[left]!.y - initial[right]!.y;
-        const distanceSquared = Math.max(dx * dx + dy * dy, 36);
-        const distance = Math.sqrt(distanceSquared);
-        const repulsion = (idealLength * idealLength * 0.78) / distanceSquared;
-        dx = (dx / distance) * repulsion;
-        dy = (dy / distance) * repulsion;
-        forces[left]!.x += dx;
-        forces[left]!.y += dy;
-        forces[right]!.x -= dx;
-        forces[right]!.y -= dy;
-      }
-    }
-    for (const [source, target] of connectedEdges) {
-      const dx = initial[target]!.x - initial[source]!.x;
-      const dy = initial[target]!.y - initial[source]!.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
-      const attraction = ((distance - idealLength) * 0.014) / Math.sqrt(connectedEdges.length || 1);
-      const fx = (dx / distance) * attraction;
-      const fy = (dy / distance) * attraction;
-      forces[source]!.x += fx;
-      forces[source]!.y += fy;
-      forces[target]!.x -= fx;
-      forces[target]!.y -= fy;
-    }
-    const cooling = 1 - iteration / 72;
-    for (let index = 0; index < ordered.length; index += 1) {
-      if (index === centerIndex) continue;
-      const point = initial[index]!;
-      const force = forces[index]!;
-      const drift = Math.max(0.001, Math.min(0.18, cooling * 0.12));
-      force.x -= point.x * 0.002;
-      force.y -= point.y * 0.002;
-      velocity[index]!.x = (velocity[index]!.x + force.x) * 0.62;
-      velocity[index]!.y = (velocity[index]!.y + force.y) * 0.62;
-      point.x += Math.max(-18, Math.min(18, velocity[index]!.x * drift));
-      point.y += Math.max(-18, Math.min(18, velocity[index]!.y * drift));
-    }
-  }
-
-  initial.forEach((point, index) => {
-    positions.set(ordered[index]!.id, point);
-  });
-
-  return ordered.flatMap((node, index) => {
-    const position = positions.get(node.id);
-    if (!position) return [];
-    return [
-      {
-        id: node.id,
-        type: "codeSymbol",
-        position,
-        data: {
-          ...node,
-          kindLabel: graphKindLabel(node.kind, copy),
-          linksLabel: copy("codeGraph.linkCount", { count: node.degree }),
-          showLabel:
-            Boolean(graph.focusId) || index < 10 || node.degree >= 8 || node.id === selectedId,
-        },
-        draggable: false,
-        selectable: true,
+  if (!graph.nodes.length) return [];
+  const positions = constellationPositions(graph.nodes, graph.edges);
+  const hot = neighborhood(graph.nodes, graph.edges, focusId ?? null);
+  return graph.nodes.map((node) => {
+    const kind = node.kind.toLowerCase();
+    const moduleLike = kind === "module" || kind === "file";
+    const label = shortLabel(node.name);
+    const width = moduleLike ? MODULE_WIDTH : Math.min(188, Math.max(88, 28 + label.length * 7.2));
+    const dimmed = hot !== null && !hot.has(node.id);
+    return {
+      id: node.id,
+      type: "codeSymbol",
+      position: positions.get(node.id) ?? { x: 0, y: 0 },
+      width,
+      height: moduleLike ? MODULE_HEIGHT : PILL_HEIGHT,
+      selected: node.id === selectedId,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      className: dimmed ? "is-dim" : node.id === selectedId ? "is-hot" : undefined,
+      data: {
+        ...node,
+        shortLabel: label,
+        kindLabel: graphKindLabel(node.kind, copy),
+        linksLabel: copy("codeGraph.linkCount", { count: node.degree }),
+        dimmed,
+        accent: accentFor(node.kind),
+        moduleLike,
       },
-    ];
+      ariaLabel: `${node.name}, ${graphKindLabel(node.kind, copy)}, ${node.path}:${node.startLine}`,
+      draggable: true,
+      selectable: true,
+    };
   });
 }
 
