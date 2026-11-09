@@ -2001,7 +2001,7 @@ async function executeSwarmRun(
               swarmRunId,
               attempt,
               maxAttempts: SWARM_PLAN_MAX_ATTEMPTS,
-              reason: attemptTimedOut ? "planner_timeout" : "planner_transient_error",
+              reason: "planner_transient_error",
             });
             await waitForSwarmPlannerRetry(
               SWARM_PLAN_RETRY_BACKOFF_MS,
