@@ -35,7 +35,7 @@ import { AgentRuntime } from "../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { resolveSubagentSelection } from "../helpers/subagent-selection.js";
-import { sharedReadFileStateForChild } from "../helpers/shared-read-cache.js";
+import { sharedReadFileStateForChild } from "../helpers/runtime-reminders.js";
 import { modelSupportsNativeWebSearch } from "./config.js";
 import type { AgentRuntimeDeps } from "../types.js";
 import { toMcpToolName } from "../../mcp/index.js";

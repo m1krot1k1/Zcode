@@ -2,8 +2,10 @@ import { createSessionId } from "@zcode/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { AgentRuntime } from "../src/runtime.js";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
-import { buildCodeIndexTurnHint } from "../src/runtime/helpers/code-index-turn-hint.js";
-import { sharedReadFileStateForChild } from "../src/runtime/helpers/shared-read-cache.js";
+import {
+  buildCodeIndexTurnHint,
+  sharedReadFileStateForChild,
+} from "../src/runtime/helpers/runtime-reminders.js";
 import { createAgentToolEntry } from "../src/tool/handlers/agent.js";
 import { codeIndexToolEntry } from "../src/tool/handlers/code-index.js";
 import type { ReadFileStateMap } from "../src/tool/types.js";

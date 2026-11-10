@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
-import { buildCodeIndexTurnHint } from "../helpers/code-index-turn-hint.js";
+import { buildCodeIndexTurnHint } from "../helpers/runtime-reminders.js";
 import { ensureGroupTaskPermissionScope } from "./input-intent-persistence.js";
 import { prepareOffPeakTurn } from "../off-peak/runtime.js";
 import {

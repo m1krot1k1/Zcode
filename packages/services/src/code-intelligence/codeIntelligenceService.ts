@@ -21,23 +21,16 @@ import {
   MAX_DIAGNOSTICS,
   MAX_EMBED_BATCH,
   embeddingFailureFromError,
-  cosineSimilarity,
   databaseFileFor,
   getEmbeddingConfig,
   getCounts,
-  readImpact,
-  readTrace,
-  readSymbolContext,
   hasPartialCoverage,
   syncGraphFacts,
   lexicalScore,
   openDatabase,
-  readEmbedding,
   readText,
   requestEmbeddings,
   rows,
-  chunkExcerpt,
-  readCoveringChunkContent,
   safeLimit,
   statusFromDb,
   tokenize,
@@ -50,6 +43,14 @@ import {
   type Row,
 } from "./database.js";
 import { probeEmbeddingProvider } from "./embeddingProbe.js";
+import {
+  chunkExcerpt,
+  mergeSemanticChunkHits,
+  readCoveringChunkContent,
+  readImpact,
+  readSymbolContext,
+  readTrace,
+} from "./graphReads.js";
 import { createWorkspaceWatcherRegistry } from "./workspaceWatcher.js";
 
 type WorkspaceParams = { workspacePath: string; workspaceIdentity?: string };
@@ -702,50 +703,9 @@ export function createCodeIntelligenceService(
               ...(storedApiKey?.trim() ? { apiKey: storedApiKey.trim() } : {}),
             };
             const [queryVector] = await requestEmbeddings(requestConfig, [query], fetchImpl);
-            if (queryVector) {
+            if (queryVector && config.identity) {
               semantic = true;
-              const semanticCandidates: Array<{ id: string; score: number }> = [];
-              let lastId = "";
-              while (true) {
-                const page = rows<Row>(
-                  db,
-                  "SELECT id, embedding FROM chunks WHERE id > ? AND embedding_model = ? AND embedding IS NOT NULL ORDER BY id LIMIT 256",
-                  lastId,
-                  config.identity,
-                );
-                if (page.length === 0) break;
-                for (const chunk of page) {
-                  const vector = readEmbedding(chunk.embedding);
-                  if (!vector) continue;
-                  const score = Math.max(0, cosineSimilarity(queryVector, vector));
-                  if (semanticCandidates.length < 200 || score > semanticCandidates.at(-1)!.score) {
-                    semanticCandidates.push({ id: String(chunk.id), score });
-                    semanticCandidates.sort((left, right) => right.score - left.score);
-                    if (semanticCandidates.length > 200) semanticCandidates.pop();
-                  }
-                }
-                lastId = String(page[page.length - 1]!.id);
-                if (page.length < 256) break;
-              }
-              for (const candidate of semanticCandidates) {
-                const chunk = rows<Row>(
-                  db,
-                  "SELECT path, start_line AS startLine, end_line AS endLine, content FROM chunks WHERE id = ?",
-                  candidate.id,
-                )[0];
-                if (!chunk) continue;
-                const key = `${chunk.path}:${chunk.startLine}`;
-                const existing = byKey.get(key);
-                const combined = Math.min(1, candidate.score * 0.7 + (existing?.score ?? 0) * 0.3);
-                byKey.set(key, {
-                  path: String(chunk.path),
-                  startLine: Number(chunk.startLine),
-                  endLine: Number(chunk.endLine),
-                  excerpt: String(chunk.content),
-                  match: "semantic",
-                  score: combined,
-                });
-              }
+              mergeSemanticChunkHits(db, byKey, queryVector, config.identity);
             }
           } catch {
             const workspace = resolveWorkspace(params);
