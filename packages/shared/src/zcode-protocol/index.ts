@@ -2151,7 +2151,8 @@ const codeIndexSearchResultSchema = z
     endLine: z.number().int().positive(),
     symbolName: z.string().max(256).optional(),
     symbolKind: z.string().max(64).optional(),
-    excerpt: z.string().max(360),
+    excerpt: z.string().max(4096),
+    excerptTruncated: z.boolean().optional(),
     match: z.enum(["lexical", "semantic"]),
     score: z.number().finite().min(0).max(1),
   })
@@ -2161,6 +2162,9 @@ const codeIndexRelatedSymbolSchema = z
     name: z.string().max(256),
     path: codeIndexRelativePathSchema,
     startLine: z.number().int().positive(),
+    endLine: z.number().int().positive().optional(),
+    excerpt: z.string().max(4096).optional(),
+    excerptTruncated: z.boolean().optional(),
   })
   .strict();
 const codeIndexSymbolContextSchema = z
@@ -2173,6 +2177,8 @@ const codeIndexSymbolContextSchema = z
         path: codeIndexRelativePathSchema,
         startLine: z.number().int().positive(),
         endLine: z.number().int().positive(),
+        excerpt: z.string().max(4096).optional(),
+        excerptTruncated: z.boolean().optional(),
       })
       .strict(),
     callers: z.array(codeIndexRelatedSymbolSchema).max(100),
@@ -2208,6 +2214,7 @@ const codeIndexQuerySchema = z.discriminatedUnion("action", [
       action: z.literal("search"),
       query: z.string().trim().min(1).max(500),
       limit: z.number().int().min(1).max(12).optional(),
+      lexicalOnly: z.boolean().optional(),
     })
     .strict(),
   z.object({ action: z.literal("context"), symbol: codeIndexSymbolRefSchema }).strict(),
@@ -2245,6 +2252,7 @@ export const zcodeCodeIndexQueryParamsSchema = z.discriminatedUnion("action", [
       action: z.literal("search"),
       query: z.string().trim().min(1).max(500),
       limit: z.number().int().min(1).max(12).optional(),
+      lexicalOnly: z.boolean().optional(),
     })
     .strict(),
   z

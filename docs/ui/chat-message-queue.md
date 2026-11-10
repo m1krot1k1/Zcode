@@ -53,7 +53,16 @@ restore request 必须幂等。目标已被消费或被另一端删除时，`del
 普通文本和 goal 可以撤回；goal 恢复为 `/goal ...`。`compact` 继续没有编辑入口。附件按 queue 中的
 原顺序、完整 `AttachmentRef` 恢复为 ready chip，标记为 session-owned reference；删除、追加和直接
 重发都不重复 upload/adopt，runtime restart 与清理逻辑也不得把它误判为尚未接管的 staged ref。
-图片没有本地 object URL 时显示文件名和类型图标，不新增缩略图下载协议。
+
+`image/*` 与 `video/*` 在队列行和撤回后的 composer chip 上显示缩略图。字节仍经现有
+`v4/attachment/read` 读取，不新增下载协议。读取授权接受该 ref 出现在当前 session 的 transcript，
+或出现在当前 session 的队列项上；其他 ref 继续 `fault.attachment.previewRefNotAuthorized`。
+撤回编辑必须在 `deleteQueueItem` 之前读取仍挂在队列上的 ref，并把得到的 object URL 交给恢复后的
+chip，这样图片不会因为没有本地 URL 被降成 `application/octet-stream`。非媒体附件继续只显示文件名。
+预览不放进带 `truncate` 的文本节点里。
+
+composer 已有草稿时拒绝撤回：不恢复文本和附件，也不删除队列项。若删除已经完成、恢复却因草稿冲突
+失败，提示已有的 `chat.queue.editDraftConflict`，不能静默留下空 composer。
 
 发起端恢复的草稿保持 renderer-local，不写入 conversation snapshot、relay 或 main process；其他桌面
 或手机端只消费权威 queue removal。底层 `editQueueItem` 继续作为 V4 兼容能力保留，但第一方 UI 不再调用。

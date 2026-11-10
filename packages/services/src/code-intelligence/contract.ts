@@ -43,6 +43,15 @@ export interface CodeIndexStatus {
   diagnostics: string[];
 }
 
+export interface CodeIndexSpanNode {
+  name: string;
+  path: string;
+  startLine: number;
+  endLine?: number;
+  excerpt?: string;
+  excerptTruncated?: boolean;
+}
+
 export interface CodeSearchResult {
   path: string;
   startLine: number;
@@ -50,6 +59,7 @@ export interface CodeSearchResult {
   symbolName?: string;
   symbolKind?: string;
   excerpt: string;
+  excerptTruncated?: boolean;
   match: CodeIndexMatchKind;
   score: number;
 }
@@ -62,9 +72,11 @@ export interface CodeSymbolContext {
     path: string;
     startLine: number;
     endLine: number;
+    excerpt?: string;
+    excerptTruncated?: boolean;
   };
-  callers: Array<{ name: string; path: string; startLine: number }>;
-  dependencies: Array<{ name: string; path: string; startLine: number }>;
+  callers: Array<CodeIndexSpanNode>;
+  dependencies: Array<CodeIndexSpanNode>;
   partial: boolean;
 }
 
@@ -92,23 +104,13 @@ export interface CodeGraphOverview {
 
 export interface CodeImpactResult {
   changedPaths: string[];
-  affectedSymbols: Array<{
-    name: string;
-    path: string;
-    startLine: number;
-    distance: number;
-  }>;
+  affectedSymbols: Array<CodeIndexSpanNode & { distance: number }>;
   partial: boolean;
 }
 
 export interface CodeTraceResult {
   found: boolean;
-  path: Array<{
-    name: string;
-    path: string;
-    startLine: number;
-    relation: string;
-  }>;
+  path: Array<CodeIndexSpanNode & { relation: string }>;
   partial: boolean;
 }
 
@@ -132,7 +134,9 @@ export interface CodeIntelligenceService {
   indexWorkspace(params: CodeWorkspaceRef & { force?: boolean }): Promise<CodeIndexStatus>;
 
   /** Search indexed code; lexical search works offline, semantic ranking is optional. */
-  search(params: CodeWorkspaceRef & { query: string; limit?: number }): Promise<{
+  search(
+    params: CodeWorkspaceRef & { query: string; limit?: number; lexicalOnly?: boolean },
+  ): Promise<{
     results: CodeSearchResult[];
     semantic: boolean;
     partial: boolean;

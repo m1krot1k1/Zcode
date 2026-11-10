@@ -55,6 +55,7 @@ export const SYSTEM_REMINDER_PER_REQUEST_SOURCES = [
   "diagnostics",
   "swarm_results",
   "swarm_unavailable",
+  "code_index_hint",
 ] as const;
 
 export type SystemReminderPrefixSource = (typeof SYSTEM_REMINDER_PREFIX_SOURCES)[number];
@@ -190,6 +191,7 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     true,
     "sr.swarm_unavailable",
   ),
+  code_index_hint: descriptor("current_turn", "per_current_turn", true, "sr.code_index_hint"),
   // 第四批 4a-0（2026-09-12）：原 plugin_ui_state 源已删除，插件给模型的信息改走 ui/update-model-context。
 };
 

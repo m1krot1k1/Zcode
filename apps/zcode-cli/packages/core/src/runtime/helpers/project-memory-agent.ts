@@ -70,7 +70,8 @@ export function captureProjectMemoryAgentContext(
     midConversationSystem: runtime.config.midConversationSystem,
     model,
     operation: input.operation,
-    readFileState: new Map(runtime.readFileState),
+    // Тот же workspace: карта диапазонов общая, отдельное хранилище не заводим.
+    readFileState: runtime.readFileState,
     // Memory 的既有执行策略不允许 ToolSearch；历史引用只在此请求投影中降级。
     tools: runtime
       .getTools(model)
@@ -122,7 +123,7 @@ export function createProjectMemoryAgentToolExecutor(
     permissionService: new PermissionService(defaultPermissionConfig),
     // Memory agent 必须继承 Main 已完成的 Read；否则 provider context 说文件已读，
     // Edit 执行边界却会拒绝同一文件，和基线的 cloned tool context 不一致。
-    readFileState: new Map(context.readFileState),
+    readFileState: context.readFileState,
     registry: runtime.registry,
     runtimeScope: "main",
     sessionId: runtime.sessionId,

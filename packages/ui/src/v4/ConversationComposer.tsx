@@ -83,6 +83,7 @@ import {
   AttachmentPreview,
 } from "@/components/ai-elements/attachments.js";
 import { Button } from "@/components/ui/button.js";
+import { toast } from "@/components/ui/toast.js";
 import {
   Dialog,
   DialogClose,
@@ -347,6 +348,8 @@ export interface ComposerRestoreRequest {
   inputKind: "sendText" | "sendGoalCommand";
   text: string;
   attachments: readonly AttachmentRef[];
+  /** previewRef ?? ref → 撤回前读到的 object URL。只在 delete 之前读取，删除后授权消失。 */
+  attachmentPreviewUrls?: Readonly<Record<string, string>>;
   config?: Pick<V4ComposerDraft, "mode" | "planEnabled" | "modelSelection">;
 }
 
@@ -359,6 +362,7 @@ export function applyComposerRestoreRequestToComposer({
   request,
   requestFocus,
   restoreSessionOwnedAttachments,
+  reportRestore,
   restoreDraftConfig,
   scheduleDraftPersist,
   updateText,
@@ -370,7 +374,11 @@ export function applyComposerRestoreRequestToComposer({
   inputApi: Pick<LexicalChatInputHandle, "setText"> | null;
   request: ComposerRestoreRequest | null | undefined;
   requestFocus: () => void;
-  restoreSessionOwnedAttachments: (attachments: readonly AttachmentRef[]) => boolean;
+  restoreSessionOwnedAttachments: (
+    attachments: readonly AttachmentRef[],
+    previewUrls?: Readonly<Record<string, string>>,
+  ) => boolean;
+  reportRestore?: (reason: "applied" | "not-ready" | "conflict" | "mismatch") => void;
   restoreDraftConfig?: (config: NonNullable<ComposerRestoreRequest["config"]>) => void;
   scheduleDraftPersist: () => void;
   updateText: (text: string) => void;
@@ -378,23 +386,38 @@ export function applyComposerRestoreRequestToComposer({
   if (!request || request.requestId === appliedRequestId) {
     return appliedRequestId;
   }
+  if (request.sessionId !== currentSessionId || request.workspaceKey !== currentWorkspaceKey) {
+    reportRestore?.("mismatch");
+    return appliedRequestId;
+  }
+  if (!inputApi) {
+    reportRestore?.("not-ready");
+    return appliedRequestId;
+  }
   if (
-    request.sessionId !== currentSessionId ||
-    request.workspaceKey !== currentWorkspaceKey ||
     hasDraftContent ||
-    !inputApi
+    !restoreSessionOwnedAttachments(request.attachments, request.attachmentPreviewUrls)
   ) {
+    // 删除已经落到权威队列，但 composer 在 ACK 返回前又有了草稿。静默 return 会留下空输入框。
+    reportRestore?.("conflict");
     return appliedRequestId;
   }
-  if (!restoreSessionOwnedAttachments(request.attachments)) {
-    return appliedRequestId;
-  }
+  reportRestore?.("applied");
   inputApi.setText(request.text);
   updateText(request.text);
   if (request.config) restoreDraftConfig?.(request.config);
   scheduleDraftPersist();
   requestFocus();
   return request.requestId;
+}
+
+function revokeUnappliedComposerPreviewUrls(
+  urls: Readonly<Record<string, string>> | undefined,
+): void {
+  if (!urls) return;
+  for (const url of Object.values(urls)) {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  }
 }
 
 function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -1053,8 +1076,17 @@ function ConversationComposerImpl({
     scopeKey: `${workspaceKey}\0${draftScopeId}`,
   });
 
+  const restoreConflictRequestRef = useRef<number | null>(null);
+  const appliedPreviewRequestRef = useRef<number | null>(null);
+  const latestRestoreRequestIdRef = useRef<number | null>(null);
+  const restoreConflictMessageRef = useRef(intl.formatMessage);
+  latestRestoreRequestIdRef.current = composerRestoreRequest?.requestId ?? null;
+  restoreConflictMessageRef.current = intl.formatMessage;
+
   useEffect(() => {
     if (!composerRestoreRequest) return;
+    const request = composerRestoreRequest;
+    let reason: "applied" | "not-ready" | "conflict" | "mismatch" = "not-ready";
     const applyRequest = () => {
       const nextAppliedRequestId = applyComposerRestoreRequestToComposer({
         appliedRequestId: appliedComposerRestoreRequestRef.current,
@@ -1069,15 +1101,18 @@ function ConversationComposerImpl({
           conversationSelectionReferences.length > 0 ||
           pluginUiContexts.length > 0,
         inputApi: inputApiRef.current,
-        request: composerRestoreRequest,
+        request,
         requestFocus: requestComposerFocus,
         restoreSessionOwnedAttachments: attachmentsApi.restoreSessionOwnedAttachments,
+        reportRestore: (next) => {
+          reason = next;
+        },
         // 撤回项携带独立 Submission 配置；沿用草稿 owner，一次恢复且保留已处理授权标记。
         restoreDraftConfig: (config) =>
           replaceComposerDraft({
             ...ownerDraftRef.current.draft,
             ...config,
-            text: composerRestoreRequest.text,
+            text: request.text,
             editorStateJson: undefined,
             mention: undefined,
           }),
@@ -1085,16 +1120,38 @@ function ConversationComposerImpl({
         updateText,
       });
       const appliedNow =
-        nextAppliedRequestId === composerRestoreRequest.requestId &&
-        appliedComposerRestoreRequestRef.current !== composerRestoreRequest.requestId;
+        nextAppliedRequestId === request.requestId &&
+        appliedComposerRestoreRequestRef.current !== request.requestId;
       appliedComposerRestoreRequestRef.current = nextAppliedRequestId;
-      if (appliedNow) onComposerRestoreApplied?.(composerRestoreRequest.requestId);
-      return nextAppliedRequestId === composerRestoreRequest.requestId;
+      if (appliedNow) {
+        appliedPreviewRequestRef.current = request.requestId;
+        onComposerRestoreApplied?.(request.requestId);
+      }
+      return nextAppliedRequestId === request.requestId;
+    };
+    const finishAbandoned = () => {
+      if (reason !== "conflict" || restoreConflictRequestRef.current === request.requestId) return;
+      restoreConflictRequestRef.current = request.requestId;
+      toast(restoreConflictMessageRef.current({ id: "chat.queue.editDraftConflict" }));
     };
     if (applyRequest()) return;
-    if (typeof requestAnimationFrame !== "function") return;
-    const frame = requestAnimationFrame(applyRequest);
-    return () => cancelAnimationFrame(frame);
+    if (typeof requestAnimationFrame !== "function") {
+      finishAbandoned();
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (!applyRequest()) finishAbandoned();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      // 请求被下一次撤回替换、且这次没有变成 chip 时，blob 没有主人，必须释放。
+      if (
+        latestRestoreRequestIdRef.current !== request.requestId &&
+        appliedPreviewRequestRef.current !== request.requestId
+      ) {
+        revokeUnappliedComposerPreviewUrls(request.attachmentPreviewUrls);
+      }
+    };
   }, [
     attachmentsApi.attachments.length,
     attachmentsApi.restoreSessionOwnedAttachments,

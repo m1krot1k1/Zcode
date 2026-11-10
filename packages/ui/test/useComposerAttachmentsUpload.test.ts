@@ -928,6 +928,48 @@ describe("useComposerAttachments eager upload", () => {
     act(() => root.unmount());
   });
 
+  it("空 composer 撤回图片时保留 object URL，已有附件则不替换草稿", () => {
+    const transfer = createTransferService();
+    mocks.service = transfer.service;
+    const { root } = renderProbe({
+      attachmentSessionId: "session-1",
+      scopeId: "queue-preview",
+    });
+    const image = {
+      ref: "session-ref-image",
+      previewRef: "preview-image",
+      fileName: "shot.png",
+      mime: "image/png",
+      bytes: 4,
+    };
+    act(() => {
+      expect(
+        latestApi?.restoreSessionOwnedAttachments([image], {
+          "preview-image": "blob:restored-shot",
+        }),
+      ).toBe(true);
+    });
+    expect(latestApi?.attachments[0]).toMatchObject({
+      filename: "shot.png",
+      mimeType: "image/png",
+      objectUrl: "blob:restored-shot",
+      referenceOwnership: "session",
+      uploadStatus: "ready",
+    });
+    const occupied = latestApi?.attachments.map((item) => item.filename);
+    act(() => {
+      expect(
+        latestApi?.restoreSessionOwnedAttachments(
+          [{ ref: "other", fileName: "other.png", mime: "image/png", bytes: 1 }],
+          { other: "blob:other" },
+        ),
+      ).toBe(false);
+    });
+    expect(latestApi?.attachments.map((item) => item.filename)).toEqual(occupied);
+    expect(latestApi?.attachments[0]?.objectUrl).toBe("blob:restored-shot");
+    act(() => root.unmount());
+  });
+
   it("换代后清空旧 ref；会话尚未重建时不入队，新会话到达才重传", async () => {
     const transfer = createTransferService();
     mocks.service = transfer.service;

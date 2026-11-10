@@ -176,6 +176,58 @@ describe("code intelligence embedding configuration", () => {
     });
   });
 
+  it("reports ready when a status read outlives the indexing pass that was in flight", async () => {
+    const { workspacePath, root } = await createTestService();
+    await writeFile(join(workspacePath, "held.ts"), "export const held = true;\n", "utf8");
+    let releaseFetch: (response: Response) => void = () => undefined;
+    const fetchGate = new Promise<Response>((resolve) => {
+      releaseFetch = resolve;
+    });
+    let releaseStatusRead: () => void = () => undefined;
+    let markStatusPaused: () => void = () => undefined;
+    const statusPaused = new Promise<void>((resolve) => {
+      markStatusPaused = resolve;
+    });
+    const statusGate = new Promise<void>((resolve) => {
+      releaseStatusRead = resolve;
+    });
+    let pauseStatusRead = false;
+    const service = createCodeIntelligenceService({
+      indexRootDir: join(root, "stale-status-index"),
+      fetch: vi.fn(() => fetchGate) as typeof fetch,
+      beforeReadStatusProgress: async () => {
+        if (!pauseStatusRead) return;
+        pauseStatusRead = false;
+        markStatusPaused();
+        await statusGate;
+      },
+    });
+    services.push(service);
+    await service.setEmbeddingConfig({
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    });
+
+    const indexing = service.indexWorkspace({ workspacePath });
+    await vi.waitFor(async () => {
+      expect((await service.getStatus({ workspacePath })).state).toBe("indexing");
+    });
+    pauseStatusRead = true;
+    const pendingStatus = service.getStatus({ workspacePath });
+    await statusPaused;
+    releaseFetch(
+      Response.json({
+        data: [{ index: 0, embedding: [1, 0] }],
+      }),
+    );
+    await indexing;
+    releaseStatusRead();
+
+    await expect(pendingStatus).resolves.toMatchObject({ state: "ready" });
+  });
+
   it("sanitizes invalid probe inputs and credential-store failures without saving draft settings", async () => {
     const { workspacePath, service, credentialService } = await createTestService();
     const fetchImpl = vi.fn(
@@ -845,5 +897,42 @@ describe("code intelligence workspace lifecycle", () => {
     expect(
       (await service.getStatus({ workspacePath, workspaceIdentity: "clear-race" })).state,
     ).toBe("unindexed");
+  });
+});
+
+describe("code intelligence chunk excerpts", () => {
+  it("returns the stored chunk and does not call the embedding provider for lexicalOnly", async () => {
+    const { workspacePath, root } = await createTestService();
+    const fetchImpl = vi.fn(async () =>
+      Response.json({ data: [{ index: 0, embedding: [1, 0] }] }),
+    );
+    const service = createCodeIntelligenceService({
+      indexRootDir: join(root, "excerpt-index"),
+      fetch: fetchImpl as typeof fetch,
+    });
+    services.push(service);
+    const body = `export function wideExcerpt() {\n${"x".repeat(5000)}\n}`;
+    await writeFile(join(workspacePath, "wide.ts"), body, "utf8");
+    await service.setEmbeddingConfig({
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    });
+    await service.indexWorkspace({ workspacePath });
+    const callsAfterIndex = fetchImpl.mock.calls.length;
+    const found = await service.search({
+      workspacePath,
+      query: "wideExcerpt",
+      lexicalOnly: true,
+    });
+    expect(fetchImpl.mock.calls.length).toBe(callsAfterIndex);
+    expect(found.semantic).toBe(false);
+    expect(found.results[0]?.excerpt.length).toBeGreaterThan(360);
+    expect(found.results[0]?.excerptTruncated).toBe(true);
+    expect(found.results[0]?.endLine).toBeGreaterThan(found.results[0]?.startLine ?? 0);
+    const context = await service.getSymbolContext({ workspacePath, symbol: "wideExcerpt" });
+    expect(context?.symbol.endLine).toBeGreaterThan(context?.symbol.startLine ?? 0);
+    expect(context?.symbol.excerpt?.length).toBeGreaterThan(360);
   });
 });

@@ -77,6 +77,7 @@ import { AgentWorkbenchView } from "../src/agent-workbench/AgentWorkbenchView.js
 afterEach(() => {
   cleanup();
   mocks.services = null;
+  vi.restoreAllMocks();
 });
 
 describe("CodeIndexPopover coverage messaging", () => {
@@ -102,6 +103,9 @@ describe("CodeIndexPopover coverage messaging", () => {
     await waitFor(() => expect(screen.getByText("codeIndex.partial")).toBeTruthy());
 
     expect(screen.getByText("codeIndex.coverageDetails")).toBeTruthy();
+    expect(screen.getByTestId("composer-code-index-skip-reason").textContent).toBe(
+      "codeIndex.skip.secret",
+    );
     expect(screen.queryByText(diagnostic)).toBeNull();
     expect(document.querySelector(".text-amber-600, .text-amber-400")).toBeNull();
   });
@@ -242,6 +246,78 @@ describe("CodeIndexPopover status indicator tones", () => {
     );
   });
 
+  it("keeps polling a closed popover while indexing and then stops on ready", async () => {
+    const scheduled: Array<() => void> = [];
+    const setIntervalSpy = vi
+      .spyOn(window, "setInterval")
+      .mockImplementation((handler: TimerHandler) => {
+        scheduled.push(handler as () => void);
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      });
+    vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
+    const getStatus = vi
+      .fn<() => Promise<CodeIndexStatus>>()
+      .mockResolvedValueOnce(statusWith("indexing"))
+      .mockResolvedValue(statusWith("ready", false));
+    mocks.services = {
+      codeIntelligenceService: {
+        getStatus,
+        watchWorkspace: vi.fn(() => new Promise<void>(() => undefined)),
+      },
+    };
+
+    render(createElement(CodeIndexPopover, { workspacePath: "/workspace" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe(
+        "indexing",
+      ),
+    );
+    expect(scheduled.length).toBeGreaterThan(0);
+    scheduled.at(-1)?.();
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe(
+        "ready",
+      ),
+    );
+    setIntervalSpy.mockRestore();
+    vi.spyOn(window, "clearInterval").mockRestore();
+  });
+
+  it("ignores a slower indexing reply that lands after a newer ready status", async () => {
+    let resolveStale: (status: CodeIndexStatus) => void = () => undefined;
+    const stale = new Promise<CodeIndexStatus>((resolve) => {
+      resolveStale = resolve;
+    });
+    let resolveWatch: () => void = () => undefined;
+    const getStatus = vi
+      .fn<() => Promise<CodeIndexStatus>>()
+      .mockImplementationOnce(() => stale)
+      .mockResolvedValue(statusWith("ready", false));
+    mocks.services = {
+      codeIntelligenceService: {
+        getStatus,
+        watchWorkspace: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveWatch = resolve;
+            }),
+        ),
+      },
+    };
+
+    render(createElement(CodeIndexPopover, { workspacePath: "/workspace" }));
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
+    resolveWatch();
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe(
+        "ready",
+      ),
+    );
+    resolveStale(statusWith("indexing"));
+    await Promise.resolve();
+    expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe("ready");
+  });
+
   it("does not rely on raw palette utilities in the indicator dot", async () => {
     const dot = await renderWithStatus(statusWith("ready", false), "ready");
 
@@ -320,6 +396,46 @@ describe("AgentWorkbench index state pill", () => {
     expect(englishMessages["agentWorkbench.statePartial"]).not.toBe(
       englishMessages["agentWorkbench.stateReady"],
     );
+  });
+
+  it("polls while indexing even when the build button is idle", async () => {
+    const scheduled: Array<() => void> = [];
+    const setIntervalSpy = vi
+      .spyOn(window, "setInterval")
+      .mockImplementation((handler: TimerHandler) => {
+        scheduled.push(handler as () => void);
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      });
+    vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
+    const getStatus = vi
+      .fn<() => Promise<CodeIndexStatus>>()
+      .mockResolvedValueOnce(statusWith("indexing"))
+      .mockResolvedValue(statusWith("ready", false));
+    mocks.services = {
+      codeIntelligenceService: {
+        getStatus,
+        watchWorkspace: vi.fn(() => new Promise<void>(() => undefined)),
+      },
+      subagentsService: {
+        list: vi.fn().mockResolvedValue({ agents: [] }),
+      },
+    };
+
+    render(createElement(AgentWorkbenchView, { workspacePath: "/workspace" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-workbench-index-state").dataset.codeIndexTone).toBe(
+        "indexing",
+      ),
+    );
+    expect(scheduled.length).toBeGreaterThan(0);
+    scheduled.at(-1)?.();
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-workbench-index-state").dataset.codeIndexTone).toBe(
+        "ready",
+      ),
+    );
+    setIntervalSpy.mockRestore();
+    vi.spyOn(window, "clearInterval").mockRestore();
   });
 
   it("uses the destructive surface pill for a degraded index", async () => {

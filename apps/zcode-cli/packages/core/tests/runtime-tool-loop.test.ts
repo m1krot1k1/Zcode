@@ -1,3 +1,4 @@
+import { resolveAdaptiveSubagentMaxParallel } from "../src/runtime-task/registry.js";
 import { withoutAgentListingMessages } from "./test-agent-listing.js";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -3704,7 +3705,7 @@ describe("AgentRuntime tool loop", () => {
       maxParallel?: number;
     };
     expect(dagRequest.nodes?.[0]?.subagent_type).toBe("orchestrator");
-    expect(dagRequest.maxParallel).toBe(1);
+    expect(dagRequest.maxParallel).toBe(resolveAdaptiveSubagentMaxParallel());
     expect(launch).not.toHaveBeenCalled();
 
     const events = await eventStore.getEvents(sessionId);
@@ -5136,7 +5137,7 @@ describe("AgentRuntime tool loop", () => {
       maxParallel?: number;
     };
     expect(dagRequest.nodes?.[0]?.subagent_type).toBe("orchestrator");
-    expect(dagRequest.maxParallel).toBe(1);
+    expect(dagRequest.maxParallel).toBe(resolveAdaptiveSubagentMaxParallel());
     expect(launch).not.toHaveBeenCalled();
     expect(result.response).toContain("root synthesized orchestrator result");
     const swarmEvents = (await eventStore.getEvents(sessionId)).filter(

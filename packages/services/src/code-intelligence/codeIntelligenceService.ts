@@ -36,7 +36,8 @@ import {
   readText,
   requestEmbeddings,
   rows,
-  safeExcerpt,
+  chunkExcerpt,
+  readCoveringChunkContent,
   safeLimit,
   statusFromDb,
   tokenize,
@@ -66,6 +67,11 @@ interface CodeIntelligenceServiceOptions {
   indexRootDir?: string;
   fetch?: typeof fetch;
   credentialService?: EmbeddingCredentialStore;
+  /**
+   * Test seam. Runs after the database is known to exist and before the
+   * in-memory indexing flag is read, so a pass can finish during the wait.
+   */
+  beforeReadStatusProgress?: () => Promise<void>;
 }
 
 export function createCodeIntelligenceService(
@@ -193,16 +199,21 @@ export function createCodeIntelligenceService(
     workspaceIdentity?: string;
   }): Promise<CodeIndexStatus> => {
     const workspace = resolveWorkspace(params);
-    const progress = progressByIdentity.get(workspace.key);
     try {
       await access(workspace.databasePath);
-      const status = await withDb(params, (db) => statusFromDb(db, progress));
+      // 修复原因：progress 只存在内存里，且会在 await 期间被索引进程的 finally 删掉。
+      // 如果在 await 之前拍下快照，已经结束的索引仍会被画成 indexing，圆点就一直脉冲。
+      await options.beforeReadStatusProgress?.();
+      const status = await withDb(params, (db) =>
+        statusFromDb(db, progressByIdentity.get(workspace.key)),
+      );
       const runtimeDiagnostics = diagnosticsByIdentity.get(workspace.key) ?? [];
       return {
         ...status,
         diagnostics: [...status.diagnostics, ...runtimeDiagnostics].slice(0, MAX_DIAGNOSTICS),
       };
     } catch (error) {
+      const progress = progressByIdentity.get(workspace.key);
       if (!progress && (error as NodeJS.ErrnoException).code === "ENOENT") {
         return {
           state: "unindexed",
@@ -648,7 +659,7 @@ export function createCodeIntelligenceService(
             endLine: Number(symbol.endLine),
             symbolName: String(symbol.name),
             symbolKind: String(symbol.kind),
-            excerpt: safeExcerpt(String(symbol.signature)),
+            excerpt: String(symbol.signature),
             match: "lexical",
             score: Math.min(
               1,
@@ -665,7 +676,7 @@ export function createCodeIntelligenceService(
             path: String(chunk.path),
             startLine: Number(chunk.startLine),
             endLine: Number(chunk.endLine),
-            excerpt: safeExcerpt(String(chunk.content)),
+            excerpt: String(chunk.content),
             match: "lexical",
             score: score * 0.8,
           };
@@ -673,7 +684,9 @@ export function createCodeIntelligenceService(
         }
         const config = getEmbeddingConfig(db);
         let semantic = false;
+        // 显式 lexicalOnly (подсказка хода) не ждёт эмбеддинг: семантический поиск блокируется на поставщике.
         if (
+          !params.lexicalOnly &&
           config.endpoint &&
           config.model &&
           config.identity &&
@@ -728,7 +741,7 @@ export function createCodeIntelligenceService(
                   path: String(chunk.path),
                   startLine: Number(chunk.startLine),
                   endLine: Number(chunk.endLine),
-                  excerpt: safeExcerpt(String(chunk.content)),
+                  excerpt: String(chunk.content),
                   match: "semantic",
                   score: combined,
                 });
@@ -743,7 +756,18 @@ export function createCodeIntelligenceService(
         }
         const results = [...byKey.values()]
           .sort((left, right) => right.score - left.score)
-          .slice(0, limit);
+          .slice(0, limit)
+          .map((result) => {
+            const covered =
+              readCoveringChunkContent(db, result.path, result.startLine, result.endLine) ??
+              result.excerpt;
+            const piece = chunkExcerpt(covered);
+            return {
+              ...result,
+              excerpt: piece.excerpt,
+              ...(piece.excerptTruncated ? { excerptTruncated: true } : {}),
+            };
+          });
         return { results, semantic, partial: candidatesTruncated || hasPartialCoverage(db) };
       });
     },

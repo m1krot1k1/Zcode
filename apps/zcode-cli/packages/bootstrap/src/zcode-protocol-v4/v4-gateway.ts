@@ -2397,6 +2397,14 @@ export class ConversationV4Gateway {
         };
       }
     }
+    // 排队项还没写入 transcript row。若只扫已发送行，队列缩略图和撤回前的读取都会被
+    // previewRefNotAuthorized。授权范围仍是当前 session 快照里的 previewable ref，不接受任意路径。
+    for (const item of publisher.getSnapshot().queue.items) {
+      for (const attachment of item.attachments) {
+        if (!isPreviewable(attachment)) continue;
+        if ((attachment.previewRef ?? attachment.ref) === ref) return { attachment };
+      }
+    }
     return null;
   }
 

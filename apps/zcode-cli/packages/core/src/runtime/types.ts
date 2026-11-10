@@ -31,6 +31,7 @@ import type {
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
+import type { ReadFileStateMap } from "../tool/types.js";
 import type {
   CompactPhase,
   CompactReason,
@@ -429,6 +430,11 @@ export interface AgentRuntimeDeps {
   topicResourcePort?: TopicResourcePort;
   /** Read-only local code graph/search queries routed through the owning Host. */
   codeIntelligencePort?: CodeIntelligencePort;
+  /**
+   * Shared Read range cache for child runtimes in the same workspace.
+   * The key stays path + mtime + range; a repeat returns the existing stub.
+   */
+  sharedReadFileState?: ReadFileStateMap;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;

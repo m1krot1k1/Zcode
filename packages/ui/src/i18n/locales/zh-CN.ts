@@ -5861,6 +5861,10 @@ const zhCN: Record<string, string> = {
   "codeIndex.details": "索引详情",
   "codeIndex.coverageDetails":
     "部分文件因工作区筛选、安全规则或大小限制而未加入索引。其余已索引文件仍可搜索。",
+  "codeIndex.skip.secret": "有文件因疑似密钥而未加入索引。",
+  "codeIndex.skip.size": "有文件因超过 1 MiB 而未加入索引。",
+  "codeIndex.skip.limit": "索引已达到文件数量安全上限并停止。",
+  "codeIndex.skip.other": "另有 {count} 个文件未加入索引。",
   "codeIndex.build": "建立本地索引",
   "codeIndex.refresh": "刷新索引",
   "codeIndex.retry": "重试索引",

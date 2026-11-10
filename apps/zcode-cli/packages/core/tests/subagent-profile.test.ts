@@ -426,7 +426,8 @@ tools:
     const implementerPrompt =
       swarmProfiles.find(({ name }) => name === "implementer")?.systemPrompt ?? "";
     expect(implementerPrompt).toContain("Для задачи о коде сначала вызови CodeIndex status");
-    expect(implementerPrompt).toContain("не дублируй это широким Explore/Grep обходом");
+    expect(implementerPrompt).toContain("Не дублируй индекс широким Explore/Grep обходом");
+    expect(implementerPrompt).toContain("offset = startLine");
     const orchestratorPrompt =
       swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
     expect(orchestratorPrompt).toContain(
@@ -1096,7 +1097,7 @@ describe("built-in role capability matrix", () => {
       const prompt =
         builtInProfiles().find((profile) => profile.name === name)?.systemPrompt ?? "";
       expect(prompt, name).toContain(
-        "worker/researcher-подагентов в пределах доступных runtime-слотов",
+        "worker/researcher-подагентов одним сообщением, с непересекающимися путями и параллелизмом по свободным слотам runtime, не 1",
       );
       expect(prompt, name).toContain("Каждый подагент получает узкий deliverable");
       expect(prompt, name).not.toContain("до двух worker/researcher-подагентов");

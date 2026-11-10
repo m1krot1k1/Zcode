@@ -50,6 +50,7 @@ import type {
   ContextSourcePort,
   ExecutionPort,
   FileSystemPort,
+  CodeIntelligencePort,
   ImageProcessorPort,
   PdfDocumentPort,
   McpConnectionSnapshot,
@@ -235,6 +236,7 @@ export class AgentRuntime {
   private artifactStore?: ToolArtifactStorePort;
   private executionPort?: ExecutionPort;
   private fileSystemPort?: FileSystemPort;
+  private codeIntelligencePort?: CodeIntelligencePort;
   private imageProcessorPort?: ImageProcessorPort;
   private pdfDocumentPort?: PdfDocumentPort;
   private skillLoadOutcome?: SkillLoadOutcome;
@@ -362,7 +364,7 @@ export class AgentRuntime {
     this.sessionModelSelection =
       config.modelSelection && cloneModelSelection(config.modelSelection);
     this.messageHistory = new MessageHistoryImpl();
-    this.readFileState = new Map();
+    this.readFileState = deps.sharedReadFileState ?? new Map();
     this.memoryRecallState = createMemoryRecallState();
     this.runtimeCommandQueue = createRuntimeCommandQueue();
     this.workingDirectory = config.workingDirectory ?? ".";
@@ -394,6 +396,7 @@ export class AgentRuntime {
     this.artifactStore = deps.artifactStore;
     this.executionPort = deps.executionPort;
     this.fileSystemPort = deps.fileSystemPort;
+    this.codeIntelligencePort = deps.codeIntelligencePort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;
     this.subagentPort =

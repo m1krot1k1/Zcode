@@ -4188,7 +4188,48 @@ export function SessionPane({
       const operation = { queueItemId, sessionId, workspaceKey };
       queueEditOperationRef.current = operation;
       setQueueEditOperation(operation);
+      const createdPreviewUrls: string[] = [];
+      const attachmentPreviewUrls: Record<string, string> = {};
+      const revokeCreatedPreviewUrls = () => {
+        for (const url of createdPreviewUrls) URL.revokeObjectURL(url);
+      };
       try {
+        // delete 之后 ref 不再挂在队列上，attachment/read 会拒绝它。先取回 image/video，
+        // 否则恢复出的 chip 没有 object URL，会被 composer 降成 application/octet-stream。
+        if (runtimeReady) {
+          await Promise.all(
+            restoreTarget.attachments.map(async (attachment) => {
+              const mime = attachment.mime.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+              if (!mime.startsWith("image/") && !mime.startsWith("video/")) return;
+              const ref = attachment.previewRef ?? attachment.ref;
+              try {
+                const result = await attachmentRead({
+                  sessionId,
+                  ref,
+                  ...(mime.startsWith("video/") ? { mediaType: attachment.mime } : {}),
+                });
+                if ("url" in result) {
+                  attachmentPreviewUrls[ref] = result.url;
+                  return;
+                }
+                const url = URL.createObjectURL(
+                  new Blob([Uint8Array.from(result.bytes)], { type: result.mediaType }),
+                );
+                createdPreviewUrls.push(url);
+                attachmentPreviewUrls[ref] = url;
+              } catch (error) {
+                logger.warn("[v4-pane] 撤回前读取队列缩略图失败", error);
+              }
+            }),
+          );
+        }
+        if (composerDraftStateRef.current.hasContent || composerDraftStateRef.current.busy) {
+          // 读取缩略图期间用户已经开始输入。此时删除会丢掉队列项，草稿侧又会拒绝恢复。
+          revokeCreatedPreviewUrls();
+          toast(intl.formatMessage({ id: "chat.queue.editDraftConflict" }));
+          clearQueueEditOperation();
+          return;
+        }
         const ack = await dispatchCommand(
           "deleteQueueItem",
           { queueItemId },
@@ -4196,6 +4237,7 @@ export function SessionPane({
           restoreTarget.baseRevision,
         );
         if (!shouldRestoreQueuedComposerFromAck(ack.status)) {
+          revokeCreatedPreviewUrls();
           logger.warn(`[v4-pane] queue 撤回编辑被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
           toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
           clearQueueEditOperation();
@@ -4209,6 +4251,7 @@ export function SessionPane({
         ) {
           // delete ACK 异步返回时 pane 可能已切 task；旧实现若直接 setText，
           // 会把原 session 的 queue payload 写进新 task。权威删除保留，但本地恢复必须放弃。
+          revokeCreatedPreviewUrls();
           logger.warn("[v4-pane] queue 撤回编辑未恢复：ACK 返回前 composer 已切换", {
             queueItemId,
             sessionId,
@@ -4224,15 +4267,17 @@ export function SessionPane({
           inputKind: restoreTarget.inputKind,
           text: restoreTarget.text,
           attachments: restoreTarget.attachments,
+          ...(Object.keys(attachmentPreviewUrls).length > 0 ? { attachmentPreviewUrls } : {}),
           config: restoreTarget.config,
         });
       } catch (error) {
+        revokeCreatedPreviewUrls();
         logger.warn("[v4-pane] queue 撤回编辑命令失败", error);
         toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
         clearQueueEditOperation();
       }
     },
-    [clearQueueEditOperation, dispatchCommand, intl, sessionId, workspaceKey],
+    [attachmentRead, clearQueueEditOperation, dispatchCommand, intl, runtimeReady, sessionId, workspaceKey],
   );
 
   const handleSendQueuedNow = useCallback(
@@ -5693,6 +5738,8 @@ export function SessionPane({
           onSendNow={handleSendQueuedNow}
           onMoveItem={handleReorderQueueItem}
           onResume={handleResumeQueue}
+          sessionId={sessionId}
+          readAttachment={runtimeReady ? attachmentRead : undefined}
         />
       ) : null}
       {/* Bugfix: v4 权限/问答等待态只是 runtime 的阻塞交互，必须和 composer

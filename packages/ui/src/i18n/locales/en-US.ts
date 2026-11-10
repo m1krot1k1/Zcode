@@ -6272,6 +6272,10 @@ const enUS: Record<string, string> = {
   "codeIndex.details": "Index details",
   "codeIndex.coverageDetails":
     "Some files are omitted by workspace filters, safety rules, or size limits. Search still works across the indexed files.",
+  "codeIndex.skip.secret": "A file was left out because it looks like a secret.",
+  "codeIndex.skip.size": "A file was left out because it is larger than 1 MiB.",
+  "codeIndex.skip.limit": "Indexing stopped at the file safety limit.",
+  "codeIndex.skip.other": "{count} other files were left out of the index.",
   "codeIndex.build": "Build local index",
   "codeIndex.refresh": "Refresh index",
   "codeIndex.retry": "Retry indexing",

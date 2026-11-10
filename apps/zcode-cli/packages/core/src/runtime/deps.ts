@@ -213,6 +213,7 @@ export type {
   BrowserControlPort,
   ExecutionShellSelection,
   FileSystemPort,
+  CodeIntelligencePort,
   HttpClientPort,
   ImageProcessorPort,
   PdfDocumentPort,

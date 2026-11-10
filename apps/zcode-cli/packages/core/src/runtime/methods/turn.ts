@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
+import { buildCodeIndexTurnHint } from "../helpers/code-index-turn-hint.js";
 import { ensureGroupTaskPermissionScope } from "./input-intent-persistence.js";
 import { prepareOffPeakTurn } from "../off-peak/runtime.js";
 import {
@@ -35,6 +36,7 @@ import {
 } from "../deps.js";
 import type {
   HookRunResult,
+  TraceContext,
   MessageId,
   MessagePart,
   Model,
@@ -653,6 +655,17 @@ export async function executeTurnCommand(
         injectReferencedSessionContextReminderIntoMessageHistory.call(this, input, options);
         // 话题原文由标准文本附件按需读取，可信来源归档不能再次生成隐藏上下文。
         injectDateChangeReminderIntoMessageHistory.call(this);
+        // 无端口或 model-only 唤醒不进入 async：通知回合若多让出一个 microtask，
+        // 会和下一轮 prepareAgentDefinitions 抢同一次 profile 加载。
+        if (options?.inputVisibility !== "model-only" && this.codeIntelligencePort) {
+          await injectCodeIndexTurnHint.call(
+            this,
+            input,
+            turnAbortSignal,
+            turnTraceContext,
+            options,
+          );
+        }
         const resolvedAttachments = await resolveTurnAttachments(attachments, {
           abortSignal: turnAbortSignal,
           artifactStore: this.artifactStore,
@@ -1445,6 +1458,37 @@ async function executeSwarmRun(
         snapshot.turnId === state.turnId &&
         snapshot.parentToolCallId === swarmRunId,
     );
+  // Воркер orchestrator не имеет parentToolCallId роя: его родитель — сессия orchestrator.
+  // Панель fallback должна показать этих потомков, а не одну строку про планировщик.
+  const getFallbackVisibleChildren = () => {
+    const rootSessionId = this.runtimeTaskRegistry.getRootSessionIdForSession(this.sessionId);
+    const visible = [...getDirectChildren()];
+    const sessions = new Set(
+      visible.flatMap((snapshot) =>
+        typeof snapshot.childSessionId === "string" ? [snapshot.childSessionId] : [],
+      ),
+    );
+    const seen = new Set(visible);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const snapshot of Object.values(this.runtimeTaskRegistry.all())) {
+        if (seen.has(snapshot) || snapshot.type !== "local_agent") continue;
+        if (snapshot.rootSessionId !== rootSessionId) continue;
+        if (
+          typeof snapshot.parentSessionId !== "string" ||
+          !sessions.has(snapshot.parentSessionId)
+        ) {
+          continue;
+        }
+        visible.push(snapshot);
+        seen.add(snapshot);
+        if (typeof snapshot.childSessionId === "string") sessions.add(snapshot.childSessionId);
+        grew = true;
+      }
+    }
+    return visible;
+  };
   const createPersistSwarmNodeAttempt = () => {
     const run = durableRun;
     if (!run || !journal?.reserveSwarmNodeAttempt || !journal.transitionSwarmNodeAttempt) {
@@ -1662,25 +1706,29 @@ async function executeSwarmRun(
     const activeCap =
       this.runtimeTaskRegistry.getRootRunMaxParallel?.(policy.rootRunId) ??
       resolveAdaptiveSubagentMaxParallel();
+    // Узел графа один, но потолок слотов root-run не сжимается до 1:
+    // воркеры, которых orchestrator выпустит одним сообщением, берут этот cap.
     const capacity = resolveSwarmParallelismWithCapacity({
       nodeCount: 1,
-      requestedMaxParallel: 1,
+      requestedMaxParallel: activeCap,
       ...(activeWorkItems === undefined ? {} : { activeCount: activeWorkItems }),
       activeCap,
     });
     if (capacity.route === "integrate_inline") {
       return { status: "unavailable", reason: `недостаточно ёмкости: ${capacity.reason}` };
     }
+    const slotCap = Math.max(1, activeCap);
+    const goal = truncateUtf8(task, 160);
     const graph = AgentTaskGraphSchema.parse({
       nodes: [
         {
           id: "orchestrator-fallback",
-          description: "Передать исходную задачу оркестратору",
+          description: `Цель: ${goal}`,
           prompt: task,
           subagent_type: orchestratorProfile.name,
         },
       ],
-      max_parallel: 1,
+      max_parallel: slotCap,
     });
     if (durableRun && journal?.commitSwarmRunGraph) {
       journalFailClosed = true;
@@ -1708,14 +1756,38 @@ async function executeSwarmRun(
       await holdSwarmCrashBoundary();
     }
     phase = "running";
+    const fallbackSummary = (done: boolean) =>
+      `Планировщик недоступен; ${done ? "задачу выполнил" : "задача передана"} orchestrator. Цель: ${goal}`;
     await publish({
       swarmRunId,
       status: "running",
       taskCount: graph.nodes.length,
       childSessionIds: [],
-      summary: "Планировщик недоступен; задача передана orchestrator.",
+      summary: fallbackSummary(false),
     });
     const persistSwarmNodeAttempt = createPersistSwarmNodeAttempt();
+    let queuedChildProgress = Promise.resolve();
+    let lastPublishedChildSessionIds = "";
+    const publishFallbackChildren = () => {
+      const readyChildren = getFallbackVisibleChildren().filter(
+        (snapshot) => snapshot.childSessionReady === true,
+      );
+      const childSessionIds = getSwarmChildSessionIds(readyChildren);
+      const progressKey = childSessionIds.join("\u0000");
+      if (!childSessionIds.length || progressKey === lastPublishedChildSessionIds) return;
+      lastPublishedChildSessionIds = progressKey;
+      queuedChildProgress = queuedChildProgress.then(() =>
+        publish({
+          swarmRunId,
+          status: "running",
+          taskCount: Math.max(graph.nodes.length, readyChildren.length),
+          childSessionIds,
+          childAgentTypes: getSwarmChildAgentTypes(readyChildren),
+          summary: fallbackSummary(false),
+        }),
+      );
+    };
+    const unsubscribeTaskRegistry = this.runtimeTaskRegistry.subscribe?.(publishFallbackChildren);
     let output: AgentOutput;
     try {
       output = await subagentPort.runTaskDag(
@@ -1730,7 +1802,7 @@ async function executeSwarmRun(
           workspaceRoot: this.workspaceRoot,
           trace: state.turnTraceContext,
           nodes: graph.nodes,
-          maxParallel: 1,
+          maxParallel: slotCap,
         },
         {
           signal: state.turnAbortSignal,
@@ -1748,27 +1820,31 @@ async function executeSwarmRun(
         status: "failed",
         reason: truncateUtf8(error instanceof Error ? error.message : String(error), 180),
       };
+    } finally {
+      unsubscribeTaskRegistry?.();
+      publishFallbackChildren();
+      await queuedChildProgress;
     }
     throwIfTurnAborted(state.turnAbortSignal);
     if (!output || output.status !== "completed") {
       return { status: "failed", reason: "orchestrator не вернул результат выполнения" };
     }
     const childSummary = output.content.map((block) => block.text).join("\n\n");
+    const children = getFallbackVisibleChildren();
     if (/\[(?:failed|blocked|cancelled)\]/u.test(childSummary)) {
       return {
         status: "failed",
-        reason: buildSwarmChildFailureSummary(getDirectChildren()),
+        reason: buildSwarmChildFailureSummary(children),
       };
     }
-    const children = getDirectChildren();
     await publish({
       swarmRunId,
       status: "completed",
       outcomeAcceptance: output.acceptance?.status ?? "unknown",
-      taskCount: 1,
+      taskCount: Math.max(1, children.length),
       childSessionIds: getSwarmChildSessionIds(children),
       childAgentTypes: getSwarmChildAgentTypes(children),
-      summary: "Планировщик недоступен; задачу выполнил orchestrator.",
+      summary: fallbackSummary(true),
     });
     const boundedSummary = truncateUtf8(childSummary, SWARM_CHILD_RESULT_MAX_BYTES);
     commitTurnRequestEntries(this, state.turnRequestState, [
@@ -2596,6 +2672,24 @@ function injectDateChangeReminderIntoMessageHistory(this: AgentRuntimeInternal):
     "date_change",
     buildDateChangeReminderBody(previousDate, currentDate),
   );
+}
+
+async function injectCodeIndexTurnHint(
+  this: AgentRuntimeInternal,
+  input: string,
+  signal: AbortSignal,
+  trace: TraceContext,
+  options?: ExecuteTurnOptions,
+): Promise<void> {
+  if (options?.inputVisibility === "model-only") return;
+  const hint = await buildCodeIndexTurnHint({
+    port: this.codeIntelligencePort,
+    query: input,
+    signal,
+    trace,
+  });
+  if (!hint) return;
+  this.messageHistory.addAttachment("code_index_hint", hint);
 }
 
 function injectReferencedSessionContextReminderIntoMessageHistory(

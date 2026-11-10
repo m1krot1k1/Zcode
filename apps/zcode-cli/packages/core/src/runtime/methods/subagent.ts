@@ -35,6 +35,7 @@ import { AgentRuntime } from "../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { resolveSubagentSelection } from "../helpers/subagent-selection.js";
+import { sharedReadFileStateForChild } from "../helpers/shared-read-cache.js";
 import { modelSupportsNativeWebSearch } from "./config.js";
 import type { AgentRuntimeDeps } from "../types.js";
 import { toMcpToolName } from "../../mcp/index.js";
@@ -578,6 +579,13 @@ export function createDefaultSubagentPort(
             fileSystemPort: deps.fileSystemPort,
             // CodeIndex остаётся Host-owned: потомок получает только типизированный query-port.
             codeIntelligencePort: deps.codeIntelligencePort,
+            // Один trace и один workspace делят карту Read: повтор того же диапазона
+            // получает уже существующий stub, а не новый дамп файла.
+            ...sharedReadFileStateForChild(
+              this.workingDirectory,
+              request.workingDirectory,
+              this.readFileState,
+            ),
             // Explore 子运行时会暴露 WebFetch，但之前没有继承主 runtime 的
             // HTTP client port，导致工具在真正发请求前抛出配置错误，而不是网络请求失败。
             httpClientPort: deps.httpClientPort,

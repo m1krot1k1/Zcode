@@ -101,10 +101,14 @@ message is `codeIndex.triggerWithStatus` with a `{status}` placeholder, present 
   additive motion, not the only signal.
 - `ready`: success tone; the popover shows counts, embedding readiness, and the last
   update time.
-- `partial`: warning tone. Coverage details stay in the existing neutral disclosure;
-  the dot, pill, popover badge, trigger name, and live region all read as partial
+- `partial`: warning tone. Coverage details stay in the existing neutral disclosure.
+  The disclosure also lists localized skip reasons derived from known diagnostic
+  sentences (`codeIndex.skip.secret`, `codeIndex.skip.size`, `codeIndex.skip.limit`,
+  and `codeIndex.skip.other` with a count). Raw diagnostic text is never rendered.
+  The dot, pill, popover badge, trigger name, and live region all read as partial
   rather than plain ready, while `data-code-index-state` keeps the authoritative
-  `"ready"` value.
+  `"ready"` value. A solid warning dot is a finished partial index, not an
+  indexing pass that failed to clear.
 - `degraded`: destructive tone; the popover keeps the existing retry action and the
   last committed generation remains visible.
 - Unknown or still-loading status: neutral tone with the localized `codeIndex.loadingStatus`
@@ -121,5 +125,9 @@ message is `codeIndex.triggerWithStatus` with a `{status}` placeholder, present 
 - The Workbench pill renders the same tone and the same text through the shared helper
   while preserving `data-code-index-state` as the authoritative `state` value.
 - `ready && partial === true` renders the partial text in both the popover badge and
-  the Workbench pill, never "Ready".
+  the Workbench pill, never "Ready". A secret/size/limit diagnostic renders the
+  matching localized skip reason and never the raw diagnostic sentence.
+- While `state === "indexing"`, the composer indicator and the Workbench pill keep
+  requesting status even when the popover is closed and the Build button is idle.
+  A slower status response that started earlier must not replace a newer one.
 - No raw palette color utility appears in the indicator mapping.

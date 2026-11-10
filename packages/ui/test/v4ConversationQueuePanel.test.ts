@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { QueueState } from "@zcode/shared/zcode-protocol-v4";
 import {
   ConversationQueuePanel,
@@ -67,6 +69,10 @@ function renderPanel(): string {
 }
 
 describe("ConversationQueuePanel", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("shows queued attachment names alongside the sender", () => {
     const queue = queueState();
     queue.items[0]!.attachments = [
@@ -80,6 +86,47 @@ describe("ConversationQueuePanel", () => {
       ),
     );
     expect(html).toContain("requirements.pdf");
+  });
+
+  it("renders an image thumbnail for a queued image through attachment read", async () => {
+    const queue = queueState();
+    queue.items[0]!.attachments = [
+      {
+        ref: "attachment:shot",
+        previewRef: "attachment:shot-preview",
+        fileName: "shot.png",
+        mime: "image/png",
+        bytes: 3,
+      },
+    ];
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:queue-shot");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const readAttachment = vi.fn(async () => ({
+      bytes: new Uint8Array([1, 2, 3]),
+      mediaType: "image/png",
+    }));
+    const view = render(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "zh-CN" },
+        createElement(ConversationQueuePanel, {
+          queue,
+          sessionId: "session-1",
+          readAttachment,
+        }),
+      ),
+    );
+    await waitFor(() => {
+      expect(view.container.querySelector("img")?.getAttribute("src")).toBe("blob:queue-shot");
+    });
+    expect(readAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: "attachment:shot-preview", sessionId: "session-1" }),
+    );
+    expect(view.container.textContent).not.toContain("shot.png");
+    view.unmount();
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:queue-shot");
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
   });
 
   it("renders v4 queue with icon actions and drag handles", () => {

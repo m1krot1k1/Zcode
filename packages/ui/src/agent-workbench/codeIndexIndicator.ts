@@ -76,3 +76,54 @@ export function codeIndexDotClassName(tone: CodeIndexIndicatorTone): string {
 export function codeIndexPillClassName(tone: CodeIndexIndicatorTone): string {
   return PILL_CLASS[tone];
 }
+
+export type CodeIndexSkipReason = { key: string; count?: number };
+
+const SKIP_DEFAULTS: Record<string, string> = {
+  "codeIndex.skip.secret": "A file was left out because it looks like a secret.",
+  "codeIndex.skip.size": "A file was left out because it is larger than 1 MiB.",
+  "codeIndex.skip.limit": "Indexing stopped at the file safety limit.",
+  "codeIndex.skip.other": "{count} other files were left out of the index.",
+};
+
+export function codeIndexSkipDefault(key: string): string {
+  return SKIP_DEFAULTS[key] ?? "A file was left out of the index.";
+}
+
+// 扫描器写入的是稳定英文诊断句。这里只映射已知的覆盖缺口，原始句子不进界面。
+const SECRET_DIAGNOSTIC = "secret patterns";
+const SIZE_DIAGNOSTIC = "1 MiB";
+const LIMIT_DIAGNOSTIC = "safety limit";
+
+export function codeIndexSkipReasons(diagnostics: readonly string[]): CodeIndexSkipReason[] {
+  const reasons: CodeIndexSkipReason[] = [];
+  const seen = new Set<string>();
+  let other = 0;
+  for (const diagnostic of diagnostics) {
+    const key = diagnostic.includes(SECRET_DIAGNOSTIC)
+      ? "codeIndex.skip.secret"
+      : diagnostic.includes(SIZE_DIAGNOSTIC)
+        ? "codeIndex.skip.size"
+        : diagnostic.includes(LIMIT_DIAGNOSTIC)
+          ? "codeIndex.skip.limit"
+          : undefined;
+    if (key) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        reasons.push({ key });
+      }
+      continue;
+    }
+    if (
+      diagnostic.startsWith("Embedding generation failed") ||
+      diagnostic.startsWith("Indexing failed") ||
+      diagnostic.startsWith("The local code index could not") ||
+      diagnostic.startsWith("Workspace file watching")
+    ) {
+      continue;
+    }
+    other += 1;
+  }
+  if (other > 0) reasons.push({ key: "codeIndex.skip.other", count: other });
+  return reasons;
+}

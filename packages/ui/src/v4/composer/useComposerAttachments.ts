@@ -97,7 +97,10 @@ export interface ComposerAttachmentsApi {
   /** 草稿跨工作区时重新准备附件，不能继承旧 session 的上传引用。 */
   restoreDraftAttachments: (attachments: readonly ChatComposerAttachment[]) => void;
   /** 把已由 session 接管的 queue refs 原样恢复为 ready chips；不触发 upload/adopt。 */
-  restoreSessionOwnedAttachments: (attachments: readonly AttachmentRef[]) => boolean;
+  restoreSessionOwnedAttachments: (
+    attachments: readonly AttachmentRef[],
+    previewUrls?: Readonly<Record<string, string>>,
+  ) => boolean;
   /** 只返回已 ready ref；任一附件未就绪时返回 null 作 submit 二次门禁。 */
   prepareForSend: () => Promise<AttachmentRef[] | null>;
   /** sendText accepted 后才移交远端暂存内容，发送失败时仍由草稿持有。 */
@@ -1023,11 +1026,19 @@ export function useComposerAttachments(
   );
 
   const restoreSessionOwnedAttachments = useCallback(
-    (attachmentRefs: readonly AttachmentRef[]): boolean => {
+    (
+      attachmentRefs: readonly AttachmentRef[],
+      previewUrls?: Readonly<Record<string, string>>,
+    ): boolean => {
       if (attachmentRefs.length === 0) return true;
       if (readComposerAttachmentScope(scopeKey).length > 0) return false;
       const restored: ComposerAttachmentUploadItem[] = attachmentRefs.map((attachmentRef) => {
         const id = nanoid();
+        const previewKey = attachmentRef.previewRef ?? attachmentRef.ref;
+        const objectUrl = previewUrls?.[previewKey];
+        const mime = attachmentRef.mime.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+        const keepsPreview =
+          Boolean(objectUrl) && (mime.startsWith("image/") || mime.startsWith("video/"));
         return {
           id,
           filename: attachmentRef.fileName,
@@ -1035,6 +1046,7 @@ export function useComposerAttachments(
             ? { sourceKind: attachmentRef.sourceKind, messageCount: attachmentRef.messageCount }
             : {}),
           mimeType: attachmentRef.mime,
+          ...(keepsPreview ? { objectUrl } : {}),
           sizeBytes: attachmentRef.bytes,
           referenceOwnership: "session",
           uploadStatus: "ready",

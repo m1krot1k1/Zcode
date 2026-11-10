@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Bot, Database, RefreshCw, Search, Trash2, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
@@ -6,7 +6,13 @@ import { useServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
-import { codeIndexPillClassName, codeIndexStateKey, codeIndexTone } from "./codeIndexIndicator.js";
+import {
+  codeIndexPillClassName,
+  codeIndexSkipDefault,
+  codeIndexSkipReasons,
+  codeIndexStateKey,
+  codeIndexTone,
+} from "./codeIndexIndicator.js";
 import {
   ZCODE_AGENT_PROVIDER,
   type AgentSummary,
@@ -70,12 +76,17 @@ export function AgentWorkbenchView({
     [intl],
   );
   const workspaceRef = { workspacePath, ...(workspaceIdentity ? { workspaceIdentity } : {}) };
+  const statusRequestRef = useRef(0);
 
   const refreshStatus = useCallback(async () => {
     if (!codeIndex || !workspacePath) return;
+    const request = ++statusRequestRef.current;
     try {
-      setStatus(await codeIndex.getStatus(workspaceRef));
+      const next = await codeIndex.getStatus(workspaceRef);
+      if (request !== statusRequestRef.current) return;
+      setStatus(next);
     } catch {
+      if (request !== statusRequestRef.current) return;
       setMessage(copy("agentWorkbench.statusLoadFailed", "Could not read the local code index."));
     }
   }, [codeIndex, copy, workspaceIdentity, workspacePath]);
@@ -110,10 +121,11 @@ export function AgentWorkbenchView({
   }, [refreshStatus]);
 
   useEffect(() => {
-    if (!busy) return;
+    // busy 只表示按钮在转。自动索引不置 busy，所以只要服务状态是 indexing 就要继续轮询。
+    if (status.state !== "indexing") return;
     const timer = window.setInterval(() => void refreshStatus(), 500);
     return () => window.clearInterval(timer);
-  }, [busy, refreshStatus]);
+  }, [refreshStatus, status.state]);
 
   const indexWorkspace = async () => {
     if (!codeIndex) return;
@@ -412,12 +424,23 @@ export function AgentWorkbenchView({
               )}
         </p>
         {status.partial ? (
-          <p className="mb-3 text-ui-xs text-amber-600">
-            {copy(
-              "agentWorkbench.indexPartial",
-              "Some files were skipped or capped; relationship results may be incomplete.",
-            )}
-          </p>
+          <div className="mb-3 space-y-1 text-ui-xs text-warning">
+            <p>
+              {copy(
+                "agentWorkbench.indexPartial",
+                "Some files were skipped or capped; relationship results may be incomplete.",
+              )}
+            </p>
+            {codeIndexSkipReasons(status.diagnostics).map((reason) => (
+              <p key={reason.key} data-testid="agent-workbench-index-skip-reason">
+                {copy(
+                  reason.key,
+                  codeIndexSkipDefault(reason.key),
+                  reason.count === undefined ? undefined : { count: reason.count },
+                )}
+              </p>
+            ))}
+          </div>
         ) : null}
         <div className="flex gap-2">
           <Button

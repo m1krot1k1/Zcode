@@ -16,6 +16,7 @@ import type {
   ContextSourceSnapshot,
   ExecutionPort,
   FileSystemPort,
+  CodeIntelligencePort,
   HookRunner,
   ImageProcessorPort,
   PdfDocumentPort,
@@ -135,6 +136,7 @@ export interface AgentRuntimeInternal
   artifactStore?: ToolArtifactStorePort;
   executionPort?: ExecutionPort;
   fileSystemPort?: FileSystemPort;
+  codeIntelligencePort?: CodeIntelligencePort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
   skillLoadOutcome?: SkillLoadOutcome;

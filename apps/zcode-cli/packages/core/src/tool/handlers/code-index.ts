@@ -50,9 +50,9 @@ export const codeIndexToolEntry: ToolEntry = {
     description: [
       "Queries the local workspace code index for fast symbol and dependency navigation.",
       "Actions: status, search, context, impact, trace.",
-      "For codebase tasks, start with status/search and use context/impact/trace to navigate relationships; verify important findings with Read.",
+      "For a code task, call status, then a targeted search, and use context/impact/trace for relationships. Answer from the excerpt and path:startLine-endLine when the fact is already in the excerpt. Read only to edit, open a test, or when the excerpt is truncated, endLine is missing, or the needed text is absent. Issue those Reads in one parallel batch with offset = startLine and a limit covering the range — not the whole file and not every caller.",
       "Paths for impact must be workspace-relative. This tool never reads or writes outside the current workspace and never changes files.",
-      "If the index is unavailable or partial, report that and use normal file search/read tools to verify important findings.",
+      "If the index is unavailable, empty, or stale, report that and use ordinary file search. A partial index does not prove the code is absent.",
     ].join("\n"),
     readOnly: true,
     destructive: false,

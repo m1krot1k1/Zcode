@@ -3200,6 +3200,7 @@ export function createZCodeAgentService(
                     ...workspaceRef,
                     query: parsed.data.query,
                     limit: parsed.data.limit ?? 12,
+                    ...(parsed.data.lexicalOnly ? { lexicalOnly: true } : {}),
                   });
                   result = { action: "search", ...search };
                   break;

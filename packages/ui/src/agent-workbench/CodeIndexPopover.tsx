@@ -7,7 +7,12 @@ import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { setPendingSettingsUsageCodeGraphIntent } from "@/lib/settingsNavigation.js";
-import { codeIndexDotClassName, codeIndexStateKey, codeIndexTone } from "./codeIndexIndicator.js";
+import {
+  codeIndexDotClassName,
+  codeIndexSkipReasons,
+  codeIndexStateKey,
+  codeIndexTone,
+} from "./codeIndexIndicator.js";
 import type { CodeIndexStatus, CodeSearchResult } from "./contract.js";
 
 export function CodeIndexPopover({
@@ -43,12 +48,18 @@ export function CodeIndexPopover({
   const [busy, setBusy] = useState<"index" | "search" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+  const statusRequestRef = useRef(0);
 
   const refreshStatus = useCallback(async () => {
     if (!codeIndex || !workspacePath) return;
+    const request = ++statusRequestRef.current;
     try {
-      setStatus(await codeIndex.getStatus(workspaceRef));
+      const next = await codeIndex.getStatus(workspaceRef);
+      // 慢返回不能覆盖更新的状态：索引已经结束时，旧的 indexing 会把圆点重新点亮。
+      if (request !== statusRequestRef.current) return;
+      setStatus(next);
     } catch {
+      if (request !== statusRequestRef.current) return;
       setMessage(copy("codeIndex.statusFailed"));
       setMessageIsError(true);
     }
@@ -72,6 +83,7 @@ export function CodeIndexPopover({
   }, [codeIndex, copy, refreshStatus, workspacePath, workspaceRef]);
 
   useEffect(() => {
+    // 自动索引不经过 Build 按钮。只要服务还在 indexing，关闭的弹层也要继续问状态。
     if (!open && status?.state !== "indexing") return;
     const timer = window.setInterval(() => void refreshStatus(), 1500);
     return () => window.clearInterval(timer);
@@ -278,6 +290,20 @@ export function CodeIndexPopover({
                   {copy(status?.partial ? "codeIndex.partial" : "codeIndex.details")}
                 </summary>
                 <p className="mt-1.5">{copy("codeIndex.coverageDetails")}</p>
+                {status?.partial
+                  ? codeIndexSkipReasons(status.diagnostics).map((reason) => (
+                      <p
+                        key={reason.key}
+                        className="mt-1"
+                        data-testid="composer-code-index-skip-reason"
+                      >
+                        {copy(
+                          reason.key,
+                          reason.count === undefined ? undefined : { count: reason.count },
+                        )}
+                      </p>
+                    ))
+                  : null}
               </details>
             ) : null}
             {embeddingFailure ? (
