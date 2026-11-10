@@ -76,8 +76,9 @@ const MAX_SOURCE_BYTES = 1024 * 1024;
 const MAX_SOURCE_FILES = 20_000;
 const MAX_CHUNK_LINES = 120;
 const CHUNK_OVERLAP_LINES = 12;
-const SECRET_CONTENT =
-  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|client[_-]?secret|password|private[_-]?key)\s*[:=]\s*["'][^"'\n]{16,}["']/i;
+const PRIVATE_KEY_BLOCK = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
+const SECRET_ASSIGNMENT =
+  /\b(?:api[_-]?key|client[_-]?secret|password|private[_-]?key)\s*[:=]\s*["'][^"'\n]{16,}["']/i;
 const SECRET_FILE_NAME =
   /(?:^|\/)(?:\.env(?:\..*)?|[^/]*\.(?:pem|key|p12|pfx|keystore)|[^/]*secret[^/]*)$/i;
 const DEFAULT_IGNORES = [
@@ -111,6 +112,20 @@ interface PreviousFileMeta {
   ctimeMs: number;
   size: number;
   fingerprint: string;
+}
+
+function isFixtureSourcePath(filePath: string): boolean {
+  const normalized = filePath.replaceAll("\\", "/").toLowerCase();
+  return (
+    /(?:^|\/)(?:__tests__|tests?|e2e|fixtures|__fixtures__|__mocks__)(?:\/|$)/u.test(normalized) ||
+    /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(normalized)
+  );
+}
+
+// 修复原因：测试夹具里的长口令赋值不是工作区密钥。把它算进 partial 会让已经建完的索引一直显示不完整。
+function sourceLooksLikeSecret(filePath: string, content: string): boolean {
+  if (PRIVATE_KEY_BLOCK.test(content)) return true;
+  return !isFixtureSourcePath(filePath) && SECRET_ASSIGNMENT.test(content);
 }
 
 function sourceScriptKind(filePath: string): ts.ScriptKind {
@@ -484,7 +499,7 @@ export async function scanWorkspace(
       if (Buffer.byteLength(content, "utf8") > MAX_SOURCE_BYTES) {
         file.excluded = true;
         diagnostics.push("Some source files exceeded the 1 MiB indexing limit and were skipped.");
-      } else if (SECRET_CONTENT.test(content)) {
+      } else if (sourceLooksLikeSecret(file.path, content)) {
         file.excluded = true;
         diagnostics.push("A source file matching secret patterns was excluded from the index.");
       } else {

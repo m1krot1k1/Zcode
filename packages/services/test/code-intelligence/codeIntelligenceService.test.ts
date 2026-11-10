@@ -462,6 +462,62 @@ describe("code intelligence embedding configuration", () => {
   });
 });
 
+describe("code intelligence coverage", () => {
+  it("indexes a fixture password in a test without marking the workspace partial", async () => {
+    const { workspacePath, service } = await createTestService();
+    await mkdir(join(workspacePath, "src", "test"), { recursive: true });
+    await writeFile(join(workspacePath, "src", "ready.ts"), "export const ready = true;\n", "utf8");
+    await writeFile(
+      join(workspacePath, "src", "test", "login.test.ts"),
+      'export const password = "fixture-password-value";\n',
+      "utf8",
+    );
+
+    const status = await service.indexWorkspace({ workspacePath });
+
+    expect(status.partial).toBe(false);
+    expect(status.diagnostics.join("\n")).not.toContain("secret patterns");
+    const found = await service.search({
+      workspacePath,
+      query: "fixture-password-value",
+      lexicalOnly: true,
+    });
+    expect(found.results.some((hit) => hit.path.endsWith("login.test.ts"))).toBe(true);
+  });
+
+  it("keeps a product credential and a private-key block out of the index", async () => {
+    const { workspacePath, service } = await createTestService();
+    await mkdir(join(workspacePath, "src", "test"), { recursive: true });
+    await writeFile(
+      join(workspacePath, "src", "keys.ts"),
+      'export const password = "production-credential-value";\n',
+      "utf8",
+    );
+    await writeFile(
+      join(workspacePath, "src", "test", "pem.test.ts"),
+      `${"-----BEGIN " + "PRIVATE KEY-----"}\nfixture\n`,
+      "utf8",
+    );
+
+    const status = await service.indexWorkspace({ workspacePath });
+
+    expect(status.partial).toBe(true);
+    expect(status.diagnostics.some((line) => line.includes("secret patterns"))).toBe(true);
+    const found = await service.search({
+      workspacePath,
+      query: "production-credential-value",
+      lexicalOnly: true,
+    });
+    expect(found.results).toEqual([]);
+    const pem = await service.search({
+      workspacePath,
+      query: "BEGIN PRIVATE KEY",
+      lexicalOnly: true,
+    });
+    expect(pem.results).toEqual([]);
+  });
+});
+
 describe("code intelligence graph overview", () => {
   it("resolves named imported calls to the exported symbol across workspace files", async () => {
     const { workspacePath, service } = await createTestService();
