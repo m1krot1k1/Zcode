@@ -1213,6 +1213,26 @@ describe("ConversationTurnGroup assistant history status", () => {
     expect(renderUnit(interruptedUnit, { locale: "zh-CN" })).not.toContain("已工作 5 秒");
   });
 
+  it("labels a failed turn as failed instead of worked", () => {
+    // docs/specs/max-turns-limit.md：error_max_turns 是受限结果，不能显示成普通成功；
+    // 轮次标签同理不能把失败终态写成「已工作 N 秒」。
+    const row = reasoningRow();
+    const failedUnit = baseUnit({
+      key: "turn-failed:1",
+      turnId: "turn-failed",
+      assistantHistoryDefaultOpen: true,
+      workStatus: { state: "failed", durationMs: 5_000 },
+      assistantWorkRows: [row],
+      assistantHistoryRows: [row],
+      renderRows: [row],
+    });
+
+    expect(renderUnit(failedUnit, { locale: "en-US" })).toContain("Failed");
+    expect(renderUnit(failedUnit, { locale: "en-US" })).not.toContain("Worked for 5s");
+    expect(renderUnit(failedUnit, { locale: "zh-CN" })).toContain("失败");
+    expect(renderUnit(failedUnit, { locale: "zh-CN" })).not.toContain("已工作 5 秒");
+  });
+
   it("按语言格式化工作时长的单位间距", () => {
     const row = reasoningRow();
     const completedUnit = baseUnit({

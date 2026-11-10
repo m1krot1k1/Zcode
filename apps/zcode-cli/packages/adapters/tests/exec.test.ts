@@ -3475,13 +3475,19 @@ describe("NodeExecutionAdapter", () => {
     // 回归：protected-resource sandbox 时代计时器被提前到准备阶段（覆盖 capability probe），
     // sandbox 撤除后该行为一度被保留——shell 初始化较慢或 timeout 较短时，命令还没 spawn
     // 就返回 timed_out。计时器必须在 spawn 之后才启动。
+    //
+    // 两个数都要留足余量，否则机器负载会制造假红（全量套件并行时实测过 60ms 预算 + 正常
+    // node 启动 ≈ 74ms 就超时）：
+    //   - 准备延迟必须明显大于 timeout，这样「计时器覆盖准备期」的旧行为仍会被抓住
+    //     （600ms 准备 vs 400ms 预算 → 旧行为必然 timed_out）；
+    //   - spawn 之后子进程仍要跑完 `process.exit(0)`，400ms 相对实测启动延迟有 ~5x 余量。
     const adapter = new NodeExecutionAdapter();
     const internals = adapter as unknown as {
       prepareChildSpawn: (request: unknown) => Promise<unknown>;
     };
     const originalPrepare = internals.prepareChildSpawn.bind(adapter);
     internals.prepareChildSpawn = async (request: unknown) => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 600));
       return originalPrepare(request);
     };
 
@@ -3491,7 +3497,7 @@ describe("NodeExecutionAdapter", () => {
         file: process.execPath,
         args: ["-e", "process.exit(0)"],
       },
-      timeoutMs: 60,
+      timeoutMs: 400,
     });
 
     expect(result.status).toBe("completed");

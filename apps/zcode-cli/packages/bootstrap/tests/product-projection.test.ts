@@ -3848,6 +3848,65 @@ describe("ProductProjection 黄金测试（L1）", () => {
     expect(projection.getSnapshot().control.phase).toBe("running");
   });
 
+  // MAXTURN-07：error_max_turns 是受限结果而非成功。投影必须在 control.lastError 写入
+  // 稳定 code，否则 ChatErrorBanner 永远走不到 ERROR_MAX_TURNS 本地化分支
+  //（composerError 只从 lastError 构建）。
+  it("MAXTURN-07: TurnComplete(error_max_turns) проецирует failed-заголовок и lastError с кодом", () => {
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(
+      SessionEventType.TurnStarted,
+      { turnNumber: 1, input: "работай" },
+      { turnId: "turn-1" },
+    );
+    log.push(
+      SessionEventType.TurnComplete,
+      {
+        response: "сохранённый текст",
+        tokenCount: 0,
+        toolCallCount: 0,
+        duration: 12,
+        resultType: "error_max_turns",
+      },
+      { turnId: "turn-1" },
+    );
+
+    const { projection } = runAll(log.events);
+    const snapshot = projection.getSnapshot();
+    expect(snapshot.control.phase).toBe("error");
+    expect(snapshot.rows.window.find((row) => row.kind === "turnHeader")).toMatchObject({
+      state: "failed",
+    });
+    expect(snapshot.control.lastError).toMatchObject({
+      code: "error_max_turns",
+      recoverable: true,
+      source: "runtime",
+    });
+    expect(() => conversationSnapshotSchema.parse(snapshot)).not.toThrow();
+    // lastError — transient: следующий принятый turn сбрасывает его, как и TurnError.
+    log.push(
+      SessionEventType.TurnStarted,
+      { turnNumber: 2, input: "continue" },
+      { turnId: "turn-2" },
+    );
+    const next = runAll(log.events).projection.getSnapshot();
+    expect(next.control.phase).toBe("running");
+    expect(next.control.lastError).toBeNull();
+  });
+
+  // Обычный success/cancelled не создаёт lastError: фикс не должен менять их семантику.
+  it("MAXTURN-07: обычный success не выставляет lastError", () => {
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "hi" }, { turnId: "turn-1" });
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "done", tokenCount: 0, toolCallCount: 0, duration: 5, resultType: "success" },
+      { turnId: "turn-1" },
+    );
+    expect(runAll(log.events).projection.getSnapshot().control.lastError).toBeNull();
+  });
+
   it("K10：retry 目标只允许全时间线最后一条 assistantText row", () => {
     const log = new EventLog();
     log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });

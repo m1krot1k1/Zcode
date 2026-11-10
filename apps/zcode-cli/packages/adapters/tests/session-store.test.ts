@@ -43,7 +43,10 @@ interface ConcurrentStartupResult {
 }
 
 const CONCURRENT_STARTUP_ATTEMPTS = 5;
-const CONCURRENT_STARTUP_TEST_TIMEOUT_MS = 10_000;
+// 本用例每次 attempt fork 两个 tsx 子进程、各自迁移一份新库，共 5 轮；全包并行运行时
+// CPU 争抢会把隔离约 8s 的执行推过旧的 10s 上限。超时属于排队预算，不是断言失败，
+// 因此放宽执行预算，断言（两个进程都成功、每库 28 条迁移）保持不变。
+const CONCURRENT_STARTUP_TEST_TIMEOUT_MS = 60_000;
 
 function openSessionStoreInConcurrentProcesses(dbPath: string): Promise<ConcurrentStartupResult[]> {
   const workerUrl = new URL("./fixtures/session-store-concurrent-process.ts", import.meta.url);

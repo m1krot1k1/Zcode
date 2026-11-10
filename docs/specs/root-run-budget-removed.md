@@ -8,22 +8,28 @@
 
 ## 保留的护栏
 
-- spawn 预算（`spawnBudget`，缺省 128）：整棵子 Agent 树的 admission 上限；0 表示禁止 spawn。
-- idle 600s 与首个 token 90s 超时不变；`maxTurns` 与工具级超时不变。
+- spawn 预算已从 admission 移除：`spawnBudget`、`remaining_spawns`、`spawnGrant` 是 legacy 字段，
+  旧值仍可读取，但不再限制新的启动。唯一的活动并发边界是实际 worker slot 容量（`active_limit`）；
+  创建任务的总数没有上限。
+- idle 600s 与首个 token 90s 超时不变（`DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS = 600_000`、
+  `DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS = 90_000`）；工具级超时不变。
+- `maxTurns` 是显式的用户/配置文件设置：未设置表示不限制轮数，限制只在显式正整数时生效，
+  并让 turn 以可预测的 `error_max_turns` 结束（见 `max-turns-limit.md`）。
 
 ## runaway 如何被覆盖
 
-真实 runaway 只有三种形态：无限 spawn、长时间无输出、无限 turn。分别由 spawn 预算、
-idle/首 token 超时、maxTurns 拦截；token 数量不再是准入条件，只作为 usage 统计保留。
+真实 runaway 被分层拦截：无限 turn 由显式 `maxTurns` 拦截，长时间无输出由 idle/首 token
+超时拦截，其余由用户 Stop 与 runtime stop 终止。创建任务的总数不再由应用层计数器限制：
+并发受实际 slot 容量约束，串行链路只受角色 deadline（若显式启用）、Stop 或 turn 结束约束。
+token 数量不再是准入条件，只作为 usage 统计保留。
 
-Root run также сохраняет отдельный wall-clock deadline как аварийную защиту. По умолчанию
-он равен 4 часам: больше максимального worker deadline (180 минут) и оставляет до 30 минут
-на синтез профилями `start`/`orchestrator`. Это не token budget и не ограничивает число
-модельных запросов до исчерпания wall-clock времени.
+Root run 默认不设置 wall-clock deadline：`DEFAULT_ROOT_RUN_DEADLINE_MS` 为 `undefined`，
+因此 root turn 执行到完成、用户取消或 runtime 停止。`beginRootRunBudget` 的显式 `deadlineMs`
+仍可供调用方和测试使用；它不是 token budget，也不限制模型请求数量。
 
 ## 移除范围
 
 - 设置：`AppSettings.rootRunTokenLimit`、设置卡片中的 token 行、`ZCODE_ROOT_RUN_TOKEN_LIMIT` 环境变量。
 - Agent：`AgentRuntimeConfig.rootRunTokenLimit` 及其 token admission 预留（另一半提交）。
-- 不动 spawn 预算、per-role deadline、usage 记账与 provider 结算逻辑. Root run wall-clock
-  deadline остаётся отдельной аварийной защитой.
+- 不动 per-role deadline（只能通过 `subagentTaskTimeoutMinutes` 显式启用）、usage 记账与
+  provider 结算逻辑。Root-run wall-clock deadline 默认不存在，只能由显式 `deadlineMs` 启用。

@@ -72,6 +72,9 @@ const LOCALIZED_ERROR_CODES = new Set([
   "no_model_selected",
   // OpenCode 免费额度耗尽必须显示“换模型/等重置”，不能透出 429 原文或长时间“Working”。
   "OPENCODE_FREE_LIMIT_REACHED",
+  // turn loop 达到显式 maxTurns 时以 TurnComplete(resultType) 结束；
+  // 该终态不是普通成功，必须显示可执行的“达到回合上限”说明，而不是底层技术串。
+  "error_max_turns",
 ]);
 
 // runtime core error 的 snake_case 码 → 本地化键前缀，未列出时按原 codes 命名。
@@ -79,6 +82,7 @@ const CORE_ERROR_LOCALE_KEYS: Readonly<Record<string, string>> = {
   turn_cancelled: "TURN_CANCELLED",
   no_model_selected: "NO_MODEL_SELECTED",
   first_token_timeout: "FIRST_TOKEN_TIMEOUT",
+  error_max_turns: "ERROR_MAX_TURNS",
 };
 
 const MODEL_CONFIG_MISSING_CODES = new Set([

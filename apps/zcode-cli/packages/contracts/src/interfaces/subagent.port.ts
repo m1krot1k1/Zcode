@@ -133,7 +133,10 @@ export interface SubagentRunRequest {
   orchestrationRunId?: string;
   /** Explicit machine-checkable criteria; absent criteria must remain acceptance=unknown. */
   acceptanceCriteria?: readonly PrismTaskAcceptanceRequestCriterion[];
-  /** 模型声明的子树剩余 spawn 配额；Host 会与自身 hostGrant 取 min。 */
+  /**
+   * @deprecated Legacy persisted spawn-count value; accepted for format compatibility and ignored
+   * for admission. Worker-slot capacity is the only concurrency limit.
+   */
   spawnBudget?: number;
   /** 模型声明的嵌套层级；仅记录，不用于深度熔断。 */
   level?: number;
@@ -153,9 +156,15 @@ export type SubagentTaskDagRequest = Omit<
 
 export interface SubagentRunOptions {
   signal?: AbortSignal;
-  /** 父级（调用方）当前持有的 spawn 预算；缺省时由 Host 使用根预算。 */
+  /**
+   * @deprecated Legacy caller-side spawn-count value; accepted for format compatibility and
+   * ignored for admission. Live concurrency is bounded by actual worker-slot capacity.
+   */
   spawnBudget?: number;
-  /** Host 为本子任务签发的 spawn 配额；优先于按父预算推导的默认值。 */
+  /**
+   * @deprecated Legacy Host-issued spawn grant; accepted for format compatibility and ignored
+   * for admission. It does not take priority over any current limit.
+   */
   internalSpawnGrant?: number;
   /** 父级嵌套层级；子级记录为 +1，仅记录不设上限。 */
   level?: number;

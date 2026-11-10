@@ -3,6 +3,7 @@ import { BOT_TASK_BROADCAST_CHANNEL } from "@zcode/shared";
 import {
   resolveBotTaskBroadcastRefresh,
   resolveBotTaskBroadcastRuntimeStatus,
+  resolveTaskCompleteRuntimeStatus,
 } from "../src/root/botsTaskBroadcast.js";
 import type { WindowTabState } from "../src/store/tabStore.js";
 
@@ -68,6 +69,17 @@ describe("bot task broadcast", () => {
     expect(resolveBotTaskBroadcastRuntimeStatus("updated")).toBe("ready");
     expect(resolveBotTaskBroadcastRuntimeStatus("completed")).toBe("completed");
     expect(resolveBotTaskBroadcastRuntimeStatus("error")).toBe("failed");
+  });
+
+  it("does not mark a limited task_complete as completed", () => {
+    // docs/specs/max-turns-limit.md MAXTURN-07：error_max_turns 是受限结果而非成功。
+    expect(resolveTaskCompleteRuntimeStatus("success")).toBe("completed");
+    expect(resolveTaskCompleteRuntimeStatus("complete")).toBe("completed");
+    expect(resolveTaskCompleteRuntimeStatus("cancelled")).toBe("completed");
+    expect(resolveTaskCompleteRuntimeStatus("error_max_turns")).toBe("failed");
+    expect(resolveTaskCompleteRuntimeStatus("error_max_budget")).toBe("failed");
+    expect(resolveTaskCompleteRuntimeStatus("error_during_execution")).toBe("failed");
+    expect(resolveTaskCompleteRuntimeStatus("error_max_tool_calls")).toBe("failed");
   });
 
   it("accepts prompt metadata for optimistic user message sync", () => {

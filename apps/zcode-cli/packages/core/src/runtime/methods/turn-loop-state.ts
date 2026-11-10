@@ -18,6 +18,8 @@ import type { DrainedPendingInputDiagnostics, ModelExecutionContext } from "../t
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { expandSubagentDispatchDisallowRules } from "../helpers/tool-allowlist.js";
+import { AGENT_TOOL_NAME } from "../../tool/compat.js";
 import { getMetadataTools } from "./config.js";
 
 export type PendingStreamRecoveryRequest = ModelStreamRecoveryStatus;
@@ -57,20 +59,19 @@ export function getTurnTools(runtime: AgentRuntimeInternal, state: RegularTurnLo
   const effectiveDisallowed = new Set(disallowed ?? []);
   if (subagentsDisabled) {
     // 修复依据：禁用子代理时 Agent 隐藏但别名 Task 仍可能进入模型工具集，导致误触发委派与 agent listing。
-    effectiveDisallowed.add("Agent");
-    effectiveDisallowed.add("Task");
+    // 这里同样走 dispatch-пары helper, чтобы список имён не дублировался в третьем месте.
+    for (const toolName of expandSubagentDispatchDisallowRules([AGENT_TOOL_NAME]) ?? []) {
+      effectiveDisallowed.add(toolName);
+    }
   }
   const tools = runtime.getTools(state.model);
   return tools.filter((tool) => !effectiveDisallowed.has(tool.name));
 }
 
 function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
-  const tools = new Set(state.toolDisallowlist ?? []);
-  if (tools.has("Agent") || tools.has("Task")) {
-    // Agent 与 Task 是同一委派能力的两个入口，逐个隐藏会留下绕过禁用项的别名。
-    tools.add("Agent");
-    tools.add("Task");
-  }
+  // 三个边界 (registration, permission, turn) 共用同一个 helper: `Agent(*)` / `Task`
+  // разворачиваются в пару до сравнения по точному имени; остальные правила не меняются.
+  const tools = new Set(expandSubagentDispatchDisallowRules(state.toolDisallowlist) ?? []);
   if (isAutomationMutationRestrictedTurn(state)) {
     for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) tools.add(toolName);
   }

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { BrowserInfo } from "../src/browser-client/index.js";
 import {
@@ -12,15 +13,16 @@ import {
 import { loadBrowserDocumentation } from "../src/browser-client/documentation.js";
 import { NodeReplSession } from "../src/repl/node-repl-session.js";
 
-const docsRoot = resolve(process.cwd(), "../browser-use-plugin/docs");
-const skillPath = resolve(process.cwd(), "../browser-use-plugin/skills/control-browser/SKILL.md");
+// 修复原因：测试从 apps/zcode-cli 与 packages/core 两种 cwd 调用时，process.cwd() 拼出的
+// 相对路径会漂移到不存在的 apps/browser-use-plugin/...。以测试文件自身位置为锚点，
+// 再用 fileURLToPath 解码 `%20` 等百分号编码，保证任意 cwd 下都解析到同一个真实目录。
+const browserUsePluginRoot = fileURLToPath(new URL("../../browser-use-plugin/", import.meta.url));
+const docsRoot = resolve(browserUsePluginRoot, "docs");
+const skillPath = resolve(browserUsePluginRoot, "skills/control-browser/SKILL.md");
 const overviewPath = resolve(docsRoot, "overview.md");
 const workflowPath = resolve(docsRoot, "workflow.md");
 const playwrightPath = resolve(docsRoot, "playwright.md");
-const testerSkillPath = resolve(
-  process.cwd(),
-  "../browser-use-plugin/skills/web-gui-tester/SKILL.md",
-);
+const testerSkillPath = resolve(browserUsePluginRoot, "skills/web-gui-tester/SKILL.md");
 const iab: BrowserInfo = {
   id: "iab-runtime-1",
   generation: 3,

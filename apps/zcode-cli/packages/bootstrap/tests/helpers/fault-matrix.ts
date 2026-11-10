@@ -92,6 +92,12 @@ interface FaultCellOptions {
   timeoutMs?: number;
   /** 每子代理空转轮数 K（信息性：只影响 `logicalRequests`），缺省 {@link FAULT_CELL_TURNS}。 */
   turns?: number;
+  /**
+   * 流空闲看门狗（**真实**毫秒），缺省关闭。
+   * 只有 B6「挂起 → 流空闲超时」行显式选定；其余行关掉它，否则并行套件把事件循环压住时
+   * 会出现没有任何产品缺陷的假 `stream_idle_timeout` 重试（见 fault-provider-model.ts 的说明）。
+   */
+  streamIdleTimeoutMs?: number;
 }
 
 export interface FaultCellObservation {
@@ -180,6 +186,9 @@ function wireCell(options: Omit<FaultCellOptions, "shape">): CellWiring {
       apiFormat: options.apiFormat,
       baseURL: options.server.baseURL,
       statusSink,
+      ...(options.streamIdleTimeoutMs === undefined
+        ? {}
+        : { streamIdleTimeoutMs: options.streamIdleTimeoutMs }),
     }),
     fileSystemPort: fakeFileSystemPort({}),
     scale,
@@ -489,16 +498,32 @@ export function assertCommonInvariants(
 
   // 5 停下后零请求。引擎 stop() 先 abort 在飞节点再结算，但假服务器与客户端共用一个事件循环：
   // 一个在 abort 之前就已写到回环网卡上的请求，要等结算那一串同步工作（journal、通知、兄弟
-  // abort）做完才轮到服务器的 handler 给它盖"到达"戳——负载重时能晚十几毫秒。那不是停下之后
-  // 的新工作，是停下之前的尾巴，runner 那边会把它报成 `reason:"cancelled"`。所以：宽限之外的
-  // 晚到请求，每一条都必须对得上一条 cancelled 回声；一个没被撤掉的退避定时器发出的请求不会
-  // 被 runner 报成 cancelled，照样抓得到。
-  const late = server.requests.filter((entry) => entry.at > settledAt + STOP_WIRE_GRACE_MS);
-  const cancelledEchoes = failed.filter((event) => event.reason === "cancelled").length;
+  // abort）做完才轮到服务器的 handler 给它盖"到达"戳——负载重时能晚几百毫秒。
+  //
+  // 判据必须是**请求身份**，不能只看到达时刻：只看 `entry.at` 时，一条在结算前就已发起
+  // （`model_request_started` 早于 `settledAt`）却被事件循环拖到宽限之后才被 handler 记账的
+  // 请求，会被误判成「停下之后的新请求」。每个物理请求都带 `x-request-id`（= 该 attempt 的
+  // `requestId`），所以这里按 id 关联：
+  //   - 该 id 的 `model_request_started` 早于结算 → 停下之前的尾巴，允许（无论到达多晚）；
+  //   - 该 id 没有 started 或 started 晚于结算 → 真正在停下之后发起的新工作，必失败。
+  // 一个没被撤掉的退避定时器发出的请求同样会在结算后才有 started，照样抓得到。
+  const startedAtByRequest = new Map<string, number>();
+  for (const event of statusEvents) {
+    if (event.type !== "model_request_started") continue;
+    startedAtByRequest.set(event.requestId, Date.parse(event.timestamp));
+  }
+  const afterStop = server.requests.filter((entry) => {
+    if (entry.at <= settledAt + STOP_WIRE_GRACE_MS) return false;
+    const startedAt =
+      entry.requestId === undefined ? undefined : startedAtByRequest.get(entry.requestId);
+    // 无法关联的晚到请求同样按可疑处理：没有 started 物证就不是「停下之前的尾巴」。
+    return startedAt === undefined || startedAt > settledAt;
+  });
   expect(
-    late.length,
-    `requests arriving after run-settled (${late.length}) must all be cancel echoes (${cancelledEchoes})`,
-  ).toBeLessThanOrEqual(cancelledEchoes);
+    afterStop.length,
+    `requests initiated after run-settled (${afterStop.length}) must be zero; ` +
+      `late arrivals are allowed only when their model_request_started precedes settlement`,
+  ).toBe(0);
 
   // 6 在飞上界：治理器的增长上限。格子里的 run 跑在默认上界上、不抬它，所以就是 2D。
   expect(server.inFlightPeak).toBeLessThanOrEqual(

@@ -660,6 +660,7 @@ async function persistDurableSessionEvent(
   if (event.type === SessionEventType.TurnComplete || event.type === SessionEventType.TurnError) {
     const payload = event.payload as { resultType?: string };
     // 终态由 CLI 在发布事件前持久化；Host 冷启动不能再把全部历史任务推导为成功。
+    // error_max_turns 是受限结果而非成功：TurnComplete 的默认分支只能表示真正完成。
     await this.sessionStore.updateSession({
       id: event.sessionId,
       lastOutcome:
@@ -667,7 +668,9 @@ async function persistDurableSessionEvent(
           ? "error"
           : payload.resultType === "cancelled"
             ? "interrupted"
-            : "completed",
+            : payload.resultType === "error_max_turns"
+              ? "error"
+              : "completed",
       timeUpdated: event.timestamp.getTime(),
     });
     return;

@@ -102,3 +102,24 @@ export function resolveBotTaskBroadcastRuntimeStatus(
       return "ready";
   }
 }
+
+/**
+ * task_complete.stopReason 就是 TurnResultType。`success` 与 `cancelled` 都算正常收口，所以都写
+ * completed：用户主动中断在会话/转录层按 interrupted 呈现（v4 phase `completedInterrupted`），
+ * 不是侧栏 runtime 状态的失败。其余 error_* 是受限/失败终态，不能标记成 completed。
+ *
+ * docs/specs/max-turns-limit.md MAXTURN-07：error_max_turns 不是成功，
+ * 旧实现无条件写 completed，会让 Bot 任务在侧栏/运行态里静默显示为完成。
+ */
+const FAILED_TASK_COMPLETE_RESULT_TYPES = new Set([
+  "error_max_turns",
+  "error_max_budget",
+  "error_during_execution",
+  "error_max_tool_calls",
+]);
+
+export function resolveTaskCompleteRuntimeStatus(
+  stopReason: string,
+): Extract<ZCodeTaskRuntimeStatus, "completed" | "failed"> {
+  return FAILED_TASK_COMPLETE_RESULT_TYPES.has(stopReason) ? "failed" : "completed";
+}

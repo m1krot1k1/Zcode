@@ -56,9 +56,9 @@ flowchart LR
 
 | ID     | Given                                                       | When                 | Then                                                                                   |
 | ------ | ----------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| EVG-01 | The catalog lists five cases                                | Run `/evaluate`      | Every case is reported once as pass, fail, or not run, with direct evidence            |
+| EVG-01 | The catalog lists its cases                                 | Run `/evaluate`      | Every case is reported once as pass, fail, or not run, with direct evidence            |
 | EVG-02 | A case has no observed evidence                             | Run `/evaluate`      | The case is recorded as `not_run`, never as `pass`                                     |
-| EVG-03 | All five cases have `pass` rows at the current HEAD         | Run `pnpm eval:gate` | The gate prints a pass summary and exits `0`                                           |
+| EVG-03 | Every catalog case has a `pass` row at the current HEAD     | Run `pnpm eval:gate` | The gate prints a pass summary and exits `0`                                           |
 | EVG-04 | A catalog case has no result row                            | Run the gate         | The gate names the missing case and exits `1`                                          |
 | EVG-05 | One result row is `not_run`                                 | Run the gate         | The gate rejects `not_run` as not pass and exits `1`                                   |
 | EVG-06 | Every result row was recorded at an earlier HEAD            | Run the gate         | The gate reports stale revisions and exits `1`                                         |

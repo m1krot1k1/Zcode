@@ -775,11 +775,13 @@ function ReadonlyHistoryStatus({
             segment.workStatus.interruptDetail,
           ),
         })
-      : segment.workStatus?.state === "running"
-        ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: duration ?? "" })
-        : duration
-          ? intl.formatMessage({ id: "chat.history.workedFor" }, { duration })
-          : labels.history;
+      : segment.workStatus?.state === "failed"
+        ? intl.formatMessage({ id: "chat.history.failed" })
+        : segment.workStatus?.state === "running"
+          ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: duration ?? "" })
+          : duration
+            ? intl.formatMessage({ id: "chat.history.workedFor" }, { duration })
+            : labels.history;
   return (
     <div className="flex w-full border-b border-border/50 pb-2">
       <CollapsibleTrigger asChild>

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { createAgentStateId, type SubagentRuntimeConfig } from "@zcode/shared";
-import type { ModelRequest } from "@zcode/contracts";
+import { modelMessageContentToText, type ModelRequest } from "@zcode/contracts";
 import { createNodeLoggerFactory } from "@zcode/adapters/logging";
 import { parseRuntimeSubagentConfig } from "../src/runtime-subagents/index.js";
 import * as subagents from "../src/subagents.js";
@@ -70,11 +70,15 @@ describe("subagent initialization source", () => {
         source: "project" as const,
         content: "This document intentionally lacks frontmatter",
       };
+      // 修复依据：内置角色拥有自己的名字（docs/specs/agent-capability-gate.md §8，коммит 3b78f7fd）：
+      // normalizeAgentProfiles отбрасывает custom-профиль с именем built-in (`reviewer`), поэтому
+      // до child доезжал встроенный reviewer без маркера _PROFILE. Для проверки источника берём
+      // уникальное имя профиля.
+      const profileName = "review-profile";
       const projectAgentDocument = {
-        path: join(workspace, ".zcode", "agents", "reviewer.md"),
+        path: join(workspace, ".zcode", "agents", `${profileName}.md`),
         source: "project" as const,
-        content:
-          "---\nname: reviewer\ndescription: Project review\ntools: Read\n---\nPROJECT_PROFILE",
+        content: `---\nname: ${profileName}\ndescription: Project review\ntools: Read\n---\nPROJECT_PROFILE`,
       };
       const readDiagnostics = async () =>
         (
@@ -99,14 +103,14 @@ describe("subagent initialization source", () => {
         },
       };
       const markdown = (prompt: string) =>
-        `---\nname: reviewer\ndescription: Review\ntools: Read\n---\n${prompt}`;
+        `---\nname: ${profileName}\ndescription: Review\ntools: Read\n---\n${prompt}`;
       const hostConfig = (prompt: string): SubagentRuntimeConfig => ({
         kind: "ready",
         profiles: [
           {
-            path: join(root, "host-agents", "reviewer.md"),
+            path: join(root, "host-agents", `${profileName}.md`),
             source: "user",
-            name: "reviewer",
+            name: profileName,
             description: "Review",
             tools: ["Read"],
             systemPrompt: prompt,
@@ -133,7 +137,7 @@ describe("subagent initialization source", () => {
           JSON.stringify({ storage: { dir: join(root, "unused-storage") } }),
         );
         if (source !== "project-files") {
-          await writeFile(join(storage, "agents", "reviewer.md"), markdown("DISK_PROFILE"));
+          await writeFile(join(storage, "agents", `${profileName}.md`), markdown("DISK_PROFILE"));
         }
         creating = createRegistryBackedTestApp({
           loggerFactory: createNodeLoggerFactory({ logDir }),
@@ -169,7 +173,7 @@ describe("subagent initialization source", () => {
                         input: {
                           description: "Review",
                           prompt: "Review",
-                          subagent_type: "reviewer",
+                          subagent_type: profileName,
                         },
                       },
                     ],
@@ -268,7 +272,22 @@ describe("subagent initialization source", () => {
       const first = JSON.stringify(requests[0]);
       for (const name of ["start", "orchestrator", "researcher", "inline-reviewer"])
         expect(first).toContain(name);
-      expect(first).not.toContain("Explore");
+      // 修复依据：Explore — встроенная совместимая роль, которую isModelSelectableAgentProfile
+      // исключает из каталога (core/src/subagent/profile.ts:957-965). Проверять «нет Explore» по
+      // всему JSON запроса нельзя: описание инструмента Agent само содержит строку
+      // "broad Explore/Grep sweep" (core/src/tool/handlers/agent.ts:185), поэтому утверждение
+      // падало ложно. Проверяем сам каталог агентов из system-reminder.
+      const agentListing = (request: ModelRequest): string =>
+        request.messages
+          .map((message) => modelMessageContentToText(message.content))
+          .find((content) =>
+            content.includes("Available named agent types for Agent/Task tools:"),
+          ) ?? "";
+      const listing = agentListing(requests[0]!);
+      // Непустой каталог доказывает, что проверка ниже не вакуумная.
+      expect(listing).toContain("- inline-reviewer:");
+      expect(listing).toContain("- start:");
+      expect(listing).not.toContain("Explore");
       expect(first).not.toContain("fixture:worker");
       expect(resolvePlugins).not.toHaveBeenCalled();
       readHost.mockResolvedValue({

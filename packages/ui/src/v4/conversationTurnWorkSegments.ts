@@ -19,7 +19,12 @@ import { buildConversationFlowItems } from "@/v4/conversationTurnFlowItems.js";
 import type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversationTurnFlowItems.js";
 
 export interface ConversationTurnWorkStatus {
-  state: "running" | "completed" | "interrupted";
+  /**
+   * failed: turnHeader.state === "failed"（含 error_max_turns 等受限终态）。
+   * 旧实现把失败终态归入 completed，导致轮次标签显示成「已工作」，与
+   * docs/specs/max-turns-limit.md「Turn не отображается как обычный success」冲突。
+   */
+  state: "running" | "completed" | "interrupted" | "failed";
   durationMs?: number;
   /** 中断原因闭集（row 可选字段；旧数据缺省时 UI 回落到 “Stopped”）。 */
   interruptReason?: "user" | "error" | "budget" | "preempted";
@@ -68,6 +73,7 @@ export function resolveConversationTurnWorkStatus(
   isRunning: boolean,
   durationMs: number | undefined,
   isInterrupted = false,
+  isFailed = false,
 ): ConversationTurnWorkStatus | undefined {
   if (header?.executionKind === "controlOnly") return undefined;
   const hasWork =
@@ -75,8 +81,16 @@ export function resolveConversationTurnWorkStatus(
     workRows.length > 0 ||
     (header?.executionKind === "agent" ? durationMs !== undefined : (durationMs ?? 0) > 0);
   if (!hasWork) return undefined;
+  // 终态由调用方按段传入：多段（guide）轮里只有最后一段属于本次终态，
+  // 不能因为 header.state=failed 把更早的已完成段也标成失败。
   return {
-    state: isRunning ? "running" : isInterrupted ? "interrupted" : "completed",
+    state: isRunning
+      ? "running"
+      : isFailed
+        ? "failed"
+        : isInterrupted
+          ? "interrupted"
+          : "completed",
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(header?.interruptReason !== undefined ? { interruptReason: header.interruptReason } : {}),
     ...(header?.interruptDetail !== undefined ? { interruptDetail: header.interruptDetail } : {}),
@@ -177,6 +191,8 @@ export function buildConversationTurnWorkSegments(options: {
   isRunning: boolean;
   isLastTurn: boolean;
   isInterrupted: boolean;
+  /** turn 终态为 failed（含 error_max_turns 等受限结果）；只影响最后一段的状态词。 */
+  isFailed?: boolean;
   forceOpenHistory: boolean;
   timelineOnly: boolean;
   nowMs?: number;
@@ -229,6 +245,7 @@ export function buildConversationTurnWorkSegments(options: {
       segmentRunning,
       segmentDurationMs,
       options.isInterrupted && segmentIndex === visualDrafts.length - 1,
+      options.isFailed === true && segmentIndex === visualDrafts.length - 1,
     );
     const segmentKey =
       segmentIndex === 0

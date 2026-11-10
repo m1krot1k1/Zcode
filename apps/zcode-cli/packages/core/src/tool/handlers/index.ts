@@ -75,6 +75,7 @@ import { getWorkflowRunToolEntry } from "./get-workflow-run.js";
 import { resumeWorkflowRunToolEntry } from "./resume-workflow-run.js";
 // import { workflowToolEntry } from "./workflow.js";
 import { createToolRuleNameSet } from "../tool-visibility.js";
+import { expandSubagentDispatchDisallowRules } from "../../runtime/helpers/tool-allowlist.js";
 
 // direct 分支保留 Glob/Grep 工具实现；embedded search 分支由 registerBuiltInTools
 // 统一隐藏 Glob/Grep，并通过 Bash find/grep 接管搜索。
@@ -225,7 +226,12 @@ export function registerBuiltInTools(
   options: RegisterBuiltInToolsOptions = {},
 ): void {
   const allowedTools = options.allowedTools ? new Set(options.allowedTools) : undefined;
-  const disallowedTools = createToolRuleNameSet(options.disallowedTools);
+  // `Agent`/`Task` — две записи одной возможности (docs/specs/task-alias-visibility.md):
+  // фильтр сравнивает точные имена, поэтому запрет любого из имён обязан закрыть пару здесь,
+  // на единственной границе регистрации для обоих входов (首次装配 и refresh).
+  const disallowedTools = createToolRuleNameSet(
+    expandSubagentDispatchDisallowRules(options.disallowedTools),
+  );
 
   for (const entry of builtInTools) {
     // Embedded Bash search дополняет Glob/Grep, а не заменяет их: профили явно

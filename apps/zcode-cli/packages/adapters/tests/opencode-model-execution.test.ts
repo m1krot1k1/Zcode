@@ -114,11 +114,13 @@ describe("OpenCode SDK model execution", () => {
 
       expect(requests).toContain("POST /session/ses_test/message");
       expect(failure).toBeDefined();
+      // 7ca4bd9d 把 OpenCode 免费额度归一到独立终态 code（contracts + UI 文案），
+      // 这里断言实际契约，不再使用旧的通用 model_rate_limited。
       expect(classifyModelFailure(failure)).toMatchObject({
-        code: "model_rate_limited",
+        code: "OPENCODE_FREE_LIMIT_REACHED",
         statusCode: 500,
         message:
-          "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+          "OpenCode free usage limit reached. Resets in about 4 hours, or switch to another model.",
         reason: "rate_limited",
         retryable: false,
       });
@@ -189,11 +191,13 @@ describe("OpenCode SDK model execution", () => {
 
       expect(requests).toContain("POST /session/ses_stream_quota/message");
       expect(failure).toBeDefined();
+      // 7ca4bd9d 把 OpenCode 免费额度归一到独立终态 code（contracts + UI 文案），
+      // 这里断言实际契约，不再使用旧的通用 model_rate_limited。
       expect(classifyModelFailure(failure)).toMatchObject({
-        code: "model_rate_limited",
+        code: "OPENCODE_FREE_LIMIT_REACHED",
         statusCode: 500,
         message:
-          "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+          "OpenCode free usage limit reached. Resets in about 4 hours, or switch to another model.",
         reason: "rate_limited",
         retryable: false,
       });
@@ -301,8 +305,9 @@ describe("OpenCode SDK model execution", () => {
 
       expect(String(failure)).not.toMatch(/invalid model|model id.*invalid/i);
       expect(String(failure)).toContain("Free usage limit reached");
+      // 免费额度文案经 SDK 空响应包装后仍命中同一 OpenCode 终态 code（见 opencode-quota-error.test.ts）。
       expect(classifyModelFailure(failure)).toMatchObject({
-        code: "model_rate_limited",
+        code: "OPENCODE_FREE_LIMIT_REACHED",
         reason: "rate_limited",
         retryable: false,
       });
@@ -398,12 +403,13 @@ describe("OpenCode SDK model execution", () => {
         true,
       );
       expect(failure).toBeDefined();
+      // SSE session.error 的免费额度信封同样落到 OpenCode 专属终态 code。
       expect(classifyModelFailure(failure)).toMatchObject({
-        code: "model_rate_limited",
+        code: "OPENCODE_FREE_LIMIT_REACHED",
         reason: "rate_limited",
         retryable: false,
         message:
-          "OpenCode's free-model usage limit is exhausted. Wait for its quota to reset or choose another model.",
+          "OpenCode free usage limit reached. Resets in about 4 hours, or switch to another model.",
       });
     } finally {
       await registry.dispose();

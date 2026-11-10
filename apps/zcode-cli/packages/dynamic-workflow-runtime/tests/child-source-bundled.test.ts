@@ -16,7 +16,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { build } from "esbuild";
 import type { renderChildEntry as renderChildEntryType } from "../src/child-source.js";
@@ -41,7 +41,9 @@ async function bundledRenderChildEntry(minify: boolean): Promise<typeof renderCh
   const outfile = join(root, "child-source.mjs");
   await build({
     bundle: true,
-    entryPoints: [new URL(ENTRY).pathname],
+    // 修复原因：URL.pathname 保留百分号编码，仓库路径含空格时 esbuild 收到
+    // "/Users/.../Zcode%20Fork/..." 并报 Could not resolve。fileURLToPath 解码回真实路径。
+    entryPoints: [fileURLToPath(ENTRY)],
     format: "esm",
     // 与 CLI 发布构建同参：desktop-agent 是 minify + keepNames，普通/SEA 构建不压缩。
     keepNames: minify,

@@ -1,10 +1,16 @@
 import type { RuntimeInputPresentation } from "@zcode/contracts";
 import { createModelId, createModelProviderId } from "@zcode/contracts";
-import { SessionEventType, createPartId, traceContextToLogContext } from "../deps.js";
+import {
+  SessionEventType,
+  createMessageId,
+  createPartId,
+  traceContextToLogContext,
+} from "../deps.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
 import type {
   EnvInfo,
   MessageId,
+  MessageInfo,
   MessagePart,
   MessageVisibility,
   Model,
@@ -12,6 +18,7 @@ import type {
   SessionProjection,
   SessionStorePort,
   TraceContext,
+  TurnId,
   SyntheticUserMessageSource,
   TurnInputIntentMetadata,
   TurnExecutionKind,
@@ -359,6 +366,112 @@ export async function persistMessage(
     role: input.role,
     status: "completed",
   });
+}
+
+/**
+ * 受限终态的 durable 标记（docs/specs/max-turns-limit.md）。
+ *
+ * cold hydration 的 turn 状态来自 transcript 而非 live TurnComplete，因此必须把
+ * `metadata.turnResult` 写到本 turn 的最终 assistant 消息上，否则重启后受限 turn 会被
+ * 重建为 success。这里刻意不用 `assistant.error`：带 error 的消息会被排除在 compact
+ * preserved segment 与 stable-fork boundary 之外，已生成的正文会丢失。
+ *
+ * 修复原因：runtime 全局 `latestAssistantMessageId` 是跨 turn 指针，空 length 步骤被
+ * `persistCompletedAssistantStep` 回滚后它仍指向上一个 turn 的 assistant，旧实现会把
+ * `error_max_turns` 写进别人的 turn。锚点必须按 `anchor.turnId` 在本 turn 内查找；
+ * 当前 turn 没有任何可标记 assistant 时，写一个空的 technical anchor，而不是越界写入。
+ * 写入失败只降级 cold 路径到旧行为，不把 live 终态改成 success。
+ */
+function isTurnAssistantBoundary(
+  info: MessageInfo,
+  turnId: TurnId,
+): info is Extract<MessageInfo, { role: "assistant" }> {
+  return (
+    info.role === "assistant" &&
+    info.anchor?.turnId === turnId &&
+    info.time.completed !== undefined &&
+    info.error === undefined
+  );
+}
+
+export async function persistTurnResultMarker(
+  this: AgentRuntimeInternal,
+  input: {
+    historyRoundCount?: number;
+    model?: Model;
+    parentMessageId: MessageId;
+    resultType: "error_max_turns";
+    traceContext: TraceContext;
+    turnId: TurnId;
+  },
+): Promise<void> {
+  if (!this.sessionStore) return;
+  const store = this.sessionStore;
+  try {
+    const findBoundary = async () => {
+      const messages = await store.messages({ sessionID: this.sessionId });
+      return messages
+        .filter((message) => isTurnAssistantBoundary(message.info, input.turnId))
+        .at(-1)?.info;
+    };
+    let boundary = await findBoundary();
+    if (!boundary) {
+      // 空 length 步骤没有可标记的 assistant：创建最小技术锚点，让冷恢复仍能看到本 turn
+      // 的受限终态。空文本/零 usage/无 finish 不会进入 provider 历史，也不会伪造 Continue。
+      const messageId = createMessageId();
+      const createdAt = Date.now();
+      await this.persistAssistantMessage(
+        messageId,
+        input.parentMessageId,
+        createdAt,
+        { completed: createdAt },
+        input.traceContext,
+        input.model,
+      );
+      this.logger?.info("Persisted max turns technical assistant anchor", {
+        ...traceContextToLogContext(input.traceContext),
+        event: "turn.max_turns.anchor_persisted",
+        messageId,
+        module: "core.runtime",
+        status: "completed",
+      });
+      boundary = await findBoundary();
+    }
+    // fail-closed：锚点必须仍属于当前 turn；不匹配时宁可不写，也不能污染其它 turn。
+    if (!boundary || !isTurnAssistantBoundary(boundary, input.turnId)) {
+      this.logger?.warn("Skipped max turns marker without a turn-scoped assistant anchor", {
+        ...traceContextToLogContext(input.traceContext),
+        event: "turn.max_turns.marker_anchor_mismatch",
+        module: "core.runtime",
+        status: "failed",
+      });
+      return;
+    }
+    const anchor =
+      input.historyRoundCount === undefined
+        ? boundary.anchor
+        : {
+            ...boundary.anchor,
+            turnId: input.turnId,
+            historyRoundCount: input.historyRoundCount,
+          };
+    await this.persistMessage(
+      {
+        ...boundary,
+        anchor,
+        metadata: { ...boundary.metadata, turnResult: input.resultType },
+      },
+      input.traceContext,
+    );
+  } catch (error) {
+    this.logger?.warn("Failed to persist max turns marker", {
+      ...traceContextToLogContext(input.traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "turn.max_turns.marker_persist_failed",
+      module: "core.runtime",
+      status: "failed",
+    });
+  }
 }
 
 export async function persistPart(

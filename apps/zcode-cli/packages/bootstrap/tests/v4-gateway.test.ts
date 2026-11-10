@@ -3117,95 +3117,104 @@ describe("文件摘要 query", () => {
 });
 
 describe("projection 16MiB fault 与恢复", () => {
-  it("oversize model event 原子拒绝并只终止一次，TurnError 与 cold hydrate 均保持可传输", async () => {
-    const host = makeHost();
-    const gateway = makeGateway(host);
-    const probe = new ConversationTopicPublisher("session-1", "epoch-1", {
-      now: () => 1_700_000_999_000,
-    });
-    const log = new EventLog();
-    const prefix = [
-      sessionCreated(log),
-      log.push(
-        SessionEventType.TurnStarted,
-        { turnNumber: 1, input: "生成长回复", messageId: "msg-user-limit" },
-        { turnId: "turn-1" },
-      ),
-      log.push(
+  // 这个用例要造一条接近 logicalFrameAssemblyMaxBytes 的 16 MiB 文本，并对 live 与 cold 两路
+  // 整帧做 JSON.stringify + UTF-8 计数；在并行 worker 满载时实测 ~4s（默认 5s 上限只留
+  // 1s 余量，偶发越界）。这里给显式上界，覆盖的是同一套断言，不降低严格度。
+  const OVERSIZE_PROJECTION_TEST_TIMEOUT_MS = 60_000;
+
+  it(
+    "oversize model event 原子拒绝并只终止一次，TurnError 与 cold hydrate 均保持可传输",
+    async () => {
+      const host = makeHost();
+      const gateway = makeGateway(host);
+      const probe = new ConversationTopicPublisher("session-1", "epoch-1", {
+        now: () => 1_700_000_999_000,
+      });
+      const log = new EventLog();
+      const prefix = [
+        sessionCreated(log),
+        log.push(
+          SessionEventType.TurnStarted,
+          { turnNumber: 1, input: "生成长回复", messageId: "msg-user-limit" },
+          { turnId: "turn-1" },
+        ),
+        log.push(
+          SessionEventType.ModelStreaming,
+          { kind: "text_start", delta: "", done: false, assistantMessageId: "msg-assistant-limit" },
+          { turnId: "turn-1" },
+        ),
+      ];
+      for (const event of prefix) {
+        probe.ingest(event);
+        gateway.ingest("session-1", event);
+      }
+
+      const emptyDeltaEvent = log.push(
         SessionEventType.ModelStreaming,
-        { kind: "text_start", delta: "", done: false, assistantMessageId: "msg-assistant-limit" },
+        { kind: "text_delta", delta: "", done: false },
         { turnId: "turn-1" },
-      ),
-    ];
-    for (const event of prefix) {
-      probe.ingest(event);
-      gateway.ingest("session-1", event);
-    }
+      );
+      probe.ingest(emptyDeltaEvent);
+      const runtimeLimit =
+        PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes - PROJECTION_TERMINAL_RESERVE_BYTES;
+      const exactText = "a".repeat(runtimeLimit - probe.getWireSnapshotLogicalBytes());
+      const exactDeltaEvent: SessionEvent = {
+        ...emptyDeltaEvent,
+        payload: { kind: "text_delta", delta: exactText, done: false },
+      };
+      gateway.ingest("session-1", exactDeltaEvent);
 
-    const emptyDeltaEvent = log.push(
-      SessionEventType.ModelStreaming,
-      { kind: "text_delta", delta: "", done: false },
-      { turnId: "turn-1" },
-    );
-    probe.ingest(emptyDeltaEvent);
-    const runtimeLimit =
-      PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes - PROJECTION_TERMINAL_RESERVE_BYTES;
-    const exactText = "a".repeat(runtimeLimit - probe.getWireSnapshotLogicalBytes());
-    const exactDeltaEvent: SessionEvent = {
-      ...emptyDeltaEvent,
-      payload: { kind: "text_delta", delta: exactText, done: false },
-    };
-    gateway.ingest("session-1", exactDeltaEvent);
-
-    const overflow = log.push(
-      SessionEventType.ModelStreaming,
-      { kind: "text_delta", delta: "a", done: false },
-      { turnId: "turn-1" },
-    );
-    gateway.ingest("session-1", overflow);
-    gateway.ingest(
-      "session-1",
-      log.push(
+      const overflow = log.push(
         SessionEventType.ModelStreaming,
-        { kind: "text_delta", delta: "b", done: false },
+        { kind: "text_delta", delta: "a", done: false },
         { turnId: "turn-1" },
-      ),
-    );
-    expect(host.projectionTerminations).toEqual([
-      { sessionId: "session-1", reasonCode: "proto.payloadTooLarge" },
-    ]);
+      );
+      gateway.ingest("session-1", overflow);
+      gateway.ingest(
+        "session-1",
+        log.push(
+          SessionEventType.ModelStreaming,
+          { kind: "text_delta", delta: "b", done: false },
+          { turnId: "turn-1" },
+        ),
+      );
+      expect(host.projectionTerminations).toEqual([
+        { sessionId: "session-1", reasonCode: "proto.payloadTooLarge" },
+      ]);
 
-    const turnError = log.push(
-      SessionEventType.TurnError,
-      {
-        error: { type: "proto.payloadTooLarge", message: "projection payload too large" },
-        turnPhase: "model",
-      },
-      { turnId: "turn-1" },
-    );
-    gateway.ingest("session-1", turnError);
-    const live = await gateway.subscribe(subscribeParams());
-    expect(live.initialFrame).not.toBeNull();
-    expect(utf8JsonByteLength(live.initialFrame)).toBeLessThanOrEqual(
-      PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes,
-    );
-    expect(
-      live.initialFrame?.payload.kind === "snapshot"
-        ? live.initialFrame.payload.snapshot.control.phase
-        : null,
-    ).toBe("error");
+      const turnError = log.push(
+        SessionEventType.TurnError,
+        {
+          error: { type: "proto.payloadTooLarge", message: "projection payload too large" },
+          turnPhase: "model",
+        },
+        { turnId: "turn-1" },
+      );
+      gateway.ingest("session-1", turnError);
+      const live = await gateway.subscribe(subscribeParams());
+      expect(live.initialFrame).not.toBeNull();
+      expect(utf8JsonByteLength(live.initialFrame)).toBeLessThanOrEqual(
+        PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes,
+      );
+      expect(
+        live.initialFrame?.payload.kind === "snapshot"
+          ? live.initialFrame.payload.snapshot.control.phase
+          : null,
+      ).toBe("error");
 
-    const coldHost = makeHost();
-    coldHost.persistedEvents.set("session-1", [...prefix, exactDeltaEvent, overflow, turnError]);
-    const cold = await makeGateway(coldHost).subscribe(subscribeParams());
-    expect(cold.initialFrame).not.toBeNull();
-    expect(utf8JsonByteLength(cold.initialFrame)).toBeLessThanOrEqual(
-      PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes,
-    );
-    expect(coldHost.errors.some((entry) => entry.scope === "v4.hydrate.payloadTooLarge")).toBe(
-      true,
-    );
-  });
+      const coldHost = makeHost();
+      coldHost.persistedEvents.set("session-1", [...prefix, exactDeltaEvent, overflow, turnError]);
+      const cold = await makeGateway(coldHost).subscribe(subscribeParams());
+      expect(cold.initialFrame).not.toBeNull();
+      expect(utf8JsonByteLength(cold.initialFrame)).toBeLessThanOrEqual(
+        PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes,
+      );
+      expect(coldHost.errors.some((entry) => entry.scope === "v4.hydrate.payloadTooLarge")).toBe(
+        true,
+      );
+    },
+    OVERSIZE_PROJECTION_TEST_TIMEOUT_MS,
+  );
 
   it("oversize tool input 不进入 projection，并以同一 protocol fault 终止 turn", async () => {
     const host = makeHost();

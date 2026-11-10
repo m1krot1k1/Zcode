@@ -6064,6 +6064,8 @@ const enUS: Record<string, string> = {
   "chat.history.stopped.byBudget": "Stop: run budget exhausted",
   "chat.history.stopped.byResourceBudget": "Stop: run resource budget exhausted",
   "chat.history.stopped.byPreempted": "Stop: session taken over",
+  // turnHeader.state === failed（含 error_max_turns 等受限终态）的轮次状态词。
+  "chat.history.failed": "Failed",
   "chat.history.duration.day": "d",
   "chat.history.duration.hour": "h",
   "chat.history.duration.minute": "m",
@@ -6158,6 +6160,7 @@ const enUS: Record<string, string> = {
   "agentWorkbench.stateUnindexed": "Not indexed",
   "agentWorkbench.stateIndexing": "Indexing",
   "agentWorkbench.stateReady": "Ready",
+  "agentWorkbench.statePartial": "Partial",
   "agentWorkbench.stateDegraded": "Needs attention",
   "agentWorkbench.files": "Files",
   "agentWorkbench.symbols": "Symbols",
@@ -6235,6 +6238,7 @@ const enUS: Record<string, string> = {
   "codeIndex.title": "Code index",
   "codeIndex.loadingStatus": "Loading…",
   "codeIndex.trigger": "Workspace code index",
+  "codeIndex.triggerWithStatus": "Workspace code index: {status}",
   "codeIndex.files": "Files",
   "codeIndex.symbols": "Symbols",
   "codeIndex.chunks": "Chunks",
@@ -7772,6 +7776,9 @@ const enUS: Record<string, string> = {
   "zcode.error.NO_ACTIVE_TASK_OWNER": "No active task owner is available for this action.",
   "zcode.error.OWNER_COMMAND_FAILED": "The task owner could not complete this action.",
   "zcode.error.TURN_CANCELLED": "Turn cancelled",
+  // TurnComplete(error_max_turns)：达到显式 maxTurns 的受限终态，不是成功也不是用户取消。
+  "zcode.error.ERROR_MAX_TURNS":
+    "This run reached the step limit and stopped. The answer so far is kept; send a follow-up message to continue.",
   "zcode.error.FIRST_TOKEN_TIMEOUT":
     "The model did not start responding in time. Check the network or model configuration and try again.",
   "zcode.error.OPENCODE_FREE_LIMIT_REACHED":

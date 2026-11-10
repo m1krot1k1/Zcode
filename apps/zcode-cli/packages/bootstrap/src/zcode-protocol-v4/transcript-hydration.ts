@@ -68,7 +68,16 @@ type PushEvent = (
   sourceTimestampMs?: number,
 ) => void;
 
-type TurnResultForHydration = "success" | "cancelled" | "error_during_execution";
+/**
+ * Результаты, которые cold hydration умеет восстановить из transcript.
+ * `error_max_turns` приходит не из assistant.error (шаг выполнился штатно), а из
+ * durable metadata.turnResult, который пишет limit-finalizer turn loop.
+ */
+type TurnResultForHydration =
+  | "success"
+  | "cancelled"
+  | "error_max_turns"
+  | "error_during_execution";
 
 interface AssistantSynthesisState {
   toolCallCount: number;
@@ -202,8 +211,13 @@ function normalizeTurnResult(
   current: TurnResultForHydration,
   next: TurnResultForHydration,
 ): TurnResultForHydration {
+  // 优先级：用户取消强于任何受限结果；turn 上限（正文已保留）比笼统的
+  // 「执行被中断」更精确；否则 success（docs/specs/max-turns-limit.md「Состояние реализации」）。
   if (current === "cancelled" || next === "cancelled") {
     return "cancelled";
+  }
+  if (current === "error_max_turns" || next === "error_max_turns") {
+    return "error_max_turns";
   }
   if (current === "error_during_execution" || next === "error_during_execution") {
     return "error_during_execution";
@@ -263,6 +277,16 @@ function isPersistedAssistantCancellation(error: AssistantErrorInfo): boolean {
  */
 function isPersistedStreamRecoveryDiscard(error: AssistantErrorInfo): boolean {
   return error.name === STREAM_RECOVERY_DISCARDED_ERROR_NAME;
+}
+
+/**
+ * 受限结果的 durable 标记由 turn loop 写在最终 assistant 的 metadata.turnResult 上。
+ * 没有它，cold 路径只会看到普通 completed step，重启后合成 TurnComplete(success)
+ * （docs/specs/max-turns-limit.md）。取值按封闭列表校验，任意 metadata 不得伪造终态。
+ */
+function persistedTurnResultMarkerOf(message: MessageWithParts): "error_max_turns" | undefined {
+  if (message.info.role !== "assistant") return undefined;
+  return message.info.metadata?.turnResult === "error_max_turns" ? "error_max_turns" : undefined;
 }
 
 function stableToolSchedule(toolCallId: string) {
@@ -1241,7 +1265,7 @@ function synthesizeAssistantParts(
         ? // Bug 根因：进程退出可能只持久化 step-start/partial，却没有 assistant error；
           // 旧 cold hydration 默认 success，伪造正常 TurnComplete 并让异常 Worked 被收起。
           "cancelled"
-        : "success";
+        : (persistedTurnResultMarkerOf(message) ?? "success");
   let toolCallCount = 0;
   for (const part of message.parts) {
     switch (part.type) {

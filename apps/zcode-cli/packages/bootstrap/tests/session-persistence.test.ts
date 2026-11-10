@@ -1133,6 +1133,9 @@ describe("session persistence", () => {
     }
   });
 
+  // Expert workflow поднимает несколько child-run; изолированно ~2.4 с, но при
+  // параллельном прогоне пакета default 5 с не хватает (third-аргумент задаёт бюджет).
+  // Проверки не ослабляются — увеличен только таймаут.
   it("uses the current model for new expert workflow child sessions after a model switch", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-bootstrap-workflow-model-switch-"));
     const dbPath = join(tempRoot, "session.sqlite");
@@ -1203,8 +1206,10 @@ describe("session persistence", () => {
       store.close();
       await rm(tempRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
+  // Та же природа: expert workflow child-run'ы под параллельной нагрузкой пакета не
+  // укладываются в default 5 с. Увеличен только таймаут, утверждения не меняются.
   it("initializes the Bash shell snapshot before direct expert workflow child sessions", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-bootstrap-workflow-shell-"));
     const configPath = join(tempRoot, "config.json");
@@ -1304,7 +1309,7 @@ describe("session persistence", () => {
       store.close();
       await rm(tempRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("reads built-in expert workflow snapshots without requiring an external expert definition file", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-bootstrap-workflow-builtin-"));
@@ -1612,7 +1617,11 @@ describe("session persistence", () => {
       expect(capturedMetaUser).toContain("# agentsMd");
       expect(capturedMetaUser).not.toContain("# claudeMd");
       expect(capturedMetaUser).not.toContain("# user_instructions");
-      expect(capturedMetaUser).toContain("Codebase and user instructions are shown below.");
+      // 修复依据：3483e531 заменил заголовок meta-user на агрегирующий (bundled harness rules,
+      // workspace rules, memory): core/src/context/sections/request-user-context.ts:83.
+      expect(capturedMetaUser).toContain(
+        "The following context includes user instructions, workspace guidance, and project memory.",
+      );
       expect(capturedMetaUser).toContain(
         `Contents of ${join(workspace, "AGENTS.md")} (workspace instructions):`,
       );
@@ -2443,9 +2452,13 @@ describe("session persistence", () => {
         // 修复原因：resume 使用现行 static # Harness + dynamic # Environment prompt 布局。
         expect.stringContaining("# Harness"),
         expect.stringContaining("# Environment"),
-        expect.stringContaining("The following skills are available"),
+        // 修复依据：52b0ee1a/4bc1be77 согласовали заголовок каталога навыков с core-тестами
+        // (core/src/context/sections/skills.ts:41, core/tests/context-builder.test.ts:1263).
+        expect.stringContaining("Installed skills currently available for this workspace:"),
         expect.stringContaining("<system-reminder>"),
-        expect.stringContaining("Available agent types for the Agent tool:"),
+        // 修复依据：каталог агентов рендерится core/src/subagent/listing.ts:6 заголовком
+        // "Available named agent types for Agent/Task tools:".
+        expect.stringContaining("Available named agent types for Agent/Task tools:"),
         "first prompt",
         "first answer",
         "second prompt",
@@ -2537,9 +2550,9 @@ describe("session persistence", () => {
         expect.stringContaining("You are ZCode"),
         expect.stringContaining("# Harness"),
         expect.stringContaining("# Communicating with the user"),
-        expect.stringContaining("The following skills are available"),
+        expect.stringContaining("Installed skills currently available for this workspace:"),
         expect.stringContaining("<system-reminder>"),
-        expect.stringContaining("Available agent types for the Agent tool:"),
+        expect.stringContaining("Available named agent types for Agent/Task tools:"),
         "first prompt",
         "first answer",
         "second prompt",

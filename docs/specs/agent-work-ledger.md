@@ -35,7 +35,7 @@
 - API: `claim`, `heartbeat`, `release`, `list`, `findConflicts`, `findSimilarIntent`, `sweepStale`;
 - нормализация и сравнение путей, TTL, дедупликация намерений;
 - registrar-gate в `runtime-task/registry.ts`: конфликт путей блокирует admission **до**
-  создания задачи и расхода spawn-бюджета;
+  создания задачи;
 - periodic sweep протухших claim'ов внутри registry;
 - `workResult` в контракте завершённого субагента и агрегация WorkResult для DAG.
 
@@ -200,7 +200,7 @@ interface WorkConflict {
 ## 6. Registrar hard gate
 
 `registerSubagentTask` — единственная точка admission для subagent-задач. До любых мутаций
-состояния (расход spawn-бюджета, `setTaskSnapshot`, запись в индексы) он выполняет:
+состояния (`setTaskSnapshot`, запись в индексы) он выполняет:
 
 1. `text = task.prompt || task.description`.
 2. `paths = extractTaskPaths(text)` (консервативный экстрактор явных путей).
@@ -213,7 +213,7 @@ interface WorkConflict {
 3. Если передан `workLedger` и известен `workspacePath` и `paths.length > 0`:
    `conflicts = ledger.findConflicts({ workspacePath, paths, agentId: task.agentId })`.
 4. Непустые `conflicts` → `{ accepted: false, reason: "write_claim_conflict" }`.
-   Задача не создаётся, budget не тратится, claim не появляется.
+   Задача не создаётся, claim не появляется.
 5. Ошибка ledger'а на чтении или записи → `{ accepted: false, reason: "work_claim_unavailable" }`.
    Это fail-closed: при включённом ledger'е нельзя гарантировать отсутствие конфликта.
 6. Без ledger'а или без workspacePath gate выключен (обратная совместимость).
@@ -241,42 +241,39 @@ security-reviewer, evaluator) остаётся non-writer: ledger намерен
 `declareWorkClaim` больше не пишет `console.warn` и не игнорирует конфликты: конфликт
 блокирует spawn до claim'а. Release остаётся в `setTaskSnapshot` (единый funnel) и `remove`.
 
-### 6.1 Остаток бюджета и фактический maxParallel
+### 6.1 Фактический maxParallel
 
-`InMemoryRuntimeTaskRegistry` — владелец остатка spawn-бюджета. Наружу добавлены
-read-only методы:
+`InMemoryRuntimeTaskRegistry` — владелец активной ёмкости root run, а не остатка spawn-бюджета.
+Наружу добавлены read-only методы:
 
 ```ts
+/** @deprecated Остаток spawn-бюджета удалён; всегда возвращает undefined. */
 getRemainingSpawnBudget(rootRunId: string, sessionId: SessionId): number | undefined;
 getActiveSubagentWorkItemCount(rootSessionId: SessionId): number;
 ```
 
-`getRemainingSpawnBudget` возвращает `remainingSpawnsBySession.get(sessionId) ?? spawnBudget`
-и `undefined`, если root-run состояния нет (legacy-путь). `resolveSpawnGrant` при отсутствии
-явных `internalSpawnGrant`/`spawnBudget` берёт остаток из registry по
-`runOptions.internalSwarmRootRunId` (или `getRootRunIdForSession`) и **не** откатывается к
-`options.spawnBudget`, если registry уже знает остаток. Старый fallback остаётся только для
-вызовов без root-run состояния.
+`getRemainingSpawnBudget` сохранён только для старых вызывающих: он возвращает `undefined`
+и не участвует в admission. Per-session счётчиков остатка больше нет; суммарное число
+созданных задач не ограничивается.
 
-Фактический параллелизм DAG — чистая функция:
+Фактический параллелизм DAG — чистая функция от количества узлов и свободных worker slots:
 
 ```
-actual = max(1, min(nodeCount, requested, remainingSpawns, activeCap - activeCount))
+actual = max(1, min(nodeCount, requested, activeCap - activeCount))
 ```
 
-- `remainingSpawns = 0` или нет свободных worker slots → routing gate выбирает
-  `integrate_inline` с причиной про бюджет; DAG-порт всё равно может попытаться запустить
-  один узел, чтобы admission вернул видимую причину (`spawn_budget_exhausted`).
-- `runTaskDag` порта пересчитывает `maxParallel` по registry remaining и active cap, а не
-  берёт сырой `request.maxParallel`.
+- Нет свободных worker slots (`activeCount >= activeCap`) → routing gate выбирает
+  `integrate_inline` или `delegate_single` с причиной по ёмкости; DAG-порт всё равно может
+  попытаться запустить один узел, чтобы admission вернул видимую причину (`active_limit`).
+- `runTaskDag` порта пересчитывает `maxParallel` по registry active cap, а не берёт сырой
+  `request.maxParallel`.
 - Конверт ребёнка (`<zcode-spawn-envelope>`) печатает фактический `max_parallel` из
   `ExploreSubagentRuntimeRequest.maxParallel`; хардкода `8` нет. `buildSpawnEnvelope` —
   чистая функция, экспортируется для тестов.
 
-Routing gate (`resolveSwarmParallelism`) живёт в `profile.ts` и не меняется. Расширение
-`remainingSpawns/activeCount/activeCap` реализовано обёрткой в `runner.ts`, которую вызывает
-`turn.ts`: она подставляет минимальный бюджет/лимит и при нулевой ёмкости возвращает
-`integrate_inline`.
+Routing gate (`resolveSwarmParallelism`) живёт в `profile.ts`. Расширение
+`activeCount/activeCap` реализовано обёрткой в `runner.ts`, которую вызывает `turn.ts`: она
+подставляет фактическую ёмкость и при нулевой ёмкости возвращает `integrate_inline`.
 
 ## 7. Дедупликация намерений
 
@@ -343,15 +340,16 @@ interface WorkResult {
 - `partial` — blocked/cancelled/unknown узлы или частичный `workResult` без failed.
 
 Сводка DAG строится из агрегированного `WorkResult`: status, summary, files, tests,
-evidence, unresolved. Ошибки admission (`spawn_budget_exhausted`, `write_claim_conflict`)
-видны в статусе узла и в причине сводки.
+evidence, unresolved. Ошибки admission (`active_limit`, `write_claim_conflict`,
+`work_claim_unavailable`) видны в статусе узла и в причине сводки.
 
 ## 9. Repair / retry
 
 - Автоматического retry failed/неидемпотентных узлов нет: DAG вызывает `runNode` один раз.
 - Repair — это новая admission с новым `attemptId` (`randomUUID` на каждый допуск).
   Повторный admission того же `agentId` не конфликтует с собственным claim'ом, но
-  обязан пройти все остальные gates (owner, lineage, budget, active limit).
+  обязан пройти все остальные gates (owner, lineage, root-run
+  deadline/cancellation, active limit).
 - После fail/timeout/cancel/killed/stopped/lost задача переходит в terminal, а claim
   освобождается в `setTaskSnapshot`; `remove` активной задачи освобождает его напрямую.
   Поэтому новая попытка на тот же путь проходит без stale-конфликта.
@@ -421,9 +419,9 @@ paths?, runId?, attemptId?, now? }`. Возвращает `{ claim, conflicts, s
   `status`, `paths` (пересечение). Сортировка по `startedAt`, затем `id`.
 - Все публичные методы возвращают замороженные снимки: внешний код не может
   изменить состояние реестра в обход API.
-- Registry дополнительно экспортирует `getRemainingSpawnBudget`,
-  `getActiveSubagentWorkItemCount` и `dispose()`; последние два/три — optional в
-  `RuntimeTaskRegistry` для совместимости реализаций.
+- Registry дополнительно экспортирует legacy-read-only `getRemainingSpawnBudget`
+  (всегда `undefined`, в admission не участвует), `getActiveSubagentWorkItemCount` и
+  `dispose()`; последние два/три — optional в `RuntimeTaskRegistry` для совместимости реализаций.
 
 ## 12. Приёмочные сценарии
 
@@ -450,7 +448,7 @@ paths?, runId?, attemptId?, now? }`. Возвращает `{ claim, conflicts, s
 Registrar:
 
 - same-file и directory-overlap конфликт блокируют `registerSubagentTask`
-  (`write_claim_conflict`), задача и claim не создаются, budget не тратится;
+  (`write_claim_conflict`), задача и claim не создаются, spawn-ёмкость не расходуется;
 - без ledger'а тот же спавн проходит (backward compat);
 - ошибка ledger'а на gate/claim → `work_claim_unavailable`, задача не создаётся;
 - fail/cancel/timeout(killed/stopped/lost) освобождают путь; новый claim после release
@@ -465,9 +463,9 @@ Registrar:
 
 Бюджет и параллелизм:
 
-- remaining=2 при 5 узлах → фактический `maxParallel = 2`;
+- 5 узлов при 2 свободных worker slots → фактический `maxParallel = 2`;
 - конверт содержит `max_parallel="2"`, а не `8`;
-- remaining=0 → `spawn_budget_exhausted` виден в admission, DAG-сводке и `workResult`.
+- 0 свободных slots → admission возвращает `active_limit`, и причина видна в DAG-сводке и `workResult`.
 
 WorkResult:
 
@@ -488,8 +486,8 @@ WorkResult:
     передаёт его в registry, bootstrap создаёт один процессный экземпляр
     (`getProcessWorkLedger`, ленивый реплей журнала). Без ledger'а wiring выключен.
   - `registerSubagentTask` сначала вызывает `findConflicts`, затем создаёт claim с
-    `runId`/`attemptId`, пишет снапшот задачи и только после успешной записи списывает
-    spawn-бюджет; сбой `setTaskSnapshot` откатывает claim и не съедает бюджет.
+    `runId`/`attemptId`, пишет снапшот задачи и только после успешной записи завершает
+    admission; сбой `setTaskSnapshot` откатывает claim.
   - В конверт ребёнка (`runtime/methods/subagent.ts`, конец `agentPrompt`) добавляется
     блок «Сейчас в работе у других агентов» (≤15 строк) и строка о похожем намерении.
   - `setTaskSnapshot` — единый funnel: переход в терминальное состояние

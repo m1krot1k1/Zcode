@@ -173,6 +173,66 @@ describe("transcript→event 合成", () => {
     });
   });
 
+  // MAXTURN-08：live TurnComplete(error_max_turns) 本身无法跨越重启。
+  // 最终 assistant 步骤的 durable 标记必须恢复受限结果，而不是把 turn 变成 success
+  // （否则 lastOutcome/phase 与上限事实分叉）。
+  it("cold resume восстанавливает error_max_turns из durable metadata.turnResult", () => {
+    const user = userMessage("u-max-turns", "работай до лимита", 1000);
+    const assistant = assistantMessage("a-max-turns", "u-max-turns", "сохранённый текст", 1001);
+    assistant.info.metadata = { turnResult: "error_max_turns" };
+
+    const { events, projection } = reduce([user, assistant]);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: SessionEventType.TurnComplete,
+        payload: expect.objectContaining({ resultType: "error_max_turns" }),
+      }),
+    );
+    expect(events.some((event) => event.type === SessionEventType.TurnError)).toBe(false);
+    const snapshot = projection.getSnapshot();
+    expect(snapshot.control.phase).toBe("error");
+    expect(snapshot.control.lastError).toMatchObject({ code: "error_max_turns" });
+    expect(snapshot.rows.window).toContainEqual(
+      expect.objectContaining({ kind: "turnHeader", state: "failed" }),
+    );
+    // 已生成的正文仍然可见：标记不是 assistant.error。
+    expect(snapshot.rows.window).toContainEqual(
+      expect.objectContaining({ kind: "assistantText", text: "сохранённый текст" }),
+    );
+  });
+
+  // 标记按封闭列表校验：任意 metadata 不得伪造终态，也不得压过真实取消。
+  it("не принимает неизвестный metadata.turnResult и не перебивает cancelled", () => {
+    const unknownUser = userMessage("u-unknown-marker", "вопрос", 1000);
+    const unknownAssistant = assistantMessage(
+      "a-unknown-marker",
+      "u-unknown-marker",
+      "ответ",
+      1001,
+    );
+    unknownAssistant.info.metadata = { turnResult: "definitely_not_a_result" };
+    expect(reduce([unknownUser, unknownAssistant]).projection.getSnapshot().control.phase).toBe(
+      "completedSuccess",
+    );
+
+    const cancelledUser = userMessage("u-cancelled-marker", "вопрос", 2000);
+    const cancelledAssistant = assistantMessage(
+      "a-cancelled-marker",
+      "u-cancelled-marker",
+      "частичный ответ",
+      2001,
+    );
+    cancelledAssistant.info.metadata = { turnResult: "error_max_turns" };
+    cancelledAssistant.info.error = {
+      name: "AiSdkModelAdapterError",
+      data: { code: ModelErrorCode.ModelRequestCancelled, turnResult: "cancelled" },
+    };
+    const cancelledSnapshot = reduce([cancelledUser, cancelledAssistant]).projection.getSnapshot();
+    expect(cancelledSnapshot.control.phase).toBe("completedInterrupted");
+    expect(cancelledSnapshot.control.lastError).toBeNull();
+  });
+
   it("OTC08 cold：持久化 finish=length 的连续正文恢复为一条 assistantText", () => {
     const user = userMessage("u-output-continue", "写一段长回复", 1000);
     const first = assistantMessage("a-output-p1", user.info.id, "即使底层已经", 1001);

@@ -12,19 +12,9 @@
       "evidence": "task-tree metadata and runtime log for the nesting run"
     },
     {
-      "id": "E-SPAWN-BUDGET",
-      "criterion": "With spawn budget 0 the runtime creates no child Task, the model cannot raise remaining_spawns, and the Task result reports the exhausted budget.",
-      "evidence": "Task tool result and task-tree metadata for the budget-0 run"
-    },
-    {
       "id": "E-PROXY-FALLBACK",
       "criterion": "An HTTP 429 retries the same request through the next proxy, an unreachable proxy is skipped for 60 seconds, and with every proxy dead the request goes direct.",
       "evidence": "proxy rotation warnings and request log for one model call"
-    },
-    {
-      "id": "E-TOKEN-BUDGET",
-      "criterion": "No phantom charge: a request is rejected only when actual usage exceeds the configured limit, and the recorded usage equals the provider-reported usage.",
-      "evidence": "session usage row and provider usage metadata for the same request"
     }
   ]
 }

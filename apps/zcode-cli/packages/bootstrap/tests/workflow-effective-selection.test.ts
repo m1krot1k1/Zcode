@@ -44,7 +44,12 @@ describe("Workflow 内显式 Subagent 的有效选择", () => {
           subagents: {
             profiles: [
               {
-                name: "researcher",
+                // 修复依据：встроенная роль владеет своим именем (docs/specs/agent-capability-gate.md §8,
+                // коммит 3b78f7fd): custom-профиль с именем `researcher` отбрасывается
+                // normalizeAgentProfiles, и до ребёнка доезжает built-in researcher без
+                // modelSelection — публичный порт резолва не вызывается. Уникальное имя
+                // сохраняет сценарий «явный subagent с modelSelection».
+                name: "research-profile",
                 description: "Research",
                 source: "user",
                 tools: ["Read"],
@@ -71,7 +76,7 @@ describe("Workflow 内显式 Subagent 的有效选择", () => {
                     input: {
                       description: "Research",
                       prompt: "Research",
-                      subagent_type: "researcher",
+                      subagent_type: "research-profile",
                     },
                   },
                 ],

@@ -76,7 +76,11 @@ import {
 } from "./steering.js";
 import { discardPersistedPendingSteerInputs } from "./steering.js";
 import { createDefaultSubagentPort } from "./subagent.js";
-import { ensureContextInitialized, getAcceptedContextSourceSnapshot, getSkillCatalog } from "./context.js";
+import {
+  ensureContextInitialized,
+  getAcceptedContextSourceSnapshot,
+  getSkillCatalog,
+} from "./context.js";
 import { createContextBuilderFromSnapshot } from "./context.js";
 import { loadProjectMemoryRoot } from "./context.js";
 import { logMemorySkipped } from "./context.js";
@@ -180,7 +184,7 @@ import { recordExternalUserPrompt } from "./control-only-turn.js";
 import { persistUserPrompt } from "./message-persistence.js";
 import { persistSyntheticUserNotice } from "./message-persistence.js";
 import { persistSyntheticUserNoticeForSession } from "./message-persistence.js";
-import { persistAssistantMessage } from "./message-persistence.js";
+import { persistAssistantMessage, persistTurnResultMarker } from "./message-persistence.js";
 import { persistMessage } from "./message-persistence.js";
 import { persistPart } from "./message-persistence.js";
 import { rebuildProjection } from "./message-persistence.js";
@@ -386,6 +390,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.persistSyntheticUserNoticeForSession = persistSyntheticUserNoticeForSession;
   proto.persistAssistantTimelinePartForSession = persistAssistantTimelinePartForSession;
   proto.persistAssistantMessage = persistAssistantMessage;
+  proto.persistTurnResultMarker = persistTurnResultMarker;
   proto.persistMessage = persistMessage;
   proto.persistPart = persistPart;
   proto.rebuildProjection = rebuildProjection;

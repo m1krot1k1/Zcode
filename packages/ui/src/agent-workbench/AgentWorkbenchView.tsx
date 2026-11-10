@@ -6,6 +6,7 @@ import { useServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
+import { codeIndexPillClassName, codeIndexStateKey, codeIndexTone } from "./codeIndexIndicator.js";
 import {
   ZCODE_AGENT_PROVIDER,
   type AgentSummary,
@@ -218,12 +219,10 @@ export function AgentWorkbenchView({
     }
   };
 
-  const stateLabel = {
-    unindexed: copy("agentWorkbench.stateUnindexed", "Not indexed"),
-    indexing: copy("agentWorkbench.stateIndexing", "Indexing"),
-    ready: copy("agentWorkbench.stateReady", "Ready"),
-    degraded: copy("agentWorkbench.stateDegraded", "Needs attention"),
-  }[status.state];
+  // 修复原因：原先这里按 status.state 取 `agentWorkbench.state*`，`ready && partial`
+  // 会显示「Ready」，与 warning 色调的 pill 相矛盾。文本取自与 composer badge 相同的
+  // helper，因此 tone 与文案始终一致。
+  const stateLabel = copy(codeIndexStateKey(status), "Not indexed");
   const parallelLimit = settings?.subagentMaxParallel;
   const minimumRuntime = settings?.subagentTaskTimeoutMinutes;
 
@@ -274,7 +273,7 @@ export function AgentWorkbenchView({
                 <span
                   className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    agent.enabled ? "bg-emerald-500" : "bg-muted-foreground",
+                    agent.enabled ? "bg-success" : "bg-muted-foreground",
                   )}
                 />
                 <span className="min-w-0 flex-1 truncate text-ui-xs font-medium">{agent.name}</span>
@@ -376,11 +375,10 @@ export function AgentWorkbenchView({
           <span
             data-testid="agent-workbench-index-state"
             data-code-index-state={status.state}
+            data-code-index-tone={codeIndexTone(status)}
             className={cn(
               "ml-auto rounded-full px-2 py-0.5 text-ui-xs",
-              status.state === "ready"
-                ? "bg-emerald-500/10 text-emerald-600"
-                : "bg-muted text-muted-foreground",
+              codeIndexPillClassName(codeIndexTone(status)),
             )}
           >
             {stateLabel}

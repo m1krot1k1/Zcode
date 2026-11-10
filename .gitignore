@@ -1,6 +1,8 @@
 node_modules/
 dist/
 apps/zcode-cli/packages/adapters/backup/
+# 测试运行时在 CLI 工作目录落盘的 backup.json / tables.sqlite，属运行产物，不入库。
+apps/zcode-cli/backup/
 # zcode-server-cli 发行包 staging 输出（spec §7.1），本地组装产物不入库。
 dist-release/
 # Bugfix: macOS CI 按架构隔离 electron-builder 输出目录，这些仍是构建产物。

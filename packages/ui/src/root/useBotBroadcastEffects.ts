@@ -11,6 +11,7 @@ import type { useTabStoreApi } from "@/store/TabStoreProvider.js";
 import {
   resolveBotTaskBroadcastRefresh,
   resolveBotTaskBroadcastRuntimeStatus,
+  resolveTaskCompleteRuntimeStatus,
 } from "@/root/botsTaskBroadcast.js";
 import { resolveBotTaskStreamBroadcast } from "@/root/botsTaskStreamBroadcast.js";
 import { insertTaskIntoTaskCaches, syncTaskMetaToTaskCaches } from "@/lib/taskListMetaSync.js";
@@ -119,7 +120,8 @@ export function useBotBroadcastEffects(
             zcodeSessionStore.setTaskRuntimeState(
               stream.workspacePath,
               stream.taskId,
-              "completed",
+              // error_max_turns 等受限 resultType 不是成功；只有普通完成才写 completed。
+              resolveTaskCompleteRuntimeStatus(event.stopReason),
               undefined,
               stream.workspaceIdentity,
             );

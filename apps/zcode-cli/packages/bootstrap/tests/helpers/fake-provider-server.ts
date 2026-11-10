@@ -61,8 +61,14 @@ export type FaultProgram = (request: FaultRequest) => Verdict;
 
 export interface RequestLedgerEntry {
   ordinal: number;
-  /** 到达时刻（Date.now()）。 */
+  /** 到达时刻（`Date.now()`）。 */
   at: number;
+  /**
+   * 客户端为这次**尝试**打的归因 id（`x-request-id`，见 runner-attribution.ts）。
+   * 与 `ModelNetworkStatusEvent.requestId` 同一值，用来把线上请求与 runner 的 started /
+   * failed 事件一一对上——单凭到达时刻在重负载下会误判「停下之后的新请求」。
+   */
+  requestId?: string;
   route: WireFormat;
   stream: boolean;
   toolResultCount: number;
@@ -250,9 +256,11 @@ async function handle(
   const stream = body.stream === true;
   const toolResultCount = countToolResults(route, body);
 
+  const headerRequestId = request.headers["x-request-id"];
   const entry: RequestLedgerEntry = {
     ordinal: state.nextOrdinal++,
     at: Date.now(),
+    ...(typeof headerRequestId === "string" ? { requestId: headerRequestId } : {}),
     route,
     stream,
     toolResultCount,

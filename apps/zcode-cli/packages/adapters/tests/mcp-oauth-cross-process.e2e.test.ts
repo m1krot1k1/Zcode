@@ -500,11 +500,26 @@ describe("MCP OAuth cross-process end-to-end", () => {
         { type: "http", url: stack.mcpUrl, oauth: { type: "authorization_code", scope: MCP_SCOPE } },
         { oauthAuthorizationTimeoutMs: 100 },
       );
-      // 预算到点只返回快照:connecting + 授权 URL,事务没有被杀。
+      // 预算到点只返回快照:connecting,事务没有被杀。
+      // 不能在这里断言 authorizationUrl 已经发布:discovery → DCR → authorize 都是异步网络+存储,
+      // 100ms 的 caller 预算完全可能先到(满载并行套件时必然如此)。产品契约只保证 caller 拿到
+      // 当时的快照,不保证 URL 已就绪(见 mcp.test.ts「URL 发布含异步存储,不能假定它比 20ms
+      // caller 预算更快;事务应在 caller 返回后继续」)。
       expect(budgeted.status).toBe("connecting");
-      expect(budgeted.authorization?.authorizationUrl).toContain(stack.asBaseUrl);
 
-      let final = budgeted;
+      // 授权事务在 caller 返回之后继续:URL 必须随后经 status() 可见。
+      let pending = budgeted;
+      for (
+        let attempt = 0;
+        attempt < 100 && !pending.authorization?.authorizationUrl;
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        pending = (await adapter.status()).budget ?? pending;
+      }
+      expect(pending.authorization?.authorizationUrl).toContain(stack.asBaseUrl);
+
+      let final = pending;
       for (let attempt = 0; attempt < 100 && final.status !== "connected"; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         final = (await adapter.status()).budget ?? final;

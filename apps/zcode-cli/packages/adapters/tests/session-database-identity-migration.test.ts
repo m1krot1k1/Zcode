@@ -6,6 +6,7 @@ import {
   type SqliteMigrationProgress,
 } from "../src/storage/session-store/migration-runner.js";
 import { runSessionDatabaseIdentityMigration } from "@zcode/shared/sqlite-migrations";
+import { SQLITE_MIGRATIONS } from "../src/storage/session-store/migrations.js";
 
 it.each(["source-first", "agent-first"])(
   "%s：两端共用同一 checksum，结构接管不生成业务代际",
@@ -25,7 +26,10 @@ it.each(["source-first", "agent-first"])(
           .get(),
       ).toEqual(initial);
       expect(db.prepare("SELECT * FROM zcode_database_identity").all()).toEqual([]);
-      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_migration").get()?.n).toBe(24);
+      // 账本必须每条迁移恰好一行：0025-0028 加入后写死 24 只会随迁移列表漂移。
+      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_migration").get()?.n).toBe(
+        SQLITE_MIGRATIONS.length,
+      );
     } finally {
       db.close();
     }

@@ -5667,6 +5667,7 @@ const zhCN: Record<string, string> = {
   "chat.history.stopped.byBudget": "已停止：运行预算耗尽",
   "chat.history.stopped.byResourceBudget": "已停止：运行资源预算耗尽",
   "chat.history.stopped.byPreempted": "已停止：会话已接管",
+  "chat.history.failed": "失败",
   "chat.history.duration.day": "天",
   "chat.history.duration.hour": "时",
   "chat.history.duration.minute": "分",
@@ -5756,6 +5757,7 @@ const zhCN: Record<string, string> = {
   "agentWorkbench.stateUnindexed": "尚未索引",
   "agentWorkbench.stateIndexing": "正在索引",
   "agentWorkbench.stateReady": "就绪",
+  "agentWorkbench.statePartial": "部分索引",
   "agentWorkbench.stateDegraded": "需要处理",
   "agentWorkbench.files": "文件",
   "agentWorkbench.symbols": "符号",
@@ -5830,6 +5832,7 @@ const zhCN: Record<string, string> = {
   "codeIndex.title": "代码索引",
   "codeIndex.loadingStatus": "正在加载…",
   "codeIndex.trigger": "工作区代码索引",
+  "codeIndex.triggerWithStatus": "工作区代码索引：{status}",
   "codeIndex.files": "文件",
   "codeIndex.symbols": "符号",
   "codeIndex.chunks": "代码块",
@@ -7390,6 +7393,8 @@ const zhCN: Record<string, string> = {
   "zcode.error.NO_ACTIVE_TASK_OWNER": "当前没有可处理该操作的任务所有者。",
   "zcode.error.OWNER_COMMAND_FAILED": "任务所有者未能完成该操作。",
   "zcode.error.TURN_CANCELLED": "本轮已取消",
+  "zcode.error.ERROR_MAX_TURNS":
+    "本次运行已达到步数上限并提前结束。已生成的内容会保留，发送后续消息即可继续。",
   "zcode.error.FIRST_TOKEN_TIMEOUT": "模型未在预期时间内开始响应。请检查网络或模型配置后重试。",
   "zcode.error.OPENCODE_FREE_LIMIT_REACHED":
     "OpenCode 免费模型额度已用尽。额度约 4 小时后重置，或切换其他模型。",

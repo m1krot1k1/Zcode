@@ -490,7 +490,10 @@ export function createDefaultSubagentPort(
             // Child knows its routing identity: start -> orchestrator only, orchestrator ->
             // worker roles, worker/custom roles -> full catalog. Root remains undefined.
             agentType: request.agentType,
-            maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
+            // 子代理的 maxTurns 只有显式配置才生效：profile 优先，其次 subagents 级设置；
+            // 两者都缺省时保持 undefined = 无限制（docs/specs/max-turns-limit.md）。
+            // 这里过去用 `?? 4` 注入隐式上限，与契约冲突。
+            maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns,
             parentSessionId: this.sessionId,
             taskType: "subagent_child",
             // Router-роль не использует Write/Edit/Bash сама, но должна передать

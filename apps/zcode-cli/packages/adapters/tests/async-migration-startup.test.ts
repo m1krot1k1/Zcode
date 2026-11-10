@@ -305,3 +305,33 @@ it("does not send malformed ledger IDs as telemetry or fail an otherwise prepare
   expect(states.at(-1)?.migration?.lastAppliedMigrationId).toBeUndefined();
   expect(JSON.stringify(states)).not.toContain("private / unexpected ID");
 });
+
+it("回滚恢复保留加法 schema 后可从空账本重跑建表迁移", async () => {
+  // 回归：restore 按 CONTRACT.md 保留已建表、删除对应 migration 记账；重启必须复跑成功。
+  // 0025/0028 的冻结 SQL 是不带 IF NOT EXISTS 的 create table，旧实现会因
+  // "table ... already exists" 让整个启动迁移失败。
+  const db = open();
+  await runSqliteSessionMigrations(db, ":memory:");
+  const tablesBefore = db
+    .prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")
+    .all();
+  db.exec("DELETE FROM schema_migration WHERE id >= '0025'");
+  const expectedExecuted = SQLITE_MIGRATIONS.filter((migration) => migration.id >= "0025").length;
+  const states: SqliteMigrationProgress[] = [];
+  await runSqliteSessionMigrationsAsync(db, ":memory:", {
+    onProgress: async (state) => {
+      states.push(state);
+    },
+  });
+  expect(states.at(-1)?.phase).toBe("ready");
+  expect(states.at(-1)?.migration).toMatchObject({
+    kind: "upgrade",
+    executedCount: expectedExecuted,
+  });
+  expect(
+    db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all(),
+  ).toEqual(tablesBefore);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM schema_migration").get()?.n).toBe(
+    SQLITE_MIGRATIONS.length,
+  );
+});

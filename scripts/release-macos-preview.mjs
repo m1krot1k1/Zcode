@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Публикует unsigned macOS Preview только как GitHub prerelease на exact commit ветки dev.
+ * Публикует ad-hoc подписанный (без Developer ID) macOS Preview только как GitHub prerelease на exact commit ветки dev.
  * Apple identity и notarization credentials не читаются и не требуются.
  */
 import { createHash } from "node:crypto";
@@ -40,7 +40,9 @@ export function createPreviewBuildEnvironment(sourceEnv = process.env) {
   for (const name of Object.keys(env)) {
     if (
       /^(?:APPLE_|CSC_)/u.test(name) ||
-      /^(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN)$/u.test(name) ||
+      // gh читает токены в порядке приоритета: GH_TOKEN/GITHUB_TOKEN для github.com и
+      // поддоменов ghe.com, GH_ENTERPRISE_TOKEN/GITHUB_ENTERPRISE_TOKEN для GHES.
+      /^(?:GH|GITHUB)_(?:ENTERPRISE_)?TOKEN$/u.test(name) ||
       name.startsWith("ZCODE_PACKAGED_AGENT_OTEL_") ||
       /^(?:ZCODE_BASE_URL|ZCODE_ENDPOINT_ORIGIN|ZCODE_TEST_BASE_URL|ZCODE_PRODUCTION_BASE_URL|VITE_ZCODE_BASE_URL|VITE_ZCODE_ENDPOINT_ORIGIN)$/u.test(
         name,
@@ -101,7 +103,7 @@ export function buildPreviewReleaseCreateArgs({ tag, commitSha, targetArch, asse
     "--title",
     `ZCode Preview ${tag.slice(1)} для macOS`,
     "--notes",
-    `Автономная Preview-сборка macOS (${targetArch}): аккаунт и backend ZCode недоступны; официальный каталог и загрузки плагинов требуют подключения к CDN и в этой сборке недоступны, локально сохранённые каталоги и встроенные плагины остаются доступны. Локальный OpenCode CLI и настроенные внешние model providers работают отдельно. Артефакты имеют суффикс _TEST. Сборка без Apple-подписи и notarization. При первом запуске macOS может блокировать приложение: откройте его через Finder и подтвердите запуск в системном предупреждении. Это Preview, не production-релиз.`,
+    `Автономная Preview-сборка macOS (${targetArch}): аккаунт и backend ZCode недоступны; официальный каталог и загрузки плагинов требуют подключения к CDN и в этой сборке недоступны, локально сохранённые каталоги и встроенные плагины остаются доступны. Локальный OpenCode CLI и настроенные внешние model providers работают отдельно. Артефакты имеют суффикс _TEST. Сборка подписана ad-hoc (не Developer ID) и не notarized. При первом запуске macOS может блокировать приложение: откройте его через Finder и подтвердите запуск в системном предупреждении. Это Preview, не production-релиз.`,
     "--prerelease",
     ...assetPaths,
   ];
@@ -116,7 +118,7 @@ export function assertPreviewReleaseMetadata(release, expectedTag, expectedAsset
 
 export function assertPreviewReleasePreconditions({ platform, branchName, dirty }) {
   if (platform !== "darwin")
-    throw new Error("Unsigned macOS Preview release must be built on macOS.");
+    throw new Error("Ad-hoc signed macOS Preview release must be built on macOS.");
   assertReleaseBranch(branchName);
   if (dirty) throw new Error("Рабочее дерево не чистое, Preview выпуск остановлен");
 }
@@ -408,7 +410,9 @@ async function main() {
         artifactSuffix: "_TEST",
         expectedBundleId: previewBundleId,
         requireStaple: false,
-        requireUnsigned: true,
+        // Ad-hoc подпись ставится afterPack перед DMG/ZIP; unsigned-проверка здесь
+        // несовместима с подписанным bundle (появляется Contents/_CodeSignature).
+        requireAdHocSignature: true,
         runCommand: run,
       });
       await run(["git", "commit", "-m", `Выпустить macOS Preview ${version}.`]);
@@ -438,7 +442,7 @@ async function main() {
         artifactSuffix: "_TEST",
         expectedBundleId: previewBundleId,
         requireStaple: false,
-        requireUnsigned: true,
+        requireAdHocSignature: true,
         runCommand: run,
       });
     }

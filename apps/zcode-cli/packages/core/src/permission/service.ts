@@ -24,6 +24,7 @@ import { isPreapprovedWorkflowDraftWrite } from "./workflow-draft-path.js";
 import { applyPermissionUpdates } from "../tool/executor/permission-rules.js";
 import { isWebFetchPreapprovedUrl } from "../tool/webfetch-preapproved.js";
 import { isStoredMcpResultPageRequest } from "../mcp/index.js";
+import { expandSubagentDispatchDisallowRules } from "../runtime/helpers/tool-allowlist.js";
 import type { ToolPermissionRulePolicy } from "../tool/types.js";
 
 // -----------------------------------------------
@@ -99,6 +100,20 @@ export class PermissionService {
     this.sessionRules = applyPermissionUpdates(this.sessionRules, updates);
   }
 
+  /**
+   * Проверка `PermissionConfig.disallowedTools` по точному имени записи.
+   *
+   * `context.toolName` приходит именем конкретной записи (`Agent` или `Task`), поэтому запрет
+   * одного имени без развёртывания оставлял бы alias исполняемым, если вызов пришёл напрямую
+   * или от hook. Развёртывание делает тот же общий helper, что и на границе регистрации
+   * (docs/specs/task-alias-visibility.md, TASKALIAS-05/07); собственного списка имён здесь нет.
+   * Список читается живым, поэтому семантика `PermissionConfig` не меняется.
+   */
+  private isToolDisallowed(toolName: string): boolean {
+    const rules = expandSubagentDispatchDisallowRules([...this.config.disallowedTools]);
+    return rules?.includes(toolName) === true;
+  }
+
   checkPermission(
     context: PermissionContext,
     toolCapability?: PermissionToolCapability,
@@ -115,7 +130,7 @@ export class PermissionService {
     }
 
     if (capability.requiresUserInteraction) {
-      if (this.config.disallowedTools.has(context.toolName)) {
+      if (this.isToolDisallowed(context.toolName)) {
         return this.deny(
           context,
           capability,
@@ -164,7 +179,7 @@ export class PermissionService {
       );
     }
 
-    if (this.config.disallowedTools.has(context.toolName)) {
+    if (this.isToolDisallowed(context.toolName)) {
       return this.deny(
         context,
         capability,
@@ -389,7 +404,7 @@ export class PermissionService {
         "Auto mode is reserved but not implemented yet",
       );
     }
-    if (this.config.disallowedTools.has(context.toolName)) {
+    if (this.isToolDisallowed(context.toolName)) {
       return this.deny(
         context,
         capability,

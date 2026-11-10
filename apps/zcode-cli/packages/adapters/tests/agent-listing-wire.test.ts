@@ -95,7 +95,9 @@ describe("agent listing final Anthropic wire", () => {
           ],
         },
         entries: [],
-        tools: [{ name: "Agent" }],
+        // 8cd57114 起 listing 按 provider-visible tool surface 过滤 profile tools；
+        // fixture 必须像真实 runtime 一样同时暴露 Agent 与被声明的 Read，否则 Read 被正确裁掉。
+        tools: [{ name: "Agent" }, { name: "Read" }],
       })!;
       const entries: RuntimeMessageEntry[] = [
         { message: { role: "system", content: "prefix" } },

@@ -63,6 +63,10 @@ describe("bundled ZCode agent skills", () => {
     }
   });
 
+  // discoverSkills вызывается один раз для listZCodeSkills и ещё раз внутри каждого
+  // inspectZCodeSkill (18 полных обходов корней после одного list). Изолированно это ~2.7 с,
+  // под нагрузкой параллельного прогона bootstrap превышает дефолтные 5 с. Тест не скипаем
+  // и проверки не ослабляем — third-аргумент задаёт только бюджет времени.
   it("discovers and loads each skill through the regular bundled SkillPort", async () => {
     const outcome = await listZCodeSkills({
       env: {},
@@ -83,7 +87,7 @@ describe("bundled ZCode agent skills", () => {
       });
       expect(inspection.skill.content).toContain(`# ${bundledSkillHeadings[name]}`);
     }
-  });
+  }, 30_000);
 
   it("keeps bootstrap, SEA, Desktop staging, and shipped skill files aligned", async () => {
     const [bootstrapSource, seaSource, desktopSource, remoteSource] = await Promise.all([

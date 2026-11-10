@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import {
   BrowserCommandError,
@@ -12,6 +12,14 @@ import {
   setupBrowserRuntime,
 } from "../src/browser-client/index.js";
 import type { BrowserCommand, BrowserCommandResult } from "@zcode/contracts";
+
+// 修复原因：process.cwd() 只在 apps/zcode-cli 下才指向插件目录，从 packages/core
+// 运行时解析到不存在的 apps/browser-use-plugin/...，documentation() 静默退回
+// fallback（`# Built-in Browser Automation API`）。改为以测试文件为锚点并用
+// fileURLToPath 解码路径，保证两种 cwd 都加载真实插件文档。
+const DOCUMENTATION_ROOT = fileURLToPath(
+  new URL("../../browser-use-plugin/docs/", import.meta.url),
+);
 
 const IAB_INFO: BrowserInfo = {
   id: "iab-runtime-1",
@@ -1075,7 +1083,7 @@ describe("browser-client facade", () => {
   it("browser.documentation() and agent.documentation.get() load plugin docs", async () => {
     const { execute } = fakeExecute();
     const browsers = createFacade(execute, [IAB_INFO], {
-      documentationRoot: resolve(process.cwd(), "../browser-use-plugin/docs"),
+      documentationRoot: DOCUMENTATION_ROOT,
     });
     const doc = await (await browsers.getDefault()).documentation();
     for (const kw of [
@@ -1113,7 +1121,7 @@ describe("browser-client facade", () => {
         list: async () => [IAB_INFO],
         execute: async () => ({ ok: true, elapsedMs: 0 }),
       },
-      documentationRoot: resolve(process.cwd(), "../browser-use-plugin/docs"),
+      documentationRoot: DOCUMENTATION_ROOT,
     });
     const screenshots = await (
       globals.agent as { documentation: { get(name: string): Promise<string> } }
@@ -1136,7 +1144,7 @@ describe("browser-client facade", () => {
     };
     const browsers = createFacade(execute, [IAB_INFO], {
       assertAvailable,
-      documentationRoot: resolve(process.cwd(), "../browser-use-plugin/docs"),
+      documentationRoot: DOCUMENTATION_ROOT,
     });
     const iab = await browsers.get("iab");
 

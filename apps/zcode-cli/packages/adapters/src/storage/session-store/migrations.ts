@@ -1,10 +1,124 @@
 import type { SqliteMigration } from "@zcode/shared/sqlite-migrations";
+import type { DatabaseSync } from "node:sqlite";
 export type { SqliteMigration } from "@zcode/shared/sqlite-migrations";
 import { PROVIDER_MODEL_SELECTION_MIGRATION_SQL } from "./migrations/0020-provider-model-selection.js";
 import { SESSION_DATABASE_IDENTITY_MIGRATION } from "@zcode/shared/sqlite-migrations";
 
 import { OFFICIAL_GLM_SELECTION_MIGRATION_SQL } from "./migrations/0021-official-glm-selection.js";
 import { BACKFILLED_SESSION_REASONING_MIGRATION_SQL } from "./migrations/0022-backfilled-session-reasoning.js";
+
+// 恢复备份只保留加法 schema、删除对应 ledger 记录，随后的启动会复跑这些迁移。
+// 因此建表迁移必须可重入：sql 是冻结的 checksum 原文，apply 在整套对象已存在时跳过。
+// 只有部分对象存在属于非 restore 产生的损坏状态，此时仍执行冻结 SQL 并显式失败，
+// 而不是静默接受半套 schema。
+const OPENCODE_AGENT_RUN_OUTBOX_SQL = `
+      create table opencode_agent_run (
+        schema_version integer not null check(schema_version = 1),
+        session_id text not null references session(id) on delete cascade,
+        run_id text not null,
+        command_id text not null,
+        input_id text not null unique references session_input(id) on delete cascade,
+        route_kind text not null check(route_kind = 'opencode-cli'),
+        requested_model_id text,
+        status text not null check(status in (
+          'pending', 'dispatching', 'running', 'completed', 'cancelled', 'failed', 'interrupted'
+        )),
+        event_sequence integer not null check(event_sequence >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        opencode_session_id text,
+        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
+        stop_reason text,
+        diagnostic_code text,
+        primary key(session_id, run_id),
+        unique(command_id),
+        check(run_id = command_id),
+        check(
+          (status in ('completed', 'cancelled', 'failed', 'interrupted') and time_terminal is not null and opencode_session_id is null)
+          or (status = 'running' and time_terminal is null and opencode_session_id is not null)
+          or (status in ('pending', 'dispatching') and time_terminal is null and opencode_session_id is null)
+        )
+      );
+
+      create index opencode_agent_run_session_created_idx
+        on opencode_agent_run(session_id, time_created, run_id);
+      create index opencode_agent_run_outbox_idx
+        on opencode_agent_run(status, time_created, run_id)
+        where status = 'pending';
+    `;
+
+const SWARM_RUN_JOURNAL_SQL = `
+      create table swarm_run (
+        schema_version integer not null check(schema_version = 1),
+        root_session_id text not null references session(id) on delete cascade,
+        source_command_id text not null,
+        run_id text not null primary key,
+        root_turn_id text not null,
+        graph_json text check(graph_json is null or length(cast(graph_json as blob)) <= 120000),
+        status text not null check(status in (
+          'planning', 'running', 'completed', 'failed', 'cancelled', 'interrupted'
+        )),
+        owner_epoch integer not null check(owner_epoch >= 0),
+        revision integer not null check(revision >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        diagnostic_code text,
+        unique(root_session_id, source_command_id),
+        check(
+          (status in ('completed', 'failed', 'cancelled', 'interrupted') and time_terminal is not null)
+          or (status in ('planning', 'running') and time_terminal is null)
+        ),
+        check(status != 'running' or graph_json is not null)
+      );
+      create index swarm_run_session_created_idx
+        on swarm_run(root_session_id, time_created, run_id);
+      create index swarm_run_recovery_idx
+        on swarm_run(status, time_updated, run_id)
+        where status in ('planning', 'running');
+
+      create table swarm_node_attempt (
+        schema_version integer not null check(schema_version = 1),
+        run_id text not null references swarm_run(run_id) on delete cascade,
+        node_id text not null,
+        attempt_id text not null,
+        attempt_no integer not null check(attempt_no >= 1),
+        status text not null check(status in (
+          'pending', 'dispatching', 'running', 'completed', 'failed', 'cancelled', 'interrupted', 'blocked'
+        )),
+        child_session_id text not null unique,
+        owner_epoch integer not null check(owner_epoch >= 0),
+        revision integer not null check(revision >= 0),
+        time_created integer not null,
+        time_updated integer not null,
+        time_terminal integer,
+        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
+        diagnostic_code text,
+        primary key(run_id, node_id, attempt_id),
+        unique(run_id, node_id, attempt_no),
+        check(
+          (status in ('completed', 'failed', 'cancelled', 'interrupted', 'blocked') and time_terminal is not null)
+          or (status in ('pending', 'dispatching', 'running') and time_terminal is null)
+        )
+      );
+      create index swarm_node_attempt_run_idx
+        on swarm_node_attempt(run_id, node_id, attempt_no);
+      create index swarm_node_attempt_recovery_idx
+        on swarm_node_attempt(status, time_updated, run_id)
+        where status in ('pending', 'dispatching', 'running');
+    `;
+
+function hasSchemaObject(db: DatabaseSync, type: "table" | "index", name: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type=? AND name=?").get(type, name));
+}
+
+function hasAllSchemaObjects(
+  db: DatabaseSync,
+  objects: readonly (readonly [type: "table" | "index", name: string])[],
+): boolean {
+  return objects.every(([type, name]) => hasSchemaObject(db, type, name));
+}
 
 export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
   {
@@ -988,42 +1102,22 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
     appVersion: "0.16.9",
     id: "0025_opencode_agent_run_outbox",
     touchedTables: ["opencode_agent_run"],
-    sql: `
-      create table opencode_agent_run (
-        schema_version integer not null check(schema_version = 1),
-        session_id text not null references session(id) on delete cascade,
-        run_id text not null,
-        command_id text not null,
-        input_id text not null unique references session_input(id) on delete cascade,
-        route_kind text not null check(route_kind = 'opencode-cli'),
-        requested_model_id text,
-        status text not null check(status in (
-          'pending', 'dispatching', 'running', 'completed', 'cancelled', 'failed', 'interrupted'
-        )),
-        event_sequence integer not null check(event_sequence >= 0),
-        time_created integer not null,
-        time_updated integer not null,
-        time_terminal integer,
-        opencode_session_id text,
-        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
-        stop_reason text,
-        diagnostic_code text,
-        primary key(session_id, run_id),
-        unique(command_id),
-        check(run_id = command_id),
-        check(
-          (status in ('completed', 'cancelled', 'failed', 'interrupted') and time_terminal is not null and opencode_session_id is null)
-          or (status = 'running' and time_terminal is null and opencode_session_id is not null)
-          or (status in ('pending', 'dispatching') and time_terminal is null and opencode_session_id is null)
-        )
-      );
-
-      create index opencode_agent_run_session_created_idx
-        on opencode_agent_run(session_id, time_created, run_id);
-      create index opencode_agent_run_outbox_idx
-        on opencode_agent_run(status, time_created, run_id)
-        where status = 'pending';
-    `,
+    // 根因：恢复备份会保留加法 schema 但删除对应 ledger 记录（CONTRACT.md），
+    // 重启复跑本条时必须可重入；原 SQL 用不带 IF NOT EXISTS 的 DDL，二次执行会
+    // 报 "table opencode_agent_run already exists" 并让整个启动迁移失败。
+    // sql 保持原文字作为不可变 checksum，apply 只在表缺失时执行同一份 DDL。
+    apply: (db) => {
+      if (
+        hasAllSchemaObjects(db, [
+          ["table", "opencode_agent_run"],
+          ["index", "opencode_agent_run_session_created_idx"],
+          ["index", "opencode_agent_run_outbox_idx"],
+        ])
+      )
+        return;
+      db.exec(OPENCODE_AGENT_RUN_OUTBOX_SQL);
+    },
+    sql: OPENCODE_AGENT_RUN_OUTBOX_SQL,
   },
   {
     appVersion: "0.16.9",
@@ -1053,7 +1147,10 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
     touchedTables: ["opencode_agent_run"],
     apply: (db) => {
       const columns = new Set(
-        db.prepare("pragma table_info(opencode_agent_run)").all().map((row) => row.name),
+        db
+          .prepare("pragma table_info(opencode_agent_run)")
+          .all()
+          .map((row) => row.name),
       );
       if (!columns.has("prompt_text")) {
         db.exec("alter table opencode_agent_run add column prompt_text text not null default ''");
@@ -1085,65 +1182,21 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
     appVersion: "0.16.9",
     id: "0028_swarm_run_journal",
     touchedTables: ["swarm_run", "swarm_node_attempt"],
-    sql: `
-      create table swarm_run (
-        schema_version integer not null check(schema_version = 1),
-        root_session_id text not null references session(id) on delete cascade,
-        source_command_id text not null,
-        run_id text not null primary key,
-        root_turn_id text not null,
-        graph_json text check(graph_json is null or length(cast(graph_json as blob)) <= 120000),
-        status text not null check(status in (
-          'planning', 'running', 'completed', 'failed', 'cancelled', 'interrupted'
-        )),
-        owner_epoch integer not null check(owner_epoch >= 0),
-        revision integer not null check(revision >= 0),
-        time_created integer not null,
-        time_updated integer not null,
-        time_terminal integer,
-        diagnostic_code text,
-        unique(root_session_id, source_command_id),
-        check(
-          (status in ('completed', 'failed', 'cancelled', 'interrupted') and time_terminal is not null)
-          or (status in ('planning', 'running') and time_terminal is null)
-        ),
-        check(status != 'running' or graph_json is not null)
-      );
-      create index swarm_run_session_created_idx
-        on swarm_run(root_session_id, time_created, run_id);
-      create index swarm_run_recovery_idx
-        on swarm_run(status, time_updated, run_id)
-        where status in ('planning', 'running');
-
-      create table swarm_node_attempt (
-        schema_version integer not null check(schema_version = 1),
-        run_id text not null references swarm_run(run_id) on delete cascade,
-        node_id text not null,
-        attempt_id text not null,
-        attempt_no integer not null check(attempt_no >= 1),
-        status text not null check(status in (
-          'pending', 'dispatching', 'running', 'completed', 'failed', 'cancelled', 'interrupted', 'blocked'
-        )),
-        child_session_id text not null unique,
-        owner_epoch integer not null check(owner_epoch >= 0),
-        revision integer not null check(revision >= 0),
-        time_created integer not null,
-        time_updated integer not null,
-        time_terminal integer,
-        result_text text check(result_text is null or length(cast(result_text as blob)) <= 32768),
-        diagnostic_code text,
-        primary key(run_id, node_id, attempt_id),
-        unique(run_id, node_id, attempt_no),
-        check(
-          (status in ('completed', 'failed', 'cancelled', 'interrupted', 'blocked') and time_terminal is not null)
-          or (status in ('pending', 'dispatching', 'running') and time_terminal is null)
-        )
-      );
-      create index swarm_node_attempt_run_idx
-        on swarm_node_attempt(run_id, node_id, attempt_no);
-      create index swarm_node_attempt_recovery_idx
-        on swarm_node_attempt(status, time_updated, run_id)
-        where status in ('pending', 'dispatching', 'running');
-    `,
+    // 同 0025：恢复备份后 ledger 行被删除但表保留，复跑时必须跳过已存在的表。
+    apply: (db) => {
+      if (
+        hasAllSchemaObjects(db, [
+          ["table", "swarm_run"],
+          ["index", "swarm_run_session_created_idx"],
+          ["index", "swarm_run_recovery_idx"],
+          ["table", "swarm_node_attempt"],
+          ["index", "swarm_node_attempt_run_idx"],
+          ["index", "swarm_node_attempt_recovery_idx"],
+        ])
+      )
+        return;
+      db.exec(SWARM_RUN_JOURNAL_SQL);
+    },
+    sql: SWARM_RUN_JOURNAL_SQL,
   },
 ];

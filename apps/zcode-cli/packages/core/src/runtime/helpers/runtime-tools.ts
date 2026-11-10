@@ -18,6 +18,7 @@ import {
   resolveBuiltInToolAllowlist,
   resolveRuntimeDisallowedTools,
   resolveRuntimeDynamicWorkflowToolsIncluded,
+  shouldIncludeTaskAlias,
 } from "./tool-allowlist.js";
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
@@ -53,13 +54,8 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),
     // 原因：ZCode 原生路由规则要求根会话用 Task(start) 作为可见入口，但此前 Task 只对子代理进入 provider schema，模型无法遵循这条规则。
-    // 修复依据：交互根会话和可递归子代理共用精确 profile 校验的 Task 别名；工作流 actor 仍不暴露该入口。
-    includeTaskAlias:
-      runtime.config.taskType === undefined ||
-      runtime.config.taskType === "interactive" ||
-      runtime.config.taskType === "fork" ||
-      runtime.config.taskType === "selection_side_chat" ||
-      runtime.config.taskType === "subagent_child",
+    // 修复依据：可见性规则收敛到唯一 helper shouldIncludeTaskAlias；首次装配与分支 refresh 共用，交互根会话和可递归子代理可见，workflow actor 不可见。
+    includeTaskAlias: shouldIncludeTaskAlias(runtime.config.taskType),
     includeSendMessage: runtime.subagentPort?.sendMessage !== undefined,
     includeRespondToCoordinator:
       runtime.config.taskType === "subagent_child" && Boolean(deps.coordinatorResponsePort),

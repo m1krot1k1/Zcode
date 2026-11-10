@@ -48,6 +48,11 @@ import {
   patchNsisInstallSectionFile,
   restoreNsisInstallSectionFileSync,
 } from "./scripts/patch-nsis-install-section.mjs";
+import {
+  applyMacAdHocSignature,
+  resolveMacAdHocAppBundlePath,
+  resolveMacAdHocSigningDecision,
+} from "./scripts/macos-adhoc-signing.mjs";
 
 const buildMetadata = getBuildMetadata();
 const targetPlatform = getTargetPlatform();
@@ -608,6 +613,38 @@ function signWindowsBrowserImportHelper(context) {
   ]);
 }
 
+/**
+ * Ad-hoc подпись unsigned macOS Preview.
+ *
+ * Точка вставки — конец afterPack: electron-builder вызывает hook после копирования app.asar,
+ * extraResources и runtime modules, затем выполняет sanityCheck/fuses и только потом
+ * packageInDistributableFormat собирает DMG/ZIP из готового `.app`. Поэтому подпись попадает
+ * в оба артефакта, а не только в staging bundle.
+ *
+ * Developer ID не затрагивается: решение принимает resolveMacAdHocSigningDecision по
+ * signingEnabled/forceCodeSigning и signing-credentials в env; причина всегда логируется.
+ */
+function applyMacAdHocSignatureIfNeeded(context) {
+  const decision = resolveMacAdHocSigningDecision({
+    electronPlatformName: context.electronPlatformName,
+    productFlavor: desktopProductIdentity.flavor,
+    signingEnabled: shouldEnableMacSigning,
+    forceCodeSigning: macBuildSecurity.forceCodeSigning,
+  });
+  if (!decision.enabled) {
+    if (context.electronPlatformName === "darwin") {
+      console.log(`[macos-adhoc-signing] skipped: ${decision.reason}`);
+    }
+    return;
+  }
+  const appPath = resolveMacAdHocAppBundlePath({
+    appOutDir: context.appOutDir,
+    productFilename: context.packager?.appInfo?.productFilename,
+  });
+  console.log(`[macos-adhoc-signing] applying ad-hoc signature (${decision.reason}): ${appPath}`);
+  applyMacAdHocSignature(appPath);
+}
+
 /** @type {import("electron-builder").Configuration} */
 export default {
   appId: desktopProductIdentity.appId,
@@ -746,6 +783,10 @@ export default {
         signWindowsBrowserImportHelper(context),
       );
     }
+    // Preview без Apple credentials должен получить ad-hoc подпись до упаковки DMG/ZIP:
+    // electron-builder 在 identity=null 时 сам не подписывает bundle, а DMG/ZIP собираются
+    // из готового .app в packageInDistributableFormat уже после этого hook.
+    runTimedSync("afterPack:applyMacAdHocSignature", () => applyMacAdHocSignatureIfNeeded(context));
   },
   ...(shouldPackageWindowsBrowserImportHelper
     ? {

@@ -6,7 +6,7 @@
 - `pre-push` 会执行 `pnpm run verify:pre-push`。
 - 根 `pnpm test` 现在只跑单测，不再误把桌面端 `packages/desktop/test/e2e` 当成 Vitest 用例。
 - Bugfix：单测脚本里的 E2E exclude glob 必须加引号；否则 shell 会先把 `packages/desktop/test/e2e/**/*.test.ts` 展开成真实文件列表，导致 Vitest 把多余文件当成 filters，同时又被 exclude 排除，最终报 `No test files found` 并阻止 push。
-- `verify:pre-push` 依次执行 lint、架构检查和 push 范围的受影响单测；lint、架构检查、选中测试或脚本自身失败都会阻止 push。
+- `verify:pre-push` 依次执行 lint、跟踪文件隐私检查、架构检查和 push 范围的受影响单测；lint、隐私检查、架构检查、选中测试或脚本自身失败都会阻止 push。
 
 这样可以在代码推到远端前，先用更快的静态检查拦住明显问题，再把单测问题拦在本地，同时保留 `pnpm test:e2e` 作为桌面端 E2E 的独立入口。
 
@@ -20,7 +20,7 @@ pre-push 直接使用当前 `PATH` 中的 pnpm / Node，不强制依赖 mise。�
 开发者准备 Node / pnpm（mise、nvm 或其他方式）
     → Git hook 保留 push ref 信息并清理 Git local env
     → pnpm run verify:pre-push
-    → lint / 架构检查 / 受影响单测
+    → lint / 跟踪文件隐私检查 / 架构检查 / 受影响单测
 ```
 
 - 仓库负责声明工具版本和执行检查；个人环境负责让合适的 Node / pnpm 可被 Git 找到。
@@ -29,6 +29,43 @@ pre-push 直接使用当前 `PATH` 中的 pnpm / Node，不强制依赖 mise。�
   版本管理环境，参见 [Husky 官方说明](https://typicode.github.io/husky/how-to.html#node-version-managers-and-guis)。
 - 缺少命令或检查失败仍然阻止 push；hook 不自动安装工具，不静默跳过检查。
 - 本次只解除 hook 对 mise 的依赖，不新增版本检查，也不修改现有开发、CLI/SEA 或 CI 的版本要求。
+
+## 跟踪文件隐私检查
+
+`scripts/check-tracked-privacy.mjs` 在 lint 之后、架构检查之前运行。它扫描 git 索引与 `HEAD` 的内容（不是工作树），因此「HEAD 里已有秘密、工作树被改成干净内容」或「秘密只在暂存区」都会被拦下。pre-push 通过 `ZCODE_PRE_PUSH_STDIN` 传入 refs 时，还会扫描 push 范围内可达的 blob，覆盖「某次提交加过秘密、后续提交又删掉」的情况。本仓库约 1.8 万个跟踪文件，当前耗时约 7 秒。
+
+| 项目     | 规则                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 检测内容 | home 路径（`/Users/<name>`、`/home/<name>`、`C:\Users\<name>`）、常见邮箱地址、令牌特征（见下表）                                                 |
+| 扫描范围 | 索引 + `HEAD` + pre-push 范围 blob；锁文件、`*.min.js`、`node_modules`、`assets/`、`third-party/`、`docs/electron/`、`docs/webdriverio/` 整体豁免 |
+| 输出     | 只输出 `文件:行号:类型`，不回显命中值，避免日志二次泄漏                                                                                           |
+| 失败行为 | 任一命中即 exit 1，直接阻止 push；不自动修改文件、不跳过检查                                                                                      |
+| 误报处理 | 已评审的误报按「精确文件路径 + 类型 + 完整命中值（可选整行标记或整行精确匹配）」点对点放行；不关闭类别，同一文件的其它命中照报                    |
+
+令牌覆盖的格式：
+
+| 平台                   | 前缀/形态                                   |
+| ---------------------- | ------------------------------------------- |
+| GitHub（经典）         | `ghp_`、`gho_`、`ghu_`、`ghs_`、`ghr_`      |
+| GitHub（fine-grained） | `github_pat_`                               |
+| GitLab                 | `glpat-`                                    |
+| Slack                  | `xoxb-`、`xoxa-`、`xoxp-`、`xoxr-`、`xoxs-` |
+| Google API key         | `AIza` + 35 位                              |
+| OpenAI 风格            | `sk-`                                       |
+| Stripe live secret     | `sk_live_`                                  |
+| AWS access key         | `AKIA` + 16 位                              |
+| PEM 私钥               | `-----BEGIN [RSA/EC/...] PRIVATE KEY-----`  |
+
+本地运行：
+
+```bash
+node scripts/check-tracked-privacy.mjs   # 扫描索引 + HEAD（+ pre-push 范围）
+pnpm verify:privacy                      # 先跑脚本单测，再扫描
+```
+
+`verify:privacy` 当前约 10 秒（单测约 3 秒、扫描约 7 秒），超过 2 秒预算，因此 `verify:pre-push` 只保留单次扫描，不重复调用 `verify:privacy`。
+
+出现新命中时，优先删除或改写真实值（测试样本运行时拼装）；只有确认是第三方文档示例或测试夹具时，才在 `scripts/check-tracked-privacy.mjs` 的 `ALLOWLISTED_FINDINGS` 增加一条带注释的最小豁免（类型 + 精确文件路径 + 完整命中值，必要时加整行标记或 `lineEquals` 整行精确匹配），并同步补充 `scripts/check-tracked-privacy.test.mjs` 的断言。不要用目录前缀整体豁免来掩盖某个文件里的单个假阳性：那样同一目录里新增的真实泄漏会被一起吞掉。PEM 这类多行密钥不能用「行内包含标记」放行，必须精确到完整合成行，否则真实密钥只要附上标记就能绕过。
 
 ## Affected Unit Tests
 

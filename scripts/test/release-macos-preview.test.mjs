@@ -37,6 +37,12 @@ test("offline Preview needs no ZCode backend and pins every endpoint alias to lo
     APPLE_ID: "must-not-be-forwarded",
     CSC_LINK: "must-not-be-forwarded",
     GH_TOKEN: "must-not-be-forwarded",
+    GITHUB_TOKEN: "must-not-be-forwarded",
+    GH_ENTERPRISE_TOKEN: "must-not-be-forwarded",
+    GITHUB_ENTERPRISE_TOKEN: "must-not-be-forwarded",
+    // Безобидный GH_* не относится к auth и должен пережить очистку.
+    GH_HOST: "ghe.example.invalid",
+    GH_REPO: "owner/repo",
   });
   assert.equal(env.ZCODE_ENV, "test");
   assert.equal(env.ZCODE_OFFLINE_PREVIEW, "1");
@@ -55,10 +61,22 @@ test("offline Preview needs no ZCode backend and pins every endpoint alias to lo
   ]) {
     assert.equal(env[name], OFFLINE_PREVIEW_ZCODE_ENDPOINT);
   }
-  for (const name of ["APPLE_ID", "CSC_LINK", "GH_TOKEN"]) assert.equal(name in env, false);
+  for (const name of [
+    "APPLE_ID",
+    "CSC_LINK",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN",
+  ]) {
+    assert.equal(name in env, false, `${name} не должен наследоваться Preview-сборкой`);
+  }
+  // gh поддерживает и GH_HOST/GH_REPO; это не токены, их удаление сломало бы выбор host/repo.
+  assert.equal(env.GH_HOST, "ghe.example.invalid");
+  assert.equal(env.GH_REPO, "owner/repo");
 });
 
-test("Preview release is an unsigned-labeled prerelease pinned to the exact pushed commit", async () => {
+test("Preview release is an ad-hoc-signed prerelease pinned to the exact pushed commit", async () => {
   const plan = await createPreviewReleasePlan({
     version: "3.17.1",
     targetArch: "arm64",
@@ -80,8 +98,13 @@ test("Preview release is an unsigned-labeled prerelease pinned to the exact push
     plan.args.some(
       (arg) =>
         (arg.includes("аккаунт и backend ZCode недоступны") && arg.includes("loopback")) ||
-        (arg.includes("без Apple-подписи") && arg.includes("_TEST")),
+        (arg.includes("ad-hoc") && arg.includes("_TEST")),
     ),
+  );
+  // Release notes не должны возвращать формулировку «без Apple-подписи»: bundle ad-hoc подписан.
+  assert.equal(
+    plan.args.some((arg) => arg.includes("без Apple-подписи")),
+    false,
   );
 });
 

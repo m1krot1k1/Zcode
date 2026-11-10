@@ -56,6 +56,10 @@ describe("visualize protocol-only skill discovery", () => {
         }
       }
     },
+    // 两段 it.each 都要启动插件 seed + 技能发现（多次真实文件系统遍历）；全量套件并行时
+    // 墙钟会超过 5s（实测 5.5–6s），而 Vitest 缺省超时就是 5s。断言与产品行为无关，
+    // 按同包重 I/O 用例的惯例给 30s。
+    30_000,
   );
 
   it.each([undefined, false, true])(
@@ -86,6 +90,8 @@ describe("visualize protocol-only skill discovery", () => {
         expect(outcome.skills.some((skill) => skill.name === "pdf")).toBe(true);
       }
     },
+    // 见上一条 it.each 的说明：同为插件 seed + 技能发现，全量并行时会超过 5s 缺省超时。
+    30_000,
   );
 
   it("keeps project skills with the same name available in CLI", async () => {

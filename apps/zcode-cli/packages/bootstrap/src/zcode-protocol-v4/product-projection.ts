@@ -2333,6 +2333,21 @@ export class ProductProjection {
           : "error";
     const streamClose = payload.resultType === "success" ? "complete" : "interrupted";
     const activeMs = this.activeMsForCompletion(event, payload.duration);
+    // error_max_turns 是受限结果而非传输失败：phase/标题已显示 failed，但
+    // ChatErrorBanner 只读 control.lastError。投影稳定 code 才能让 ERROR_MAX_TURNS
+    // 本地化分支可达（docs/specs/max-turns-limit.md「Контракт」）；message 用中性的
+    // runtime 文案，UI 按 code 本地化而不是展示技术串。
+    const limitLastError: SessionControl["lastError"] =
+      payload.resultType === "error_max_turns"
+        ? {
+            code: "error_max_turns",
+            message: "Turn reached the configured maxTurns limit.",
+            recoverable: true,
+            at: this.ms(event),
+            source: "runtime",
+            traceId: String(event.traceId),
+          }
+        : null;
 
     // stopPausesActiveGoalTarget：stop 作用于任何 foreground work 时，
     // active/verifying 的 goal 强制进入 paused，等待显式 resumeGoal。
@@ -2380,6 +2395,9 @@ export class ProductProjection {
             stopState: "idle",
             stopTargetKind: "unknown",
             activeWorks: [],
+            // 受限终态才写 lastError；success/cancelled 不传该字段，保持「终态本身
+            // 不清除 transient lastError」的既有语义。
+            ...(limitLastError ? { lastError: limitLastError } : {}),
             // 旧 V4 reducer 没有消费 ModelNetworkStatus，补投影后若 turn
             // 直接进入终态仍不清理，会让“重新连接中”残留到下一轮。
             apiRetry: null,

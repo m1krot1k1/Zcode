@@ -7,6 +7,7 @@ import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { setPendingSettingsUsageCodeGraphIntent } from "@/lib/settingsNavigation.js";
+import { codeIndexDotClassName, codeIndexStateKey, codeIndexTone } from "./codeIndexIndicator.js";
 import type { CodeIndexStatus, CodeSearchResult } from "./contract.js";
 
 export function CodeIndexPopover({
@@ -123,6 +124,12 @@ export function CodeIndexPopover({
   };
 
   const currentStatus = status?.state ?? "unindexed";
+  const indicatorTone = codeIndexTone(status);
+  // 修复原因：badge 之前按 status.state 取 `codeGraph.state.*`，`ready && partial`
+  // 会显示「Ready」，且 `codeGraph.state.degraded` 的文案是「Partial index」，
+  // 把两种不同状态说成同一件事。统一通过 codeIndexStateKey 按 tone 取词。
+  const statusLabel = copy(codeIndexStateKey(status));
+  const triggerLabel = copy("codeIndex.triggerWithStatus", { status: statusLabel });
   const indexAction =
     status?.state === "unindexed"
       ? copy("codeIndex.build")
@@ -152,18 +159,29 @@ export function CodeIndexPopover({
           variant="ghost"
           size="icon-sm"
           className="relative h-7 w-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-          aria-label={copy("codeIndex.trigger")}
-          title={copy("codeIndex.trigger")}
+          aria-label={triggerLabel}
+          title={triggerLabel}
           data-testid="composer-code-index-trigger"
+          data-code-index-state={currentStatus}
+          data-code-index-tone={indicatorTone}
         >
           <Database className="size-4" aria-hidden="true" />
-          {status?.state === "ready" && !status.partial ? (
-            <span className="absolute right-1 top-1 size-1.5 rounded-full bg-emerald-500" />
-          ) : status?.state === "indexing" ? (
-            <span className="absolute right-1 top-1 size-1.5 animate-pulse rounded-full bg-primary" />
-          ) : null}
+          <span
+            className={`absolute right-1 top-1 size-1.5 rounded-full ${codeIndexDotClassName(indicatorTone)}`}
+            data-testid="composer-code-index-indicator"
+            data-code-index-tone={indicatorTone}
+            aria-hidden="true"
+          />
         </Button>
       </PopoverTrigger>
+      <span
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="composer-code-index-status"
+      >
+        {statusLabel}
+      </span>
       <PopoverContent
         align="end"
         side="top"
@@ -177,8 +195,11 @@ export function CodeIndexPopover({
               {workspacePath.split(/[\\/]/).filter(Boolean).at(-1)}
             </p>
           </div>
-          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-ui-xs text-muted-foreground">
-            {status ? copy(`codeGraph.state.${currentStatus}`) : copy("codeIndex.loadingStatus")}
+          <span
+            className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-ui-xs text-muted-foreground"
+            data-testid="composer-code-index-badge"
+          >
+            {statusLabel}
           </span>
         </div>
 

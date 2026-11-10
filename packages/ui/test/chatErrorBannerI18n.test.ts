@@ -7,6 +7,7 @@ import {
 import { resolveChatErrorBannerDisplayMessage } from "@/ChatErrorBanner.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import enUS from "@/i18n/locales/en-US.js";
+import ruRU from "@/i18n/locales/ru-RU.json" with { type: "json" };
 import zhCN from "@/i18n/locales/zh-CN.js";
 
 function createIntl(messages: Record<string, string>): IntlInstance {
@@ -112,4 +113,32 @@ describe("ChatErrorBanner i18n", () => {
       "This run exceeded the maximum single-run time. Create a new off-peak task to continue.",
     );
   });
+
+  it.each([
+    [
+      "en-US",
+      enUS,
+      "This run reached the step limit and stopped. The answer so far is kept; send a follow-up message to continue.",
+    ],
+    [
+      "ru-RU",
+      ruRU,
+      "Запуск достиг лимита шагов и остановился. Полученный ответ сохранён — отправьте следующее сообщение, чтобы продолжить.",
+    ],
+    ["zh-CN", zhCN, "本次运行已达到步数上限并提前结束。已生成的内容会保留，发送后续消息即可继续。"],
+  ] as const)(
+    "localizes error_max_turns for %s instead of exposing the raw runtime code",
+    (_locale, messages, expected) => {
+      // docs/specs/max-turns-limit.md MAXTURN-07：UI 必须显示明确的「达到步数上限」，
+      // 且不能把 snake_case resultType 直接当作用户文案。
+      const message = resolveChatErrorBannerDisplayMessage(
+        { code: "error_max_turns", message: "Turn reached max turns" },
+        createIntl(messages),
+      );
+
+      expect(message).toBe(expected);
+      expect(message).not.toContain("error_max_turns");
+      expect(message).not.toContain("zcode.error.ERROR_MAX_TURNS");
+    },
+  );
 });

@@ -687,11 +687,13 @@ function AssistantHistoryStatus({
                 segment.workStatus.interruptDetail,
               ),
         })
-      : segment.workStatus?.state === "running"
-        ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: durationLabel ?? "" })
-        : durationLabel
-          ? intl.formatMessage({ id: "chat.history.workedFor" }, { duration: durationLabel })
-          : intl.formatMessage({ id: "chat.history.worked" });
+      : segment.workStatus?.state === "failed"
+        ? intl.formatMessage({ id: "chat.history.failed" })
+        : segment.workStatus?.state === "running"
+          ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: durationLabel ?? "" })
+          : durationLabel
+            ? intl.formatMessage({ id: "chat.history.workedFor" }, { duration: durationLabel })
+            : intl.formatMessage({ id: "chat.history.worked" });
 
   return (
     <div
