@@ -125,11 +125,6 @@ export function lexicalScore(queryTerms: string[], value: string): number {
   return matched / Math.max(queryTerms.length, 1);
 }
 
-export function safeExcerpt(value: string): string {
-  return value.replace(/\p{Cc}/gu, " ").slice(0, 360);
-}
-
-
 export function readEmbedding(blob: unknown): number[] | undefined {
   if (!(blob instanceof Uint8Array) || blob.byteLength === 0 || blob.byteLength % 4 !== 0) return;
   const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);

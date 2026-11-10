@@ -77,7 +77,7 @@ export function codeIndexPillClassName(tone: CodeIndexIndicatorTone): string {
   return PILL_CLASS[tone];
 }
 
-export type CodeIndexSkipReason = { key: string; count?: number };
+type CodeIndexSkipReason = { key: string; count?: number };
 
 const SKIP_DEFAULTS: Record<string, string> = {
   "codeIndex.skip.secret": "A file was left out because it looks like a secret.",

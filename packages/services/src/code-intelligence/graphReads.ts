@@ -13,7 +13,7 @@ import {
   type Row,
 } from "./database.js";
 
-export const CODE_INDEX_CHUNK_EXCERPT_CHARS = 4096;
+const CODE_INDEX_CHUNK_EXCERPT_CHARS = 4096;
 const GRAPH_EXCERPT_BUDGET = 8_000;
 const GRAPH_EXCERPT_NODE_CAP = 1024;
 

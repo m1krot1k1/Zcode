@@ -262,7 +262,7 @@ function normalizeWorkspaceDirectory(value: string | undefined): string {
   return trimmed.length === 0 ? "." : trimmed;
 }
 
-export function sameWorkspaceDirectory(
+function sameWorkspaceDirectory(
   left: string | undefined,
   right: string | undefined,
 ): boolean {
@@ -279,7 +279,7 @@ export function sharedReadFileStateForChild(
   return { sharedReadFileState: readFileState };
 }
 
-export const CODE_INDEX_TURN_HINT_TIMEOUT_MS = 800;
+const CODE_INDEX_TURN_HINT_TIMEOUT_MS = 800;
 const HINT_HITS = 4;
 const HINT_CHAR_BUDGET = 12_000;
 
