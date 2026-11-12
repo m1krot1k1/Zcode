@@ -231,9 +231,25 @@ describe("Source Server release resolver", () => {
         { fetch: remoteAssetFetch },
       ),
     ).rejects.toMatchObject({
-      message: "Unable to resolve Source Server release descriptor",
+      // Сообщение теперь включает фактическую причину и список испробованных URL:
+      // без них пользователь не мог отличить недоступный CDN от сетевой блокировки.
+      message: expect.stringContaining("Unable to resolve Source Server release descriptor"),
       cause: expect.objectContaining({ message: "proxy unavailable" }),
     });
+    // Диагностика должна объяснять причину. URL намеренно маскируется общим
+    // санитайзером соединений (`[redacted-url]`), поэтому проверяем причину и версию.
+    const failure = await resolveSourceServerReleaseAsset(
+      probe,
+      {
+        remoteCdnBaseUrls: [`https://cdn.example.test/releases/${ZCODE_VERSION}`],
+        remoteCacheDir: root,
+      },
+      target,
+      { fetch: remoteAssetFetch },
+    ).catch((error: unknown) => error as Error);
+    expect(failure.message).toContain("proxy unavailable");
+    expect(failure.message).toContain(ZCODE_VERSION);
+    expect(failure.message).toContain("Tried:");
     expect(remoteAssetFetch).toHaveBeenCalled();
     expect(directFetch).not.toHaveBeenCalled();
   });

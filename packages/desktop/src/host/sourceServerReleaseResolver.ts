@@ -138,7 +138,17 @@ async function resolveRemoteDescriptor(
       releaseBases,
     };
   }
-  throw new Error("Unable to resolve Source Server release descriptor", { cause: lastError });
+  // Диагностика: без URL и статуса пользователь видел только «Unable to resolve …»
+  // и не мог отличить недоступный CDN от сетевой блокировки. Последняя ошибка содержит
+  // фактический ответ (например `HTTP 404`) для конкретного кандидата.
+  const attempted = descriptorUrls.join(", ");
+  const reason = lastError instanceof Error ? `: ${lastError.message}` : "";
+  throw new Error(
+    `Unable to resolve Source Server release descriptor for ${ZCODE_VERSION}${reason}. Tried: ${attempted}. ` +
+      "This build reads the descriptor from the remote asset CDN; if the CDN does not publish this version, " +
+      "installing the Source Server on the remote host is unavailable.",
+    { cause: lastError },
+  );
 }
 
 async function downloadArchive(
