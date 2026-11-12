@@ -1,6 +1,6 @@
 import type { CuaPermissionKind, Locale } from "@zcode/shared";
 
-export interface CuaPermissionPanelMessages {
+interface CuaPermissionPanelMessages {
   documentTitle: string;
   dragTitle: string;
   hintPrefix: string;

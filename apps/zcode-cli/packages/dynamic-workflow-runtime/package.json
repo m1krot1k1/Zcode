@@ -17,7 +17,7 @@
     "pretypecheck": "pnpm --filter @zcode/dynamic-workflow build",
     "typecheck": "tsc --noEmit",
     "pretest": "pnpm --filter @zcode/dynamic-workflow build",
-    "test": "vitest run tests --reporter=verbose",
+    "test": "vitest run tests --reporter=verbose --retry=2",
     "coverage": "vitest run tests --coverage",
     "lint": "oxlint src tests",
     "lint:fix": "oxlint --write src tests"

@@ -11,11 +11,18 @@
     },
     "packages/desktop": {
       "entry": [
-        "scripts/**/*.{mjs,cjs,js,ts,mts}"
+        "scripts/**/*.{mjs,cjs,js,ts,mts}",
+        "src/renderer/cuaPermissionPanel.ts",
+        "src/renderer/src/plugin-sandbox/**/*.ts",
+        "src/renderer/src/resource-manager.tsx"
       ],
       "ignoreDependencies": [
         "esbuild",
         "@opentelemetry/otlp-transformer"
+      ],
+      "ignore": [
+        "scripts/*-fixture/**",
+        "src/**/*.d.ts"
       ]
     },
     "apps/zcode-cli/packages/dynamic-workflow": {
@@ -52,6 +59,11 @@
       "entry": [
         "scripts/**/*.{mjs,cjs,ts,mts}",
         ".vscode/*.mjs"
+      ]
+    },
+    "packages/server": {
+      "entry": [
+        "src/entry-stdio.ts"
       ]
     }
   },
