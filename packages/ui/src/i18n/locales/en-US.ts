@@ -1568,10 +1568,6 @@ const enUS: Record<string, string> = {
   "subagentDirectory.status.failed": "Failed",
   "subagentDirectory.status.cancelled": "Cancelled",
   "subagentDirectory.status.lost": "Lost",
-  "subagentDirectory.prismAcceptance.verified":
-    "Host check: declared command exited 0 · {passed}/{total} criteria",
-  "subagentDirectory.prismAcceptance.rejected": "Host check failed · {passed}/{total} criteria",
-  "subagentDirectory.prismAcceptance.unknown": "Host check not run · {passed}/{total} criteria",
   "chat.statusPanel.endedAgents": "Ended",
   "chat.statusPanel.endedWorkflows": "Ended workflows",
   "chat.statusPanel.workflowsLive": "{count} running",
@@ -8763,6 +8759,9 @@ const enUS: Record<string, string> = {
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · {duration}s saved",
   "globalNotice.highspeed.close": "Close Highspeed share card",
   ...requestSecurityMessagesEnUS,
+  "subagentDirectory.hostAcceptance.verified": "Host check: declared command exited 0 · {passed}/{total} criteria",
+  "subagentDirectory.hostAcceptance.rejected": "Host check failed · {passed}/{total} criteria",
+  "subagentDirectory.hostAcceptance.unknown": "Host check not run · {passed}/{total} criteria",
 };
 
 export default enUS;

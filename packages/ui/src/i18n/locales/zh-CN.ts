@@ -1442,10 +1442,6 @@ const zhCN: Record<string, string> = {
   "subagentDirectory.status.failed": "失败",
   "subagentDirectory.status.cancelled": "已取消",
   "subagentDirectory.status.lost": "已丢失",
-  "subagentDirectory.prismAcceptance.verified":
-    "主机校验：声明的命令返回 0 · {passed}/{total} 项标准",
-  "subagentDirectory.prismAcceptance.rejected": "主机校验未通过 · {passed}/{total} 项标准",
-  "subagentDirectory.prismAcceptance.unknown": "主机校验未执行 · {passed}/{total} 项标准",
   "chat.statusPanel.endedAgents": "已结束",
   // workflow run 目录（任务页脚行 → 这一页 → 详情页）。状态词复用
   // chat.toolCall.workflow.run.status.*，这里只有页面自己的结构文案。
@@ -8304,6 +8300,9 @@ const zhCN: Record<string, string> = {
     "我用 ZCode 高速卡节省了 {duration} 秒的时间，你也来试试吧。下载 ZCode https://zcode.z.ai",
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · 节省 {duration} 秒",
   "globalNotice.highspeed.close": "关闭加速分享卡片",
+  "subagentDirectory.hostAcceptance.verified": "主机校验：声明的命令返回 0 · {passed}/{total} 项标准",
+  "subagentDirectory.hostAcceptance.rejected": "主机校验未通过 · {passed}/{total} 项标准",
+  "subagentDirectory.hostAcceptance.unknown": "主机校验未执行 · {passed}/{total} 项标准",
 };
 
 export default zhCN;

@@ -293,6 +293,12 @@ function normalizeBuiltInSelectionOverrides(
   const explore = modelSelectionSchema.safeParse(structuredRecord.Explore);
   if (generalPurpose.success) result["general-purpose"] = generalPurpose.data;
   if (explore.success) result.Explore = explore.data;
+  // Router-роли: дешёвая/быстрая модель для маршрутизации не обязательна, но если Host
+  // её задал — применяем. Отсутствие ключа сохраняет наследование модели сессии.
+  for (const role of ["start", "orchestrator"] as const) {
+    const parsed = modelSelectionSchema.safeParse(structuredRecord[role]);
+    if (parsed.success) result[role] = parsed.data;
+  }
   return result;
 }
 

@@ -1,9 +1,9 @@
 import { Buffer } from "node:buffer";
 import {
   createSessionId,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SessionEventType,
   selectActiveConversationBranch,
   type BackgroundTaskInfo,
@@ -465,6 +465,8 @@ export function projectSessionSubagents(
         childSession.time.updated,
       ...(input.prismAcceptanceByChildSessionId?.get(candidate.childSessionId)
         ? {
+            // Каноническое имя + совместимость со старыми клиентами, читающими prismAcceptance.
+            hostAcceptance: input.prismAcceptanceByChildSessionId.get(candidate.childSessionId),
             prismAcceptance: input.prismAcceptanceByChildSessionId.get(candidate.childSessionId),
           }
         : {}),
@@ -533,15 +535,15 @@ export async function resolvePrismAcceptanceByChildSessionId(input: {
     const [contracts, receipts, terminals] = await Promise.all([
       store.sessionEntries({
         sessionID: rootSession.id,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       }),
       store.sessionEntries({
         sessionID: rootSession.id,
-        type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
       }),
       store.sessionEntries({
         sessionID: rootSession.id,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       }),
     ]);
     const acceptanceIndex = createPrismHistoricalAcceptanceIndex({

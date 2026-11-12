@@ -314,3 +314,11 @@ export interface SubagentPort {
     options?: SubagentSendMessageOptions,
   ): Promise<SubagentSendMessageResult>;
 }
+
+/**
+ * Канонические имена приёмки. `Prism*` оставлены для wire/disk-совместимости:
+ * durable entry types и protocol-поля не переименовываются без миграции читателей.
+ */
+export type HostAcceptanceContract = PrismTaskContract;
+export type HostAcceptanceEvidenceReceipt = PrismHostEvidenceReceipt;
+export type HostAcceptanceDecision = PrismTaskAcceptanceDecision;

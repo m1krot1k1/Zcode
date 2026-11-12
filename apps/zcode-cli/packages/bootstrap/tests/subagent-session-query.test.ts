@@ -5,9 +5,9 @@ import {
   PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION,
   SessionEventType,
   STREAM_RECOVERY_DISCARDED_ERROR_NAME,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   createSessionEvent,
   STREAM_RECOVERY_DISCARDED_FINISH,
   type MessageWithParts,
@@ -123,18 +123,18 @@ function prismHistory(input: {
     receipts: evaluation.receipts.map((receipt) =>
       entry(
         `prism-evidence-receipt:${input.root.id}:${receipt.receiptId}`,
-        SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+        SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
         { receipt },
       ),
     ),
     contractEntry: entry(
       `prism-task-contract:${input.root.id}:${rootRunId}:${input.taskId}:${attemptId}`,
-      SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       { contract },
     ),
     terminalEntry: entry(
       `prism-task-terminal:${input.root.id}:${terminal.terminalId}`,
-      SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       { terminal },
     ),
   };
@@ -511,7 +511,7 @@ describe("subagent session query", () => {
     const entry: SessionEntryInfo = {
       id: "contract-prism-task",
       sessionID: root.id,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       time: { created: 1, updated: 1 },
       data: { contract: { taskId: "prism-task", rootRunId: `${root.id}:prism-turn` } },
     };
@@ -653,7 +653,7 @@ describe("subagent session query", () => {
     };
     const parentTerminalEntry: SessionEntryInfo = {
       id: `prism-task-terminal:${root.id}:${parentTerminal.terminalId}`,
-      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       sessionID: root.id,
       time: { created: 1, updated: 1 },
       data: { terminal: parentTerminal },
@@ -719,7 +719,7 @@ describe("subagent session query", () => {
     const entry: SessionEntryInfo = {
       id: "contract-nested-task",
       sessionID: root.id,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       time: { created: 1, updated: 1 },
       data: {
         contract: {

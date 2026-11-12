@@ -26,7 +26,9 @@ export function importSubagentStateSelections(input: Record<string, unknown>): R
 } {
   const current = Object.hasOwn(input, "builtInModelSelectionOverrides");
   const selections: BuiltInSubagentModelSelectionOverrides = {};
-  for (const name of ["Explore", "general-purpose"] as const) {
+  // Router-роли тоже входят вцелевой набор: их override переживает миграцию файла состояния,
+  // иначе настройка «дешёвая модель для start/orchestrator» терялась при каждом чтении.
+  for (const name of ["Explore", "general-purpose", "start", "orchestrator"] as const) {
     const selection = current
       ? modelSelectionSchema.safeParse(record(input.builtInModelSelectionOverrides)[name]).data
       : parseSubagentMarkdownSelection({

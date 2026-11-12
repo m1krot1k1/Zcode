@@ -2,9 +2,9 @@ import type { WorkspaceId } from "@zcode/contracts";
 import { buildExecutionStateEntry, readRuntimeExecutionState } from "../execution-state.js";
 import {
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SESSION_ENTRY_USER_INPUT_AUTO_RESOLUTION,
   SessionEventType,
   createMessageId,
@@ -147,21 +147,21 @@ async function restorePrismProjectionEventsFromStore(
   const [contractEntries, receiptEntries, terminalEntries] = await Promise.all([
     store.sessionEntries({
       sessionID: this.sessionId,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       limit: PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE,
       order: "desc",
       maxDataBytes: PRISM_PROJECTION_MAX_ENTRY_BYTES,
     }),
     store.sessionEntries({
       sessionID: this.sessionId,
-      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
       limit: PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE,
       order: "desc",
       maxDataBytes: PRISM_PROJECTION_MAX_ENTRY_BYTES,
     }),
     store.sessionEntries({
       sessionID: this.sessionId,
-      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       limit: PRISM_PROJECTION_MAX_ENTRIES_PER_TYPE,
       order: "desc",
       maxDataBytes: PRISM_PROJECTION_MAX_ENTRY_BYTES,
@@ -922,7 +922,7 @@ async function persistPrismTaskContract(
   return serializePrismFactPersistence.call(this, entryId, async () => {
     const entries = await readSessionEntries({
       sessionID: lineage.rootSessionId,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
     });
     const existing = entries.find((entry) => entry.id === entryId);
     if (existing) {
@@ -943,7 +943,7 @@ async function persistPrismTaskContract(
       await saveSessionEntry({
         id: entryId,
         sessionID: lineage.rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
         touchSession: false,
         time: { created: timestamp, updated: timestamp },
         data: { contract, projectionEvent: createPrismProjectionEventEnvelope(event) },
@@ -990,7 +990,7 @@ async function persistPrismEvidenceReceipt(
 
   const contractEntries = await readSessionEntries({
     sessionID: lineage.rootSessionId,
-    type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+    type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
   });
   const contractEntryId = prismTaskContractEntryId(lineage.rootSessionId, {
     rootRunId: receipt.rootRunId,
@@ -1020,7 +1020,7 @@ async function persistPrismEvidenceReceipt(
   return serializePrismFactPersistence.call(this, entryId, async () => {
     const entries = await readSessionEntries({
       sessionID: lineage.rootSessionId,
-      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
     });
     const existing = entries.find((entry) => entry.id === entryId);
     if (existing) {
@@ -1041,7 +1041,7 @@ async function persistPrismEvidenceReceipt(
       await saveSessionEntry({
         id: entryId,
         sessionID: lineage.rootSessionId,
-        type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
         touchSession: false,
         time: { created: timestamp, updated: timestamp },
         data: { receipt, projectionEvent: createPrismProjectionEventEnvelope(event) },
@@ -1119,7 +1119,7 @@ async function persistSubagentExecutionTerminal(
   return serializePrismFactPersistence.call(this, entryId, async () => {
     const entries = await readSessionEntries({
       sessionID: lineage.rootSessionId,
-      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
     });
     const existing = entries.find((entry) => entry.id === entryId);
     if (existing) {
@@ -1139,7 +1139,7 @@ async function persistSubagentExecutionTerminal(
       await saveSessionEntry({
         id: entryId,
         sessionID: lineage.rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
         touchSession: false,
         time: { created: timestamp, updated: timestamp },
         data: { terminal: payload, projectionEvent: createPrismProjectionEventEnvelope(event) },

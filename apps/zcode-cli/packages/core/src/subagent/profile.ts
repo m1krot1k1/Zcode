@@ -893,8 +893,15 @@ export function matchAgentTypeInCatalog(
 
 // general-purpose оставлен только для чтения старых пользовательских настроек; runtime больше
 // не создаёт эту роль и не выбирает её модель. Новые встроенные роли наследуют модель сессии.
+/**
+ * Переопределение модели встроенных ролей.
+ *
+ * start/orchestrator только маршрутизируют и не требуют тяжёлой модели: если Host
+ * настроил для них более дешёвую/быструю модель, она применяется как профильная.
+ * Без override роли наследуют модель сессии, как раньше.
+ */
 export type BuiltInSubagentModelSelectionOverrides = Partial<
-  Record<"general-purpose" | typeof EXPLORE_AGENT_TYPE, ModelSelection>
+  Record<"general-purpose" | typeof EXPLORE_AGENT_TYPE | "start" | "orchestrator", ModelSelection>
 >;
 
 export function createBuiltInExploreAgentProfile(
@@ -979,7 +986,11 @@ export function normalizeAgentProfiles(
     }),
   );
   for (const profile of BUILT_IN_SWARM_PROFILES) {
-    active.set(profile.name, { ...profile });
+    const routerOverride = overrides[profile.name as keyof typeof overrides];
+    active.set(
+      profile.name,
+      routerOverride ? { ...profile, modelSelection: routerOverride } : { ...profile },
+    );
   }
   for (const profile of profiles) {
     // Не принимаем compatibility/general роли ни из workspace, ни из plugin snapshot:

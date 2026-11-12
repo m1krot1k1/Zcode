@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SessionEventType,
   createSessionEvent,
   createModelId,
@@ -187,7 +187,7 @@ describe("subagent tool event projection", () => {
       });
       const terminalEntries = await sessionStore.sessionEntries?.({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       });
       expect(terminalEntries).toHaveLength(3);
     } finally {
@@ -347,7 +347,7 @@ describe("subagent tool event projection", () => {
       });
       const terminalEntries = await sessionStore.sessionEntries?.({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       });
       expect(terminalEntries).toHaveLength(1);
       expect(terminalEntries?.[0]?.data).toMatchObject({
@@ -741,7 +741,7 @@ describe("subagent tool event projection", () => {
       });
       const durableTerminalEntries = await sessionStore.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       });
       const durableTerminalPayloads = durableTerminalEntries.map(
         (entry) => (entry.data as { terminal?: SubagentExecutionTerminalPayload }).terminal,

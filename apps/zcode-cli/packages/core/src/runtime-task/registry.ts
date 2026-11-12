@@ -29,9 +29,9 @@ import {
   PRISM_TASK_CONTRACT_MAX_CRITERIA,
   PRISM_TASK_CONTRACT_MAX_CRITERION_DESCRIPTION_BYTES,
   PRISM_TASK_CONTRACT_SCHEMA,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
   SessionEventType,
   type AgentOutput,
@@ -594,7 +594,7 @@ export function createPrismHistoricalAcceptanceIndex(input: {
 }): PrismHistoricalAcceptanceIndex {
   const contractsByTaskId = new Map<string, SessionEntryInfo[]>();
   for (const entry of input.contracts) {
-    if (entry.type !== SESSION_ENTRY_PRISM_TASK_CONTRACT || entry.sessionID !== input.rootSessionId)
+    if (entry.type !== SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT || entry.sessionID !== input.rootSessionId)
       continue;
     const taskId = nestedRecord(entry.data, "contract")?.taskId;
     if (typeof taskId !== "string") continue;
@@ -606,7 +606,7 @@ export function createPrismHistoricalAcceptanceIndex(input: {
   const receiptsByLineage = new Map<string, SessionEntryInfo[]>();
   for (const entry of input.receipts) {
     if (
-      entry.type !== SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT ||
+      entry.type !== SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT ||
       entry.sessionID !== input.rootSessionId
     )
       continue;
@@ -633,7 +633,7 @@ export function createPrismHistoricalAcceptanceIndex(input: {
   const rawTerminalCountByTaskAndChild = new Map<string, number>();
   const terminalTaskChildKeys = new Set<string>();
   for (const entry of input.terminals) {
-    if (entry.type !== SESSION_ENTRY_PRISM_TASK_TERMINAL || entry.sessionID !== input.rootSessionId)
+    if (entry.type !== SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL || entry.sessionID !== input.rootSessionId)
       continue;
     const rawTerminal = nestedRecord(entry.data, "terminal");
     const parsed = parsePrismHistoricalTerminal(entry.data);
@@ -896,7 +896,7 @@ function hasCurrentPrismTerminalOwnerChain(input: {
   const visitedTaskIds = new Set<string>();
   while (true) {
     if (
-      terminalEntry.type !== SESSION_ENTRY_PRISM_TASK_TERMINAL ||
+      terminalEntry.type !== SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL ||
       terminalEntry.sessionID !== input.rootSessionId ||
       terminalEntry.id !== `prism-task-terminal:${input.rootSessionId}:${terminal.terminalId}` ||
       terminal.rootRunId !== input.rootRunId ||

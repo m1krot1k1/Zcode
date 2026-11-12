@@ -821,15 +821,18 @@ export const SESSION_ENTRY_WORKSPACE_FILE_REWIND = "runtime/workspace_file_rewin
 /** 动态工作流工具面已在本会话激活（docs/dynamic-workflow/launch.md「On demand: activation」）。 */
 export const SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION =
   "runtime/dynamic_workflow_activation" as const;
-/** 根会话唯一保存 PRISM task contract 与 Host evidence receipt；不引入平行队列或表。 */
-export const SESSION_ENTRY_PRISM_TASK_CONTRACT = "runtime/prism_task_contract" as const;
-export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT = "runtime/prism_evidence_receipt" as const;
-/** Root-session append-only projection of one admitted subagent attempt's terminal lifecycle. */
-export const SESSION_ENTRY_PRISM_TASK_TERMINAL = "runtime/prism_task_terminal" as const;
+/**
+ * Канонические имена Host-приёмки (см. алиасы ниже). Строковые значения сохранены
+ * прежними, чтобы уже записанные SessionEntry и старые клиенты оставались валидными.
+ */
+export const SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT = "runtime/prism_task_contract" as const;
+export const SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT = "runtime/prism_evidence_receipt" as const;
+export const SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL = "runtime/prism_task_terminal" as const;
 /** Read-only metadata and output locator for terminal TaskOutput lookup after registry eviction. */
 export const SESSION_ENTRY_RUNTIME_TASK_TERMINAL = "runtime/task_terminal" as const;
 /** Append-only аудит решений о разрешениях: кто и по какой причине одобрил вызов. */
 export const SESSION_ENTRY_PERMISSION_DECISION = "runtime/permission_decision" as const;
+
 
 export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -840,9 +843,9 @@ export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_WORKSPACE_CHECKPOINT,
   SESSION_ENTRY_WORKSPACE_FILE_REWIND,
   SESSION_ENTRY_DYNAMIC_WORKFLOW_ACTIVATION,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
   SESSION_ENTRY_PERMISSION_DECISION,
 ] as const;

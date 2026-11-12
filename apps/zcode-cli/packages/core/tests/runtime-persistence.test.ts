@@ -13,9 +13,9 @@ import {
   READ_MAX_FILE_SIZE_BYTES,
   SESSION_ENTRY_BASH_SHELL_SELECTION,
   SESSION_ENTRY_MODEL_SELECTION,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SESSION_ENTRY_USER_INPUT_AUTO_RESOLUTION,
   SESSION_ENTRY_WORKSPACE_CHECKPOINT,
   RewindScope,
@@ -220,7 +220,7 @@ describe("AgentRuntime session persistence", () => {
       await store.saveSessionEntry!({
         id: contractId,
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
         touchSession: false,
         time: { created: timestampMs, updated: timestampMs },
         data: {
@@ -261,7 +261,7 @@ describe("AgentRuntime session persistence", () => {
       await store.saveSessionEntry!({
         id: `prism-task-terminal:${rootSessionId}:${terminalId}`,
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
         touchSession: false,
         time: { created: timestampMs + 5, updated: timestampMs + 5 },
         data: {
@@ -329,13 +329,13 @@ describe("AgentRuntime session persistence", () => {
     expect(
       await store.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       }),
     ).toHaveLength(fixtureCount + 1);
     expect(
       await store.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
       }),
     ).toHaveLength(fixtureCount + 1);
   });
@@ -427,10 +427,10 @@ describe("AgentRuntime session persistence", () => {
       }
       const sessionEntryType =
         event.type === SessionEventType.PrismTaskContractDeclared
-          ? SESSION_ENTRY_PRISM_TASK_CONTRACT
+          ? SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT
           : event.type === SessionEventType.PrismEvidenceReceiptObserved
-            ? SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT
-            : SESSION_ENTRY_PRISM_TASK_TERMINAL;
+            ? SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT
+            : SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL;
       const durableEntries = await store.sessionEntries!({
         sessionID: rootSessionId,
         type: sessionEntryType,
@@ -461,7 +461,7 @@ describe("AgentRuntime session persistence", () => {
     const durableContractEntry = (
       await store.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       })
     ).find(({ id }) => id === contractEntryId);
     if (!durableContractEntry) throw new Error("PRISM contract fixture was not persisted");
@@ -505,7 +505,7 @@ describe("AgentRuntime session persistence", () => {
     const canonicalContractEntry = (
       await store.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       })
     ).find(({ id }) => id === contractEntryId);
     expect(
@@ -659,7 +659,7 @@ describe("AgentRuntime session persistence", () => {
     await store.saveSessionEntry!({
       id: `prism-task-contract:${rootSessionId}:legacy-prism-root-run:legacy-prism-task:legacy-prism-attempt`,
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       touchSession: false,
       time: { created: 126, updated: 126 },
       data: { contract: legacyContract },
@@ -689,7 +689,7 @@ describe("AgentRuntime session persistence", () => {
     await store.saveSessionEntry!({
       id: `prism-evidence-receipt:${rootSessionId}:${staleReceipt.receiptId}`,
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
       touchSession: false,
       time: { created: 127, updated: 127 },
       data: {
@@ -747,7 +747,7 @@ describe("AgentRuntime session persistence", () => {
       (
         await store.sessionEntries!({
           sessionID: rootSessionId,
-          type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+          type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
         })
       ).some(
         ({ data }) =>
@@ -759,7 +759,7 @@ describe("AgentRuntime session persistence", () => {
       (
         await store.sessionEntries!({
           sessionID: rootSessionId,
-          type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
         })
       ).some(
         ({ data }) =>
@@ -815,7 +815,7 @@ describe("AgentRuntime session persistence", () => {
     const contractEntry = (
       await store.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       })
     ).find((entry) => {
       const data = entry.data as { contract?: { taskId?: string } };
@@ -907,7 +907,7 @@ describe("AgentRuntime session persistence", () => {
     const malformedContractEntry = (
       await store.sessionEntries!({
         sessionID: rootSessionId,
-        type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+        type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
       })
     ).find((entry) => entry.id === contractEntry?.id);
     if (!malformedContractEntry) throw new Error("PRISM contract entry fixture is missing");
@@ -1058,15 +1058,15 @@ describe("AgentRuntime session persistence", () => {
 
     const contractEntries = await store.sessionEntries!({
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
     });
     const receiptEntries = await store.sessionEntries!({
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
     });
     const terminalEntries = await store.sessionEntries!({
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
     });
     expect(contractEntries).toHaveLength(2);
     expect(receiptEntries).toHaveLength(2);
@@ -1118,7 +1118,7 @@ describe("AgentRuntime session persistence", () => {
     });
     const saveSessionEntry = store.saveSessionEntry!.bind(store);
     store.saveSessionEntry = async (entry) => {
-      if (entry.type === SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT) {
+      if (entry.type === SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT) {
         throw new Error("fixture store write failure");
       }
       await saveSessionEntry(entry);
@@ -1212,11 +1212,11 @@ describe("AgentRuntime session persistence", () => {
 
     const contractEntries = await store.sessionEntries!({
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
     });
     const receiptEntries = await store.sessionEntries!({
       sessionID: rootSessionId,
-      type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+      type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
     });
     expect(receiptEntries).toHaveLength(0);
     expect(

@@ -12,9 +12,9 @@ import {
   createSessionEvent,
   createSessionId,
   createTurnId,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
 } from "@zcode/contracts";
 import {
   InMemoryRuntimeTaskRegistry,
@@ -230,15 +230,15 @@ describe("PRISM SQLite projection recovery", () => {
       const [contracts, receipts, terminals, owner] = await Promise.all([
         store.sessionEntries!({
           sessionID: rootSessionId,
-          type: SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          type: SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
         }),
         store.sessionEntries!({
           sessionID: rootSessionId,
-          type: SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+          type: SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
         }),
         store.sessionEntries!({
           sessionID: rootSessionId,
-          type: SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          type: SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
         }),
         store.getSession(rootSessionId),
       ]);

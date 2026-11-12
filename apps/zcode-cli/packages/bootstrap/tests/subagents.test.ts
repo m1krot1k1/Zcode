@@ -312,6 +312,16 @@ description: 用户级运行 agent
               modelId: "gpt-5.4",
               options: { reasoningLevel: "high" },
             },
+            // Router-роли: override допустим и применяется к start/orchestrator.
+            start: {
+              providerId: "custom-openai",
+              modelId: "glm-5.2",
+            },
+            orchestrator: {
+              providerId: "custom-openai",
+              modelId: "glm-5.2",
+              options: { reasoningLevel: "low" },
+            },
             ignored: {
               providerId: "custom-openai",
               modelId: "ignored",
@@ -336,6 +346,12 @@ description: 用户级运行 agent
           providerId: "custom-openai",
           modelId: "gpt-5.4",
           options: { reasoningLevel: "high" },
+        },
+        start: { providerId: "custom-openai", modelId: "glm-5.2" },
+        orchestrator: {
+          providerId: "custom-openai",
+          modelId: "glm-5.2",
+          options: { reasoningLevel: "low" },
         },
       });
     } finally {

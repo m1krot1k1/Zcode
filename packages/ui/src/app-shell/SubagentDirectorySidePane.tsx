@@ -91,17 +91,31 @@ const DirectoryRow = memo(function DirectoryRow({
             {item.summary}
           </span>
         ) : null}
-        {"prismAcceptance" in item && item.prismAcceptance ? (
-          <span className="mt-0.5 block text-ui-sm text-foreground-subtlest" role="status">
-            {intl.formatMessage(
-              { id: `subagentDirectory.prismAcceptance.${item.prismAcceptance.status}` },
-              {
-                passed: String(item.prismAcceptance.passedCriteria),
-                total: String(item.prismAcceptance.totalCriteria),
-              },
-            )}
-          </span>
-        ) : null}
+        {(() => {
+          // Причина: каноническое имя — hostAcceptance; prismAcceptance читаем только
+          // у старых Host/кэшированных проекций, чтобы не терять статус после обновления.
+          type Acceptance = {
+            status: "unknown" | "verified" | "rejected";
+            passedCriteria: number;
+            totalCriteria: number;
+          };
+          const acceptance = (("hostAcceptance" in item ? item.hostAcceptance : undefined) ??
+            ("prismAcceptance" in item ? item.prismAcceptance : undefined)) as
+            | Acceptance
+            | undefined;
+          if (!acceptance) return null;
+          return (
+            <span className="mt-0.5 block text-ui-sm text-foreground-subtlest" role="status">
+              {intl.formatMessage(
+                { id: `subagentDirectory.hostAcceptance.${acceptance.status}` },
+                {
+                  passed: String(acceptance.passedCriteria),
+                  total: String(acceptance.totalCriteria),
+                },
+              )}
+            </span>
+          );
+        })()}
       </span>
       {timestamp ? (
         <span className="shrink-0 text-ui-sm text-foreground-subtlest">

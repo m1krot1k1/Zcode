@@ -1959,7 +1959,17 @@ export type ZCodeSessionRunningSubagent = z.infer<typeof zcodeSessionRunningSuba
 
 export const zcodeSessionEndedSubagentSchema = zcodeSessionSubagentBaseSchema.extend({
   status: z.enum(["success", "failed", "cancelled", "lost"]),
+  /** @deprecated Используйте hostAcceptance; поле сохранено для старых клиентов. */
   prismAcceptance: z
+    .object({
+      status: z.enum(["unknown", "verified", "rejected"]),
+      passedCriteria: z.number().int().nonnegative(),
+      totalCriteria: z.number().int().nonnegative(),
+    })
+    .strict()
+    .optional(),
+  /** Каноническое имя приёмки: проверка объявленной команды на стороне Host. */
+  hostAcceptance: z
     .object({
       status: z.enum(["unknown", "verified", "rejected"]),
       passedCriteria: z.number().int().nonnegative(),

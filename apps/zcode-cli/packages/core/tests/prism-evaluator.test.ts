@@ -3,9 +3,9 @@ import {
   PRISM_BASH_EVIDENCE_ARTIFACT_SCHEMA,
   PRISM_BASH_EXIT_CODE_EVALUATOR_ID,
   PRISM_BASH_EXIT_CODE_EVALUATOR_VERSION,
-  SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
-  SESSION_ENTRY_PRISM_TASK_CONTRACT,
-  SESSION_ENTRY_PRISM_TASK_TERMINAL,
+  SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
+  SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
   SessionEventType,
   createSessionEvent,
   createSessionId,
@@ -355,7 +355,7 @@ describe("PRISM historical acceptance projection", () => {
         contracts: [
           entry(
             `prism-task-contract:${rootSessionId}:${current.rootRunId}:${current.taskId}:${current.attemptId}`,
-            SESSION_ENTRY_PRISM_TASK_CONTRACT,
+            SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
             rootSessionId,
             { contract },
           ),
@@ -363,7 +363,7 @@ describe("PRISM historical acceptance projection", () => {
         receipts: evaluation.receipts.map((receipt) =>
           entry(
             `prism-evidence-receipt:${rootSessionId}:${receipt.receiptId}`,
-            SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+            SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
             rootSessionId,
             { receipt },
           ),
@@ -371,7 +371,7 @@ describe("PRISM historical acceptance projection", () => {
         terminals: [
           entry(
             terminalEntryId,
-            SESSION_ENTRY_PRISM_TASK_TERMINAL,
+            SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
             rootSessionId,
             JSON.parse(JSON.stringify({ terminal })) as unknown,
           ),
@@ -482,7 +482,7 @@ describe("PRISM historical acceptance projection", () => {
       contracts: [
         entry(
           `prism-task-contract:${fixture.rootSessionId}:${nestedContract.rootRunId}:${nestedContract.taskId}:${nestedContract.attemptId}`,
-          SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
           fixture.rootSessionId,
           { contract: nestedContract },
         ),
@@ -490,7 +490,7 @@ describe("PRISM historical acceptance projection", () => {
       receipts: nestedEvaluation.receipts.map((receipt) =>
         entry(
           `prism-evidence-receipt:${fixture.rootSessionId}:${receipt.receiptId}`,
-          SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+          SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
           fixture.rootSessionId,
           { receipt },
         ),
@@ -498,13 +498,13 @@ describe("PRISM historical acceptance projection", () => {
       terminals: [
         entry(
           `prism-task-terminal:${fixture.rootSessionId}:${parentTerminal.terminalId}`,
-          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
           fixture.rootSessionId,
           { terminal: parentTerminal },
         ),
         entry(
           `prism-task-terminal:${fixture.rootSessionId}:${leafTerminal.terminalId}`,
-          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
           fixture.rootSessionId,
           { terminal: leafTerminal },
         ),
@@ -569,7 +569,7 @@ describe("PRISM historical acceptance projection", () => {
       contracts: [
         entry(
           `prism-task-contract:${fixture.rootSessionId}:${nestedContract.rootRunId}:${nestedContract.taskId}:${nestedContract.attemptId}`,
-          SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
           fixture.rootSessionId,
           { contract: nestedContract },
         ),
@@ -577,7 +577,7 @@ describe("PRISM historical acceptance projection", () => {
       receipts: nestedEvaluation.receipts.map((receipt) =>
         entry(
           `prism-evidence-receipt:${fixture.rootSessionId}:${receipt.receiptId}`,
-          SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
+          SESSION_ENTRY_HOST_ACCEPTANCE_RECEIPT,
           fixture.rootSessionId,
           { receipt },
         ),
@@ -585,13 +585,13 @@ describe("PRISM historical acceptance projection", () => {
       terminals: [
         entry(
           `prism-task-terminal:${fixture.rootSessionId}:${parentTerminal.terminalId}`,
-          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
           fixture.rootSessionId,
           { terminal: parentTerminal },
         ),
         entry(
           `prism-task-terminal:${fixture.rootSessionId}:${leafTerminal.terminalId}`,
-          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
           fixture.rootSessionId,
           { terminal: leafTerminal },
         ),
@@ -706,7 +706,7 @@ describe("PRISM historical acceptance projection", () => {
       contracts: [
         entry(
           `prism-task-contract:${fixture.rootSessionId}:${current.rootRunId}:${current.taskId}:${current.attemptId}`,
-          SESSION_ENTRY_PRISM_TASK_CONTRACT,
+          SESSION_ENTRY_HOST_ACCEPTANCE_CONTRACT,
           fixture.rootSessionId,
           { contract: contractWithParent },
         ),
@@ -714,7 +714,7 @@ describe("PRISM historical acceptance projection", () => {
       terminals: [
         entry(
           `prism-task-terminal:${fixture.rootSessionId}:${childTerminal.terminalId}`,
-          SESSION_ENTRY_PRISM_TASK_TERMINAL,
+          SESSION_ENTRY_HOST_ACCEPTANCE_TERMINAL,
           fixture.rootSessionId,
           { terminal: childTerminal },
         ),

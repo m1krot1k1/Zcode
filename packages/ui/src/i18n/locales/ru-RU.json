@@ -7042,9 +7042,6 @@
   "subagentDirectory.status.failed": "Ошибка",
   "subagentDirectory.status.cancelled": "Отменён",
   "subagentDirectory.status.lost": "Потерян",
-  "subagentDirectory.prismAcceptance.verified": "Проверка хоста: объявленная команда вернула 0 · {passed}/{total}",
-  "subagentDirectory.prismAcceptance.rejected": "Проверка хоста не пройдена · {passed}/{total}",
-  "subagentDirectory.prismAcceptance.unknown": "Проверка хоста не выполнялась · {passed}/{total}",
   "treemapping.title": "Карта файловой активности",
   "treemapping.badge.live": "В реальном времени",
   "treemapping.badge.snapshot": "Снимок",
@@ -7529,5 +7526,8 @@
   "settings.workspaceBoundaryDescription": "Управляет доступом Read/Write/Edit/Bash за пределы workspace: strict запрещает, ask требует подтверждения, allow сохраняет прежнее поведение. Действует для новых сессий.",
   "settings.workspaceBoundary.strict": "Строго — запрещать выход за пределы",
   "settings.workspaceBoundary.ask": "Спрашивать — требовать подтверждение",
-  "settings.workspaceBoundary.allow": "Разрешать — без ограничений"
+  "settings.workspaceBoundary.allow": "Разрешать — без ограничений",
+  "subagentDirectory.hostAcceptance.verified": "Проверка хоста: объявленная команда вернула 0 · {passed}/{total}",
+  "subagentDirectory.hostAcceptance.rejected": "Проверка хоста не пройдена · {passed}/{total}",
+  "subagentDirectory.hostAcceptance.unknown": "Проверка хоста не выполнялась · {passed}/{total}"
 }

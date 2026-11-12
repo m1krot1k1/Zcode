@@ -425,7 +425,9 @@ tools:
     expect(startPrompt).toContain("не обещай возобновление после перезапуска");
     const implementerPrompt =
       swarmProfiles.find(({ name }) => name === "implementer")?.systemPrompt ?? "";
-    expect(implementerPrompt).toContain("Для задачи о коде сначала вызови CodeIndex status");
+    // Контракт изменился: сначала используется уже готовая подсказка, status/search — только без неё.
+    expect(implementerPrompt).toContain("Если в контексте уже есть `code-index hint`");
+    expect(implementerPrompt).toContain("сначала вызови CodeIndex status");
     expect(implementerPrompt).toContain("Не дублируй индекс широким Explore/Grep обходом");
     expect(implementerPrompt).toContain("offset = startLine");
     const orchestratorPrompt =
@@ -631,6 +633,23 @@ Review carefully.`,
       providerId: "custom-openai",
       modelId: "gpt-5.4",
     });
+  });
+
+  it("applies router model overrides to start/orchestrator only", () => {
+    const routerSelection = { providerId: "custom-openai", modelId: "cheap-router" };
+    const profiles = normalizeAgentProfiles([], {
+      builtInModelSelectionOverrides: { start: routerSelection },
+    });
+
+    expect(profiles.find((profile) => profile.name === "start")?.modelSelection).toEqual(
+      routerSelection,
+    );
+    // Без override orchestrator продолжает наследовать модель сессии (undefined).
+    expect(
+      profiles.find((profile) => profile.name === "orchestrator")?.modelSelection,
+    ).toBeUndefined();
+    // Worker-роли не получают router-override.
+    expect(profiles.find((profile) => profile.name === "coder")?.modelSelection).toBeUndefined();
   });
 
   it("keeps built-in Explore internal while retaining its formatter for compatibility", () => {

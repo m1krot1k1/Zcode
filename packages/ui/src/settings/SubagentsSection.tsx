@@ -167,8 +167,14 @@ function getBuiltInSubagentName(agent: AgentSummary): BuiltInSubagentName | null
   if (!isBuiltInAgent(agent)) {
     return null;
   }
-  // 原因：设置页合同仍包含 general-purpose 和 Explore。只认 Explore 时 general-purpose 没有模型选择器。
-  return agent.name === "general-purpose" || agent.name === "Explore" ? agent.name : null;
+  // 合同: general-purpose/Explore + router-роли. Для start/orchestrator override — это
+  // способ назначить дешёвую модель маршрутизации, не меняя модель исполнителей.
+  return agent.name === "general-purpose" ||
+    agent.name === "Explore" ||
+    agent.name === "start" ||
+    agent.name === "orchestrator"
+    ? agent.name
+    : null;
 }
 
 function getKnownTools(values: readonly string[] | undefined): string[] {
