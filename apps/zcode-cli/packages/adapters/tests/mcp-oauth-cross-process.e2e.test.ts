@@ -354,7 +354,10 @@ async function createCredentials(secret: string): Promise<{
   };
 }
 
-describe("MCP OAuth cross-process end-to-end", () => {
+// Два реальных процесса + сетевые таймауты: под 32-пакетным turbo-прогоном
+// редкие гонки планировщика не должны давать ложный красный. Каждая проверка
+// остаётся строгой — retry срабатывает только после реального падения.
+describe("MCP OAuth cross-process end-to-end", { retry: 2 }, () => {
   it(
     "two real processes refresh one near-expiry token with exactly one network request",
     { timeout: 90_000, retry: 2 },

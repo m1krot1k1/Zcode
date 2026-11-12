@@ -94,7 +94,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "node ../../scripts/clean-dist.mjs",
-    "test": "vitest tests",
+    "test": "vitest run tests --pool=forks --maxWorkers=2",
     "coverage": "vitest run tests --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",

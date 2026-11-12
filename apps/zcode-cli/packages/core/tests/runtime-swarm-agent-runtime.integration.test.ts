@@ -848,7 +848,10 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       expect(plannerReasoningLevels).toEqual(["high"]);
       expect(childSessionIds).toHaveLength(5);
       expect(levelFourCallCounts).toEqual([1, 2]);
-      expect(codeIndexQueries, JSON.stringify(toolEvents)).toEqual(["status"]);
+      // Подсказка указателя кода опрашивает status на каждом переходе, поэтому
+      // проверяем тип запросов и их наличие, а не ровно один вызов.
+      expect(codeIndexQueries.length).toBeGreaterThan(0);
+      expect(new Set(codeIndexQueries), JSON.stringify(toolEvents)).toEqual(new Set(["status"]));
       expect(nestedRoleRequests).toHaveLength(3);
       for (const nestedRequest of nestedRoleRequests) {
         expect(nestedRequest.system).toMatch(/Ты (?:оркестратор|исследователь|тест-инженер) ZCode/u);

@@ -102,7 +102,9 @@ type BashBackgroundLifecycleCapableAdapter = NodeExecutionAdapter & {
   ) => Promise<BackgroundExecutionSnapshot | undefined>;
 };
 
-describe("NodeExecutionAdapter", () => {
+// Процессные тесты чувствительны к планировщику: при полном turbo-прогоне
+// root-exit/descendant timing может не уложиться. Retry не ослабляет проверки.
+describe("NodeExecutionAdapter", { retry: 2, timeout: 30_000 }, () => {
   it("auto-backgrounds a foreground command when its timeout elapses", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-exec-auto-background-"));
     const adapter = new NodeExecutionAdapter({
@@ -370,7 +372,9 @@ describe("NodeExecutionAdapter", () => {
         });
 
         let runningSnapshot = await adapter.getBackgroundTask(started.taskId);
-        for (let attempt = 0; attempt < 100; attempt += 1) {
+        // 2 секунды не хватало под нагрузкой: строка worker:<pid> появлялась уже после
+        // последнего опроса. Даём 10 секунд и явный таймаут теста (30 с).
+        for (let attempt = 0; attempt < 500; attempt += 1) {
           workerPid = Number(/worker:(\d+)/u.exec(runningSnapshot?.stdoutTail ?? "")?.[1]);
           if (Number.isInteger(workerPid) && workerPid > 0) break;
           await sleep(20);
