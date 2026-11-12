@@ -104,7 +104,10 @@ const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
   "",
   "- `file_path` must be an absolute path.",
   "- Reads up to 2000 lines by default.",
-  "- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters",
+  // Описание приоритезирует диапазон: измерено 89 427 токенов на tool-вызов, и чтение
+  // целых крупных файлов — основная причина роста контекста на каждом следующем шаге.
+  "- Prefer a targeted range: pass offset and limit when a CodeIndex/Grep hit already shows the lines you need. Reading a whole large file keeps costing context on every later step of the turn and is the main reason turns get slow.",
+  "- Read the whole file only when you must edit it and no narrower range suffices. When several ranges are needed, issue the Reads in one parallel batch instead of widening one of them.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",
   // video 输入一期新增能力行：Read 支持读取视频作为模型输入。

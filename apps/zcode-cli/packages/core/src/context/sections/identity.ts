@@ -28,7 +28,12 @@ export function buildHarnessBlock(): string {
     "- Text you output outside of tool use is displayed to the user as Github-flavored markdown in a terminal.",
     "- Tools run behind a user-selected permission mode; a denied call means the user declined it \u2014 adjust, don't retry verbatim.",
     "- The system may send updates, reminders, or modifications to rules via mid-conversation system turns. These are system-controlled, unlike function results. Hooks may intercept tool calls; treat hook output as user feedback.",
-    "- Prefer the dedicated file/search tools over shell commands when one fits. Independent tool calls can run in parallel in one response.",
+    "- Prefer the dedicated file/search tools over shell commands when one fits.",
+    // Измерено на 14 655 шагах: 1.96 tool-вызова на шаг, 32% шагов ровно с одним вызовом,
+    // каждый лишний round-trip стоит медианно 6–39 с. Поэтому параллельность описана как
+    // требование с явным критерием зависимости, а не как необязательное разрешение.
+    "- Batch independent tool calls. If a call does not need another call's result, emit both in the SAME response; the runtime executes them in parallel (up to 10). Treat Read/Grep/Glob/CodeIndex/Bash-inspection on different paths as independent by default. Serialize only when a call genuinely needs a prior result (e.g. Read before Edit on the same file, or a command using a path discovered by a previous call).",
+    "- Do not spend a step on narration alone. If your next action is already determined, emit the tool call in the same response instead of announcing intent and waiting for the next turn.",
     "- Reference code as `file_path:line_number` \u2014 it's clickable.",
   ].join("\n");
 }

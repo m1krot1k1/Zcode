@@ -322,7 +322,11 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).toContain("mid-conversation system turns");
     expect(stableBody).toContain("Hooks may intercept tool calls");
     expect(stableBody).toContain("Prefer the dedicated file/search tools");
-    expect(stableBody).toContain("Independent tool calls can run in parallel");
+    // Параллельность описана как требование с критерием зависимости, а не как разрешение:
+    // измерено 1.96 tool-вызова на шаг, и каждый лишний round-trip стоит секунды.
+    expect(stableBody).toContain("Batch independent tool calls");
+    expect(stableBody).toContain("SAME response");
+    expect(stableBody).toContain("Do not spend a step on narration alone");
     expect(stableBody).toContain("Reference code as `file_path:line_number`");
     expect(stableBody).not.toContain("match local style, naming, patterns, and comment density");
     expect(stableBody).not.toContain("For actions that are hard to reverse");
