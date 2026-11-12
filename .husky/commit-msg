@@ -4,8 +4,12 @@
 # 在 commit-msg 阶段拦截；正文不检查。
 # grep 在 C locale 下按字节匹配多字节字符，会把中文误判为含西里尔字母，
 # 因此先探测可用的 UTF-8 locale。
-for loc in C.UTF-8 en_US.UTF-8; do
-  if [ "$(LC_ALL=$loc locale charmap 2>/dev/null)" = UTF-8 ]; then
+for loc in C.UTF-8 en_US.UTF-8 ru_RU.UTF-8; do
+  # Одного charmap недостаточно: в C.UTF-8 GNU grep отвергает диапазон
+  # [А-Яа-яЁё] («Invalid collation character») и русский коммит блокируется.
+  # Проверяем именно ту операцию, которой пользуется hook.
+  if [ "$(LC_ALL=$loc locale charmap 2>/dev/null)" = UTF-8 ] &&
+     printf 'А\n' | LC_ALL=$loc grep -q '[А-Яа-яЁё]' 2>/dev/null; then
     LC_ALL=$loc
     export LC_ALL
     break

@@ -44,7 +44,8 @@ The provider-visible MCS and hook bullet is exactly:
 `- The system may send updates, reminders, or modifications to rules via mid-conversation system turns. These are system-controlled, unlike function results. Hooks may intercept tool calls; treat hook output as user feedback.`
 
 The ZCode static sections end at the final `# Harness` bullet. The same stable
-`system[1]` body then appends the PRISM Ω FULL 5.1 swarm protocol. Code-style and
+`system[1]` body then appends the PRISM 10.0 `coding` profile (core plus
+intent/evidence/runtime modules). Code-style and
 risk/reporting paragraphs must not be emitted in the ZCode sections of `system[1]`.
 
 An active output style changes the static intro but does not remove `# Harness`,

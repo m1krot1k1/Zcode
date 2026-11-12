@@ -36,6 +36,22 @@ function replaceExactlyOnce(input, target, replacement, label) {
   return `${input.slice(0, first)}${replacement}${input.slice(first + target.length)}`;
 }
 
+/**
+ * Замена, которая применяется только если фрагмент присутствует.
+ *
+ * Причина: runtime использует компактный профиль `coding` (ядро + intent/evidence/runtime).
+ * Текст про локальный gate живёт в модуле recursive_research и в этот профиль не входит.
+ * Жёсткая замена по отсутствующему тексту ломала бы сборку профиля при смене набора модулей.
+ */
+function replaceIfPresent(input, target, replacement, label) {
+  const first = input.indexOf(target);
+  if (first < 0) return input;
+  if (input.indexOf(target, first + target.length) >= 0) {
+    throw new Error(`PRISM adapter target must occur at most once: ${label}`);
+  }
+  return `${input.slice(0, first)}${replacement}${input.slice(first + target.length)}`;
+}
+
 async function readSource(relativePath) {
   const absolutePath = path.resolve(SOURCE_ROOT, relativePath);
   if (!absolutePath.startsWith(`${SOURCE_ROOT}${path.sep}`)) {
@@ -87,9 +103,20 @@ async function compileOfficialProfile(profile) {
   };
 }
 
+/**
+ * Runtime-профиль.
+ *
+ * Причина выбора: полный профиль `all` весит 15 080 символов, из которых 56 % — самоулучшение,
+ * evals и правила роя. Для исполнителей роя эти правила не применяются (у них собственные
+ * контракты в subagent/profile.ts), а корневой агент платит за них токенами и вниманием на
+ * каждом запросе. `coding` — официальный профиль самого пакета (README: ядро + подключаемые
+ * модули), он сохраняет intent/evidence/runtime и убирает recursive/swarm/evolution.
+ */
+const RUNTIME_PROFILE = "coding";
+
 export async function buildPrismRuntimeProfile() {
   const checkedSourcePaths = await verifySourceChecksums();
-  const { compiled, modulePaths } = await compileOfficialProfile("all");
+  const { compiled, modulePaths } = await compileOfficialProfile(RUNTIME_PROFILE);
   let prompt = compiled;
   const activationTarget = prompt.match(
     /## 0\. Активация\n\n[\s\S]*?(?=\n\n## 1\. Неизменяемое ядро)/u,
@@ -101,13 +128,13 @@ export async function buildPrismRuntimeProfile() {
     ACTIVATION_REPLACEMENT,
     "activation section",
   );
-  prompt = replaceExactlyOnce(
+  prompt = replaceIfPresent(
     prompt,
     "Для тестового гейта: `python scripts/experiment_gate.py --input fixtures/...jsonl --objective success`.",
     GATE_COMMAND_REPLACEMENT,
     "external gate command",
   );
-  prompt = replaceExactlyOnce(
+  prompt = replaceIfPresent(
     prompt,
     "Реальный набор утилит `experiment_gate.py` может проверять **предоставленные** парные результаты и выдавать техническую рекомендацию; сам он не вызывает LLM и не проверяет подлинность receipts.",
     GATE_AVAILABILITY_REPLACEMENT,
@@ -166,7 +193,7 @@ function renderIdentitySource(identitySource, prompt, sourceDigest, profileDiges
     `const PRISM_OMEGA_SYSTEM_PROMPT = ${JSON.stringify(prompt)};`,
   );
 
-  const commentBlock = `// PRISM 10.0 all profile: generated from the vendored, checksum-verified source.\n// PRISM_SOURCE_SHA256: ${sourceDigest}\n// PRISM_PROFILE_SHA256: ${profileDigest}`;
+  const commentBlock = `// PRISM 10.0 ${RUNTIME_PROFILE} profile: generated from the vendored, checksum-verified source.\n// PRISM_SOURCE_SHA256: ${sourceDigest}\n// PRISM_PROFILE_SHA256: ${profileDigest}`;
   const lines = output.split("\n");
   const commentIndex = lines.findIndex((line) => line.startsWith("// PRISM 10.0"));
   if (commentIndex < 0) throw new Error("PRISM profile comment block was not found");

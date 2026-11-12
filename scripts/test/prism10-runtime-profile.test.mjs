@@ -9,25 +9,31 @@ import { buildPrismRuntimeProfile } from "../prism10-runtime-profile.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-test("PRISM runtime profile derives from the checksum-verified all source", async () => {
+/** Компактный runtime-профиль: официальный `coding` занимает ~9,3 тыс. символов. */
+const COMPACT_PROMPT_CHAR_LIMIT = 10_000;
+
+test("PRISM runtime profile derives from the checksum-verified coding source", async () => {
   const artifact = await buildPrismRuntimeProfile();
   const official = await readFile(
-    path.join(repositoryRoot, "docs/vendor/prism10/generated/all.md"),
+    path.join(repositoryRoot, "docs/vendor/prism10/generated/coding.md"),
     "utf8",
   );
 
   assert.equal(artifact.checkedSourcePaths.length, 26);
   assert.equal(artifact.compiledProfile, official);
   assert.equal(createHash("sha256").update(artifact.prompt).digest("hex"), artifact.profileDigest);
+  // Причина: runtime использует компактный профиль. Полный `all` весил 15 080 символов и
+  // проигрывал по вниманию/токенам, поэтому размер зафиксирован порогом, а не только хешем.
+  assert.ok(artifact.prompt.length <= COMPACT_PROMPT_CHAR_LIMIT);
   assert.match(artifact.prompt, /## 5\. Контур проверки поколения/u);
-  assert.match(artifact.prompt, /Proof-Carrying Upgrade/u);
-  assert.match(artifact.prompt, /EXPERIMENTAL RECURSIVE DISCOVERY MODULE \(v10\)/u);
-  assert.match(artifact.prompt, /не запускает LLM/u);
-  assert.match(artifact.prompt, /node scripts\/prism10-experiment-gate\.mjs/u);
-  assert.match(artifact.prompt, /не проверяет подлинность receipts/u);
-  assert.doesNotMatch(artifact.prompt, /PRISM ∞ 10\.0 активирован\./u);
+  assert.match(artifact.prompt, /МОДУЛЬ EVIDENCE & EVALUATION/u);
+  assert.match(artifact.prompt, /МОДУЛЬ RUNTIME & ENGINEERING/u);
+  assert.doesNotMatch(artifact.prompt, /EXPERIMENTAL RECURSIVE DISCOVERY MODULE \(v10\)/u);
+  assert.doesNotMatch(artifact.prompt, /МОДУЛЬ SWARM EXECUTION/u);
+  assert.doesNotMatch(artifact.prompt, /Proof-Carrying Upgrade/u);
   assert.doesNotMatch(artifact.prompt, /python scripts\/experiment_gate\.py/u);
-  assert.doesNotMatch(artifact.prompt, /не проверяй и не применяй патчи ZCode/u);
+  assert.doesNotMatch(artifact.prompt, /node scripts\/prism10-experiment-gate\.mjs/u);
+  assert.doesNotMatch(artifact.prompt, /PRISM ∞ 10\.0 активирован\./u);
   assert.doesNotMatch(artifact.prompt, /\/Users\/ndppd\//u);
 });
 
