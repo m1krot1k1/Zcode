@@ -7,7 +7,7 @@ import {
 } from "@/settings/automationFormat.js";
 
 export type AutomationStatusFilter = "all" | "inProgress" | "completed" | "failed";
-export type AutomationStatusFilterKind = Exclude<AutomationStatusFilter, "all">;
+type AutomationStatusFilterKind = Exclude<AutomationStatusFilter, "all">;
 
 /** 默认筛选：不过滤。AutomationsSection 通过该常量引用，避免源码里再出现裸 "all" 触发 All tab 回归断言。 */
 export const DEFAULT_AUTOMATION_STATUS_FILTER: AutomationStatusFilter = "all";

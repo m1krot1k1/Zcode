@@ -3,7 +3,7 @@ import {
   type ActivePromptInputTrigger,
 } from "@/lib/promptInputTriggers.js";
 
-export interface PromptInputTextSelectionSnapshot {
+interface PromptInputTextSelectionSnapshot {
   cursorOffset: number;
   nodeKey: string;
   text: string;

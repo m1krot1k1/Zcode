@@ -142,7 +142,7 @@ export function logGenerateTextDiagnostics(input: {
   }
 }
 
-export function summarizeFinishChunkForDiagnostics(
+function summarizeFinishChunkForDiagnostics(
   chunk: unknown,
 ): Record<string, unknown> | undefined {
   const record = asRecord(chunk);

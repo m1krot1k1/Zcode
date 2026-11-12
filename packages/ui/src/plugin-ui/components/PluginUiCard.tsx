@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef } from "react";
 import { bindPluginUiPage } from "../adapters/pluginUiPageRegistry.js";
 import type { PluginUiHostPhase } from "../app/pluginUiHostController.js";
 
-export interface PluginUiCardProps {
+interface PluginUiCardProps {
   pageKey: string;
   handle: PluginSandboxHandle | null;
   phase: PluginUiHostPhase;

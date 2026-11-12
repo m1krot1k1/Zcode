@@ -74,7 +74,7 @@ export const modelExecutionSchema = z
 
 export type ModelExecution = z.infer<typeof modelExecutionSchema>;
 export type ModelExecutionSelectionFallback = NonNullable<ModelExecution["selectionFallback"]>;
-export type ModelExecutionSelectionFallbackRule = ModelExecutionSelectionFallback["rules"][number];
-export type ModelExecutionSelectionFallbackReason = z.infer<
+type ModelExecutionSelectionFallbackRule = ModelExecutionSelectionFallback["rules"][number];
+type ModelExecutionSelectionFallbackReason = z.infer<
   typeof modelExecutionSelectionFallbackReasonSchema
 >;

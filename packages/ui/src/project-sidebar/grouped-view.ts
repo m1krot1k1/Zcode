@@ -18,7 +18,7 @@ export function groupTaskRef(task: ProjectTask): GroupTaskRef {
     ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
   };
 }
-export type GroupedRow =
+type GroupedRow =
   | { type: "group"; key: string; group: TaskGroup }
   | { type: "task"; key: string; task: ProjectTask; groupId: string | null }
   | { type: "empty"; key: string; groupId: string };

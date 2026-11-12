@@ -17,7 +17,7 @@ export interface UsageEntitlementRequestOptions {
 }
 
 export type UsageEntitlementRefreshReason = "initial" | "access" | "manual" | "purchase" | "auth";
-export type UsageEntitlementScheduleState = "unknown" | "active" | "none" | "unavailable";
+type UsageEntitlementScheduleState = "unknown" | "active" | "none" | "unavailable";
 
 export const USAGE_ENTITLEMENT_ACCESS_REFRESH_MS = 60_000;
 
@@ -93,7 +93,7 @@ export function recordSharedEntitlementAccess(params: {
   getAccessRequestMap(params.usageStatsService).set(params.freshnessKey, params.now);
 }
 
-export function buildEntitlementRequestKey(options: UsageEntitlementRequestOptions): string {
+function buildEntitlementRequestKey(options: UsageEntitlementRequestOptions): string {
   return JSON.stringify({
     ...(options.invalidateBalanceCache ? { invalidateBalanceCache: true } : {}),
     includeSubscription: options.includeSubscription,

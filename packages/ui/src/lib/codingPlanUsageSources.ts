@@ -46,7 +46,7 @@ export function buildPersonalCodingPlanUsageSource({
   };
 }
 
-export type CurrentSidebarCodingPlanUsageSource =
+type CurrentSidebarCodingPlanUsageSource =
   | {
       audience: "individual";
       providerId: SidebarUsageCodingPlanProviderId;
@@ -188,7 +188,7 @@ export function resolveSidebarCurrentCodingPlanUsageSource({
   return { audience: "individual", providerId, sourceId: providerId, accountAccess };
 }
 
-export function matchesTeamPlanUsageSourceKey(sourceId: string, selectedKey: string): boolean {
+function matchesTeamPlanUsageSourceKey(sourceId: string, selectedKey: string): boolean {
   return sourceId === selectedKey;
 }
 

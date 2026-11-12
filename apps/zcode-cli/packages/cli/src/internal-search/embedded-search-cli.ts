@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-export type EmbeddedSearchCommand = "find" | "grep";
+type EmbeddedSearchCommand = "find" | "grep";
 
 type EmbeddedSearchWritable = {
   destroyed?: boolean;
@@ -52,7 +52,7 @@ interface EmbeddedSearchAbortReason {
   signal?: NodeJS.Signals;
 }
 
-export interface EmbeddedSearchIo {
+interface EmbeddedSearchIo {
   cwd: string;
   signal?: AbortSignal;
   stderr: EmbeddedSearchWritable;

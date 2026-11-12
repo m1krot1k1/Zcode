@@ -128,7 +128,7 @@ export interface ConversationStatusPanelModel {
   runningWorkflowRuns: ConversationStatusPanelWorkflowRun[];
 }
 
-export interface BuildConversationStatusPanelModelInput {
+interface BuildConversationStatusPanelModelInput {
   isOfficeMode?: boolean;
   gitSummary?: GitRepositorySummary | null;
   gitDirtyFileCount?: number;

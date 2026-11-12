@@ -1,6 +1,6 @@
 export const WORKBENCH_SESSION_DRAG_MIME = "application/x-zcode-session";
 
-export interface WorkbenchSessionDragPayload {
+interface WorkbenchSessionDragPayload {
   readonly kind: "zcode/session";
   readonly workspacePath: string;
   readonly workspaceIdentity?: string;

@@ -29,7 +29,7 @@ export function getNetworkErrorCodes(error: unknown): string[] {
   return [...collectNetworkErrorDetails(error).codes].sort();
 }
 
-export function isNetworkFailure(error: unknown): boolean {
+function isNetworkFailure(error: unknown): boolean {
   const { codes } = collectNetworkErrorDetails(error);
   return [...codes].some((code) => NETWORK_FAILURE_CODES.has(code));
 }

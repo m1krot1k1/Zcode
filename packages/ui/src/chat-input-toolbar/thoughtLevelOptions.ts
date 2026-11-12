@@ -1,10 +1,10 @@
 import { thoughtLevelLabelId } from "@/chat-input-toolbar/thoughtLevelLabels.js";
-export { thoughtLevelLabelId } from "@/chat-input-toolbar/thoughtLevelLabels.js";
+
 import type { ZCodeConfigOption, ZCodeProvider } from "@zcode/shared";
 import type { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getConfigOptionEntryLabel } from "@/chat-input-toolbar/display.js";
 
-export type ThoughtLevelEntry = NonNullable<ZCodeConfigOption["options"]>[number];
+type ThoughtLevelEntry = NonNullable<ZCodeConfigOption["options"]>[number];
 
 const NO_THOUGHT_LEVEL_VALUES = new Set([
   "disabled",

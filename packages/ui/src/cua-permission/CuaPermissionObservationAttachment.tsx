@@ -53,7 +53,7 @@ async function runWithOneRetry<T>(
   throw new Error("CUA permission retry exhausted");
 }
 
-export function cuaPermissionObservationKey(
+function cuaPermissionObservationKey(
   observation: ZCodeAgentCuaPermissionObservation,
 ): string {
   const workspaceKey = observation.workspaceIdentity?.trim() || observation.workspacePath;
@@ -66,7 +66,7 @@ export function cuaPermissionObservationKey(
   ].join("\0");
 }
 
-export async function runCuaPermissionPrompt(
+async function runCuaPermissionPrompt(
   dependencies: CuaPermissionPromptDependencies,
 ): Promise<void> {
   const readMissing = async () => {

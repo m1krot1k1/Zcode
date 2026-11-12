@@ -15,7 +15,7 @@ export type HighspeedTurnPreparer = (
 ) => Promise<HighspeedPrepareTurnResult | null>;
 
 /** 会话投影/草稿里可参与 Highspeed prepare 选择解析的字段（结构兼容 snapshot config）。 */
-export interface HighspeedPrepareSelectionSource {
+interface HighspeedPrepareSelectionSource {
   readonly provider?: string;
   readonly model?: string;
   readonly thought?: string;

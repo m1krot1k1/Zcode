@@ -41,4 +41,4 @@ export function createProviderSettingsConnectivityTester(dependencies: {
   };
 }
 
-export type { ModelConnectivityResult };
+

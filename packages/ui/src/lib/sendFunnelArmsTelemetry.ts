@@ -7,9 +7,9 @@ import { logger } from "@/logger.js";
 
 export const SEND_FUNNEL_ARMS_GROUP = "send_funnel";
 
-export const SEND_FUNNEL_EVENT_INPUT_FOCUS = "send_input_focus";
-export const SEND_FUNNEL_EVENT_SEND_CLICK = "send_click";
-export const SEND_FUNNEL_EVENT_SEND_RESULT = "send_result";
+const SEND_FUNNEL_EVENT_INPUT_FOCUS = "send_input_focus";
+const SEND_FUNNEL_EVENT_SEND_CLICK = "send_click";
+const SEND_FUNNEL_EVENT_SEND_RESULT = "send_result";
 
 type ArmsReporter = Pick<IPlatformService, "reportArmsCustomEvent">;
 
@@ -50,7 +50,7 @@ function emit(payload: ArmsCustomEventPayload): void {
 }
 
 /** 会话态 / 草稿态，用于区分「已有会话里发」和「新建任务首发」两类漏斗。 */
-export function composerScopeOf(sessionId: string | null | undefined): "session" | "draft" {
+function composerScopeOf(sessionId: string | null | undefined): "session" | "draft" {
   return sessionId ? "session" : "draft";
 }
 

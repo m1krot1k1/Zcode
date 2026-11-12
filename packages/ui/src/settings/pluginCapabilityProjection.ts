@@ -31,7 +31,7 @@ export function selectBuiltInPlugins(
   return plugins.filter((plugin) => plugin.source === "official" && !installedIds.has(plugin.id));
 }
 
-export interface PluginSettingsGroups {
+interface PluginSettingsGroups {
   installed: ZCodePluginInfo[];
   builtIn: ZCodePluginInfo[];
 }
@@ -145,7 +145,7 @@ export function selectCommandsForScope(
   });
 }
 
-export interface SkillSourceGroup {
+interface SkillSourceGroup {
   id: string;
   label: string;
   pluginId?: string;

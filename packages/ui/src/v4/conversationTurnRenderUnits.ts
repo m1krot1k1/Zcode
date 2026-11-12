@@ -3,9 +3,7 @@ import type {
   BuildConversationTurnRenderUnitsOptions,
 } from "@/v4/conversationTurnRenderUnitTypes.js";
 export type {
-  ConversationTurnRenderUnit,
-  BuildConversationTurnRenderUnitsOptions,
-} from "@/v4/conversationTurnRenderUnitTypes.js";
+  ConversationTurnRenderUnit} from "@/v4/conversationTurnRenderUnitTypes.js";
 import type {
   AssistantTextRow,
   ConversationRow,

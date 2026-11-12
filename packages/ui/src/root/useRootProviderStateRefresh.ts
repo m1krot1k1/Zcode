@@ -4,7 +4,7 @@ import { logger } from "@/logger.js";
 
 type RootProviderStateServices = Pick<IServiceAccessor, "providerSettingsService">;
 
-export async function refreshRootProviderState(services: RootProviderStateServices): Promise<void> {
+async function refreshRootProviderState(services: RootProviderStateServices): Promise<void> {
   try {
     // Provider Runtime 统一刷新 Config、Account Source 与 Registry；Root 不再维护旧快照。
     await services.providerSettingsService.refresh("root-provider-state-refresh");

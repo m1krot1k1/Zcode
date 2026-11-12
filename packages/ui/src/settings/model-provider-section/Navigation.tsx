@@ -70,7 +70,7 @@ export function shouldShowModelProviderGroupLoadingIndicator(params: {
   return params.groupId === "custom" && params.customLoading;
 }
 
-export function resolveModelProviderSideNavLabel(item: ModelProviderNavItem): string {
+function resolveModelProviderSideNavLabel(item: ModelProviderNavItem): string {
   if (item.type === "preset") {
     return resolveModelProviderFamilySpecByProviderId(item.presetId)?.label ?? item.label;
   }

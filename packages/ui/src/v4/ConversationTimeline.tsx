@@ -265,7 +265,7 @@ function getUnitHeightCacheKey(unit: ConversationTurnRenderUnit | undefined): st
   return unit?.key;
 }
 
-export interface ConversationTimelineProps {
+interface ConversationTimelineProps {
   rows: readonly ConversationRow[];
   /** 手机远控窄屏允许整条会话 flex 链按抽屉宽度收缩；桌面布局保持原样。 */
   compactForRemoteControl?: boolean;

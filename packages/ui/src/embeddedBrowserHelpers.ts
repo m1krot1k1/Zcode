@@ -27,7 +27,7 @@ const WEBVIEW_DETACHED_ERROR_FRAGMENTS = [
   "Render frame was disposed",
 ] as const;
 
-export function isWebviewDetachedError(error: unknown): boolean {
+function isWebviewDetachedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   if (!message) {
     return false;
@@ -88,7 +88,7 @@ export interface BrowserState {
   title: string;
 }
 
-export interface BrowserNavigationRequest {
+interface BrowserNavigationRequest {
   id: string;
   url: string;
 }
@@ -217,7 +217,7 @@ function isLocalhostName(host: string): boolean {
   return host === "localhost" || host === "localhost.localdomain" || host.endsWith(".localhost");
 }
 
-export function isLocalDevelopmentHost(host: string): boolean {
+function isLocalDevelopmentHost(host: string): boolean {
   const normalizedHost = host.toLowerCase().replace(/^\[(.*)]$/, "$1");
   if (
     isLocalhostName(normalizedHost) ||
@@ -258,7 +258,7 @@ export function isLocalDevelopmentBrowserUrl(url: string): boolean {
   }
 }
 
-export type MessageLinkOpenTarget = "app-browser" | "external-browser";
+type MessageLinkOpenTarget = "app-browser" | "external-browser";
 
 /**
  * 交互语义：右键菜单的两项是显式互补的目标选择，只有左键单击才走本机/私网启发式。

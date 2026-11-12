@@ -6,7 +6,7 @@ interface ChromiumHardwareAccelerationApp {
   disableHardwareAcceleration(): void;
 }
 
-export function resolveChromiumHardwareAccelerationSettingsFile(
+function resolveChromiumHardwareAccelerationSettingsFile(
   homePath: string = homedir(),
 ): string {
   return join(homePath, ".zcode", "v2", "setting.json");

@@ -1282,7 +1282,7 @@ async function validateSubagentComputerUseConfiguration(
   );
 }
 
-export function isUniqueOfficialSkillRequest(
+function isUniqueOfficialSkillRequest(
   skills: readonly SkillContent["metadata"][],
   requestName: string,
   cuaPolicy: Pick<OfficialCuaPolicy, "isOfficialSkill">,

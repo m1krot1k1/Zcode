@@ -1,4 +1,4 @@
-export { basename, join, resolve as resolvePath } from "node:path";
+export { basename, resolve as resolvePath } from "node:path";
 import {
   createChildTraceContext as createContractChildTraceContext,
   traceContextToLogContext as contractTraceContextToLogContext,

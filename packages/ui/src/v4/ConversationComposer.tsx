@@ -249,7 +249,7 @@ function getComposerAttachmentTypeLabel(filename: string, mimeType: string): str
   return (mimeType.split("/").at(-1) ?? mimeType).toUpperCase();
 }
 
-export interface ExternalTextInsertRequest {
+interface ExternalTextInsertRequest {
   requestId: number;
   text: string;
   mention?: ComposerMentionPrefill;
@@ -424,7 +424,7 @@ function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly s
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
-export interface ConversationComposerProps {
+interface ConversationComposerProps {
   snapshot: ConversationSnapshot | null;
   /** 草稿 scope（sessionId；draft 态 null → "__draft__" scope）。 */
   sessionId?: string | null;

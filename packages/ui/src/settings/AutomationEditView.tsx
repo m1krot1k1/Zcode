@@ -1065,7 +1065,7 @@ export interface AutomationEditSubmit {
   workspaceIdentity?: string;
 }
 
-export interface AutomationEditViewProps {
+interface AutomationEditViewProps {
   /** null = 新建；否则编辑。 */
   editing: ZCodeAutomation | null;
   /** 新建预填(来自 More ideas 模板)。 */

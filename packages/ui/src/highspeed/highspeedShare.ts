@@ -2,14 +2,14 @@ import type { GlobalNoticeEnvelope } from "@/global-notice/globalNoticeStore.js"
 import type { HighspeedShareMetrics } from "@/highspeed/highspeedTurnStore.js";
 import { calculateHighspeedSavedDurationMs } from "@/highspeed/highspeedSavedTime.js";
 
-export const HIGHSPEED_NOTICE_DISMISS_COOLDOWN_MS = 24 * 60 * 60_000;
-export const HIGHSPEED_NOTICE_AUTO_CLOSE_MS = 24 * 60 * 60_000;
-export const MIN_HIGHSPEED_SHARE_SPEEDUP = 1.2;
+const HIGHSPEED_NOTICE_DISMISS_COOLDOWN_MS = 24 * 60 * 60_000;
+const HIGHSPEED_NOTICE_AUTO_CLOSE_MS = 24 * 60 * 60_000;
+const MIN_HIGHSPEED_SHARE_SPEEDUP = 1.2;
 /**
  * 左下角分享卡通知的 payload。指标一律以毫秒事实携带（与发布门禁 isHighspeedShareEligible 同精度），
  * 秒级展示值由渲染侧派生；durationSeconds/savedDurationSeconds 只是 ≤24h 内遗留持久化通知的兼容读取字段。
  */
-export interface HighspeedShareNoticePayload extends Record<string, unknown> {
+interface HighspeedShareNoticePayload extends Record<string, unknown> {
   cardId: string;
   tokenUsage: number;
   durationMs?: number;
@@ -84,7 +84,7 @@ export function highspeedSavedPercent(metrics: HighspeedShareMetrics): number {
 
 const HIGHSPEED_CARD_IMAGE_SIZE = { width: 436, height: 304 } as const;
 
-export interface HighspeedShareImageLabels {
+interface HighspeedShareImageLabels {
   benefit: string;
   standardSpeed: string;
   speedSummary: string;

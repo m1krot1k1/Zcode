@@ -26,7 +26,7 @@ export type PendingStreamRecoveryRequest = ModelStreamRecoveryStatus;
 
 export const RAPID_REFILL_TOOL_TURN_THRESHOLD = 3;
 export const MAX_CONSECUTIVE_RAPID_REFILLS = 3;
-export const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
+const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
 const AUTOMATION_QUERY_ID_PREFIX = "automation-";
 /**
  * 闲时派发轮隐藏的工具；OffPeakList 只读保留。

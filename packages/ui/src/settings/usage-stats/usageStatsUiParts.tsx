@@ -4,7 +4,7 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatCompactTokenNumber } from "@/lib/tokenNumberFormat.js";
 
-export const RANGE_OPTIONS: AppUsageRange[] = ["7d", "30d"];
+const RANGE_OPTIONS: AppUsageRange[] = ["7d", "30d"];
 export const USAGE_STATS_TABS_LIST_CLASS =
   "flex h-7 rounded-full bg-surface p-0.5 group-data-horizontal/tabs:h-7";
 export const USAGE_STATS_TABS_TRIGGER_CLASS =
@@ -89,7 +89,7 @@ export function resolveModelLabel(
   return modelId?.trim() || intl.formatMessage({ id: "settings.usage.unknownModel" });
 }
 
-export function UsageMetricCard({
+function UsageMetricCard({
   icon: Icon,
   label,
   value,

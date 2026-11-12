@@ -38,7 +38,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isCronCreateToolCall(
+function isCronCreateToolCall(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): boolean {
   return [toolCall.toolName, toolCall.kind, toolCall.title].some(
@@ -206,7 +206,7 @@ export function CronCreateAutomationCard({
   );
 }
 
-export function CronCreateToolCallBlock(context: ToolCallBlockRenderContext) {
+function CronCreateToolCallBlock(context: ToolCallBlockRenderContext) {
   const { toolCall } = context.toolCallNode;
   const automation = readCronCreateAutomationSummary(toolCall);
 

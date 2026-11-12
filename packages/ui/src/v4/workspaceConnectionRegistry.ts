@@ -46,7 +46,7 @@ export type WorkspaceConnectionAgentService = Pick<
   | "onAgentRuntimeRestarted"
 >;
 
-export interface WorkspaceConnectionScope {
+interface WorkspaceConnectionScope {
   /** = pane 绑定的 primary workspace（连接路由键）。 */
   workspacePath: string;
   workspaceIdentity?: string;
@@ -83,7 +83,7 @@ interface RegistryEntry {
 const registry = new Map<string, RegistryEntry>();
 
 /** 本机 endpoint 的保留键（与 sessionsIndexRegistry / task list shardKey 口径一致）。 */
-export const LOCAL_WORKSPACE_CONNECTION_ENDPOINT = "__base__";
+const LOCAL_WORKSPACE_CONNECTION_ENDPOINT = "__base__";
 
 /** 引用归零后延迟释放窗口（ms）；与 SessionDataLayer keep-warm 同标度。 */
 export const WORKSPACE_CONNECTION_KEEP_WARM_MS = 30_000;

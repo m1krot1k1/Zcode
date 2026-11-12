@@ -47,7 +47,7 @@ function elapsedMsForClock(input: {
   return Math.max(elapsedFromJob, elapsedFromBaseline);
 }
 
-export function BackgroundTaskElapsedLabel({
+function BackgroundTaskElapsedLabel({
   className,
   job,
   now = Date.now(),

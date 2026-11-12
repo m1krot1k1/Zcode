@@ -29,7 +29,7 @@ type CodingPlanProductsSnapshot = Omit<CodingPlanBatchPreviewResponse, "productL
 };
 
 const CODING_PLAN_OAUTH_REQUIRED_ERROR = "coding_plan_oauth_required";
-export const ZAI_START_FREE_PRODUCT_ID = "zai-start-free";
+const ZAI_START_FREE_PRODUCT_ID = "zai-start-free";
 const ZAI_START_FREE_PRODUCT_IDS = {
   month: `${ZAI_START_FREE_PRODUCT_ID}-monthly`,
   quarter: `${ZAI_START_FREE_PRODUCT_ID}-quarterly`,
@@ -336,7 +336,7 @@ function formatStartPlanPreviewEntitlement(
   return [amount, unit, period].filter(Boolean).join(" ");
 }
 
-export function isZaiStartFreeProductId(productId: string | null | undefined) {
+function isZaiStartFreeProductId(productId: string | null | undefined) {
   if (!productId) {
     return false;
   }
@@ -525,7 +525,7 @@ export function normalizeErrorMessage(error: unknown): string {
   return message;
 }
 
-export function isCodingPlanOAuthRequiredError(error: string): boolean {
+function isCodingPlanOAuthRequiredError(error: string): boolean {
   return (
     error === CODING_PLAN_OAUTH_REQUIRED_ERROR ||
     error === "bigmodel_oauth_required" ||
@@ -534,7 +534,7 @@ export function isCodingPlanOAuthRequiredError(error: string): boolean {
   );
 }
 
-export function isCodingPlanSystemBusyError(error: string): boolean {
+function isCodingPlanSystemBusyError(error: string): boolean {
   return error === CODING_PLAN_SYSTEM_BUSY || isCodingPlanSystemBusyMessage(error);
 }
 

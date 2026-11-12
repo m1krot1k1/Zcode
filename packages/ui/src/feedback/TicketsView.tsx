@@ -138,7 +138,7 @@ export function TicketsView({
   );
 }
 
-export function TicketsInitialLoadingState() {
+function TicketsInitialLoadingState() {
   const { intl } = useZCodeIntl();
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 py-8 text-center text-ui-base text-foreground-subtle">

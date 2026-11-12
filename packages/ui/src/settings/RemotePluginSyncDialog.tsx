@@ -38,7 +38,7 @@ import {
   shouldStartRemoteSyncOperation,
 } from "@/settings/RemoteSyncActions.js";
 
-export type RemotePluginSyncDialogStep =
+type RemotePluginSyncDialogStep =
   | "loading"
   | "selection"
   | "preflighting"
@@ -65,7 +65,7 @@ type RemotePluginSyncAgentService = Pick<
 
 const REMOTE_PLUGIN_SYNC_CONFIG_SCOPE = "user" as const;
 
-export interface RemotePluginSyncCandidate {
+interface RemotePluginSyncCandidate {
   id: string;
   kind: RemotePluginSyncKind;
   name: string;
@@ -96,7 +96,7 @@ interface RemotePluginSyncCandidateStatus {
   remoteMarketplaceExists?: boolean;
 }
 
-export interface RemotePluginSyncRow {
+interface RemotePluginSyncRow {
   candidate: RemotePluginSyncCandidate;
   exists: boolean;
   path?: string;
@@ -113,11 +113,11 @@ interface RemotePluginSyncResultItem extends Omit<
   status: RemotePluginSyncResultStatus;
 }
 
-export interface RemotePluginSyncRunResult {
+interface RemotePluginSyncRunResult {
   results: RemotePluginSyncResultItem[];
 }
 
-export function shouldFinishRemotePluginSyncRun(
+function shouldFinishRemotePluginSyncRun(
   currentRun: AbortController | null,
   run: AbortController,
 ): boolean {
@@ -126,7 +126,7 @@ export function shouldFinishRemotePluginSyncRun(
 
 type RemotePluginSyncProgressStatus = "queued" | "syncing" | RemotePluginSyncResultStatus;
 
-export interface RemotePluginSyncProgressEvent {
+interface RemotePluginSyncProgressEvent {
   candidateId: string;
   log: string;
   pluginId: string;

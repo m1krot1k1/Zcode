@@ -396,7 +396,7 @@ async function respondToOpenCodePermission(
 }
 
 /** goal-pause barrier 共用件：stop 与 sendQueuedNow（抢占重发）复用，不复制。 */
-export async function pauseActiveGoal(
+async function pauseActiveGoal(
   host: V4CommandCoreHost,
   record: V4SessionRecordView,
 ): Promise<boolean> {
@@ -418,7 +418,7 @@ export async function pauseActiveGoal(
 }
 
 /** 轮询等 Bootstrap turn 与 Core turn 的 finally 都释放 authority。 */
-export async function waitForSessionIdle(record: V4SessionRecordView): Promise<void> {
+async function waitForSessionIdle(record: V4SessionRecordView): Promise<void> {
   const deadline = Date.now() + IDLE_POLL_TIMEOUT_MS;
   while (true) {
     // Bug 根因：Bootstrap 的 abort/foreground 标记会早于 Core activeTurn 清理，编辑在这

@@ -12,7 +12,7 @@ import {
   type FinalArmsCustomEventE2EController,
 } from "./desktopArmsCustomEvent.js";
 
-export const REMOTE_USAGE_ARMS_GROUP = "remote_usage";
+const REMOTE_USAGE_ARMS_GROUP = "remote_usage";
 const REMOTE_USAGE_ARMS_EVENT_CONNECT_RESULT = "remote_connect_result";
 const REMOTE_USAGE_ARMS_EVENT_ACTIVE_SESSION_COUNT = "remote_active_session_count";
 const REMOTE_USAGE_ARMS_EVENT_DISCONNECT = "remote_disconnect";

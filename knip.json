@@ -26,8 +26,16 @@
         "src/renderer/src/resource-manager.tsx"
       ],
       "ignoreDependencies": [
+        "@babel/runtime",
+        "@electron/rebuild",
+        "@larksuiteoapi/node-sdk",
+        "@lydell/node-pty-linux-arm64",
+        "@lydell/node-pty-linux-x64",
+        "@opentelemetry/otlp-transformer",
+        "@wdio/local-runner",
         "esbuild",
-        "@opentelemetry/otlp-transformer"
+        "module-details-from-path",
+        "tailwindcss"
       ],
       "ignore": [
         "scripts/*-fixture/**",
@@ -51,12 +59,22 @@
       "ignore": [
         "ui/**",
         "src/adapters/**"
+      ],
+      "ignoreDependencies": [
+        "@aiden0z/pptx-renderer",
+        "@modelcontextprotocol/ext-apps",
+        "docx-preview"
       ]
     },
     "apps/zcode-cli": {
       "entry": [
         "e2e/**/*.mjs",
         "scripts/**/*.mjs"
+      ],
+      "ignoreDependencies": [
+        "oxlint",
+        "postject",
+        "tsx"
       ]
     },
     "packages/zcode-server-cli": {
@@ -68,11 +86,56 @@
       "entry": [
         "scripts/**/*.{mjs,cjs,ts,mts}",
         ".vscode/*.mjs"
+      ],
+      "ignoreDependencies": [
+        "@release-it/conventional-changelog",
+        "dotenv",
+        "lint-staged",
+        "postject",
+        "turbo"
       ]
     },
     "packages/server": {
       "entry": [
         "src/entry-stdio.ts"
+      ],
+      "ignoreDependencies": [
+        "@lydell/node-pty-darwin-arm64",
+        "@lydell/node-pty-darwin-x64",
+        "@lydell/node-pty-linux-arm64",
+        "@lydell/node-pty-linux-x64",
+        "axios",
+        "combined-stream",
+        "follow-redirects",
+        "form-data",
+        "node-forge",
+        "proxy-from-env",
+        "undici",
+        "yaml",
+        "yauzl",
+        "yazl"
+      ]
+    },
+    "packages/web": {
+      "ignoreDependencies": [
+        "tailwindcss"
+      ]
+    },
+    "packages/web-share": {
+      "ignoreDependencies": [
+        "tailwindcss"
+      ]
+    },
+    "packages/share-ui": {
+      "ignoreDependencies": [
+        "@tailwindcss/typography",
+        "@types/react",
+        "@types/react-dom"
+      ]
+    },
+    "packages/shared": {
+      "ignoreDependencies": [
+        "@modelcontextprotocol/ext-apps"
       ]
     }
   },

@@ -160,7 +160,7 @@ function CodeBlock({ value }: { value: string }) {
   );
 }
 
-export function UsageBadges({
+function UsageBadges({
   usage,
   intl,
 }: {

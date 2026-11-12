@@ -61,7 +61,7 @@ function collectOwnedRemoteWorkspaceCredentialKeys(snapshot: RemoteTargetSnapsho
   return [];
 }
 
-export function getWorkspaceDisplayLabel(workspacePath: string): string {
+function getWorkspaceDisplayLabel(workspacePath: string): string {
   const normalized = workspacePath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? workspacePath;
@@ -75,7 +75,7 @@ export function hasRemoteWorkspaceIdentity(entry: {
   return Boolean(entry.remoteSessionId || entry.remoteTarget || entry.workspaceIdentity);
 }
 
-export function isSshRemoteWorkspaceIdentity(workspaceIdentity?: string | null): boolean {
+function isSshRemoteWorkspaceIdentity(workspaceIdentity?: string | null): boolean {
   return workspaceIdentity?.trim().startsWith("remote:ssh:") === true;
 }
 
@@ -704,7 +704,7 @@ function mergeIdentityAliases(
   return aliases;
 }
 
-export interface RemoteWorkspaceSessionIdentityRekey {
+interface RemoteWorkspaceSessionIdentityRekey {
   workspacePath: string;
   previousWorkspaceIdentity: string;
   workspaceIdentity: string;

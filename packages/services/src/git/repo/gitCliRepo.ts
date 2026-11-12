@@ -63,11 +63,8 @@ export type {
   GitBranchComparisonChange,
   GitBranchComparisonSnapshot,
   GitCliRepo,
-  GitLineStat,
-  GitResolvedRepository,
   GitStatusEntry,
-  GitStatusSnapshot,
-} from "./gitCliTypes.js";
+  GitStatusSnapshot} from "./gitCliTypes.js";
 
 function toUnavailableDiff(path: string, summary: string): GitDiffResult {
   return {

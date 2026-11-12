@@ -4,7 +4,7 @@ import { connect as connectTls } from "node:tls";
 import { rootCertificates } from "node:tls";
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 
-export interface HostApiNetworkOptions {
+interface HostApiNetworkOptions {
   httpProxy?: string;
   noProxy?: string;
   caCertPath?: string;

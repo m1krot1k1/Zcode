@@ -4,9 +4,9 @@ import { sortInstalledEditorsForOpenWith } from "@/lib/openWithEditors.js";
 const REMOTE_SSH_EDITOR_IDS = ["vscode", "vscode-insiders"];
 const REMOTE_WSL_EDITOR_IDS = ["vscode", "vscode-insiders", "explorer"];
 
-export type WorkspaceEditorSelectionKind = "preferred" | "fallback" | "empty" | "explicit";
+type WorkspaceEditorSelectionKind = "preferred" | "fallback" | "empty" | "explicit";
 
-export interface WorkspaceEditorSelectionState {
+interface WorkspaceEditorSelectionState {
   availableEditors: EditorInfo[];
   selectedEditor: EditorInfo | null;
   selectionKind: Exclude<WorkspaceEditorSelectionKind, "explicit">;

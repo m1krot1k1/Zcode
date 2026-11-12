@@ -281,7 +281,7 @@ export function toProtocolError(error: unknown): {
   };
 }
 
-export function createProtocolTraceId(_sessionId: SessionId): TraceContext["traceId"] {
+function createProtocolTraceId(_sessionId: SessionId): TraceContext["traceId"] {
   // Bugfix: traceId 是 session 之上的观测链路，不应由 sessionId 拼出来。
   // 这里复用 agent/contracts 的 UUID 算法，保证 app 和 agent 两端 trace 格式一致。
   return createTraceId();

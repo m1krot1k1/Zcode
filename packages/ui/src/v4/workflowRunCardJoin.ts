@@ -224,7 +224,7 @@ export function resolveWorkflowRunGraphForRun(
 }
 
 /** 「配置」修订出来的 run 的发起 toolCallId 前缀（agent 铸 `settings-<uuid>`，docs/dynamic-workflow/launch.md）。 */
-export const WORKFLOW_SETTINGS_TOOL_CALL_PREFIX = "settings-";
+const WORKFLOW_SETTINGS_TOOL_CALL_PREFIX = "settings-";
 
 /**
  * 按发起 toolCallId 取图，外加唯一一条借图规则：
@@ -268,7 +268,7 @@ export function resolveWorkflowRunGraph(
  *
  * 与其他联接同一条纪律：纯函数、一遍行窗口、身份只认入参通道（display 上没有这件事）。
  */
-export type WorkflowSaveCandidate = ZCodeWorkflowsForRunCandidate;
+type WorkflowSaveCandidate = ZCodeWorkflowsForRunCandidate;
 
 function readWorkflowSaveCandidate(
   row: ConversationRow,

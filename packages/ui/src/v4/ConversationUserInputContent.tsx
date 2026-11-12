@@ -25,7 +25,7 @@ import { parseV4VisibleSlashCommand } from "@/v4/slashCommands.js";
 const GOAL_QUERY_TOKEN_PATTERN = /^(\s*)(\/(?:goal|target))(?=\s|$)([\s\S]*)$/i;
 const EMPTY_ATTACHMENTS: readonly unknown[] = [];
 
-export interface V4UserInputGoalQueryDisplay {
+interface V4UserInputGoalQueryDisplay {
   leadingText: string;
   commandText: string;
   trailingText: string;

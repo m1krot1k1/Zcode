@@ -44,7 +44,7 @@ const SHARE_PHASE_LABEL_IDS: Record<ConversationShareProgressPhase, string> = {
   checking: "conversationShare.phase.checking",
 };
 
-export interface ConversationShareConfirmationDockProps {
+interface ConversationShareConfirmationDockProps {
   selectionEditing?: boolean;
   publishDisabled?: boolean;
   preflightChecking?: boolean;

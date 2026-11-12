@@ -23,7 +23,7 @@ const MISSING_STATUS = 502;
 const UNSUPPORTED_HTTP_STATUS_CODE = "ZCODE_UNSUPPORTED_HTTP_STATUS";
 
 /** 原样读出的响应：状态码不做任何裁剪，正文是流（无正文状态为 `null`）。 */
-export interface IncomingResponse {
+interface IncomingResponse {
   status: number;
   statusText: string;
   headers: Headers;
@@ -33,7 +33,7 @@ export interface IncomingResponse {
 /**
  * `Response` 表示不了的状态码。形状跟随原生 fetch 的网络失败（`TypeError`），调用方按错误码而不是文本区分。
  */
-export class UnsupportedHttpStatusError extends TypeError {
+class UnsupportedHttpStatusError extends TypeError {
   readonly code = UNSUPPORTED_HTTP_STATUS_CODE;
 
   constructor(readonly status: number) {

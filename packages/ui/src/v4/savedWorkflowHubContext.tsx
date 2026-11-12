@@ -20,7 +20,7 @@ export interface SavedWorkflowHubTarget {
   workspaceIdentity?: string;
 }
 
-export interface SavedWorkflowHubHandlers {
+interface SavedWorkflowHubHandlers {
   openWorkflow: (target: SavedWorkflowHubTarget) => void;
   navigateToRun: (target: SavedWorkflowLaunchTarget, sessionId: string) => void;
 }

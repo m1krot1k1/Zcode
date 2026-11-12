@@ -55,7 +55,7 @@ import {
   type WorkbenchSessionBinding,
 } from "@/v4/workbenchGroupStore.js";
 
-export interface V4WorkspaceChatAreaProps {
+interface V4WorkspaceChatAreaProps {
   workspacePath: string;
   workspaceIdentity?: string;
   /** Prompt 模板埋点当前仅覆盖 Desktop；Web / 手机远控保留 UI 行为但不触发该事件。 */

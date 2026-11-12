@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-export interface ComposerBackgroundWorkCounts {
+interface ComposerBackgroundWorkCounts {
   bashCount: number;
   workflowCount: number;
   subagentCount: number;
@@ -38,7 +38,7 @@ export function getComposerBackgroundWorkCounts(
   };
 }
 
-export interface ConversationBackgroundWorkTriggerProps {
+interface ConversationBackgroundWorkTriggerProps {
   backgroundWorks: readonly BackgroundWorkSummary[];
   runningSubagentCount?: number;
   onOpen?: () => void;

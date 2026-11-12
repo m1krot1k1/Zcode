@@ -48,7 +48,7 @@ export interface ProjectAccessTokenScope {
   readonly loginGeneration: string;
 }
 
-export type ProjectAccessTokenResult =
+type ProjectAccessTokenResult =
   | { readonly enabled: false }
   | {
       readonly enabled: true;

@@ -15,7 +15,7 @@ import { usePluginStoreOrder } from "@/hooks/usePluginStoreOrder.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-export interface PluginMentionLabels {
+interface PluginMentionLabels {
   conflictReason: string;
 }
 

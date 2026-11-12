@@ -1,7 +1,7 @@
 import { isRemoteWorkspaceIdentity, parseRemoteWorkspaceIdentity } from "@zcode/shared";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 
-export function workspaceBelongsToSettingsSource(
+function workspaceBelongsToSettingsSource(
   tab: Pick<WorkspaceTabState, "workspaceIdentity">,
   sourceServerId: string | null,
 ): boolean {
@@ -28,12 +28,12 @@ export function buildSourceSettingsProjectionKey(
   return authority ? `${authority}\0${targetKey}` : targetKey;
 }
 
-export interface SourceSettingsHomeSnapshot {
+interface SourceSettingsHomeSnapshot {
   sourceServerId: string;
   homedir: string;
 }
 
-export interface SourceSettingsValueSnapshot<T> {
+interface SourceSettingsValueSnapshot<T> {
   sourceServerId: string;
   value: T;
 }

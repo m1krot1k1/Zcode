@@ -71,7 +71,7 @@ export interface WindowRemoteLogicalSessionSnapshot {
   sourceAvailability: "online" | "offline";
 }
 
-export class WindowRemoteConnectCancelledError extends Error {
+class WindowRemoteConnectCancelledError extends Error {
   public readonly code = "remote-connection-canceled";
   constructor() {
     super("远程连接已取消");

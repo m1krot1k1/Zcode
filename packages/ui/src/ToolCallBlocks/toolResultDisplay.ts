@@ -13,14 +13,14 @@ import {
   type ToolCallSavedWorkflowListDisplay,
 } from "@zcode/shared/zcode-protocol-v4";
 
-export interface LocalAgentMessageToolResultDisplay {
+interface LocalAgentMessageToolResultDisplay {
   kind: "local_agent_message";
   status: "success" | "failed";
   error?: string;
   message?: string;
 }
 
-export interface TaskStopToolResultDisplay {
+interface TaskStopToolResultDisplay {
   kind: "task_stop";
   taskId: string;
   taskType: string;
@@ -29,7 +29,7 @@ export interface TaskStopToolResultDisplay {
   truncated?: boolean;
 }
 
-export interface TaskOutputToolResultDisplay {
+interface TaskOutputToolResultDisplay {
   kind: "task_output";
   retrievalStatus: "success" | "not_ready" | "timeout";
   taskStatus?: string;
@@ -37,12 +37,12 @@ export interface TaskOutputToolResultDisplay {
   truncated?: true;
 }
 
-export interface RespondToCoordinatorToolResultDisplay {
+interface RespondToCoordinatorToolResultDisplay {
   kind: "respond_to_coordinator";
   status: "success" | "failed";
 }
 
-export interface CuaToolResultDisplay {
+interface CuaToolResultDisplay {
   kind: "cua";
   schemaVersion: 1;
   toolName: string;
@@ -64,7 +64,7 @@ export interface CuaToolResultDisplay {
   };
 }
 
-export type ToolResultDisplay =
+type ToolResultDisplay =
   | LocalAgentMessageToolResultDisplay
   | TaskStopToolResultDisplay
   | TaskOutputToolResultDisplay

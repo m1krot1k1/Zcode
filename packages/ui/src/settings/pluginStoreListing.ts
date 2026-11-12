@@ -90,7 +90,7 @@ export function isItemBusy(
   );
 }
 
-export type PluginUpdateStatus = NonNullable<ZCodeInstalledPluginSummary["updateStatus"]>;
+type PluginUpdateStatus = NonNullable<ZCodeInstalledPluginSummary["updateStatus"]>;
 
 export function isPluginUpdatePending(
   updateStatus: PluginUpdateStatus | undefined,
@@ -125,7 +125,7 @@ export function resolveLocalizedList(
   return base && base.length > 0 ? base : undefined;
 }
 
-export function formatCanonicalMarketplaceName(name: string, locale: string): string {
+function formatCanonicalMarketplaceName(name: string, locale: string): string {
   return formatCanonicalPluginName(name, locale);
 }
 
@@ -169,7 +169,7 @@ export {
   PLUGIN_STORE_CATEGORY_ORDER as KNOWN_CATEGORY_ORDER,
 } from "@zcode/shared";
 
-export interface StoreCategoryGroup {
+interface StoreCategoryGroup {
   category: string;
   items: StorePluginItem[];
 }

@@ -109,7 +109,7 @@ export interface ZCodeSessionEventProjectionState extends ZCodeToolProjectionMem
   streamedTurnKeys?: Set<string>;
 }
 
-export function createZCodeSessionEventProjectionState(): ZCodeSessionEventProjectionState {
+function createZCodeSessionEventProjectionState(): ZCodeSessionEventProjectionState {
   return {
     ...createZCodeToolProjectionMemory(),
     activePromptInputIdBySession: new Map<string, InputId>(),
@@ -118,7 +118,7 @@ export function createZCodeSessionEventProjectionState(): ZCodeSessionEventProje
   };
 }
 
-export type ZCodeSessionProjectionMode = "active-live" | "background-summary";
+type ZCodeSessionProjectionMode = "active-live" | "background-summary";
 
 export function formatModelPickerValue(ref: ModelSelection | undefined): string {
   return formatSharedModelSelection(ref);
@@ -159,7 +159,7 @@ export function parseModelPickerValue(value: string): ModelSelection {
   return parseSharedModelSelection(value);
 }
 
-export function toZCodeTaskMode(mode: ZCodeTaskMode | undefined): ZCodeSessionMode | undefined {
+function toZCodeTaskMode(mode: ZCodeTaskMode | undefined): ZCodeSessionMode | undefined {
   switch (mode) {
     case "plan":
       return "plan";
@@ -784,7 +784,7 @@ function sessionTodoGroupsToRuntime(
   }));
 }
 
-export function zcodeSessionSnapshotToTaskMeta(snapshot: ZCodeSessionStateSnapshot): ZCodeTaskMeta {
+function zcodeSessionSnapshotToTaskMeta(snapshot: ZCodeSessionStateSnapshot): ZCodeTaskMeta {
   return {
     taskId: snapshot.session.sessionId,
     traceId: generateTraceId(snapshot.session.sessionId),
@@ -1216,7 +1216,7 @@ export function zcodeStateUpdatedToZCodeStreamEvents(params: {
   ];
 }
 
-export function zcodePermissionRequestToZCodeStreamEvent(
+function zcodePermissionRequestToZCodeStreamEvent(
   taskId: string,
   request: ZCodePermissionRequestParams,
 ): ZCodeStreamEvent {
@@ -2771,7 +2771,7 @@ function setProjectionBackgroundTaskControls(
   ensureProjectionBackgroundTaskControlsCache(state)?.set(taskId, jobs);
 }
 
-export function syncZCodeSessionBackgroundTaskProjection(
+function syncZCodeSessionBackgroundTaskProjection(
   state: ZCodeSessionEventProjectionState | undefined,
   taskId: string,
   jobs: ZCodeBackgroundTaskControlItem[],
@@ -2779,7 +2779,7 @@ export function syncZCodeSessionBackgroundTaskProjection(
   setProjectionBackgroundTaskControls(state, taskId, jobs);
 }
 
-export function syncZCodeSessionBackgroundTaskProjectionFromSnapshot(
+function syncZCodeSessionBackgroundTaskProjectionFromSnapshot(
   state: ZCodeSessionEventProjectionState | undefined,
   snapshot: ZCodeSessionStateSnapshot,
 ) {

@@ -122,7 +122,7 @@ export async function applyDesktopSessionNetworkPolicy(
  * 仅供内置浏览器 partition 使用：自签名证书的内网测试站点在 Electron `<webview>` 里
  * 拿不到 Chrome 的安全插页，被拒后只剩一张空的 chrome-error 页，用户无从放行。
  */
-export function createInsecureCertificateVerifyProc(): CertificateVerifyProc {
+function createInsecureCertificateVerifyProc(): CertificateVerifyProc {
   return (_request, callback) => {
     callback(ACCEPT_CERTIFICATE);
   };
@@ -150,7 +150,7 @@ export function buildElectronProxyConfig(
   return proxyConfig;
 }
 
-export function createCustomCaCertificateVerifyProcFromFile(
+function createCustomCaCertificateVerifyProcFromFile(
   caCertPath: string | undefined,
   logger: Pick<DesktopNetworkPolicyLogger, "warn">,
 ): CertificateVerifyProc | null {

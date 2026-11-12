@@ -26,8 +26,8 @@ import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
 import { MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS, useIdleTrigger } from "./useIdleTrigger.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
 
-export type ProviderNameEditKeyAction = "commit" | "cancel";
-export type ProviderDraftCleanupAction = "commit" | "skip-delete";
+type ProviderNameEditKeyAction = "commit" | "cancel";
+type ProviderDraftCleanupAction = "commit" | "skip-delete";
 interface ProviderSaveNotificationTarget {
   modelId?: string;
   operation?: "delete";
@@ -44,7 +44,7 @@ export function shouldApplyProviderSaveCompletion(
   return currentRevision === completedRevision;
 }
 
-export function resolveProviderDraftCleanupAction({
+function resolveProviderDraftCleanupAction({
   deleteRequested,
 }: {
   deleteRequested: boolean;
@@ -61,7 +61,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<void> {
   );
 }
 
-export function runProviderDeleteWithDraftCleanupGuard({
+function runProviderDeleteWithDraftCleanupGuard({
   deleteRequestedRef,
   onDelete,
 }: {

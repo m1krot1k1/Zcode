@@ -295,7 +295,7 @@ function scopeToPrefix(scope: CommandCenterSearchScope): string {
  * 独立组件便于复用与单测；按 DESIGN.md 语义角色，列表项里的相对时间属于
  * secondary copy，使用 text-ui-sm（不用 text-ui-xs，避免偏小）。
  */
-export function CommandCenterConversationTimestamp({
+function CommandCenterConversationTimestamp({
   className,
   children,
 }: {

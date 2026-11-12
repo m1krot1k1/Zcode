@@ -29,7 +29,7 @@ type FormatMessage = (
   values?: Record<string, string | number>,
 ) => string;
 
-export interface PhasePillRenderers {
+interface PhasePillRenderers {
   nameOf: (pill: TimelinePill) => string;
   pillProps: (pill: TimelinePill) => Parameters<typeof WorkflowAgentPill>[0];
   renderPill: (pill: TimelinePill) => JSX.Element;

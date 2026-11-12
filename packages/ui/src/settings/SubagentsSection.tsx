@@ -113,7 +113,7 @@ export function projectSettingsSubagents(result: AgentsListResult): AgentSummary
   return [...result.agents.filter((agent) => agent.source !== "plugin"), ...result.pluginAgents];
 }
 
-export interface SubagentFormInitialState {
+interface SubagentFormInitialState {
   name: string;
   description: string;
   color: AgentColor;
@@ -226,7 +226,7 @@ function toSubagentModelSelection(
   };
 }
 
-export type SubagentThoughtOptionState = SubagentReasoningFieldState;
+type SubagentThoughtOptionState = SubagentReasoningFieldState;
 
 export function resolveSubagentThoughtOptionState(params: {
   model: string;

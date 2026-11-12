@@ -64,7 +64,7 @@ type SharedEvaluationCatalog =
   | { reason: string; status: "invalid" }
   | { status: "absent" };
 
-export function sharedEvaluationCatalogPath(workingDirectory: string): string {
+function sharedEvaluationCatalogPath(workingDirectory: string): string {
   return join(workingDirectory, ".zcode", "evaluation-cases.json");
 }
 

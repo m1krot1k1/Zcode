@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { PluginUiModelContext } from "../domain/pluginUiModelContext.js";
 import { buildPluginUiImageFileName } from "../domain/pluginUiImageBlocks.js";
 
-export interface PluginUiContextImagesPort {
+interface PluginUiContextImagesPort {
   addAttachmentFiles(files: File[]): string[];
   removeAttachment(id: string): void;
 }

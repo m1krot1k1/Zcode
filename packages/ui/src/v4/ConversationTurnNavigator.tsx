@@ -18,7 +18,7 @@ import {
 } from "@/v4/conversationTurnNavigatorHelpers.js";
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 
-export interface ConversationTurnNavigatorProps {
+interface ConversationTurnNavigatorProps {
   renderUnits: readonly ConversationTurnRenderUnit[];
   scrollOffsetPx: number;
   viewportHeightPx: number;

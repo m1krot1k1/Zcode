@@ -23,7 +23,7 @@ import {
 
 type Step = "loading" | "selection" | "preflighting" | "syncing" | "complete";
 
-export interface RemoteMcpSyncRow {
+interface RemoteMcpSyncRow {
   candidate: McpSyncCandidate;
   exists: boolean;
 }
@@ -91,7 +91,7 @@ function resolveMcpTypeLabel(config: McpServerConfig): string {
   return "unknown";
 }
 
-export function RemoteMcpSyncTitle() {
+function RemoteMcpSyncTitle() {
   const { intl } = useZCodeIntl();
   const [warningTooltipOpen, setWarningTooltipOpen] = useState(false);
   const warningTitle = intl.formatMessage({
@@ -126,7 +126,7 @@ export function RemoteMcpSyncTitle() {
   );
 }
 
-export function RemoteMcpSyncExistingFilterCheckbox({
+function RemoteMcpSyncExistingFilterCheckbox({
   checked,
   onCheckedChange,
 }: {
@@ -148,7 +148,7 @@ export function RemoteMcpSyncExistingFilterCheckbox({
   );
 }
 
-export function RemoteMcpSyncTargetRow({
+function RemoteMcpSyncTargetRow({
   targetLabel,
   showExistingRemoteMcp,
   showExistingFilter,
@@ -178,7 +178,7 @@ export function RemoteMcpSyncTargetRow({
   );
 }
 
-export function RemoteMcpSyncBulkSelectionCheckbox({
+function RemoteMcpSyncBulkSelectionCheckbox({
   selectedCount,
   totalSelectable,
   onSelectAll,

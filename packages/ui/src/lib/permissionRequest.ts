@@ -3,10 +3,7 @@ import type { ZCodePermissionOption } from "@zcode/shared";
 
 export {
   getPermissionRequestPreview,
-  type PermissionRequestFileChange,
-  type PermissionRequestPreview,
-  type PermissionRequestScope,
-} from "@zcode/shared";
+  type PermissionRequestScope} from "@zcode/shared";
 
 type PermissionOptionDisplayKind =
   | "allowOnce"

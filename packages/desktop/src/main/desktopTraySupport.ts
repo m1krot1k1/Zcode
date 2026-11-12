@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
  * 因此驻留开关不能依赖托盘是否创建成功，必须显式探测该 DBus name。
  */
 
-export interface DesktopCloseToTrayCapability {
+interface DesktopCloseToTrayCapability {
   /** 关闭驻留托盘是否可用 */
   supported: boolean;
   /** 是否为 GNOME 系桌面且无托盘；仅用于设置页置灰文案追加扩展安装提示 */

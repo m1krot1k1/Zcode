@@ -932,7 +932,7 @@ export const useTaskQueryCacheStore = create<TaskQueryCacheState>()((set) => ({
     })),
 }));
 
-export function selectTaskListCacheResult(queryKey: TaskListCacheKey) {
+function selectTaskListCacheResult(queryKey: TaskListCacheKey) {
   return (state: TaskQueryCacheState): CachedTaskListResult | null => {
     return state.resultsByQueryKey[queryKey] ?? null;
   };

@@ -35,7 +35,7 @@ interface BrowserTabResidencySelectionOptions {
   tabLimit?: number;
 }
 
-export function isBrowserTabResidencyProtected(candidate: BrowserTabResidencyCandidate): boolean {
+function isBrowserTabResidencyProtected(candidate: BrowserTabResidencyCandidate): boolean {
   // 产品边界：preferred 只用于恢复默认选中，不提供 30 分钟豁免；达到逻辑 tab
   // 上限时，只有用户可见或正在运行的状态受保护，suspended shell 也可以被直接关闭。
   return (

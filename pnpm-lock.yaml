@@ -35,6 +35,9 @@ importers:
 
   .:
     dependencies:
+      '@tanstack/react-virtual':
+        specifier: ^3.13.23
+        version: 3.13.23(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       d3-path:
         specifier: ^3.1.0
         version: 3.1.0
@@ -48,9 +51,6 @@ importers:
       '@release-it/conventional-changelog':
         specifier: ^10.0.6
         version: 10.0.6(conventional-commits-filter@5.0.0)(conventional-commits-parser@6.4.0)(release-it@19.2.4(@types/node@25.6.0)(magicast@0.5.2))
-      '@tanstack/react-virtual':
-        specifier: ^3.13.23
-        version: 3.13.23(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@types/node':
         specifier: ^25.5.0
         version: 25.6.0
@@ -579,11 +579,7 @@ importers:
         specifier: ^4.1.5
         version: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@24.12.2)(typescript@5.9.3))(vite@7.3.3(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
 
-  apps/zcode-cli/packages/documents-plugin:
-    devDependencies:
-      '@zcode/office-runtime':
-        specifier: workspace:*
-        version: link:../office-runtime
+  apps/zcode-cli/packages/documents-plugin: {}
 
   apps/zcode-cli/packages/dynamic-workflow:
     dependencies:
@@ -693,9 +689,6 @@ importers:
       '@fontsource/noto-sans-sc':
         specifier: 5.3.1
         version: 5.3.1
-      '@modelcontextprotocol/core':
-        specifier: 2.0.0
-        version: 2.0.0
       '@modelcontextprotocol/ext-apps':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.0.0)(@modelcontextprotocol/server@2.0.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.6.5)
@@ -748,19 +741,11 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
-  apps/zcode-cli/packages/pdf-plugin:
-    devDependencies:
-      '@zcode/office-runtime':
-        specifier: workspace:*
-        version: link:../office-runtime
+  apps/zcode-cli/packages/pdf-plugin: {}
 
   apps/zcode-cli/packages/plugin-creator-plugin: {}
 
-  apps/zcode-cli/packages/presentations-plugin:
-    devDependencies:
-      '@zcode/office-runtime':
-        specifier: workspace:*
-        version: link:../office-runtime
+  apps/zcode-cli/packages/presentations-plugin: {}
 
   apps/zcode-cli/packages/restore-legacy-sessions-plugin: {}
 
@@ -772,11 +757,7 @@ importers:
 
   apps/zcode-cli/packages/skill-creator-plugin: {}
 
-  apps/zcode-cli/packages/spreadsheets-plugin:
-    devDependencies:
-      '@zcode/office-runtime':
-        specifier: workspace:*
-        version: link:../office-runtime
+  apps/zcode-cli/packages/spreadsheets-plugin: {}
 
   apps/zcode-cli/packages/superpowers-plugin: {}
 

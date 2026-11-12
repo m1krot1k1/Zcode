@@ -16,7 +16,7 @@ export interface ConversationFindMatch {
   sourceText: string;
 }
 
-export interface ConversationFindIndex {
+interface ConversationFindIndex {
   query: string;
   matches: ConversationFindMatch[];
   matchCount: number;
@@ -36,7 +36,7 @@ interface ConversationFindTarget {
   text: string;
 }
 
-export function normalizeConversationFindQuery(query: string): string {
+function normalizeConversationFindQuery(query: string): string {
   return query.trim().toLocaleLowerCase();
 }
 

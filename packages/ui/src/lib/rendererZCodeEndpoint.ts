@@ -14,7 +14,7 @@ function readRendererImportMetaEnv(): RendererImportMetaEnv {
     {}) as RendererImportMetaEnv;
 }
 
-export function createRendererZCodeEndpointEnv(
+function createRendererZCodeEndpointEnv(
   env: RendererImportMetaEnv = readRendererImportMetaEnv(),
 ): RuntimeZCodeEndpointEnv {
   return {

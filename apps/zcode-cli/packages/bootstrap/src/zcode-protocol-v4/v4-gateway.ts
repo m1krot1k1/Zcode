@@ -512,7 +512,7 @@ interface ProjectionEventCommitWaiter {
 const PROJECTION_EVENT_COMMIT_TIMEOUT_MS = 25_000;
 const MAX_TELEMETRY_EVENT_IDS = 2_000;
 /** detached subagent child 终态后无订阅者时，publisher 由低频 tick 释放前的保留时长。 */
-export const DETACHED_CHILD_PUBLISHER_GRACE_MS = 120_000;
+const DETACHED_CHILD_PUBLISHER_GRACE_MS = 120_000;
 
 class ProjectionEventCommitWaitError extends Error {
   constructor(
@@ -542,7 +542,7 @@ interface V4SubscribeDispatchResult<TFrame> {
   commit(): boolean;
 }
 
-export function encodeReservedTopicFrame(
+function encodeReservedTopicFrame(
   reservation: TopicFrameReservation<RoutedTopicFrame>,
 ): RoutedTopicWireFrame[] {
   return encodeTopicWireFrames(reservation.frame, {

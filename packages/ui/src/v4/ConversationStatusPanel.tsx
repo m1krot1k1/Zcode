@@ -102,7 +102,7 @@ import {
   getConversationGoalElapsedSeconds,
 } from "@/v4/conversationGoalSummaryModel.js";
 
-export interface ConversationStatusPanelProps {
+interface ConversationStatusPanelProps {
   workspacePath: string;
   workspaceIdentity?: string;
   gitSummary?: GitRepositorySummary | null;
@@ -615,7 +615,7 @@ function PlanStatusIcon({ status }: { status: PlanState["items"][number]["status
 const COMPACT_TODO_THRESHOLD = 6;
 const TODO_FOCUS_WINDOW_SIZE = 3;
 
-export interface StatusPanelTodoFocusWindow {
+interface StatusPanelTodoFocusWindow {
   compact: boolean;
   precedingItems: PlanState["items"];
   focusItems: PlanState["items"];

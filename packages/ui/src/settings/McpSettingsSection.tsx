@@ -371,7 +371,7 @@ export function McpCommunityCatalog({
   );
 }
 
-export type McpServerStatusListRefreshOutcome =
+type McpServerStatusListRefreshOutcome =
   | "refreshed"
   | "stale-workspace"
   | "status-mode-unsupported";
@@ -441,7 +441,7 @@ export async function refreshMcpServerStatusList({
   }
 }
 
-export interface McpOAuthAuthorizationPendingRefresh {
+interface McpOAuthAuthorizationPendingRefresh {
   mcpServers: ZCodeAgentMcpServer[];
   pendingKey: string;
   workspaceKey: string;
@@ -462,7 +462,7 @@ export function transitionMcpAutoStatusListRefreshKey(
   };
 }
 
-export interface McpOAuthAuthorizationFollowupRefresh {
+interface McpOAuthAuthorizationFollowupRefresh {
   mcpServers: ZCodeAgentMcpServer[];
   refreshKey: string;
   workspaceKey: string;
@@ -522,9 +522,9 @@ interface McpStatusListRefreshQueue {
 }
 
 /** 刷新来源：manual 是用户点了刷新按钮，auto 是列表/配置变化驱动的自动刷新。 */
-export type McpStatusListRefreshTrigger = "auto" | "manual";
+type McpStatusListRefreshTrigger = "auto" | "manual";
 
-export interface McpStatusListRefreshInput {
+interface McpStatusListRefreshInput {
   activeWorkspaceKey: string;
   activeWorkspacePath?: string;
   configReadyWorkspaceKey: string;

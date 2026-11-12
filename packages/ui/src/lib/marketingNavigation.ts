@@ -3,7 +3,7 @@ import { logger } from "@/logger.js";
 import type { MarketingAction } from "@zcode/shared";
 import type { SettingsSectionId } from "@/lib/settingsNavigation.js";
 
-export type MarketingNavigationTarget = Extract<MarketingAction, { type: "navigate" }>["args"];
+type MarketingNavigationTarget = Extract<MarketingAction, { type: "navigate" }>["args"];
 export const marketingSettingsSections = {
   general: "general",
   appearance: "appearance",

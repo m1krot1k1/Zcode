@@ -64,7 +64,7 @@ export function formatCommandShortcutLabel(
   return `${mod}+${key.toUpperCase()}`;
 }
 
-export function formatAltCommandShortcutLabel(
+function formatAltCommandShortcutLabel(
   key: string,
   platformInfo?: KeyboardShortcutPlatformInfo,
 ): string {
@@ -186,7 +186,7 @@ export function matchesShiftTab(event: PrimaryShortcutKeyboardEvent): boolean {
   );
 }
 
-export function formatShiftTabShortcutLabel(platformInfo?: KeyboardShortcutPlatformInfo): string {
+function formatShiftTabShortcutLabel(platformInfo?: KeyboardShortcutPlatformInfo): string {
   return isAppleKeyboardPlatform(platformInfo) ? formatAppleShortcutLabel("⇧", "Tab") : "Shift+Tab";
 }
 

@@ -28,7 +28,7 @@ function isAgentProvider(value: unknown): value is ZCodeProvider {
   return typeof value === "string" && ZCODE_AGENT_PROVIDERS.includes(value as ZCodeProvider);
 }
 
-export function readLastSelectedAgentProvider(
+function readLastSelectedAgentProvider(
   storage: StorageLike | null = getBrowserStorage(),
 ): ZCodeProvider | null {
   const rawValue = storage?.getItem(LAST_SELECTED_AGENT_PROVIDER_STORAGE_KEY);

@@ -2,12 +2,12 @@ import type { ZCodePluginReferenceCatalogEntry } from "@zcode/shared";
 import { buildPluginMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 
-export interface DraftSuggestedPromptPluginReference {
+interface DraftSuggestedPromptPluginReference {
   stableId: string;
   label: string;
 }
 
-export interface DraftSuggestedPromptPrefill {
+interface DraftSuggestedPromptPrefill {
   text: string;
   mention?: ComposerMentionPrefill;
   pluginUnavailable?: true;

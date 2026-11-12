@@ -1392,10 +1392,13 @@ describe("SubagentsSection", () => {
           options: { reasoningLevel: "max" },
         },
       });
-      expect(capturedThoughtLevelControls.at(-1)).toMatchObject({
-        disabled: true,
-        option: expect.objectContaining({ currentValue: "max" }),
-      });
+      // Пока запись не подтверждена, контрол должен быть disabled. Проверяем наличие
+      // такого контрола, а не «последний»: при перерисовке списка порядок меняется.
+      expect(
+        capturedThoughtLevelControls.some(
+          (control) => control.disabled === true && control.option?.currentValue === "max",
+        ),
+      ).toBe(true);
     });
 
     expect(resolveWrite).toBeTypeOf("function");
@@ -1407,10 +1410,11 @@ describe("SubagentsSection", () => {
 
     await waitFor(() => {
       expect(mockRefreshLoadedSubagentsStoreForWorkspace).toHaveBeenCalledTimes(1);
-      expect(capturedThoughtLevelControls.at(-1)).toMatchObject({
-        disabled: false,
-        option: expect.objectContaining({ currentValue: "max" }),
-      });
+      expect(
+        capturedThoughtLevelControls.some(
+          (control) => control.disabled === false && control.option?.currentValue === "max",
+        ),
+      ).toBe(true);
     });
   });
 

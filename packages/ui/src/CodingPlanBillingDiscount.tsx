@@ -16,9 +16,9 @@ import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { logger } from "@/logger.js";
 
 const BILLING_DISCOUNT_CACHE_TTL_MS = 60 * 60 * 1000;
-export const CODING_PLAN_BILLING_DISCOUNT_DIALOG_CONTENT_CLASS =
+const CODING_PLAN_BILLING_DISCOUNT_DIALOG_CONTENT_CLASS =
   "max-h-[min(82vh,640px)] max-w-lg grid-rows-[auto_minmax(0,1fr)] overflow-hidden";
-export const CODING_PLAN_BILLING_DISCOUNT_DIALOG_BODY_CLASS = "p-3 !space-y-3";
+const CODING_PLAN_BILLING_DISCOUNT_DIALOG_BODY_CLASS = "p-3 !space-y-3";
 
 let billingDiscountCache: {
   value: CodingPlanBillingDiscountConfig | undefined;

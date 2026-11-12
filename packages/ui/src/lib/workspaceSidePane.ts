@@ -764,11 +764,11 @@ function createTerminalSidePaneTab(options: {
   };
 }
 
-export function encodeSidePaneTabIdPart(value: string): string {
+function encodeSidePaneTabIdPart(value: string): string {
   return encodeURIComponent(value);
 }
 
-export function createSubagentSessionSidePaneTab(options: {
+function createSubagentSessionSidePaneTab(options: {
   workspaceKey: string;
   workspacePath: string;
   workspaceIdentity?: string;
@@ -828,7 +828,7 @@ export function createSubagentDirectorySidePaneTab(options: {
   };
 }
 
-export function createSelectionSideChatPaneTab(
+function createSelectionSideChatPaneTab(
   options: OpenSelectionSideChatRequest & {
     workspaceKey: string;
     ordinal: number;
@@ -853,7 +853,7 @@ export function createSelectionSideChatPaneTab(
   };
 }
 
-export function createPlanDetailSidePaneTab(
+function createPlanDetailSidePaneTab(
   options: OpenScopedPlanDetailSideTabRequest & { workspaceKey: string },
 ): PlanDetailSidePaneTab {
   return {
@@ -1128,7 +1128,7 @@ export function sidePaneOwnerKey(taskId: string | null | undefined): string {
   return taskId ?? "__draft__";
 }
 
-export interface SidePaneVisibilityScope {
+interface SidePaneVisibilityScope {
   workspaceKey: string | null;
   ownerTaskId: string | null;
 }
@@ -1462,7 +1462,7 @@ export function openBrowserUseSidePane(
   return { ...current, tabs: [...current.tabs, tab] };
 }
 
-export interface BrowserUseSidePaneScope {
+interface BrowserUseSidePaneScope {
   workspaceKey: string;
   remoteSessionId?: string;
   ownerTaskId: string | null;
@@ -1810,7 +1810,7 @@ export function activateGitSidePane(
   return activateSidePaneTab(current, createGitSidePaneTab());
 }
 
-export function activateTreemappingSidePane(
+function activateTreemappingSidePane(
   current: WorkspaceSidePaneState | null,
   source?: TreemappingSidePaneSource,
 ): WorkspaceSidePaneState {
@@ -2294,7 +2294,7 @@ export function closeOtherSidePaneTabs(
   };
 }
 
-export function closeAllSidePaneTabs(): WorkspaceSidePaneState | null {
+function closeAllSidePaneTabs(): WorkspaceSidePaneState | null {
   return null;
 }
 

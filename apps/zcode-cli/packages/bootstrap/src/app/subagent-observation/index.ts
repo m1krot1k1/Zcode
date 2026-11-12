@@ -5,6 +5,12 @@ import type {
   SubagentObservationDeps,
   SubagentTranscriptSnapshot,
 } from "./contract.js";
+
+export type {
+  SubagentObservation,
+  SubagentObservationDeps,
+  SubagentTranscriptSnapshot,
+} from "./contract.js";
 import { projectSessionTranscript } from "../../session-transcript.js";
 import {
   collectSubagentChildSessionIds,
@@ -14,11 +20,7 @@ import {
   resolvePrismAcceptanceByChildSessionId,
 } from "./query.js";
 
-export type {
-  SubagentObservation,
-  SubagentObservationDeps,
-  SubagentTranscriptSnapshot,
-} from "./contract.js";
+
 export {
   collectSubagentChildSessionIds,
   isOwnedSubagentChild,

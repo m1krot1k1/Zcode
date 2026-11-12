@@ -224,7 +224,7 @@ export function OnboardingSessionsStep(props: {
   );
 }
 
-export function OnboardingAgentSettingsStep(props: {
+function OnboardingAgentSettingsStep(props: {
   settingsSync: ReturnType<typeof useSettingsSync>;
 }) {
   const { intl } = useZCodeIntl();

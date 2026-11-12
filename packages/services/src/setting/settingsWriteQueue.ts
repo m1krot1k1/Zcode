@@ -1,7 +1,7 @@
 const SETTINGS_WRITE_QUEUE_TIMEOUT_MS = 30_000;
 const SETTINGS_WRITE_QUEUE_TIMEOUT_ENV = "ZCODE_SETTING_WRITE_QUEUE_TIMEOUT_MS";
 
-export function getSettingsWriteQueueTimeoutMs(): number {
+function getSettingsWriteQueueTimeoutMs(): number {
   const rawValue = process.env[SETTINGS_WRITE_QUEUE_TIMEOUT_ENV]?.trim();
   if (!rawValue) {
     return SETTINGS_WRITE_QUEUE_TIMEOUT_MS;

@@ -56,7 +56,7 @@ export class InvalidAutomationMaxRunsUpdateError extends Error {
 }
 
 /** 相对延迟只用于一次性任务，并由服务端真实时钟生成调度规则。 */
-export class InvalidAutomationRelativeDelayError extends Error {
+class InvalidAutomationRelativeDelayError extends Error {
   constructor(message: string) {
     super(`非法的相对时间定时任务：${message}`);
     this.name = "InvalidAutomationRelativeDelayError";

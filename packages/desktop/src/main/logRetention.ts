@@ -38,7 +38,7 @@ function getLogRetentionCutoffDate(now: Date, retentionDays: number = LOG_RETENT
   return cutoff;
 }
 
-export function shouldDeleteExpiredLogFile(
+function shouldDeleteExpiredLogFile(
   fileName: string,
   now: Date,
   retentionDays: number = LOG_RETENTION_DAYS,

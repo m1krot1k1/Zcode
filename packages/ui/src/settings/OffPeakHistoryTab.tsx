@@ -27,7 +27,7 @@ const STATUS_INDICATOR_CLASS = {
   running: { dot: "bg-brand", text: "text-brand" },
 } as const satisfies Record<string, { dot: string; text: string }>;
 
-export function resolveOffPeakHistoryStatus(
+function resolveOffPeakHistoryStatus(
   task: Pick<ZCodeOffPeakTask, "status">,
 ): keyof typeof STATUS_INDICATOR_CLASS {
   if (task.status === "completed") return "succeeded";

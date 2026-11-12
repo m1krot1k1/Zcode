@@ -39,7 +39,7 @@ export function resolveToolSearchMode(
   return "off";
 }
 
-export function isDeferredTool(tool: ModelToolContract, metadata?: ToolMetadata): boolean {
+function isDeferredTool(tool: ModelToolContract, metadata?: ToolMetadata): boolean {
   return (
     tool.name !== TOOL_SEARCH_NAME &&
     tool.name !== DEFERRED_TOOL_CALL_NAME &&

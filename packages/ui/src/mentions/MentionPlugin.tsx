@@ -66,7 +66,7 @@ interface MentionPluginProps {
   onWhiteboardMentionSelected?: (boardId: string) => void | Promise<void>;
 }
 
-export function getWrappedMentionIndex(
+function getWrappedMentionIndex(
   currentIndex: number,
   delta: number,
   itemCount: number,

@@ -37,7 +37,7 @@ export function subscribePluginUiDisclosure(listener: () => void): () => void {
 }
 
 /** 测试用：清空全部记录。 */
-export function resetPluginUiDisclosureForTest(): void {
+function resetPluginUiDisclosureForTest(): void {
   pins.clear();
   listeners.clear();
   version = 0;

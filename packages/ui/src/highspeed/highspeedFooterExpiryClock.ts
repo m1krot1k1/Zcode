@@ -23,7 +23,7 @@ type ExpiryClockDocument = Pick<
   "visibilityState" | "addEventListener" | "removeEventListener"
 >;
 
-export interface HighspeedFooterExpiryClockDeps {
+interface HighspeedFooterExpiryClockDeps {
   windowTarget?: ExpiryClockWindow;
   documentTarget?: ExpiryClockDocument;
   now?: () => number;

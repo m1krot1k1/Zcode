@@ -1,4 +1,4 @@
-export { BUILTIN_TUI_THEMES, DARK_TUI_THEME, LIGHT_TUI_THEME } from "./defaults.js";
+export { DARK_TUI_THEME, LIGHT_TUI_THEME } from "./defaults.js";
 export { palette, themeToLegacyPalette } from "./legacy-palette.js";
 export {
   activeTuiTheme,

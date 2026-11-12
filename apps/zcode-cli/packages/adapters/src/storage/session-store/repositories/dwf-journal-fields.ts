@@ -25,7 +25,7 @@ const CLIPPED_CHARS = 1000;
 const ROW_OVERHEAD_BYTES = 64;
 
 /** 一个字段路径的全部 SQLite JSON 路径候选；超过展开上限时为空（该字段恒为「没有」）。 */
-export function fieldPathCandidates(path: string): string[] {
+function fieldPathCandidates(path: string): string[] {
   const segments = path.split(".");
   const indexLike = segments.filter((segment) => arrayIndexOf(segment) !== undefined).length;
   if (indexLike > MAX_INDEX_LIKE_SEGMENTS) return [];

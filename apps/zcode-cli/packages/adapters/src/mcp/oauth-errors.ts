@@ -79,13 +79,13 @@ export function createTemporaryRefreshFailureError(input: {
   return error;
 }
 
-export function isInteractiveAuthorizationRequiredError(
+function isInteractiveAuthorizationRequiredError(
   error: unknown,
 ): error is McpOAuthInteractiveRequiredError {
   return hasBrand(error, INTERACTIVE_REQUIRED_BRAND);
 }
 
-export function isTemporaryRefreshFailureError(
+function isTemporaryRefreshFailureError(
   error: unknown,
 ): error is McpOAuthTemporaryRefreshFailureError {
   return hasBrand(error, TEMPORARY_REFRESH_FAILURE_BRAND);

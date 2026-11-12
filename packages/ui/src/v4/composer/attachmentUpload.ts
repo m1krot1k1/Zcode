@@ -88,7 +88,7 @@ export async function uploadComposerAttachment(
 /**
  * 附件数组 → AttachmentRef[]（顺序保持）。put 失败原样抛出（调用方中止发送，草稿保留）。
  */
-export async function uploadComposerAttachments(
+async function uploadComposerAttachments(
   put: AttachmentPutFn,
   sessionId: string,
   attachments: readonly ZCodePromptAttachment[],

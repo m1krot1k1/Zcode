@@ -81,7 +81,7 @@ export interface ModelProviderCatalogModel {
   priority?: number;
 }
 
-export interface ModelProviderCatalogProvider {
+interface ModelProviderCatalogProvider {
   id: string;
   name: string;
   endpoints: {
@@ -92,7 +92,7 @@ export interface ModelProviderCatalogProvider {
   models: ModelProviderCatalogModel[];
 }
 
-export interface ModelProviderCatalogFile {
+interface ModelProviderCatalogFile {
   schemaVersion: "zcode.model-providers.v1";
   providers: ModelProviderCatalogProvider[];
 }
@@ -148,7 +148,7 @@ export interface ModelProviderConfig {
   updatedAt: number;
 }
 
-export interface ModelProviderStoreFile {
+interface ModelProviderStoreFile {
   schemaVersion: "zcode.model-providers.v2";
   providers: ModelProviderConfig[];
 }
@@ -317,7 +317,7 @@ const modelProviderConfigSchema = z.object({
   updatedAt: z.number(),
 });
 
-export const modelProviderListSchema = z.array(modelProviderConfigSchema);
+const modelProviderListSchema = z.array(modelProviderConfigSchema);
 
 const modelProviderStoreFileSchema = z.object({
   schemaVersion: z.literal("zcode.model-providers.v2"),
@@ -488,7 +488,7 @@ export function resolveModelProviderKindApiFormat(kind: ModelProviderKind): Mode
   }
 }
 
-export function mapModelProviderApiFormatToKind(
+function mapModelProviderApiFormatToKind(
   apiFormat: ModelProviderApiFormat,
 ): ModelProviderKind {
   switch (apiFormat) {
@@ -622,7 +622,7 @@ export function resolveModelProviderRuntimeBaseUrl(
   return normalizeModelProviderBaseUrlForKind(joinBaseUrlAndPath(baseURL, paths[kind] ?? ""), kind);
 }
 
-export function getModelProviderEndpointKinds(
+function getModelProviderEndpointKinds(
   endpoints: ModelProviderEndpoints,
 ): ModelProviderKind[] {
   const kinds: ModelProviderKind[] = [];

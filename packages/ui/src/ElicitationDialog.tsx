@@ -35,7 +35,7 @@ interface ElicitationDialogProps {
   onFormDraftChange?: (requestId: string, draft: ElicitationFormDraft) => void;
 }
 
-export type ElicitationAutoResolutionSnoozeSource =
+type ElicitationAutoResolutionSnoozeSource =
   | "panelHover"
   | "answer"
   | "navigation"
@@ -102,18 +102,18 @@ function useElicitationCountdownSeconds(autoResolution: InteractionAutoResolutio
   return getElicitationCountdownSeconds(autoResolution, clockNow);
 }
 
-export interface NormalizedElicitationQuestion extends ZCodeElicitationQuestion {
+interface NormalizedElicitationQuestion extends ZCodeElicitationQuestion {
   key: string;
 }
 
-export interface AnswerDraft {
+interface AnswerDraft {
   selectedValues: string[];
   customAnswer: string;
 }
 
-export type DraftState = Record<string, AnswerDraft>;
+type DraftState = Record<string, AnswerDraft>;
 
-export type ElicitationCustomInputKeyAction =
+type ElicitationCustomInputKeyAction =
   | "advance"
   | "submit"
   | "previous"

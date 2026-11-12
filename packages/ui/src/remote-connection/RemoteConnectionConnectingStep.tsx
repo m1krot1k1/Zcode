@@ -49,7 +49,7 @@ const REMOTE_CONNECTION_PHASES = [
   ["handshake", "remote.phase.handshake"],
 ] as const;
 
-export type RemoteConnectionPhaseStatus = "pending" | "active" | "complete" | "failed";
+type RemoteConnectionPhaseStatus = "pending" | "active" | "complete" | "failed";
 
 function normalizeRemoteConnectionPhase(rawPhase: string): string | null {
   if (rawPhase === "probe") return "channel";
@@ -110,7 +110,7 @@ export function resolveRemoteConnectionPhases(
   }));
 }
 
-export interface RemoteOperationProgress {
+interface RemoteOperationProgress {
   index: number;
   total: number;
   titleId: string;

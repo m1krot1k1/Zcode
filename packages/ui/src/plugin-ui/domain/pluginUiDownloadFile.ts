@@ -5,7 +5,7 @@ import type { McpAppsDownloadFileItem } from "@zcode/shared/mcp-apps";
  * 内容来源是内联 text / blob（base64）或需要宿主先 `resources/read` 的 uri。文件名优先取项上的 name，
  * 否则取 uri 最后一段；没有扩展名时按 mimeType 补一个常见扩展名，仍没有就 `download-<序号>`。
  */
-export interface PluginUiDownloadPlan {
+interface PluginUiDownloadPlan {
   name: string;
   mimeType: string | undefined;
   source:
@@ -45,7 +45,7 @@ function lastPathSegment(uri: string): string {
 }
 
 /** 去掉路径分隔与控制字符，长度限制与桌面 saveFile 的 basename 截断一致（120）。 */
-export function sanitizePluginUiDownloadFileName(name: string): string {
+function sanitizePluginUiDownloadFileName(name: string): string {
   return name
     .replace(/[\\/\u0000-\u001f]/g, "_")
     .replace(/^\.+/, "")

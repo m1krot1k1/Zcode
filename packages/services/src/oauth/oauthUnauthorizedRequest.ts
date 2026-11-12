@@ -112,7 +112,7 @@ export async function resolveOAuthBusinessCredentialValidationRequest(options: {
   };
 }
 
-export async function isCurrentOAuthBusinessCredentialRequest(options: {
+async function isCurrentOAuthBusinessCredentialRequest(options: {
   input: string | URL;
   headers: Headers;
   credentialService: Pick<ICredentialService, "load">;

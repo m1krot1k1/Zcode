@@ -8,7 +8,7 @@ import {
 } from "@zcode/shared";
 import { type CodingPlanProviderId } from "@/settings/model-provider-section/constants.js";
 
-export type CodingPlanPurchaseAuthStatus =
+type CodingPlanPurchaseAuthStatus =
   | "unknown"
   | "loading"
   | "authenticated"
@@ -19,7 +19,7 @@ export function isCodingPlanPurchaseAuthPending(status: CodingPlanPurchaseAuthSt
   return status === "unknown" || status === "loading";
 }
 
-export async function readCodingPlanPurchaseTokenState(credentialService: {
+async function readCodingPlanPurchaseTokenState(credentialService: {
   load(key: string): Promise<string | null>;
 }) {
   const [activeProvider, zaiToken, bigmodelToken] = await Promise.all([
@@ -52,7 +52,7 @@ export function normalizeCodingPlanProviderId(
     : null;
 }
 
-export function isCodingPlanProviderId(
+function isCodingPlanProviderId(
   providerId: CodingPlanProviderId | null,
 ): providerId is CodingPlanProviderId {
   return Boolean(providerId);

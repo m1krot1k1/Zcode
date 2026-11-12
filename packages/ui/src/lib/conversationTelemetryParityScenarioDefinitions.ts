@@ -193,7 +193,7 @@ export type ConversationTelemetryParityOperation =
   | { kind: "scope.dispose"; scope?: string }
   | { kind: "web.noop"; operations: ConversationTelemetryParityOperation[] };
 
-export interface ConversationTelemetryParityScenario {
+interface ConversationTelemetryParityScenario {
   caseId: string;
   operations: ConversationTelemetryParityOperation[];
   minimumReportInventory: Record<string, number>;
@@ -1237,7 +1237,7 @@ function buildScenarios(): ConversationTelemetryParityScenario[] {
 
 const SCENARIOS = new Map(buildScenarios().map((item) => [item.caseId, item]));
 
-export const CONVERSATION_TELEMETRY_PARITY_CASE_IDS = [...SCENARIOS.keys()];
+const CONVERSATION_TELEMETRY_PARITY_CASE_IDS = [...SCENARIOS.keys()];
 
 export function getConversationTelemetryParityScenario(
   caseId: string,

@@ -179,7 +179,7 @@ export async function atomicWriteText(
   }
 }
 
-export async function atomicWriteJson(
+async function atomicWriteJson(
   filePath: string,
   data: Record<string, unknown>,
   options?: AtomicWriteTextOptions,

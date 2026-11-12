@@ -25,7 +25,7 @@ export function normalizeServerMap(value: unknown): Record<string, McpServerConf
   return next;
 }
 
-export function normalizeStringArray(value: unknown): string[] {
+function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -59,11 +59,11 @@ export async function writeTextAtomic(filePath: string, content: string): Promis
   }
 }
 
-export function normalizePathForLookup(value: string): string {
+function normalizePathForLookup(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-export function buildClaudeStateFilePath(): string {
+function buildClaudeStateFilePath(): string {
   return join(homedir(), ".claude.json");
 }

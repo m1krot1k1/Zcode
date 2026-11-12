@@ -48,7 +48,7 @@ interface StartMemoryDiagnosticsLoggerOptions {
   reportHeapSample?: (sample: RendererHeapSample) => void;
 }
 
-export interface MemoryDiagnosticsLoggerHandle {
+interface MemoryDiagnosticsLoggerHandle {
   sampleNow(): boolean;
   stop(): void;
 }

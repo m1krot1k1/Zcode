@@ -26,7 +26,7 @@ export function supportsAppUnreadBadge(platform: NodeJS.Platform): boolean {
 }
 
 // Windows 的 app.setBadgeCount 是 no-op，任务栏角标要走窗口级 overlay（setOverlayIcon）。
-export function supportsWindowOverlayBadge(platform: NodeJS.Platform): boolean {
+function supportsWindowOverlayBadge(platform: NodeJS.Platform): boolean {
   return platform === "win32";
 }
 

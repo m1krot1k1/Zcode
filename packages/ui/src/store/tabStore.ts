@@ -77,7 +77,7 @@ export function isWorkspaceTab(tab: WindowTabState): tab is WorkspaceTabState {
   return tab.kind === "workspace";
 }
 
-export function isWorkspaceTabReadOnly(tab: WindowTabState): tab is WorkspaceTabState & {
+function isWorkspaceTabReadOnly(tab: WindowTabState): tab is WorkspaceTabState & {
   availability: "unavailable-local-directory";
 } {
   return isWorkspaceTab(tab) && tab.availability === "unavailable-local-directory";

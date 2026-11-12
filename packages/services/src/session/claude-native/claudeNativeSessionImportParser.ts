@@ -89,7 +89,7 @@ function isClaudeNativeSidechainEntry(entry: JsonLineRecord): boolean {
   );
 }
 
-export function hasClaudeNativeSidechainMarker(entries: readonly JsonLineRecord[]): boolean {
+function hasClaudeNativeSidechainMarker(entries: readonly JsonLineRecord[]): boolean {
   return entries.some(isClaudeNativeSidechainEntry);
 }
 
@@ -119,7 +119,7 @@ function sanitizeClaudeDiagnosticText(text: string): string {
   return text.replace(COMMAND_DIAGNOSTIC_TAG_RE, " ").replace(/\r\n/g, "\n").trim();
 }
 
-export function stripClaudeNativeSyntheticNoResponsePlaceholderText(text: string): string {
+function stripClaudeNativeSyntheticNoResponsePlaceholderText(text: string): string {
   return text
     .trimEnd()
     .replace(/(?:\n+\s*)?No response requested\.$/u, "")
@@ -233,7 +233,7 @@ function extractClaudeAssistantText(entry: JsonLineRecord): string | null {
   return visibleText.length > 0 ? visibleText : null;
 }
 
-export function extractClaudeNativeSessionHeadInfo(entries: readonly JsonLineRecord[]): {
+function extractClaudeNativeSessionHeadInfo(entries: readonly JsonLineRecord[]): {
   workspacePath?: string;
   previewTitle?: string;
   createdAt?: number;
@@ -263,7 +263,7 @@ export function extractClaudeNativeSessionHeadInfo(entries: readonly JsonLineRec
   return { workspacePath };
 }
 
-export function parseClaudeNativeSessionRecords(params: {
+function parseClaudeNativeSessionRecords(params: {
   records: readonly JsonLineRecord[];
   workspacePath: string;
   sessionId: string;
@@ -478,7 +478,7 @@ function parseClaudeNativeVisibleAssistantTurns(
   return turns;
 }
 
-export async function readClaudeNativeVisibleAssistantTurnsFile(
+async function readClaudeNativeVisibleAssistantTurnsFile(
   filePath: string,
 ): Promise<ClaudeNativeVisibleAssistantTurn[]> {
   const records = await readJsonLinesFile(filePath);
@@ -565,7 +565,7 @@ function selectClaudeNativeUnknownCommandWarningAfter(
   return strictCandidates[0] ?? candidates.at(-1) ?? null;
 }
 
-export async function readClaudeNativeUnknownCommandWarningsFile(
+async function readClaudeNativeUnknownCommandWarningsFile(
   filePath: string,
 ): Promise<ClaudeNativeUnknownCommandWarning[]> {
   const records = await readJsonLinesFile(filePath);

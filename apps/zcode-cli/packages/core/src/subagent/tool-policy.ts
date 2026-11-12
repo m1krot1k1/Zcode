@@ -39,7 +39,7 @@ export function filterSubagentChildToolNames(
   );
 }
 
-export function isSubagentDispatchRule(rule: string): boolean {
+function isSubagentDispatchRule(rule: string): boolean {
   const name = getToolRuleName(rule);
   return name === AGENT_TOOL_NAME || name === TASK_TOOL_NAME;
 }

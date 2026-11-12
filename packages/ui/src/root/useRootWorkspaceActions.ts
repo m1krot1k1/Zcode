@@ -47,7 +47,7 @@ import {
 } from "@/v4/composer/composerDraftStore.js";
 
 /** 新任务落点：identity 缺省一律归一化为 null，供只读校验、focus/addTab 统一消费。 */
-export interface NewTaskTargetResolution {
+interface NewTaskTargetResolution {
   workspacePath: string;
   workspaceIdentity: string | null;
 }

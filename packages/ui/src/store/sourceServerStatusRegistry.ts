@@ -6,7 +6,7 @@ import {
   type RemoteConnectionPresentationInput,
 } from "@/lib/remoteConnectionPresentation.js";
 
-export interface SourceServerStatusRegistry {
+interface SourceServerStatusRegistry {
   subscribe(listener: () => void): () => void;
   getInputs(): ReadonlyMap<string, RemoteConnectionPresentationInput>;
   getSnapshot(): ReadonlyMap<string, AggregatedSourceStatus>;

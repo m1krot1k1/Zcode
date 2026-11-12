@@ -214,7 +214,7 @@ interface ZCodeAgentRuntimeRestartedEvent {
   runtimeIdentity: ZCodeAgentRuntimeIdentity;
 }
 
-export interface ZCodeAgentRuntimeLifecycleEvent {
+interface ZCodeAgentRuntimeLifecycleEvent {
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceKey: string;

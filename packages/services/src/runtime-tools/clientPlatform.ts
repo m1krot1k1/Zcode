@@ -14,12 +14,12 @@ function readOverride(name: string): string | undefined {
   return value && value.length > 0 ? value : undefined;
 }
 
-export function resolveReleaseTarget(platform: string = process.platform): string {
+function resolveReleaseTarget(platform: string = process.platform): string {
   const override = readOverride("ZCODE_TEST_RELEASE_TARGET");
   return override ?? RELEASE_TARGET_MAP[platform] ?? platform;
 }
 
-export function resolveReleaseArch(arch: string = process.arch): string {
+function resolveReleaseArch(arch: string = process.arch): string {
   const override = readOverride("ZCODE_TEST_RELEASE_ARCH");
   return override ?? RELEASE_ARCH_MAP[arch] ?? arch;
 }

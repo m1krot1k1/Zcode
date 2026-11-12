@@ -73,7 +73,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible.js";
 
-export interface RemoteSegmentedOption<T extends string> {
+interface RemoteSegmentedOption<T extends string> {
   value: T;
   label: string;
   icon?: LucideIcon;
@@ -140,7 +140,7 @@ export function RemoteSegmentedControl<T extends string>({
 
 const NO_SSH_CONFIG_ALIAS_VALUE = "__ssh_config_alias_none__";
 
-export function formatSshConfigAliasSummary(aliasOption: SSHConfigAliasOption): string {
+function formatSshConfigAliasSummary(aliasOption: SSHConfigAliasOption): string {
   const host = aliasOption.host?.trim() || aliasOption.alias;
   const username = aliasOption.username?.trim();
   const withUser = username ? `${username}@${host}` : host;

@@ -92,7 +92,7 @@ function mayHaveSideEffects(command: BrowserCommand): boolean {
   ].includes(command.method);
 }
 
-export interface BrowserControlMainBridge {
+interface BrowserControlMainBridge {
   list(): Promise<BrowserBackendDescriptor[]>;
   execute(input: {
     requestId?: string;

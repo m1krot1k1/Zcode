@@ -9,7 +9,7 @@ import {
 } from "@/lib/remoteConnectionPresentation.js";
 export { formatConnectionProfileTarget } from "@/lib/remoteConnectionPresentation.js";
 
-export type RemoteConnectionDisplayStatus = RemoteConnectionStatus;
+type RemoteConnectionDisplayStatus = RemoteConnectionStatus;
 
 /**
  * 连接类型的唯一配色来源。类型 token 只表达连接类型（DESIGN.md），

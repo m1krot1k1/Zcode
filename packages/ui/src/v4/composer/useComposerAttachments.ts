@@ -44,20 +44,18 @@ import {
 } from "@/store/composerAttachmentUploadStore.js";
 import { uploadComposerAttachment, type AttachmentPutFn } from "@/v4/composer/attachmentUpload.js";
 
-export const COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY = 2;
-export const COMPOSER_ATTACHMENT_AUTO_RETRY_DELAY_MS = 500;
+const COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY = 2;
+const COMPOSER_ATTACHMENT_AUTO_RETRY_DELAY_MS = 500;
 export const COMPOSER_ATTACHMENT_COMPLETE_VISIBLE_MS = 300;
 /**
  * 换代重传的兜底上限。dev 实测同一 workspace 可达 runtimeGeneration=4（3 次换代），
  * 取 5 留余量；它只防 Helper 反复崩溃时的无限重传，正常使用不该触达。
  */
-export const COMPOSER_ATTACHMENT_REBUILD_RETRY_LIMIT = 5;
+const COMPOSER_ATTACHMENT_REBUILD_RETRY_LIMIT = 5;
 const EMPTY_COMPOSER_ATTACHMENTS: ComposerAttachmentUploadItem[] = [];
 const REMOTE_ATTACHMENT_NOT_STAGED_ERROR_CODE = "remoteAttachmentNotStaged";
 export type {
-  ComposerAttachmentUploadItem,
-  ComposerAttachmentUploadStatus,
-} from "@/store/composerAttachmentUploadStore.js";
+  ComposerAttachmentUploadItem} from "@/store/composerAttachmentUploadStore.js";
 
 interface UploadTarget {
   sessionId: string | null;
@@ -108,7 +106,7 @@ export interface ComposerAttachmentsApi {
   setAttachmentError: (message: string | null) => void;
 }
 
-export interface UseComposerAttachmentsOptions {
+interface UseComposerAttachmentsOptions {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
@@ -132,7 +130,7 @@ export interface UseComposerAttachmentsOptions {
   listenAddToChatEvents?: boolean;
 }
 
-export async function selectAttachmentLocalPaths(
+async function selectAttachmentLocalPaths(
   platform: Pick<IPlatformService, "selectFile" | "selectFiles">,
 ): Promise<string[]> {
   const selectedPaths = platform.selectFiles

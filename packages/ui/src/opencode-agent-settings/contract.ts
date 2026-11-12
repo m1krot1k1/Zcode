@@ -43,7 +43,7 @@ export type OpenCodeAgentCliStatus =
       installSupported?: boolean;
     };
 
-export type OpenCodeAgentModelCatalog =
+type OpenCodeAgentModelCatalog =
   | { status: "available"; models: string[]; authentication: "not-checked" }
   | { status: "unavailable" | "timed-out"; diagnostic: string };
 
@@ -53,7 +53,7 @@ type OpenCodeAgentPermissionOptionKind =
   | "reject_once"
   | "reject_always";
 
-export interface OpenCodeAgentPermissionRequest {
+interface OpenCodeAgentPermissionRequest {
   requestId: string;
   sessionId: string;
   toolTitle: string;

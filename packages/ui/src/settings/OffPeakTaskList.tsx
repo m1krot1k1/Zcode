@@ -69,7 +69,7 @@ export function sortOffPeakTasksByCreatedAt(
 }
 
 /** 与 AutomationsSection 定时任务列表相同的滚动阈值（Figma 规范最多露出 8 张卡片）。 */
-export const OFFPEAK_LIST_SCROLL_THRESHOLD = 8;
+const OFFPEAK_LIST_SCROLL_THRESHOLD = 8;
 
 const OFFPEAK_MENU_HINT_MAX_WIDTH = 320;
 const OFFPEAK_MENU_HINT_RIGHT_OFFSET = 16;

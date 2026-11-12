@@ -6,7 +6,7 @@ import {
 } from "@zcode/shared";
 const INSTALLABLE_AGENT_CLI_PROVIDERS: ZCodeProvider[] = [];
 
-export type BuiltinAgentCliStatus = "enabled" | "enabling" | "disabling" | "disabled";
+type BuiltinAgentCliStatus = "enabled" | "enabling" | "disabling" | "disabled";
 
 function normalizeEnabledBuiltinAgentCliProviders(
   providers?: ReadonlyArray<ZCodeProvider>,
@@ -14,13 +14,13 @@ function normalizeEnabledBuiltinAgentCliProviders(
   return normalizeAgentProvidersToZCodeAgent(providers);
 }
 
-export function getEnabledBuiltinAgentCliProviders(
+function getEnabledBuiltinAgentCliProviders(
   settings: Pick<AppSettings, "enabledBuiltinAgentCliProviders"> | null | undefined,
 ): ZCodeProvider[] {
   return normalizeEnabledBuiltinAgentCliProviders(settings?.enabledBuiltinAgentCliProviders);
 }
 
-export function requiresBuiltinAgentCliInstall(provider: ZCodeProvider): boolean {
+function requiresBuiltinAgentCliInstall(provider: ZCodeProvider): boolean {
   return INSTALLABLE_AGENT_CLI_PROVIDERS.includes(provider);
 }
 
@@ -47,7 +47,7 @@ export function resolveBuiltinAgentCliStatus(params: {
   return params.enabledProviders.includes(params.provider) ? "enabled" : "disabled";
 }
 
-export function getEffectiveBuiltinAgentCliProvider(
+function getEffectiveBuiltinAgentCliProvider(
   _settings: Pick<AppSettings, "enabledBuiltinAgentCliProviders"> | null | undefined,
   provider: ZCodeProvider,
 ): ZCodeProvider {

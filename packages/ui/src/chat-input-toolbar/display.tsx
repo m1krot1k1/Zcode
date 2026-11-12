@@ -46,10 +46,7 @@ import { ZCODE_MODE_OPTION_DESCRIPTION_IDS, ZCODE_MODE_OPTION_LABEL_IDS } from "
 import { RollingToolbarLabel } from "@/chat-input-toolbar/RollingToolbarLabel.js";
 
 export {
-  ChatContextUsage,
-  getContextCompressionCommand,
-  getRenderableTaskUsage,
-} from "@/chat-input-toolbar/contextUsage.js";
+  ChatContextUsage} from "@/chat-input-toolbar/contextUsage.js";
 
 type ConfigSelectTriggerSize = ComponentProps<typeof SelectTrigger>["size"];
 type ConfigSelectTriggerVariant = ComponentProps<typeof SelectTrigger>["variant"];
@@ -57,7 +54,7 @@ type ConfigSelectTriggerVariant = ComponentProps<typeof SelectTrigger>["variant"
 /** Radix Select 在受控值与子项注册竞争时可能发出空值等未渲染值；直接上抛会把
  * 系统事件误当成用户选择（如 Automations 编辑页仅打开详情就被标记未保存修改）。
  * 用户只能点到已渲染的 option，值域外的选择回调一律丢弃。 */
-export function isConfigSelectValueInOptions(option: ZCodeConfigOption, value: string): boolean {
+function isConfigSelectValueInOptions(option: ZCodeConfigOption, value: string): boolean {
   return option.options?.some((entry) => String(entry.value) === value) ?? false;
 }
 
@@ -96,13 +93,13 @@ function getConfigSelectItemTestId(
   return undefined;
 }
 
-export function buildModelSearchText({ itemName }: { itemName: string }): string {
+function buildModelSearchText({ itemName }: { itemName: string }): string {
   // Bugfix: 需求要求模型搜索仅匹配“展示名”，不能再命中分组名/模型值。
   // 这里统一只返回展示名，保证搜索范围收敛且稳定。
   return itemName.trim();
 }
 
-export function matchesModelDisplayNameSearch(
+function matchesModelDisplayNameSearch(
   modelDisplayName: string,
   searchText: string,
 ): boolean {
@@ -176,7 +173,7 @@ export function getModeOptionDisplayLabel(
   return intl.formatMessage({ id: labelMessageId });
 }
 
-export function getModeOptionLabelMessageId(
+function getModeOptionLabelMessageId(
   provider: ZCodeProvider | undefined,
   entry: Pick<ZCodeConfigSelectValue, "value">,
 ): string | null {
@@ -211,7 +208,7 @@ export function getConfigOptionEntryLabel(
   return entry.name;
 }
 
-export function getConfigOptionEntryDescription(
+function getConfigOptionEntryDescription(
   intl: ReturnType<typeof useZCodeIntl>["intl"],
   provider: ZCodeProvider | undefined,
   option: ZCodeConfigOption,

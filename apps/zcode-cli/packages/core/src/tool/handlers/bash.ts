@@ -43,13 +43,7 @@ import {
   workspaceBoundaryOptions,
 } from "../path-policy.js";
 import { decideBashCwdPolicy } from "./bash-cwd-policy.js";
-export {
-  getBashActivityDescription,
-  getBashAutoClassifierInput,
-  getBashDescription,
-  getBashToolUseSummary,
-  getBashUserFacingName,
-} from "./bash-metadata.js";
+
 import { readStringProperty } from "./bash-metadata.js";
 import { formatBashModelContent, formatPersistedBashModelContent } from "./bash-model-content.js";
 
@@ -155,7 +149,7 @@ export function prepareBashPermissionMatcher(input: unknown): BashPermissionMatc
   return command === undefined ? undefined : prepareBashPermissionMatcherForCommand(command);
 }
 
-export function resolveBashPermissionCapability(
+function resolveBashPermissionCapability(
   input: unknown,
   context?: ToolRuntimePermissionCapabilityContext,
 ): ToolRuntimePermissionCapability | undefined {

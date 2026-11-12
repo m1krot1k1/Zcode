@@ -69,7 +69,7 @@ function canPlayToolEntranceAnimation(key: string, active: boolean) {
   return active && !hasPlayedToolEntranceAnimation(key);
 }
 
-export function isAgentToolCall(toolCall: TaskChatToolCallTreeNode["toolCall"]): boolean {
+function isAgentToolCall(toolCall: TaskChatToolCallTreeNode["toolCall"]): boolean {
   return resolveToolCallIdentity(toolCall).family === "agent";
 }
 

@@ -87,7 +87,7 @@ export function PluginStorePaidPlanBadge({
 }
 
 /** 详情页与管理视图的插件级启停开关；紧凑商店卡片只保留「…」菜单。 */
-export function PluginStoreEnabledSwitch({
+function PluginStoreEnabledSwitch({
   item,
   actions,
 }: {

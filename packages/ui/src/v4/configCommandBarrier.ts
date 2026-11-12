@@ -1,11 +1,11 @@
-export interface ConfigCommandBarrier {
+interface ConfigCommandBarrier {
   enqueue<T>(command: () => Promise<T>): Promise<T>;
   wait(): Promise<void>;
 }
 
 export const CONFIG_COMMAND_SUPERSEDED = Symbol("config-command-superseded");
 
-export interface LatestConfigCommandScheduler<T> {
+interface LatestConfigCommandScheduler<T> {
   /**
    * 合并尚未开始的同类配置命令；被新意图替代的调用以 superseded 收敛。
    */

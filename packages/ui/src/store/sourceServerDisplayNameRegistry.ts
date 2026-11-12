@@ -1,7 +1,7 @@
 import type { ISourceServerManagementService } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-export interface SourceServerDisplayNameRegistry {
+interface SourceServerDisplayNameRegistry {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ReadonlyMap<string, string>;
 }

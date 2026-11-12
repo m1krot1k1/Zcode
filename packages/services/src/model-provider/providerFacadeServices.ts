@@ -36,7 +36,7 @@ export interface DiscoveredModel {
   readonly reasoningEffort?: readonly string[];
 }
 
-export interface ProviderSettingsServiceOptions {
+interface ProviderSettingsServiceOptions {
   /** 测试注入的网络实现；生产使用运行时 fetch。 */
   readonly fetchImpl?: typeof fetch;
   /** 测试注入的时钟，供后续 models.dev 缓存复用。 */

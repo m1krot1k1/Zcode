@@ -54,7 +54,7 @@ export {
 
 const TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON = "sidebar-coding-plan-upgrade-button";
 
-export function WorkspaceSidebarFooterUsageSummary({
+function WorkspaceSidebarFooterUsageSummary({
   enabled,
   onUsageClick,
   onUpgradeClick,
@@ -412,7 +412,7 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
   };
 }
 
-export type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
+type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
   typeof useWorkspaceSidebarFooterUsageSummaryState
 >;
 

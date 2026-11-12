@@ -132,7 +132,7 @@ function buildModelSelectionEntry(
 }
 
 /** stable/compact-edit fork 一次性预分配的完整 child-local 身份。 */
-export interface ForkIdentityMap {
+interface ForkIdentityMap {
   parentSessionId: SessionId;
   childSessionId: SessionId;
   messageIds: Map<MessageId, MessageId>;

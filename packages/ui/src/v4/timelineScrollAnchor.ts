@@ -12,7 +12,7 @@
 /** 离底判定容差：小于该距离视为「在底部」。取值覆盖亚像素滚动与最后一行 padding。 */
 export const BOTTOM_ANCHOR_EPSILON_PX = 48;
 
-export interface TimelineScrollMetrics {
+interface TimelineScrollMetrics {
   /** 滚动容器 scrollTop。 */
   scrollTop: number;
   /** 滚动容器可视高度（clientHeight）。 */
@@ -45,7 +45,7 @@ export function nextFollowingAfterScroll(
   return isAtBottom(metrics, epsilonPx);
 }
 
-export type TimelineScrollEventSource = "user" | "programmatic" | "layout";
+type TimelineScrollEventSource = "user" | "programmatic" | "layout";
 
 /**
  * scroll 事件后的滚动权裁决。布局/程序化 scroll 不得改变用户意图；只有用户输入
@@ -222,7 +222,7 @@ export function prependVirtualAnchorAdjustment(
   return next.start - previous.offsetTop - currentScrollTop;
 }
 
-export interface PrependAnchorInput {
+interface PrependAnchorInput {
   /** 上一 commit 的窗口首行 rowId（null = 尚无行）。 */
   prevFirstRowId: number | null;
   /** 本 commit 的窗口首行 rowId（null = 行被清空）。 */

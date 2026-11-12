@@ -23,7 +23,7 @@ import {
   readCachedCuaPermissionStatus,
 } from "./cuaPermissionStatusCache.js";
 
-export interface CuaPermissionStatusSnapshot {
+interface CuaPermissionStatusSnapshot {
   /** 上次成功查询的结果；null = 该 workspace 尚未拿到过任何状态。 */
   status: CuaPermissionStatusResult | null;
   /**
@@ -104,7 +104,7 @@ export function getCuaPermissionStatusSnapshot(key: string | null): CuaPermissio
 }
 
 /** 测试复位：模块级缓存会跨用例存活。 */
-export function resetCuaPermissionStatusStoreForTest(): void {
+function resetCuaPermissionStatusStoreForTest(): void {
   for (const slot of slots.values()) clearTransientRetry(slot);
   slots.clear();
   listeners.clear();
@@ -239,7 +239,7 @@ function scheduleTransientRetry(slot: Slot, params: FetchCuaPermissionStatusPara
   return true;
 }
 
-export interface FetchCuaPermissionStatusParams {
+interface FetchCuaPermissionStatusParams {
   service: ICuaPermissionService;
   workspacePath: string;
   workspaceIdentity?: string;

@@ -11,7 +11,7 @@ import {
   resolvePluginUiDownloadFileName,
 } from "../domain/pluginUiDownloadFile.js";
 
-export interface PluginUiDownloadHandlerDeps {
+interface PluginUiDownloadHandlerDeps {
   /** 桌面 IPlatformService.saveFile：原生另存为对话框；main 侧再做一次 50 MiB 与文件名校验。 */
   saveFile(payload: SaveFileRequest): Promise<SaveFileResult>;
   /** 只有 uri 的项（ResourceLink / 无内容的 EmbeddedResource）先经同插件 server 读取。 */
@@ -67,7 +67,7 @@ export function createPluginUiDownloadInteraction(input: {
   };
 }
 
-export function createPluginUiDownloadHandler(deps: PluginUiDownloadHandlerDeps) {
+function createPluginUiDownloadHandler(deps: PluginUiDownloadHandlerDeps) {
   const resolveBytes = async (
     plan: ReturnType<typeof planPluginUiDownload>,
   ): Promise<{ data: ArrayBuffer; name: string }> => {

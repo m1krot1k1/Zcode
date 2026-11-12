@@ -1,8 +1,8 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-export const SUMMARY_ROLL_TRANSITION_MS = 300;
-export const SUMMARY_ROLL_HOLD_MS = 500;
+const SUMMARY_ROLL_TRANSITION_MS = 300;
+const SUMMARY_ROLL_HOLD_MS = 500;
 export const SUMMARY_ROLL_TOTAL_MS = SUMMARY_ROLL_TRANSITION_MS + SUMMARY_ROLL_HOLD_MS;
 const SUMMARY_ROLL_TIMER_DRIFT_SKIP_MS = 250;
 const SUMMARY_ROLL_MAX_PENDING = 2;

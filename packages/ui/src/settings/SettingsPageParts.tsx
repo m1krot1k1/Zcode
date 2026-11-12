@@ -161,7 +161,7 @@ export function SettingsBadge({ children }: { children: ReactNode }) {
   );
 }
 
-export function SettingsRangeControl({
+function SettingsRangeControl({
   value,
   min,
   max,

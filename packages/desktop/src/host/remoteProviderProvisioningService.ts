@@ -11,7 +11,7 @@ import {
 } from "@zcode/services/node";
 import type { ServiceCollection } from "@zcode/services";
 
-export interface RemoteProviderProvisioningExecutor {
+interface RemoteProviderProvisioningExecutor {
   syncLocalToRemote(): Promise<ProviderProvisioningResult>;
 }
 

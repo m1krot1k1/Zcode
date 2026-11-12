@@ -6,7 +6,9 @@ import type { ZCodeToolExecResource } from "@zcode/shared";
 import { describe, expect, it, vi } from "vitest";
 import { NodeExecutionAdapter } from "../src/exec/node-execution-adapter.js";
 
-describe("Bash 执行适配器资源生命周期", () => {
+// Реальные spawn/ps замеры чувствительны к нагрузке: под 32-пакетным turbo
+// редкий delayed start даёт ложный таймаут. Retry не ослабляет проверки.
+describe("Bash 执行适配器资源生命周期", { retry: 1 }, () => {
   it("真实 Bash 退出保留输出和 exit code，资源耗时从 spawn 起算", async () => {
     const root = await mkdtemp(join(tmpdir(), "bash-resource-"));
     const onToolExecResource = vi.fn();

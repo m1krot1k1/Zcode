@@ -65,7 +65,7 @@ const OFFICIAL_PLUGIN_ASSETS_BASE_URL = "https://cdn-zcode.z.ai/zcode/official-p
 const OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS = ["dist/mcp/server.js"] as const;
 
 /** 文档插件（documents / pdf / presentations / spreadsheets）查看面板的构建产物。 */
-export const OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS = [
+const OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS = [
   "dist/server.mjs",
   "dist/ui/assets.json",
   "dist/ui/panel.html",

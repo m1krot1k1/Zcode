@@ -34,7 +34,7 @@ import {
 import { createWorkspaceHookReviewMutationPort } from "./workspace-hook-review-mutation.js";
 import type { WorkspaceHookReviewHostContext } from "./types.js";
 
-export interface WorkspaceHookRuntimeSecurity {
+interface WorkspaceHookRuntimeSecurity {
   admission: WorkspaceHookRuntimeAdmissionPort;
   snapshot: WorkspaceHookBundleSnapshot;
   /**

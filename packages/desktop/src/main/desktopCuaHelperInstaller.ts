@@ -10,7 +10,7 @@ import {
 
 type InstallerFactory = (options: CuaHelperInstallerOptions) => CuaHelperInstaller;
 
-export { normalizeCuaHelperArch, normalizeCuaHelperArchs } from "@zcode/services/node";
+
 
 interface DesktopCuaHelperInstallerOptions extends Pick<
   CuaHelperInstallerOptions,
@@ -22,7 +22,7 @@ interface DesktopCuaHelperInstallerOptions extends Pick<
   resourcesPath?: string;
 }
 
-export function resolvePackagedCuaHelperAppPath(
+function resolvePackagedCuaHelperAppPath(
   options: Pick<DesktopCuaHelperInstallerOptions, "platform" | "isPackaged" | "resourcesPath"> = {},
 ): string | undefined {
   const platform = options.platform ?? process.platform;

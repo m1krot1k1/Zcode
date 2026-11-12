@@ -713,7 +713,7 @@ export function getSkillDirectorySymlinkType(
   return platform === "win32" ? "junction" : "dir";
 }
 
-export function getCommandFileSymlinkType(): "file" {
+function getCommandFileSymlinkType(): "file" {
   return "file";
 }
 

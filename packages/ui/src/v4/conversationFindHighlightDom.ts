@@ -28,7 +28,7 @@ interface CssHighlightRegistryLike {
 type CssHighlightLike = { priority?: number };
 type HighlightConstructor = new (...ranges: Range[]) => unknown;
 
-export function ensureConversationFindHighlightStyle() {
+function ensureConversationFindHighlightStyle() {
   if (typeof document === "undefined") {
     return;
   }
@@ -121,7 +121,7 @@ function getMountedRowElement(root: HTMLElement, rowId: number): HTMLElement | n
   return root.querySelector<HTMLElement>(`[data-row-id="${rowId}"]`);
 }
 
-export function getMountedConversationFindRange(
+function getMountedConversationFindRange(
   root: HTMLElement,
   query: string,
   match: ConversationFindMatch,

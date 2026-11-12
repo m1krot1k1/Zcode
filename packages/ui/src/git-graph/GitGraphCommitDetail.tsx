@@ -3,7 +3,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatCommitTime, getRefIcon, getShortHash } from "./GitGraphDisplay.js";
 import type { GitGraphCommit } from "./layout.js";
 
-export interface GitGraphCommitDetailProps {
+interface GitGraphCommitDetailProps {
   commit: GitGraphCommit;
 }
 

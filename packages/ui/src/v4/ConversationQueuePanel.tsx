@@ -35,7 +35,7 @@ import { logger } from "@/logger.js";
 import { runUserAction, runUserActionAsync } from "@/lib/userActionTelemetry.js";
 import type { ConversationAttachmentReadParams } from "@/v4/transport.js";
 
-export interface ConversationQueuePanelProps {
+interface ConversationQueuePanelProps {
   queue: QueueState;
   /** 删除队列项（deleteQueueItem command）。 */
   onDeleteItem?: (queueItemId: string) => void;
@@ -134,7 +134,7 @@ function QueueMediaThumb({
 
 type QueueItem = QueueState["items"][number];
 
-export interface V4QueueReorderAnchor {
+interface V4QueueReorderAnchor {
   beforeQueueItemId: string | null;
   queueItemId: string;
 }

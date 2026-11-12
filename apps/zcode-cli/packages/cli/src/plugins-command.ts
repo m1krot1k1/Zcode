@@ -33,10 +33,8 @@ import {
 import { runMarketplaceCommand } from "./plugins-marketplace-command.js";
 
 export type {
-  PluginsCommandDependencies,
   PluginsCommandFlags,
-  PluginsCommandOverrides,
-} from "./plugins-command-shared.js";
+  PluginsCommandOverrides} from "./plugins-command-shared.js";
 
 const PLUGINS_COMMAND_USAGE = `Usage: zcode plugins <command> [options]
 

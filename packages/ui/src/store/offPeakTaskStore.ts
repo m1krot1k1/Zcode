@@ -18,7 +18,7 @@ import { logger } from "@/logger.js";
 // 闲时任务管理 store（与 automationManagementStore 独立）：走 IOffPeakTaskService RPC。
 // 位次/状态靠列表轮询刷新（host offPeakTaskSync 写 sqlite，renderer 只读快照）。
 
-export interface CreateOffPeakTaskInput {
+interface CreateOffPeakTaskInput {
   title: string;
   prompt: string;
   /** 权限四档（build/edit/plan/yolo）；类型收窄在服务端入参处完成。 */
@@ -28,7 +28,7 @@ export interface CreateOffPeakTaskInput {
   workspaceIdentity?: string;
 }
 
-export interface UpdateOffPeakTaskInput {
+interface UpdateOffPeakTaskInput {
   title?: string;
   prompt?: string;
   permissionMode?: string;
@@ -124,7 +124,7 @@ export function isOffPeakQuotaError(result: OffPeakTaskCreateResult | null | und
   );
 }
 
-export type OffPeakCreateErrorMessageId =
+type OffPeakCreateErrorMessageId =
   | "offPeak.error.quota"
   | "offPeak.error.unavailable"
   | "offPeak.error.generic";

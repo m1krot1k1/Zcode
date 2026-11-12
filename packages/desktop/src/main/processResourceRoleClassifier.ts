@@ -46,7 +46,7 @@ export interface ChromiumProcessRolePids {
   schedulerPids: ReadonlySet<number>;
 }
 
-export interface ChromiumRoleAggregate {
+interface ChromiumRoleAggregate {
   role: ChromiumProcessResourceRole;
   /** 角色内全部进程的 CPU 之和（整机归一化百分比）。 */
   cpuPercent: number;

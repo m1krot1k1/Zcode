@@ -6,7 +6,7 @@ import { logger } from "@/logger.js";
 const PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-export interface SessionSubagentsViewState {
+interface SessionSubagentsViewState {
   revision: number;
   ended: ZCodeSessionSubagentsResult["ended"];
   error: string | null;

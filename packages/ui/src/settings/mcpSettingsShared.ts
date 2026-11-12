@@ -4,7 +4,7 @@ export const MCP_SECTIONS = ["zcodeagentmcp"] as const;
 
 export type ServerScope = (typeof MCP_SECTIONS)[number];
 
-export const SOURCE_META: Record<
+const SOURCE_META: Record<
   ServerScope,
   { label: string; section: string; badgeClass: string }
 > = {

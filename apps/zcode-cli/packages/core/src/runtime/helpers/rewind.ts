@@ -127,7 +127,7 @@ export function selectCheckpointsForMessages(
     );
 }
 
-export function selectCheckpointForMessages(
+function selectCheckpointForMessages(
   events: readonly SessionEvent[],
   targetMessageIds: Iterable<MessageId>,
 ): CheckpointCreatedPayload | undefined {

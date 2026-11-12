@@ -33,7 +33,7 @@ export const send = (id: string, message: string) => ({
   input: { to: id, message, summary: message },
 });
 type Call = ReturnType<typeof spawn> | ReturnType<typeof send>;
-export interface ChildRequest {
+interface ChildRequest {
   sessionId: SessionId;
   model: string;
   reasoning: unknown;

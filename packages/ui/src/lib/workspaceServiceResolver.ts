@@ -42,7 +42,7 @@ export function resolveWorkspaceRemoteSessionId<TServices>(
   );
 }
 
-export function isRemoteWorkspaceTarget(
+function isRemoteWorkspaceTarget(
   target: WorkspaceServiceTarget,
   resolvedRemoteSessionId?: string,
 ): boolean {
@@ -77,7 +77,7 @@ export function resolveWorkspaceServices(
   };
 }
 
-export function buildWorkspaceServiceLookup(
+function buildWorkspaceServiceLookup(
   workspaceTabs: WorkspaceServiceTarget[],
   baseServices: IServiceAccessor,
   state: WorkspaceServiceResolverState,

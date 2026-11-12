@@ -13,7 +13,7 @@ import type { CodingPlanWebviewLocale } from "@zcode/shared";
 import type { CodingPlanFunnelContext } from "@/lib/codingPlanFunnelTelemetry.js";
 import type { CodingPlanProviderId } from "@/settings/model-provider-section/constants.js";
 
-export type CodingPlanWebsiteProvider = "zai" | "bigmodel";
+type CodingPlanWebsiteProvider = "zai" | "bigmodel";
 export type CodingPlanPurchaseAudience = "personal" | "team";
 
 export interface CodingPlanEmbeddedCredentials {
@@ -22,7 +22,7 @@ export interface CodingPlanEmbeddedCredentials {
   bigmodelAccessToken?: string | null;
 }
 
-export interface CodingPlanEmbeddedReportContext {
+interface CodingPlanEmbeddedReportContext {
   purchase_funnel_id?: string;
   purchase_entry_reporter?: "app";
   upgrade_source?: string;
@@ -45,13 +45,13 @@ export type CodingPlanEmbeddedTheme = "zai-light" | "zai-dark";
  * App locale（zh-CN / en-US）→ 官网 URL lang 段（cn / en）。
  * 用于 webview URL 的 ?lang= hint，让官网首屏就有正确语言，避免注入前的英文闪烁。
  */
-export function codingPlanLocaleToWebsiteLang(
+function codingPlanLocaleToWebsiteLang(
   locale: CodingPlanWebviewLocale | null | undefined,
 ): "cn" | "en" {
   return locale === "zh-CN" ? "cn" : "en";
 }
 
-export interface ResolveCodingPlanEmbeddedOriginOptions {
+interface ResolveCodingPlanEmbeddedOriginOptions {
   dev: boolean;
   endpointOrigin: string;
   e2eStoreBridgeEnabled?: boolean;

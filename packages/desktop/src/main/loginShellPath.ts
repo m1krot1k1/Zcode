@@ -12,11 +12,11 @@ const SHELL_TIMEOUT_MS = 5_000;
 const PRINT_PATH_COMMAND = `/bin/sh -c 'printf "%s%s%s" "${PATH_MARKER_START}" "$PATH" "${PATH_MARKER_END}"'`;
 const SKIP_ENV_VAR = "ZCODE_SKIP_LOGIN_SHELL_PATH";
 
-export function defaultShellFor(platform: NodeJS.Platform): string {
+function defaultShellFor(platform: NodeJS.Platform): string {
   return platform === "darwin" ? "/bin/zsh" : "/bin/bash";
 }
 
-export function loginShellFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string {
+function loginShellFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string {
   try {
     const shell = userInfo().shell?.trim();
     if (shell) return shell;
@@ -26,7 +26,7 @@ export function loginShellFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv)
   return env.SHELL?.trim() || defaultShellFor(platform);
 }
 
-export function shellInvocation(
+function shellInvocation(
   shell: string,
   command: string,
 ): { args: string[]; argv0?: string } {
@@ -60,7 +60,7 @@ export function prependPathDirectory(env: NodeJS.ProcessEnv, directory: string):
   env.PATH = [directory, ...entries].join(delimiter);
 }
 
-export function resolveLoginShellPath(
+function resolveLoginShellPath(
   shell: string,
   timeoutMs = SHELL_TIMEOUT_MS,
 ): Promise<string | undefined> {

@@ -241,7 +241,7 @@ export function supportsShellInitSnapshot(
   return shellDialect === "posix" || shellDialect === "git-bash";
 }
 
-export function detectShellKind(shellPath: string): ShellInitSnapshotShellKind {
+function detectShellKind(shellPath: string): ShellInitSnapshotShellKind {
   const name = basename(shellPath).toLowerCase();
   if (name.includes("zsh")) return "zsh";
   if (name.includes("bash")) return "bash";

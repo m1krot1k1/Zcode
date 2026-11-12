@@ -30,7 +30,7 @@ function isRunningZCodeTimeline(timeline: ZCodeTimelineMeta | undefined): boolea
   return false;
 }
 
-export function hasRunningZCodeTimeline(messages: readonly TaskChatMessage[]): boolean {
+function hasRunningZCodeTimeline(messages: readonly TaskChatMessage[]): boolean {
   return messages.some((message) => isRunningZCodeTimeline(message.syntheticTimeline));
 }
 

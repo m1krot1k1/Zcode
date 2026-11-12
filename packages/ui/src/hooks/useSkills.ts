@@ -3,7 +3,7 @@ import type { ZCodeSkillReferenceCatalogEntry } from "@zcode/shared";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { logger } from "@/logger.js";
 
-export interface ConversationSkillCatalogState {
+interface ConversationSkillCatalogState {
   skills: ZCodeSkillReferenceCatalogEntry[];
   authority: "session" | "workspace" | null;
   loading: boolean;
@@ -27,7 +27,7 @@ const EMPTY_SCOPED_STATE: ScopedConversationSkillCatalogState = {
   value: EMPTY_STATE,
 };
 
-export interface UseSkillsOptions {
+interface UseSkillsOptions {
   workspacePath: string;
   workspaceIdentity?: string;
   sessionId: string | null;

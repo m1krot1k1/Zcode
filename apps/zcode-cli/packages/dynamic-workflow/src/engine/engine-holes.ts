@@ -160,7 +160,7 @@ export class HoleRegistry {
 }
 
 /** 记录前把 prompt 截到上限（超出的以 `…` 收尾，截后总长恰为上限）。 */
-export function boundHolePrompt(prompt: string): string {
+function boundHolePrompt(prompt: string): string {
   if (prompt.length <= HOLE_PROMPT_MAX_CHARS) return prompt;
   return prompt.slice(0, HOLE_PROMPT_MAX_CHARS - ELLIPSIS.length) + ELLIPSIS;
 }

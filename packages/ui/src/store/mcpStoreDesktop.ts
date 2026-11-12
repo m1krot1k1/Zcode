@@ -76,7 +76,7 @@ export async function fetchNativeMcpServers(
   return result.servers ?? [];
 }
 
-export async function peekLegacyCommonMcpCount(
+async function peekLegacyCommonMcpCount(
   platform: McpPlatformService | null,
 ): Promise<number> {
   try {

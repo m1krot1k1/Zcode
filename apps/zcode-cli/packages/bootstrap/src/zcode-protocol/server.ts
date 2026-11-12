@@ -151,7 +151,7 @@ import {
 } from "./server-types.js";
 import { createInMemorySessionEventStore } from "@zcode/contracts";
 
-export type { ZCodeProtocolAgentDependencies, ZCodeProtocolSessionRecord };
+
 
 import { closeMcpUiInstance, openMcpUiInstance, validateMcpUiInstance } from "./mcp-ui/index.js";
 const MAX_CLIENT_REQUEST_REANNOUNCE_INTERVAL_MS = 10_000;

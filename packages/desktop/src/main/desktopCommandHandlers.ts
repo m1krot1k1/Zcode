@@ -132,7 +132,7 @@ async function clearAllDataAndRelaunch(options: {
   app.exit(0);
 }
 
-export async function clearCodingPlanWebviewStorage(options: {
+async function clearCodingPlanWebviewStorage(options: {
   logger: {
     info: (...args: unknown[]) => void;
     warn: (...args: unknown[]) => void;

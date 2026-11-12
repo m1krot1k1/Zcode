@@ -1,6 +1,6 @@
 import type { Locale, PostUpdateReleaseNotesPayload } from "@zcode/shared";
 
-export type LocalizedUpdateReleaseNotes = {
+type LocalizedUpdateReleaseNotes = {
   title: string;
   markdown: string;
 };

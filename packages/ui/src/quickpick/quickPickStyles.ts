@@ -3,7 +3,7 @@ export const quickPickDialogClassName =
 
 export const quickPickCommandClassName = "rounded-2xl bg-popover p-0.5 text-foreground";
 
-export const quickPickInputClassName = "text-ui-base";
+const quickPickInputClassName = "text-ui-base";
 
 export const quickPickListClassName = "max-h-[min(460px,64vh)] py-0.5";
 

@@ -10,7 +10,7 @@ import {
 import { stageSeaPackageAssets } from "./sea-workspace-package-assets.mjs";
 
 export const seaTuiAssetPrefix = "zcode-tui-runtime/";
-export const seaTuiManifestAssetKey = `${seaTuiAssetPrefix}manifest.json`;
+const seaTuiManifestAssetKey = `${seaTuiAssetPrefix}manifest.json`;
 
 const workspacePackageParentDirectoryNames = ["packages", "tools"];
 

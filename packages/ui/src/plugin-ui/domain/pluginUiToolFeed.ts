@@ -5,7 +5,7 @@ import type { PluginUiPresentation } from "../contract.js";
 import { parseJsonText, readPluginUiPresentation } from "./readPluginUiPresentation.js";
 
 /** 内联卡片与侧栏共用的 legacy ChatToolCall 子集（toolCallRowAdapter 输出）。 */
-export interface PluginUiLegacyToolCall {
+interface PluginUiLegacyToolCall {
   status: string;
   input: unknown;
   output?: unknown;

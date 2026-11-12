@@ -38,7 +38,7 @@ function createTeamPlanNavigationKey(
     .join(":");
 }
 
-export interface ResolvedCodingPlanEntitlementState {
+interface ResolvedCodingPlanEntitlementState {
   statusLabelId?: string;
   status: CodingPlanStatus;
   planLevel: string | null;

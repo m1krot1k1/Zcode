@@ -13,7 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function getContextKey(bot: Pick<BotConfig, "id">): string {
+function getContextKey(bot: Pick<BotConfig, "id">): string {
   return bot.id;
 }
 

@@ -50,7 +50,7 @@ export interface RemoteConnectionFlowOptions {
   onProjectIntentCleared?: () => void;
 }
 
-export interface RemoteConnectionCompletionIntent {
+interface RemoteConnectionCompletionIntent {
   preferredDirectoryPath?: string;
   options?: {
     directToDirectory?: boolean;
@@ -112,7 +112,7 @@ export function normalizeRemoteConnectionOptions({
     initialFailure,
   };
 }
-export type RemoteConnectionOptions = ReturnType<typeof normalizeRemoteConnectionOptions>;
+type RemoteConnectionOptions = ReturnType<typeof normalizeRemoteConnectionOptions>;
 
 /** 同一 Root flow 的只读 UI 投影；不含凭据，不保存连接事实。 */
 export interface RemoteConnectionProgress {

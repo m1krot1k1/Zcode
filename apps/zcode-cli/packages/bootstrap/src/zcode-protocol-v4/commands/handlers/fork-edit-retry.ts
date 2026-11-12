@@ -55,7 +55,7 @@ class _V4ForkTargetNotLatestSegmentError extends Error {
   }
 }
 
-export class V4ForkTargetGuardError extends Error {
+class V4ForkTargetGuardError extends Error {
   constructor(
     readonly reasonCode: string,
     targetRowId: number,

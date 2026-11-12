@@ -43,7 +43,7 @@ export interface SessionsIndexTransport {
   onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
 }
 
-export interface AgentSessionsIndexTransportTarget {
+interface AgentSessionsIndexTransportTarget {
   workspacePath: string;
   workspaceIdentity?: string;
 }

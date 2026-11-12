@@ -7,7 +7,7 @@ import { resolvePluginUiLogicalScope } from "../domain/pluginUiLogicalScope.js";
 import type { UsePluginUiHostInput, UsePluginUiHostResult } from "./pluginUiHostTypes.js";
 import { createPage } from "./pluginUiManagedPage.js";
 import { acquirePluginUiPage, pluginUiPages, subscribePage } from "./pluginUiPageRegistry.js";
-export type { UsePluginUiHostInput, UsePluginUiHostResult } from "./pluginUiHostTypes.js";
+
 function pageIdentity(input: UsePluginUiHostInput): { key: string; input: UsePluginUiHostInput } {
   const scope = resolvePluginUiLogicalScope(input.presentation, input.scope.scope);
   const key = buildPluginUiSurfaceKey({ ...input.scope, ...input.presentation }, scope);

@@ -92,7 +92,7 @@ export function buildEnterpriseCodingPlanProductList(
   });
 }
 
-export function mergeEnterpriseCodingPlanProductList(
+function mergeEnterpriseCodingPlanProductList(
   staticProducts: CodingPlanStaticTeamProduct[],
   pricingProducts: EnterpriseCodingPlanPricingProduct[],
 ): EnterpriseCodingPlanProductDisplay[] {
@@ -174,7 +174,7 @@ function resolveEnterpriseCodingPlanDisplayPayAmount(
   return undefined;
 }
 
-export function buildEnterpriseCodingPlanCalculateRequest({
+function buildEnterpriseCodingPlanCalculateRequest({
   product,
   maxSeats,
   duration,
@@ -265,7 +265,7 @@ export function buildEnterpriseCodingPlanEstimateFromPendingOrder(
   };
 }
 
-export function buildEnterpriseCodingPlanEstimateFromOrderResponse(
+function buildEnterpriseCodingPlanEstimateFromOrderResponse(
   order: EnterpriseCodingPlanCreateOrderResponse,
 ): EnterpriseCodingPlanOrderCalculateResponse {
   return {
@@ -458,7 +458,7 @@ export function isEnterpriseCodingPlanPaymentSuccessStatus(
   return status === "SUCCESS";
 }
 
-export function isEnterpriseCodingPlanPaymentFailureStatus(
+function isEnterpriseCodingPlanPaymentFailureStatus(
   status: EnterpriseCodingPlanPaymentStatus,
 ): boolean {
   return ENTERPRISE_CODING_PLAN_FAILURE_STATUSES.includes(
@@ -466,7 +466,7 @@ export function isEnterpriseCodingPlanPaymentFailureStatus(
   );
 }
 
-export function getEnterpriseCodingPlanFailureStatuses(): string[] {
+function getEnterpriseCodingPlanFailureStatuses(): string[] {
   return [...ENTERPRISE_CODING_PLAN_FAILURE_STATUSES];
 }
 

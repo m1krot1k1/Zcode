@@ -8,7 +8,7 @@ import {
   type SubagentInteractionOriginContext,
 } from "../../subagent/interaction-origin.js";
 
-export interface SubagentInteractionBrokerContext extends SubagentInteractionOriginContext {
+interface SubagentInteractionBrokerContext extends SubagentInteractionOriginContext {
   parentToolCallId?: PermissionBrokerRequest["toolCallId"] | string;
 }
 

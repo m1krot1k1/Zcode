@@ -41,7 +41,7 @@ class LayoutBranch {
   }
 }
 
-export class LayoutVertex {
+class LayoutVertex {
   readonly id: number;
   readonly hash: string;
   private readonly parents: LayoutVertex[] = [];

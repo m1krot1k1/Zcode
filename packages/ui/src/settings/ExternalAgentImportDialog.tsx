@@ -123,7 +123,7 @@ function readResourceSelectionKey(key: string): ResourceSelectionKeyPayload | nu
   }
 }
 
-export function buildExternalAgentImportSelections(
+function buildExternalAgentImportSelections(
   selectedKeys: string[],
   targetScope: SettingsSyncSourceScope,
   importMode: SettingsSyncImportMode,
@@ -332,7 +332,7 @@ export function CommandsImportDialog(props: ExternalAgentImportDialogProps) {
   return <ExternalAgentImportDialog {...props} category="commands" />;
 }
 
-export function PluginsImportDialog(props: ExternalAgentImportDialogProps) {
+function PluginsImportDialog(props: ExternalAgentImportDialogProps) {
   return <ExternalAgentImportDialog {...props} category="plugins" />;
 }
 

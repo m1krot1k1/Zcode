@@ -27,7 +27,7 @@ const GREP_ALLOWED_LONG_FLAGS = new Set([
   "--color=auto",
 ]);
 
-export interface BashReadFileSource {
+interface BashReadFileSource {
   filePath: string;
   startLine?: number;
   endLine?: number;

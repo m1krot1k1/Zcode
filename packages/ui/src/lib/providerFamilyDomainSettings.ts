@@ -38,7 +38,7 @@ export async function setProviderFamilyDomain(
   );
 }
 
-export function buildOAuthProviderFamilySelections(
+function buildOAuthProviderFamilySelections(
   domain: ProviderFamilyDomain,
   currentSelections: ProviderFamilyConnectionSelectionSettings | null | undefined,
 ): ProviderFamilyConnectionSelectionSettings {
@@ -48,7 +48,7 @@ export function buildOAuthProviderFamilySelections(
   };
 }
 
-export async function clearProviderFamilyDomain(
+async function clearProviderFamilyDomain(
   settingService: Pick<ISettingService, "update">,
 ): Promise<void> {
   await settingService.update({

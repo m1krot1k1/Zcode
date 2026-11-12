@@ -47,7 +47,7 @@ function getLocalStorage(): Storage | null {
   }
 }
 
-export function readSidebarUsageCodingPlanProviderPreference():
+function readSidebarUsageCodingPlanProviderPreference():
   | SidebarUsageCodingPlanProviderId
   | undefined {
   const value = readSidebarUsageCodingPlanSourcePreference();

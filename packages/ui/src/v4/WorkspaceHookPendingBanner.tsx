@@ -46,13 +46,13 @@ class WorkspaceHookPendingDismissStore {
 
 export const workspaceHookPendingDismissStore = new WorkspaceHookPendingDismissStore();
 
-export interface WorkspaceHookAdmissionInfo {
+interface WorkspaceHookAdmissionInfo {
   pendingCount: number;
   bundleDigest: string;
   workspaceIdentity?: string;
 }
 
-export interface WorkspaceHookPendingBannerProps {
+interface WorkspaceHookPendingBannerProps {
   sessionId: string;
   workspacePath: string;
   workspaceIdentity?: string;

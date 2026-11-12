@@ -14,12 +14,7 @@ import type {
   TaskFactTarget,
 } from "#src/task-facts/contract.js";
 export type {
-  TaskFactsContract,
-  TaskFactStore,
-  TaskFactSource,
-  TaskFactTarget,
-  TaskFactMutation,
-} from "#src/task-facts/contract.js";
+  TaskFactMutation} from "#src/task-facts/contract.js";
 
 export function createTaskFacts(options: {
   store: TaskFactStore;

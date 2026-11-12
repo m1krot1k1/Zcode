@@ -211,7 +211,7 @@ export function getTaskUiState(workspaceState: WorkspaceZCodeUIState, taskId: st
   return workspaceState.taskUiByTaskId[taskId] ?? DEFAULT_TASK_UI_STATE;
 }
 
-export function hasTaskPendingPermissionRequest(
+function hasTaskPendingPermissionRequest(
   workspaceState: WorkspaceZCodeUIState,
   taskId: string,
 ): boolean {
@@ -222,7 +222,7 @@ export function hasTaskPendingPermissionRequest(
   );
 }
 
-export function hasTaskPendingHumanInterventionRequest(
+function hasTaskPendingHumanInterventionRequest(
   workspaceState: WorkspaceZCodeUIState,
   taskId: string,
 ): boolean {

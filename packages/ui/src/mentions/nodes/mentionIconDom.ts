@@ -10,7 +10,7 @@ export type MentionLucideIconNode = ReadonlyArray<
   readonly ["path" | "circle" | "rect", Readonly<Record<string, string>>]
 >;
 
-export const SKILL_MENTION_LUCIDE_ICON_NAME = "WandSparkles";
+const SKILL_MENTION_LUCIDE_ICON_NAME = "WandSparkles";
 export const SKILL_MENTION_ICON_NODE = [
   [
     "path",
@@ -27,7 +27,7 @@ export const SKILL_MENTION_ICON_NODE = [
   ["path", { d: "M11 3H9" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const SUBAGENT_MENTION_LUCIDE_ICON_NAME = "Bot";
+const SUBAGENT_MENTION_LUCIDE_ICON_NAME = "Bot";
 export const SUBAGENT_MENTION_ICON_NODE = [
   ["path", { d: "M12 8V4H8" }],
   ["rect", { width: "16", height: "12", x: "4", y: "8", rx: "2" }],
@@ -37,7 +37,7 @@ export const SUBAGENT_MENTION_ICON_NODE = [
   ["path", { d: "M9 13v2" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const WHITEBOARD_MENTION_LUCIDE_ICON_NAME = "Palette";
+const WHITEBOARD_MENTION_LUCIDE_ICON_NAME = "Palette";
 export const WHITEBOARD_MENTION_ICON_NODE = [
   [
     "path",
@@ -51,21 +51,21 @@ export const WHITEBOARD_MENTION_ICON_NODE = [
   ["path", { d: "M17 12h.01" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const GOAL_COMMAND_MENTION_LUCIDE_ICON_NAME = "Goal";
+const GOAL_COMMAND_MENTION_LUCIDE_ICON_NAME = "Goal";
 export const GOAL_COMMAND_MENTION_ICON_NODE = [
   ["path", { d: "M12 13V2l8 4-8 4" }],
   ["path", { d: "M20.561 10.222a9 9 0 1 1-12.55-5.29" }],
   ["path", { d: "M8.002 9.997a5 5 0 1 0 8.9 2.02" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const WORKFLOW_COMMAND_MENTION_LUCIDE_ICON_NAME = "Workflow";
+const WORKFLOW_COMMAND_MENTION_LUCIDE_ICON_NAME = "Workflow";
 export const WORKFLOW_COMMAND_MENTION_ICON_NODE = [
   ["rect", { width: "8", height: "8", x: "3", y: "3", rx: "2" }],
   ["path", { d: "M7 11v4a2 2 0 0 0 2 2h4" }],
   ["rect", { width: "8", height: "8", x: "13", y: "13", rx: "2" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const COMPACT_COMMAND_MENTION_LUCIDE_ICON_NAME = "ScrollText";
+const COMPACT_COMMAND_MENTION_LUCIDE_ICON_NAME = "ScrollText";
 export const COMPACT_COMMAND_MENTION_ICON_NODE = [
   ["path", { d: "M15 12h-5" }],
   ["path", { d: "M15 8h-5" }],
@@ -78,7 +78,7 @@ export const COMPACT_COMMAND_MENTION_ICON_NODE = [
   ],
 ] as const satisfies MentionLucideIconNode;
 
-export const COMMAND_MENTION_LUCIDE_ICON_NAME = "SquareSlash";
+const COMMAND_MENTION_LUCIDE_ICON_NAME = "SquareSlash";
 export const COMMAND_MENTION_ICON_NODE = [
   [
     "path",
@@ -89,7 +89,7 @@ export const COMMAND_MENTION_ICON_NODE = [
   ["path", { d: "m9 15 6-6" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const SESSION_MENTION_LUCIDE_ICON_NAME = "MessagesSquare";
+const SESSION_MENTION_LUCIDE_ICON_NAME = "MessagesSquare";
 export const SESSION_MENTION_ICON_NODE = [
   [
     "path",
@@ -100,7 +100,7 @@ export const SESSION_MENTION_ICON_NODE = [
   ["path", { d: "M18 9h2a2 2 0 0 1 2 2v10l-4-4h-6a2 2 0 0 1-2-2v-1" }],
 ] as const satisfies MentionLucideIconNode;
 
-export const PLUGIN_MENTION_LUCIDE_ICON_NAME = "Cable";
+const PLUGIN_MENTION_LUCIDE_ICON_NAME = "Cable";
 export const PLUGIN_MENTION_ICON_NODE = [
   ["path", { d: "M17 19a1 1 0 0 1-1-1v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a1 1 0 0 1-1 1z" }],
   ["path", { d: "M17 21v-2" }],

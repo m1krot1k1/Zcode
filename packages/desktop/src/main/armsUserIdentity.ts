@@ -1,11 +1,11 @@
-export interface ArmsUserIdentitySyncDeps {
+interface ArmsUserIdentitySyncDeps {
   /** 设备维度 id，直接作为 ARMS user.name 上报 */
   deviceMid: string;
   /** 写入 ARMS user 配置（默认包装 armsRum.setConfig("user", ...)） */
   setUser: (user: { name: string }) => void;
 }
 
-export interface ArmsUserIdentitySync {
+interface ArmsUserIdentitySync {
   /** 将 deviceMid 写入 ARMS user.name（带去重） */
   refresh: () => void;
 }

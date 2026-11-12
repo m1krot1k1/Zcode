@@ -44,7 +44,7 @@ export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
 }
 
 /** preload 中 ARMS frame preload 可能晚于本脚本一帧，短重试避免 Bridge 尚未就绪 */
-export function scheduleArmsBrowserRumInit(runtimeEnv: ZCodeRuntimeEnv, maxAttempts = 50): void {
+function scheduleArmsBrowserRumInit(runtimeEnv: ZCodeRuntimeEnv, maxAttempts = 50): void {
   let attempts = 0;
   const tick = (): void => {
     if (initArmsBrowserRumOnce(runtimeEnv)) {

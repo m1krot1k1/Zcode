@@ -1,6 +1,6 @@
 import type { SqliteMigration } from "@zcode/shared/sqlite-migrations";
 import type { DatabaseSync } from "node:sqlite";
-export type { SqliteMigration } from "@zcode/shared/sqlite-migrations";
+
 import { PROVIDER_MODEL_SELECTION_MIGRATION_SQL } from "./migrations/0020-provider-model-selection.js";
 import { SESSION_DATABASE_IDENTITY_MIGRATION } from "@zcode/shared/sqlite-migrations";
 

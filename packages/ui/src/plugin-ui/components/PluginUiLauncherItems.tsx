@@ -15,7 +15,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { OpenPluginUiSideTabRequest } from "@/plugin-ui/contract.js";
 import { resolvePluginUiSurfaceTitle } from "@/plugin-ui/adapters/usePluginUiSurfaces.js";
 
-export interface PluginUiLauncherItemsProps {
+interface PluginUiLauncherItemsProps {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;

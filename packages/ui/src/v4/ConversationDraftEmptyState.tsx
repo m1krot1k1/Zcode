@@ -15,7 +15,7 @@ const GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23] as const;
 const GREETING_MIN_FONT_SIZE_PX = 20;
 const GREETING_MAX_FONT_SIZE_PX = 30;
 
-export type ChatEmptyGreetingMessageId =
+type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.morningEarly"
   | "chat.empty.greeting.morning"
   | "chat.empty.greeting.noon"
@@ -23,7 +23,7 @@ export type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.evening"
   | "chat.empty.greeting.lateNight";
 
-export function getChatEmptyGreetingMessageId(date: Date = new Date()): ChatEmptyGreetingMessageId {
+function getChatEmptyGreetingMessageId(date: Date = new Date()): ChatEmptyGreetingMessageId {
   const hour = date.getHours();
 
   if (hour >= 5 && hour < 9) return "chat.empty.greeting.morningEarly";
@@ -35,7 +35,7 @@ export function getChatEmptyGreetingMessageId(date: Date = new Date()): ChatEmpt
   return "chat.empty.greeting.lateNight";
 }
 
-export function getNextChatEmptyGreetingDelayMs(date: Date = new Date()) {
+function getNextChatEmptyGreetingDelayMs(date: Date = new Date()) {
   const candidates = GREETING_BOUNDARY_HOURS.map((hour) => {
     const boundary = new Date(date);
     boundary.setHours(hour, 0, 0, 0);

@@ -220,7 +220,7 @@ function OffPeakCreateButton({
 }
 
 /** 创建表单的预填草稿(来自「More ideas」模板)。 */
-export interface AutomationDraft {
+interface AutomationDraft {
   templateId?: string;
   title: string;
   cronExpr: string;
@@ -236,7 +236,7 @@ type AutomationsView =
   | { mode: "offpeak-edit"; task: ZCodeOffPeakTask };
 
 /** 主视图标签页：Scheduled 常驻，Idle-time 受灰度控制（D31）；不设 All 混排视图。 */
-export type AutomationsTab = "scheduled" | "idle";
+type AutomationsTab = "scheduled" | "idle";
 
 const SCHEDULED_ONLY_AUTOMATION_TABS: readonly AutomationsTab[] = ["scheduled"];
 const SCHEDULED_AND_IDLE_AUTOMATION_TABS: readonly AutomationsTab[] = ["scheduled", "idle"];
@@ -330,7 +330,7 @@ export function getAutomationRunNowToastId(
   return "automations.runNowFailed";
 }
 
-export type AutomationActionError = "create" | "update" | "toggle" | "restart" | "delete";
+type AutomationActionError = "create" | "update" | "toggle" | "restart" | "delete";
 
 /** 原始 Agent/RPC 错误留在 logger；界面只展示当前动作对应的可理解提示。 */
 export function getAutomationActionErrorToastId(action: AutomationActionError): string {
@@ -363,7 +363,7 @@ export function resolveAutomationDetailNavigation(
 }
 
 /** D49：openAutomationId 里 `offpeak-` 前缀 id 的判别（生成点唯一：offPeakTaskService 的 offpeak-${uuid}）。 */
-export function isOffPeakDetailNavigationId(automationId: string | null | undefined): boolean {
+function isOffPeakDetailNavigationId(automationId: string | null | undefined): boolean {
   return Boolean(automationId?.trim().startsWith("offpeak-"));
 }
 

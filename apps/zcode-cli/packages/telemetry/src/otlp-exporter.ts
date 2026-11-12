@@ -206,7 +206,7 @@ function cardinalityView(instrumentName: string): ViewOptions {
   };
 }
 
-export function resourceAttributes(
+function resourceAttributes(
   resource: TelemetryResourceContext,
 ): Record<string, string | number | boolean> {
   return telemetryResourceAttributes(resource, {
@@ -215,7 +215,7 @@ export function resourceAttributes(
   });
 }
 
-export function metricResourceAttributes(
+function metricResourceAttributes(
   resource: TelemetryResourceContext,
 ): Record<string, string | number | boolean> {
   return telemetryResourceAttributes(resource, {

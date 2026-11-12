@@ -33,7 +33,7 @@ export type RemoteWorkspaceIntent =
     }
   | { type: "close-workspace"; workspaceKey: string; origin: "user-close" };
 
-export interface RemoteWorkspaceControllerHandlers {
+interface RemoteWorkspaceControllerHandlers {
   connectDevice: (
     profileId: string,
     effect: "select-project" | "device-management",

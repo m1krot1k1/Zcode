@@ -44,7 +44,7 @@ export function getGroupedTaskDragGroupId(value: unknown): string | null {
   return data.type === "grouped-group" && typeof data.groupId === "string" ? data.groupId : null;
 }
 
-export function getGroupedTaskDragType(value: unknown): string | null {
+function getGroupedTaskDragType(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -52,7 +52,7 @@ export function getGroupedTaskDragType(value: unknown): string | null {
   return typeof data.type === "string" ? data.type : null;
 }
 
-export function getGroupedGroupOverGroupId(value: unknown): string | null {
+function getGroupedGroupOverGroupId(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -62,7 +62,7 @@ export function getGroupedGroupOverGroupId(value: unknown): string | null {
     : null;
 }
 
-export function getGroupedTaskCollapsedOverGroupId(value: unknown): string | null {
+function getGroupedTaskCollapsedOverGroupId(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -72,7 +72,7 @@ export function getGroupedTaskCollapsedOverGroupId(value: unknown): string | nul
     : null;
 }
 
-export function getGroupedTaskHeaderOverGroupId(value: unknown): string | null {
+function getGroupedTaskHeaderOverGroupId(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -82,7 +82,7 @@ export function getGroupedTaskHeaderOverGroupId(value: unknown): string | null {
     : null;
 }
 
-export function getGroupedTaskFooterOverGroupId(value: unknown): string | null {
+function getGroupedTaskFooterOverGroupId(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -92,7 +92,7 @@ export function getGroupedTaskFooterOverGroupId(value: unknown): string | null {
     : null;
 }
 
-export function getGroupedTaskEmptyOverGroupId(value: unknown): string | null {
+function getGroupedTaskEmptyOverGroupId(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -102,7 +102,7 @@ export function getGroupedTaskEmptyOverGroupId(value: unknown): string | null {
     : null;
 }
 
-export type GroupedTaskDragDirectionPosition = "before" | "after";
+type GroupedTaskDragDirectionPosition = "before" | "after";
 
 export const groupedTaskCollisionDetection: CollisionDetection = (args) => {
   const activeType = getGroupedTaskDragType(args.active.data.current);

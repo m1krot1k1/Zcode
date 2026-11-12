@@ -100,7 +100,7 @@ export class AccountRequestRetry {
   }
 }
 
-export function isProjectTokenRejection(error: unknown): boolean {
+function isProjectTokenRejection(error: unknown): boolean {
   return (
     getHttpResponseStatus(unwrapRetryError(error)) === 401 &&
     !isOtherAuthRejection(error, new WeakSet<object>())

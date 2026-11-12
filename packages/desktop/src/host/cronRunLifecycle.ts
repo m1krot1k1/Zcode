@@ -69,7 +69,7 @@ export async function recordCronRunOutcomeBestEffort(
   }
 }
 
-export async function releaseManualClaimBestEffort(
+async function releaseManualClaimBestEffort(
   params: Pick<CronRunLifecycleIdentity, "automationId" | "runId" | "workspaceKey"> & {
     repo: Pick<CronRunLifecycleRepo, "releaseManualClaim">;
     logWarn: LogWarn;

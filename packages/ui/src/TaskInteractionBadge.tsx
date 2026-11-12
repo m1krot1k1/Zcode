@@ -12,13 +12,13 @@ interface TaskInteractionBadgeProps {
   onSnoozeCountdown?: (interactionId: string) => boolean | Promise<boolean>;
 }
 
-export interface TaskInteractionBadgePresentation {
+interface TaskInteractionBadgePresentation {
   kind: "permission" | "userInput";
   countdownProgress?: number;
   canSnooze: boolean;
 }
 
-export function isAskUserQuestionInteraction(
+function isAskUserQuestionInteraction(
   interaction: ZCodeTaskPendingInteraction | undefined,
 ): boolean {
   if (!interaction || interaction.kind !== "userInput") return false;

@@ -33,7 +33,7 @@ interface NotificationControllerOptions {
 
 type SourceServerUpdateState = SourceServerManagementSnapshot["states"][number];
 
-export interface SourceServerUpdateNotificationController {
+interface SourceServerUpdateNotificationController {
   refresh(): void;
   dispose(): void;
 }
@@ -81,7 +81,7 @@ function getEligibleNotificationKey(
   return getSourceServerUpdateNotificationKey(state);
 }
 
-export function showSourceServerUpdateNotification(
+function showSourceServerUpdateNotification(
   options: NotificationControllerOptions & {
     snapshot: SourceServerManagementSnapshot;
     state: SourceServerUpdateState;

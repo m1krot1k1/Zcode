@@ -207,7 +207,7 @@ export function resolveTeamPlanInspectionAccess(
   };
 }
 
-export function resolvePlanSettingsProvider({
+function resolvePlanSettingsProvider({
   view,
   providerId,
   fallback,
@@ -1069,7 +1069,7 @@ function CodingPlanPurchaseChoiceBanners({
   );
 }
 
-export function resolveEnterpriseTeamPlanBannerClass(tierKey: string): string {
+function resolveEnterpriseTeamPlanBannerClass(tierKey: string): string {
   const normalized = tierKey.trim().toLowerCase();
   if (normalized === "max" || normalized.includes("advanced")) {
     return TEAM_PLAN_ADVANCED_ENTRY_BANNER_CLASS;
@@ -1077,7 +1077,7 @@ export function resolveEnterpriseTeamPlanBannerClass(tierKey: string): string {
   return TEAM_PLAN_ENTRY_BANNER_CLASS;
 }
 
-export function resolveEnterpriseTeamPlanBannerIconClass(tierKey: string): string {
+function resolveEnterpriseTeamPlanBannerIconClass(tierKey: string): string {
   const normalized = tierKey.trim().toLowerCase();
   if (normalized === "max" || normalized.includes("advanced")) {
     return "text-[#14b8a6]";
@@ -1085,7 +1085,7 @@ export function resolveEnterpriseTeamPlanBannerIconClass(tierKey: string): strin
   return "text-[#0ea5e9]";
 }
 
-export function resolveEnterpriseTeamPlanBannerDescriptionId(tierKey: string): string {
+function resolveEnterpriseTeamPlanBannerDescriptionId(tierKey: string): string {
   const normalized = tierKey.trim().toLowerCase();
   if (normalized === "max" || normalized.includes("advanced")) {
     return "settings.modelProvider.codingPlan.purchaseBanner.teamAdvancedDescription";

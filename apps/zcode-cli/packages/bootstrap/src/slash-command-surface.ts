@@ -26,7 +26,7 @@ const RESERVED_SLASH_COMMAND_NAMES = new Set(
   ]).concat([...EXTRA_RESERVED_SLASH_COMMAND_NAMES]),
 );
 
-export function normalizeZCodeSlashCommandName(name: string): string {
+function normalizeZCodeSlashCommandName(name: string): string {
   return name.trim().replace(/^\/+/, "").toLowerCase();
 }
 

@@ -47,7 +47,7 @@ export function buildTaskEntityKey(
   return `${buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity)}::${task.taskId}`;
 }
 
-export function normalizeTaskListWorkspaceScopes(
+function normalizeTaskListWorkspaceScopes(
   scopes: ZCodeTaskListWorkspaceScope[],
 ): ZCodeTaskListWorkspaceScope[] {
   const uniqueScopes = new Map<string, ZCodeTaskListWorkspaceScope>();

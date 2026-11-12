@@ -51,7 +51,7 @@ export function mcpOAuthCredentialKey(keyPrefix: string, name: string): string {
   return `${keyPrefix}:${name}`;
 }
 
-export function createCredentialGeneration(): string {
+function createCredentialGeneration(): string {
   return randomBytes(16).toString("hex");
 }
 
@@ -59,7 +59,7 @@ export function createCredentialGeneration(): string {
  * 迁移期 baseline：旧记录没有 `generation`，用 canonical 原始内容的稳定 hash 代替。
  * 内容变化即 generation 变化，足以支撑 follower 的「是否换代」判断。
  */
-export function resolveCredentialGeneration(
+function resolveCredentialGeneration(
   canonical: McpOAuthCanonicalCredentials,
   raw: string,
 ): string {

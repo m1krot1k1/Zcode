@@ -43,7 +43,7 @@ const INITIAL_STATE: UsageEntitlementState = {
   error: null,
 };
 
-export const USAGE_ENTITLEMENT_REFRESH_TIMEOUT_MS = 20_000;
+const USAGE_ENTITLEMENT_REFRESH_TIMEOUT_MS = 20_000;
 
 export interface UsageEntitlementRefreshOptions {
   silent?: boolean;

@@ -129,7 +129,7 @@ export function isModelSelectGroupSelected(
   return group.items.some((item) => item.value === normalizedValue);
 }
 
-export function getModelTriggerLabelClassName({
+function getModelTriggerLabelClassName({
   labelVisibilityClassName,
   triggerLabelClassName,
 }: {

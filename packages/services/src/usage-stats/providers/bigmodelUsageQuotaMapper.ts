@@ -83,7 +83,7 @@ function formatPlanName(level: string): string {
   return `GLM Coding ${normalized}`;
 }
 
-export function isNoPlanMessage(message: string): boolean {
+function isNoPlanMessage(message: string): boolean {
   return message.includes("不存在coding plan") || message.includes("没有资格");
 }
 

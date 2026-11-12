@@ -8,7 +8,7 @@ import {
   type PluginUiModelContext,
 } from "../domain/pluginUiModelContext.js";
 
-export const TID_PLUGIN_UI_MODEL_CONTEXT_CHIP = "plugin-ui-model-context-chip";
+const TID_PLUGIN_UI_MODEL_CONTEXT_CHIP = "plugin-ui-model-context-chip";
 
 /** composer 与历史用户消息共用的"插件上下文"pill；与 WebElementContextAttachmentChip 同构。 */
 export function PluginUiModelContextChip({

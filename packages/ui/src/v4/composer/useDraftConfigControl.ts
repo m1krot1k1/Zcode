@@ -75,7 +75,7 @@ export function shouldHydrateWorkspaceCatalog(params: {
   return params.slashCommands.length === 0 || !hasModePresentation;
 }
 
-export interface DraftConfigControl {
+interface DraftConfigControl {
   modelSelectionRead: ModelSelectionRead;
   /** Renderer 下一次提交的配置；恢复采用当前权限，在线授权只同步对应字段。 */
   draftConfig: Partial<SessionConfigState>;

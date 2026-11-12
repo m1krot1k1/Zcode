@@ -26,7 +26,7 @@ import { useAssistantCodeCommentFeatureEnabled } from "@/AssistantCodeCommentFea
 const FIND_AUTO_LOAD_ROW_LIMIT = 1200;
 const SEARCH_RESULT_HIGHLIGHT_DURATION_MS = 3000;
 
-export interface UseConversationTimelineFindOptions {
+interface UseConversationTimelineFindOptions {
   rootRef: React.RefObject<HTMLElement | null>;
   renderUnits: readonly ConversationTurnRenderUnit[];
   rows: readonly ConversationRow[];

@@ -53,7 +53,7 @@ interface RefreshMcpOAuthTokensInput {
   staticClientId?: string;
 }
 
-export interface ResolvedAsMetadata {
+interface ResolvedAsMetadata {
   authorizationServerUrl: string;
   metadata?: AuthorizationServerMetadata;
   resource?: URL;
@@ -241,7 +241,7 @@ function failSoft(
  * discovery 记录带 TTL 且与 Phase 2 共用；`resource` 必须求出并带进 refresh 请求（RFC 8707），
  * SDK 自己的 refresh 会传它，我们绕开 `auth()` 后必须自己补上，否则受众绑定丢失。
  */
-export async function resolveAsMetadata(
+async function resolveAsMetadata(
   input: Pick<
     RefreshMcpOAuthTokensInput,
     "credentialStore" | "fetchFn" | "keyPrefix" | "serverUrl"
@@ -282,6 +282,6 @@ export async function resolveAsMetadata(
  * credentials.json 加锁；同一路径会自重入死锁。basename 只含 hash 与连字符（Windows 文件名
  * 不允许冒号）。
  */
-export function resolveRefreshLockPath(credentialsFilePath: string, keyPrefix: string): string {
+function resolveRefreshLockPath(credentialsFilePath: string, keyPrefix: string): string {
   return join(dirname(credentialsFilePath), `${sanitizeKeyPrefix(keyPrefix)}.refresh`);
 }

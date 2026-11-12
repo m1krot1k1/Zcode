@@ -13,7 +13,7 @@ import type { PluginUiHostBridge } from "./pluginUiHostBridge.js";
  * 迟到成功（实例已销毁或 guest 已换代）立即补退订；`unsubscribeAll` 在 guest 换代与 dispose 时逐 uri 退订
  * （best effort，agent 会话关闭兜底）。
  */
-export interface PluginUiResourceSubscriptionsDeps {
+interface PluginUiResourceSubscriptionsDeps {
   bridge: Pick<
     IPluginUiBridgeService,
     | "readResource"
@@ -29,7 +29,7 @@ export interface PluginUiResourceSubscriptionsDeps {
   isDisposed(): boolean;
 }
 
-export interface PluginUiResourceSubscriptions {
+interface PluginUiResourceSubscriptions {
   /** 给当前 AppBridge 挂 resources/read、list、templates/list、subscribe、unsubscribe 处理器。 */
   install(bridge: PluginUiHostBridge): void;
   /** 本实例是否订阅了该 uri（通知只投递给已订阅的）。 */

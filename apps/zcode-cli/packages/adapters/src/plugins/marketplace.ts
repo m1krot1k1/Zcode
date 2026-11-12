@@ -914,12 +914,12 @@ export function loadMarketplaceManifestSync(
   return parseMarketplaceManifest(parsed);
 }
 
-export function loadInstalledPluginsSync(storageRoot: string): InstalledPluginsState {
+function loadInstalledPluginsSync(storageRoot: string): InstalledPluginsState {
   const parsed = readJsonFileSync(join(storageRoot, INSTALLED_PLUGINS_FILE));
   return normalizeInstalledPluginsState(parsed);
 }
 
-export async function saveInstalledPlugins(
+async function saveInstalledPlugins(
   storageRoot: string,
   state: InstalledPluginsState,
 ): Promise<void> {
@@ -1427,7 +1427,7 @@ function resolveManifestRootFromFile(filePath: string): string {
   return dirName.startsWith(".") && dirName.endsWith("-plugin") ? dirname(dir) : dir;
 }
 
-export function getMarketplaceManifestPath(storageRoot: string, marketplace: string): string {
+function getMarketplaceManifestPath(storageRoot: string, marketplace: string): string {
   return join(storageRoot, "marketplaces", sanitizePluginId(marketplace), MARKETPLACE_FILE);
 }
 

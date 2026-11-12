@@ -332,7 +332,7 @@ function FeatureRequestTextarea({
   );
 }
 
-export function buildFeatureRequestDescription({
+function buildFeatureRequestDescription({
   description,
   solution,
   source,

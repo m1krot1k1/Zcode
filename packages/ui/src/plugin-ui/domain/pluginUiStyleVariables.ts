@@ -5,7 +5,7 @@ import type { McpAppsStyleVariables } from "@zcode/shared/mcp-apps";
  * （官方 `McpUiStyleVariableKey`）。每个标准键给出来源 token 与兜底字面量：token 读不到（非 DOM 环境、
  * 旧主题缺项）时用兜底，保证页面拿到的每个键都是可用的 CSS 值。颜色值原样透传（含 color-mix()）。
  */
-export interface PluginUiStyleVariableSource {
+interface PluginUiStyleVariableSource {
   token?: string;
   fallback: string;
 }
@@ -15,7 +15,7 @@ const SYSTEM_SANS =
 const SYSTEM_MONO =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
-export const PLUGIN_UI_STYLE_VARIABLE_SOURCES: Record<string, PluginUiStyleVariableSource> = {
+const PLUGIN_UI_STYLE_VARIABLE_SOURCES: Record<string, PluginUiStyleVariableSource> = {
   "--color-background-primary": { token: "--color-background", fallback: "#ffffff" },
   "--color-background-secondary": { token: "--color-panel", fallback: "#f5f5f5" },
   "--color-background-tertiary": { token: "--color-surface", fallback: "#ededed" },

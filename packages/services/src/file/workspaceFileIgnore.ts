@@ -129,7 +129,7 @@ function buildBuiltinDefaultsSection(gitignoreContent: string | null): string {
  * 交给用户编辑，删除即放开，维持"单一真相源、无代码级并集"的承诺。
  * 默认段写入前先对 gitignore 区做规则去重（见 buildBuiltinDefaultsSection）。
  */
-export function buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent: string | null): string {
+function buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent: string | null): string {
   const gitignoreSection =
     gitignoreContent !== null && gitignoreContent.trim().length > 0
       ? gitignoreContent.endsWith("\n")
@@ -178,7 +178,7 @@ function splitWorkspaceFileSearchIgnoreSections(
  * 默认排除段与自定义区原样保留（用户对默认段的删改不受影响）。
  * 标记缺失时退化为整体初始内容重建（无法结构化定位分区）。
  */
-export function syncWorkspaceFileSearchIgnoreFromGitignore(
+function syncWorkspaceFileSearchIgnoreFromGitignore(
   currentContent: string,
   gitignoreContent: string | null,
 ): string {
@@ -207,7 +207,7 @@ export function syncWorkspaceFileSearchIgnoreFromGitignore(
  * 「恢复默认规则」：只重置默认排除段为内置清单，gitignore 区与自定义区原样保留。
  * 标记缺失时退化为整体初始内容重建。
  */
-export function resetWorkspaceFileSearchIgnoreDefaults(
+function resetWorkspaceFileSearchIgnoreDefaults(
   currentContent: string,
   gitignoreContent: string | null,
 ): string {

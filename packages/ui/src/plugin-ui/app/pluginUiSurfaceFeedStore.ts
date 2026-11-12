@@ -29,13 +29,13 @@ export function offerPluginUiSurfaceFeed(
   return next;
 }
 
-export function subscribePluginUiSurfaceFeeds(listener: () => void): () => void {
+function subscribePluginUiSurfaceFeeds(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
 /** 测试用：清空全部记录。 */
-export function resetPluginUiSurfaceFeedsForTest(): void {
+function resetPluginUiSurfaceFeedsForTest(): void {
   feeds.clear();
   listeners.clear();
 }

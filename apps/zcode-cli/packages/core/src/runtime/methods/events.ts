@@ -1268,7 +1268,7 @@ function prismTaskTerminalEntryId(
   return `prism-task-terminal:${rootSessionId}:${terminal.terminalId}`;
 }
 
-export function createPrismProjectionEventEnvelope(
+function createPrismProjectionEventEnvelope(
   event: SessionEvent,
 ): PrismProjectionEventEnvelope {
   return {
@@ -1283,7 +1283,7 @@ export function createPrismProjectionEventEnvelope(
   };
 }
 
-export async function ensurePrismProjectionEnvelope(
+async function ensurePrismProjectionEnvelope(
   this: AgentRuntimeInternal,
   entry: {
     id: string;

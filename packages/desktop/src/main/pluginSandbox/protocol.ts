@@ -80,7 +80,7 @@ export function parsePluginSandboxUrl(rawUrl: string): PluginSandboxRequestTarge
 }
 
 /** 在插件 HTML 的 `<head>` 顶部（或文档最前）注入别名脚本引用。 */
-export function injectPluginSandboxAliasScript(html: string, sandboxId?: string): string {
+function injectPluginSandboxAliasScript(html: string, sandboxId?: string): string {
   const tag = `<script src="${sandboxId ? `/instance/${sandboxId}` : ""}${PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH}"></script>`;
   const headMatch = /<head[^>]*>/i.exec(html);
   if (headMatch) {

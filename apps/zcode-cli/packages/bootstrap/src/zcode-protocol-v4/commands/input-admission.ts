@@ -30,7 +30,7 @@ export function hasPromptInput(text: string, attachments: readonly unknown[] | u
 }
 
 /** held（inputRouting.mode=choice）下 sendText/sendGoalCommand 缺 disposition → 拒绝（10 §6.4）。 */
-export class V4HeldQueueDispositionRequiredError extends Error {
+class V4HeldQueueDispositionRequiredError extends Error {
   readonly reasonCode = "heldQueueDispositionRequired";
   constructor() {
     super("held queue requires heldQueueDisposition (clearQueueAndSend | keepQueueAndSend)");
@@ -39,7 +39,7 @@ export class V4HeldQueueDispositionRequiredError extends Error {
 }
 
 /** 确认框打开后队列被另一端增删：旧确认不能继续清空/保留并发送。 */
-export class V4HeldQueueConfirmationStaleError extends Error {
+class V4HeldQueueConfirmationStaleError extends Error {
   readonly reasonCode = "guard.heldQueueConfirmationStale";
   constructor() {
     super("paused queue changed after send confirmation opened");

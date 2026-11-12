@@ -27,7 +27,7 @@ export interface ConversationTurnNavigatorVirtualItem {
   size: number;
 }
 
-export interface ResolveConversationTurnNavigatorActiveUnitIndexOptions {
+interface ResolveConversationTurnNavigatorActiveUnitIndexOptions {
   items: readonly ConversationTurnNavigatorItem[];
   virtualItems: readonly ConversationTurnNavigatorVirtualItem[];
   scrollOffsetPx: number;
@@ -40,33 +40,33 @@ export interface ConversationTurnNavigatorQueryPosition {
   end: number;
 }
 
-export interface ResolveConversationTurnNavigatorActiveQueryRowIdOptions {
+interface ResolveConversationTurnNavigatorActiveQueryRowIdOptions {
   positions: readonly ConversationTurnNavigatorQueryPosition[];
   scrollOffsetPx: number;
   viewportHeightPx: number;
 }
 
-export type ConversationTurnNavigatorBarTone = "idle" | "mid" | "near" | "peak";
-export type ConversationTurnNavigatorBarColorTone = "focus" | "muted";
+type ConversationTurnNavigatorBarTone = "idle" | "mid" | "near" | "peak";
+type ConversationTurnNavigatorBarColorTone = "focus" | "muted";
 
-export interface ConversationTurnNavigatorBarVisualState {
+interface ConversationTurnNavigatorBarVisualState {
   colorTone: ConversationTurnNavigatorBarColorTone;
   opacity: number;
   scaleX: number;
   tone: ConversationTurnNavigatorBarTone;
 }
 
-export interface ResolveConversationTurnNavigatorBarVisualStateOptions {
+interface ResolveConversationTurnNavigatorBarVisualStateOptions {
   itemIndex: number;
   visualFocusItemIndex: number | undefined;
 }
 
-export interface ResolveConversationTurnNavigatorVisualFocusItemIndexOptions {
+interface ResolveConversationTurnNavigatorVisualFocusItemIndexOptions {
   activeItemIndex: number;
   interactionItemIndex: number | undefined;
 }
 
-export const CONVERSATION_TURN_NAVIGATOR_MIN_WIDTH_PX = 864;
+const CONVERSATION_TURN_NAVIGATOR_MIN_WIDTH_PX = 864;
 
 export type ConversationTurnNavigatorHydrationResult =
   | { status: "hydrated"; logEpoch: string }

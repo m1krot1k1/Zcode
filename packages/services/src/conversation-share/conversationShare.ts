@@ -153,8 +153,8 @@ export interface ConversationShareFailureIssue {
     | "unknown";
 }
 
-export type ConversationShareFailureDiagnosticValue = string | number | boolean;
-export type ConversationShareFailureDiagnostics = Readonly<
+type ConversationShareFailureDiagnosticValue = string | number | boolean;
+type ConversationShareFailureDiagnostics = Readonly<
   Record<string, ConversationShareFailureDiagnosticValue>
 >;
 
@@ -193,7 +193,7 @@ function inferFailureReasonCode(message: string): ConversationShareFailureReason
   return "invalid_conversation";
 }
 
-export interface ConversationShareFailureDetails {
+interface ConversationShareFailureDetails {
   requestId?: string;
   status?: number;
   code?: number;

@@ -68,13 +68,13 @@ import { useMcpStore } from "@/store/mcpStore.js";
 import { useSourceServerDisplayNames } from "@/hooks/useSourceServerDisplayNames.js";
 import { useRemoteDevicePresentationInput } from "@/hooks/useSourceServerStatuses.js";
 
-export type { WorkspaceHeaderState, WorkspaceHeaderTitleSectionProps };
+export type { WorkspaceHeaderState};
 export {
   WorkspaceHeaderActionSection,
   type WorkspaceHeaderActionSectionProps,
 } from "@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js";
 
-export function shouldShowRemoteSkillSyncAction(params: {
+function shouldShowRemoteSkillSyncAction(params: {
   remoteSessionId?: string | null;
   remoteTarget?: RemoteTarget | null;
   clientMode?: "desktop-continuous" | "web-remote-replayable";

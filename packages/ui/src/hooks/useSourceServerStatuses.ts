@@ -7,7 +7,7 @@ const emptyStatuses: ReadonlyMap<string, AggregatedSourceStatus> = new Map();
 const subscribeToNothing = () => () => undefined;
 const getEmptyStatuses = () => emptyStatuses;
 
-export function useSourceServerStatuses() {
+function useSourceServerStatuses() {
   const management = useBaseWorkspaceServices().sourceServerManagementService;
   const registry = useMemo(
     () => (management ? getSourceServerStatusRegistry(management) : null),

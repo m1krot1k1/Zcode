@@ -3,7 +3,7 @@ import { InternalChannels, PlatformChannels } from "@zcode/shared";
 import type { PluginSandboxCaptureRequest } from "@zcode/shared/mcp-apps";
 import { enableSandboxRetainedMoves } from "./retainedMoves.js";
 
-export interface PluginSandboxHostBridgeApi {
+interface PluginSandboxHostBridgeApi {
   supportsRetainedMove: boolean;
   setExecutionActive(sandboxId: string, initId: number, active: boolean): Promise<void>;
   copyImage(input: PluginSandboxCaptureRequest): Promise<void>;

@@ -12,7 +12,7 @@ type WizardIntlLike = {
   formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string;
 };
 
-export interface RemoteConnectionFormSnapshot {
+interface RemoteConnectionFormSnapshot {
   kind: RemoteTarget["kind"];
   host: string;
   port: string;
@@ -393,7 +393,7 @@ export function findSourceServerUpgradeProfileId(
 }
 
 /** 从主机框粘贴的文本中拆出的 SSH 目标；缺省字段由用户继续填写。 */
-export interface SshPasteTarget {
+interface SshPasteTarget {
   host: string;
   username?: string;
   port?: string;

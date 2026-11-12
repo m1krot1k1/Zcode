@@ -4,9 +4,9 @@
 // 安全事实和去激活执行面；pool 只维护 idle TTL、LRU touch、operation lease 与
 // deactivation gate。
 
-export const DEFAULT_SESSION_RESIDENT_TARGET_COUNT = 8;
+const DEFAULT_SESSION_RESIDENT_TARGET_COUNT = 8;
 export const DEFAULT_SESSION_RESIDENT_HIGH_WATER_COUNT = 16;
-export const DEFAULT_SESSION_RESIDENT_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
+const DEFAULT_SESSION_RESIDENT_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export type SessionDeactivationReason = "high_water_lru" | "idle_timeout";
 

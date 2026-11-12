@@ -20,7 +20,7 @@ export interface WorkflowHoleTarget {
 }
 
 /** display 的 `fill` 块（与 shared 的 toolCallCreateWorkflowDisplaySchema.fill 同形），未解析的原样。 */
-export interface WorkflowDisplayFill {
+interface WorkflowDisplayFill {
   siteId: string;
   name: string;
   draftPath?: string;
@@ -50,7 +50,7 @@ export function readWorkflowHoleTarget(
 }
 
 /** 补全的体（`script`）：与 CreateWorkflow 的脚本同一通道，流式草稿的笔从它里扫阶段。 */
-export function readWorkflowHoleBody(input: unknown): string | undefined {
+function readWorkflowHoleBody(input: unknown): string | undefined {
   return isPlainRecord(input) && typeof input.script === "string" ? input.script : undefined;
 }
 

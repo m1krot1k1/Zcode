@@ -15,10 +15,10 @@ import { useConversationProjection } from "@/v4/useConversationProjection.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 /** 输出预览只展示最近 3 条文本输出；完整 transcript 通过子会话侧栏查看。 */
-export const SUBAGENT_DRILLDOWN_MAX_ROWS = 3;
+const SUBAGENT_DRILLDOWN_MAX_ROWS = 3;
 const SUBAGENT_DRILLDOWN_MAX_TOOL_ROWS = 3;
 
-export interface SubagentDrilldownProps {
+interface SubagentDrilldownProps {
   childSessionId: string;
   /** 父行渲染上下文（theme/codePreviewSettings 沿用；宿主保证引用稳定）。 */
   context: ConversationRowRenderContext;

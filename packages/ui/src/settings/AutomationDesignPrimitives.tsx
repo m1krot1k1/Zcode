@@ -31,7 +31,7 @@ export {
 } from "@/settings/AutomationIcons.js";
 
 /** 设置页返回入口仅高亮图标与文本，保留点击热区但不显示 hover/focus 背景。 */
-export const AUTOMATION_BACK_TRIGGER_CLASSNAME =
+const AUTOMATION_BACK_TRIGGER_CLASSNAME =
   "-m-1 inline-flex w-fit max-w-full min-w-0 items-center gap-1 bg-transparent p-1 text-ui-base leading-5 text-foreground-subtle transition-colors hover:text-foreground active:text-foreground focus-visible:text-foreground focus-visible:outline-none";
 
 // 修复原因：space-y 给行内 label 添加 margin 时会受字体行盒影响，实际视觉间距小于设计稿的 6px。

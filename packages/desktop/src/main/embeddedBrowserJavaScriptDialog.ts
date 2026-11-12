@@ -61,7 +61,7 @@ export function resolveEmbeddedBrowserDialogSource(frameUrl: string, guestUrl?: 
   return "This page says";
 }
 
-export function resolveEmbeddedBrowserDialogButtons(
+function resolveEmbeddedBrowserDialogButtons(
   locale: Locale,
   type: EmbeddedBrowserDialogRequest["type"],
 ): string[] {

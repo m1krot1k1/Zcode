@@ -47,7 +47,7 @@ interface MembershipBumpEventLike {
   };
 }
 
-export function bumpTaskListMembershipVersionForWorkspaceEvent(
+function bumpTaskListMembershipVersionForWorkspaceEvent(
   event: MembershipBumpEventLike,
 ): void {
   if (!event.taskMeta || !event.taskId) {
@@ -79,6 +79,6 @@ export function bumpTaskListMembershipVersionForWorkspaceEvent(
 }
 
 /** React 绑定：版本号变化触发重渲染（subscribe/get 是模块级函数，引用稳定）。 */
-export function useTaskListMembershipVersion(): number {
+function useTaskListMembershipVersion(): number {
   return useSyncExternalStore(subscribeTaskListMembershipVersion, getTaskListMembershipVersion);
 }

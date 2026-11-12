@@ -138,7 +138,7 @@ export function prepareOffPeakTurn(
   };
 }
 
-export class OffPeakRuntimeExecution {
+class OffPeakRuntimeExecution {
   readonly lifecycle: OffPeakLifecycle;
   readonly authority: OffPeakTicketAuthority;
   readonly ordinarySelection: ModelSelection | undefined;

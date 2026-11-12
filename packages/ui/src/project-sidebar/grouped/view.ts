@@ -7,7 +7,7 @@ import type {
 
 import { taskKey } from "@/project-sidebar/grouped/ids.js";
 
-function cloneView(view: ZCodeGroupedTaskView): ZCodeGroupedTaskView {
+export function cloneView(view: ZCodeGroupedTaskView): ZCodeGroupedTaskView {
   return {
     nodes: view.nodes.map((node) =>
       node.type === "task" ? { ...node } : { ...node, tasks: [...node.tasks] },
@@ -77,7 +77,7 @@ function insertTaskIntoGroup(
   return { nodes };
 }
 
-function removeTaskFromGroupedView(
+export function removeTaskFromGroupedView(
   view: ZCodeGroupedTaskView,
   targetTaskKey: string,
 ): ZCodeGroupedTaskView {
@@ -102,7 +102,7 @@ function removeTaskFromGroupedView(
   return nextView;
 }
 
-function filterGroupedViewByTaskKeys(
+export function filterGroupedViewByTaskKeys(
   view: ZCodeGroupedTaskView,
   hiddenTaskKeys: ReadonlySet<string>,
 ): ZCodeGroupedTaskView {
@@ -152,7 +152,7 @@ function findTaskInGroupedView(
   return null;
 }
 
-function replaceTaskInGroupedView(
+export function replaceTaskInGroupedView(
   view: ZCodeGroupedTaskView,
   nextTask: ZCodeTaskMeta,
 ): ZCodeGroupedTaskView {
@@ -170,18 +170,18 @@ function replaceTaskInGroupedView(
   };
 }
 
-function getGroupedTaskGroupIds(view: ZCodeGroupedTaskView): string[] {
+export function getGroupedTaskGroupIds(view: ZCodeGroupedTaskView): string[] {
   return view.nodes.flatMap((node) => (node.type === "group" ? [node.group.id] : []));
 }
 
-function areAllGroupedTaskGroupsExpanded(
+export function areAllGroupedTaskGroupsExpanded(
   groupIds: readonly string[],
   collapsedGroupIds: ReadonlySet<string>,
 ): boolean {
   return groupIds.length > 0 && groupIds.every((groupId) => !collapsedGroupIds.has(groupId));
 }
 
-function pruneCollapsedGroupedTaskGroupIds(
+export function pruneCollapsedGroupedTaskGroupIds(
   collapsedGroupIds: ReadonlySet<string>,
   groupIds: readonly string[],
 ): Set<string> {
@@ -271,7 +271,7 @@ function findTaskLocation(
   return null;
 }
 
-function resolveGroupedDraftTaskPlacementForTask(
+export function resolveGroupedDraftTaskPlacementForTask(
   view: ZCodeGroupedTaskView,
   targetTaskKey: string | null | undefined,
 ): GroupedDraftTaskPlacement {
@@ -564,21 +564,12 @@ function moveTaskToTopByMenu(
 }
 
 export {
-  areAllGroupedTaskGroupsExpanded,
-  cloneView,
-  filterGroupedViewByTaskKeys,
   findTaskInGroupedView,
-  getGroupedTaskGroupIds,
   moveTaskByMenu,
   moveGroupAroundTopLevelNode,
   moveTaskToTopByMenu,
   moveTaskToGroupEnd,
   moveTaskToGroupStart,
   moveTaskToRootAroundGroup,
-  moveTaskOverTask,
-  pruneCollapsedGroupedTaskGroupIds,
-  removeTaskFromGroupedView,
-  replaceTaskInGroupedView,
-  resolveGroupedDraftTaskPlacementForTask,
-};
+  moveTaskOverTask};
 export type { GroupedTaskInsertPosition };

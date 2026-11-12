@@ -129,13 +129,13 @@ export function readMcpToolPresentation(
   return readLegacyMcpToolPresentation(context.toolCallNode.toolCall.toolName);
 }
 
-export function formatMcpIdentifier(value: string): string {
+function formatMcpIdentifier(value: string): string {
   const words = value.trim().replace(/[-_]+/gu, " ").replace(/\s+/gu, " ");
   if (!words) return value;
   return words[0]!.toLocaleUpperCase() + words.slice(1);
 }
 
-export function formatMcpServerLabel(value: string): string {
+function formatMcpServerLabel(value: string): string {
   const namespaceSegments = value
     .split(":")
     .map((segment) => segment.trim())
@@ -149,7 +149,7 @@ export function formatMcpServerLabel(value: string): string {
   return formatMcpIdentifier(displayIdentifier);
 }
 
-export function formatMcpToolLabel(toolName: string, serverLabel: string): string {
+function formatMcpToolLabel(toolName: string, serverLabel: string): string {
   const formattedToolName = formatMcpIdentifier(toolName);
   const repeatedPrefix = `${serverLabel} `;
   // 不少 MCP 工具会再次用 server 名作为 tool 前缀；summary 同时展示 server

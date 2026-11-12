@@ -53,16 +53,16 @@ export interface PresentationPreviewEngine {
 }
 
 /** 后续 DOM 编辑能力的标记边界；第一期不定义尚未验证的编辑命令语义。 */
-export interface PresentationEditEngine {
+interface PresentationEditEngine {
   readonly capability: "dom-edit";
 }
 
 /** 后续 DOM -> PPTX 导出能力的标记边界；第一期不承诺原文件无损写回。 */
-export interface PresentationExportEngine {
+interface PresentationExportEngine {
   readonly capability: "dom-to-pptx";
 }
 
-export interface PresentationCapabilities {
+interface PresentationCapabilities {
   preview: PresentationPreviewEngine;
   edit?: PresentationEditEngine;
   export?: PresentationExportEngine;

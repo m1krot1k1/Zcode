@@ -173,7 +173,7 @@ export function RemoteSkillSyncExistingFilterCheckbox({
   );
 }
 
-export function RemoteSkillSyncTargetRow({
+function RemoteSkillSyncTargetRow({
   targetLabel,
   showExistingRemoteSkills,
   showExistingFilter,

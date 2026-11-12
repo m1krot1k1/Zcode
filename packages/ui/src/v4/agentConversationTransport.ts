@@ -44,7 +44,7 @@ import {
   type AttachmentUploadOptions,
 } from "@/v4/attachmentUploadTransaction.js";
 
-export interface AgentConversationTransportTarget {
+interface AgentConversationTransportTarget {
   workspacePath: string;
   workspaceIdentity?: string;
   /** Desktop 本地媒体协议 URL；Web/remote 不注入，因此保持分片读取。 */

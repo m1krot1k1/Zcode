@@ -5,7 +5,7 @@ import {
   storageMigrationReportSchema,
 } from "@zcode/shared/sqlite-migrations";
 import type { StartupStorageContract } from "./contract.js";
-export type { StartupStorageContract, AgentStorageMigrationInput } from "./contract.js";
+
 const execute = promisify(execFile);
 const MAX_COMMAND_OUTPUT_BYTES = 256 * 1024;
 export const startupStorage: StartupStorageContract = {

@@ -5,7 +5,7 @@ import type {
 } from "@zcode/shared";
 
 // 进度条从当前占用恢复到 100% 的动画时长，沿用现有 500ms ease-out。
-export const CODING_PLAN_QUOTA_RESET_PROGRESS_DURATION_MS = 500;
+const CODING_PLAN_QUOTA_RESET_PROGRESS_DURATION_MS = 500;
 // 完成后“额度已重置”提示的停留时长，随后自动收起提示（额度条保持 100%）。
 export const CODING_PLAN_QUOTA_RESET_DONE_DISPLAY_MS = 2_600;
 // 自动/运营重置在 Composer 触发器上先合成一小段“正在重置”的时长，随后切换为“已重置”。
@@ -15,7 +15,7 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 
 // 完成后乐观改写“下一次重置时间”的周期：五小时额度按 5 小时，周额度按 7 天。
-export function resolveCodingPlanQuotaResetDurationMs(resetType: CodingPlanResetType): number {
+function resolveCodingPlanQuotaResetDurationMs(resetType: CodingPlanResetType): number {
   return resetType === "WEEK" ? WEEK_MS : FIVE_HOURS_MS;
 }
 

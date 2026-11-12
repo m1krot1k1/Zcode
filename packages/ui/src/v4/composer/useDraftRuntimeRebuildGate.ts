@@ -7,7 +7,7 @@ import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
  */
 export const DRAFT_RUNTIME_REBUILD_TIMEOUT_MS = 5000;
 
-export interface DraftRuntimeRebuildGateState {
+interface DraftRuntimeRebuildGateState {
   rebuilding: boolean;
   /** 换代发生时的预热会话 id；出现与之不同的非空 id 即视为重建完成。 */
   pendingFrom: string | null;
@@ -15,7 +15,7 @@ export interface DraftRuntimeRebuildGateState {
   epoch: number;
 }
 
-export type DraftRuntimeRebuildGateEvent =
+type DraftRuntimeRebuildGateEvent =
   | { type: "runtimeRestart"; prewarmSessionId: string | null }
   | { type: "prewarmSessionChanged"; prewarmSessionId: string | null }
   | { type: "rebuildTimeout" };

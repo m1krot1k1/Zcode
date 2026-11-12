@@ -9,7 +9,7 @@ const EMPTY_COMPLETION_MAX_RETRIES = 1;
 const EMPTY_COMPLETION_MESSAGE =
   "Model returned no text, no tool calls, and no usage before completing the turn.";
 
-export function createEmptyCompletionFailure(): ClassifiedModelFailure {
+function createEmptyCompletionFailure(): ClassifiedModelFailure {
   return {
     code: ModelErrorCode.InvalidModelResponse,
     message: EMPTY_COMPLETION_MESSAGE,

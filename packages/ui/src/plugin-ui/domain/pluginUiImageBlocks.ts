@@ -7,7 +7,7 @@ export interface PluginUiImageBlock {
   bytes: number;
 }
 
-export type PluginUiImageBlocksResult =
+type PluginUiImageBlocksResult =
   | { ok: true; images: PluginUiImageBlock[] }
   | {
       ok: false;

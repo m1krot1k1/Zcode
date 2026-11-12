@@ -22,7 +22,7 @@ interface ParityScopeRuntime {
   foregroundOwners: Map<string, object>;
 }
 
-export interface ConversationTelemetryParityScenarioResult {
+interface ConversationTelemetryParityScenarioResult {
   caseId: string;
   minimumArmsInventory: Record<string, number>;
   minimumReportInventory: Record<string, number>;

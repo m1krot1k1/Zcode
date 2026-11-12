@@ -23,7 +23,7 @@ interface TypeMeta {
 
 type MessageFormatter = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
-export const FEEDBACK_TYPE_META: TypeMeta[] = [
+const FEEDBACK_TYPE_META: TypeMeta[] = [
   {
     value: "bug",
     label: "遇到 Bug",
@@ -53,7 +53,7 @@ export const FEEDBACK_TYPE_META: TypeMeta[] = [
     iconText: "text-violet-500 dark:text-violet-400",
   },
 ];
-export const SEVERITY_META: {
+const SEVERITY_META: {
   value: FeedbackTicketSeverity;
   label: string;
   hint: string;
@@ -110,7 +110,7 @@ export const STATUS_META: Record<FeedbackTicketStatus, StatusMeta> = {
   },
 };
 
-export const SEVERITY_BADGE: Record<FeedbackTicketSeverity, { label: string; className: string }> =
+const SEVERITY_BADGE: Record<FeedbackTicketSeverity, { label: string; className: string }> =
   {
     "P1-高": {
       label: "P1",
@@ -126,7 +126,7 @@ export const SEVERITY_BADGE: Record<FeedbackTicketSeverity, { label: string; cla
     },
   };
 
-export const FEEDBACK_MODULE_MESSAGE_IDS: Record<FeedbackTicketModule, string> = {
+const FEEDBACK_MODULE_MESSAGE_IDS: Record<FeedbackTicketModule, string> = {
   "Plugin / MCP": "feedback.module.pluginMcp",
   Agent任务执行失败: "feedback.module.agentTaskFailed",
   "模型配置 / API Key": "feedback.module.modelConfigApiKey",
@@ -155,7 +155,7 @@ export const FEEDBACK_STATUS_MESSAGE_IDS: Record<FeedbackTicketStatus, string> =
   已上线: "feedback.status.released",
 };
 
-export function formatFeedbackModuleLabel(
+function formatFeedbackModuleLabel(
   module: FeedbackTicketModule,
   formatMessage: MessageFormatter,
 ) {

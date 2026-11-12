@@ -51,7 +51,7 @@ export interface WorkbenchGroupSnapshot {
   readonly sessionIndex: Readonly<Record<string, string>>;
 }
 
-export interface WorkbenchGroupStore extends WorkbenchGroupSnapshot {
+interface WorkbenchGroupStore extends WorkbenchGroupSnapshot {
   configureClientMode: (clientMode: ZCodeTaskClientMode) => void;
   openSessionFromSidebar: (binding: WorkbenchSessionBinding) => void;
   splitSessionIntoGroup: (

@@ -43,7 +43,7 @@ const loadsByService = new WeakMap<
   IPluginManagementService,
   Map<string, { task: Promise<Partial<PluginManagementState>>; revision: number }>
 >();
-export interface PluginManagementChange {
+interface PluginManagementChange {
   owner?: () => PluginManagementState;
   workspacePath: string;
   workspaceIdentity: string | null;

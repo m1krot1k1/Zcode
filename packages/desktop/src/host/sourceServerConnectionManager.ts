@@ -38,10 +38,7 @@ import {
 import type { SourceServerDirectory } from "./sourceServerDirectory.js";
 import { isSourceServerAutomaticRecoveryTerminalState } from "./sourceServerRecoveryPolicy.js";
 
-export type {
-  SourceServerConnectionState,
-  SourceServerConnectionStateSnapshot,
-} from "@zcode/shared";
+
 
 export interface ManagedSourceServerConnection {
   /** 本次调用复用物理连接时的实际脱敏目标；不写入在线 owner。 */

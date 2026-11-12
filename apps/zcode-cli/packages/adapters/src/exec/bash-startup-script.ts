@@ -114,7 +114,7 @@ export function applyBashSourceScript(
   return applyBashSourceScripts(command, materialized ? [materialized] : []);
 }
 
-export function applyBashSourceScripts(command: string, sources: BashSourceScript[]): string {
+function applyBashSourceScripts(command: string, sources: BashSourceScript[]): string {
   const sourceLines = sources.map((source) => {
     const sourceCommand = `. ${quoteSourcePath(source)}`;
     return source.optional ? `${sourceCommand} 2>/dev/null || true` : sourceCommand;

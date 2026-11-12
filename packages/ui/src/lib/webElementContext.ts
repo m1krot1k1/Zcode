@@ -347,7 +347,7 @@ export function dispatchWebElementContextAddToChat(payload: WebElementContextPay
   );
 }
 
-export function dispatchWebElementContextRemoveFromChat(payload: {
+function dispatchWebElementContextRemoveFromChat(payload: {
   id: string;
   workspacePath: string;
   workspaceIdentity?: string;

@@ -98,7 +98,7 @@ export function formatTaskChangedFileLabel(
   return statParts.length > 0 ? `${relativePath} ${statParts.join(" ")}` : relativePath;
 }
 
-export function buildPerTurnFileChangeMap(
+function buildPerTurnFileChangeMap(
   fileChanges: readonly ZCodePersistedFileChange[] | undefined,
 ): Map<number, ZCodePersistedFileChange> {
   const result = new Map<number, ZCodePersistedFileChange>();
@@ -210,7 +210,7 @@ function hasUnsuccessfulToolStatus(
   );
 }
 
-export function buildToolCallChangeSummary(
+function buildToolCallChangeSummary(
   message: TaskChatMessage,
   turnIndex: number,
 ): {
@@ -395,7 +395,7 @@ export function buildTurnChangeSummary(
  * 从 fileChanges 中按轮次构建 per-turn 文件变更摘要。
  * 用于在每条 assistant 消息下方显示该轮的文件改动。
  */
-export function buildPerTurnChangeSummaries(
+function buildPerTurnChangeSummaries(
   fileChanges: readonly ZCodePersistedFileChange[] | undefined,
 ): Map<number, ZCodeTaskChangeSummary> {
   const result = new Map<number, ZCodeTaskChangeSummary>();

@@ -18,7 +18,7 @@ import {
   WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME,
 } from "@/components/ui/resizable.js";
 
-export { WorkspaceFileTree };
+
 const FILE_MANAGER_PANEL_IDS = ["preview", "directory"];
 
 type FileManagerPaneProps = Omit<ComponentProps<typeof PreviewPane>, "source"> & {

@@ -40,7 +40,7 @@ function getClientScenesVisibilityRecovery() {
   return visibilityRecovery;
 }
 
-export class ClientScenesBusinessError extends Error {
+class ClientScenesBusinessError extends Error {
   readonly code: number;
   readonly responseMessage: string;
 

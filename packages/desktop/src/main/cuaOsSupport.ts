@@ -9,7 +9,7 @@ const CUA_MINIMUM_MACOS_VERSION = "12.0";
 // bump 任一侧必须同步其余常量。
 const CUA_MINIMUM_DARWIN_MAJOR = 21; // Darwin major - 9 = macOS major（21↔12, 22↔13）
 
-export function darwinMajorToMacosMajor(major: number): number {
+function darwinMajorToMacosMajor(major: number): number {
   return major - 9;
 }
 

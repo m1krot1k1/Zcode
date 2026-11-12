@@ -22,7 +22,7 @@ export interface CodingPlanQuotaResetAutoPlayedSlot {
   week: number | null;
 }
 
-export interface CodingPlanQuotaResetStoreState {
+interface CodingPlanQuotaResetStoreState {
   authSessionSeq: number;
   codingPlanQuotaResetUiBySource: Record<string, CodingPlanQuotaResetUiEntries>;
   codingPlanQuotaResetAutomaticObservationsBySource: Record<
@@ -35,13 +35,13 @@ export interface CodingPlanQuotaResetStoreState {
 /** 自动完成"多窗口只播一次"的跨窗口广播频道（state: 前缀符合跨窗口状态同步约定）。 */
 export const CODING_PLAN_QUOTA_RESET_AUTO_PLAYED_CHANNEL = "state:codereset-autoplayed";
 
-export interface CodingPlanQuotaResetAutoPlayedBroadcastPayload {
+interface CodingPlanQuotaResetAutoPlayedBroadcastPayload {
   sourceKey: string;
   resetType: CodingPlanResetType;
   completedAt: number;
 }
 
-export function buildCodingPlanQuotaResetAutoPlayClaimKey(
+function buildCodingPlanQuotaResetAutoPlayClaimKey(
   sourceKey: string,
   resetType: CodingPlanResetType,
   completedAt: number,
@@ -49,7 +49,7 @@ export function buildCodingPlanQuotaResetAutoPlayClaimKey(
   return `coding-plan-reset-autoplay:${encodeURIComponent(sourceKey)}:${resetType}:${completedAt}`;
 }
 
-export function parseCodingPlanQuotaResetAutoPlayedPayload(
+function parseCodingPlanQuotaResetAutoPlayedPayload(
   payload: unknown,
 ): CodingPlanQuotaResetAutoPlayedBroadcastPayload | null {
   if (!payload || typeof payload !== "object") {
@@ -91,7 +91,7 @@ export function parseCodingPlanQuotaResetAutoPlayedBroadcastMessage(
 /**
  * 广播本窗口首次播放的自动完成 used_at，其他窗口收到后抑制同 used_at 的提示。
  */
-export function broadcastCodingPlanQuotaResetAutoPlayed(
+function broadcastCodingPlanQuotaResetAutoPlayed(
   broadcastService: Pick<IBroadcastService, "send">,
   sourceKey: string,
   resetType: CodingPlanResetType,
@@ -103,7 +103,7 @@ export function broadcastCodingPlanQuotaResetAutoPlayed(
   });
 }
 
-export interface CodingPlanQuotaResetStoreUpdate {
+interface CodingPlanQuotaResetStoreUpdate {
   patch: Pick<
     CodingPlanQuotaResetStoreState,
     | "codingPlanQuotaResetUiBySource"
@@ -118,7 +118,7 @@ export interface CodingPlanQuotaResetStoreUpdate {
  * status 观察和 Composer 播放资格必须分离。设置页 / Usage 页也会调用本函数，
  * 如果在这里直接写 played，就会在没有展示 Tooltip/撒花时提前消耗跨窗口播放资格。
  */
-export function updateCodingPlanQuotaResetStoreState(
+function updateCodingPlanQuotaResetStoreState(
   state: CodingPlanQuotaResetStoreState,
   sourceKey: string,
   resetType: CodingPlanResetType,
@@ -290,7 +290,7 @@ function isCodingPlanQuotaResetAutoPlayCandidate(
  * reservation 与 played 提交必须分离。等待 Main 期间组件可能卸载或切换 source；
  * 此阶段只占用带 token 的临时 lease，不写 played、不广播，也不把 busy 误判为已播放。
  */
-export async function reserveCodingPlanQuotaResetAutoPlay(params: {
+async function reserveCodingPlanQuotaResetAutoPlay(params: {
   broadcastService: Pick<IBroadcastService, "acquireClaim" | "releaseClaim">;
   readState: () => CodingPlanQuotaResetAutoPlayState;
   writeState: (
@@ -355,7 +355,7 @@ export async function reserveCodingPlanQuotaResetAutoPlay(params: {
  * 组件确认仍 mounted、source/candidate 匹配并即将展示时提交 reservation。
  * 本函数同步写本地 played，再发送 Main commit 与 played 广播；同一 JS task 内不会穿插卸载。
  */
-export function commitCodingPlanQuotaResetAutoPlay(params: {
+function commitCodingPlanQuotaResetAutoPlay(params: {
   broadcastService: Pick<IBroadcastService, "commitClaim" | "send">;
   writeState: (
     updater: (state: CodingPlanQuotaResetAutoPlayState) => CodingPlanQuotaResetAutoPlayState,
@@ -394,14 +394,14 @@ export function commitCodingPlanQuotaResetAutoPlay(params: {
   return true;
 }
 
-export async function releaseCodingPlanQuotaResetAutoPlay(params: {
+async function releaseCodingPlanQuotaResetAutoPlay(params: {
   broadcastService: Pick<IBroadcastService, "releaseClaim">;
   reservation: CodingPlanQuotaResetAutoPlayReservation;
 }): Promise<void> {
   await params.broadcastService.releaseClaim(params.reservation.lease);
 }
 
-export interface CodingPlanQuotaResetStoreActions {
+interface CodingPlanQuotaResetStoreActions {
   setCodingPlanQuotaResetUiEntry: (
     sourceKey: string,
     resetType: CodingPlanResetType,

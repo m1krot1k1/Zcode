@@ -8,8 +8,8 @@ import {
 export const MACOS_TRAFFIC_LIGHT_BASE_POSITION = { x: 22, y: 23 } as const;
 const MACOS_TRAFFIC_LIGHT_BASE_LEFT_PADDING_PX = 96;
 const MACOS_TRAFFIC_LIGHT_POSITION_MOVEMENT_GAIN = 1.5;
-export const WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX = 136;
-export const WINDOWS_TITLE_BAR_HEIGHT_PX = 48;
+const WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX = 136;
+const WINDOWS_TITLE_BAR_HEIGHT_PX = 48;
 const MACOS_TRAFFIC_LIGHT_MIN_POSITION_PX = 4;
 const customWindowsControls = new WeakSet<BrowserWindow>();
 
@@ -21,7 +21,7 @@ export function hasCustomWindowsControls(window: BrowserWindow) {
   return customWindowsControls.has(window);
 }
 
-export function resolveMacOSWindowButtonPositionForZoomLevel(zoomLevel: number): Point {
+function resolveMacOSWindowButtonPositionForZoomLevel(zoomLevel: number): Point {
   const zoomFactor = resolveDesktopZoomFactorForLevel(zoomLevel);
   const resolveVerticalPosition = (base: number) =>
     Math.max(
@@ -34,7 +34,7 @@ export function resolveMacOSWindowButtonPositionForZoomLevel(zoomLevel: number):
   };
 }
 
-export function resolveMacOSWindowControlsOverlayMetricsForZoomLevel(zoomLevel: number) {
+function resolveMacOSWindowControlsOverlayMetricsForZoomLevel(zoomLevel: number) {
   const zoomFactor = resolveDesktopZoomFactorForLevel(zoomLevel);
   const buttonPosition = resolveMacOSWindowButtonPositionForZoomLevel(zoomLevel);
   return {
@@ -45,11 +45,11 @@ export function resolveMacOSWindowControlsOverlayMetricsForZoomLevel(zoomLevel: 
   };
 }
 
-export function resolveWindowsTitleBarOverlayHeightForZoomLevel(zoomLevel: number) {
+function resolveWindowsTitleBarOverlayHeightForZoomLevel(zoomLevel: number) {
   return Math.round(WINDOWS_TITLE_BAR_HEIGHT_PX * resolveDesktopZoomFactorForLevel(zoomLevel));
 }
 
-export function resolveWindowsWindowControlsOverlayMetricsForZoomLevel(zoomLevel: number) {
+function resolveWindowsWindowControlsOverlayMetricsForZoomLevel(zoomLevel: number) {
   return {
     // 原生按钮宽度不随页面缩放；固定 CSS 边距只适用于下面的自绘窗控分支。
     rightPaddingPx: Math.round(

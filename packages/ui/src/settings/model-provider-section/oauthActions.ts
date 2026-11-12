@@ -7,7 +7,7 @@ import {
 } from "@/lib/appTelemetry.js";
 import { logger } from "@/logger.js";
 
-export async function startPresetSubscriptionLogin(params: {
+async function startPresetSubscriptionLogin(params: {
   presetId: BuiltinModelProviderId;
   oauthService: IOAuthService;
   platform: IPlatformService;

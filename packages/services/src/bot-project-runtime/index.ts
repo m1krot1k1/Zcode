@@ -8,10 +8,7 @@ import type {
   IZCodeTaskService,
 } from "#src/bot-project-runtime/contract.js";
 export type {
-  BotRemoteRuntimeService,
-  BotProjectRuntimePort,
-  BotProjectConnection,
-} from "#src/bot-project-runtime/contract.js";
+  BotProjectConnection} from "#src/bot-project-runtime/contract.js";
 
 type Lease = { hostId: string; membershipId: string; connection: BotProjectConnection };
 

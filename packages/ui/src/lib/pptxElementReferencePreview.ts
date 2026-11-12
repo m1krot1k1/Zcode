@@ -5,7 +5,7 @@ import {
 } from "@/lib/pptxElementReference.js";
 import { isWorkspaceFilePathInside } from "@/workspace-file-tree/model.js";
 
-export interface PptxElementReferencePreviewScope {
+interface PptxElementReferencePreviewScope {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;

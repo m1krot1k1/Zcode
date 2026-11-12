@@ -54,7 +54,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
-export { SubmitProgressView } from "@/feedback/FeedbackSubmitProgressView.js";
+
 export { readCurrentAgentModelContext } from "@/feedback/feedbackSubmitModelContext.js";
 
 const DESCRIPTION_MAX = 4000;

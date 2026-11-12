@@ -1,6 +1,6 @@
 import { logger } from "@/logger.js";
 
-export interface SessionQuotaBannerDismissalStore {
+interface SessionQuotaBannerDismissalStore {
   dismiss(sessionId: string, dismissKey: string): void;
   getSnapshot(): number;
   isDismissed(sessionId: string, dismissKey: string): boolean;

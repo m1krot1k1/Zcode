@@ -82,7 +82,7 @@ export function isSuspiciousEmptyModelResult(
 const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
   "Model completed without returning visible text or tool calls.";
 
-export function createSuspiciousEmptyModelResultError(
+function createSuspiciousEmptyModelResultError(
   finishReason: string | undefined,
   rawFinishReason: string | undefined,
   model?: { modelId: string; providerId: string },
@@ -148,7 +148,7 @@ export function finalizeSuspiciousEmptyModelResult(input: {
   );
 }
 
-export function tryCreateProviderBusinessModelErrorFromMetadata(
+function tryCreateProviderBusinessModelErrorFromMetadata(
   providerMetadata: Record<string, unknown> | undefined,
   model?: { modelId: string; providerId: string },
 ): ReturnType<typeof createCoreError> | undefined {
@@ -261,7 +261,7 @@ export function isModelContextExceededError(error: unknown): boolean {
   return false;
 }
 
-export function isModelContextExceededMarker(value: string | undefined): boolean {
+function isModelContextExceededMarker(value: string | undefined): boolean {
   return value !== undefined && MODEL_CONTEXT_EXCEEDED_MARKERS.has(value.trim().toLowerCase());
 }
 

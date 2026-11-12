@@ -37,7 +37,7 @@ export interface DerivedTrajectoryResult {
   trajectories: DerivedTrajectory[];
 }
 
-export async function deriveTrajectoriesFromJsonlFile(
+async function deriveTrajectoriesFromJsonlFile(
   inputPath: string,
   options: TrajectoryDerivationOptions = {},
 ): Promise<DerivedTrajectoryResult> {

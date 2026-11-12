@@ -112,7 +112,7 @@ interface LexicalModifiedEnterSubmitOptions {
   text: string;
 }
 
-export type LexicalSubmitResult = boolean | void;
+type LexicalSubmitResult = boolean | void;
 
 interface LeadingChineseSlashAliasInputOptions {
   data: string | null;
@@ -166,7 +166,7 @@ export function shouldResetLexicalEditorAfterSubmit(result: LexicalSubmitResult)
   return result !== false;
 }
 
-export function shouldNormalizeLeadingChineseSlashAliasInput({
+function shouldNormalizeLeadingChineseSlashAliasInput({
   data,
   inputType,
   isAtEditorStart,

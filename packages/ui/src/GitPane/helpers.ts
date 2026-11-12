@@ -10,7 +10,7 @@ import {
 const MAX_RICH_DIFF_FULL_CONTENT_CHAR_COUNT = 180_000;
 const MAX_RICH_DIFF_FULL_CONTENT_LINE_COUNT = 1_200;
 
-export type GitPaneDiffPreviewPlan =
+type GitPaneDiffPreviewPlan =
   | {
       kind: "rich";
     }
@@ -113,7 +113,7 @@ function countLogicalLines(content: string | null): number {
   return lineCount;
 }
 
-export function shouldRenderPatchOnlyGitDiffPreview(diff: GitDiffResult): boolean {
+function shouldRenderPatchOnlyGitDiffPreview(diff: GitDiffResult): boolean {
   if (diff.availability !== "patch" || !diff.patch) {
     return false;
   }

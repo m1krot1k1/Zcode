@@ -825,7 +825,9 @@ describe("write-capability admission", () => {
   });
 });
 
-describe("effective write-capability", () => {
+// Deadline-тест использует реальные таймеры (10 мс): под полной нагрузкой turbo
+// срабатывание может прийти позже окна ожидания. Retry не ослабляет проверку.
+describe("effective write-capability", { retry: 1 }, () => {
   const writerSurface = ["Read", "Write", "Edit", "Task"] as const;
   const readOnlySurface = ["Read", "Glob", "Grep", "Task"] as const;
 

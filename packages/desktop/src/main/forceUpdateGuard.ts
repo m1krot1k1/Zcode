@@ -183,7 +183,7 @@ export async function resolveDesktopForceUpdateRequirement(options: {
   return null;
 }
 
-export function resolveForceUpdateDownloadUrl(
+function resolveForceUpdateDownloadUrl(
   locale: Locale,
   endpointOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN,
 ): string {

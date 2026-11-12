@@ -4,7 +4,7 @@ import { resolveWindowsCuaRuntime } from "#src/cua-permission-broker/windowsCuaD
 
 const logger = createServiceLogger("stable-cua-transport");
 
-export interface StableCuaWinRecipe {
+interface StableCuaWinRecipe {
   command: string;
   entryPath: string;
   root: string;
@@ -44,7 +44,7 @@ export function resolveStableCuaWinRecipe(): Promise<StableCuaWinRecipe | null> 
   return recipePromise;
 }
 
-export function __resetStableCuaTransportForTest(): void {
+function __resetStableCuaTransportForTest(): void {
   stablePipeName = null;
   recipePromise = null;
   recipeFailureLogged = false;

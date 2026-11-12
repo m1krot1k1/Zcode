@@ -15,7 +15,7 @@ import type { Hit, ParsedDocument, ReadPage } from "#office/domain/model.ts";
 import { cut } from "#office/domain/text.ts";
 import type { LoadedFile, WorkspaceFiles } from "#office/adapters/files.ts";
 
-export type Parser = (file: LoadedFile) => Promise<ParsedDocument>;
+type Parser = (file: LoadedFile) => Promise<ParsedDocument>;
 
 interface Entry {
   file: LoadedFile;

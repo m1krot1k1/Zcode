@@ -201,7 +201,7 @@ function hasRemainingMatches(rule: NormalizedFsFaultRule): boolean {
   return rule.maxMatches === 0 || rule.matchedCount < rule.maxMatches;
 }
 
-export function createInjectedFsFaultError(input: {
+function createInjectedFsFaultError(input: {
   code: string;
   id: string;
   message?: string;

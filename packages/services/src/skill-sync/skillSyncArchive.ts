@@ -10,7 +10,7 @@ const gzipAsync = promisify(gzip);
 const TAR_BLOCK_SIZE = 512;
 const TAR_END_BLOCK_BYTES = TAR_BLOCK_SIZE * 2;
 
-export interface SkillSyncArchiveEntry {
+interface SkillSyncArchiveEntry {
   sourcePath: string;
   archivePath: string;
 }

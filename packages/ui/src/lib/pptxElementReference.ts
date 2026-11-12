@@ -134,7 +134,7 @@ export function isPptxElementReferencePayload(payload: unknown): payload is Pptx
   );
 }
 
-export function createPptxElementReferenceId() {
+function createPptxElementReferenceId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }

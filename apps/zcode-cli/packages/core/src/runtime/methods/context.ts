@@ -35,7 +35,7 @@ import {
   resolveGenUiOutputDirectory,
 } from "../helpers/gen-ui-output.js";
 
-export { buildContextHistoryEntries };
+
 
 export async function ensureContextInitialized(
   this: AgentRuntimeInternal,

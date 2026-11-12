@@ -1175,7 +1175,7 @@ async function shouldAutoDownloadAndInstallUpdates(
   }
 }
 
-export async function skipAvailableUpdateVersion(
+async function skipAvailableUpdateVersion(
   version: string,
   settingService: SettingServiceLike | undefined,
 ): Promise<void> {

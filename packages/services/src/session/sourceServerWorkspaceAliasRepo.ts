@@ -80,7 +80,7 @@ export class SourceServerWorkspaceIdentityConflictError extends Error {
   }
 }
 
-export class SourceServerWorkspaceConfigConflictError extends Error {
+class SourceServerWorkspaceConfigConflictError extends Error {
   public readonly code = WORKSPACE_CONFIG_FILE_CONFLICT_ERROR_CODE;
   public readonly retryable = false;
 
@@ -94,7 +94,7 @@ export class SourceServerWorkspaceConfigConflictError extends Error {
   }
 }
 
-export class SourceServerWorkspaceMigrationPlanDivergedError extends Error {
+class SourceServerWorkspaceMigrationPlanDivergedError extends Error {
   public readonly code = WORKSPACE_MIGRATION_PLAN_DIVERGED_ERROR_CODE;
   public readonly retryable = false;
 
@@ -107,7 +107,7 @@ export class SourceServerWorkspaceMigrationPlanDivergedError extends Error {
   }
 }
 
-export class SourceServerWorkspaceSessionGenerationChangedError extends Error {
+class SourceServerWorkspaceSessionGenerationChangedError extends Error {
   public readonly code = WORKSPACE_SESSION_GENERATION_CHANGED_ERROR_CODE;
   public readonly retryable = false;
 

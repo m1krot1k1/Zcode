@@ -6,18 +6,18 @@ import type { IZCodeTaskService } from "@zcode/services";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { buildTaskEntityKey } from "@/lib/taskQueryCache.js";
 
-export interface TaskListMembershipScope {
+interface TaskListMembershipScope {
   workspacePath: string;
   workspaceIdentity?: string;
 }
 
-export type TaskListMembershipService = Pick<
+type TaskListMembershipService = Pick<
   IZCodeTaskService,
   "listPinnedTaskIds" | "listArchivedTasks" | "listTasks" | "listPinnedTasks"
 > &
   Partial<Pick<IZCodeTaskService, "listDeletedTaskIds">>;
 
-export interface TaskListMembershipSets {
+interface TaskListMembershipSets {
   /** tasks-index 三个持久分区（active/pinned/archived）的完整 task 行并集。 */
   taskIndexItems: ZCodeTaskMeta[];
   pinnedIds: Set<string>;
@@ -110,7 +110,7 @@ async function holdTaskListMembershipRefreshResultForE2E(): Promise<void> {
 }
 
 /** M5 ③：remote shard 的归属在各自 endpoint 的 tasks-index，按 endpoint 分片拉取后求并。 */
-export interface TaskListMembershipEndpoint {
+interface TaskListMembershipEndpoint {
   service: TaskListMembershipService;
   scopes: TaskListMembershipScope[];
 }
@@ -301,7 +301,7 @@ function membershipServiceIdOf(service: TaskListMembershipService): number {
   return id;
 }
 
-export function fetchTaskListMembershipSetsForEndpointsCached(params: {
+function fetchTaskListMembershipSetsForEndpointsCached(params: {
   /** 建议形态：`${membershipVersion}::${endpoints 签名}`。 */
   cacheKey: string;
   endpoints: TaskListMembershipEndpoint[];
@@ -329,12 +329,12 @@ export function fetchTaskListMembershipSetsForEndpointsCached(params: {
 }
 
 /** 测试/异常恢复用：清空 membership 缓存。 */
-export function clearTaskListMembershipCache(): void {
+function clearTaskListMembershipCache(): void {
   membershipPromiseByCacheKey.clear();
 }
 
 /** 按 endpoint 并行拉取归属并求并集（taskId 为 sessionId，跨 endpoint 不冲突）。 */
-export async function fetchTaskListMembershipSetsForEndpoints(
+async function fetchTaskListMembershipSetsForEndpoints(
   endpoints: TaskListMembershipEndpoint[],
 ): Promise<TaskListMembershipSets> {
   const results = await Promise.all(

@@ -48,7 +48,7 @@ export interface BigModelBizEnvelopeDiagnostics {
   success: boolean | null;
 }
 
-export function createBigModelBizHeaders(
+function createBigModelBizHeaders(
   authorization: string,
   teamContext?: BigModelTeamPlanBizContext | null,
 ): Record<string, string> {
@@ -84,7 +84,7 @@ function isUsableBigModelTeamPlanApiKey(item: BigModelTeamPlanApiKeySummary): bo
   );
 }
 
-export async function ensureBigModelTeamPlanProjectApiKey(params: {
+async function ensureBigModelTeamPlanProjectApiKey(params: {
   apiClient: ApiClient;
   authorization: string;
   host: string;

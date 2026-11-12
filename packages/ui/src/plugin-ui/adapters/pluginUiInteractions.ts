@@ -12,7 +12,7 @@ import { dispatchPluginUiModelContextAdd } from "./pluginUiModelContextEvents.js
 
 import { type PluginUiSessionScope } from "@/plugin-ui/contract.js";
 
-export interface PluginUiInteractionScope extends PluginUiSessionScope {
+interface PluginUiInteractionScope extends PluginUiSessionScope {
   sessionId: string;
   pluginId: string;
   /** 工具卡片或面板；决定 widgetState 的 surfaceKey 以及来源标记 / 上下文 id。 */

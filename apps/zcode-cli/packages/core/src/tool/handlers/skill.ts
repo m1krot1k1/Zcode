@@ -15,7 +15,7 @@ import {
 import type { ToolEntry, ToolHandler } from "../types.js";
 
 /** 技能正文的默认字节上限；超出部分由 adapter 从尾部截掉。 */
-export const MAX_SKILL_BYTES = 100_000;
+const MAX_SKILL_BYTES = 100_000;
 
 /**
  * `dynamic-workflows` 技能的字节上限（docs/dynamic-workflow/authoring.md「The skill」）。

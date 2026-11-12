@@ -27,7 +27,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** 解析 MCP `requestedSchema`（扁平 object，属性只允许原始类型）；非法属性跳过。 */
-export function readMcpElicitationFields(requestedSchema: unknown): McpElicitationSchemaField[] {
+function readMcpElicitationFields(requestedSchema: unknown): McpElicitationSchemaField[] {
   if (!isRecord(requestedSchema) || !isRecord(requestedSchema.properties)) return [];
   const required = new Set(
     Array.isArray(requestedSchema.required)

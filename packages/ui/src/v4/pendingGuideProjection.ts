@@ -1,6 +1,6 @@
 import type { QueueItem, QueueState } from "@zcode/shared/zcode-protocol-v4";
 
-export interface PendingGuideQueueProjection {
+interface PendingGuideQueueProjection {
   pendingGuides: readonly QueueItem[];
   visibleQueue: QueueState;
 }

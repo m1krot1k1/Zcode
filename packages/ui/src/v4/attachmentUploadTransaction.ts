@@ -24,7 +24,7 @@ export interface AttachmentUploadAgent {
   attachmentAbortV4(params: ZCodeAgentAttachmentTerminalParams): Promise<void>;
 }
 
-export interface AttachmentUploadWorkspace {
+interface AttachmentUploadWorkspace {
   workspacePath: string;
   workspaceIdentity?: string;
 }

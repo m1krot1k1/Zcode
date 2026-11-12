@@ -26,7 +26,7 @@ interface WalkStorageRootResult {
   missingRoot: boolean;
 }
 
-export function createStorageAbortError(): Error {
+function createStorageAbortError(): Error {
   return new DOMException("storage scan aborted", "AbortError");
 }
 

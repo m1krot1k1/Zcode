@@ -33,7 +33,7 @@ const OFF_PEAK_SYNC_MIN_INTERVAL_MS = 5_000;
 const OFF_PEAK_SYNC_MAX_INTERVAL_MS = 5 * 60_000;
 const SYNC_FAILURE_BASE_MS = 10_000;
 
-export interface OffPeakTaskServiceDeps {
+interface OffPeakTaskServiceDeps {
   repo: OffPeakTaskRepo;
   prepareProjectExecution?: (projectId: string) => Promise<ProjectExecutionSnapshot>;
   client: OffPeakServerClient;

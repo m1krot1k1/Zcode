@@ -28,7 +28,7 @@ interface ResolveGitHubArchiveSourceInput {
   url: string;
 }
 
-export class GitHubArchiveRequiresGitError extends Error {
+class GitHubArchiveRequiresGitError extends Error {
   readonly reason: string;
 
   constructor(reason: string) {

@@ -139,7 +139,7 @@ function setupChannelServer(
   });
 }
 
-export interface HttpServerOptions {
+interface HttpServerOptions {
   topicResourcePeers?: TopicResourcePeers;
   serverId?: string;
   virtualProjects?: boolean;

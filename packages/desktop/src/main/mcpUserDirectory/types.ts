@@ -18,7 +18,7 @@ export type McpConfigKeyName = "mcpServers" | "mcp" | "mcp_servers" | "mcp.serve
  * - command 是数组格式 ["npx", "-y", "server"] 而不是分开的 command + args
  * - 必须有 type 字段 ("local" 或 "remote")
  */
-export interface OpenCodeMcpServerConfig {
+interface OpenCodeMcpServerConfig {
   type: "local" | "remote";
   command?: string[];
   url?: string;
@@ -26,7 +26,7 @@ export interface OpenCodeMcpServerConfig {
   headers?: Record<string, string>;
 }
 
-export interface McpSourceDescriptor {
+interface McpSourceDescriptor {
   source: CliMcpSource;
   configDirSegments: string[];
   fileName: string;

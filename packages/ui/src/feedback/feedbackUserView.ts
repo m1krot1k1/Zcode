@@ -26,7 +26,7 @@ export const STATUS_USER_HINT: Record<FeedbackTicketStatus, string> = {
   已上线: "相关修复或改进已上线，感谢你的反馈。",
 };
 
-export const STATUS_USER_HINT_MESSAGE_IDS: Record<FeedbackTicketStatus, string> = {
+const STATUS_USER_HINT_MESSAGE_IDS: Record<FeedbackTicketStatus, string> = {
   已提交: "feedback.statusHint.pendingReview",
   信息不足: "feedback.statusHint.needInfo",
   已采纳: "feedback.statusHint.accepted",

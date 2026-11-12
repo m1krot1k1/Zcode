@@ -81,7 +81,7 @@ const EXAMPLE_PROMPT_DOCUMENT_ICON_URLS: Record<ExamplePromptDocumentIcon, strin
   spreadsheets: spreadsheetsIconUrl,
 };
 
-export function resolveExamplePromptDocumentIcon(prompt: string): ExamplePromptDocumentIcon {
+function resolveExamplePromptDocumentIcon(prompt: string): ExamplePromptDocumentIcon {
   if (/\bpdf\b/iu.test(prompt)) {
     return "pdf";
   }

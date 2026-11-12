@@ -1,4 +1,4 @@
-export type SystemReminderDeliveryChannel =
+type SystemReminderDeliveryChannel =
   | "request_prefix"
   | "current_turn"
   | "tool_result"
@@ -6,7 +6,7 @@ export type SystemReminderDeliveryChannel =
   | "mid_turn_event"
   | "real_user";
 
-export type SystemReminderLifecycle =
+type SystemReminderLifecycle =
   | "request_prefix"
   | "per_current_turn"
   | "runtime_local"
@@ -15,7 +15,7 @@ export type SystemReminderLifecycle =
   | "mid_turn_event"
   | "real_user";
 
-export type SystemReminderProviderVisibility = "provider_visible" | "provider_hidden";
+type SystemReminderProviderVisibility = "provider_visible" | "provider_hidden";
 
 export const SYSTEM_REMINDER_PREFIX_SOURCES = ["context_prefix", "skills_listing"] as const;
 
@@ -67,7 +67,7 @@ export type SystemReminderSource =
   | SystemReminderPersistedSource
   | SystemReminderPerRequestSource;
 
-export interface SystemReminderSourceDescriptor {
+interface SystemReminderSourceDescriptor {
   source: SystemReminderSource;
   channel: SystemReminderDeliveryChannel;
   lifecycle: SystemReminderLifecycle;

@@ -102,7 +102,7 @@ export function foldWorkflowRunRail(
 }
 
 /** 并行阶段之间的连接词：同时在跑的几站并排，而不是排队。 */
-export const WORKFLOW_RUN_PARALLEL_SEPARATOR = " ∥ ";
+const WORKFLOW_RUN_PARALLEL_SEPARATOR = " ∥ ";
 
 /**
  * 同时在跑的站名，连成 tooltip 里的一段。并行时「当前阶段」不再是一个站——谁都不比谁更当前，

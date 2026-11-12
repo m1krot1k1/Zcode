@@ -1,4 +1,4 @@
-export interface TeamPlanDisplayNameInput {
+interface TeamPlanDisplayNameInput {
   organizationId?: string | null;
   organizationName?: string | null;
   projectId?: string | null;

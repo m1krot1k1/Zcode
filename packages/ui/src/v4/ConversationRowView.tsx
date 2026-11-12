@@ -256,7 +256,7 @@ export interface EditWorkspaceRewindAvailability {
   reason: "available" | "noFiles" | "reverted" | "running" | "unavailable";
 }
 
-export interface ConversationRowViewProps {
+interface ConversationRowViewProps {
   row: ConversationRow;
   /** 渲染上下文（theme/codePreviewSettings/workspacePath）；宿主保证引用稳定。 */
   context: ConversationRowRenderContext;

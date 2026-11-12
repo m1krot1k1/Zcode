@@ -116,7 +116,7 @@ export function registerRendererActionTraceIpc(options: {
   };
 }
 
-export function resolveRuntimeConfig(
+function resolveRuntimeConfig(
   config: RendererActionTraceConfigV1,
   env: Record<string, string | undefined>,
 ): RendererActionTraceConfigV1 {

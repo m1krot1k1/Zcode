@@ -14,7 +14,7 @@ import {
   type PendingCommandResolution,
 } from "@/v4/pendingCommandRegistry.js";
 
-export interface UnsettledComposerSubmission {
+interface UnsettledComposerSubmission {
   commandId: string;
   /** 提交时冻结的完整正文；消费方据此确认回填的草稿仍是这次提交，而非用户新输入。 */
   text: string;

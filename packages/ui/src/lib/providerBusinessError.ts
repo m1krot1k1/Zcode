@@ -1,5 +1,5 @@
 /** 与 core `model-errors.ts` 中 anomaly guard 文案保持一致。 */
-export const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
+const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
   "Model completed without returning visible text or tool calls.";
 
 import {
@@ -8,11 +8,7 @@ import {
   type RequestVerificationRecoveryAction,
 } from "@/request-security-edition/errors.js";
 export {
-  resolveRequestVerificationBusinessCode,
-  isRequestVerificationTerminalError,
-  isRequestVerificationRejectedMessage,
-  REQUEST_VERIFICATION_REJECTED_MESSAGE,
-} from "@/request-security-edition/errors.js";
+  resolveRequestVerificationBusinessCode} from "@/request-security-edition/errors.js";
 /**
  * zcode-plan / Coding Plan 业务错误码与前端处理约定。
  *
@@ -30,7 +26,7 @@ export {
  */
 import { isOffPeakTicketExpiredError } from "@zcode/shared";
 
-export const PROVIDER_BUSINESS_ERROR_CODES = [
+const PROVIDER_BUSINESS_ERROR_CODES = [
   "1006",
   "1005",
   "3006",
@@ -45,7 +41,7 @@ export const PROVIDER_BUSINESS_ERROR_CODES = [
   "429",
 ] as const;
 
-export type ProviderBusinessErrorCode = (typeof PROVIDER_BUSINESS_ERROR_CODES)[number];
+type ProviderBusinessErrorCode = (typeof PROVIDER_BUSINESS_ERROR_CODES)[number];
 
 export type ProviderBusinessErrorUiAction =
   | "login"
@@ -55,7 +51,7 @@ export type ProviderBusinessErrorUiAction =
   | "retry-later"
   | "upgrade";
 
-export const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCode, string> = {
+const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCode, string> = {
   "1006": "zcode.error.providerBusiness.1006",
   "1005": "zcode.error.providerBusiness.1005",
   "3006": "zcode.error.providerBusiness.3006",
@@ -70,7 +66,7 @@ export const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCo
   "429": "zcode.error.providerBusiness.429",
 };
 
-export const PROVIDER_BUSINESS_ERROR_ACTION_MESSAGE_IDS: Record<
+const PROVIDER_BUSINESS_ERROR_ACTION_MESSAGE_IDS: Record<
   ProviderBusinessErrorUiAction,
   string
 > = {
@@ -242,7 +238,7 @@ export function resolveStartPlanConcurrentLimitBusinessCode(
 }
 
 /** 判断业务码是否为并发上限类型。 */
-export function isConcurrentLimitBusinessCode(code: string | undefined): boolean {
+function isConcurrentLimitBusinessCode(code: string | undefined): boolean {
   return Boolean(code && CONCURRENT_LIMIT_BUSINESS_CODES.has(code));
 }
 

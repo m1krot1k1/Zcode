@@ -18,7 +18,7 @@ interface LoadCodingPlanApiKeyInput {
   readonly forceRefresh?: boolean;
   readonly rejectedProjectTokenFingerprint?: string;
 }
-export interface AccountProviderCredentialService {
+interface AccountProviderCredentialService {
   loadCodingPlanApiKey(input: LoadCodingPlanApiKeyInput): Promise<string | null>;
   loadCodingPlanMaterial(
     input: LoadCodingPlanApiKeyInput,

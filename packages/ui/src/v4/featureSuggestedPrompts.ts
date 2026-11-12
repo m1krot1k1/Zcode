@@ -15,7 +15,7 @@ type FeatureRecommendedPrompt = DraftSuggestedPromptItem & {
 };
 
 // 本期推荐按模式硬分池；展示文案和填入正文分别维护。
-export const featureSuggestedPrompts: FeatureRecommendedPrompt[] = [
+const featureSuggestedPrompts: FeatureRecommendedPrompt[] = [
   {
     id: "feature-recvvsPdvcWQzF",
     mode: "office",

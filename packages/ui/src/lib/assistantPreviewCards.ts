@@ -21,10 +21,7 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { collectGenUiSourcePaths, matchesGenUiSourcePath } from "@/gen-ui/contract.js";
 
 export {
-  extractAssistantFileReferences,
-  hasAssistantPreviewFileChangeCandidates,
-  isAssistantPreviewHtmlPath,
-} from "@/lib/assistantFileReferences.js";
+  extractAssistantFileReferences} from "@/lib/assistantFileReferences.js";
 export type {
   AssistantFileReference,
   AssistantPreviewFileKind,

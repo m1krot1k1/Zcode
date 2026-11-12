@@ -25,7 +25,7 @@ export function normalizeCodingPlanCardCopyItems(items: unknown): CodingPlanCard
   });
 }
 
-export type CodingPlanBillingPeriod = "monthly" | "quarterly" | "yearly";
+type CodingPlanBillingPeriod = "monthly" | "quarterly" | "yearly";
 export type CodingPlanPriceCurrency = "CNY" | "USD";
 export type CodingPlanPriceUnit = "month" | "quarter" | "year";
 
@@ -42,15 +42,15 @@ const CODING_PLAN_CURRENCY_LABELS_ZH: Record<CodingPlanPriceCurrency, string> = 
   USD: "美元",
 };
 
-export const CODING_PLAN_PERIODS: CodingPlanBillingPeriod[] = ["monthly", "quarterly", "yearly"];
+const CODING_PLAN_PERIODS: CodingPlanBillingPeriod[] = ["monthly", "quarterly", "yearly"];
 
-export const CODING_PLAN_PERIOD_LABEL_IDS: Record<CodingPlanBillingPeriod, string> = {
+const CODING_PLAN_PERIOD_LABEL_IDS: Record<CodingPlanBillingPeriod, string> = {
   monthly: "settings.modelProvider.codingPlan.period.monthly",
   quarterly: "settings.modelProvider.codingPlan.period.quarterly",
   yearly: "settings.modelProvider.codingPlan.period.yearly",
 };
 
-export function groupProductsByPeriod(
+function groupProductsByPeriod(
   productList: CodingPlanProductDisplay[],
 ): Record<CodingPlanBillingPeriod, CodingPlanProductDisplay[]> {
   const groups: Record<CodingPlanBillingPeriod, CodingPlanProductDisplay[]> = {
@@ -70,11 +70,11 @@ export function groupProductsByPeriod(
   return groups;
 }
 
-export function pickProductTitle(product: CodingPlanProductPreviewPayment): string {
+function pickProductTitle(product: CodingPlanProductPreviewPayment): string {
   return product.productName?.trim() || product.productBigTitle?.trim() || product.productId;
 }
 
-export function pickProductDetails(product: CodingPlanProductPreviewPayment): string[] {
+function pickProductDetails(product: CodingPlanProductPreviewPayment): string[] {
   // 修复原因：套餐卡片的运营文案现在由静态配置的 description 控制；
   // 继续优先拼 productEquityList 会展示旧权益字段，和服务端配置的套餐说明不一致。
   const descriptionDetails = [
@@ -107,7 +107,7 @@ export function pickProductPrice(product: CodingPlanProductPreviewPayment): numb
   return product.payAmount ?? product.discountAmount ?? product.renewAmount ?? null;
 }
 
-export function normalizeCodingPlanCurrency(
+function normalizeCodingPlanCurrency(
   currency: string | null | undefined,
 ): CodingPlanPriceCurrency {
   return currency?.trim().toUpperCase() === "USD" ? "USD" : "CNY";
@@ -140,7 +140,7 @@ export function formatCodingPlanAmount(
     : formatted;
 }
 
-export function inferBillingPeriod(
+function inferBillingPeriod(
   product: CodingPlanProductPreviewPayment,
 ): CodingPlanBillingPeriod {
   const explicitUnit = product.priceUnit;

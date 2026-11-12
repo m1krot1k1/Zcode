@@ -35,7 +35,7 @@ export {
 } from "@/lib/chatAttachmentMetadata.js";
 
 export const MAX_CHAT_ATTACHMENTS = 8;
-export const LONG_PASTE_TEXT_ATTACHMENT_CHAR_THRESHOLD = 15 * 1024;
+const LONG_PASTE_TEXT_ATTACHMENT_CHAR_THRESHOLD = 15 * 1024;
 const INLINE_IMAGE_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 const INLINE_VIDEO_ATTACHMENT_MAX_BYTES = Math.min(
   VIDEO_INPUT_MAX_BYTES,
@@ -450,7 +450,7 @@ async function readAttachmentBase64(attachment: ChatComposerAttachment): Promise
   return dataUrl.slice(base64MarkerIndex + 1);
 }
 
-export function getChatAttachmentPreviewUrl(attachment: ZCodePromptAttachment): string | null {
+function getChatAttachmentPreviewUrl(attachment: ZCodePromptAttachment): string | null {
   if (!attachment.dataBase64) {
     return null;
   }

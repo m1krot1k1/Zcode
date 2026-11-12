@@ -60,7 +60,7 @@ function countAssistantMessages(messages: readonly ZCodeSessionImportMessage[]):
   return messages.filter((message) => message.role === "assistant").length;
 }
 
-export function shouldRepairImportedClaudeSnapshot(
+function shouldRepairImportedClaudeSnapshot(
   snapshot: Pick<ZCodeSessionStateSnapshot, "messages" | "runtime" | "session">,
 ): boolean {
   if (snapshot.session.status === "running" || snapshot.runtime.activeTurnId) {
@@ -154,7 +154,7 @@ async function readNativeImportedClaudeHistory(
     : null;
 }
 
-export async function resolveImportedClaudeHistoryForRepair(
+async function resolveImportedClaudeHistoryForRepair(
   target: ImportedClaudeHistoryRepairTarget,
 ): Promise<ImportedClaudeHistoryRepairResult | null> {
   const legacyHistory = readLegacyImportedClaudeHistory(target);

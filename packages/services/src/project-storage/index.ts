@@ -18,9 +18,7 @@ import {
 } from "#src/project-storage/schema.js";
 
 export type {
-  ProjectMigrationContext,
-  ProjectStorageContract,
-} from "#src/project-storage/contract.js";
+  ProjectMigrationContext} from "#src/project-storage/contract.js";
 export const projectStorage: ProjectStorageContract = {
   migrate: async (db, context) => {
     let firstProjectMigration = false;

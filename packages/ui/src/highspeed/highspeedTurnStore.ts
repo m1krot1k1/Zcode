@@ -36,7 +36,7 @@ export interface HighspeedTurnRecord {
   autoSharedAt?: number;
 }
 
-export interface HighspeedCardAutoShareCandidate {
+interface HighspeedCardAutoShareCandidate {
   cardId: string;
   expiresAt: number;
   metrics: HighspeedShareMetrics;

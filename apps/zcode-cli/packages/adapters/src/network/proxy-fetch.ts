@@ -252,7 +252,7 @@ function clearProxyUnavailable(key: string): void {
  * Ошибка установки туннеля до отправки запроса: прокси не принял соединение.
  * Обходим `cause` (как cline `isTransientNetworkError`) и `AggregateError.errors`.
  */
-export function isProxyUnavailableError(error: unknown): boolean {
+function isProxyUnavailableError(error: unknown): boolean {
   return matchesProxyUnavailable(error, new Set<unknown>(), 0);
 }
 

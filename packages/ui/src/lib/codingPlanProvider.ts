@@ -16,7 +16,7 @@ export function hasActiveUsageEntitlementSnapshot(
   return resolveUsageEntitlementOutcome(snapshot, providerId) === "active";
 }
 
-export type UsageEntitlementOutcome = "active" | "inactive" | "unknown";
+type UsageEntitlementOutcome = "active" | "inactive" | "unknown";
 
 /** 只把权威 no_plan 解释为失效；网络、鉴权和不完整快照都保持未知。 */
 export function resolveUsageEntitlementOutcome(

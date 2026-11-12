@@ -152,7 +152,7 @@ export async function resolveCliCommand(cliPath?: string): Promise<OpenCodeCliRe
   return resolution;
 }
 
-export function childProcessEnvironment(
+function childProcessEnvironment(
   source: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): NodeJS.ProcessEnv {
@@ -183,7 +183,7 @@ export function spawnOptions(
   };
 }
 
-export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(label)), timeoutMs);

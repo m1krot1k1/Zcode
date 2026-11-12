@@ -130,7 +130,7 @@ interface EvidenceGatedLesson {
  * 原因：只承认同一回合里同一工具先失败、后一次调用成功。
  * 不复制错误正文和工具输出，避免把密钥或猜测写进记忆。
  */
-export function selectEvidenceGatedLesson(
+function selectEvidenceGatedLesson(
   events: readonly SessionEvent[],
 ): EvidenceGatedLesson | undefined {
   const toolNames = new Map<string, string>();

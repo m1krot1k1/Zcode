@@ -41,8 +41,17 @@
 | --- | --- | --- |
 | `packages/ui` | `@radix-ui/react-radio-group`, `@rive-app/react-webgl2`, `ansi-to-react`, `embla-carousel-react`, `media-chrome`, `react-jsx-parser`, `use-stick-to-bottom` | `packages/ui/src/components/**` (исключён из knip как вендоренный набор примитивов/ai-elements) |
 | `packages/desktop` | `esbuild`, `@opentelemetry/otlp-transformer` | dev-инструменты e2e-скриптов и OTLP-приёмник телеметрии |
+| `packages/desktop` | `@babel/runtime`, `@larksuiteoapi/node-sdk`, `module-details-from-path`, `@lydell/node-pty-*` | runtime-closure `bundle.mjs` (CJS-require из @arms/rum-core, native prebuilds) |
+| `packages/desktop` | `@electron/rebuild`, `@wdio/local-runner`, `tailwindcss` | скрипты postinstall, конфиг wdio, Tailwind-Vite плагин |
+| `packages/server` | `@lydell/node-pty-*`, `axios`, `form-data`, `combined-stream`, `follow-redirects`, `proxy-from-env`, `node-forge`, `yaml`, `yauzl`, `yazl`, `undici` | tsup-externals удалённого server-бандла (не импортируются напрямую) |
+| `packages/web`, `packages/web-share` | `tailwindcss` | CSS-директива `@import "tailwindcss"` |
+| `packages/share-ui` | `@types/react`, `@types/react-dom`, `@tailwindcss/typography` | типы для компиляции ре-экспортируемых исходников UI и typography-плагин |
+| `apps/zcode-cli` | `oxlint`, `postject`, `tsx` | бинарники в lint/test/SEA-скриптах пакетов |
+| `apps/zcode-cli/packages/office-runtime` | `@aiden0z/pptx-renderer`, `@modelcontextprotocol/ext-apps`, `docx-preview` | `ui/` (исключён из knip как вендоренный набор вьюеров) |
+| `packages/shared` | `@modelcontextprotocol/ext-apps` | `src/mcp-apps/` (контракт генерируется в `module.ts`/`contract.ts`, которые knip игнорирует) |
 | корень | `zod`, `ws`, `node-pty`, `@modelcontextprotocol/sdk` | dev-скрипты smoke/e2e, не входящие в runtime root-пакета |
 | корень | `d3-path`, `tailwind-scrollbar-hide` | транзитивные зависимости UI-тулинга |
+| корень | `@release-it/conventional-changelog`, `dotenv`, `lint-staged`, `postject`, `turbo` | конфиги release-it/lint-staged, e2e-скрипты desktop, SEA-сборка, CLI turbo |
 
 ## Что остаётся в baseline и почему не удаляется
 

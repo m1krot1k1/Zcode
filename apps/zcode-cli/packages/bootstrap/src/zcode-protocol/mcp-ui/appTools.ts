@@ -72,7 +72,7 @@ interface SessionState {
 }
 
 /** 实例键 = 沙箱作用域 + 代际；同作用域的新代际替换旧代际。 */
-export const buildMcpUiAppToolInstanceKey = (instance: McpUiAppToolInstance) =>
+const buildMcpUiAppToolInstanceKey = (instance: McpUiAppToolInstance) =>
   `${instance.scopeId}|${instance.generation}`;
 const jsonBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
 

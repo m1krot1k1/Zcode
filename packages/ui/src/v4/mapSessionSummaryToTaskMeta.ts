@@ -25,7 +25,7 @@ function phaseToStatus(phase: SessionSummary["phase"]): ZCodeTaskMeta["status"] 
   }
 }
 
-export interface MapSessionSummaryOptions {
+interface MapSessionSummaryOptions {
   workspacePath: string;
   workspaceIdentity?: string;
   /** 本地已有 meta（保留手动标题/provider 等旧值，避免被列表刷新冲掉）。 */

@@ -4,7 +4,7 @@ import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { logger } from "@/logger.js";
 
-export interface AutomationProjectOption {
+interface AutomationProjectOption {
   projectId: string;
   hostId: string;
   workspacePath: string;

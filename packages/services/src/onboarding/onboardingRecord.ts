@@ -71,8 +71,6 @@ export const IOnboardingRecordService = createServiceDescriptor<IOnboardingRecor
 );
 
 export type {
-  OnboardingDecision,
   OnboardingRecordEntry,
   OnboardingRecordEntryInput,
-  OnboardingRecordFile,
-};
+  OnboardingRecordFile};

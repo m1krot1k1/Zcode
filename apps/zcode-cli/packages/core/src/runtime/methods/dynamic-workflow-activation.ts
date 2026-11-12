@@ -149,7 +149,7 @@ export async function writeDynamicWorkflowActivationEntryIfActivated(
   );
 }
 
-export function buildDynamicWorkflowActivationEntry(
+function buildDynamicWorkflowActivationEntry(
   sessionId: SessionId,
   source: DynamicWorkflowActivationSource,
 ): SessionEntryInfo {

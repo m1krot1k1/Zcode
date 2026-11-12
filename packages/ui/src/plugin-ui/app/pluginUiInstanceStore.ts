@@ -35,7 +35,7 @@ export function subscribePluginUiInstances(listener: () => void): () => void {
 }
 
 /** 测试用：清空全部记录。 */
-export function resetPluginUiInstancesForTest(): void {
+function resetPluginUiInstancesForTest(): void {
   derivations.clear();
   listeners.clear();
 }

@@ -40,11 +40,11 @@ function getIsMobileCompactViewport(): boolean {
   return getMediaQueryMatches(MOBILE_COMPACT_VIEWPORT_QUERY);
 }
 
-export function subscribeMobileTextInputViewport(listener: (matches: boolean) => void): () => void {
+function subscribeMobileTextInputViewport(listener: (matches: boolean) => void): () => void {
   return subscribeMediaQuery(MOBILE_TEXT_INPUT_QUERY, listener);
 }
 
-export function subscribeMobileCompactViewport(listener: (matches: boolean) => void): () => void {
+function subscribeMobileCompactViewport(listener: (matches: boolean) => void): () => void {
   return subscribeMediaQuery(MOBILE_COMPACT_VIEWPORT_QUERY, listener);
 }
 
@@ -58,7 +58,7 @@ export function useIsMobileTextInputViewport(): boolean {
   return isMobileTextInputViewport;
 }
 
-export function useIsMobileCompactViewport(): boolean {
+function useIsMobileCompactViewport(): boolean {
   const [isMobileCompactViewport, setIsMobileCompactViewport] = useState(
     getIsMobileCompactViewport,
   );

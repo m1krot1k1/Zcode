@@ -16,13 +16,13 @@ import { PluginComponentGroups } from "@/settings/PluginComponentGroups.js";
 import { buildInstalledPluginDisplayGroups } from "@/settings/pluginManagedResourceGroups.js";
 import { isPluginUpdatePending } from "@/settings/pluginStoreListing.js";
 
-export type PluginOptionValueGetter = (
+type PluginOptionValueGetter = (
   plugin: ZCodePluginInfo,
   key: string,
   option: ZCodePluginUserConfigOption,
 ) => string | number | boolean;
 
-export function InstalledPluginDetailDialog({
+function InstalledPluginDetailDialog({
   diagnostics,
   getPluginOptionValue,
   configScope,

@@ -198,7 +198,7 @@ export function resolvePptxPreviewReadErrorMessage(
   return getPreviewPaneSafeErrorMessage(error, options.sourcePath);
 }
 
-export function readPreviewPaneScrollMetrics(
+function readPreviewPaneScrollMetrics(
   container: Pick<HTMLElement, "scrollHeight" | "scrollTop"> | null,
 ) {
   if (!container) {
@@ -246,7 +246,7 @@ function getFileImageMediaType(path?: string): string | null {
 const PDF_RANGE_CHUNK_BYTES = 256 * 1024;
 // 小 PDF 直接循环拉全量（少量往返、渲染路径最简单）；超过阈值交给 pdf.js range 按需分段加载。
 const PDF_FULL_READ_MAX_BYTES = 2 * 1024 * 1024;
-export const PPTX_MAX_FILE_BYTES = 64 * 1024 * 1024;
+const PPTX_MAX_FILE_BYTES = 64 * 1024 * 1024;
 
 export function isPptxPreviewFileTooLarge(size: number): boolean {
   return size > PPTX_MAX_FILE_BYTES;
