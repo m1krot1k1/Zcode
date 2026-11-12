@@ -41,8 +41,11 @@ const createReleaseFixture = async (root) => {
 };
 
 test("parses upload arguments with defaults and overrides", () => {
+  // Причина: default destination root существует только на macOS (SMB-монтаж);
+  // на Linux/Windows он undefined by design. Тест должен проверять wiring, а не
+  // навязывать macOS-путь другим платформам.
   assert.deepEqual(parseUploadSeaSmbArgs([]), {
-    destinationRoot: DEFAULT_DESTINATION_ROOT,
+    destinationRoot: resolveDefaultDestinationRoot(),
     distDir: resolve(import.meta.dirname, "../dist"),
     force: false,
     help: false,
