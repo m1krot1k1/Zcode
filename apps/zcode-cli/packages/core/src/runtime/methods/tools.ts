@@ -26,6 +26,7 @@ import {
   isTurnCancellationError,
   findParallelGroupIndex,
   recordTurnFileChange,
+  buildPermissionDecisionEntry,
 } from "../helpers/index.js";
 import type {
   PermissionDecisionResult,
@@ -278,6 +279,40 @@ export async function resolvePermission(
   toolCallId: ToolCallId,
   decision: PermissionDecisionResult,
 ): Promise<void> {
+  const pendingRequest = this.getPendingPermissionRequests().find(
+    (request) => request.toolCallId === toolCallId,
+  );
+  const traceContext = getCurrentTraceContext() ?? this.rootTraceContext;
+
+  // Аудит пишем до возврата управления: разрешённое действие не должно произойти без следа.
+  // Ошибка записи не отменяет решение пользователя, но оставляет диагностический warn.
+  try {
+    if (this.sessionStore?.saveSessionEntry) {
+      await this.sessionStore.saveSessionEntry(
+        buildPermissionDecisionEntry({
+          sessionId: this.sessionId,
+          turnId: pendingRequest?.turnId,
+          toolCallId: String(toolCallId),
+          toolName: pendingRequest?.toolName ?? "unknown",
+          allowed: decision.allowed,
+          modified: decision.modifiedInput !== undefined,
+          reason: decision.reason ?? pendingRequest?.reason,
+          ruleId: pendingRequest?.ruleId,
+          traceId: String(traceContext.traceId),
+        }),
+      );
+    }
+  } catch (error) {
+    this.logger?.warn("Permission decision audit was not persisted", {
+      ...traceContextToLogContext(traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "permission_decision.persist_failed",
+      module: "core.runtime",
+      status: "failed",
+      toolCallId: String(toolCallId),
+    });
+  }
+
   const brokerResult: PermissionBrokerResult = {
     decision: decision.allowed ? "allow" : "deny",
     reason: decision.reason,
@@ -291,7 +326,6 @@ export async function resolvePermission(
     if (resolved) return;
   }
 
-  const traceContext = getCurrentTraceContext() ?? this.rootTraceContext;
   const event = this.createEvent(
     SessionEventType.PermissionResolved,
     {

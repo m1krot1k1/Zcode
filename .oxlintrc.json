@@ -26,10 +26,14 @@
         "**/apps/zcode-cli/packages/core/src/runtime/methods/steering.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/turn.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
+        // 存量超大文件；本次仅改一行 cost 归属，移除 pristine 豁免后需显式保留告警。
+        // 拆分会牵扯 fork/rewind 生命周期，不在审计修复范围内。
+        "**/apps/zcode-cli/packages/core/src/runtime/methods/session-fork.ts",
         // core 包内以 --no-ignore 运行时，oxlint 按 cwd 相对路径匹配同一组存量文件。
         "src/runtime/methods/steering.ts",
         "src/runtime/methods/turn.ts",
         "src/runtime/methods/turn-model-step.ts",
+        "src/runtime/methods/session-fork.ts",
         // CLI 存量实现：上游快照后被本地修改，职责仍完整；先以告警跟踪行数，不做机械拆分。
         "**/apps/zcode-cli/packages/adapters/src/model/runner-stream.ts",
         "**/apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/session-inputs.ts",

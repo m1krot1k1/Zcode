@@ -865,6 +865,21 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: audit-2026-11-12-new-helpers
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/core/src/runtime/helpers/model-cost.ts
+      - apps/zcode-cli/packages/core/src/runtime/helpers/permission-decision-audit.ts
+      - apps/zcode-cli/packages/core/src/tool/executor/permission-response.ts
+      - packages/desktop/src/main/desktopHostProcessLifecycle.ts
+      - packages/shared/src/model-cost.ts
+      - packages/ui/src/settings/mcpProjectApprovalPreview.ts
+    reason: >-
+      Узкие хелперы, вынесенные при закрытии аудита 2026-11-12 (стоимость модели,
+      аудит решений permissions, жизненный цикл Host, preview согласования MCP).
+      Они лежат в уже существующих неокупаемых модулях (zcode-cli, desktop, shared, ui),
+      чьи границы импортов не меняются; перенос целых деревьев в managed-модули —
+      отдельная задача и не должен блокировать сами исправления.
   - id: subagents-service-existing-facade-size
     rule: max-file-lines
     paths: [packages/services/src/subagents/subagentsService.ts]

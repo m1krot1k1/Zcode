@@ -41,6 +41,49 @@ MCP 局部接线测试只可明确排除已有独立验证的四个内置文档 
 5. 定向执行相关保留行为测试，验证清理没有破坏测试装配；不自动扩展为全量单测。
 6. 自查仅有约定范围内的测试与文档变更，检查通过后提交本地 commit。
 
+## 测试入口与 CI
+
+根 `vitest.config.ts` 是单测的唯一默认入口，包含三个 project：
+
+- `unit`：`packages/*/test/**/*.test.{ts,tsx}`、`packages/*/src/**/*.test.{ts,tsx}`、
+  `packages/*/scripts/**/*.test.ts`。第二个模式同时覆盖架构治理要求的 `contract.test.ts`、
+  Gen UI 目录回归以及插件沙箱/插件 UI 等源码旁用例。此前只精确放行 `contract.test.ts`
+  与 gen-ui 目录，导致 23 个 `src/**` 测试、1 个 `scripts/**` 测试和 10 个
+  `packages/ui/test/*.test.tsx` 从未执行。
+- `fork-isolated`：会改 cwd/umask、回收进程树或密集 spawn 的集成用例，串行 `forks` 执行。
+- `packages/zcode-cua`：该包自带的 `vitest.config.ts`。
+
+`packages/desktop/test/e2e/**` 与 `packages/zcode-cua/**` 在 `unit` project 中显式排除；
+新增 glob 不会收集 E2E、夹具或 `dist` 产物。需要 jsdom 的用例在文件首行写
+`// @vitest-environment jsdom`。
+
+常用命令（仓库根目录）：
+
+| 用途                   | 命令                                                          |
+| ---------------------- | ------------------------------------------------------------- |
+| 全量单测               | `pnpm test:unit`（`vitest run`，排除桌面 E2E）                |
+| 变更相关单测           | `pnpm test:unit:affected --base origin/dev`                   |
+| 定向单测               | `pnpm exec vitest run --project unit <file>...`               |
+| 覆盖率                 | `pnpm test:coverage`                                          |
+| UI 包单测              | `pnpm --filter @zcode/ui test`（复用根配置与 setup）          |
+| UI 包类型检查          | `pnpm --filter @zcode/ui typecheck`（`tsc -b tsconfig.json`） |
+| 桌面 E2E（本门禁之外） | `pnpm test:e2e`                                               |
+
+CI 由 `.github/workflows/checks.yml` 执行，触发条件为 `pull_request` 与 `push` 到
+`dev`/`main`，Node 固定 `24.14.0`、pnpm 固定 `10.33.2`，安装使用
+`pnpm install --frozen-lockfile`，`concurrency` 按 PR/分支取消旧运行，pnpm store 通过
+`actions/setup-node` 缓存：
+
+- `static`：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check`、
+  `node scripts/check-doc-links.mjs`。
+- `unit-affected`（仅 PR）：`pnpm test:unit:affected --base origin/<base>`，checkout 使用
+  `fetch-depth: 0` 以解析基线。
+- `unit-full`（仅 push）：`pnpm test:unit` 按 4 个 shard 并行，命令为
+  `pnpm test:unit -- --shard=<n>/4`。
+
+工作流不运行桌面 E2E、打包或发布；这些仍由 `.github/workflows/cross-platform-preview-release.yml`
+与本地发布脚本负责（见 `docs/desktop-ci-cd.md`）。CI 通过不等于 E2E 或产品验收通过。
+
 ## 剩余单测逐文件审查合同
 
 第三轮从 `0cd29a0ab4` 建立当前测试库存。范围是 Git tracked 的 TS/JS test/spec 文件，

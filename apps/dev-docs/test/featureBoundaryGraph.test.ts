@@ -108,16 +108,34 @@ describe("feature boundary graph helpers", () => {
       ),
       "utf8",
     );
-    const graph = normalizeFeatureBoundaryGraph(parseYaml(source));
+    const raw = parseYaml(source) as {
+      nodes: Array<{ id: string }>;
+      edges: Array<{ from: string; to: string }>;
+    };
+    const graph = normalizeFeatureBoundaryGraph(raw);
     const stats = getFeatureBoundaryGraphStats(graph);
 
-    expect(stats).toMatchObject({
-      nodeCount: 324,
-      edgeCount: 629,
-      unresolvedEndpointCount: 2,
-    });
+    // 期望值从 YAML 本身推导，避免图增长后固定数字（此前是 324/629）变成永久失败。
+    // 同时校验真实的图不变量：id 唯一、normalize 不丢节点、边数不变、未声明端点
+    // 集合与 unresolved 节点完全一致。这些断言在空图或重复 id 时也会失败。
+    const declaredIds = raw.nodes.map((node) => node.id);
+    expect(declaredIds.length).toBeGreaterThan(0);
+    expect(raw.edges.length).toBeGreaterThan(0);
+    expect(new Set(declaredIds).size).toBe(declaredIds.length);
+
+    const declaredIdSet = new Set(declaredIds);
+    const missingEndpoints = new Set<string>();
+    for (const edge of raw.edges) {
+      for (const endpoint of [edge.from, edge.to]) {
+        if (!declaredIdSet.has(endpoint)) missingEndpoints.add(endpoint);
+      }
+    }
+
+    expect(stats.nodeCount).toBe(declaredIds.length + missingEndpoints.size);
+    expect(stats.edgeCount).toBe(raw.edges.length);
+    expect(stats.unresolvedEndpointCount).toBe(missingEndpoints.size);
     expect(graph.nodes.filter((node) => node.kind === "unresolved").map((node) => node.id)).toEqual(
-      ["capability.mcp-oauth-authorization", "persistence.desktop-user-data-root"],
+      [...missingEndpoints].sort(),
     );
   });
 });

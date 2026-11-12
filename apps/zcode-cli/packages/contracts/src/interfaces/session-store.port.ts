@@ -410,7 +410,8 @@ export interface AssistantMessageInfo {
     root: string;
   };
   summary?: boolean;
-  cost: number;
+  /** 模型价格目录能确定成本时才写入；未知价格省略，不能用 0 伪装。 */
+  cost?: number;
   tokens: TokenUsageInfo;
   structured?: unknown;
   reasoningLevel?: string;
@@ -692,7 +693,8 @@ export interface StepFinishPart {
   type: "step-finish";
   reason: string;
   snapshot?: string;
-  cost: number;
+  /** 未知价格时省略；0 只表示真实零成本。 */
+  cost?: number;
   tokens: TokenUsageInfo;
 }
 
@@ -826,6 +828,8 @@ export const SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT = "runtime/prism_evidence_rece
 export const SESSION_ENTRY_PRISM_TASK_TERMINAL = "runtime/prism_task_terminal" as const;
 /** Read-only metadata and output locator for terminal TaskOutput lookup after registry eviction. */
 export const SESSION_ENTRY_RUNTIME_TASK_TERMINAL = "runtime/task_terminal" as const;
+/** Append-only аудит решений о разрешениях: кто и по какой причине одобрил вызов. */
+export const SESSION_ENTRY_PERMISSION_DECISION = "runtime/permission_decision" as const;
 
 export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -840,6 +844,7 @@ export const SESSION_ENTRY_TYPES = [
   SESSION_ENTRY_PRISM_EVIDENCE_RECEIPT,
   SESSION_ENTRY_PRISM_TASK_TERMINAL,
   SESSION_ENTRY_RUNTIME_TASK_TERMINAL,
+  SESSION_ENTRY_PERMISSION_DECISION,
 ] as const;
 
 export type SessionEntryType = (typeof SESSION_ENTRY_TYPES)[number];

@@ -98,12 +98,15 @@ export default defineConfig({
         test: {
           name: "unit",
           include: [
-            "packages/*/test/**/*.test.ts",
-            // 架构治理要求 managed 模块自带 contract.test.ts（见 architecture-policy.yaml），放在模块目录内。
-            "packages/*/src/**/contract.test.ts",
-            // Gen UI 目录回归位于源码旁，默认入口也必须执行，避免只在手动定向运行时生效。
-            "packages/shared/src/node/genUiPaths.test.ts",
-            "packages/services/src/gen-ui/**/*.test.ts",
+            // `.test.tsx` 只出现在 UI 的 test/ 目录（jsdom 用例），旧模式 `.test.ts`
+            // 让这 10 个文件存在但从不进入默认入口。
+            "packages/*/test/**/*.test.{ts,tsx}",
+            // 与源码同目录的回归用例：架构治理的 contract.test.ts（见 architecture-policy.yaml）、
+            // Gen UI 目录回归、插件沙箱/插件 UI 等模块内测试都放在这里。此前只精确放行
+            // contract.test.ts 与 gen-ui 目录，其余 src 下测试因此长期不执行。
+            "packages/*/src/**/*.test.{ts,tsx}",
+            // 与构建脚本同目录的产物校验（gen-ui runtime assets）。
+            "packages/*/scripts/**/*.test.ts",
           ],
           exclude: ["packages/desktop/test/e2e/**", "packages/zcode-cua/**", ...forkIsolatedTests],
           // Node 24/macOS 的 threads 全量运行可触发 V8 SIGSEGV；诊断时切换进程隔离，测试范围不变。

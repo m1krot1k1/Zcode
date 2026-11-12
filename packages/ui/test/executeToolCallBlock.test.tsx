@@ -56,7 +56,9 @@ describe("ExecuteToolCallBlock", () => {
       ),
     );
 
-    expect(html).toContain("输出结果");
+    // 渲染器现在只输出命令与结构化结果，没有独立的“输出结果”标签；旧断言引用的是
+    // 已移除的文案，会让这个文件永久失败。保留对结构化输出的实质检查。
+    expect(html).toContain('data-testid="bash-result-output"');
     expect(html).toContain("packages installed successfully");
     expect(html).not.toContain("&quot;stdout&quot;");
     expect(html).not.toContain("&quot;exitCode&quot;");
