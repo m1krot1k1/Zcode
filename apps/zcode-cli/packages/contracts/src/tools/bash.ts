@@ -60,18 +60,23 @@ export const BashInputSchema = z
     run_in_background: semanticBoolean()
       .optional()
       .describe("Set to true to run this command in the background."),
-    /**
-     * Set this to true to dangerously override sandbox mode and run commands without sandboxing.
-     */
-    dangerouslyDisableSandbox: semanticBoolean()
-      .optional()
-      .describe(
-        "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
-      ),
   })
   .strict();
 
-export type BashInput = z.infer<typeof BashInputSchema>;
+/**
+ * R04 вариант B: у ZCode нет OS-sandbox для Bash, поэтому sandbox-поле не
+ * объявляется ни модели, ни runtime-входу. `BashInputSchema` остаётся
+ * `.strict()`, и legacy-аргумент отклоняется до handler-а.
+ *
+ * Поле сохранено только как deprecated-носитель типа: его читает
+ * `core/src/tool/handlers/bash-output.ts` при сборке BashOutput (этот модуль
+ * вне scope текущего изменения). В схему, provider JSON Schema, execution,
+ * telemetry и новый output оно не попадает.
+ */
+export type BashInput = z.infer<typeof BashInputSchema> & {
+  /** @deprecated Legacy carrier only; not part of `BashInputSchema`. */
+  dangerouslyDisableSandbox?: boolean;
+};
 
 export const BashInputJsonSchema = toToolJsonSchema(BashInputSchema);
 

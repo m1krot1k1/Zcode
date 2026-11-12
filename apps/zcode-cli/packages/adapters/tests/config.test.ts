@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ConfigKey } from "@zcode/contracts";
 import { createConfig, updateUiLocaleInFileConfig } from "../src/config/index.js";
 import { parseEnvConfig } from "../src/config/env-config.adapter.js";
 import {
@@ -428,6 +429,84 @@ describe("config adapters", () => {
 
       expect(result.loaded).toBe(true);
       expect(result.config.permission?.mode).toBe("edit");
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  // docs/specs/2026-11-11-permission-hard-deny-approval-timeout.md §4.2：
+  // permission.approvalTimeoutMs 是新增的加法键，schema 只增加字段、不改成 strict。
+  it("loads the permission approval timeout and ignores unknown siblings", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
+    const path = join(dir, "config.json");
+
+    try {
+      await writeFile(
+        path,
+        JSON.stringify({
+          permission: { approvalTimeoutMs: 150000, futureKnob: true },
+        }),
+      );
+
+      const result = loadFileConfig(path);
+
+      expect(result.loaded).toBe(true);
+      expect(result.config.permission?.approvalTimeoutMs).toBe(150000);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("merges a configured approval timeout over the 300000 default", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
+    const path = join(dir, "config.json");
+
+    try {
+      await writeFile(path, JSON.stringify({ permission: { approvalTimeoutMs: 120000 } }));
+
+      const merged = createConfig({ env: {}, userConfigPath: path });
+
+      expect(merged.config.permission.approvalTimeoutMs).toBe(120000);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps an explicit approval timeout of 0 instead of the default", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
+    const path = join(dir, "config.json");
+
+    try {
+      await writeFile(path, JSON.stringify({ permission: { approvalTimeoutMs: 0 } }));
+
+      const merged = createConfig({ env: {}, userConfigPath: path });
+
+      // 0 是「关闭超时」的有效值：merge/getAll 不能按真值判断丢掉它。
+      expect(merged.config.permission.approvalTimeoutMs).toBe(0);
+      expect(merged.configPort.get(ConfigKey.PermissionApprovalTimeout)).toBe(0);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("defaults the approval timeout to 300000", () => {
+    const merged = createConfig({ env: {}, skipUserConfig: true });
+
+    expect(merged.config.permission.approvalTimeoutMs).toBe(300_000);
+    expect(merged.configPort.get(ConfigKey.PermissionApprovalTimeout)).toBe(300_000);
+  });
+
+  it("rejects a negative approval timeout from file config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
+    const path = join(dir, "config.json");
+
+    try {
+      await writeFile(path, JSON.stringify({ permission: { approvalTimeoutMs: -1 } }));
+
+      const result = loadFileConfig(path);
+
+      expect(result.loaded).toBe(false);
+      expect(result.config).toEqual({});
     } finally {
       await rm(dir, { force: true, recursive: true });
     }

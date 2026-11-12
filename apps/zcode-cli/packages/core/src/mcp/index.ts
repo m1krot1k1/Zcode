@@ -25,6 +25,10 @@ import type { ToolRegistry } from "../tool/registry.js";
 import { createToolRuleNameSet } from "../tool/tool-visibility.js";
 import type { ToolEntry } from "../tool/types.js";
 import {
+  createUntrustedExternalContentNotice,
+  wrapUntrustedExternalContent,
+} from "../tool/untrusted-content.js";
+import {
   asDataUrl,
   base64PayloadFromMcpImageData,
   normalizeMcpToolResultForModel,
@@ -352,7 +356,7 @@ export function createMcpToolEntry(
         toolName: name,
       });
     },
-    formatModelContent: (output) => formatMcpToolResult(output),
+    formatModelContent: (output) => formatMcpToolResultForModel(output),
   };
 }
 
@@ -516,6 +520,30 @@ export function formatMcpToolResult(output: unknown): ModelMessageContent {
     errorPresentation === ZCODE_MCP_ERROR_PRESENTATION_MESSAGE_ONLY
     ? content
     : `MCP tool returned an error:\n${modelMessageContentToText(content)}`;
+}
+
+/**
+ * 模型投影：在原始 `formatMcpToolResult` 之上加外部内容信任框架。
+ *
+ * 边界选择：`formatMcpToolResult` 同时服务分页（`storeOversizedMcpTextResult`
+ * 用它估算原始字节并切页），所以包装不能下沉进去，否则 pagination 的
+ * originalBytes / page 计数会随框架文案变化。持久化的分页结果保持干净，
+ * 只有真正交给模型的这一层加标签。
+ */
+export function formatMcpToolResultForModel(output: unknown): ModelMessageContent {
+  const content = formatMcpToolResult(output);
+  if (typeof content === "string") {
+    // helper 自身幂等：已包裹的字符串原样返回，不会层层嵌套。
+    return wrapUntrustedExternalContent(content);
+  }
+  // 图片/引用等结构化块必须保持原顺序与位置（官方 CUA 要求 image/image_ref
+  // 位于块 0/1；node_repl 要求 image-first）。标签只能作为尾部文本块追加。
+  //
+  // 这里无条件追加，不按内容里的“已有标签”去重：尾部提示是标记块而非包裹，
+  // 去重判据若来自结果内容，恶意 server 只要把同样的提示文本当作最后一块返回，
+  // 就能抑制真正的标记。重复标记本身无害，无法用来终止框架。每个结果只投影
+  // 一次（serializeOutput），生产路径不会重复追加。
+  return [...content, { type: "text" as const, text: createUntrustedExternalContentNotice() }];
 }
 
 function formatContentBlock(block: Record<string, unknown>): ModelMessageContentBlock[] {

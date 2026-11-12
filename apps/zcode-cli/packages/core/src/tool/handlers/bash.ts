@@ -21,7 +21,9 @@ import {
   type ExecutionResult,
   type ExecutionRequest,
   type ExecutionRunOptions,
+  type ExecutionSandboxPolicy,
   type ExecutionShellSelection,
+  type JsonSchema,
   type TraceContext,
 } from "@zcode/contracts";
 import {
@@ -83,6 +85,44 @@ const BASH_PROVIDER_DESCRIPTION = createBashProviderDescription({
   defaultTimeoutMs: DEFAULT_BASH_TIMEOUT_POLICY.defaultTimeoutMs,
   maxTimeoutMs: DEFAULT_BASH_TIMEOUT_POLICY.maxTimeoutMs,
 });
+
+// R04 вариант B: ZCode не реализует OS-sandbox для Bash, поэтому единая
+// `BashInputSchema` не объявляет sandbox-поле. Runtime admission (`.strict()`)
+// отклоняет legacy-аргумент до handler-а; отдельная provider-проекция входа
+// больше не нужна, потому что скрывать нечего.
+const BASH_SANDBOX_FIELD_NAME = "dangerouslyDisableSandbox";
+const BASH_SANDBOX_ENFORCEMENT = "not_implemented";
+
+/**
+ * Provider-visible output: у Bash нет статуса sandbox, поэтому поле не
+ * описывается. Runtime-output schema контракта сохраняет optional-поле для
+ * чтения старых persisted-результатов.
+ */
+function createBashProviderOutputSchema(): JsonSchema {
+  const properties = readSchemaRecord(BashOutputJsonSchema.properties);
+  if (!properties || !(BASH_SANDBOX_FIELD_NAME in properties)) return BashOutputJsonSchema;
+  const providerProperties = { ...properties };
+  delete providerProperties[BASH_SANDBOX_FIELD_NAME];
+  return { ...BashOutputJsonSchema, properties: providerProperties };
+}
+
+function readSchemaRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+const BASH_PROVIDER_OUTPUT_SCHEMA = createBashProviderOutputSchema();
+
+/** Внутренний trace: фактическое отсутствие OS-sandbox, не запрос модели. */
+function createBashSandboxTrace(): ExecutionSandboxPolicy {
+  return {
+    enabled: false,
+    // Честный маркер для внутренней диагностики: политика не применяется,
+    // потому что enforcement отсутствует. Adapter поле не читает.
+    metadata: { enforcement: BASH_SANDBOX_ENFORCEMENT },
+  };
+}
 
 export function getBashPrompt(
   timeoutPolicy: BashTimeoutPolicy = DEFAULT_BASH_TIMEOUT_POLICY,
@@ -249,6 +289,10 @@ async function executeBashHandler(
     progressTiming,
     stderrSuffix: cwdDecision.stderrSuffix,
   });
+  // R04 вариант B: provider-visible результат не должен подтверждать
+  // несуществующий sandbox. Поле остаётся в runtime-схеме для чтения старых
+  // persisted-результатов, но новый ответ Bash его не несёт.
+  delete output.dangerouslyDisableSandbox;
   await applyBashReadFileStateEffects({
     command: parsed.command,
     context,
@@ -267,7 +311,6 @@ function emptyBashOutput(input: BashInput): BashOutput {
       isImage: false,
       noOutputExpected: false,
       status: "completed",
-      dangerouslyDisableSandbox: input.dangerouslyDisableSandbox,
     },
     createEmptyBashPerformanceTelemetry(input),
   );
@@ -288,7 +331,6 @@ function toBackgroundedBashOutput(
       persistedOutputPath: task.outputPath,
       stdoutPersistedOutputPath: task.stdoutPersistedOutputPath,
       stderrPersistedOutputPath: task.stderrPersistedOutputPath,
-      dangerouslyDisableSandbox: input.dangerouslyDisableSandbox,
     },
     createBashBackgroundPerformanceTelemetry(input),
   );
@@ -325,7 +367,10 @@ function startBashCommandTelemetry(
     category: commandCategory(input.command),
     commandCount: identity.count ?? 0,
     safeName: identity.name ?? "other",
-    sandboxed: input.dangerouslyDisableSandbox !== true,
+    // R04 вариант B: sandbox не реализован, поэтому команда никогда не
+    // изолирована. sandbox-поля во входе нет — это наблюдаемый факт, а не
+    // отражение запроса модели.
+    sandboxed: false,
     shellKind: commandShellKind(context.bashShellSelection),
   });
 }
@@ -455,10 +500,10 @@ function createExecutionRequest(
       maxPersistedBytes: MAX_RUNTIME_PERSISTED_OUTPUT_BYTES,
       persistOutput: input.run_in_background ? "always" : "on_truncate",
     },
-    sandbox: {
-      enabled: !input.dangerouslyDisableSandbox,
-      dangerouslyDisableSandbox: input.dangerouslyDisableSandbox,
-    },
+    // R04: sandbox-политика — только внутренний trace. Adapter не читает
+    // request.sandbox (см. adapters/src/exec/node-execution-adapter-run.ts:399-400),
+    // поэтому enabled всегда false: OS-изоляции нет, и это не запрос модели.
+    sandbox: createBashSandboxTrace(),
     trace: {
       traceId: context.traceId,
       spanId: context.spanId,
@@ -494,7 +539,7 @@ export const bashToolEntry: ToolEntry = {
   resolvePermissionCapability: resolveBashPermissionCapability,
   resolvePermissionRulePolicy: resolveBashPermissionRulePolicy,
   inputSchema: BashInputJsonSchema,
-  outputSchema: BashOutputJsonSchema,
+  outputSchema: BASH_PROVIDER_OUTPUT_SCHEMA,
   runtimeInputSchema: BashInputSchema,
   runtimeOutputSchema: BashOutputSchema,
   permission: {
@@ -546,10 +591,11 @@ export function createBashToolEntry(
   } = {},
 ): ToolEntry {
   const timeoutPolicy = options.bashTimeoutPolicy ?? DEFAULT_BASH_TIMEOUT_POLICY;
+  const inputSchema = createBashInputJsonSchema(timeoutPolicy);
   return {
     ...bashToolEntry,
     handler: createBashHandler(timeoutPolicy),
-    inputSchema: createBashInputJsonSchema(timeoutPolicy),
+    inputSchema,
     resolveTimeoutBudgetMs: createBashTimeoutBudgetResolver(timeoutPolicy),
     metadata: {
       ...bashToolEntry.metadata,
@@ -581,6 +627,8 @@ function createBashTimeoutBudgetResolver(
 }
 
 function createBashInputJsonSchema(timeoutPolicy: BashTimeoutPolicy): Record<string, unknown> {
+  // Entry-level схема — та же provider-схема контракта; переопределяется только
+  // описание timeout из createBashToolEntry(timeoutPolicy). Sandbox-поля в ней нет.
   const schema = BashInputJsonSchema as Record<string, unknown>;
   const properties = schema.properties as Record<string, unknown> | undefined;
   const timeoutProperty = properties?.timeout as Record<string, unknown> | undefined;

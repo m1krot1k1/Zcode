@@ -6,6 +6,7 @@ import {
   type WebFetchInput,
 } from "@zcode/contracts";
 import type { ToolExecutionContext } from "../types.js";
+import { wrapUntrustedExternalContent } from "../untrusted-content.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 import { MAX_MODEL_INPUT_CHARS, WEBFETCH_TOOL_NAME } from "./webfetch-constants.js";
 import { truncateContentForModel } from "./webfetch-content.js";
@@ -116,7 +117,7 @@ function buildProcessingPrompt(content: string, prompt: string, preapprovedUrl: 
   return `
 Web page content:
 ---
-${content}
+${wrapUntrustedExternalContent(content)}
 ---
 
 ${prompt}

@@ -1051,6 +1051,26 @@ exceptions:
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/runtime-task/work-ledger-wire.ts]
     reason: work-ledger 的接线层（保守抽取任务路径、拼装 child 信封中的占用块、节流 heartbeat、进程级单例）与纯台账核心分开，便于核心保持无运行时依赖并分别验收；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，runtime-task 目录没有独立模块边界，为这一个人文件登记路径级例外。
+  - id: untrusted-external-content-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/tool/untrusted-content.ts]
+    reason: 外部内容信任框架（QW6/R17）的唯一所有者：标签、单行警告、闭标签中和与幂等判据。它刻意不 import 任何模块，供 tool / mcp / runtime-task 三个目录共享同一语义而不新增依赖边或循环；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，tool 目录没有独立模块边界，为这一个人文件登记路径级例外。
+  - id: plugin-hook-trust-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/adapters/src/plugins/plugin-hook-trust.ts]
+    reason: 第三方插件 Hook 信任的唯一 owner（digest 绑定、atomic store、fail-closed 评估）。从 plugins/index.ts 拆出是为守住 800 行 max-lines 上限并让信任判定只有一条路径；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，plugins 目录没有独立模块边界，为这一个人文件登记路径级例外。
+  - id: plugin-hook-inspection-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/adapters/src/plugins/plugin-hook-inspection.ts]
+    reason: 插件 Hook 解析与 inspection 的纯函数集合（事件校验、matcher 归一、detail 投影），从 plugins/index.ts 拆出以满足 max-lines；不持有状态、不做信任判定，语义与拆分前逐行一致。apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，为这一个人文件登记路径级例外。
+  - id: mcp-app-tools-existing-edit
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/mcp/app-tools.ts]
+    reason: 已准入的存量文件：MCP app-tools 只增加外部内容 untrusted 框（QW6/R17）的接线，工具名、schema 与结果投影保持不变；不为同目录其他文件开放例外，接管整个 zcode-cli 不在本次范围内。
+  - id: ui-remote-connection-errors-existing-edit
+    rule: unmanaged-new-file
+    paths: [packages/ui/src/lib/remoteConnectionPresentationErrors.ts]
+    reason: 已准入的存量文件：同时支持传输层无路由与端口拒绝两种原因的展示分类，公开错误码与 reasonId 契约不变；只为这一条既有文件的局部扩展登记例外，接管整个 ui 目录需要单独的边界梳理。
   - id: ui-theme-utilities-unmanaged-file
     rule: unmanaged-new-file
     paths: [packages/ui/src/theme.ts]

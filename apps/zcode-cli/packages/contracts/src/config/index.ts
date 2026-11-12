@@ -19,6 +19,7 @@ export const ConfigKey = {
   PermissionDisallowedTools: "permission.disallowedTools",
   PermissionAutoApproveHighRisk: "permission.autoApproveHighRisk",
   PermissionAllowMediumRiskInAuto: "permission.allowMediumRiskInAuto",
+  PermissionApprovalTimeout: "permission.approvalTimeoutMs",
 
   // Storage
   StorageDir: "storage.dir",
@@ -89,6 +90,7 @@ export type ConfigKey = (typeof ConfigKey)[keyof typeof ConfigKey];
 export type ConfigValue<K extends ConfigKey> = K extends
   | "modelStream.idleTimeoutMs"
   | "modelStream.firstTokenTimeoutMs"
+  | "permission.approvalTimeoutMs"
   ? number
   : K extends "permission.mode"
     ? CollaborationMode
@@ -210,6 +212,8 @@ export interface RuntimeConfig {
     disallowedTools: string[];
     autoApproveHighRisk: boolean;
     allowMediumRiskInAuto: boolean;
+    /** 审批等待上限（毫秒）：有限正数生效；0 = 显式关闭（不设超时）。 */
+    approvalTimeoutMs: number;
   };
   storage: {
     dir: string;
@@ -305,6 +309,8 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
     disallowedTools: [],
     autoApproveHighRisk: false,
     allowMediumRiskInAuto: false,
+    // 悬空审批必须有界；0 = 显式关闭（broker 只在有限正数上排 timer）。
+    approvalTimeoutMs: 300_000,
   },
   storage: {
     dir: "~/.zcode",

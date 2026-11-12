@@ -1209,9 +1209,9 @@ describe("tool contract declarations", () => {
     expect(bashInput.properties.run_in_background.description).toBe(
       "Set to true to run this command in the background.",
     );
-    expect(bashInput.properties.dangerouslyDisableSandbox.description).toBe(
-      "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
-    );
+    // R04 вариант B: sandbox-поле удалено из provider-visible схемы.
+    expect(bashInput.properties).not.toHaveProperty("dangerouslyDisableSandbox");
+    expect(JSON.stringify(bashInput)).not.toContain("sandbox");
   });
 
   it("drops the legacy Agent model field at the runtime input boundary", () => {
@@ -1763,32 +1763,37 @@ describe("tool contract declarations", () => {
     expect(properties).toHaveProperty("timeout");
     expect(properties).toHaveProperty("description");
     expect(properties).toHaveProperty("run_in_background");
-    expect(properties).toHaveProperty("dangerouslyDisableSandbox");
+    // R04 вариант B: sandbox-поле не объявляется ни модели, ни runtime-входу.
+    expect(properties).not.toHaveProperty("dangerouslyDisableSandbox");
     expect(properties).not.toHaveProperty("argv");
     expect(properties).not.toHaveProperty("cwd");
     expect(properties).not.toHaveProperty("env");
     expect(properties.timeout?.type).toBe("number");
     expect(properties.run_in_background?.type).toBe("boolean");
-    expect(properties.dangerouslyDisableSandbox?.type).toBe("boolean");
 
     expect(
       bashToolEntry.runtimeInputSchema.parse({
         command: "npm test",
         timeout: "30000",
         run_in_background: "true",
-        dangerouslyDisableSandbox: "0",
       }),
     ).toEqual({
       command: "npm test",
       timeout: 30000,
       run_in_background: true,
-      dangerouslyDisableSandbox: false,
     });
 
     expect(() =>
       bashToolEntry.runtimeInputSchema.parse({
         command: "node -v",
         argv: { file: "node", args: ["-v"] },
+      }),
+    ).toThrow();
+    // Legacy-аргумент отклоняется strict-схемой, а не игнорируется молча.
+    expect(() =>
+      bashToolEntry.runtimeInputSchema.parse({
+        command: "node -v",
+        dangerouslyDisableSandbox: "0",
       }),
     ).toThrow();
   });

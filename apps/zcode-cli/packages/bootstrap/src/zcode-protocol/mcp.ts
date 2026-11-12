@@ -1,5 +1,5 @@
 import { createConfig, resolvePath } from "@zcode/adapters/config";
-import type { Logger, McpConnectionSnapshot, McpPort, McpServerStatus } from "@zcode/contracts";
+import type { Logger, McpConnectionSnapshot, McpPort, McpServerConfig, McpServerStatus } from "@zcode/contracts";
 import {
   zcodeMcpListParamsSchema,
   zcodeMcpListResultSchema,
@@ -12,6 +12,11 @@ import {
 } from "../mcp-config.js";
 import { StartupTimer, startupNow } from "../startup-logging.js";
 import { getCliStorageRoot } from "../app/paths.js";
+import {
+  readMcpProjectTrustRecords,
+  resolveMcpTrustIdentity,
+  resolveUntrustedProjectMcpServers,
+} from "../app/runtime-config.js";
 import { resolveStartupPlugins } from "../app/startup-marks.js";
 import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
@@ -71,8 +76,21 @@ export async function listMcpServers(
     configuredMcpServers,
     pluginOutcome.mcpServers,
   );
-  // 产品决定 workspace MCP 开箱即用：project 作用域 MCP 默认 trusted，并自动连接。
-  const untrustedProjectMcpServers = new Set<string>();
+  // project-scope MCP 默认 untrusted：与 app 启动边界使用同一个 approval store 与
+  // 同一套 digest 判定。store 缺失/损坏 → 零授权（fail closed），不中断 mcp/list。
+  const untrustedProjectMcpServers = resolveUntrustedProjectMcpServers({
+    configuredMcpServers,
+    serverSources: configResult.sources.mcp?.serverSources ?? {},
+    trust: {
+      workspaceIdentity: resolveMcpTrustIdentity({
+        workspaceIdentity: params.workspace.workspaceIdentity,
+        workspacePath: workingDirectory,
+      }),
+      approvals: await readMcpProjectTrustRecords(
+        resolvePath(configResult.config.storage.dir),
+      ),
+    },
+  });
   const mcpPort = context.deps.mcpPort;
   if (mcpPort) {
     if (params.mode === "status") {
@@ -116,7 +134,11 @@ export async function listMcpServers(
         });
       });
       return zcodeMcpListResultSchema.parse({
-        statuses: pendingAuthorizationSnapshot.statuses,
+        statuses: await withUntrustedProjectStatuses(
+          pendingAuthorizationSnapshot.statuses,
+          configuredMcpServers,
+          untrustedProjectMcpServers,
+        ),
       });
     }
 
@@ -128,6 +150,30 @@ export async function listMcpServers(
     untrustedProjectMcpServers,
   );
   return zcodeMcpListResultSchema.parse({ statuses });
+}
+
+/**
+ * OAuth pending 早退时 `mcpPort.status()` 只包含已建立连接的 server；未授权的
+ * project-scope server 必须继续投影为 untrusted，不能被从这个快照里静默丢掉。
+ */
+async function withUntrustedProjectStatuses(
+  statuses: Record<string, McpServerStatus>,
+  configuredMcpServers: Record<string, McpServerConfig>,
+  untrustedProjectMcpServers: ReadonlySet<string>,
+): Promise<Record<string, McpServerStatus>> {
+  if (untrustedProjectMcpServers.size === 0) return statuses;
+  const missing: Record<string, McpServerConfig> = {};
+  for (const name of untrustedProjectMcpServers) {
+    const config = configuredMcpServers[name];
+    if (config && statuses[name] === undefined) missing[name] = config;
+  }
+  if (Object.keys(missing).length === 0) return statuses;
+  const projected = await listMcpServerStatuses(
+    undefined,
+    missing,
+    new Set(Object.keys(missing)),
+  );
+  return { ...statuses, ...projected };
 }
 
 async function waitForOAuthAuthorizationSnapshot(

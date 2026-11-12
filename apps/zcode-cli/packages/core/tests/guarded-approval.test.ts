@@ -522,6 +522,19 @@ describe("Guarded executor authorization boundary", () => {
     expect(h.saveProjectPermission).not.toHaveBeenCalled();
     expect(h.broker.resolvePermission(h.requests[0]!.requestId, { decision: "allow" })).toBe(false);
   });
+  it("keeps waiting when the approval timeout is explicitly disabled with 0", async () => {
+    // docs/specs/2026-11-11-permission-hard-deny-approval-timeout.md §4.1：0 = 无超时。
+    const h = harness({ timeoutMs: 0 });
+    const pending = h.execute();
+    await vi.waitFor(() => expect(h.requests).toHaveLength(1));
+    // 让出事件循环，确认没有立即以 PermissionTimeout 收口。
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(h.broker.listPendingRequests()).toHaveLength(1);
+    expect(h.handler).not.toHaveBeenCalled();
+    expect(h.broker.resolvePermission(h.requests[0]!.requestId, { decision: "allow" })).toBe(true);
+    expect((await pending).success).toBe(true);
+    expect(h.handler).toHaveBeenCalledTimes(1);
+  });
   it("cleans pending on cancellation", async () => {
     const h = harness();
     const abort = new AbortController();

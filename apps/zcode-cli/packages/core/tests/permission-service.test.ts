@@ -510,6 +510,24 @@ describe("PermissionService mode policy", () => {
     });
   });
 
+  it("lets a hard deny win over the EnterPlanMode transition allow", () => {
+    // 硬拒绝位于模式迁移之前：显式禁用的 EnterPlanMode 不能借 "tool.plan.enter" 的
+    // 无条件 allow 绕过（docs/specs/2026-11-11-permission-hard-deny-approval-timeout.md §3）。
+    const service = new PermissionService({
+      allowedTools: new Set(),
+      autoApproveHighRisk: false,
+      disallowedTools: new Set(["EnterPlanMode"]),
+      allowMediumRiskInAutoMode: false,
+    });
+
+    expect(
+      service.checkPermission(
+        { input: {}, mode: "build", riskLevel: "low", toolName: "EnterPlanMode" },
+        planModeTransitionCapability,
+      ),
+    ).toMatchObject({ decision: "deny", ruleId: "rule.disallowedTools" });
+  });
+
   it("asks for side-effecting tools in build mode", () => {
     const service = new PermissionService();
 
@@ -934,35 +952,97 @@ describe("PermissionService mode policy", () => {
     });
   });
 
-  it("lets yolo bypass disallowed tool rules", () => {
+  // research R05 / docs/specs/2026-11-11-permission-hard-deny-approval-timeout.md：
+  // 硬拒绝（disallowedTools / 项目 deny）先于 yolo/guarded 的 allow 分支，模式不能解除硬禁用；
+  // 不能通过 PreToolUse allow 或审批弹窗绕过。
+  for (const mode of ["yolo", "guarded"] as const) {
+    it(`denies a disallowed tool in ${mode} mode`, () => {
+      const service = new PermissionService({
+        allowedTools: new Set(),
+        autoApproveHighRisk: false,
+        disallowedTools: new Set(["Bash"]),
+        allowMediumRiskInAutoMode: false,
+      });
+
+      const decision = service.checkPermission(
+        {
+          input: { command: "rm -rf build" },
+          mode,
+          riskLevel: "high",
+          toolName: "Bash",
+        },
+        {
+          destructive: true,
+          needsApproval: true,
+          readOnly: false,
+          riskLevel: "high",
+          sideEffectScope: "system",
+        },
+      );
+
+      expect(decision).toMatchObject({
+        allowed: false,
+        decision: "deny",
+        ruleId: "rule.disallowedTools",
+      });
+    });
+
+    it(`denies a project deny rule in ${mode} mode`, () => {
+      const service = new PermissionService();
+
+      const decision = service.checkPermission(
+        {
+          input: { command: "rm -rf build" },
+          mode,
+          riskLevel: "high",
+          toolName: "Bash",
+        },
+        {
+          destructive: true,
+          needsApproval: true,
+          readOnly: false,
+          riskLevel: "high",
+          sideEffectScope: "system",
+        },
+        {
+          version: 1,
+          deny: [{ toolName: "Bash" }],
+        },
+      );
+
+      expect(decision).toMatchObject({
+        allowed: false,
+        decision: "deny",
+        ruleId: "rule.project.deny",
+      });
+    });
+  }
+
+  it("keeps an allowedTools entry from overriding a hard deny", () => {
     const service = new PermissionService({
-      allowedTools: new Set(),
+      allowedTools: new Set(["Bash"]),
       autoApproveHighRisk: false,
       disallowedTools: new Set(["Bash"]),
       allowMediumRiskInAutoMode: false,
     });
 
-    const decision = service.checkPermission(
-      {
-        input: { command: "rm -rf build" },
-        mode: "yolo",
-        riskLevel: "high",
-        toolName: "Bash",
-      },
-      {
-        destructive: true,
-        needsApproval: true,
-        readOnly: false,
-        riskLevel: "high",
-        sideEffectScope: "system",
-      },
-    );
-
-    expect(decision).toMatchObject({
-      allowed: true,
-      decision: "allow",
-      ruleId: "mode.yolo",
-    });
+    expect(
+      service.checkPermission(
+        {
+          input: { command: "rm -rf build" },
+          mode: "yolo",
+          riskLevel: "high",
+          toolName: "Bash",
+        },
+        {
+          destructive: true,
+          needsApproval: true,
+          readOnly: false,
+          riskLevel: "high",
+          sideEffectScope: "system",
+        },
+      ),
+    ).toMatchObject({ decision: "deny", ruleId: "rule.disallowedTools" });
   });
 
   it("does not let yolo bypass user interaction tools", () => {

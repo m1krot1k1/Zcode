@@ -8,7 +8,7 @@ import {
 } from "@zcode/shared/mcp-apps";
 import type { ToolEntry, ToolExecutionContext } from "../tool/types.js";
 import { normalizeMcpToolResultForModel } from "./image-normalization.js";
-import { McpToolOutputJsonSchema, formatMcpToolResult } from "./index.js";
+import { McpToolOutputJsonSchema, formatMcpToolResultForModel } from "./index.js";
 
 /** 条目级超时：认领期限 + 执行期限 + 余量；真正的两段期限由执行器按规范值判定。 */
 export const MCP_APP_PROVIDED_TOOL_ENTRY_TIMEOUT_MS =
@@ -139,7 +139,7 @@ export function createMcpAppProvidedToolEntry(
         toolName: definition.modelName,
       });
     },
-    formatModelContent: (output) => formatMcpToolResult(output),
+    formatModelContent: (output) => formatMcpToolResultForModel(output),
   };
 }
 

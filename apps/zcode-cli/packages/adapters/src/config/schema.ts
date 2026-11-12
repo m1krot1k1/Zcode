@@ -18,6 +18,8 @@ const permissionSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   autoApproveHighRisk: z.boolean().optional(),
   allowMediumRiskInAuto: z.boolean().optional(),
+  // 审批等待上限：0 = 显式关闭超时；负数/非有限值由配置层拒绝。
+  approvalTimeoutMs: z.number().finite().nonnegative().optional(),
 });
 
 const storageSchema = z.object({

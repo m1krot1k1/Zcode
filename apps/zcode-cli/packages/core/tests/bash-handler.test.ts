@@ -270,7 +270,7 @@ describe("bashHandler", () => {
     },
   );
 
-  it("delegates shell command, timeout, session cwd, and sandbox fields to ExecutionPort", async () => {
+  it("delegates shell command, timeout and session cwd to ExecutionPort", async () => {
     let capturedRequest: ExecutionRequest | undefined;
     const executionPort: ExecutionPort = {
       async run(request) {
@@ -287,7 +287,6 @@ describe("bashHandler", () => {
       {
         command: "npm test",
         timeout: 123,
-        dangerouslyDisableSandbox: true,
       } satisfies BashInput,
       contextWith(executionPort, {
         workingDirectory: projectRoot,
@@ -327,10 +326,13 @@ describe("bashHandler", () => {
       maxPersistedBytes: 5 * 1024 * 1024 * 1024,
       persistOutput: "on_truncate",
     });
+    // R04 вариант B: единственный внутренний trace фиксирует отсутствие
+    // OS-изоляции; sandbox-запрос из входа больше не пересылается.
     expect(capturedRequest?.sandbox).toMatchObject({
       enabled: false,
-      dangerouslyDisableSandbox: true,
+      metadata: { enforcement: "not_implemented" },
     });
+    expect(capturedRequest?.sandbox).not.toHaveProperty("dangerouslyDisableSandbox");
     expect(capturedRequest?.sandbox).not.toHaveProperty("protectedResources");
   });
 
@@ -447,16 +449,40 @@ describe("bashHandler", () => {
         command: "npm test",
         timeout: "123",
         run_in_background: "false",
-        dangerouslyDisableSandbox: "1",
       },
       contextWith(executionPort),
     );
 
     expect(capturedRequest?.timeoutMs).toBe(123);
-    expect(capturedRequest?.sandbox).toMatchObject({
+    // R04 вариант B: sandbox-поля во входе нет, trace всегда честный.
+    expect(capturedRequest?.sandbox).toEqual({
       enabled: false,
-      dangerouslyDisableSandbox: true,
+      metadata: { enforcement: "not_implemented" },
     });
+  });
+
+  it("rejects a legacy sandbox argument before execution", async () => {
+    let executionRuns = 0;
+    const executionPort: ExecutionPort = {
+      async run() {
+        executionRuns += 1;
+        return executionResult({ status: "completed" });
+      },
+    };
+
+    // 修复原因：поле удалено из схемы; старый transcript не должен доходить до
+    // команды. Отказ — обычная validation-ошибка handler-а (recoverable), а не
+    // частичное выполнение.
+    await expect(
+      bashHandler(
+        {
+          command: "npm test",
+          dangerouslyDisableSandbox: true,
+        },
+        contextWith(executionPort),
+      ),
+    ).rejects.toBeInstanceOf(Error);
+    expect(executionRuns).toBe(0);
   });
 
   it("updates session cwd from successful foreground Bash execution", async () => {

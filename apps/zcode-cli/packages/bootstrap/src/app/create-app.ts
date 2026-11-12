@@ -75,7 +75,15 @@ import { createInputFacade } from "./input-facade.js";
 import { createPluginFacadeForApp } from "./plugin-facade.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import { createSessionFacade } from "./session-facade.js";
-import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
+import {
+  createMcpProjectApprovalRecord,
+  grantMcpProjectTrust,
+  readMcpProjectTrustRecords,
+  resolveAppRuntimeConfig,
+  resolveMcpTrustIdentity,
+  runtimeConfigLogContext,
+  type ProjectMcpTrustSnapshot,
+} from "./runtime-config.js";
 import { resolveBundledSkillRoots } from "./bundled-skills.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import { createWorkspaceHookRuntimeSecurity } from "./workspace-hook-trust.js";
@@ -285,6 +293,16 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     const persistedMode = options.runtimeConfig?.mode
       ? undefined
       : readProjectPermissionMode(localSettingStore, projectID);
+    // project-scope MCP 默认 untrusted：审批记录在启动边界一次性读出，之后只由显式
+    // connect 追加。读失败/文件损坏由 readMcpProjectTrustRecords 收口为空集（fail closed）。
+    const mcpProjectTrustIdentity = resolveMcpTrustIdentity({
+      workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
+      workspacePath: workingDirectory,
+    });
+    const mcpProjectTrust: ProjectMcpTrustSnapshot = {
+      workspaceIdentity: mcpProjectTrustIdentity,
+      approvals: await readMcpProjectTrustRecords(storageRoot),
+    };
     let { configuredMcpServers, runtimeConfig, untrustedProjectMcpServers } =
       resolveAppRuntimeConfig({
         cliStorageRoot,
@@ -297,6 +315,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         pluginRuntimeFeatures,
         builtInSubagentModelSelectionOverrides:
           zcodeSubagentProfileOutcome.builtInModelSelectionOverrides,
+        projectMcpTrust: mcpProjectTrust,
         subagentOutputRootDir: join(cliStorageRoot, "agents"),
         subagentProfiles,
         storageRoot,
@@ -1016,6 +1035,24 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     });
     const sessionFacade = createSessionFacade({
       cliDefaultSelection,
+      // project-scope MCP 的唯一写入口：显式 connect 才落 approval，且只保存定义 digest。
+      // 写失败直接抛出，由 connectMcpServer 中止连接（不降级为临时放行）。
+      approveProjectMcpServer: async ({ name, config }) => {
+        await grantMcpProjectTrust({
+          storageRoot,
+          record: createMcpProjectApprovalRecord({
+            workspaceIdentity: mcpProjectTrustIdentity,
+            serverName: name,
+            config,
+          }),
+        });
+        logger.info("Project MCP server approved", {
+          event: "mcp.project.approved",
+          module: "bootstrap",
+          serverName: name,
+          workspaceKey: mcpProjectTrustIdentity,
+        });
+      },
       // App 关闭时停下本会话拥有的 dwf run：
       // 引擎活在本 App 的闭包里，关掉 App 而不停它，journal 行会停在 running 等下一次孤儿收敛。
       ...(dynamicWorkflowRunPort === undefined

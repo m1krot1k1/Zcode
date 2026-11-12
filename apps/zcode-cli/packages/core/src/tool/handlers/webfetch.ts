@@ -30,6 +30,7 @@ import type {
   RedirectFetchContent,
 } from "./webfetch-types.js";
 import { isWebFetchPreapprovedUrl } from "../webfetch-preapproved.js";
+import { wrapUntrustedExternalContent } from "../untrusted-content.js";
 import { normalizeWebFetchUrl } from "./webfetch-url.js";
 
 export function clearWebFetchCacheForTests(): void {
@@ -258,7 +259,12 @@ export const webFetchToolEntry: ToolEntry = {
 
 function formatWebFetchModelContent(output: unknown): string {
   if (isWebFetchOutput(output)) {
-    return output.result;
+    // 只有 2xx 的成功正文来自外部页面；redirect / HTTP-error 文本是本地生成的
+    // 诊断，包进信任框架反而会把本地指令伪装成外部数据。status 缺失时按外部
+    // 内容处理（fail closed），避免旧格式输出绕过信任边界。
+    const isLocallyGenerated =
+      typeof output.status === "number" && (output.status < 200 || output.status >= 300);
+    return isLocallyGenerated ? output.result : wrapUntrustedExternalContent(output.result);
   }
   return typeof output === "string" ? output : (JSON.stringify(output) ?? "");
 }

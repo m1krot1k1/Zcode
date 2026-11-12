@@ -15,6 +15,7 @@ import {
   discoverNodePluginsSync,
   enrichCachedClaudeMarketplaceIcons,
   ensureDefaultPluginMarketplaces,
+  grantPluginHookTrust,
   installMarketplacePlugin,
   listInstalledPluginRecords,
   loadKnownMarketplacesSync,
@@ -819,7 +820,9 @@ describe("NodePluginAdapter", () => {
             command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start"',
             event: "SessionStart",
             matcher: "startup",
-            runnable: true,
+            // inline（project plugins.dirs 形态）不是 first-party：未显式信任前不可执行，
+            // 定义仍保留给设置页只读展示（docs/specs/2026-11-11-plugin-hooks-trust.md PT-08）。
+            runnable: false,
             sourcePath: join(pluginRoot, "hooks", "hooks.json"),
             type: "command",
           },
@@ -838,14 +841,9 @@ describe("NodePluginAdapter", () => {
       expect(outcome.mcpServers[mcpKey]?.env).toMatchObject({
         IOS_SIM_DEFAULT_DEVICE: "iPhone 16",
       });
-      expect(outcome.hooks.SessionStart?.[0]?.hooks[0]).toMatchObject({
-        command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start"',
-        plugin: {
-          id: "ios-dev@inline",
-          rootPath: pluginRoot,
-        },
-        type: "command",
-      });
+      // 未信任的 inline 插件 Hook 不进入可执行集合：matcher 在 gate 之前就被清空，
+      // 因此 bootstrap/core 拿不到任何可创建进程的事件。
+      expect(outcome.hooks.SessionStart).toBeUndefined();
 
       const disabledOutcome = await createNodePluginAdapter({
         storageRoot: join(dir, "plugins"),
@@ -866,7 +864,8 @@ describe("NodePluginAdapter", () => {
         hookDetails: [
           {
             event: "SessionStart",
-            runnable: true,
+            // 未信任状态与插件启停无关：disabled 插件同样只做只读展示。
+            runnable: false,
           },
         ],
       });
@@ -3546,7 +3545,7 @@ describe("NodePluginAdapter", () => {
     }
   });
 
-  it("runs Marketplace cache hooks from third-party marketplaces when enabled", async () => {
+  it("blocks Marketplace cache hooks from third-party marketplaces until trusted", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-marketplace-hooks-"));
     const storageRoot = join(dir, "storage");
     const marketplaceRoot = join(dir, "marketplace");
@@ -3599,16 +3598,44 @@ describe("NodePluginAdapter", () => {
         storageRoot,
         workingDirectory: dir,
       });
-      // 三方 marketplace 插件 hook 现在默认放行（与内置/官方一致）。
-      expect(outcome.hooks.SessionStart).toBeDefined();
+      // 三方 marketplace 的 cache 安装产物不是 first-party：无显式信任记录时 Hook 不可执行，
+      // 也不进入 PluginLoadOutcome.hooks（docs/specs/2026-11-11-plugin-hooks-trust.md PT-01）。
+      expect(outcome.hooks.SessionStart).toBeUndefined();
       expect(outcome.plugins[0]?.hookDetails).toMatchObject([
         {
           command: "echo hooked",
           event: "SessionStart",
-          runnable: true,
+          runnable: false,
           type: "command",
         },
       ]);
+
+      // 显式 trust 后同一 discovery 才注册（PT-02）。记录按 pluginId + version + digest 匹配，
+      // 安装本身不会产生任何隐式信任。
+      await grantPluginHookTrust({
+        events: {
+          SessionStart: [{ hooks: [{ command: "echo hooked", type: "command" }] }],
+        },
+        pluginId: "hooked@hook-market",
+        storageRoot,
+        version: "0.0.0",
+      });
+      const trustedOutcome = await createNodePluginAdapter({ storageRoot }).discoverPlugins({
+        config: {
+          dirs: [],
+          enabled: true,
+          enabledPlugins: { "hooked@hook-market": true },
+          options: {},
+        },
+        env: {},
+        storageRoot,
+        workingDirectory: dir,
+      });
+      expect(trustedOutcome.hooks.SessionStart?.[0]?.hooks[0]).toMatchObject({
+        command: "echo hooked",
+        plugin: { id: "hooked@hook-market" },
+      });
+      expect(trustedOutcome.plugins[0]?.hookDetails).toMatchObject([{ runnable: true }]);
       expect(outcome.diagnostics).not.toContainEqual(
         expect.objectContaining({
           code: "plugin_unsupported_component",

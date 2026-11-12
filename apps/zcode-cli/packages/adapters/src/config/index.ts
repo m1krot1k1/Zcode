@@ -100,6 +100,10 @@ class ConfigStore {
           scope,
         );
       }
+      // 0 是有效值（显式关闭审批超时），不能用真值判断把它丢掉。
+      if (config.permission.approvalTimeoutMs !== undefined) {
+        this.set(ConfigKey.PermissionApprovalTimeout, config.permission.approvalTimeoutMs, scope);
+      }
     }
     if (config.storage) {
       if (config.storage.dir) this.set(ConfigKey.StorageDir, config.storage.dir, scope);
@@ -274,6 +278,7 @@ export class ConfigPortImpl implements ConfigPort {
         disallowedTools: this.get(ConfigKey.PermissionDisallowedTools),
         autoApproveHighRisk: this.get(ConfigKey.PermissionAutoApproveHighRisk),
         allowMediumRiskInAuto: this.get(ConfigKey.PermissionAllowMediumRiskInAuto),
+        approvalTimeoutMs: this.get(ConfigKey.PermissionApprovalTimeout),
       },
       storage: {
         dir: this.store.get(ConfigKey.StorageDir) ?? DefaultConfig.storage.dir,
@@ -389,6 +394,8 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.permission.autoApproveHighRisk;
     case ConfigKey.PermissionAllowMediumRiskInAuto:
       return defaults.permission.allowMediumRiskInAuto;
+    case ConfigKey.PermissionApprovalTimeout:
+      return defaults.permission.approvalTimeoutMs;
     case ConfigKey.StorageDir:
       return defaults.storage.dir;
     case ConfigKey.StorageSessionDbPath:

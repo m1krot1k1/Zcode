@@ -137,6 +137,14 @@ interface CreateSessionFacadeDeps {
   prepareResume(traceContext?: TraceContext): Promise<void>;
   projectID: ProjectId;
   providerRegistry: ProviderRegistryModelSource;
+  /**
+   * project-scope MCP 显式审批：只有用户主动 connect 才调用，写用户域 store 后返回。
+   * 缺席表示本装配没有可写 store（嵌入/测试），此时 untrusted server 拒绝连接。
+   */
+  approveProjectMcpServer?: (input: {
+    name: string;
+    config: McpServerConfig;
+  }) => Promise<void>;
   resolveUiLocale(locale: UiLocale): SupportedLocale;
   runtime: AgentRuntime;
   sessionId: SessionId;
@@ -390,6 +398,16 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       }
       if (!deps.mcpPort) {
         throw new Error("MCP is disabled");
+      }
+      if (deps.untrustedProjectMcpServers.has(name)) {
+        // project-scope 默认拒绝：必须先有显式用户批准，批准只绑定当前定义 digest。
+        // 没有可写 store 时保持 fail closed，不能退化成「内存临时放行」。
+        const approve = deps.approveProjectMcpServer;
+        if (!approve) {
+          throw new Error(`Project MCP server requires explicit approval before use: ${name}`);
+        }
+        await approve({ name, config });
+        deps.untrustedProjectMcpServers.delete(name);
       }
       return deps.mcpPort.connectServer(name, config, {
         trace: deps.traceContext,
