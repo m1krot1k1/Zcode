@@ -43,13 +43,7 @@ export function isAppleKeyboardPlatform(
 
 function getCommandModifierLabel(platformInfo?: KeyboardShortcutPlatformInfo): string {
   return isAppleKeyboardPlatform(platformInfo) ? "⌘" : "Ctrl";
-}
-
-function getCtrlModifierLabel(platformInfo?: KeyboardShortcutPlatformInfo): string {
-  return isAppleKeyboardPlatform(platformInfo) ? "⌃" : "Ctrl";
-}
-
-function formatAppleShortcutLabel(...parts: string[]): string {
+}function formatAppleShortcutLabel(...parts: string[]): string {
   return parts.join(" ");
 }
 
@@ -62,21 +56,7 @@ export function formatCommandShortcutLabel(
     return formatAppleShortcutLabel(mod, formatShortcutKeyLabel(key));
   }
   return `${mod}+${key.toUpperCase()}`;
-}
-
-function formatAltCommandShortcutLabel(
-  key: string,
-  platformInfo?: KeyboardShortcutPlatformInfo,
-): string {
-  const isApple = isAppleKeyboardPlatform(platformInfo);
-  const command = getCommandModifierLabel(platformInfo);
-  if (isApple) {
-    return formatAppleShortcutLabel("⌥", command, formatShortcutKeyLabel(key));
-  }
-  return `Ctrl+Alt+${key.toUpperCase()}`;
-}
-
-export function formatShiftCommandShortcutLabel(
+}export function formatShiftCommandShortcutLabel(
   key: string,
   platformInfo?: KeyboardShortcutPlatformInfo,
 ): string {
@@ -184,13 +164,7 @@ export function matchesShiftTab(event: PrimaryShortcutKeyboardEvent): boolean {
     !event.altKey &&
     (event.key === "Tab" || event.code === "Tab")
   );
-}
-
-function formatShiftTabShortcutLabel(platformInfo?: KeyboardShortcutPlatformInfo): string {
-  return isAppleKeyboardPlatform(platformInfo) ? formatAppleShortcutLabel("⇧", "Tab") : "Shift+Tab";
-}
-
-function matchesShortcutKey(
+}function matchesShortcutKey(
   event: Pick<PrimaryShortcutKeyboardEvent, "key" | "code">,
   key: string,
 ): boolean {

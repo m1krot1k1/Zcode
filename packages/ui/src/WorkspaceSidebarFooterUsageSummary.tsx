@@ -52,39 +52,7 @@ export {
   resolveSidebarFooterProfilePlanBadge,
 } from "@/WorkspaceSidebarFooterPlanBadgeHelpers.js";
 
-const TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON = "sidebar-coding-plan-upgrade-button";
-
-function WorkspaceSidebarFooterUsageSummary({
-  enabled,
-  onUsageClick,
-  onUpgradeClick,
-  workspaceIdentity,
-  workspacePath,
-}: {
-  enabled: boolean;
-  onUsageClick?: () => void;
-  onUpgradeClick?: (
-    providerId: SidebarUsageCodingPlanProviderId,
-    funnelContext: CodingPlanFunnelContext,
-  ) => void;
-  workspaceIdentity?: string;
-  workspacePath?: string;
-}) {
-  const state = useWorkspaceSidebarFooterUsageSummaryState({
-    enabled,
-    workspaceIdentity,
-    workspacePath,
-  });
-  return (
-    <WorkspaceSidebarFooterUsageSummaryContent
-      state={state}
-      onUsageClick={onUsageClick}
-      onUpgradeClick={onUpgradeClick}
-    />
-  );
-}
-
-export function useWorkspaceSidebarFooterUsageSummaryState({
+const TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON = "sidebar-coding-plan-upgrade-button";export function useWorkspaceSidebarFooterUsageSummaryState({
   enabled,
   workspaceIdentity,
   workspacePath,

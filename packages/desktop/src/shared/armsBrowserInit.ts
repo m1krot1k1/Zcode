@@ -42,20 +42,3 @@ export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
   }
   return true;
 }
-
-/** preload 中 ARMS frame preload 可能晚于本脚本一帧，短重试避免 Bridge 尚未就绪 */
-function scheduleArmsBrowserRumInit(runtimeEnv: ZCodeRuntimeEnv, maxAttempts = 50): void {
-  let attempts = 0;
-  const tick = (): void => {
-    if (initArmsBrowserRumOnce(runtimeEnv)) {
-      return;
-    }
-    attempts += 1;
-    if (attempts < maxAttempts) {
-      setTimeout(tick, 0);
-    } else {
-      console.warn("[arms] ArmsEventBridge 不可用，跳过 renderer RUM 初始化");
-    }
-  };
-  tick();
-}

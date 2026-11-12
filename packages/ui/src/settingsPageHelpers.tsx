@@ -47,14 +47,7 @@ import { useOptionalServices } from "@/hooks/useServices.js";
 import { ProactiveSuggestionsSetting } from "@/settings/ProactiveSuggestionsSetting.js";
 import { DynamicWorkflowModeSetting } from "@/settings/DynamicWorkflowModeSetting.js";
 import { normalizeInterfaceMode, type InterfaceMode } from "@/lib/interfaceMode.js";
-import {
-  createSettingsPageConfig,
-  resolveSettingsSectionForPlatform,
-  SETTINGS_SECTION_GROUPS,
-  SETTINGS_SECTIONS,
-  isSettingsSectionAvailable,
-  type SettingsSectionId,
-} from "@/settings/settingsPageConfig.js";
+import { createSettingsPageConfig, resolveSettingsSectionForPlatform, isSettingsSectionAvailable } from "@/settings/settingsPageConfig.js";
 
 
 

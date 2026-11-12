@@ -6,7 +6,7 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { describeAutomationCardSchedule } from "@/settings/automationCardSchedule.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
-import { FallbackToolCallBlock } from "@/ToolCallBlocks/renderers/fallback.js";
+import "@/ToolCallBlocks/renderers/fallback.js";
 
 export interface CronCreateAutomationSummary {
   automationId?: string;
@@ -36,17 +36,7 @@ function normalizeToolName(value: unknown): string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isCronCreateToolCall(
-  toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
-): boolean {
-  return [toolCall.toolName, toolCall.kind, toolCall.title].some(
-    (value) => normalizeToolName(value) === "croncreate",
-  );
-}
-
-export function isCronAutomationCardToolCall(
+}export function isCronAutomationCardToolCall(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): boolean {
   return [toolCall.toolName, toolCall.kind, toolCall.title].some((value) => {
@@ -203,21 +193,5 @@ export function CronCreateAutomationCard({
         </Button>
       </div>
     </div>
-  );
-}
-
-function CronCreateToolCallBlock(context: ToolCallBlockRenderContext) {
-  const { toolCall } = context.toolCallNode;
-  const automation = readCronCreateAutomationSummary(toolCall);
-
-  if (toolCall.status === "failed" || !automation) {
-    return <FallbackToolCallBlock {...context} />;
-  }
-
-  return (
-    <CronCreateAutomationCard
-      automation={automation}
-      onOpenAutomationsMain={context.onOpenAutomationsMain}
-    />
   );
 }

@@ -50,11 +50,7 @@ export function resolveEnterpriseCodingPlanProductFamily(
   product: Pick<EnterpriseCodingPlanProductDisplay, "family">,
 ): ProviderFamilyDomain {
   return product.family ?? "bigmodel";
-}
-
-const ENTERPRISE_CODING_PLAN_FAILURE_STATUSES = ["FAIL", "CLOSED", "CANCELLED"] as const;
-
-export function buildEnterpriseCodingPlanProductList(
+}export function buildEnterpriseCodingPlanProductList(
   products: EnterpriseCodingPlanPricingProduct[],
 ): EnterpriseCodingPlanProductDisplay[] {
   return products.map((product): EnterpriseCodingPlanProductDisplay => {
@@ -172,33 +168,7 @@ function resolveEnterpriseCodingPlanDisplayPayAmount(
     return roundCurrencyAmount(Math.max(0, product.originalAmount - product.discountAmount));
   }
   return undefined;
-}
-
-function buildEnterpriseCodingPlanCalculateRequest({
-  product,
-  maxSeats,
-  duration,
-  giveAmount = 0,
-  balanceDeductAmount = 0,
-}: {
-  product: EnterpriseCodingPlanProductDisplay;
-  maxSeats: number;
-  duration: number;
-  giveAmount?: number;
-  balanceDeductAmount?: number;
-}) {
-  return {
-    productId: product.productId,
-    maxSeats,
-    subscribePeriod: product.subscribePeriod,
-    subscribeMode: product.subscribeMode,
-    duration: product.subscribeMode === "ONE_TIME" ? duration : undefined,
-    giveAmount,
-    balanceDeductAmount,
-  };
-}
-
-export function buildEnterpriseCodingPlanCreateOrderRequest({
+}export function buildEnterpriseCodingPlanCreateOrderRequest({
   product,
   maxSeats,
   duration,
@@ -263,21 +233,7 @@ export function buildEnterpriseCodingPlanEstimateFromPendingOrder(
     // 真正拉起支付时会再用继续支付接口返回的 thirdPayAmount 刷新二维码弹窗金额。
     thirdPayAmount: order.amount,
   };
-}
-
-function buildEnterpriseCodingPlanEstimateFromOrderResponse(
-  order: EnterpriseCodingPlanCreateOrderResponse,
-): EnterpriseCodingPlanOrderCalculateResponse {
-  return {
-    totalOriginalAmount: order.totalOriginalAmount,
-    campaignDiscountAmount: order.campaignDiscountAmount,
-    discountDetails: order.discountDetails,
-    totalPayAmount: order.totalPayAmount,
-    thirdPayAmount: order.thirdPayAmount,
-  };
-}
-
-export function buildEnterpriseCodingPlanCampaignDiscountDetails({
+}export function buildEnterpriseCodingPlanCampaignDiscountDetails({
   campaignDiscountAmount,
   discountDetails,
   pricingCampaignDiscountDetails,
@@ -456,21 +412,7 @@ export function isEnterpriseCodingPlanPaymentSuccessStatus(
   status: EnterpriseCodingPlanPaymentStatus,
 ): boolean {
   return status === "SUCCESS";
-}
-
-function isEnterpriseCodingPlanPaymentFailureStatus(
-  status: EnterpriseCodingPlanPaymentStatus,
-): boolean {
-  return ENTERPRISE_CODING_PLAN_FAILURE_STATUSES.includes(
-    status as (typeof ENTERPRISE_CODING_PLAN_FAILURE_STATUSES)[number],
-  );
-}
-
-function getEnterpriseCodingPlanFailureStatuses(): string[] {
-  return [...ENTERPRISE_CODING_PLAN_FAILURE_STATUSES];
-}
-
-function formatEnterpriseCodingPlanTier(tier: EnterpriseCodingPlanPricingProduct["tier"]): string {
+}function formatEnterpriseCodingPlanTier(tier: EnterpriseCodingPlanPricingProduct["tier"]): string {
   const normalized = tier.trim();
   if (!normalized) {
     return tier;

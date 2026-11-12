@@ -448,16 +448,7 @@ async function readAttachmentBase64(attachment: ChatComposerAttachment): Promise
     throw new Error("附件数据格式不正确");
   }
   return dataUrl.slice(base64MarkerIndex + 1);
-}
-
-function getChatAttachmentPreviewUrl(attachment: ZCodePromptAttachment): string | null {
-  if (!attachment.dataBase64) {
-    return null;
-  }
-  return `data:${attachment.mimeType};base64,${attachment.dataBase64}`;
-}
-
-export function isImageChatComposerAttachment(attachment: ChatComposerAttachment): boolean {
+}export function isImageChatComposerAttachment(attachment: ChatComposerAttachment): boolean {
   return attachment.mimeType.startsWith("image/");
 }
 

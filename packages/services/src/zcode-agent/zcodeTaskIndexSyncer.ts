@@ -117,7 +117,7 @@ export interface ZCodeTaskIndexSyncer {
    */
   syncSnapshotAndBroadcast(
     snapshot: ZCodeSessionStateSnapshot,
-    options: {
+    _options: {
       modelOverride?: string;
       thoughtLevelOverride?: string;
       unreadSignal?: ZCodeWorkspaceTaskListChanged["unreadSignal"];
@@ -590,7 +590,7 @@ export function createZCodeTaskIndexSyncer(
   function applyTerminalTransition(
     target: ZCodeAgentSessionTarget,
     summary: SessionSummary,
-    options?: { captureRepoSnapshot?: boolean },
+    _options?: { captureRepoSnapshot?: boolean },
   ): void {
     emitTerminalAndReady(target, summary);
     const failed = summary.phase === "error";

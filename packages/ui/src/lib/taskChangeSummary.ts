@@ -96,28 +96,7 @@ export function formatTaskChangedFileLabel(
   }
 
   return statParts.length > 0 ? `${relativePath} ${statParts.join(" ")}` : relativePath;
-}
-
-function buildPerTurnFileChangeMap(
-  fileChanges: readonly ZCodePersistedFileChange[] | undefined,
-): Map<number, ZCodePersistedFileChange> {
-  const result = new Map<number, ZCodePersistedFileChange>();
-  if (!fileChanges || fileChanges.length === 0) {
-    return result;
-  }
-
-  for (const turn of fileChanges) {
-    if (turn.snapshots.length === 0) {
-      continue;
-    }
-
-    result.set(turn.turnIndex, turn);
-  }
-
-  return result;
-}
-
-export function buildTaskChangeSummary(
+}export function buildTaskChangeSummary(
   fileChanges: readonly ZCodePersistedFileChange[] | undefined,
 ): ZCodeTaskChangeSummary | null {
   if (!fileChanges || fileChanges.length === 0) {
@@ -389,28 +368,4 @@ export function buildTurnChangeSummary(
     removed,
     files,
   };
-}
-
-/**
- * 从 fileChanges 中按轮次构建 per-turn 文件变更摘要。
- * 用于在每条 assistant 消息下方显示该轮的文件改动。
- */
-function buildPerTurnChangeSummaries(
-  fileChanges: readonly ZCodePersistedFileChange[] | undefined,
-): Map<number, ZCodeTaskChangeSummary> {
-  const result = new Map<number, ZCodeTaskChangeSummary>();
-  if (!fileChanges || fileChanges.length === 0) {
-    return result;
-  }
-
-  for (const turn of fileChanges) {
-    const summary = buildTurnChangeSummary(turn);
-    if (!summary) {
-      continue;
-    }
-
-    result.set(turn.turnIndex, summary);
-  }
-
-  return result;
 }

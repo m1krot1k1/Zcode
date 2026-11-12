@@ -1235,11 +1235,7 @@ function buildScenarios(): ConversationTelemetryParityScenario[] {
   ];
 }
 
-const SCENARIOS = new Map(buildScenarios().map((item) => [item.caseId, item]));
-
-const CONVERSATION_TELEMETRY_PARITY_CASE_IDS = [...SCENARIOS.keys()];
-
-export function getConversationTelemetryParityScenario(
+const SCENARIOS = new Map(buildScenarios().map((item) => [item.caseId, item]));export function getConversationTelemetryParityScenario(
   caseId: string,
 ): ConversationTelemetryParityScenario {
   const found = SCENARIOS.get(caseId);

@@ -62,16 +62,7 @@ export function resolveMcpQuotaLimit(
   snapshot: UsageEntitlementSnapshot | null | undefined,
 ): UsageQuotaLimit | null {
   return snapshot?.mcpQuota?.aggregate ?? null;
-}
-
-function normalizeQuotaPercentage(value: number | undefined): number {
-  if (value == null || !Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(100, value));
-}
-
-export function getQuotaRemainingPercentage(limit: UsageQuotaLimit | null): number | null {
+}export function getQuotaRemainingPercentage(limit: UsageQuotaLimit | null): number | null {
   if (typeof limit?.percentage !== "number" || !Number.isFinite(limit.percentage)) {
     return null;
   }

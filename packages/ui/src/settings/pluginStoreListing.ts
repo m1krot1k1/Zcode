@@ -123,13 +123,7 @@ export function resolveLocalizedList(
     }
   }
   return base && base.length > 0 ? base : undefined;
-}
-
-function formatCanonicalMarketplaceName(name: string, locale: string): string {
-  return formatCanonicalPluginName(name, locale);
-}
-
-export function resolveItemDisplayName(item: StorePluginItem, locale: string): string {
+}export function resolveItemDisplayName(item: StorePluginItem, locale: string): string {
   return resolvePluginDisplayName(item, locale);
 }
 

@@ -12,22 +12,7 @@ import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { normalizeThemePreference, resolveTheme } from "@/useTheme.js";
 import type { CodingPlanProviderId } from "@/settings/model-provider-section/constants.js";
 import type { CodingPlanFunnelContext } from "@/lib/codingPlanFunnelTelemetry.js";
-import {
-  buildCodingPlanEmbeddedWebviewUrl,
-  buildCodingPlanEmbeddedReportContext,
-  createCodingPlanAuthInjectionScript,
-  createCodingPlanCredentialClearScript,
-  createCodingPlanLangInjectionScript,
-  createCodingPlanScrollbarHideScript,
-  getCodingPlanCredentialKeys,
-  isTrustedCodingPlanEmbeddedWebviewUrl,
-  resolveCodingPlanEmbeddedOrigin,
-  resolveCodingPlanWebsiteProvider,
-  type CodingPlanEmbeddedCredentials,
-  type CodingPlanEmbeddedTheme,
-  type CodingPlanPurchaseAudience,
-  CODING_PLAN_WEBVIEW_OVERRIDE_ENV_KEY,
-} from "@/settings/model-provider-section/codingPlanEmbeddedWebview.js";
+import { buildCodingPlanEmbeddedWebviewUrl, buildCodingPlanEmbeddedReportContext, createCodingPlanAuthInjectionScript, createCodingPlanCredentialClearScript, createCodingPlanLangInjectionScript, createCodingPlanScrollbarHideScript, getCodingPlanCredentialKeys, isTrustedCodingPlanEmbeddedWebviewUrl, resolveCodingPlanEmbeddedOrigin, resolveCodingPlanWebsiteProvider, type CodingPlanEmbeddedCredentials, type CodingPlanEmbeddedTheme, type CodingPlanPurchaseAudience } from "@/settings/model-provider-section/codingPlanEmbeddedWebview.js";
 import {
   CodingPlanWebviewChannels,
   type CodingPlanPurchaseCompletePayload,

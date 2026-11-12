@@ -136,13 +136,7 @@ async function closeRemoteControlDialog(): Promise<void> {
       { timeout: 10_000, timeoutMsg: `${CASE_MARKER}: 远程控制对话框没有关闭` },
     )
     .catch(() => undefined);
-}
-
-async function mobileText(page: PwPage): Promise<string> {
-  return (await page.evaluate(() => document.body?.innerText ?? "")) as string;
-}
-
-const REMOTE_PERMISSION_DIR = "/home/dev/r3-workspace-a/.zcode-e2e/r3-mobile-permission";
+}const REMOTE_PERMISSION_DIR = "/home/dev/r3-workspace-a/.zcode-e2e/r3-mobile-permission";
 const REMOTE_PERMISSION_FILE = `${REMOTE_PERMISSION_DIR}/permission-output.txt`;
 const PERMISSION_EXECUTION = { toolCallId: "toolu_r3_mobp_permission", toolName: "Write" };
 

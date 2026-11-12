@@ -9,7 +9,7 @@ import type {
 } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog.js";
+import "@/components/ui/dialog.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { PluginConfigControls } from "@/settings/PluginConfigControls.js";
 import { PluginComponentGroups } from "@/settings/PluginComponentGroups.js";
@@ -20,74 +20,7 @@ type PluginOptionValueGetter = (
   plugin: ZCodePluginInfo,
   key: string,
   option: ZCodePluginUserConfigOption,
-) => string | number | boolean;
-
-function InstalledPluginDetailDialog({
-  diagnostics,
-  getPluginOptionValue,
-  configScope,
-  installedAt,
-  latestVersion,
-  onOpenChange,
-  onRequestUninstall,
-  onRequestUpdate,
-  onSavePluginOptions,
-  open,
-  activeOperations,
-  plugin,
-  renderPluginSource,
-  setPluginOptionDraft,
-  uninstallable,
-  updateStatus,
-}: {
-  /** 插件管理 store 聚合的 list/overview 诊断；透传给面板展示当前插件自身的 warning。 */
-  diagnostics?: ZCodePluginDiagnostic[];
-  getPluginOptionValue: PluginOptionValueGetter;
-  configScope: ZCodePluginScope;
-  installedAt?: string;
-  latestVersion?: string;
-  onOpenChange: (open: boolean) => void;
-  onRequestUninstall?: (pluginId: string) => void;
-  onRequestUpdate?: (pluginId: string) => void;
-  onSavePluginOptions: (plugin: ZCodePluginInfo) => void;
-  open: boolean;
-  activeOperations: ReadonlyArray<{ id: string }>;
-  plugin: ZCodePluginInfo | null;
-  renderPluginSource: (plugin: ZCodePluginInfo) => string;
-  setPluginOptionDraft: (pluginId: string, key: string, value: string | number | boolean) => void;
-  uninstallable?: boolean;
-  updateStatus?: "none" | "update-available" | "version-changed";
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-h-[calc(100vh-3rem)] w-[min(600px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0"
-        data-testid="plugin-settings-detail-dialog"
-        data-plugin-id={plugin?.id}
-      >
-        <DialogTitle className="sr-only">{plugin?.name ?? ""}</DialogTitle>
-        <InstalledPluginDetailPanel
-          diagnostics={diagnostics}
-          getPluginOptionValue={getPluginOptionValue}
-          configScope={configScope}
-          installedAt={installedAt}
-          latestVersion={latestVersion}
-          activeOperations={activeOperations}
-          plugin={plugin}
-          renderPluginSource={renderPluginSource}
-          setPluginOptionDraft={setPluginOptionDraft}
-          uninstallable={uninstallable}
-          updateStatus={updateStatus}
-          onRequestUninstall={onRequestUninstall}
-          onRequestUpdate={onRequestUpdate}
-          onSavePluginOptions={onSavePluginOptions}
-        />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function InstalledPluginDetailPanel({
+) => string | number | boolean;export function InstalledPluginDetailPanel({
   diagnostics = [],
   getPluginOptionValue,
   configScope,

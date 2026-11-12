@@ -10,13 +10,7 @@ function getSettingsWriteQueueTimeoutMs(): number {
   return Number.isFinite(parsedValue) && parsedValue > 0
     ? parsedValue
     : SETTINGS_WRITE_QUEUE_TIMEOUT_MS;
-}
-
-function buildSettingsTempFile(settingsFile: string): string {
-  return `${settingsFile}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-export function withSettingsWriteQueueTimeout(
+}export function withSettingsWriteQueueTimeout(
   runUpdate: (enterCommitPhase: () => void) => Promise<void>,
   expireCurrentWrite: () => void,
 ): Promise<void> {

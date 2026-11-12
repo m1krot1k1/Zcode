@@ -1,8 +1,4 @@
-import {
-  decodeCustomModelValue,
-  ZCODE_MODEL_REASONING_SEPARATOR,
-  type ZCodeConfigOption,
-} from "@zcode/shared";
+import { decodeCustomModelValue, ZCODE_MODEL_REASONING_SEPARATOR } from "@zcode/shared";
 
 function normalizeModelIdentity(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -27,18 +23,7 @@ function normalizeModelIdentity(value: string | null | undefined): string | null
   const modelId =
     reasoningSeparatorIndex > 0 ? rawModelId.slice(0, reasoningSeparatorIndex).trim() : rawModelId;
   return providerId && modelId ? `${providerId}/${modelId}` : trimmed;
-}
-
-function readModelCurrentValueForModelStateGuard(
-  configOptions: readonly ZCodeConfigOption[],
-): string | null {
-  const modelOption = configOptions.find(
-    (option) => option.category === "model" && option.type === "select",
-  );
-  return typeof modelOption?.currentValue === "string" ? modelOption.currentValue : null;
-}
-
-export function shouldApplyModelStateUpdateForTaskModel(params: {
+}export function shouldApplyModelStateUpdateForTaskModel(params: {
   currentModelValue: string | null | undefined;
   incomingModelValue: string | null | undefined;
   reason: string;

@@ -73,4 +73,3 @@ export type ZCodeGroupedTaskViewNode =
 export interface ZCodeGroupedTaskView {
   nodes: ZCodeGroupedTaskViewNode[];
 }
-export type GroupedDraftTaskPlacement = { type: "top" } | { type: "group"; groupId: string };

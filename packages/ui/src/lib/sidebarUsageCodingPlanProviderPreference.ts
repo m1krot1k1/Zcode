@@ -45,16 +45,7 @@ function getLocalStorage(): Storage | null {
     });
     return null;
   }
-}
-
-function readSidebarUsageCodingPlanProviderPreference():
-  | SidebarUsageCodingPlanProviderId
-  | undefined {
-  const value = readSidebarUsageCodingPlanSourcePreference();
-  return isSidebarUsageCodingPlanProviderId(value) ? value : undefined;
-}
-
-export function readSidebarUsageCodingPlanSourcePreference():
+}export function readSidebarUsageCodingPlanSourcePreference():
   | SidebarUsageCodingPlanSourceId
   | undefined {
   const storage = getLocalStorage();

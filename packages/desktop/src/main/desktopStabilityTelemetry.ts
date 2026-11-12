@@ -651,15 +651,7 @@ export function reportAgentProcessSpawnErrorToArms(
     errorCode: diagnostic.errorCode,
     errorFingerprint: diagnostic.errorFingerprint,
   });
-}
-
-function mapRenderProcessGoneToCrashKind(
-  input: RenderProcessGoneInput,
-): StabilityCrashKind | null {
-  return classifyRenderProcessCrash(input)?.crashKind ?? null;
-}
-
-function mapExitReasonToCrashKind(reason: string): StabilityCrashKind {
+}function mapExitReasonToCrashKind(reason: string): StabilityCrashKind {
   // Electron 的 renderer/child gone 回调共用这组退出原因，OOM 不能因进程来源不同而被归为 native。
   return reason === "oom" || reason === "memory-eviction" ? "oom" : "native";
 }

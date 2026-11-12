@@ -59,7 +59,6 @@ interface ResolveCodingPlanEmbeddedOriginOptions {
   zcodeEnv?: ZCodeEnv;
 }
 
-export const CODING_PLAN_WEBVIEW_OVERRIDE_ENV_KEY = "VITE_CODING_PLAN_WEBVIEW_ORIGIN";
 const CODING_PLAN_WEBVIEW_CREDENTIAL_LOCAL_STORAGE_KEYS = [
   "oauth:zai:access_token",
   "zcodejwttoken",

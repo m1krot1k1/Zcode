@@ -1,26 +1,7 @@
-import {
-  normalizeAgentProviderToZCodeAgent,
-  normalizeAgentProvidersToZCodeAgent,
-  type ZCodeProvider,
-  type AppSettings,
-} from "@zcode/shared";
+import { type ZCodeProvider } from "@zcode/shared";
 const INSTALLABLE_AGENT_CLI_PROVIDERS: ZCodeProvider[] = [];
 
-type BuiltinAgentCliStatus = "enabled" | "enabling" | "disabling" | "disabled";
-
-function normalizeEnabledBuiltinAgentCliProviders(
-  providers?: ReadonlyArray<ZCodeProvider>,
-): ZCodeProvider[] {
-  return normalizeAgentProvidersToZCodeAgent(providers);
-}
-
-function getEnabledBuiltinAgentCliProviders(
-  settings: Pick<AppSettings, "enabledBuiltinAgentCliProviders"> | null | undefined,
-): ZCodeProvider[] {
-  return normalizeEnabledBuiltinAgentCliProviders(settings?.enabledBuiltinAgentCliProviders);
-}
-
-function requiresBuiltinAgentCliInstall(provider: ZCodeProvider): boolean {
+type BuiltinAgentCliStatus = "enabled" | "enabling" | "disabling" | "disabled";function requiresBuiltinAgentCliInstall(provider: ZCodeProvider): boolean {
   return INSTALLABLE_AGENT_CLI_PROVIDERS.includes(provider);
 }
 
@@ -45,14 +26,4 @@ export function resolveBuiltinAgentCliStatus(params: {
   }
 
   return params.enabledProviders.includes(params.provider) ? "enabled" : "disabled";
-}
-
-function getEffectiveBuiltinAgentCliProvider(
-  _settings: Pick<AppSettings, "enabledBuiltinAgentCliProviders"> | null | undefined,
-  provider: ZCodeProvider,
-): ZCodeProvider {
-  // Bugfix: workspace/store 里的 selectedProvider 可能残留旧三方 provider。
-  // 如果 UI 继续直接消费这个值，菜单和任务创建会把旧 agent 当作可用状态。
-  // 这里统一回退到始终可用的 glm，避免 UI 状态和 agent server 单一事实源分叉。
-  return normalizeAgentProviderToZCodeAgent(provider);
 }

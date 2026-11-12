@@ -6,9 +6,7 @@ import type {
   ZCodeMcpServer,
 } from "@zcode/shared";
 
-export const MCP_CONFIG_KEY = "zcode-mcp-config";
-const MCP_ENABLED_STATES_KEY = "zcode-mcp-enabled-states";
-export const MCP_DELETED_PRELOAD_KEY = "zcode-mcp-deleted-preload";
+export const MCP_CONFIG_KEY = "zcode-mcp-config";export const MCP_DELETED_PRELOAD_KEY = "zcode-mcp-deleted-preload";
 
 export const DEFAULT_MCP_CONFIG: McpConfig = {
   mcp: { mcpServers: {} },

@@ -59,27 +59,13 @@ function collectOwnedRemoteWorkspaceCredentialKeys(snapshot: RemoteTargetSnapsho
   }
 
   return [];
-}
-
-function getWorkspaceDisplayLabel(workspacePath: string): string {
-  const normalized = workspacePath.replace(/\\/g, "/");
-  const segments = normalized.split("/").filter(Boolean);
-  return segments[segments.length - 1] ?? workspacePath;
-}
-
-export function hasRemoteWorkspaceIdentity(entry: {
+}export function hasRemoteWorkspaceIdentity(entry: {
   remoteSessionId?: string;
   remoteTarget?: RemoteTarget;
   workspaceIdentity?: string;
 }): boolean {
   return Boolean(entry.remoteSessionId || entry.remoteTarget || entry.workspaceIdentity);
-}
-
-function isSshRemoteWorkspaceIdentity(workspaceIdentity?: string | null): boolean {
-  return workspaceIdentity?.trim().startsWith("remote:ssh:") === true;
-}
-
-type WslRemoteTargetLike = Extract<RemoteTarget | RemoteTargetSnapshot, { kind: "wsl" }>;
+}type WslRemoteTargetLike = Extract<RemoteTarget | RemoteTargetSnapshot, { kind: "wsl" }>;
 
 function getWslRemoteTargetUser(target: WslRemoteTargetLike): string | undefined {
   return target.user?.trim() || undefined;

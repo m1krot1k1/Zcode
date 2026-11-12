@@ -27,19 +27,6 @@ export function offerPluginUiSurfaceFeed(
   feeds.set(key, next);
   for (const listener of listeners) listener();
   return next;
-}
-
-function subscribePluginUiSurfaceFeeds(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-/** 测试用：清空全部记录。 */
-function resetPluginUiSurfaceFeedsForTest(): void {
-  feeds.clear();
-  listeners.clear();
-}
-
-export function clearPluginUiSurfaceFeed(key: string): void {
+}export function clearPluginUiSurfaceFeed(key: string): void {
   feeds.delete(key);
 }

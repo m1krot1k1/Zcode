@@ -68,16 +68,7 @@ interface StdioTrafficLogField {
   name: string;
   type: string;
   meaning: string;
-}
-
-interface StdioTrafficReadStep {
-  id: string;
-  title: string;
-  command: string;
-  detail: string;
-}
-
-export const concepts: Concept[] = [
+}export const concepts: Concept[] = [
   {
     id: "sessionId",
     name: "sessionId",
@@ -1087,30 +1078,7 @@ export const stdioTrafficLogFields: StdioTrafficLogField[] = [
     type: "string | null",
     meaning: "解析失败原因。proxy 不应因此截断转发，只在查看器里标红。",
   },
-];
-
-const stdioTrafficReadSteps: StdioTrafficReadStep[] = [
-  {
-    id: "tail-current",
-    title: "实时跟随当前文件",
-    command: "cat ~/.zcode/v2/dev/stdio-traffic/<workspaceHash>/latest.txt",
-    detail: "适合临时排查，按写入顺序看每一行 traffic record。",
-  },
-  {
-    id: "pretty-stdin",
-    title: "只看 app 发给 agent",
-    command: "jq 'select(.direction == \"app-to-agent\") | .message' < traffic.ndjson",
-    detail: "用于确认 session/send、session/stop、permission response 是否真的发出。",
-  },
-  {
-    id: "pair-by-id",
-    title: "按 JSON-RPC id 配对",
-    command: "jq 'select(.message.id == 7)' < traffic.ndjson",
-    detail: "同一个 id 的 request/response 放在一起，能快速看出耗时和结果。",
-  },
-];
-
-export const stdioTrafficFrames: StdioTrafficFrame[] = [
+];export const stdioTrafficFrames: StdioTrafficFrame[] = [
   {
     id: "frame-001",
     timestamp: "10:42:18.124",

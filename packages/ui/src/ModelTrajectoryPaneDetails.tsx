@@ -1,9 +1,5 @@
 import type { ReactNode } from "react";
-import type {
-  ZCodeModelTrajectoryContentPart,
-  ZCodeModelTrajectoryRecord,
-  ZCodeModelTrajectoryUsage,
-} from "@zcode/services";
+import type { ZCodeModelTrajectoryContentPart, ZCodeModelTrajectoryRecord } from "@zcode/services";
 import { Badge } from "@/components/ui/badge.js";
 import { cn } from "@/components/lib/utils.js";
 import type { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -158,46 +154,7 @@ function CodeBlock({ value }: { value: string }) {
       {value || "—"}
     </pre>
   );
-}
-
-function UsageBadges({
-  usage,
-  intl,
-}: {
-  usage?: ZCodeModelTrajectoryUsage;
-  intl: IntlShape;
-}) {
-  if (!usage) {
-    return null;
-  }
-  const parts: string[] = [];
-  if (typeof usage.inputTokens === "number") {
-    parts.push(
-      intl.formatMessage(
-        { id: "modelTrajectory.usage.input" },
-        { count: usage.inputTokens.toLocaleString() },
-      ),
-    );
-  }
-  if (typeof usage.outputTokens === "number") {
-    parts.push(
-      intl.formatMessage(
-        { id: "modelTrajectory.usage.output" },
-        { count: usage.outputTokens.toLocaleString() },
-      ),
-    );
-  }
-  if (parts.length === 0) {
-    return null;
-  }
-  return (
-    <Badge variant="outline" className="font-mono text-foreground-subtle">
-      {parts.join("  ")}
-    </Badge>
-  );
-}
-
-export function EmptyState({
+}export function EmptyState({
   text,
   detail,
   tone,

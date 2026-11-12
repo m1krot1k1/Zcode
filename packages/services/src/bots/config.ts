@@ -16,23 +16,14 @@ export const BOTS_CONFIG_FILE = "bot-config.v3.json";
 export const BOTS_LEGACY_CONFIG_FILE = "bot-config.json";
 export const BOTS_LEGACY_STATE_FILE = "bot-state.json";
 export const BOTS_V2_STATE_FILE = "bot-state.v2.json";
-export const BOTS_STATE_FILE = "bot-state.v3.json";
-const BOTS_LEGACY_MODEL_CACHE_FILE = "bots-model-cache.json";
-const BOTS_MODEL_CACHE_FILE = "bots-model-cache.v2.json";
-const BOT_CREDENTIAL_PREFIX = "bot";
+export const BOTS_STATE_FILE = "bot-state.v3.json";const BOT_CREDENTIAL_PREFIX = "bot";
 
 export function createDefaultBotsConfig(): BotsConfigFile {
   return {
     version: 3,
     bots: [],
   };
-}
-
-function createDefaultBotCommands(): BotCommandPolicy {
-  return { ...DEFAULT_BOT_COMMANDS };
-}
-
-export function normalizeBotCommandPolicy(
+}export function normalizeBotCommandPolicy(
   commands: Partial<BotCommandPolicy> & { cli?: unknown } = {},
 ): BotCommandPolicy {
   // Bugfix: /cli 命令已经移除，历史 bot-config.json 里残留的 cli 字段不能继续被保存回新配置。

@@ -34,6 +34,9 @@
         "src/runtime/methods/turn.ts",
         "src/runtime/methods/turn-model-step.ts",
         "src/runtime/methods/session-fork.ts",
+        // 存量超大 модуль远程连接流程 (2057 строк, без изменений с 6225154e):
+        // разделение на подмодули — отдельный рефакторинг, не механическая нарезка.
+        "**/packages/ui/src/remote-connection-flow/index.ts",
         // CLI 存量实现：上游快照后被本地修改，职责仍完整；先以告警跟踪行数，不做机械拆分。
         "**/apps/zcode-cli/packages/adapters/src/model/runner-stream.ts",
         "**/apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/session-inputs.ts",
@@ -64,7 +67,6 @@
         "src/runtime-task/registry.ts",
         "src/fs/index.ts",
         "src/subagent/profile.ts",
-        "**/packages/ui/src/remote-connection-flow/index.ts"
       ],
       "rules": {
         "max-lines": ["warn", { "max": 800, "skipBlankLines": true, "skipComments": true }]

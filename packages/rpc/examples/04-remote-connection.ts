@@ -133,12 +133,12 @@ class SSHAuthorityResolver implements IRemoteAuthorityResolver {
 const pendingServerSockets: MockSocket[] = [];
 
 class MockWebSocketFactory implements ISocketFactory<RemoteConnectionType.WebSocket> {
-  supports(connectTo: RemoteConnection & { type: RemoteConnectionType.WebSocket }): boolean {
+  supports(_connectTo: RemoteConnection & { type: RemoteConnectionType.WebSocket }): boolean {
     return true;
   }
 
   async connect(
-    connectTo: WebSocketRemoteConnection,
+    _connectTo: WebSocketRemoteConnection,
     path: string,
     query: string,
   ): Promise<ISocket> {
@@ -223,7 +223,7 @@ async function main() {
 
   console.log("\n[3] Establishing socket connection...");
   const clientSocket = await socketFactory.connect(
-    resolved.connectTo,
+    resolved._connectTo,
     "/",
     `token=${resolved.connectionToken}`,
   );

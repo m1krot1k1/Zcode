@@ -175,11 +175,7 @@ export function createCloseToTrayCapabilityMonitor(options: {
       return pending;
     },
   };
-}
-
-type CloseToTrayCapabilityMonitor = ReturnType<typeof createCloseToTrayCapabilityMonitor>;
-
-/**
+}/**
  * 关窗可隐藏能力的最终裁决（CR-01）：DBus watcher 存在只证明"桌面可能有托盘 host"，
  * 不能证明 Electron Tray 实例创建成功（图标缺失、会话未就绪等会让 new Tray() 抛错）。
  * 隐藏窗口前必须验证最终用户入口真实存在，否则违反 spec"不会隐藏后失联"的承诺。

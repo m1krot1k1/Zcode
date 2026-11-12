@@ -70,11 +70,7 @@ const START_PLAN_ENTRY_BANNER_CLASS =
 const PERSONAL_PLAN_ENTRY_BANNER_CLASS =
   "min-h-20 w-full overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_14%_12%,color-mix(in_srgb,#4099ff_24%,var(--color-background)_76%)_0%,color-mix(in_srgb,#4099ff_10%,var(--color-surface)_90%)_64%,var(--color-surface)_300%)] p-4 text-left transition-colors hover:border-border-hover";
 const TEAM_PLAN_ENTRY_BANNER_CLASS =
-  "min-h-20 w-full overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_14%_12%,color-mix(in_srgb,#0ea5e9_24%,var(--color-background)_76%)_0%,color-mix(in_srgb,#0ea5e9_10%,var(--color-surface)_90%)_64%,var(--color-surface)_300%)] p-4 text-left transition-colors hover:border-border-hover";
-const TEAM_PLAN_ADVANCED_ENTRY_BANNER_CLASS =
-  "min-h-20 w-full overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_14%_12%,color-mix(in_srgb,#14b8a6_24%,var(--color-background)_76%)_0%,color-mix(in_srgb,#14b8a6_10%,var(--color-surface)_90%)_64%,var(--color-surface)_300%)] p-4 text-left transition-colors hover:border-border-hover";
-
-function isPlanNavItem(
+  "min-h-20 w-full overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_14%_12%,color-mix(in_srgb,#0ea5e9_24%,var(--color-background)_76%)_0%,color-mix(in_srgb,#0ea5e9_10%,var(--color-surface)_90%)_64%,var(--color-surface)_300%)] p-4 text-left transition-colors hover:border-border-hover";function isPlanNavItem(
   item: ModelProviderNavItem | null,
 ): item is Extract<ModelProviderNavItem, { type: "codingPlan" | "teamPlan" }> {
   return item?.type === "codingPlan" || item?.type === "teamPlan";
@@ -1067,33 +1063,7 @@ function CodingPlanPurchaseChoiceBanners({
       ))}
     </div>
   );
-}
-
-function resolveEnterpriseTeamPlanBannerClass(tierKey: string): string {
-  const normalized = tierKey.trim().toLowerCase();
-  if (normalized === "max" || normalized.includes("advanced")) {
-    return TEAM_PLAN_ADVANCED_ENTRY_BANNER_CLASS;
-  }
-  return TEAM_PLAN_ENTRY_BANNER_CLASS;
-}
-
-function resolveEnterpriseTeamPlanBannerIconClass(tierKey: string): string {
-  const normalized = tierKey.trim().toLowerCase();
-  if (normalized === "max" || normalized.includes("advanced")) {
-    return "text-[#14b8a6]";
-  }
-  return "text-[#0ea5e9]";
-}
-
-function resolveEnterpriseTeamPlanBannerDescriptionId(tierKey: string): string {
-  const normalized = tierKey.trim().toLowerCase();
-  if (normalized === "max" || normalized.includes("advanced")) {
-    return "settings.modelProvider.codingPlan.purchaseBanner.teamAdvancedDescription";
-  }
-  return "settings.modelProvider.codingPlan.purchaseBanner.teamStandardDescription";
-}
-
-export function resolvePurchaseChoiceBannerProductsProviderId(
+}export function resolvePurchaseChoiceBannerProductsProviderId(
   providerId: CodingPlanProviderId,
 ): CodingPlanProviderId {
   return resolveCodingPlanUpgradeProductsProviderId(providerId) ?? providerId;

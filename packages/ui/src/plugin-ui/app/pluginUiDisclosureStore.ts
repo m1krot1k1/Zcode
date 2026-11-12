@@ -35,10 +35,3 @@ export function subscribePluginUiDisclosure(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
-
-/** 测试用：清空全部记录。 */
-function resetPluginUiDisclosureForTest(): void {
-  pins.clear();
-  listeners.clear();
-  version = 0;
-}

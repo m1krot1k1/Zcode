@@ -3,19 +3,7 @@ import {
   CONVERSATION_PREVIEW_CARD_CANDIDATE_LIMIT,
   CONVERSATION_PREVIEW_CARD_VISIBLE_LIMIT,
 } from "@zcode/shared";
-import {
-  cleanAssistantFilePathCandidate,
-  extractAssistantFileReferences,
-  getAssistantPreviewFileTypeDefinition,
-  hasAssistantPreviewFileChangeCandidates,
-  isAssistantPreviewHtmlPath,
-  parseAssistantFileUrlPath,
-  resolveAssistantRawFilePath,
-  type AssistantFileReference,
-  type AssistantFilePathResolveOptions,
-  type AssistantPreviewFileKind,
-  type AssistantPreviewFileSubtitleId,
-} from "@/lib/assistantFileReferences.js";
+import { cleanAssistantFilePathCandidate, extractAssistantFileReferences, getAssistantPreviewFileTypeDefinition, isAssistantPreviewHtmlPath, parseAssistantFileUrlPath, resolveAssistantRawFilePath, type AssistantFileReference, type AssistantFilePathResolveOptions, type AssistantPreviewFileKind, type AssistantPreviewFileSubtitleId } from "@/lib/assistantFileReferences.js";
 import { decodeFilePathUriEscapes, getPathLeaf, toFileUrl } from "@/lib/path.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { collectGenUiSourcePaths, matchesGenUiSourcePath } from "@/gen-ui/contract.js";

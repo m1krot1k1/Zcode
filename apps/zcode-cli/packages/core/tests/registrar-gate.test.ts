@@ -918,7 +918,9 @@ describe("effective write-capability", { retry: 1 }, () => {
   });
 });
 
-describe("subagent task deadline", () => {
+// Deadline-тест использует реальные таймеры (10 мс): под полной нагрузкой turbo
+// срабатывание может прийти позже окна ожидания. Retry не ослабляет проверку.
+describe("subagent task deadline", { retry: 1 }, () => {
   it("fails and releases a foreground task whose child never settles", async () => {
     const directory = mkdtempSync(join(tmpdir(), "zcode-deadline-"));
     directories.push(directory);

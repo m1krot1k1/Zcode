@@ -860,7 +860,7 @@ export const v4AttachmentBeginParamsSchema = z
       .string()
       .min(1)
       .max(255)
-      .regex(/^[^\0\r\n]+$/),
+      .regex(/^[^\p{Cc}]+$/u),
     mime: z
       .string()
       .min(3)

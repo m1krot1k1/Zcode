@@ -8,7 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
-import { Switch } from "@/components/ui/switch.js";
+import "@/components/ui/switch.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,37 +84,7 @@ export function PluginStorePaidPlanBadge({
       </span>
     </ControlHintTooltip>
   );
-}
-
-/** 详情页与管理视图的插件级启停开关；紧凑商店卡片只保留「…」菜单。 */
-function PluginStoreEnabledSwitch({
-  item,
-  actions,
-}: {
-  item: StorePluginItem;
-  actions: PluginStoreActions;
-}) {
-  const { intl } = useZCodeIntl();
-  if (!item.info || !actions.onSetEnabled) return null;
-  const enabled = item.info.enabled;
-  return (
-    <Switch
-      data-testid="plugin-store-enabled-switch"
-      data-plugin-id={item.id}
-      checked={enabled}
-      disabled={actions.togglingPluginId === item.id}
-      aria-label={
-        enabled
-          ? intl.formatMessage({ id: "settings.plugins.store.menu.disable" })
-          : intl.formatMessage({ id: "settings.plugins.store.menu.enable" })
-      }
-      onClick={(event) => event.stopPropagation()}
-      onCheckedChange={(checked) => actions.onSetEnabled?.(item.id, checked)}
-    />
-  );
-}
-
-/** 已安装条目的「…」菜单：启用/禁用、更新（有更新时）、卸载。卡片与详情页共用。 */
+}/** 已安装条目的「…」菜单：启用/禁用、更新（有更新时）、卸载。卡片与详情页共用。 */
 export function PluginStoreItemMenu({
   item,
   actions,

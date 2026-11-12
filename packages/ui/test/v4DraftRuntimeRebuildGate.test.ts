@@ -125,7 +125,7 @@ function createRestartHook() {
   return {
     fire() {
       act(() => {
-        for (const listener of [...listeners]) listener();
+        for (const listener of Array.from(listeners)) listener();
       });
     },
     subscribe: (listener: () => void) => {
@@ -141,7 +141,7 @@ function createLifecycleHook() {
   return {
     fire(state: "available" | "unavailable") {
       act(() => {
-        for (const listener of [...listeners]) listener(state);
+        for (const listener of Array.from(listeners)) listener(state);
       });
     },
     subscribe: (listener: (state: "available" | "unavailable") => void) => {

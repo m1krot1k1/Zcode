@@ -123,9 +123,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
       pin,
       openTaskFiles,
     ],
-  );
-  const msg = (id: string) => intl.formatMessage({ id: `project.${id}` });
-  const start = async (projectId?: string, hostId?: string, taskGroupId?: string | null) => {
+  );  const start = async (projectId?: string, hostId?: string, taskGroupId?: string | null) => {
     const activeTaskId = useZCodeSessionStore
       .getState()
       .getWorkspaceState(props.workspacePath, props.workspaceIdentity).activeTaskId;

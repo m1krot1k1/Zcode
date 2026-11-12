@@ -107,15 +107,7 @@ async function holdTaskListMembershipRefreshResultForE2E(): Promise<void> {
     enteredCallCount: taskListMembershipRefreshHoldState.enteredCallCount + 1,
   };
   await hold.released;
-}
-
-/** M5 ③：remote shard 的归属在各自 endpoint 的 tasks-index，按 endpoint 分片拉取后求并。 */
-interface TaskListMembershipEndpoint {
-  service: TaskListMembershipService;
-  scopes: TaskListMembershipScope[];
-}
-
-function scopeParams(scope: TaskListMembershipScope): {
+}function scopeParams(scope: TaskListMembershipScope): {
   workspacePath: string;
   workspaceIdentity?: string;
 } {
@@ -286,98 +278,7 @@ export async function fetchTaskListMembershipSets(params: {
 // 会让所有列表实例各发一轮 1+3×scopes 的 RPC（多 workspace 多实例下每帧上百次调用）。
 // 这里按「membershipVersion + endpoints 签名」缓存 in-flight promise，跨 hook 实例共享；
 // 版本 bump 或 endpoint 拓扑变化时自然换 key 重拉。缓存有界，避免历史版本堆积。
-const membershipPromiseByCacheKey = new Map<string, Promise<TaskListMembershipSets>>();
-const MEMBERSHIP_CACHE_MAX_KEYS = 8;
-// service 实例身份进 key：不同 endpoint service（含测试 mock、重连后的新 proxy）不得共享缓存。
-const membershipServiceIds = new WeakMap<TaskListMembershipService, number>();
-let nextMembershipServiceId = 1;
-
-function membershipServiceIdOf(service: TaskListMembershipService): number {
-  let id = membershipServiceIds.get(service);
-  if (id === undefined) {
-    id = nextMembershipServiceId++;
-    membershipServiceIds.set(service, id);
-  }
-  return id;
-}
-
-function fetchTaskListMembershipSetsForEndpointsCached(params: {
-  /** 建议形态：`${membershipVersion}::${endpoints 签名}`。 */
-  cacheKey: string;
-  endpoints: TaskListMembershipEndpoint[];
-}): Promise<TaskListMembershipSets> {
-  const fullCacheKey = `${params.cacheKey}::svc=${params.endpoints
-    .map((endpoint) => membershipServiceIdOf(endpoint.service))
-    .join(",")}`;
-  const cached = membershipPromiseByCacheKey.get(fullCacheKey);
-  if (cached) {
-    return cached;
-  }
-  const promise = fetchTaskListMembershipSetsForEndpoints(params.endpoints);
-  membershipPromiseByCacheKey.set(fullCacheKey, promise);
-  // 辅助集合可按空集降级，但 task 行分区读取不完整会 reject；不缓存失败，
-  // 避免一次短暂 RPC 异常被当前 version 粘住。
-  promise.catch(() => membershipPromiseByCacheKey.delete(fullCacheKey));
-  while (membershipPromiseByCacheKey.size > MEMBERSHIP_CACHE_MAX_KEYS) {
-    const oldestKey = membershipPromiseByCacheKey.keys().next().value;
-    if (oldestKey === undefined) {
-      break;
-    }
-    membershipPromiseByCacheKey.delete(oldestKey);
-  }
-  return promise;
-}
-
-/** 测试/异常恢复用：清空 membership 缓存。 */
+const membershipPromiseByCacheKey = new Map<string, Promise<TaskListMembershipSets>>();/** 测试/异常恢复用：清空 membership 缓存。 */
 function clearTaskListMembershipCache(): void {
   membershipPromiseByCacheKey.clear();
-}
-
-/** 按 endpoint 并行拉取归属并求并集（taskId 为 sessionId，跨 endpoint 不冲突）。 */
-async function fetchTaskListMembershipSetsForEndpoints(
-  endpoints: TaskListMembershipEndpoint[],
-): Promise<TaskListMembershipSets> {
-  const results = await Promise.all(
-    endpoints
-      .filter((endpoint) => endpoint.scopes.length > 0)
-      .map((endpoint) =>
-        fetchTaskListMembershipSets({
-          service: endpoint.service,
-          scopes: endpoint.scopes,
-        }),
-      ),
-  );
-  const merged: TaskListMembershipSets = {
-    taskIndexItems: [],
-    pinnedIds: new Set<string>(),
-    archivedIds: new Set<string>(),
-    deletedIds: new Set<string>(),
-    unreadAtByTaskId: new Map<string, number>(),
-    terminalStatusByTaskId: new Map(),
-    titleOverrideByTaskId: new Map<string, string>(),
-    cronAutomationIdByTaskId: new Map<string, string>(),
-  };
-  const taskIndexItemByEntityKey = new Map<string, ZCodeTaskMeta>();
-  for (const result of results) {
-    for (const task of result.taskIndexItems) {
-      taskIndexItemByEntityKey.set(buildTaskEntityKey(task), task);
-    }
-    for (const taskId of result.pinnedIds) merged.pinnedIds.add(taskId);
-    for (const taskId of result.archivedIds) merged.archivedIds.add(taskId);
-    for (const taskId of result.deletedIds) merged.deletedIds.add(taskId);
-    for (const [taskId, unreadAt] of result.unreadAtByTaskId) {
-      merged.unreadAtByTaskId.set(taskId, unreadAt);
-    }
-    for (const [taskId, status] of result.terminalStatusByTaskId) {
-      merged.terminalStatusByTaskId.set(taskId, status);
-    }
-    for (const [taskId, title] of result.titleOverrideByTaskId) {
-      merged.titleOverrideByTaskId.set(taskId, title);
-    }
-    for (const [taskId, automationId] of result.cronAutomationIdByTaskId) {
-      merged.cronAutomationIdByTaskId.set(taskId, automationId);
-    }
-  }
-  merged.taskIndexItems = [...taskIndexItemByEntityKey.values()];
-  return merged;
 }

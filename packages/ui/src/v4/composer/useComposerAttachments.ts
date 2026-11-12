@@ -34,14 +34,7 @@ import { usePlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
-import {
-  exposeComposerAttachmentScopeKeyForE2E,
-  readComposerAttachmentScope,
-  updateComposerAttachmentScope,
-  useComposerAttachmentUploadStore,
-  type ComposerAttachmentUploadItem,
-  type ComposerAttachmentUploadStatus,
-} from "@/store/composerAttachmentUploadStore.js";
+import { exposeComposerAttachmentScopeKeyForE2E, readComposerAttachmentScope, updateComposerAttachmentScope, useComposerAttachmentUploadStore, type ComposerAttachmentUploadItem } from "@/store/composerAttachmentUploadStore.js";
 import { uploadComposerAttachment, type AttachmentPutFn } from "@/v4/composer/attachmentUpload.js";
 
 const COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY = 2;

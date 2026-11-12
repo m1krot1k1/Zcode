@@ -21,14 +21,7 @@ interface AskUserQuestionItem {
 interface AskUserQuestionData {
   questions: AskUserQuestionItem[];
   answers?: ZCodeUserQuestionAnswers;
-}
-
-interface AskUserQuestionAnswerDraft {
-  selectedOptionIds: string[];
-  customInput: string;
-}
-
-const CUSTOM_INPUT_FLAGS = [
+}const CUSTOM_INPUT_FLAGS = [
   "requiresInput",
   "customInput",
   "isCustom",

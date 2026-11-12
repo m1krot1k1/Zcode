@@ -1,11 +1,7 @@
 export const quickPickDialogClassName =
   "top-1/2 max-w-lg -translate-y-1/2 overflow-hidden rounded-2xl! border-popover-border bg-popover p-0 shadow-md";
 
-export const quickPickCommandClassName = "rounded-2xl bg-popover p-0.5 text-foreground";
-
-const quickPickInputClassName = "text-ui-base";
-
-export const quickPickListClassName = "max-h-[min(460px,64vh)] py-0.5";
+export const quickPickCommandClassName = "rounded-2xl bg-popover p-0.5 text-foreground";export const quickPickListClassName = "max-h-[min(460px,64vh)] py-0.5";
 
 export const quickPickItemClassName = "min-h-8 items-center rounded-xl px-2.5 text-ui-base";
 

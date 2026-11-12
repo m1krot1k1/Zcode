@@ -95,7 +95,3 @@ export function createPluginUiResourceNotificationRegistrar(
       ),
   };
 }
-
-function resetPluginUiResourceTargetsForTest(): void {
-  targets.clear();
-}

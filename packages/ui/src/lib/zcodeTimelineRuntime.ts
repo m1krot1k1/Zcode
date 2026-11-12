@@ -1,8 +1,5 @@
 import type { ZCodeTimelineMeta } from "@zcode/shared";
-import type { TaskChatMessage } from "@/lib/taskChatMessageTypes.js";
-
-const RUNNING_CONTEXT_COMPACTION_STATUSES = new Set(["started", "retrying"]);
-const RUNNING_GOAL_VERIFICATION_STATUSES = new Set(["started"]);
+import type { TaskChatMessage } from "@/lib/taskChatMessageTypes.js";const RUNNING_GOAL_VERIFICATION_STATUSES = new Set(["started"]);
 
 function isRunningGoalVerificationTimeline(
   timeline: ZCodeTimelineMeta | undefined,
@@ -15,36 +12,7 @@ function isRunningGoalVerificationTimeline(
     // 不能继续把会话判成 running，否则 completed 目标下新的 `/goal` 会被误排队。
     timeline.verification === undefined
   );
-}
-
-function isRunningZCodeTimeline(timeline: ZCodeTimelineMeta | undefined): boolean {
-  if (!timeline) {
-    return false;
-  }
-  if (timeline.type === "context_compaction") {
-    return RUNNING_CONTEXT_COMPACTION_STATUSES.has(timeline.status);
-  }
-  if (timeline.type === "goal_verification") {
-    return isRunningGoalVerificationTimeline(timeline);
-  }
-  return false;
-}
-
-function hasRunningZCodeTimeline(messages: readonly TaskChatMessage[]): boolean {
-  return messages.some((message) => isRunningZCodeTimeline(message.syntheticTimeline));
-}
-
-function hasRunningContextCompactionTimeline(messages: readonly TaskChatMessage[]): boolean {
-  return messages.some((message) => {
-    const timeline = message.syntheticTimeline;
-    return (
-      timeline?.type === "context_compaction" &&
-      RUNNING_CONTEXT_COMPACTION_STATUSES.has(timeline.status)
-    );
-  });
-}
-
-function hasRunningGoalVerificationTimeline(messages: readonly TaskChatMessage[]): boolean {
+}function hasRunningGoalVerificationTimeline(messages: readonly TaskChatMessage[]): boolean {
   return messages.some((message) => isRunningGoalVerificationTimeline(message.syntheticTimeline));
 }
 

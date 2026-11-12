@@ -1,9 +1,6 @@
 import { nativeTheme, type BrowserWindow, type Point } from "electron";
 import { PlatformChannels } from "@zcode/shared";
-import {
-  resolveDesktopZoomFactorForLevel,
-  resolveDesktopZoomLevelFromFactor,
-} from "./desktopZoom.js";
+import { resolveDesktopZoomFactorForLevel } from "./desktopZoom.js";
 
 export const MACOS_TRAFFIC_LIGHT_BASE_POSITION = { x: 22, y: 23 } as const;
 const MACOS_TRAFFIC_LIGHT_BASE_LEFT_PADDING_PX = 96;
@@ -112,22 +109,4 @@ export function syncWindowControlsOverlayForZoomLevel(
       resolveWindowsWindowControlsOverlayMetricsForZoomLevel(zoomLevel),
     );
   }
-}
-
-function syncMacOSWindowButtonPositionForZoomLevel(
-  targetWindow: BrowserWindow | null | undefined,
-  zoomLevel: number,
-) {
-  syncWindowControlsOverlayForZoomLevel(targetWindow, zoomLevel);
-}
-
-function syncMacOSWindowButtonPositionForCurrentZoomFactor(
-  targetWindow: BrowserWindow | null | undefined,
-) {
-  if (!targetWindow || targetWindow.isDestroyed()) {
-    return;
-  }
-
-  const zoomLevel = resolveDesktopZoomLevelFromFactor(targetWindow.webContents.getZoomFactor());
-  syncWindowControlsOverlayForZoomLevel(targetWindow, zoomLevel);
 }

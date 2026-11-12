@@ -1,11 +1,4 @@
-import type { ZCodeTaskPersistStatus, ZCodeTaskRuntimeStatus } from "@zcode/shared";
-
-interface TaskRestoreTimestampedMessageLike {
-  role: "user" | "assistant";
-  timestamp: number;
-}
-
-interface ResolveTaskRuntimeStatusAfterRestoreOptions {
+import type { ZCodeTaskPersistStatus, ZCodeTaskRuntimeStatus } from "@zcode/shared";interface ResolveTaskRuntimeStatusAfterRestoreOptions {
   persistedStatus?: ZCodeTaskPersistStatus;
   persistedUpdatedAt?: number;
   latestUserMessageTimestamp?: number | null;
@@ -37,23 +30,7 @@ export function shouldShowTaskConfigLoadingOnSwitch(
   // 工具栏会短暂显示旧模型，直到 resume/config_option_update 回包才纠正。
   // 这里按 taskId 切换判定先进入 loading，占位期不再暴露上一个 task 的模型回显。
   return previousTaskId !== nextTaskId;
-}
-
-function getLatestTaskUserMessageTimestamp(
-  messages: readonly TaskRestoreTimestampedMessageLike[],
-): number | null {
-  let latestTimestamp: number | null = null;
-  for (const message of messages) {
-    if (message.role !== "user") {
-      continue;
-    }
-    latestTimestamp =
-      latestTimestamp === null ? message.timestamp : Math.max(latestTimestamp, message.timestamp);
-  }
-  return latestTimestamp;
-}
-
-function toTerminalRuntimeStatus(status: ZCodeTaskPersistStatus): ZCodeTaskRuntimeStatus {
+}function toTerminalRuntimeStatus(status: ZCodeTaskPersistStatus): ZCodeTaskRuntimeStatus {
   if (status === "running") {
     return "streaming";
   }

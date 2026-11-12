@@ -178,11 +178,3 @@ export async function atomicWriteText(
     await releaseLock?.();
   }
 }
-
-async function atomicWriteJson(
-  filePath: string,
-  data: Record<string, unknown>,
-  options?: AtomicWriteTextOptions,
-): Promise<void> {
-  await atomicWriteText(filePath, JSON.stringify(data, null, 2), options);
-}

@@ -92,7 +92,6 @@ import {
   useWebRemoteControlFeatureEnabled,
 } from "@/WebRemoteControlFeatureProvider.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";
-import { useWebRemoteControlStatus } from "@/hooks/useWebRemoteControlStatus.js";
 import {
   CODE_COMMENT_REMOVE_BROADCAST_CHANNEL,
   CODE_COMMENT_PREVIEW_RESTORE_BROADCAST_CHANNEL,
@@ -525,15 +524,7 @@ function RootInner({
     },
     [tabStoreApi],
   );
-  const webRemoteControlFeatureEnabled = useWebRemoteControlFeatureEnabled();
-  // Bugfix: WebRemoteControlDialog 只是可开关的展示入口，不能由它的本地 state 决定全局远控状态。
-  // Root 直接轮询 main 进程状态，让远控会话 running/active 成为唯一真值来源。
-  const webRemoteControlStatus = useWebRemoteControlStatus({
-    enabled: Boolean(webRemoteControlFeatureEnabled && isDesktop),
-  });
-  const webRemoteControlSessionActive =
-    webRemoteControlStatus.status === "running" || webRemoteControlStatus.status === "active";
-  const refreshProviderState = useRootProviderStateRefresh(services);
+  const webRemoteControlFeatureEnabled = useWebRemoteControlFeatureEnabled();  const refreshProviderState = useRootProviderStateRefresh(services);
   useRootProviderSettingsSnapshot(services);
   useEffect(() => {
     let disposed = false;

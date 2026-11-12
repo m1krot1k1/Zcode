@@ -930,15 +930,7 @@ export const useTaskQueryCacheStore = create<TaskQueryCacheState>()((set) => ({
       taskMetaByEntityKey: {},
       taskUnreadOverlayByEntityKey: {},
     })),
-}));
-
-function selectTaskListCacheResult(queryKey: TaskListCacheKey) {
-  return (state: TaskQueryCacheState): CachedTaskListResult | null => {
-    return state.resultsByQueryKey[queryKey] ?? null;
-  };
-}
-
-export function invalidateTaskQueryCacheByScopes(
+}));export function invalidateTaskQueryCacheByScopes(
   scopes: Array<{ workspacePath: string; workspaceIdentity?: string }>,
 ): void {
   const workspaceKeys = scopes.map((scope) =>

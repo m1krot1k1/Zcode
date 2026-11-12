@@ -15,16 +15,6 @@ export function RemoteWorkspaceControllerProvider({
       {children}
     </RemoteWorkspaceControllerContext.Provider>
   );
-}
-
-function useRemoteWorkspaceController(): RemoteWorkspaceController {
-  const controller = useContext(RemoteWorkspaceControllerContext);
-  if (!controller) {
-    throw new Error("RemoteWorkspaceControllerProvider 未挂载");
-  }
-  return controller;
-}
-
-export function useOptionalRemoteWorkspaceController(): RemoteWorkspaceController | null {
+}export function useOptionalRemoteWorkspaceController(): RemoteWorkspaceController | null {
   return useContext(RemoteWorkspaceControllerContext);
 }

@@ -10,11 +10,7 @@ import {
   type Session,
   type WebFrameMain,
 } from "electron";
-import type {
-  BrowserWebmRecorderFactoryInput,
-  BrowserWebmRecorderFactory,
-  BrowserWebmRecorderSession,
-} from "./browserVideoRecorder.js";
+import type { BrowserWebmRecorderFactoryInput, BrowserWebmRecorderSession } from "./browserVideoRecorder.js";
 
 const RECORDER_PORT_CHANNEL = "zcode-browser-video-recorder:port";
 const RECORDER_START_TIMEOUT_MS = 15_000;

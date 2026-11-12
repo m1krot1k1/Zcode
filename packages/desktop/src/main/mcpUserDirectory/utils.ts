@@ -4,7 +4,7 @@
 
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { homedir } from "node:os";
+import "node:os";
 import type { McpServerConfig } from "@zcode/shared";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -23,17 +23,7 @@ export function normalizeServerMap(value: unknown): Record<string, McpServerConf
     }
   }
   return next;
-}
-
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is string => typeof item === "string");
-}
-
-export async function readJsonObject(filePath: string): Promise<Record<string, unknown> | null> {
+}export async function readJsonObject(filePath: string): Promise<Record<string, unknown> | null> {
   try {
     const raw = await readFile(filePath, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
@@ -57,13 +47,4 @@ export async function writeTextAtomic(filePath: string, content: string): Promis
     await rm(tmpFile, { force: true });
     throw error;
   }
-}
-
-function normalizePathForLookup(value: string): string {
-  const normalized = value.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
-function buildClaudeStateFilePath(): string {
-  return join(homedir(), ".claude.json");
 }

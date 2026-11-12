@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 
-const MOBILE_TEXT_INPUT_QUERY = "(max-width: 767px) and (hover: none) and (pointer: coarse)";
-const MOBILE_COMPACT_VIEWPORT_QUERY = "(max-width: 767px)";
-
-function getMediaQueryMatches(query: string): boolean {
+const MOBILE_TEXT_INPUT_QUERY = "(max-width: 767px) and (hover: none) and (pointer: coarse)";function getMediaQueryMatches(query: string): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -34,21 +31,9 @@ function subscribeMediaQuery(query: string, listener: (matches: boolean) => void
 
 function getIsMobileTextInputViewport(): boolean {
   return getMediaQueryMatches(MOBILE_TEXT_INPUT_QUERY);
-}
-
-function getIsMobileCompactViewport(): boolean {
-  return getMediaQueryMatches(MOBILE_COMPACT_VIEWPORT_QUERY);
-}
-
-function subscribeMobileTextInputViewport(listener: (matches: boolean) => void): () => void {
+}function subscribeMobileTextInputViewport(listener: (matches: boolean) => void): () => void {
   return subscribeMediaQuery(MOBILE_TEXT_INPUT_QUERY, listener);
-}
-
-function subscribeMobileCompactViewport(listener: (matches: boolean) => void): () => void {
-  return subscribeMediaQuery(MOBILE_COMPACT_VIEWPORT_QUERY, listener);
-}
-
-export function useIsMobileTextInputViewport(): boolean {
+}export function useIsMobileTextInputViewport(): boolean {
   const [isMobileTextInputViewport, setIsMobileTextInputViewport] = useState(
     getIsMobileTextInputViewport,
   );
@@ -56,19 +41,7 @@ export function useIsMobileTextInputViewport(): boolean {
   useEffect(() => subscribeMobileTextInputViewport(setIsMobileTextInputViewport), []);
 
   return isMobileTextInputViewport;
-}
-
-function useIsMobileCompactViewport(): boolean {
-  const [isMobileCompactViewport, setIsMobileCompactViewport] = useState(
-    getIsMobileCompactViewport,
-  );
-
-  useEffect(() => subscribeMobileCompactViewport(setIsMobileCompactViewport), []);
-
-  return isMobileCompactViewport;
-}
-
-export function resolveChatEnterSubmits({
+}export function resolveChatEnterSubmits({
   isMobileTextInputViewport,
   preferEnterNewline,
 }: {

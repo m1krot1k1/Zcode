@@ -86,14 +86,7 @@ export interface BrowserState {
   isLoading: boolean;
   isReady: boolean;
   title: string;
-}
-
-interface BrowserNavigationRequest {
-  id: string;
-  url: string;
-}
-
-export const INITIAL_BROWSER_STATE: BrowserState = {
+}export const INITIAL_BROWSER_STATE: BrowserState = {
   canGoBack: false,
   canGoForward: false,
   currentUrl: DEFAULT_BROWSER_URL,

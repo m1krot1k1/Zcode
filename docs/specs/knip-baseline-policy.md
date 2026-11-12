@@ -86,3 +86,25 @@ pnpm knip:update-baseline # только после уменьшения тек�
 (3 алиаса), `botCommandPolicySchema`, `applyResolvedShellCommandForTest`,
 `ExpertWorkflowRunSnapshotSchema`, `CUA_TOOL_ICON`, `SSHDialog`,
 `resolveRemoteWorkspaceReconnectLogHistoryIds`, `TEST_ZCODE_ENDPOINT_ORIGIN`.
+
+## Лint: чистка мёртвого кода
+
+После сведения knip к нулю остались предупреждения `no-unused-vars`, которые
+появились после де-экспорта символов в предыдущих итерациях. Они удалены:
+
+- 163 + 89 + 55 объявления (функции, константы, типы), которые никто не импортировал
+  и которые не использовались внутри файла;
+- 10 + 38 + 11 неиспользуемых импортов;
+- неиспользуемые параметры/локальные переменные помечены `_` там, где сигнатура —
+  часть контракта (React props, объектные литералы, опции);
+- `new Array(n)` → `Array.from({length:n})`, control-regex → `\p{Cc}`,
+  `[...set]` → `Array.from(set)` (тот же copy-семантический результат),
+  `throw` из `finally` переписан в накопление ошибки и бросок после блока;
+- дубли ключей и лишние проверки длины убраны;
+- два superseded-файла (`feedbackIcons.tsx`, `zcodeProviders.ts`) удалены вместе с
+  side-effect импортами — их содержимое никто не использовал.
+
+Итог: `oxlint` в корне — 0 диагностик; CLI-пакет — 0 ошибок и 27 предупреждений
+`max-lines` для уже зарегистрированных по политике крупных файлов
+(плюс один такой же модуль `packages/ui/src/remote-connection-flow/index.ts`
+зарегистрирован в `.oxlintrc.json`; он не менялся с 6225154e).

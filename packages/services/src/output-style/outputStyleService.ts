@@ -3,10 +3,7 @@ import type { IOutputStyleService } from "./outputStyle.js";
 import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-
-const DEFAULT_OUTPUT_STYLE = "default";
-const SETTINGS_FILE = "settings.json";
+import { join } from "node:path";const SETTINGS_FILE = "settings.json";
 
 const BUILT_IN_STYLES: OutputStyle[] = [
   {

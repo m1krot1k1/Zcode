@@ -44,6 +44,7 @@ export async function prepareTasksIndexStorage(
   const db = new DatabaseSync(path);
   let failure: unknown;
   let migration: DatabaseMigrationFacts | undefined;
+  let closeFailure: unknown;
   try {
     db.exec("PRAGMA busy_timeout = 25");
     db.exec("PRAGMA foreign_keys = ON");
@@ -93,36 +94,35 @@ export async function prepareTasksIndexStorage(
     }
     throw error;
   } finally {
+    // throw внутри finally перекрывает исходное исключение: копим ошибку close и
+    // бросаем её только на успешном пути, как раньше.
     try {
       db.close();
     } catch (error) {
-      if (!failure) throw error;
+      closeFailure = error;
     }
   }
+  if (!failure && closeFailure) throw closeFailure;
   markTasksStorageMigrated(path);
   const repos = [
     new TaskIndexRepo(settings, undefined, path, LOCK_WAIT_MS),
     new AutomationRepo(path, LOCK_WAIT_MS),
     new OffPeakTaskRepo(path, LOCK_WAIT_MS),
   ];
-  let preparationFailure: unknown;
+  let preparationCloseFailure: unknown;
   try {
     // 这些是原本就在初始化时执行的修复，不创建新的迁移或改变已有事务边界。
     for (const repo of repos) await repo.ensureReady();
-  } catch (error) {
-    preparationFailure = error;
-    throw error;
   } finally {
-    let closeFailure: unknown;
     for (const repo of repos) {
       try {
         repo.close({ throwOnError: true });
       } catch (error) {
-        closeFailure ??= error;
+        preparationCloseFailure ??= error;
       }
     }
-    if (!preparationFailure && closeFailure) throw closeFailure;
   }
+  if (preparationCloseFailure) throw preparationCloseFailure;
   markTasksStoragePrepared(path);
   report("ready", migration);
 }

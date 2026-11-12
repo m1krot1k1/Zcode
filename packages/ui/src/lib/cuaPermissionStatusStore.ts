@@ -101,17 +101,7 @@ export function subscribeCuaPermissionStatus(listener: () => void): () => void {
 export function getCuaPermissionStatusSnapshot(key: string | null): CuaPermissionStatusSnapshot {
   if (!key) return initialSnapshot();
   return slots.get(key)?.snapshot ?? initialSnapshot();
-}
-
-/** 测试复位：模块级缓存会跨用例存活。 */
-function resetCuaPermissionStatusStoreForTest(): void {
-  for (const slot of slots.values()) clearTransientRetry(slot);
-  slots.clear();
-  listeners.clear();
-  initialSnapshotCache = null;
-}
-
-function ensureSlot(key: string): Slot {
+}function ensureSlot(key: string): Slot {
   const existing = slots.get(key);
   if (existing) return existing;
   const created: Slot = {

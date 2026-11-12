@@ -82,20 +82,7 @@ function isUsableBigModelTeamPlanApiKey(item: BigModelTeamPlanApiKeySummary): bo
     item.keyType === BIGMODEL_TEAM_PLAN_API_KEY_TYPE &&
     Boolean(item.apiKey?.trim())
   );
-}
-
-async function ensureBigModelTeamPlanProjectApiKey(params: {
-  apiClient: ApiClient;
-  authorization: string;
-  host: string;
-  teamContext: BigModelTeamPlanBizContext;
-  timeoutMs: number;
-}): Promise<BigModelTeamPlanApiKeySummary | null> {
-  const result = await ensureBigModelTeamPlanProjectApiKeyWithStatus(params);
-  return result.apiKey;
-}
-
-export async function ensureBigModelTeamPlanProjectApiKeyWithStatus(params: {
+}export async function ensureBigModelTeamPlanProjectApiKeyWithStatus(params: {
   apiClient: ApiClient;
   authorization: string;
   host: string;

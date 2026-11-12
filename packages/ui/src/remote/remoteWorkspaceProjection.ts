@@ -1,11 +1,4 @@
-import {
-  parseRemoteWorkspaceIdentity,
-  type SourceServerConnectionStateSnapshot,
-  type SourceServerManagementSnapshot,
-  type SourceServerRecord,
-  type SourceServerWorkspaceHistoryEntry,
-  type WorkspacePurpose,
-} from "@zcode/shared";
+import { parseRemoteWorkspaceIdentity, type SourceServerManagementSnapshot, type SourceServerRecord, type SourceServerWorkspaceHistoryEntry, type WorkspacePurpose } from "@zcode/shared";
 import {
   buildAggregatedSourceStatusMap,
   type AggregatedSourceStatus,
@@ -214,20 +207,4 @@ export function buildRemoteWorkspaceProjection(
   });
 
   return { devices, openWorkspaces, projectHistory, executionContexts };
-}
-
-function resolveSourceStatus(
-  snapshot: SourceServerManagementSnapshot | null | undefined,
-  sourceServerId: string,
-): AggregatedSourceStatus {
-  return buildAggregatedSourceStatusMap(snapshot).get(sourceServerId) ?? "offline";
-}
-
-function isSourceConnectionStateOnline(
-  states: readonly SourceServerConnectionStateSnapshot[],
-  sourceServerId: string,
-): boolean {
-  return states.some(
-    (state) => state.sourceServerId === sourceServerId && state.state === "online",
-  );
 }

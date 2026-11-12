@@ -21,18 +21,5 @@ export interface RemoteOrganizationInfo {
 
 export interface RemoteCustomerInfo {
   organizations?: RemoteOrganizationInfo[];
-}
-
-interface RemoteApiKeySummary {
-  apiKey?: string;
-  keyType?: number | null;
-  name?: string;
-}
-
-interface RemoteApiKeySecret {
-  secretKey?: string;
-}
-
-export const DEFAULT_ORG_NAME = "默认机构";
+}export const DEFAULT_ORG_NAME = "默认机构";
 export const DEFAULT_PROJECT_NAME = "默认项目";
-const ZCODE_API_KEY_NAME = "zcode-api-key";

@@ -181,20 +181,7 @@ export function spawnOptions(
     detached: shouldSpawnInDetachedProcessGroup(),
     shell: false,
   };
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(label)), timeoutMs);
-    timer.unref?.();
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
-
-/** Read the CLI's bounded model metadata without opening an ACP session or exposing raw output. */
+}/** Read the CLI's bounded model metadata without opening an ACP session or exposing raw output. */
 export async function runModelCatalog(
   spec: OpenCodeCommandSpec,
   sourceEnvironment: NodeJS.ProcessEnv = process.env,

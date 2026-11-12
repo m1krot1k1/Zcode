@@ -1,6 +1,6 @@
 import type { Locale } from "@zcode/shared";
 import type { McpAppsResourcePermission } from "@zcode/shared/mcp-apps";
-import { PLUGIN_SANDBOX_SCHEME } from "./contract.js";
+import "./contract.js";
 
 /**
  * 页面浏览器权限的纯规则：Electron 权限名 → 规范四键、放行裁决、确认框文案。零 IO，Electron 接线在
@@ -13,10 +13,7 @@ const PROMPTED: ReadonlySet<McpAppsResourcePermission> = new Set([
   "camera",
   "microphone",
   "geolocation",
-]);
-const PLUGIN_HOST_PREFIX = "plugin-";
-
-/**
+]);/**
  * request handler 的 Electron 权限名 → 需要的规范权限；返回 null 表示不属于四键（一律拒绝）。
  * `media` 同时要音视频时两个都要求；mediaTypes 缺省按两者都要（Chromium 未给类型时保守）。
  */
@@ -73,26 +70,7 @@ export function isPluginSandboxPermissionGranted(input: {
 }): boolean {
   if (!input.declared.includes(input.permission)) return false;
   return !PROMPTED.has(input.permission) || input.consented.has(input.permission);
-}
-
-/** 发起请求的 frame URL 必须是 `zcode-sandbox://plugin-<sandboxId>`；shell 或其他来源返回 null（拒绝）。 */
-function readPluginSandboxIdFromPluginUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== `${PLUGIN_SANDBOX_SCHEME}:`) return null;
-  if (!parsed.hostname.startsWith(PLUGIN_HOST_PREFIX)) return null;
-  const sandboxId = parsed.pathname.startsWith("/instance/")
-    ? (parsed.pathname.split("/")[2] ?? "")
-    : "";
-  return sandboxId.length > 0 ? sandboxId : null;
-}
-
-interface PluginSandboxPermissionDialogText {
+}interface PluginSandboxPermissionDialogText {
   title: string;
   message: string;
   detail: string;

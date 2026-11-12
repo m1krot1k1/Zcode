@@ -8,7 +8,7 @@ import {
 } from "./contract.js";
 
 /** 一个带 UI 资源的工具 `_meta` 归一化后应得到的描述。 */
-const exampleToolUiDescriptor: McpToolUiDescriptor = {
+export const exampleToolUiDescriptor: McpToolUiDescriptor = {
   resourceUri: "ui://example-plugin/widget.html",
   visibility: ["model", "app"],
   preferredDisplayMode: "inline",
@@ -17,7 +17,7 @@ const exampleToolUiDescriptor: McpToolUiDescriptor = {
 };
 
 /** main 登记成功后返回给 renderer 的句柄；partition 按 server 身份派生，同一 server 的页面共享。 */
-const exampleSandboxHandle: PluginSandboxHandle = {
+export const exampleSandboxHandle: PluginSandboxHandle = {
   instance: {
     runtimeId: "test-agent",
     generation: 1,
@@ -39,13 +39,13 @@ const exampleSandboxHandle: PluginSandboxHandle = {
 };
 
 /** agent 对 MCP server `initialize` 时宣告的 ui 扩展能力。 */
-const exampleClientCapabilities = buildMcpAppsClientCapabilities();
+export const exampleClientCapabilities = buildMcpAppsClientCapabilities();
 /** 宿主在 hostCapabilities.experimental 里宣告的 CSP 放宽键。 */
-const exampleCspExperimental = buildMcpAppsCspExperimentalCapability();
+export const exampleCspExperimental = buildMcpAppsCspExperimentalCapability();
 /** 资源级 `_meta` 里声明放宽的写法。 */
 export const exampleResourceMetaWithRelaxations = {
   ui: { csp: { connectDomains: ["https://api.example.com"] } },
   [MCP_APPS_CSP_RELAXATION_META_KEY]: { unsafeEval: true },
 };
-const exampleSetWidgetStateMethod = MCP_APPS_SET_WIDGET_STATE_METHOD;
-const examplePortName = PLUGIN_SANDBOX_PORT_NAME;
+export const exampleSetWidgetStateMethod = MCP_APPS_SET_WIDGET_STATE_METHOD;
+export const examplePortName = PLUGIN_SANDBOX_PORT_NAME;

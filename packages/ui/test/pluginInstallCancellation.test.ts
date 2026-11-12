@@ -108,7 +108,7 @@ describe("plugin install cancellation (store)", () => {
     const operationId = pending.lastOperationId();
     expect(operationId).toEqual(expect.any(String));
     expect(operationId).not.toHaveLength(0);
-    expect((pending.installPlugin.mock.calls[0]?.[0] as InstallParams).operationId).toBe(
+    expect((pending.installPlugin.mock.calls[0]?.[0] as InstallParams | undefined)?.operationId).toBe(
       operationId,
     );
     expect(store.getState().activeOperations).toEqual([

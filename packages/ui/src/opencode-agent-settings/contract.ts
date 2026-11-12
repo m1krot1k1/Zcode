@@ -27,50 +27,13 @@ export type OpenCodeAgentConfigOption =
       description?: string | null;
       type: "boolean";
       currentValue: boolean;
-    };
-
-interface OpenCodeAgentSession {
-  sessionId: string;
-  cwd: string;
-  configOptions: OpenCodeAgentConfigOption[];
-}
-
-export type OpenCodeAgentCliStatus =
+    };export type OpenCodeAgentCliStatus =
   | { status: "available"; version: string; executablePath: string }
   | {
       status: "missing" | "unavailable" | "timed-out";
       diagnostic: string;
       installSupported?: boolean;
-    };
-
-type OpenCodeAgentModelCatalog =
-  | { status: "available"; models: string[]; authentication: "not-checked" }
-  | { status: "unavailable" | "timed-out"; diagnostic: string };
-
-type OpenCodeAgentPermissionOptionKind =
-  | "allow_once"
-  | "allow_always"
-  | "reject_once"
-  | "reject_always";
-
-interface OpenCodeAgentPermissionRequest {
-  requestId: string;
-  sessionId: string;
-  toolTitle: string;
-  toolKind?: string;
-  inputSummary?: string;
-  options: Array<{
-    optionId: string;
-    kind: OpenCodeAgentPermissionOptionKind;
-    name: string;
-  }>;
-}
-
-type OpenCodeAgentPermissionEvent =
-  | { type: "requested"; request: OpenCodeAgentPermissionRequest }
-  | { type: "resolved"; requestId: string; sessionId: string };
-
-/** ACP selectors are rendered from the live session response; no ZCode provider fallback exists. */
+    };/** ACP selectors are rendered from the live session response; no ZCode provider fallback exists. */
 export function getOpenCodeSelectValues(option: OpenCodeAgentConfigOption): Array<{
   value: string;
   name: string;

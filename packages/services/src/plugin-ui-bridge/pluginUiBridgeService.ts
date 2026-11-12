@@ -340,14 +340,7 @@ function decodedBase64Length(value: string): number {
   if (trimmed.length === 0) return 0;
   const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0;
   return Math.floor((trimmed.length * 3) / 4) - padding;
-}
-
-/** 兼容旧调用：只要 HTML 文本。 */
-function pickHtmlContent(result: ZCodeMcpReadResourceResult, uri: string): string {
-  return pickHtmlResource(result, uri).html;
-}
-
-const LIST_LEVEL_META_MAX_PAGES = 8;
+}const LIST_LEVEL_META_MAX_PAGES = 8;
 
 /**
  * resources/read 的 HTML 项没带 `_meta` 时，翻 resources/list 找同 uri 条目的 `_meta`（最多 8 页）。

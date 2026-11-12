@@ -221,13 +221,7 @@ function getRenderableTaskUsage<T extends { used: number; size: number }>(
   }
 
   return taskUsage;
-}
-
-function getContextCompressionCommand(_provider: ZCodeProvider): string {
-  return "/compact";
-}
-
-// 自动/运营完成（startedAt 为空）当前生效的 used_at；手动完成不进入触发器交互。
+}// 自动/运营完成（startedAt 为空）当前生效的 used_at；手动完成不进入触发器交互。
 function resolveAutomaticCompletedAt(entry: CodingPlanQuotaResetUiEntry | null): number | null {
   return entry?.status === "completed" && entry.startedAt === null && entry.observedAt !== null
     ? entry.completedAt

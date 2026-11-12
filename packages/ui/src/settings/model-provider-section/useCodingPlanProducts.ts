@@ -523,22 +523,7 @@ export function normalizeErrorMessage(error: unknown): string {
     return CODING_PLAN_OAUTH_REQUIRED_ERROR;
   }
   return message;
-}
-
-function isCodingPlanOAuthRequiredError(error: string): boolean {
-  return (
-    error === CODING_PLAN_OAUTH_REQUIRED_ERROR ||
-    error === "bigmodel_oauth_required" ||
-    error === "zai_oauth_required" ||
-    isCodingPlanOAuthRequiredMessage(error)
-  );
-}
-
-function isCodingPlanSystemBusyError(error: string): boolean {
-  return error === CODING_PLAN_SYSTEM_BUSY || isCodingPlanSystemBusyMessage(error);
-}
-
-function readErrorMessage(error: unknown): string {
+}function readErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message || error.name;
   }

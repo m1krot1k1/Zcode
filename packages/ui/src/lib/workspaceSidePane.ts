@@ -714,20 +714,7 @@ function createBrowserSidePaneTab(options?: {
 
 function createGitSidePaneTab(): GitSidePaneTab {
   return { id: "git", type: "git", openedAt: Date.now() };
-}
-
-function createTreemappingSidePaneTab(
-  source: TreemappingSidePaneSource = { kind: "current" },
-): TreemappingSidePaneTab {
-  return {
-    id: "treemapping",
-    type: "treemapping",
-    openedAt: Date.now(),
-    source,
-  };
-}
-
-function createModelTrajectorySidePaneTab(options: {
+}function createModelTrajectorySidePaneTab(options: {
   taskId: string;
   title?: string | null;
 }): ModelTrajectorySidePaneTab {
@@ -1808,16 +1795,7 @@ export function activateGitSidePane(
   current: WorkspaceSidePaneState | null,
 ): WorkspaceSidePaneState {
   return activateSidePaneTab(current, createGitSidePaneTab());
-}
-
-function activateTreemappingSidePane(
-  current: WorkspaceSidePaneState | null,
-  source?: TreemappingSidePaneSource,
-): WorkspaceSidePaneState {
-  return activateSidePaneTab(current, createTreemappingSidePaneTab(source));
-}
-
-export function openWhiteboardSidePane(
+}export function openWhiteboardSidePane(
   current: WorkspaceSidePaneState | null,
   options: {
     boardId: string;
@@ -2292,13 +2270,7 @@ export function closeOtherSidePaneTabs(
     tabs: [targetTab],
     activeTabId: targetTab.id,
   };
-}
-
-function closeAllSidePaneTabs(): WorkspaceSidePaneState | null {
-  return null;
-}
-
-export function setActiveSidePaneTab(
+}export function setActiveSidePaneTab(
   current: WorkspaceSidePaneState | null,
   tabId: string,
 ): WorkspaceSidePaneState | null {

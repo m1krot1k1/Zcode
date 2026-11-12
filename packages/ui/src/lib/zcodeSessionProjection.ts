@@ -1,90 +1,5 @@
 /* oxlint-disable eslint(max-lines) -- ZCode session 到当前聊天 projection 的迁移桥需要同时保持 snapshot 和 event 映射一致。 */
-import {
-  getZCodeAgentAvailableModes as getSharedAgentAvailableModes,
-  normalizeAvailableZCodeMode,
-  coalesceConsecutiveZCodeAssistants,
-  extractPlanStepsFromToolInput,
-  extractPlanStepsFromToolOutput,
-  decodeCustomModelValue,
-  deriveZCodeTaskStatusFromSessionSnapshot,
-  generateTraceId,
-  getConversationMessageProjectionPolicy,
-  getZCodeGoalActiveIterationCount,
-  getZCodeGoalIterationByAssistantMessageId,
-  getZCodeUserVisibleMessages,
-  isMainAgentToolProjectionSource,
-  isZCodeGoalContinuationReminderMessage,
-  normalizeZCodeApiRetryStatus,
-  attachZCodeBackgroundTaskNotificationToRaw,
-  collectZCodeBackgroundTaskNotificationsByToolUseId,
-  mergeZCodeBackgroundTaskControlItems,
-  parseZCodeBackgroundTaskControlItems,
-  parseZCodeBackgroundTaskNotificationText,
-  parseModelPickerValue as parseSharedModelSelection,
-  formatModelPickerValue as formatSharedModelSelection,
-  resolveZCodeVisibleSessionTitle,
-  textFromZCodeMessageParts,
-  ZCODE_AGENT_PROVIDER,
-  zcodeBackgroundTaskNotificationToolUpdateStatus,
-  appendZCodeStreamingToolInputDelta,
-  buildZCodeStreamingToolInputPreview,
-  createZCodeToolProjectionMemory,
-  ensureZCodeToolProjectionMemory,
-  finalizeZCodeToolProjectionInput,
-  forgetZCodeToolProjectionMetadata,
-  isZCodeModelRetryRecoveryProgressPayload,
-  markZCodeStreamingToolInputPreviewMaterialized,
-  resolveZCodeToolProjectionMetadata,
-  shouldMaterializeZCodeStreamingToolInputPreview,
-  zcodeApiRetryFromModelNetworkStatusPayload,
-  zcodeApiRetryFromStreamRecoveryPayload,
-  zcodeTaskNetworkDebugStatusFromPayload,
-  type ZCodeApiRetryStatus,
-  type ZCodeBackgroundTaskNotificationInfo,
-  type ZCodeBackgroundTaskControlItem,
-  type ZCodeConfigOption,
-  type ZCodePersistedMessage,
-  type ZCodePersistedMessagePart,
-  type ZCodePersistedToolCall,
-  type ZCodeTaskGoal,
-  type ZCodeTaskGoalStats,
-  type ZCodeTaskTargetChangedAction,
-  type ZCodeTaskMode,
-  type ZCodeTaskModeInfo,
-  type ZCodeStreamEvent,
-  type ZCodeTaskMeta,
-  type ZCodeTaskSnapshot,
-  type ZCodeTodoGroup,
-  type ZCodeTurnSteerCommandKind,
-  type ZCodeTurnSteerSource,
-  type ZCodePlanStep,
-  type ZCodePromptAttachment,
-  type ZCodeUsage,
-  type InputId,
-  type TraceId,
-  type ZCodeMessagePart,
-  type ZCodeMessageWithParts,
-  type ModelSelection,
-  type ZCodePermissionOption,
-  type ZCodePermissionRequest,
-  type ZCodePermissionRequestParams,
-  type ZCodeSessionEvent,
-  type ZCodeSessionMode,
-  type ZCodeSessionSettingsState,
-  type ZCodeSessionStateSnapshot,
-  type ZCodeStateUpdatedNotification,
-  type ZCodeContextCompactionTimelinePhase,
-  type ZCodeContextCompactionTimelineMeta,
-  type ZCodeGoalVerification,
-  type ZCodeGoalVerificationTimelineMeta,
-  type ZCodeTimelineMeta,
-  type ZCodeTimelineStatus,
-  type ZCodeTimelineTrigger,
-  type ZCodeToolProjectionMemory,
-  type ZCodeUserInputRequestParams,
-  type ZCodeUserInputResponse,
-  zcodeContextUsageBreakdownSchema,
-} from "@zcode/shared";
+import { getZCodeAgentAvailableModes as getSharedAgentAvailableModes, normalizeAvailableZCodeMode, coalesceConsecutiveZCodeAssistants, extractPlanStepsFromToolInput, extractPlanStepsFromToolOutput, decodeCustomModelValue, deriveZCodeTaskStatusFromSessionSnapshot, generateTraceId, getConversationMessageProjectionPolicy, getZCodeGoalActiveIterationCount, getZCodeGoalIterationByAssistantMessageId, getZCodeUserVisibleMessages, isMainAgentToolProjectionSource, isZCodeGoalContinuationReminderMessage, normalizeZCodeApiRetryStatus, attachZCodeBackgroundTaskNotificationToRaw, collectZCodeBackgroundTaskNotificationsByToolUseId, mergeZCodeBackgroundTaskControlItems, parseZCodeBackgroundTaskControlItems, parseZCodeBackgroundTaskNotificationText, parseModelPickerValue as parseSharedModelSelection, formatModelPickerValue as formatSharedModelSelection, resolveZCodeVisibleSessionTitle, textFromZCodeMessageParts, ZCODE_AGENT_PROVIDER, zcodeBackgroundTaskNotificationToolUpdateStatus, appendZCodeStreamingToolInputDelta, buildZCodeStreamingToolInputPreview, ensureZCodeToolProjectionMemory, finalizeZCodeToolProjectionInput, forgetZCodeToolProjectionMetadata, isZCodeModelRetryRecoveryProgressPayload, markZCodeStreamingToolInputPreviewMaterialized, resolveZCodeToolProjectionMetadata, shouldMaterializeZCodeStreamingToolInputPreview, zcodeApiRetryFromModelNetworkStatusPayload, zcodeApiRetryFromStreamRecoveryPayload, zcodeTaskNetworkDebugStatusFromPayload, type ZCodeApiRetryStatus, type ZCodeBackgroundTaskNotificationInfo, type ZCodeBackgroundTaskControlItem, type ZCodeConfigOption, type ZCodePersistedMessage, type ZCodePersistedMessagePart, type ZCodePersistedToolCall, type ZCodeTaskGoal, type ZCodeTaskGoalStats, type ZCodeTaskTargetChangedAction, type ZCodeTaskMode, type ZCodeTaskModeInfo, type ZCodeStreamEvent, type ZCodeTaskMeta, type ZCodeTaskSnapshot, type ZCodeTodoGroup, type ZCodeTurnSteerCommandKind, type ZCodeTurnSteerSource, type ZCodePlanStep, type ZCodePromptAttachment, type ZCodeUsage, type InputId, type TraceId, type ZCodeMessagePart, type ZCodeMessageWithParts, type ModelSelection, type ZCodePermissionOption, type ZCodePermissionRequest, type ZCodeSessionEvent, type ZCodeSessionMode, type ZCodeSessionSettingsState, type ZCodeSessionStateSnapshot, type ZCodeStateUpdatedNotification, type ZCodeContextCompactionTimelinePhase, type ZCodeContextCompactionTimelineMeta, type ZCodeGoalVerification, type ZCodeGoalVerificationTimelineMeta, type ZCodeTimelineMeta, type ZCodeTimelineStatus, type ZCodeTimelineTrigger, type ZCodeToolProjectionMemory, type ZCodeUserInputRequestParams, type ZCodeUserInputResponse, zcodeContextUsageBreakdownSchema } from "@zcode/shared";
 import { errorAttributionSchema } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
 
@@ -107,18 +22,7 @@ export interface ZCodeSessionEventProjectionState extends ZCodeToolProjectionMem
   activeApiRetrySessionIds?: Set<string>;
   backgroundTaskControlsBySession?: Map<string, ZCodeBackgroundTaskControlItem[]>;
   streamedTurnKeys?: Set<string>;
-}
-
-function createZCodeSessionEventProjectionState(): ZCodeSessionEventProjectionState {
-  return {
-    ...createZCodeToolProjectionMemory(),
-    activePromptInputIdBySession: new Map<string, InputId>(),
-    activeApiRetrySessionIds: new Set<string>(),
-    streamedTurnKeys: new Set<string>(),
-  };
-}
-
-type ZCodeSessionProjectionMode = "active-live" | "background-summary";
+}type ZCodeSessionProjectionMode = "active-live" | "background-summary";
 
 export function formatModelPickerValue(ref: ModelSelection | undefined): string {
   return formatSharedModelSelection(ref);
@@ -157,33 +61,7 @@ export function parseModelPickerValue(value: string): ModelSelection {
   }
 
   return parseSharedModelSelection(value);
-}
-
-function toZCodeTaskMode(mode: ZCodeTaskMode | undefined): ZCodeSessionMode | undefined {
-  switch (mode) {
-    case "plan":
-      return "plan";
-    case "edit":
-      return "edit";
-    case "guarded":
-      return "guarded";
-    case "yolo":
-    case "bypassPermissions":
-    case "dontAsk":
-      return "yolo";
-    case "auto":
-      return "auto";
-    case "build":
-    case "default":
-    case "acceptEdits":
-    case "autoEdit":
-      return "build";
-    default:
-      return undefined;
-  }
-}
-
-export function zcodeSessionSettingsToConfigOptions(
+}export function zcodeSessionSettingsToConfigOptions(
   settings: ZCodeSessionSettingsState,
 ): ZCodeConfigOption[] {
   const configOptions: ZCodeConfigOption[] = [
@@ -1214,27 +1092,7 @@ export function zcodeStateUpdatedToZCodeStreamEvents(params: {
       },
     },
   ];
-}
-
-function zcodePermissionRequestToZCodeStreamEvent(
-  taskId: string,
-  request: ZCodePermissionRequestParams,
-): ZCodeStreamEvent {
-  return {
-    type: "permission_request",
-    taskId,
-    traceId: generateTraceId(taskId),
-    requestId: request.requestId,
-    description: request.reason || request.toolName,
-    kind: request.toolName,
-    title: request.toolName,
-    options: request.options,
-    ...(request.origin ? { origin: request.origin } : {}),
-    raw: request,
-  };
-}
-
-export function zcodeUserInputRequestToZCodeStreamEvent(
+}export function zcodeUserInputRequestToZCodeStreamEvent(
   taskId: string,
   request: ZCodeUserInputRequestParams,
 ): Extract<ZCodeStreamEvent, { type: "elicitation_request" }> {
@@ -2769,30 +2627,7 @@ function setProjectionBackgroundTaskControls(
   jobs: ZCodeBackgroundTaskControlItem[],
 ) {
   ensureProjectionBackgroundTaskControlsCache(state)?.set(taskId, jobs);
-}
-
-function syncZCodeSessionBackgroundTaskProjection(
-  state: ZCodeSessionEventProjectionState | undefined,
-  taskId: string,
-  jobs: ZCodeBackgroundTaskControlItem[],
-) {
-  setProjectionBackgroundTaskControls(state, taskId, jobs);
-}
-
-function syncZCodeSessionBackgroundTaskProjectionFromSnapshot(
-  state: ZCodeSessionEventProjectionState | undefined,
-  snapshot: ZCodeSessionStateSnapshot,
-) {
-  // Bugfix: 单 task completion 是增量 payload，必须以同一订阅收到的完整 snapshot
-  // 作为 merge 基线；否则切走/切回后新 projection state 会把 peer running task 清掉。
-  syncZCodeSessionBackgroundTaskProjection(
-    state,
-    snapshot.session.sessionId,
-    parseZCodeBackgroundTaskControlItems(snapshot.projection.backgroundJobs),
-  );
-}
-
-function updateProjectionBackgroundTaskControlsFromPayload(
+}function updateProjectionBackgroundTaskControlsFromPayload(
   state: ZCodeSessionEventProjectionState | undefined,
   taskId: string,
   payload: Record<string, unknown>,

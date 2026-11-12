@@ -84,21 +84,3 @@ export async function uploadComposerAttachment(
     bytes: sizeBytes ?? base64ByteLength(dataBase64),
   };
 }
-
-/**
- * 附件数组 → AttachmentRef[]（顺序保持）。put 失败原样抛出（调用方中止发送，草稿保留）。
- */
-async function uploadComposerAttachments(
-  put: AttachmentPutFn,
-  sessionId: string,
-  attachments: readonly ZCodePromptAttachment[],
-): Promise<AttachmentRef[]> {
-  const refs: AttachmentRef[] = [];
-  for (const attachment of attachments) {
-    const ref = await uploadComposerAttachment(put, sessionId, attachment);
-    if (ref) {
-      refs.push(ref);
-    }
-  }
-  return refs;
-}

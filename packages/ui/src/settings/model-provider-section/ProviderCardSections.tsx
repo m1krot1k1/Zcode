@@ -39,27 +39,14 @@ import { ModelRowInput } from "./ProviderFormControls.js";
 import { PresetProviderApiKeyBanner } from "./PresetProviderApiKeyBanner.js";
 import { type ProviderModelDraftValues } from "@/settings/model-provider-section/ProviderModelMetadata.js";
 import { ProviderModelMetadataDialog } from "@/settings/model-provider-section/ProviderModelMetadataDialog.js";
-import {
-  PROVIDER_CONNECTION_API_FORMATS,
-  type ProviderConnectionApiFormat,
-  ProviderApiFormatSelect,
-  resolveProviderConnectionApiFormatDisplayLabel,
-} from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
+import { type ProviderConnectionApiFormat, ProviderApiFormatSelect, resolveProviderConnectionApiFormatDisplayLabel } from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
 import { SortableProviderModelList } from "@/settings/model-provider-section/SortableProviderModelList.js";
 import { useProviderModelDraft } from "@/settings/model-provider-section/useProviderModelDraft.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
 import type { ProviderConfigObject } from "@zcode/provider";
 
 
-export { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";
-
-function resolveProviderApiFormatOptions(
-  _provider: Pick<ProviderSettingsFormProvider, "config" | "models">,
-): ProviderConnectionApiFormat[] {
-  return [...PROVIDER_CONNECTION_API_FORMATS];
-}
-
-function shouldShowProviderApiFormat(
+export { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";function shouldShowProviderApiFormat(
   _provider: Pick<ProviderSettingsFormProvider, "providerId">,
 ): boolean {
   return true;

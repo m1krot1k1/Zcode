@@ -91,28 +91,7 @@ function getConfigSelectItemTestId(
   }
 
   return undefined;
-}
-
-function buildModelSearchText({ itemName }: { itemName: string }): string {
-  // Bugfix: 需求要求模型搜索仅匹配“展示名”，不能再命中分组名/模型值。
-  // 这里统一只返回展示名，保证搜索范围收敛且稳定。
-  return itemName.trim();
-}
-
-function matchesModelDisplayNameSearch(
-  modelDisplayName: string,
-  searchText: string,
-): boolean {
-  const normalizedSearchText = searchText.trim().toLocaleLowerCase();
-  if (normalizedSearchText.length === 0) {
-    return true;
-  }
-
-  // Bugfix: 统一用大小写不敏感匹配，避免用户输入大小写与展示名不一致时搜不到。
-  return modelDisplayName.trim().toLocaleLowerCase().includes(normalizedSearchText);
-}
-
-export function ChatApiRetryStatus({
+}export function ChatApiRetryStatus({
   apiRetry,
   intl,
   locale,

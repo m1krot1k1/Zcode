@@ -13,15 +13,7 @@ import { createGenUiVendorResources, type GenUiVendorResources } from "./genUiVe
 const PLUGIN_SANDBOX_SHELL_HTML_FILE = "plugin-sandbox.html";
 /** 注入插件 HTML 顶部的 `window.zcode` 别名脚本；同源加载，避免依赖 inline nonce。 */
 const PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH = "/__zcode__/alias.js";
-const PLUGIN_SANDBOX_ALIAS_SCRIPT_FILE = "plugin-sandbox-alias.js";
-
-interface PluginSandboxSchemeRegistrar {
-  registerSchemesAsPrivileged(
-    schemes: Array<{ scheme: string; privileges: Record<string, boolean> }>,
-  ): void;
-}
-
-/** 与 zcode-media 必须在同一次 registerSchemesAsPrivileged 调用里注册（第二次调用会覆盖第一次）。 */
+const PLUGIN_SANDBOX_ALIAS_SCRIPT_FILE = "plugin-sandbox-alias.js";/** 与 zcode-media 必须在同一次 registerSchemesAsPrivileged 调用里注册（第二次调用会覆盖第一次）。 */
 export const PLUGIN_SANDBOX_PRIVILEGED_SCHEME = {
   scheme: PLUGIN_SANDBOX_SCHEME,
   privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
@@ -282,10 +274,4 @@ export function installPluginSandboxProtocol(
   if (installedProtocols.has(protocol)) return;
   protocol.handle(PLUGIN_SANDBOX_SCHEME, handler);
   installedProtocols.add(protocol);
-}
-
-function uninstallPluginSandboxProtocol(protocol: PluginSandboxProtocolHost): void {
-  if (!installedProtocols.has(protocol)) return;
-  if (protocol.isProtocolHandled(PLUGIN_SANDBOX_SCHEME)) protocol.unhandle(PLUGIN_SANDBOX_SCHEME);
-  installedProtocols.delete(protocol);
 }

@@ -2,11 +2,7 @@ import type {
   CodingPlanResetStatusSnapshot,
   CodingPlanResetType,
   UsageQuotaLimit,
-} from "@zcode/shared";
-
-// 进度条从当前占用恢复到 100% 的动画时长，沿用现有 500ms ease-out。
-const CODING_PLAN_QUOTA_RESET_PROGRESS_DURATION_MS = 500;
-// 完成后“额度已重置”提示的停留时长，随后自动收起提示（额度条保持 100%）。
+} from "@zcode/shared";// 完成后“额度已重置”提示的停留时长，随后自动收起提示（额度条保持 100%）。
 export const CODING_PLAN_QUOTA_RESET_DONE_DISPLAY_MS = 2_600;
 // 自动/运营重置在 Composer 触发器上先合成一小段“正在重置”的时长，随后切换为“已重置”。
 // 后端没有 processing 信号，这里仅在客户端还原一次“处理中→已重置”的观感。

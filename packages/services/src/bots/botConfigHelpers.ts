@@ -11,13 +11,7 @@ import { normalizeAllowedWorkspaces } from "./workspaceHelpers.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function getContextKey(bot: Pick<BotConfig, "id">): string {
-  return bot.id;
-}
-
-export function findBot(config: BotsConfigFile, botId: string): BotConfig | null {
+}export function findBot(config: BotsConfigFile, botId: string): BotConfig | null {
   return config.bots.find((bot) => bot.id === botId) ?? null;
 }
 

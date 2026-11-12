@@ -1,9 +1,4 @@
-import {
-  normalizeAgentProviderToZCodeAgent,
-  ZCODE_AGENT_PROVIDER,
-  type ZCodeProvider,
-} from "@zcode/shared";
-import { ZCODE_AGENT_PROVIDERS } from "./zcodeProviders.js";
+import { normalizeAgentProviderToZCodeAgent, type ZCodeProvider } from "@zcode/shared";
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -22,26 +17,7 @@ function getBrowserStorage(): StorageLike | null {
   } catch {
     return null;
   }
-}
-
-function isAgentProvider(value: unknown): value is ZCodeProvider {
-  return typeof value === "string" && ZCODE_AGENT_PROVIDERS.includes(value as ZCodeProvider);
-}
-
-function readLastSelectedAgentProvider(
-  storage: StorageLike | null = getBrowserStorage(),
-): ZCodeProvider | null {
-  const rawValue = storage?.getItem(LAST_SELECTED_AGENT_PROVIDER_STORAGE_KEY);
-  if (!isAgentProvider(rawValue)) {
-    return ZCODE_AGENT_PROVIDER;
-  }
-
-  // Bugfix: 单 ZCode Agent 迁移后，旧本地存储里已移除的第三方 provider 值不能再参与首屏预热。
-  // 否则 UI 会短暂以旧 provider 作为事实源发起 prepare/create，和 agent server 的 glm 状态产生竞态。
-  return normalizeAgentProviderToZCodeAgent(rawValue);
-}
-
-export function persistLastSelectedAgentProvider(
+}export function persistLastSelectedAgentProvider(
   provider: ZCodeProvider,
   storage: StorageLike | null = getBrowserStorage(),
 ) {
