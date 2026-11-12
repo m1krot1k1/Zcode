@@ -81,7 +81,10 @@
     "apps/zcode-cli/packages/adapters/tests/fixtures/**",
     "apps/zcode-cli/packages/core/tests/fixtures/**",
     "apps/zcode-cli/tests/gb2312.js",
-    "packages/rpc/examples/**"
+    "packages/rpc/examples/**",
+    "packages/desktop/src/host/electronPort.ts",
+    "packages/desktop/src/scheduler/schedulerProtocol.ts",
+    "packages/services/src/subagents/contract.ts"
   ],
   "ignoreDependencies": [
     "d3-path",
