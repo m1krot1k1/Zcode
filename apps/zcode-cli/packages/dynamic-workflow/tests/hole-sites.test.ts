@@ -809,7 +809,10 @@ describe("a tail chain twenty fills deep", () => {
     return { lengths, text };
   };
 
-  it("keeps 20 nested fills stable with bounded ids and their enclosing fill identity", () => {
+  // Причина: построение 20 вложенных fill + lowering на загруженной машине (32 пакета
+  // в turbo) выходит за дефолтные 5 с, хотя сам тест детерминирован. Явный бюджет
+  // убирает ложный таймаут, не ослабляя проверки.
+  it("keeps 20 nested fills stable with bounded ids and their enclosing fill identity", { timeout: 60_000 }, () => {
     const { lengths, text } = grow();
     // 最长的 id 是 `hole#xxxxxxxx/actor#1` 这一类：21 个字符，与深度无关。
     expect(new Set(lengths)).toEqual(new Set([lengths[0]]));
