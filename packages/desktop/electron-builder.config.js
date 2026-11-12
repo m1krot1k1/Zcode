@@ -920,6 +920,10 @@ export default {
       // 缺失该 key 时 macOS 会静默拒绝 CoreBluetooth 枚举，内置浏览器 Web Bluetooth
       // 的设备选择器列表恒为空（实测 Chrome 有蓝牙隐私权限则正常）。
       NSBluetoothAlwaysUsageDescription: `${desktopProductIdentity.productName} needs Bluetooth access to list nearby devices when a website you open in the embedded browser requests one.`,
+      // 本机网络权限：SSH 目标通常是局域网/私有网段地址，macOS 会按应用授权本地网络访问。
+      // 缺少该 key 时系统不展示授权请求，用户也没有机会在「本地网络」中允许 ZCode。
+      // 该声明只影响授权提示，不保证路由、VPN 或目标防火墙允许连接。
+      NSLocalNetworkUsageDescription: `${desktopProductIdentity.productName} needs local network access to connect to SSH hosts and other devices on your network.`,
     },
     // 预签名脚本走的是原生 codesign，要求完整的 "Developer ID Application: ..." 身份串；
     // 但 electron-builder 的 mac.identity 在 26.x 下会拒绝带此前缀的名字。

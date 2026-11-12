@@ -11,6 +11,25 @@ function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * 取消 RPC 与 install 收口是两条链路：取消请求可能超时，但 CLI 已经 abort；
+ * 此时 install 仍会以 AbortError/「Plugin operation cancelled」诊断失败。
+ * 按错误本身识别取消，避免用户看到一条误导性的安装失败。
+ */
+export function isPluginOperationCancelledError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return true;
+  if ("code" in error && (error as { code?: unknown }).code === "plugin_operation_cancelled") {
+    return true;
+  }
+  const data =
+    "data" in error && error.data && typeof error.data === "object"
+      ? (error.data as { name?: unknown; code?: unknown })
+      : undefined;
+  if (data?.name === "AbortError" || data?.code === "plugin_operation_cancelled") return true;
+  return /plugin operation cancelled/iu.test(error.message);
+}
+
 export function buildWorkspaceKey(
   workspacePath: string,
   workspaceIdentity: string | null,
@@ -86,12 +105,22 @@ export function isPluginManagementChangeRelevant(
 
 // 单个 operationId 会被后一次安装覆盖；每次调用持有独立条目，完成时只移除自己。
 // 通过条目身份清理，同名并发操作以及切换配置层后的新操作都不会被误清除。
+export interface PluginActiveOperationEntry {
+  id: string;
+  /** 传给 CLI 的 operationId；只有安装操作携带，取消按钮据此定位远端链路。 */
+  remoteOperationId?: string;
+}
+
 export function beginPluginOperation(
   set: (partial: Partial<PluginManagementState>) => void,
   get: () => PluginManagementState,
   id: string,
+  remoteOperationId?: string,
 ): () => void {
-  const entry = { id };
+  const entry: PluginActiveOperationEntry = {
+    id,
+    ...(remoteOperationId ? { remoteOperationId } : {}),
+  };
   set({
     activeOperations: [...get().activeOperations, entry],
     operationVersion: get().operationVersion + 1,
@@ -110,10 +139,12 @@ export async function runWorkspaceOperation(
   operationId: string,
   operation: (workspace: { workspacePath: string; workspaceIdentity?: string }) => Promise<void>,
   scope: ZCodePluginScope = "user",
+  options: { remoteOperationId?: string } = {},
 ): Promise<boolean> {
   const { workspacePath, workspaceIdentity, authorityKey, configScope } = get();
   if (!workspacePath) return false;
-  const finish = beginPluginOperation(set, get, operationId);
+  const remoteOperationId = options.remoteOperationId;
+  const finish = beginPluginOperation(set, get, operationId, remoteOperationId);
   const operationVersion = get().operationVersion;
   const isCurrentContext = (): boolean => {
     const current = get();
@@ -159,6 +190,37 @@ export async function runWorkspaceOperation(
     });
     return isCurrentContext();
   } catch (error) {
+    // 用户已取消的安装：CLI 会把 abort 投影成 error diagnostic（或 RPC reject），
+    // 这不是可恢复失败。不能写 error，也不能假装安装仍在进行；重新读取投影，
+    // 让未安装/保留旧安装的真实状态回到 UI。
+    // 只有本窗口确实为该 operation 发过取消时才静默收口：CLI 自行中止（如进程
+    // 退出）仍要以 install 诊断如实显示，不能把非用户取消伪装成用户取消。
+    if (remoteOperationId !== undefined && isPluginOperationCancelledError(error)) {
+      const cancellationRequested =
+        get().cancelRequestOperationIds.includes(remoteOperationId) ||
+        get().cancellingOperationIds.includes(remoteOperationId);
+      if (cancellationRequested) {
+        logger.info("[plugins] operation cancelled", { operationId, remoteOperationId });
+        // loadInto 会自行拒绝已切换上下文的回写；这里先刷新，再把失效信号发给
+        // 其它投影（同一 Host 的市场/管理视图）。
+        await loadInto(set, get, {
+          workspacePath,
+          workspaceIdentity,
+          authorityKey,
+          configScope,
+          pluginService,
+          fresh: true,
+        });
+        await notifyPluginManagementChange({
+          owner: get,
+          workspacePath,
+          workspaceIdentity,
+          authorityKey,
+          scope,
+        });
+        return false;
+      }
+    }
     // marketplace add/update 等通用操作失败：无插件目标，归属清空。
     logger.error("[plugins] operation failed", { operationId, error: toMessage(error) });
     // 旧操作不能覆盖同一配置层中新操作的错误态；只有最近发起的操作才回写。
@@ -167,6 +229,18 @@ export async function runWorkspaceOperation(
     }
     return false;
   } finally {
+    if (remoteOperationId) {
+      // 安装结束（成功/失败/取消）后，请求态与确认态都必须清理，避免残留 id
+      // 在后续同名安装里误匹配。
+      set({
+        cancelRequestOperationIds: get().cancelRequestOperationIds.filter(
+          (id) => id !== remoteOperationId,
+        ),
+        cancellingOperationIds: get().cancellingOperationIds.filter(
+          (id) => id !== remoteOperationId,
+        ),
+      });
+    }
     finish();
   }
 }

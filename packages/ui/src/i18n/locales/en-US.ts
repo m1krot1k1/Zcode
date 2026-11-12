@@ -248,7 +248,9 @@ const enUS: Record<string, string> = {
   "remote.error.authentication": "SSH authentication failed",
   "remote.error.details": "Details",
   "remote.error.hostUnreachable.reason":
-    "Check the device address and port, and make sure it is running and reachable.",
+    "ZCode could not reach that address. Check the host and port, your network route, VPN split tunneling, and firewall rules. On macOS, also allow ZCode under Privacy & Security > Local Network.",
+  "remote.error.hostUnreachable.refused.reason":
+    "The host responded, but nothing is accepting connections on that port. Check the port and make sure the expected service is running on the host.",
   "remote.error.connectionTimeout.reason":
     "The device did not respond in time. Check your connection and retry.",
   "remote.error.hostNotFound.reason": "Check the hostname or try an IP address.",
@@ -2263,6 +2265,7 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.organizeByProject": "Project",
   "workspaceSidebar.conversationsSection": "Tasks",
   "workspaceSidebar.projectsSection": "Projects",
+  "workspaceSidebar.addProject": "Add project",
   "workspaceSidebar.newConversation": "New task",
   "workspaceSidebar.reorderSection": "Move {section} section",
   "workspaceSidebar.sortBy": "Sort by",
@@ -2936,6 +2939,7 @@ const enUS: Record<string, string> = {
   "taskList.rename": "Rename task",
   "taskList.archive": "Archive task",
   "taskList.archiveFailed": "Could not archive task",
+  "taskList.noArchivedTasks": "There are no archived tasks to delete.",
   "taskList.unarchive": "Unarchive task",
   "taskList.renamePlaceholder": "Task name",
   "taskList.renameFailed": "Could not rename task",
@@ -3279,8 +3283,7 @@ const enUS: Record<string, string> = {
   "settings.spawnBudget": "Subagent spawn budget",
   "settings.spawnBudgetDescription":
     "Legacy setting. Spawn counts are no longer capped and this value is ignored.",
-  "settings.spawnBudgetInvalid":
-    "This legacy setting is no longer used.",
+  "settings.spawnBudgetInvalid": "This legacy setting is no longer used.",
   "settings.subagentMaxParallel": "Maximum parallel subagents",
   "settings.subagentMaxParallelDescription":
     "Optional lower concurrency limit. Leave blank or enter 0 to use the host's available CPU capacity. Takes effect for newly started agents.",
@@ -5437,6 +5440,10 @@ const enUS: Record<string, string> = {
   "settings.plugins.store.viewMoreFew": "See {names}",
   "settings.plugins.store.showLess": "Show less",
   "settings.plugins.store.install": "Install",
+  "settings.plugins.store.cancelInstall": "Cancel",
+  "settings.plugins.store.cancelling": "Cancelling…",
+  "settings.plugins.store.cancelInstallFailed":
+    "This installation can no longer be cancelled. It may have already finished.",
   "settings.plugins.store.paidPlanBadge": "Coding Plan",
   "settings.plugins.store.requiresPaidPlan": "This plugin works better with a Coding Plan",
   "settings.plugins.store.tryNow": "Try now",
@@ -6370,7 +6377,8 @@ const enUS: Record<string, string> = {
   "codeGraph.contains": "Structure",
   "codeGraph.nodeTypes": "Node types",
   "codeGraph.noNodes": "No symbols in this view",
-  "codeGraph.noVisibleNodesDescription": "Change relationship filters or search for a symbol to show graph nodes.",
+  "codeGraph.noVisibleNodesDescription":
+    "Change relationship filters or search for a symbol to show graph nodes.",
   "codeGraph.legendHint":
     "Select a node to inspect its path and nearby links. Use zoom and drag to explore.",
   "codeGraph.loading": "Loading code graph…",

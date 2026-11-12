@@ -20,6 +20,9 @@ import {
   HEADER_SIZE,
   ProtocolMessage,
   ProtocolMessageType,
+  RpcFrameLimitError,
+  readProtocolFrameHeader,
+  resolveFrameByteLimit,
   writeProtocolMessage,
   type ConnectionFlowControl,
   type IMessagePassingProtocol,
@@ -28,6 +31,11 @@ import {
 
 /** PersistentProtocol 可调参数（v4 通道层补丁）。 */
 export interface PersistentProtocolOptions {
+  /**
+   * 单个入站/出站帧 payload 上限；只能收紧，不能超过 MAX_FRAME_BYTES。
+   * 未设置时使用同一硬上限，保证与 SocketProtocol 行为一致。
+   */
+  maxFrameBytes?: number;
   /** 未 ACK 字节高水位：越过即 onSaturated（上层暂停 drain，让 coalesce 吸收）。 */
   saturationHighWaterMarkBytes?: number;
   /** 未 ACK 字节低水位：饱和后回落至此即 onDrained（上层恢复 drain）。 */
@@ -46,6 +54,9 @@ interface UnackEntry {
 export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFlowControl {
   private readonly _onMessage = new Emitter<VSBuffer>();
   readonly onMessage = this._onMessage.event;
+
+  private readonly _onError = new Emitter<Error>();
+  readonly onError = this._onError.event;
 
   private readonly _onClose = new Emitter<void>();
   readonly onClose = this._onClose.event;
@@ -87,8 +98,12 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   private readonly saturationLowWaterMarkBytes: number;
   private readonly replayBufferMaxBytes: number;
   private readonly replayBufferGraceMs: number;
+  private readonly maxFrameBytes: number;
+  /** oversize frame 尚未到达的 payload 字节数；期间所有输入按顺序丢弃。 */
+  private discardRemaining = 0;
 
   constructor(socket: ISocket, options: PersistentProtocolOptions = {}) {
+    this.maxFrameBytes = resolveFrameByteLimit(options.maxFrameBytes);
     this.saturationHighWaterMarkBytes = options.saturationHighWaterMarkBytes ?? 1024 * 1024;
     this.saturationLowWaterMarkBytes =
       options.saturationLowWaterMarkBytes ?? Math.floor(this.saturationHighWaterMarkBytes / 4);
@@ -109,6 +124,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     this.disposables.add(
       this.socket.onData((data) => {
         this.chunkStream.acceptChunk(data);
+        // 与 SocketProtocol 相同的无抛出约定：畸形帧走 break/onError。
         this.readMessages();
       }),
     );
@@ -121,6 +137,10 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   }
 
   send(buffer: VSBuffer): void {
+    // 先于任何状态变更拒绝超限帧：不能把没写出去的条目留在重放队列里。
+    if (buffer.byteLength > this.maxFrameBytes) {
+      throw new RpcFrameLimitError(buffer.byteLength, this.maxFrameBytes);
+    }
     const msg = new ProtocolMessage(
       ProtocolMessageType.Regular,
       ++this.outgoingMsgId,
@@ -150,6 +170,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     this.disposables.dispose();
     this.disposables = new DisposableStore();
     this.chunkStream = new ChunkStream();
+    this.discardRemaining = 0;
     this.socket = newSocket;
     this.bindSocket();
 
@@ -165,6 +186,15 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
 
   private readMessages(): void {
     while (true) {
+      if (this.discardRemaining > 0) {
+        const discarded = this.chunkStream.discard(this.discardRemaining);
+        this.discardRemaining -= discarded;
+        if (this.discardRemaining > 0) {
+          break;
+        }
+        continue;
+      }
+
       if (this.chunkStream.byteLength < HEADER_SIZE) {
         break;
       }
@@ -174,10 +204,19 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
         break;
       }
 
-      const type = header.readUInt8(0) as ProtocolMessageType;
-      const id = header.readUInt32BE(1);
-      const ack = header.readUInt32BE(5);
-      const length = header.readUInt32BE(9);
+      const { type, id, ack, length } = readProtocolFrameHeader(header);
+
+      // 与 SocketProtocol 共用同一硬上限，并且在等待/拼接 body 之前判定。
+      if (length > this.maxFrameBytes) {
+        this.chunkStream.skip(HEADER_SIZE);
+        // 头已经完整到达，ack 信息可信：先按普通帧语义确认发送队列，
+        // 再丢弃 payload，避免重连后重放本应已被对端确认的消息。
+        this.processAck(ack);
+        this.lastAckTime = Date.now();
+        this.discardRemaining = length;
+        this.emitError(new RpcFrameLimitError(length, this.maxFrameBytes));
+        continue;
+      }
 
       const totalFrameLength = HEADER_SIZE + length;
       if (this.chunkStream.byteLength < totalFrameLength) {
@@ -192,7 +231,8 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
       if (length > 0) {
         const readBody = this.chunkStream.read(length);
         if (!readBody) {
-          throw new Error("PersistentProtocol 读取到完整帧长度后 body 不应为空");
+          // 不可达（上面已确认整帧到齐）；不把内部不变量错误抛进 socket 回调。
+          break;
         }
         body = readBody;
       }
@@ -274,6 +314,14 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     }, this.ACK_TIMEOUT);
   }
 
+  private emitError(error: Error): void {
+    try {
+      this._onError.fire(error);
+    } catch {
+      // 与 SocketProtocol 相同：订阅者异常不能破坏帧边界。
+    }
+  }
+
   async drain(): Promise<void> {
     return this.socket.drain();
   }
@@ -287,6 +335,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     }
     this.disposables.dispose();
     this._onMessage.dispose();
+    this._onError.dispose();
     this._onClose.dispose();
     this._onSocketClose.dispose();
     this._onSaturated.dispose();

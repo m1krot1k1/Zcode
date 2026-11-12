@@ -18,6 +18,12 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "packages/*/test/**/*.test.ts",
       "packages/*/tests/**/*.test.ts",
+      // R06: регрессии редакции секретов лежат рядом с исходниками в `src/**/__tests__`
+      // и раньше не собирались ни этим конфигом, ни корневым (он не покрывает apps/).
+      // Перечисляем точные пути, чтобы не подключать чужие src-тесты оптом.
+      "packages/adapters/src/model/__tests__/provider-finish-business-error.redaction.test.ts",
+      "packages/core/src/runtime/helpers/__tests__/turn-errors.redaction.test.ts",
+      "packages/core/src/tool/handlers/__tests__/bash-sandbox-honesty.test.ts",
     ],
     // Bugfix: 排除由 Node 原生 test runner 覆盖的文件，保留 Vitest 默认忽略项。
     exclude: [...configDefaults.exclude, ...nodeTestRunnerFiles],

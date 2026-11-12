@@ -19,6 +19,7 @@ import {
   subscribePluginManagementChanges,
   isPluginManagementChangeRelevant,
   notifyPluginManagementChange,
+  type PluginActiveOperationEntry,
 } from "@/store/pluginManagementStoreLoading.js";
 import { setPluginEnabledOptimistically } from "@/store/pluginManagementStoreEnabled.js";
 
@@ -56,7 +57,11 @@ export interface PluginManagementState {
    */
   lastFailedPluginId: string | null;
   togglingPluginId: string | null;
-  activeOperations: ReadonlyArray<{ id: string }>;
+  activeOperations: ReadonlyArray<PluginActiveOperationEntry>;
+  /** 已发出取消请求、等待 CLI 应答的 remote operationId（尚未确认中止）。 */
+  cancelRequestOperationIds: string[];
+  /** CLI 已确认 abort、但底层安装尚未收口的 remote operationId。 */
+  cancellingOperationIds: string[];
   operationVersion: number;
   describeCache: Record<string, PluginDescribeEntry>;
   initialize: (params: {
@@ -84,6 +89,15 @@ export interface PluginManagementState {
     marketplace: string,
     pluginService: IPluginManagementService,
     scope?: ZCodePluginScope,
+  ) => Promise<boolean>;
+  /**
+   * 取消同插件当前在途安装。返回 true 表示 CLI 已确认 abort；
+   * false 表示没有可取消的安装、CLI 未找到该 operation，或取消 RPC 失败。
+   */
+  cancelInstall: (
+    pluginName: string,
+    marketplace: string,
+    pluginService: IPluginManagementService,
   ) => Promise<boolean>;
   uninstallPlugin: (
     pluginId: string,
@@ -125,10 +139,25 @@ function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+let pluginInstallOperationSequence = 0;
+
+/** 每个安装调用必须有唯一 operationId：CLI 按它登记 AbortController，UI 也按它取消。 */
+function createPluginInstallOperationId(): string {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `plugin-install-${Date.now()}-${++pluginInstallOperationSequence}`
+  );
+}
+
 function throwForErrorDiagnostic(diagnostics: ZCodePluginDiagnostic[]): void {
   const blockingDiagnostic = diagnostics.find((diagnostic) => diagnostic.severity === "error");
   if (blockingDiagnostic) {
-    throw new Error(blockingDiagnostic.message);
+    // CLI 用 diagnostics 传回结构化失败码。只有 message 会被旧调用方消费，
+    // 但取消识别需要 code/name；保留 code 并让取消诊断表现为 AbortError 语义。
+    const error = new Error(blockingDiagnostic.message);
+    error.name = blockingDiagnostic.code === "plugin_operation_cancelled" ? "AbortError" : "Error";
+    (error as Error & { code?: string }).code = blockingDiagnostic.code;
+    throw error;
   }
 }
 
@@ -151,6 +180,8 @@ export const createPluginManagementStore = (initialService?: IPluginManagementSe
     lastFailedPluginId: null,
     togglingPluginId: null,
     activeOperations: [],
+    cancelRequestOperationIds: [],
+    cancellingOperationIds: [],
     operationVersion: 0,
     describeCache: {},
 
@@ -194,6 +225,8 @@ export const createPluginManagementStore = (initialService?: IPluginManagementSe
         ...(contextChanged
           ? {
               activeOperations: [],
+              cancelRequestOperationIds: [],
+              cancellingOperationIds: [],
               operationVersion: current.operationVersion + 1,
               togglingPluginId: null,
               plugins: [],
@@ -306,6 +339,7 @@ export const createPluginManagementStore = (initialService?: IPluginManagementSe
     },
 
     async installPlugin(pluginName, marketplace, pluginService, scope = "user") {
+      const remoteOperationId = createPluginInstallOperationId();
       return runWorkspaceOperation(
         set,
         get,
@@ -317,13 +351,70 @@ export const createPluginManagementStore = (initialService?: IPluginManagementSe
             pluginName,
             marketplace,
             scope,
+            // 只带 operationId 的 install 才能被 CLI 的 plugins/cancelOperation 中止。
+            operationId: remoteOperationId,
           });
           // CLI 为了保留结构化诊断，安装失败会返回成功的 RPC envelope，
           // 并把实际错误放进 diagnostics。旧 UI 忽略返回值后继续刷新，看起来像按钮无响应，
           // 也没有错误和重试入口；这里将 error diagnostic 收敛到既有 operation 错误态。
           throwForErrorDiagnostic(result.diagnostics);
         },
+        scope,
+        { remoteOperationId },
       );
+    },
+
+    async cancelInstall(pluginName, marketplace, pluginService) {
+      const targetId = `plugin:install:${pluginName}@${marketplace}`;
+      const remoteOperationIds = get().activeOperations.flatMap((operation) =>
+        operation.id === targetId && operation.remoteOperationId
+          ? [operation.remoteOperationId]
+          : [],
+      );
+      if (remoteOperationIds.length === 0) return false;
+      const requestedIds = new Set(remoteOperationIds);
+      // 先进入「取消请求在途」而不是「正在取消」：只有 CLI 应答 cancelled:true
+      // 才证明底层 abort 已送达，避免把排队中的请求显示成已经生效。
+      set({
+        cancelRequestOperationIds: [
+          ...new Set([...get().cancelRequestOperationIds, ...remoteOperationIds]),
+        ],
+      });
+      const results = await Promise.all(
+        remoteOperationIds.map(async (operationId) => {
+          try {
+            const result = await pluginService.cancelPluginOperation({ operationId });
+            return result.cancelled;
+          } catch (error) {
+            // 取消 RPC 失败不能让安装永远停在请求态；清掉标记后由安装自身收口。
+            logger.warn("[plugins] cancel install request failed", {
+              operationId,
+              error: toMessage(error),
+            });
+            return false;
+          }
+        }),
+      );
+      const confirmedIds = remoteOperationIds.filter((_, index) => results[index]);
+      // 取消应答可能晚于安装收口；只有仍在 activeOperations 里的安装才能停留在
+      // 「正在取消」，否则会留下指向已结束 operation 的幽灵状态。
+      const stillActiveOperationIds = new Set(
+        get().activeOperations.flatMap((operation) =>
+          operation.remoteOperationId ? [operation.remoteOperationId] : [],
+        ),
+      );
+      const confirmedActiveIds = confirmedIds.filter((id) => stillActiveOperationIds.has(id));
+      set({
+        cancelRequestOperationIds: get().cancelRequestOperationIds.filter(
+          (id) => !requestedIds.has(id),
+        ),
+        // 只有 CLI 确认 cancelled:true 的 id 进入「正在取消」；cancelled:false
+        // 表示操作已结束或定位失败，安装照常收口，不能伪造取消状态。
+        cancellingOperationIds: [
+          ...new Set([...get().cancellingOperationIds, ...confirmedActiveIds]),
+        ],
+      });
+      return confirmedIds.length > 0;
     },
 
     async uninstallPlugin(pluginId, pluginService, removeCache = true) {

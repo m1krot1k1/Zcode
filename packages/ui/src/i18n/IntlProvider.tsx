@@ -276,6 +276,13 @@ export function ZCodeIntlProvider({
     return localePreference === "system" ? systemLocale : localePreference;
   }, [localePreference, systemLocale]);
 
+  // 屏幕阅读器按文档语言选择发音，切换 UI 语言时必须同步 BCP-47 lang；
+  // 这是 locale 的派生投影，不参与广播/持久化，也不会反向触发语言选择。
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   const setLocalePreference = useCallback(
     (newPreference: LocalePreference) => {
       const operationSeq = localePreferenceOperationSeqRef.current + 1;

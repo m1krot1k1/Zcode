@@ -1768,6 +1768,8 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
               ? intl.formatMessage({
                   id: classifyRemoteConnectionError({
                     errorCode,
+                    // 用未本地化的原始错误再分一层传输原因（端口拒绝/无路由）；本地化标题不含 OS 错误文本。
+                    error: rawError ?? error,
                     target: pendingRemoteTarget ?? undefined,
                   }).reasonId,
                 })

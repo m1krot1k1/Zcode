@@ -11,10 +11,10 @@ import {
   type TelemetryRendererContext,
   type OAuthLoginAttribution,
 } from "@zcode/shared";
-import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { version } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getAppConfigDir } from "../paths.js";
 
@@ -159,10 +159,88 @@ async function readTelemetryState(homeDir?: string): Promise<TelemetryState> {
   }
 }
 
+const TELEMETRY_STATE_RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const;
+
+function readFsErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/** 目标文件已存在时沿用其 POSIX mode；不存在时返回 undefined，走默认文件权限。 */
+async function readExistingTelemetryStateMode(stateFile: string): Promise<number | undefined> {
+  try {
+    const metadata = await stat(stateFile);
+    return metadata.isFile() ? metadata.mode & 0o777 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function renameTelemetryState(tempFile: string, stateFile: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(tempFile, stateFile);
+      return;
+    } catch (error) {
+      const delayMs = TELEMETRY_STATE_RENAME_RETRY_DELAYS_MS[attempt];
+      const code = readFsErrorCode(error);
+      // Windows Defender、索引服务或另一个进程会短暂占用目标 JSON，使原子替换 rename
+      // 抛 EPERM/EBUSY/EACCES。只对这三类瞬时占用做有界重试；真实权限错误原样抛出。
+      if (delayMs === undefined || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) {
+        throw error;
+      }
+      await sleep(delayMs);
+    }
+  }
+}
+
+/**
+ * 原子写入 telemetry-state.json：同目录临时文件写满并 sync 后 rename 替换。
+ *
+ * Bugfix（QW12）：此前直接 writeFile 覆盖目标文件，进程崩溃/断电会留下半截 JSON；
+ * readTelemetryState 解析失败返回 {}，随后会重新生成 deviceMid，导致设备身份漂移。
+ * rename 在同一文件系统上是原子的，读者只会看到旧的完整文件或新的完整文件。
+ * 调用方必须已持有 telemetry-state.lock（见 withTelemetryStateLock）。
+ */
 async function writeTelemetryState(state: TelemetryState, homeDir?: string): Promise<void> {
   const telemetryStateFile = resolveTelemetryStateFile(homeDir);
-  await mkdir(dirname(telemetryStateFile), { recursive: true });
-  await writeFile(telemetryStateFile, JSON.stringify(state, null, 2), "utf-8");
+  const directory = dirname(telemetryStateFile);
+  await mkdir(directory, { recursive: true });
+  const tempFile = join(
+    directory,
+    `.${basename(telemetryStateFile)}.${process.pid}.${Date.now()}.${Math.random()
+      .toString(16)
+      .slice(2)}.tmp`,
+  );
+  // rename 会用临时文件替换目标，mode 取自临时文件；不显式继承会丢失既有的 0600 等收紧权限。
+  const existingMode = await readExistingTelemetryStateMode(telemetryStateFile);
+  let handle: FileHandle | undefined;
+  let createdTempFile = false;
+  try {
+    handle = await open(tempFile, "wx", existingMode ?? 0o666);
+    // 只有本次真正创建了临时文件才允许清理失败路径；open 抛 EEXIST 时这里仍是 false，
+    // 不能删除另一个进程同名的活动临时文件。
+    createdTempFile = true;
+    if (existingMode !== undefined && process.platform !== "win32") {
+      // open 的 mode 会被 umask 再收窄；chmod 保证既有收紧权限（如 0600）原样保留。
+      await handle.chmod(existingMode);
+    }
+    await handle.writeFile(JSON.stringify(state, null, 2), "utf-8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await renameTelemetryState(tempFile, telemetryStateFile);
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    // 失败清理只删除本次临时文件，不扫描其他进程可能正在使用的 .tmp。
+    if (createdTempFile) {
+      await unlink(tempFile).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 async function sleep(ms: number): Promise<void> {

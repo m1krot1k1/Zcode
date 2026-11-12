@@ -241,7 +241,10 @@ const zhCN: Record<string, string> = {
   "remote.action.none": "",
   "remote.error.authentication": "SSH 认证失败",
   "remote.error.details": "详细信息",
-  "remote.error.hostUnreachable.reason": "检查设备地址和端口，确认设备已启动并可访问。",
+  "remote.error.hostUnreachable.reason":
+    "ZCode 无法访问该地址。请检查主机和端口、本机网络路由、VPN 分流规则与防火墙设置；macOS 上还需在「系统设置 > 隐私与安全性 > 本地网络」中允许 ZCode。",
+  "remote.error.hostUnreachable.refused.reason":
+    "主机有响应，但该端口没有服务接受连接。请检查端口，并确认主机上的目标服务正在运行。",
   "remote.error.connectionTimeout.reason": "设备未及时响应，请检查网络后重试。",
   "remote.error.hostNotFound.reason": "检查主机名是否正确，或尝试使用 IP 地址。",
   "remote.error.hostKeyChanged.reason":
@@ -2102,6 +2105,7 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.organizeByProject": "项目",
   "workspaceSidebar.conversationsSection": "任务",
   "workspaceSidebar.projectsSection": "项目",
+  "workspaceSidebar.addProject": "添加项目",
   "workspaceSidebar.newConversation": "新建任务",
   "workspaceSidebar.reorderSection": "移动{section}分区",
   "workspaceSidebar.sortBy": "排序方式",
@@ -2745,6 +2749,7 @@ const zhCN: Record<string, string> = {
   "taskList.rename": "重命名任务",
   "taskList.archive": "归档任务",
   "taskList.archiveFailed": "归档任务失败",
+  "taskList.noArchivedTasks": "没有可删除的归档任务。",
   "taskList.unarchive": "取消归档任务",
   "taskList.renamePlaceholder": "任务名称",
   "taskList.renameFailed": "重命名任务失败",
@@ -3073,8 +3078,7 @@ const zhCN: Record<string, string> = {
   "settings.httpProxyCaCertPathPlaceholder": "例如 /Users/name/certs/root-ca.pem",
   "settings.httpProxySavedHint": "网络代理设置已保存，重启应用后生效",
   "settings.spawnBudget": "子代理派生预算",
-  "settings.spawnBudgetDescription":
-    "旧版设置。现在不再限制子代理总数，此值会被忽略。",
+  "settings.spawnBudgetDescription": "旧版设置。现在不再限制子代理总数，此值会被忽略。",
   "settings.spawnBudgetInvalid": "此旧版设置已不再使用。",
   "settings.subagentMaxParallel": "子代理最大并行数",
   "settings.subagentMaxParallelDescription":
@@ -5077,6 +5081,9 @@ const zhCN: Record<string, string> = {
   "settings.plugins.store.viewMoreFew": "查看 {names}",
   "settings.plugins.store.showLess": "收起",
   "settings.plugins.store.install": "安装",
+  "settings.plugins.store.cancelInstall": "取消",
+  "settings.plugins.store.cancelling": "正在取消…",
+  "settings.plugins.store.cancelInstallFailed": "无法取消该安装，它可能已经完成。",
   "settings.plugins.store.paidPlanBadge": "编程套餐",
   "settings.plugins.store.requiresPaidPlan": "这个插件搭配编程套餐可以更好地工作",
   "settings.plugins.store.tryNow": "立即试用",
@@ -7429,7 +7436,8 @@ const zhCN: Record<string, string> = {
   "zcode.error.providerBusiness.3010": "当前系统繁忙，请切换模型、升级账户，或稍后再试。",
   "zcode.error.providerBusiness.3102": "已超过单次最长运行时间，请创建新的闲时任务继续。",
   "zcode.error.providerBusiness.2007": "上游服务暂时不可用，请稍后重试。",
-  "zcode.error.modelSuspiciousEmpty": "模型未返回内容（通常由令牌过期或套餐问题导致）。请重新发送。",
+  "zcode.error.modelSuspiciousEmpty":
+    "模型未返回内容（通常由令牌过期或套餐问题导致）。请重新发送。",
   "zcode.error.providerBusiness.429": "请求过于频繁，请稍后重试。",
 
   // 调试信息栏

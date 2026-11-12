@@ -110,6 +110,10 @@ export function PluginStorePage({
   const loadedWorkspaceIdentity = usePluginManagementStore((state) => state.workspaceIdentity);
   const error = usePluginManagementStore((state) => state.error);
   const activeOperations = usePluginManagementStore((state) => state.activeOperations);
+  const cancelRequestOperationIds = usePluginManagementStore(
+    (state) => state.cancelRequestOperationIds,
+  );
+  const cancellingOperationIds = usePluginManagementStore((state) => state.cancellingOperationIds);
   const describeCache = usePluginManagementStore((state) => state.describeCache);
   const initialize = usePluginManagementStore((state) => state.initialize);
   const updateMarketplace = usePluginManagementStore((state) => state.updateMarketplace);
@@ -404,6 +408,23 @@ export function PluginStorePage({
     },
   });
 
+  const cancelInstall = usePluginManagementStore((state) => state.cancelInstall);
+
+  const handleCancelInstall = useCallback(
+    async (item: StorePluginItem) => {
+      if (item.restorable) return;
+      const cancelled = await cancelInstall(item.name, item.marketplace, operationService);
+      // 取消请求未被 CLI 接受（操作已结束/定位失败）：安装本身仍有真实结果，
+      // 这里只补充可理解的反馈，不伪造已取消状态。
+      if (!cancelled) {
+        toast(intl.formatMessage({ id: "settings.plugins.store.cancelInstallFailed" }), {
+          variant: "warning",
+        });
+      }
+    },
+    [cancelInstall, intl, operationService],
+  );
+
   const handleInstall = useCallback(
     async (item: StorePluginItem) => {
       const succeeded = item.restorable
@@ -505,16 +526,22 @@ export function PluginStorePage({
         void setEnabled(pluginId, enabled, operationService, "workspace");
       },
       onInstall: (item) => void handleInstall(item),
+      onCancelInstall: (item) => void handleCancelInstall(item),
       onUninstall: uninstall.requestUninstall,
       onUpdate: (pluginId) => void handleUpdatePlugin(pluginId),
       activeOperations,
+      cancelRequestOperationIds,
+      cancellingOperationIds,
       togglingPluginId,
     }),
     [
       handleInstall,
+      handleCancelInstall,
       handleUpdatePlugin,
       openDetail,
       activeOperations,
+      cancelRequestOperationIds,
+      cancellingOperationIds,
       uninstall.requestUninstall,
       pluginUi,
       operationService,

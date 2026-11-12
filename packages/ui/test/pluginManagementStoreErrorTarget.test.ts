@@ -30,6 +30,7 @@ function resetStore(overrides: Record<string, unknown> = {}): void {
     lastFailedPluginId: null,
     togglingPluginId: null,
     activeOperations: [],
+    cancellingOperationIds: [],
     ...overrides,
   });
 }

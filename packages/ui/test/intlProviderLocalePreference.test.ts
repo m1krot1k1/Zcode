@@ -175,6 +175,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  document.documentElement.lang = "";
   vi.restoreAllMocks();
 });
 
@@ -366,6 +367,43 @@ describe("IntlProvider locale preference sync", () => {
     );
     expect(screen.getByTestId("russian-label").textContent).toBe("Русский");
     expect(screen.getByTestId("unknown-label").textContent).toBe("test.unknown.message");
+  });
+
+  it("синхронизирует documentElement.lang с текущей локалью", async () => {
+    render(
+      createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocaleControls)),
+    );
+    await waitFor(() => expect(document.documentElement.lang).toBe("ru-RU"));
+
+    fireEvent.click(screen.getByRole("button", { name: "en-US" }));
+    await waitFor(() => expect(document.documentElement.lang).toBe("en-US"));
+  });
+
+  it("documents the UI language on the document element before any locale switch", async () => {
+    render(
+      createElement(ZCodeIntlProvider, { initialLocale: "zh-CN" }, createElement(LocaleProbe)),
+    );
+    await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
+  });
+
+  it("дополняет отсутствовавшие ключи во всех каталогах", () => {
+    const requiredIds = [
+      "taskList.noArchivedTasks",
+      "workspaceSidebar.addProject",
+      "settings.plugins.store.cancelInstall",
+      "settings.plugins.store.cancelling",
+      "settings.plugins.store.cancelInstallFailed",
+    ];
+    for (const [locale, messages] of [
+      ["en-US", englishMessages],
+      ["ru-RU", russianMessages],
+      ["zh-CN", chineseMessages],
+    ] as const) {
+      const missing = requiredIds.filter(
+        (id) => !Object.hasOwn(messages, id) || messages[id]?.trim().length === 0,
+      );
+      expect({ locale, missing }).toEqual({ locale, missing: [] });
+    }
   });
 
   it("русский выбор языка сохраняется и отправляется в синхронизацию окон", async () => {
