@@ -23,7 +23,7 @@ import {
 } from "./groupSessions.js";
 /* eslint-disable max-lines -- Bots 服务仍复用原 RPC 文件名，先把鉴权、命令路由、ZCode Agent 桥接收口集中在同一服务内。 */
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { IDisposable } from "@zcode/rpc";
@@ -390,6 +390,23 @@ interface BotTaskSelectionEntry {
 
 interface BotWorkspaceSelectionEntry {
   workspace: BotWorkspaceRef;
+}
+
+/**
+ * Сравнение секретов вебхука без утечки длины/префикса по времени.
+ *
+ * 修复原因：обычное `!==` даёт timing-oracle на локальном/релейном эндпоинте.
+ * 依据：в репозитории уже есть эталонный timingSafeEqual в zcode-server-cli/http.ts.
+ */
+function webhookSecretEquals(
+  expected: string | null | undefined,
+  inbound: string | null | undefined,
+): boolean {
+  if (!expected || !inbound) return false;
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const inboundBytes = Buffer.from(inbound, "utf8");
+  if (expectedBytes.length !== inboundBytes.length) return false;
+  return timingSafeEqual(expectedBytes, inboundBytes);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -3711,7 +3728,7 @@ export function createBotsService(
       const inboundToken = isRecord(payload)
         ? (readNestedString(payload, "token") ?? readNestedString(header, "token"))
         : undefined;
-      if (!expectedToken || expectedToken !== inboundToken) {
+      if (!webhookSecretEquals(expectedToken, inboundToken)) {
         return {
           ok: false,
           replies: [],
@@ -3835,7 +3852,7 @@ export function createBotsService(
       const bot = findBot(config, inbound.botId);
       if (bot?.provider === "webhook" && bot.webhookSecretRef) {
         const expectedSecret = await deps.credentialService.load(bot.webhookSecretRef);
-        if (expectedSecret && expectedSecret !== inboundSecret) {
+        if (expectedSecret && !webhookSecretEquals(expectedSecret, inboundSecret)) {
           replies.push(createOutbound(inbound.actor, msg(locale, "webhookSecretInvalid")));
           continue;
         }
@@ -3852,7 +3869,7 @@ export function createBotsService(
             : typeof payloadHeader?.token === "string"
               ? payloadHeader.token
               : undefined;
-        if (expectedToken && expectedToken !== inboundToken) {
+        if (expectedToken && !webhookSecretEquals(expectedToken, inboundToken)) {
           replies.push(createOutbound(inbound.actor, msg(locale, "webhookSecretInvalid")));
           continue;
         }

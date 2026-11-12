@@ -85,7 +85,6 @@
     "dependencies\tpackages/share-ui/package.json\tstreamdown",
     "dependencies\tpackages/share-ui/package.json\tswr",
     "dependencies\tpackages/share-ui/package.json\ttailwind-merge",
-    "dependencies\tpackages/share-ui/package.json\ttokenlens",
     "dependencies\tpackages/share-ui/package.json\ttw-animate-css",
     "dependencies\tpackages/share-ui/package.json\tuse-stick-to-bottom",
     "dependencies\tpackages/share-ui/package.json\tzustand",

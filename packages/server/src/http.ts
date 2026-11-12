@@ -377,7 +377,16 @@ async function resolveStaticFile(
 ): Promise<string | null> {
   const root = resolve(staticRoot);
   const normalizedPathname = pathname === "/" ? "/index.html" : pathname;
-  const relativePath = decodeURIComponent(normalizedPathname).replace(/^\/+/, "");
+  // 修复原因：битый percent-encoding (`/%E0%A4%A`) выбрасывал URIError мимо try/catch
+  // вызывающего кода → HTTP 500 и stack trace в stderr. Такого файла не существует,
+  // поэтому отвечаем штатным 404.
+  let decodedPathname: string;
+  try {
+    decodedPathname = decodeURIComponent(normalizedPathname);
+  } catch {
+    return null;
+  }
+  const relativePath = decodedPathname.replace(/^\/+/, "");
   // 盘符路径必须在 resolve 之前拦截（含 %3A 解码后的形式），否则 Windows 上会解析到
   // 静态根所在盘之外的路径；直接 404，也不进入 SPA fallback。
   if (isPathDriveQualified(relativePath)) {

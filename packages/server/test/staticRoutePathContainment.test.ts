@@ -91,6 +91,12 @@ describe("static route path containment", () => {
     expect((await fetch(`http://127.0.0.1:${port}/Z%3A/marker.txt`)).status).toBe(404);
   });
 
+  it("битый percent-encoding даёт 404, а не 500 со stack trace", async () => {
+    const port = await startStaticServer();
+    const response = await fetch(`http://127.0.0.1:${port}/%E0%A4%A`);
+    expect(response.status).toBe(404);
+  });
+
   it("编码形式的 .. 在 WHATWG URL 归一化后落回根内，未命中时走 SPA fallback 而非越界", async () => {
     const port = await startStaticServer();
     const response = await fetch(`http://127.0.0.1:${port}/%2e%2e/secret.txt`);

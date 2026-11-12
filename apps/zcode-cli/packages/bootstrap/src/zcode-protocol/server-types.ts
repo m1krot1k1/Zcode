@@ -93,6 +93,8 @@ export interface ZCodeProtocolSessionRecord {
   memoryEnabled: boolean;
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
+  /** Снимок workspace boundary на момент создания; дочерние сессии наследуют его. */
+  workspaceBoundary: "strict" | "ask" | "allow";
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   createdAt: number;
   deliveryKind?: ZCodeDeliveryKind;
