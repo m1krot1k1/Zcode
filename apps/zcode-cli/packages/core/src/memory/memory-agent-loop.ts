@@ -23,12 +23,12 @@ import { auxiliaryModelOptions } from "../model/auxiliary-model-options.js";
 
 export type MemoryAgentModelRequest = ModelRequest;
 
-export interface MemoryAgentLoopResult {
+interface MemoryAgentLoopResult {
   messages: ModelInputMessage[];
   turns: number;
 }
 
-export interface MemoryAgentToolPolicyInput {
+interface MemoryAgentToolPolicyInput {
   rootDir: string;
   toolCall: ModelToolCall;
   tools: readonly ModelToolContract[];
@@ -36,7 +36,7 @@ export interface MemoryAgentToolPolicyInput {
   workspaceRoot: string;
 }
 
-export type MemoryAgentToolPolicyDecision = { allowed: true } | { allowed: false; reason: string };
+type MemoryAgentToolPolicyDecision = { allowed: true } | { allowed: false; reason: string };
 
 const MEMORY_AGENT_READ_ONLY_TOOLS = new Set(["Read", "Grep", "Glob"]);
 

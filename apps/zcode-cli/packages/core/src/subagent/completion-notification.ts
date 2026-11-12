@@ -1,12 +1,12 @@
 import type { ModelUsage } from "@zcode/contracts";
 import { formatTaskNotification } from "../runtime-task/notification.js";
 
-export type LocalAgentTaskNotificationStatus =
+type LocalAgentTaskNotificationStatus =
   | "completed"
   | "failed"
   | "stopped";
 
-export interface LocalAgentTaskNotificationInput {
+interface LocalAgentTaskNotificationInput {
   agentId: string;
   agentType: string;
   description: string;

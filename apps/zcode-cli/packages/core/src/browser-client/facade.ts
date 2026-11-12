@@ -142,7 +142,7 @@ export interface BrowserClientTransport {
   execute: BrowserTransportExecuteFn;
 }
 
-export interface CuaTab {
+interface CuaTab {
   click(options: Point & { button?: number; keypress?: string[] }): Promise<void>;
   double_click(options: Point & { keypress?: string[] }): Promise<void>;
   downloadMedia(options: Point & { timeoutMs?: number }): Promise<void>;
@@ -153,7 +153,7 @@ export interface CuaTab {
   type(options: { text: string }): Promise<void>;
 }
 
-export interface DomCuaTab {
+interface DomCuaTab {
   get_visible_dom(): Promise<BrowserSnapshot>;
   click(options: { node_id: string }): Promise<void>;
   double_click(options: { node_id: string }): Promise<void>;
@@ -347,7 +347,7 @@ export class RawTab {
   }
 }
 
-export type JsDialog = AlertDialog | ConfirmDialog | PromptDialog | BeforeUnloadDialog;
+type JsDialog = AlertDialog | ConfirmDialog | PromptDialog | BeforeUnloadDialog;
 
 class DialogBase {
   constructor(

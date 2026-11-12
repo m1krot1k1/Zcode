@@ -206,7 +206,7 @@ export function buildRewindEvaluationItems(
   return items;
 }
 
-export function formatConversationRewindNoticeBody(options: {
+function formatConversationRewindNoticeBody(options: {
   keptMessageCount: number;
   preview?: string;
   rewindId: string;

@@ -1,4 +1,4 @@
-export interface BackgroundTaskOutputMetadata {
+interface BackgroundTaskOutputMetadata {
   childSessionId?: string;
   outputBytes?: number;
   outputFile?: string;

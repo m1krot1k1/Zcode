@@ -33,7 +33,7 @@ export const SWARM_RECONCILED_COMPLETION_RESULT =
 
 export const SWARM_RECONCILED_RESULT_MAX_CHARS = 4_000;
 
-export interface ChildTranscriptMessage {
+interface ChildTranscriptMessage {
   info: { role: string };
   parts: readonly { type: string; text?: string; ignored?: boolean }[];
 }
@@ -59,7 +59,7 @@ export function childAssistantResultText(
     : latest;
 }
 
-export interface SwarmRestartClassification {
+interface SwarmRestartClassification {
   pendingNodeIds: string[];
   completedNodeIds: string[];
 }

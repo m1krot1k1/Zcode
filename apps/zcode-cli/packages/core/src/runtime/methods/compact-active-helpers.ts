@@ -15,8 +15,8 @@ import type { RuntimeModelTextResult, RunModelTextRequestOptions } from "../type
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 
-export const COMPACT_TOOL_USE_DENIAL_MESSAGE = "Tool use is not allowed during compaction";
-export const COMPACT_TOOL_USE_DENIAL_REASON =
+const COMPACT_TOOL_USE_DENIAL_MESSAGE = "Tool use is not allowed during compaction";
+const COMPACT_TOOL_USE_DENIAL_REASON =
   "compaction agent should only produce text summary";
 
 export function createCompactPromptTooLongError(options: {

@@ -12,7 +12,7 @@ import {
   isSedInPlaceOption,
 } from "./bash-readonly-policy.js";
 
-export interface BashCommandClassification {
+interface BashCommandClassification {
   isSearch: boolean;
   isRead: boolean;
   isList: boolean;
@@ -177,7 +177,7 @@ export function prepareBashPermissionMatcherForCommand(
   return (pattern) => matchesBashPermissionPattern(pattern, normalizedCommand);
 }
 
-export function hasBestEffortWritePattern(command: string): boolean {
+function hasBestEffortWritePattern(command: string): boolean {
   const analysis = analyzeBashCommand(command);
   if (analysis.hasParseErrors) return false;
   return analysis.commands.some(hasKnownBashWriteOption);
@@ -213,13 +213,13 @@ export function isSilentBashCommand(command: string): boolean {
   return hasNonFallbackCommand;
 }
 
-export function extractBashSearchText(output: { stderr?: string; stdout?: string }): string {
+function extractBashSearchText(output: { stderr?: string; stdout?: string }): string {
   const stdout = output.stdout ?? "";
   const stderr = output.stderr ?? "";
   return stderr ? `${stdout}\n${stderr}` : stdout;
 }
 
-export function isBashResultTruncated(output: { stderr?: string; stdout?: string }): boolean {
+function isBashResultTruncated(output: { stderr?: string; stdout?: string }): boolean {
   return lineCount(output.stdout ?? "") > 4 || lineCount(output.stderr ?? "") > 4;
 }
 

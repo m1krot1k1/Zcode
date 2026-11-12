@@ -10,7 +10,7 @@ import { applyMemoryFilePermission, targetsMemoryFile } from "./memory-file-perm
 import { resolveRuntimePermissionCapability } from "./permission-capability.js";
 import type { ToolExecutorDeps } from "./types.js";
 
-export interface PermissionHookInputRecheckResult {
+interface PermissionHookInputRecheckResult {
   permissionDecision?: PermissionDecisionResult;
 }
 

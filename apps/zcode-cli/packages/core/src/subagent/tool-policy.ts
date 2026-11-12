@@ -5,7 +5,7 @@ import {
 import { AGENT_TOOL_NAME, TASK_TOOL_NAME } from "../tool/compat.js";
 import { filterDisallowedToolNames, getToolRuleName } from "../tool/tool-visibility.js";
 
-export const SUBAGENT_CHILD_FORCED_DISALLOWED_TOOLS = [
+const SUBAGENT_CHILD_FORCED_DISALLOWED_TOOLS = [
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
 ] as const;

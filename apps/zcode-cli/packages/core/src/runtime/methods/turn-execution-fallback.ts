@@ -20,24 +20,24 @@ import {
 
 type SelectionFallbackDeclaration = NonNullable<ModelExecutionContext["selectionFallback"]>;
 
-export interface ExecutionSelectionFallbackMatch {
+interface ExecutionSelectionFallbackMatch {
   reason: SelectionFallbackDeclaration["rules"][number]["reason"];
   providerErrorCode?: string;
   statusCode?: number;
 }
 
-export interface ExecutionSelectionCreationFallbackMatch {
+interface ExecutionSelectionCreationFallbackMatch {
   reason: "highspeed_selection_unavailable";
 }
 
-export type ExecutionFallbackCandidateSource = "declared_target" | "session_selection";
+type ExecutionFallbackCandidateSource = "declared_target" | "session_selection";
 
-export interface ExecutionFallbackCandidate {
+interface ExecutionFallbackCandidate {
   source: ExecutionFallbackCandidateSource;
   selection: ModelSelection;
 }
 
-export interface ExecutionSelectionFallbackResult {
+interface ExecutionSelectionFallbackResult {
   applied: boolean;
   settledAcceptedTools: boolean;
 }

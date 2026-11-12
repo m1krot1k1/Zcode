@@ -127,7 +127,7 @@ export function describePredecessor(
 }
 
 /** 归一化出来的脚本字段（三条来源同形），外加模型面该看到的文件写法与「是否沿用」。 */
-export type AmendScriptResolution =
+type AmendScriptResolution =
   | {
       result: true;
       fields: { script: string; path?: string; script_line_offset?: number };

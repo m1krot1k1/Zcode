@@ -49,7 +49,7 @@ import {
   SWARM_RECONCILED_COMPLETION_RESULT,
 } from "../helpers/turn-errors.js";
 
-export type SwarmJournalRecoveryMode = "resume_open" | "before_swarm_admission";
+type SwarmJournalRecoveryMode = "resume_open" | "before_swarm_admission";
 
 const SWARM_RECOVERY_ACTIVE_RUN_LIMIT = 500;
 

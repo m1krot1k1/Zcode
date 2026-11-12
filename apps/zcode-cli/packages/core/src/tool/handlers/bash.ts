@@ -128,7 +128,7 @@ function createBashSandboxTrace(): ExecutionSandboxPolicy {
   };
 }
 
-export function getBashPrompt(
+function getBashPrompt(
   timeoutPolicy: BashTimeoutPolicy = DEFAULT_BASH_TIMEOUT_POLICY,
 ): string {
   return createBashProviderDescription({
@@ -146,7 +146,7 @@ export function isBashInputConcurrencySafe(input: unknown): boolean {
   return isBashInputReadOnly(input);
 }
 
-export function checkBashInputPermissions(input: unknown): { behavior: "allow" } | undefined {
+function checkBashInputPermissions(input: unknown): { behavior: "allow" } | undefined {
   return resolveBashPermissionCapability(input) ? { behavior: "allow" } : undefined;
 }
 

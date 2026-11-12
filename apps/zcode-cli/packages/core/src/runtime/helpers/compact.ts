@@ -29,7 +29,7 @@ export {
   truncateCompactSummaryRequestEntriesAfterPromptTooLong,
 } from "./compact-selection.js";
 
-export interface RuntimeMicrocompactResult {
+interface RuntimeMicrocompactResult {
   decision: ReturnType<typeof maybeLocalMicrocompactMessages>["decision"];
   entries: readonly RuntimeMessageEntry[];
   payload?: ReturnType<typeof maybeLocalMicrocompactMessages>["payload"];

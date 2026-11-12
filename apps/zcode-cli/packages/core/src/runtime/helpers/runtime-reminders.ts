@@ -89,7 +89,7 @@ export const TODO_REMINDER_CONFIG = Object.freeze({
   TURNS_BETWEEN_REMINDERS: 10,
 });
 
-export interface TodoReminderTurnCounts {
+interface TodoReminderTurnCounts {
   turnsSinceLastTodoWrite: number;
   turnsSinceLastReminder: number;
 }

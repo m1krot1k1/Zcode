@@ -18,7 +18,7 @@ import {
 } from "./workflow-run-introspection.js";
 
 /** 摘要要读的事实 = 整份输出减去摘要自己（handler 先铸出输出，再拿它拼这一句）。 */
-export type WorkflowRunSummaryFacts = Omit<GetWorkflowRunOutput, "summary">;
+type WorkflowRunSummaryFacts = Omit<GetWorkflowRunOutput, "summary">;
 
 /** 终态三词：run 已经没有下一步动作了（与端口的终态判定同集）。 */
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["completed", "errored", "stopped"]);

@@ -17,7 +17,7 @@ import { SAVED_WORKFLOW_SENTINEL, parseSavedWorkflow } from "./saved-workflows/i
 import { describeWorkflowScriptPath } from "./workflow-script-path.js";
 
 /** 读成功的脚本文件。 */
-export interface WorkflowScriptFile {
+interface WorkflowScriptFile {
   /** 绝对路径（journal 与模型面各取所需：前者存它，后者显示 {@link described}）。 */
   path: string;
   /** 模型面该看到的写法：工作区之下给相对路径，否则绝对路径。 */
@@ -32,7 +32,7 @@ export interface WorkflowScriptFile {
   bodyLineOffset: number;
 }
 
-export type WorkflowScriptFileResult =
+type WorkflowScriptFileResult =
   | { ok: true; file: WorkflowScriptFile }
   | { ok: false; message: string };
 

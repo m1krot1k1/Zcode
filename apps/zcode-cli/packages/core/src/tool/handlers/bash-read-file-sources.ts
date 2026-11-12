@@ -35,7 +35,7 @@ export interface BashReadFileSource {
   requiresExitZero?: boolean;
 }
 
-export interface SelectedReadContent {
+interface SelectedReadContent {
   content: string;
   offset?: number;
   limit?: number;

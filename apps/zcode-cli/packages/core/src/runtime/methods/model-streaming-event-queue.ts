@@ -3,7 +3,7 @@ import type { AgentRuntimeInternal } from "../internal.js";
 
 const MODEL_STREAMING_EVENT_WRITE_HIGH_WATER_MARK = 128;
 
-export interface ModelStreamingEventQueue {
+interface ModelStreamingEventQueue {
   drain(): Promise<void>;
   enqueue(payload: ModelStreamingPayload): void;
   maybeApplyBackpressure(): Promise<void>;

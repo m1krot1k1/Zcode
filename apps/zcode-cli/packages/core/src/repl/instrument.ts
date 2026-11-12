@@ -15,7 +15,7 @@ import { parseModule, type ESTree } from "meriyah";
  */
 
 /** parseReplCode 结果：成功携带 AST，失败携带 parseError（不 throw，交调用方回退）。 */
-export type ParseReplCodeResult = { ast: ESTree.Program } | { parseError: Error };
+type ParseReplCodeResult = { ast: ESTree.Program } | { parseError: Error };
 
 /**
  * 解析 REPL 代码为 ESTree AST。封装 meriyah.parseModule（parser 换实现只动这里 = A-ready 接缝）。

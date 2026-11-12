@@ -68,7 +68,7 @@ export function projectPersistentAgentMemoryTools(
   };
 }
 
-export interface PersistentAgentMemory {
+interface PersistentAgentMemory {
   rootDir: string;
   prompt: string;
 }

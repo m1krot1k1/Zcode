@@ -30,7 +30,7 @@ export type DynamicWorkflowActivationSource =
   | "resume_entry"
   | "resume_history";
 
-export interface DynamicWorkflowActivationEntryData {
+interface DynamicWorkflowActivationEntryData {
   activated: true;
   source: DynamicWorkflowActivationSource;
 }
