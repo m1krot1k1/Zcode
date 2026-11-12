@@ -5,7 +5,7 @@ import { ZCODE_FILE_LOCK_TIMEOUT_ERROR_CODE } from "@zcode/shared";
 import type { SharedZCodeCredentialStore } from "../auth/shared-credentials.js";
 import { isRecord, mcpOAuthCredentialKey } from "./oauth-credentials.js";
 
-export const MCP_OAUTH_PENDING_AUTHORIZATION_KEY = "pending_authorization";
+const MCP_OAUTH_PENDING_AUTHORIZATION_KEY = "pending_authorization";
 
 /**
  * 授权 lease 的竞争等待预算。
@@ -19,7 +19,7 @@ const AUTHORIZATION_LEASE_MAX_WAIT_MS = 250;
 const AUTHORIZATION_LEASE_RETRY_DELAYS_MS = [25] as const;
 const AUTHORIZATION_LEASE_OWNERLESS_GRACE_MS = 100;
 
-export interface McpOAuthAuthorizationLease {
+interface McpOAuthAuthorizationLease {
   attemptId: string;
   release(): Promise<void>;
 }
@@ -71,7 +71,7 @@ export async function tryAcquireAuthorizationLease(input: {
   }
 }
 
-export interface PendingAuthorizationRecord {
+interface PendingAuthorizationRecord {
   attemptId: string;
   authorizationUrl: string;
   baselineGeneration?: string;

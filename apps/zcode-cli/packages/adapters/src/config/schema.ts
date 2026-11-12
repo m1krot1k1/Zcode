@@ -333,7 +333,7 @@ export interface ConfigDiagnostic {
   severity: ConfigDiagnosticSeverity;
 }
 
-export interface ParseConfigFileResult {
+interface ParseConfigFileResult {
   config: RuntimeConfigPatch;
   diagnostics: ConfigDiagnostic[];
 }

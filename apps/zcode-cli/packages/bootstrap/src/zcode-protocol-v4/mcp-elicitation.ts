@@ -10,9 +10,9 @@ import type { UserInputQuestionPayload } from "@zcode/shared/zcode-protocol-v4";
 export const MCP_ELICITATION_TOOL_NAME = "McpElicitation";
 export const MCP_ELICITATION_INTERACTION = "mcp_elicitation";
 /** 自由文本题目在旧 userInput 通道里必须至少有一个选项；用这个哨兵值表示"请输入"。 */
-export const MCP_ELICITATION_FREE_TEXT_OPTION = "__zcode_free_text__";
+const MCP_ELICITATION_FREE_TEXT_OPTION = "__zcode_free_text__";
 
-export interface McpElicitationSchemaField {
+interface McpElicitationSchemaField {
   name: string;
   type: "string" | "number" | "integer" | "boolean" | "enum";
   title?: string;

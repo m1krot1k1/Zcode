@@ -67,7 +67,7 @@ export interface ClassifiedModelFailure {
   providerQuotaExhausted?: boolean;
 }
 
-export interface ProviderFailureDetails {
+interface ProviderFailureDetails {
   providerErrorCode?: string;
   providerErrorMessage?: string;
   providerRequestId?: string;

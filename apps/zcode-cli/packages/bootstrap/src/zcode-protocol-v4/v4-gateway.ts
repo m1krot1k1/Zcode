@@ -535,7 +535,7 @@ class ProjectionEventCommitWaitError extends Error {
  * server 内部分派结果：initial frame 只供 request-scoped post-response outbox
  * 消费，公共 JSON-RPC result schema 始终严格为 `{ ack }`。
  */
-export interface V4SubscribeDispatchResult<TFrame> {
+interface V4SubscribeDispatchResult<TFrame> {
   ack: SubscribeAck & { openTiming?: ConversationOpenTiming };
   initialFrame: TFrame | null;
   initialWires: RoutedTopicWireFrame[];

@@ -100,7 +100,7 @@ export function phaseNamesFromEvents(events: readonly StoredEvent[]): string[] |
   return names;
 }
 
-export interface ProjectRunHolesInput {
+interface ProjectRunHolesInput {
   /** `readRunHoleEvents` 的返回（sequence 升序）。 */
   events: readonly StoredEvent[];
   /**

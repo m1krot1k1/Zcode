@@ -11,7 +11,7 @@ import type { SendInputOptions, SendInputResult } from "../../app/types.js";
 import { runWithSessionResidencyFinalization } from "../../session-execution/index.js";
 import type { V4CommandCoreHost, V4SessionRecordView } from "./types.js";
 
-export interface StartPromptTurnParamsBase {
+interface StartPromptTurnParamsBase {
   content: string;
   /** v4 锚点：inputId=queryId=commandId（权威数据 sourceCommandId 对账）。 */
   inputId: string;
@@ -32,9 +32,9 @@ export interface StartPromptTurnParamsBase {
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
 }
 
-export type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
+type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
 
-export interface PromptTurnStartResult {
+interface PromptTurnStartResult {
   /** Core admission 已完成；不等待 TurnStarted 或 projection commit。 */
   turnStarted: Promise<void>;
   /** Core 真实完成 promise，仅供生命周期清理使用，不属于 ACK 边界。 */

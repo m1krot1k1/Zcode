@@ -53,13 +53,13 @@ interface SubagentEventRelation {
   summary?: string;
 }
 
-export interface SessionSubagentProjection {
+interface SessionSubagentProjection {
   revision: number;
   running: ZCodeSessionRunningSubagent[];
   ended: ZCodeSessionEndedSubagent[];
 }
 
-export interface ProjectSessionSubagentsInput {
+interface ProjectSessionSubagentsInput {
   revision: number;
   parentSession: SessionInfo;
   messages: readonly MessageWithParts[];
@@ -71,7 +71,7 @@ export interface ProjectSessionSubagentsInput {
   prismAcceptanceByChildSessionId?: ReadonlyMap<string, PrismSubagentAcceptanceSummary>;
 }
 
-export interface PrismSubagentAcceptanceSummary {
+interface PrismSubagentAcceptanceSummary {
   status: "unknown" | "verified" | "rejected";
   passedCriteria: number;
   totalCriteria: number;

@@ -33,7 +33,7 @@ const TARGET_KEYS: readonly { key: string; keep: "head" | "tail" }[] = [
 const ELLIPSIS = "…";
 
 /** 一次工具调用的窄视图：名字 + 入参。两者都可能缺席（老事件、空名调用）。 */
-export interface ToolCallSummaryInput {
+interface ToolCallSummaryInput {
   toolName?: string;
   input?: unknown;
 }

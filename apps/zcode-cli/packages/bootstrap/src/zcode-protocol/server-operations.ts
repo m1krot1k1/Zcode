@@ -1443,7 +1443,7 @@ async function materializeCreatedSession<T>(
   }
 }
 
-export interface ActivatedSessionForResume {
+interface ActivatedSessionForResume {
   record: ZCodeProtocolSessionRecord;
   knownSession?: SessionInfo;
   /** 仅供启动本次 V4 hydration，不写入 record 或跨请求缓存。 */

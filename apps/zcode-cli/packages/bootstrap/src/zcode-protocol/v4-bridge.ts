@@ -749,7 +749,7 @@ export async function registerCommittedForkBestEffort(
 }
 
 /** turn 终态耗时持久化所需的窄化上下文；结构化类型保证与完整 server context 兼容。 */
-export interface HighspeedTurnTerminalPersistenceContext {
+interface HighspeedTurnTerminalPersistenceContext {
   sessions: Map<
     string,
     { eventStore: SessionEventStorePort; traceContext: { traceId: string | number } }

@@ -44,18 +44,18 @@ interface OpenCodeProxyLease {
   dispose(): Promise<void>;
 }
 
-export interface OpenCodeTaskInput {
+interface OpenCodeTaskInput {
   description: string;
   prompt: string;
   subagent_type: string;
 }
 
-export interface OpenCodeSkillInput {
+interface OpenCodeSkillInput {
   skill: string;
   args?: string;
 }
 
-export interface OpenCodeTaskBridgeExecutors {
+interface OpenCodeTaskBridgeExecutors {
   /** Immutable Core role catalog for the owning model request. */
   allowedAgentTypes?: readonly string[];
   executeTask?: (

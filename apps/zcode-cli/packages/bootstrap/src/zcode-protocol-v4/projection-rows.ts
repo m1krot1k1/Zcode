@@ -18,7 +18,7 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import { PROTOCOL_V4_LIMITS } from "@zcode/shared/zcode-protocol-v4";
 
-export interface RowBaseInput {
+interface RowBaseInput {
   rowId: number;
   turnId: string;
   createdAt: number;

@@ -31,7 +31,7 @@ import { ModelApiTelemetryStatusSink } from "./model-api-recorder.js";
 export const AGENT_METRIC_EXPORT_INTERVAL_MS = 300_000;
 export const AGENT_TRACE_SAMPLE_RATIO = 0.1;
 
-export interface CreateOwnedAgentTelemetryRuntimeOptions {
+interface CreateOwnedAgentTelemetryRuntimeOptions {
   endpoint: string;
   headers?: Record<string, string>;
   identity?: TelemetryIdentitySnapshot;

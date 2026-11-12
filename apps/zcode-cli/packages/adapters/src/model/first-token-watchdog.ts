@@ -17,7 +17,7 @@ import { DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS } from "@zcode/contracts";
 export { DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS } from "@zcode/contracts";
 
 /** 与 `ModelErrorCode.FirstTokenTimeout` 保持一致。 */
-export const MODEL_FIRST_TOKEN_TIMEOUT_CODE = "first_token_timeout";
+const MODEL_FIRST_TOKEN_TIMEOUT_CODE = "first_token_timeout";
 
 export class ModelFirstTokenTimeoutError extends Error {
   readonly code = MODEL_FIRST_TOKEN_TIMEOUT_CODE;
@@ -41,7 +41,7 @@ export interface FirstTokenWatchdog {
   cancel(): void;
 }
 
-export interface FirstTokenWatchdogOptions {
+interface FirstTokenWatchdogOptions {
   /** <=0 或非有限值时关闭看门狗（用于显式退出）。 */
   timeoutMs: number;
   controller: Pick<AbortController, "abort" | "signal">;

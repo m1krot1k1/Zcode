@@ -7,29 +7,29 @@ import { buildEmbeddedSearchPreludeContent } from "./embedded-search-prelude.js"
 
 export type StartupShellDialect = ExecutionShellDialect | "legacy-shell";
 
-export interface BashInternalScriptMaterializeOptions {
+interface BashInternalScriptMaterializeOptions {
   rootDir: string;
   sessionId: string;
   shellDialect?: StartupShellDialect;
 }
 
-export interface BashInternalScriptContent {
+interface BashInternalScriptContent {
   id: string;
   content: string;
 }
 
-export interface MaterializedBashSourceScript {
+interface MaterializedBashSourceScript {
   path: string;
   shellPath: string;
 }
 
-export interface BashSourceScript {
+interface BashSourceScript {
   path: string;
   shellPath: string;
   optional?: boolean;
 }
 
-export interface ApplyBashSourcesOptions {
+interface ApplyBashSourcesOptions {
   leadingSources?: BashSourceScript[];
   rootDir: string;
   sessionId: string;

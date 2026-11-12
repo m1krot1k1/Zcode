@@ -31,33 +31,33 @@ const defaultExecFile: ShellInitSnapshotExecFile = async (file, args, options) =
   };
 };
 
-export type ShellInitSnapshotDialect = Extract<ExecutionShellDialect, "posix" | "git-bash">;
-export type ShellInitSnapshotShellKind = "bash" | "zsh" | "sh";
+type ShellInitSnapshotDialect = Extract<ExecutionShellDialect, "posix" | "git-bash">;
+type ShellInitSnapshotShellKind = "bash" | "zsh" | "sh";
 
-export interface ShellInitSnapshot {
+interface ShellInitSnapshot {
   path: string;
   shellPath: string;
 }
 
-export interface ShellInitSnapshotCleanupResult {
+interface ShellInitSnapshotCleanupResult {
   deleted: number;
   errors: number;
 }
 
-export interface CleanupStaleShellInitSnapshotsOptions {
+interface CleanupStaleShellInitSnapshotsOptions {
   now?: Date;
   retentionDays?: number;
   rootDir: string;
 }
 
-export interface ShellInitSnapshotRequest {
+interface ShellInitSnapshotRequest {
   env: NodeJS.ProcessEnv;
   rootDir: string;
   shellDialect: StartupShellDialect;
   shellPath: string;
 }
 
-export interface ShellInitSnapshotManagerOptions {
+interface ShellInitSnapshotManagerOptions {
   execFile?: ShellInitSnapshotExecFile;
 }
 

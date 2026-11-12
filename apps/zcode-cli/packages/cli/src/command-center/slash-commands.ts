@@ -14,7 +14,7 @@ import { isWorkflowModeEnabled } from "../workflow-mode.js";
 
 const WORKFLOW_COMMAND_NAME = "workflow";
 
-export type SlashCommandSurfaceOptions = {
+type SlashCommandSurfaceOptions = {
   /** 缺席不设门（单测、嵌入方）；CLI 入口总会传入解析后的 `--workflow-mode`。 */
   workflowMode?: DynamicWorkflowMode;
 };

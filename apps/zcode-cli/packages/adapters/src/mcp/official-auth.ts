@@ -41,7 +41,7 @@ export class OfficialMcpAuthError extends Error {
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACE_ID_HEADER = "x-trace-id";
 
-export interface CreateOfficialMcpAuthFetchInput {
+interface CreateOfficialMcpAuthFetchInput {
   authHeadersPort?: OfficialMcpAuthHeadersPort;
   baseFetch: typeof globalThis.fetch;
   logger?: Logger;

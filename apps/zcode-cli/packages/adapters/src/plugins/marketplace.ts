@@ -290,12 +290,12 @@ interface PluginIconSourceRecord {
   sha256?: string;
 }
 
-export interface InstalledPluginsState {
+interface InstalledPluginsState {
   version: 1;
   plugins: InstalledPluginRecord[];
 }
 
-export interface MarketplaceInstallResult {
+interface MarketplaceInstallResult {
   closure: string[];
   installed: InstalledPluginRecord[];
 }

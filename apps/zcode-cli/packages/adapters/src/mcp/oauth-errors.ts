@@ -24,14 +24,14 @@ export type McpOAuthInteractiveRequiredReason =
   | "unauthorized"
   | "legacy_provider_seam";
 
-export interface McpOAuthInteractiveRequiredError extends Error {
+interface McpOAuthInteractiveRequiredError extends Error {
   code: typeof MCP_OAUTH_INTERACTIVE_REQUIRED_ERROR_CODE;
   reason: McpOAuthInteractiveRequiredReason;
   requiredScope?: string;
   resourceMetadataUrl?: string;
 }
 
-export interface McpOAuthTemporaryRefreshFailureError extends Error {
+interface McpOAuthTemporaryRefreshFailureError extends Error {
   code: typeof MCP_OAUTH_TEMPORARY_REFRESH_FAILURE_ERROR_CODE;
 }
 

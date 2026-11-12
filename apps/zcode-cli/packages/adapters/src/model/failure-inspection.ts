@@ -11,7 +11,7 @@ export function getStatusCode(error: unknown): number | undefined {
   return getStatusCodeFromError(error, new WeakSet<object>());
 }
 
-export interface OpenCodeSessionDiagnostic {
+interface OpenCodeSessionDiagnostic {
   statusCode?: number;
   code?: string;
   message?: string;

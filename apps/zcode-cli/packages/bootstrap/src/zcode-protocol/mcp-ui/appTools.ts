@@ -23,7 +23,7 @@ import type {
  * 只在内存；会话关闭清空，不持久化。模型调用经"实例信箱"（`publishCall` → live-only 投影增量）投递给
  * 唯一实例，渲染端认领（claim）后页面 tools/call，结果经 resolve 回传。
  */
-export interface McpUiAppToolsHost {
+interface McpUiAppToolsHost {
   /** 把暴露集合同步到会话 runtime（整体替换）；会话不在时返回 null。 */
   applyTools(
     sessionId: string,

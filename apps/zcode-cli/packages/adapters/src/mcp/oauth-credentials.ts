@@ -4,8 +4,8 @@ import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprot
 import type { SharedZCodeCredentialStore } from "../auth/shared-credentials.js";
 
 export const MCP_OAUTH_CANONICAL_CREDENTIALS_KEY = "authorization_credentials";
-export const MCP_OAUTH_LEGACY_CLIENT_KEY = "client_information";
-export const MCP_OAUTH_LEGACY_TOKENS_KEY = "tokens";
+const MCP_OAUTH_LEGACY_CLIENT_KEY = "client_information";
+const MCP_OAUTH_LEGACY_TOKENS_KEY = "tokens";
 export const MCP_OAUTH_CREDENTIALS_VERSION = 2;
 export const MCP_OAUTH_SUPPORTED_CREDENTIAL_VERSIONS = new Set([1, MCP_OAUTH_CREDENTIALS_VERSION]);
 
@@ -117,7 +117,7 @@ export async function loadCanonicalCredentials(
   };
 }
 
-export interface PublishCanonicalCredentialsInput {
+interface PublishCanonicalCredentialsInput {
   clientInformation: OAuthClientInformationMixed;
   issuer?: string;
   obtainedAt?: number;
@@ -125,7 +125,7 @@ export interface PublishCanonicalCredentialsInput {
   tokens: OAuthTokens;
 }
 
-export interface PublishedCanonicalCredentials {
+interface PublishedCanonicalCredentials {
   canonical: McpOAuthCanonicalCredentials;
   generation: string;
   legacyClientRaw: string;
@@ -177,7 +177,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** access token 临期判定的安全余量。 */
-export const MCP_OAUTH_EXPIRY_SKEW_MS = 30_000;
+const MCP_OAUTH_EXPIRY_SKEW_MS = 30_000;
 
 /**
  * 是否需要在把 token 交给请求头之前先刷新。
@@ -194,7 +194,7 @@ export function isCanonicalTokenNearExpiry(
   return now >= snapshot.expiresAt - skewMs;
 }
 
-export type CanonicalInvalidationScope = "tokens" | "all";
+type CanonicalInvalidationScope = "tokens" | "all";
 
 /**
  * 按 canonical 快照做条件失效。

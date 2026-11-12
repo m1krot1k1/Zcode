@@ -90,7 +90,7 @@ export function useSessionEventApplier(
 }
 
 /** A stable subscription survives renders; both event sources share the applier. */
-export function useSessionEventSubscription(
+function useSessionEventSubscription(
   subscribe: ((sink: (event: SessionEvent) => void) => () => void) | undefined,
   applyEvent: (event: SessionEvent) => void,
 ): void {

@@ -14,7 +14,7 @@ import {
 } from "./http-config.js";
 import { readIncomingResponse, toWebResponse } from "./incoming-response.js";
 
-export type NetworkFetch = typeof globalThis.fetch;
+type NetworkFetch = typeof globalThis.fetch;
 
 /** Нефатальное уведомление о том, что вход кольца не принял соединение. */
 export interface ProxyFallbackNotice {

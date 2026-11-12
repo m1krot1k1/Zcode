@@ -44,7 +44,7 @@ import type { RunRegistryEntry } from "./dynamic-workflow-run-observation.js";
 import type { DynamicWorkflowRunServiceDeps } from "./dynamic-workflow-run-service.js";
 
 /** 本模块借用的 service 内部状态；全是引用，本文件不持有任何自己的状态。 */
-export interface DynamicWorkflowRunFillContext {
+interface DynamicWorkflowRunFillContext {
   deps: DynamicWorkflowRunServiceDeps;
   runs: Map<string, RunRegistryEntry>;
   /**

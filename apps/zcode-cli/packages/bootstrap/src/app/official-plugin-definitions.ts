@@ -18,7 +18,7 @@ export interface OfficialPluginListingSeed {
   examplePrompts_i18n?: Record<string, string[]>;
 }
 
-export const OFFICIAL_BROWSER_USE_PLUGIN_NAME = "browser-use";
+const OFFICIAL_BROWSER_USE_PLUGIN_NAME = "browser-use";
 export const OFFICIAL_BROWSER_USE_PLUGIN_ID = `${OFFICIAL_BROWSER_USE_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
 /**
  * node_repl 宿主。它不是面向用户的插件：没有 skill、没有 listing、不进市场，唯一职责是
@@ -31,7 +31,7 @@ export const OFFICIAL_BROWSER_USE_PLUGIN_ID = `${OFFICIAL_BROWSER_USE_PLUGIN_NAM
  */
 export const OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME = "node-repl-host";
 export const OFFICIAL_NODE_REPL_HOST_PLUGIN_ID = `${OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
-export const OFFICIAL_CUA_PLUGIN_NAME = "computer-use";
+const OFFICIAL_CUA_PLUGIN_NAME = "computer-use";
 export const OFFICIAL_CUA_PLUGIN_ID = `${OFFICIAL_CUA_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
 
 export interface OfficialPluginDefinition {
@@ -62,7 +62,7 @@ export interface OfficialPluginDefinition {
 const ZAI_AUTHOR = { name: "Z.ai", url: "https://z.ai" } as const;
 const OFFICIAL_PLUGIN_ASSETS_BASE_URL = "https://cdn-zcode.z.ai/zcode/official-plugin/assets";
 
-export const OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS = ["dist/mcp/server.js"] as const;
+const OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS = ["dist/mcp/server.js"] as const;
 
 /** 文档插件（documents / pdf / presentations / spreadsheets）查看面板的构建产物。 */
 export const OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS = [
@@ -83,7 +83,7 @@ export const OFFICIAL_BROWSER_USE_REQUIRED_SEED_PATHS = [
   "skills/web-gui-tester/SKILL.md",
 ] as const;
 
-export const OFFICIAL_CUA_REQUIRED_SEED_PATHS = [
+const OFFICIAL_CUA_REQUIRED_SEED_PATHS = [
   "docs/computer-use.md",
   "scripts/computer-use-client.mjs",
   "skills/computer-use/SKILL.md",
@@ -93,7 +93,7 @@ export const OFFICIAL_CUA_REQUIRED_SEED_PATHS = [
 // 残缺插件而没有任何诊断。0.3.0 起 `/workflow` 与 dynamic-workflows 技能不再随本插件发布
 // （命令编进 CLI，技能进 packages/bundled-skills，见 docs/dynamic-workflow/authoring.md），
 // 这里钉住的是配置指南技能正文。
-export const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
+const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
   "skills/zcode-configuration-guide/SKILL.md",
 ] as const;
 

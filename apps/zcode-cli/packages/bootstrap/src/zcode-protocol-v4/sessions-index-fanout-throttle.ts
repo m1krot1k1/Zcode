@@ -9,9 +9,9 @@
 export const WORKFLOW_PROGRESS_INDEX_FANOUT_MS = 250;
 
 /** 定时器句柄对调度逻辑不透明：生产用 setTimeout，测试可注入任意实现。 */
-export type FanoutTimerHandle = unknown;
+type FanoutTimerHandle = unknown;
 
-export interface SessionsIndexFanoutThrottleOptions {
+interface SessionsIndexFanoutThrottleOptions {
   /** 发布某会话当前摘要到 sessions-index（网关的 publishCurrentSummaryToIndex）。 */
   publish: (sessionId: string) => void;
   windowMs?: number;

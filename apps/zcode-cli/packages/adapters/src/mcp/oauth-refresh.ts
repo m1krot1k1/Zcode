@@ -34,7 +34,7 @@ import { loadDiscoveryRecord, saveDiscoveryRecord } from "./oauth-shared.js";
  */
 const REFRESH_LOCK_MAX_WAIT_MS = 45_000;
 
-export interface RefreshMcpOAuthTokensInput {
+interface RefreshMcpOAuthTokensInput {
   credentialStore: SharedZCodeCredentialStore;
   fetchFn?: FetchLike;
   keyPrefix: string;

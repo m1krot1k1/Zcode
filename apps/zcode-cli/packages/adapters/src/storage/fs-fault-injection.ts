@@ -1,7 +1,7 @@
 export const ZCODE_E2E_FS_FAULTS_ENV = "ZCODE_E2E_FS_FAULTS";
 export const ZCODE_E2E_FS_FAULTS_ALLOW_ENV = "ZCODE_E2E_FS_FAULTS_ALLOW";
 
-export type StorageFsFaultOperation =
+type StorageFsFaultOperation =
   | "appendFile"
   | "any"
   | "mkdir"
@@ -11,7 +11,7 @@ export type StorageFsFaultOperation =
   | "sqliteRun"
   | "writeFile";
 
-export interface StorageFsFaultRule {
+interface StorageFsFaultRule {
   id: string;
   code: string;
   operations?: readonly StorageFsFaultOperation[];
@@ -22,7 +22,7 @@ export interface StorageFsFaultRule {
   message?: string;
 }
 
-export interface StorageFsFaultInput {
+interface StorageFsFaultInput {
   operation: StorageFsFaultOperation;
   path: string;
 }
@@ -39,7 +39,7 @@ interface NormalizedStorageFsFaultRule {
   matchedCount: number;
 }
 
-export interface InjectedStorageFsFaultError extends NodeJS.ErrnoException {
+interface InjectedStorageFsFaultError extends NodeJS.ErrnoException {
   zcodeFsFaultId: string;
 }
 
@@ -160,7 +160,7 @@ function createInjectedError(input: {
   return error;
 }
 
-export interface StorageFsFaultInjector {
+interface StorageFsFaultInjector {
   maybeThrow(input: StorageFsFaultInput): void;
   reset(): void;
 }

@@ -10,7 +10,7 @@ import {
 } from "@zcode/contracts";
 import { highspeedMessageMetaSchema } from "@zcode/shared";
 
-export interface PersistHighspeedMetricsInput {
+interface PersistHighspeedMetricsInput {
   sessionStore: SessionStorePort;
   eventStore: SessionEventStorePort;
   sessionId: string;
@@ -32,7 +32,7 @@ export interface PersistHighspeedMetricsInput {
   onLiveProjectionError?(error: unknown): void;
 }
 
-export interface PersistHighspeedTimingInput {
+interface PersistHighspeedTimingInput {
   sessionStore: SessionStorePort;
   eventStore: SessionEventStorePort;
   sessionId: string;

@@ -196,11 +196,11 @@ export interface ZCodePluginUpdateData extends ZCodePluginInstallData {
   previousVersion: string;
 }
 
-export interface RestoreBuiltinPluginOptions extends ResolveZCodePluginsOptions {
+interface RestoreBuiltinPluginOptions extends ResolveZCodePluginsOptions {
   pluginId: string;
 }
 
-export interface ConfigureZCodePluginOptions extends ResolveZCodePluginsOptions {
+interface ConfigureZCodePluginOptions extends ResolveZCodePluginsOptions {
   clearOptionKeys?: string[];
   dryRun?: boolean;
   options: Record<string, unknown>;
@@ -208,18 +208,18 @@ export interface ConfigureZCodePluginOptions extends ResolveZCodePluginsOptions 
   scope?: "user" | "workspace";
 }
 
-export interface ResetZCodePluginConfigOptions extends ResolveZCodePluginsOptions {
+interface ResetZCodePluginConfigOptions extends ResolveZCodePluginsOptions {
   pluginId: string;
   scope?: "user" | "workspace";
 }
 
-export interface ValidateZCodePluginOptions extends ResolveZCodePluginsOptions {
+interface ValidateZCodePluginOptions extends ResolveZCodePluginsOptions {
   marketplace?: string;
   pluginName?: string;
   source?: string;
 }
 
-export interface DescribeZCodePluginOptions extends ResolveZCodePluginsOptions {
+interface DescribeZCodePluginOptions extends ResolveZCodePluginsOptions {
   marketplace: string;
   pluginName: string;
   withWriteLock?: <T>(write: () => Promise<T>) => Promise<T>;

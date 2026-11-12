@@ -65,7 +65,7 @@ function fieldExpression(path: string, maxValueBytes: number): { sql: string; pa
 }
 
 /** 只取字段的一页（游标、两道界与 `hasMore` 的语义同 dwf-journal-pages.ts）。 */
-export interface DwfArtifactFieldPageQuery {
+interface DwfArtifactFieldPageQuery {
   afterSequence?: number;
   fields: readonly string[];
   limit: number;
@@ -74,7 +74,7 @@ export interface DwfArtifactFieldPageQuery {
 }
 
 /** 一条只取字段的条目。 */
-export interface DwfArtifactFieldItem {
+interface DwfArtifactFieldItem {
   fields: Record<string, unknown>;
   ordinal: number;
   sequence: number;

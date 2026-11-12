@@ -55,7 +55,7 @@ export interface ProcessProbe {
   readonly treeScope: ProcessTreeScope;
 }
 
-export interface CreateProcessProbeOptions {
+interface CreateProcessProbeOptions {
   execFile?: ProcessProbeExecFile;
   /** 列出 `/proc` 下的条目，仅 Linux 使用 */
   listProcDirectory?: () => Promise<readonly string[]>;

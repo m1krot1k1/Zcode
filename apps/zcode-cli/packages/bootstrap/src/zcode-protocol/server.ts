@@ -219,7 +219,7 @@ function getOperationId(params: unknown): string | undefined {
     : undefined;
 }
 
-export interface ZCodeProtocolPostResponseBatch {
+interface ZCodeProtocolPostResponseBatch {
   readonly messages: readonly ZCodeProtocolOutboundMessage[];
   commit(): boolean;
 }

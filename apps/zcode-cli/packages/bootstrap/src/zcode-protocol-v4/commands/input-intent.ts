@@ -9,7 +9,7 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import { commandAdmissionOf } from "./executor.js";
 
-export interface CanonicalCommandIntent {
+interface CanonicalCommandIntent {
   executionRoute?: TurnInputIntentMetadata["executionRoute"];
   inputOrigin?: "desktop" | "mobile";
   conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];

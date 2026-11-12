@@ -5,11 +5,11 @@ import { HookEventName as HookEventNameValue } from "@zcode/contracts";
 import { fileExists, isRecord, resolveInside } from "./helpers.js";
 import type { LoadedPlugin } from "./types.js";
 
-export const STANDARD_HOOKS_PATH = join("hooks", "hooks.json");
+const STANDARD_HOOKS_PATH = join("hooks", "hooks.json");
 
 const SUPPORTED_HOOK_EVENTS = new Set<string>(Object.values(HookEventNameValue));
 
-export interface PluginHookSource {
+interface PluginHookSource {
   rawHooks: unknown;
   sourcePath: string;
   wrapper: boolean;

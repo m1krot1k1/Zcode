@@ -132,7 +132,7 @@ export interface ConversationSubscribeResult {
   readonly frame: ConversationTopicFrame | null;
 }
 
-export interface ConversationResyncRequest {
+interface ConversationResyncRequest {
   base: { logEpoch: string; seq: number } | null;
   forceSnapshot?: boolean;
 }
