@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { uiSourcePath } from "./uiSourcePath.js";
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
@@ -256,9 +257,9 @@ describe("ArtifactChart", () => {
     const { readFile } = await import("node:fs/promises");
     const [entry, view, barrel] = await Promise.all(
       [
-        "packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChart.tsx",
-        "packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChartView.tsx",
-        "packages/ui/src/app-shell/workflow-artifacts/presets/index.ts",
+        uiSourcePath("src", "app-shell", "workflow-artifacts", "presets", "ArtifactChart.tsx"),
+        uiSourcePath("src", "app-shell", "workflow-artifacts", "presets", "ArtifactChartView.tsx"),
+        uiSourcePath("src", "app-shell", "workflow-artifacts", "presets", "index.ts"),
       ].map((path) => readFile(path, "utf8")),
     );
     // recharts 只出现在 View 里，且只经 lazy 的动态 import 抵达。

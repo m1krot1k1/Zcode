@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { uiSourcePath } from "./uiSourcePath.js";
 import { createElement, type ReactNode } from "react";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -9,7 +10,7 @@ import { SessionPane } from "@/v4/SessionPane.js";
 import type { ConversationShareSelectionDraft } from "@/store/conversationShareSelectionStore.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 
-const sessionPaneSource = readFileSync("packages/ui/src/v4/SessionPane.tsx", "utf8");
+const sessionPaneSource = readFileSync(uiSourcePath("src", "v4", "SessionPane.tsx"), "utf8");
 
 const projectionState = vi.hoisted(() => ({
   current: null as {

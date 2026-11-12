@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { uiSourcePath } from "./uiSourcePath.js";
 import { createElement, type ContextType } from "react";
 import { DeliveryContext } from "@/v4/botGroupDeliveryContext.js";
 import { withTopicPreparationMessages } from "@/v4/topicPreparationRenderUnits.js";
@@ -700,7 +701,7 @@ describe("ConversationTurnGroup message stream display settings", () => {
 
 describe("ConversationTurnGroup assistant history status", () => {
   it("源码将会话内分享按钮接到本地卡片，且不调用后端分享接口", () => {
-    const source = readFileSync("packages/ui/src/v4/ConversationTurnGroup.tsx", "utf8");
+    const source = readFileSync(uiSourcePath("src", "v4", "ConversationTurnGroup.tsx"), "utf8");
 
     expect(source).toContain("setHighspeedShareDialogOpen(true)");
     expect(source).toContain("<HighspeedShareDialog");

@@ -19,7 +19,7 @@
     "./replay": "./src/replay.ts"
   },
   "scripts": {
-    "test": "vitest run --root ../.. packages/ui/test packages/ui/src",
+    "test": "vitest run --root ../.. --project unit packages/ui/test packages/ui/src",
     "typecheck": "tsc -b tsconfig.json",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"

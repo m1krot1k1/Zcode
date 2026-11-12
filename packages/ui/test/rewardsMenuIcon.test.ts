@@ -6,7 +6,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 it("真实入口 JSX 在匿名时不渲染，登录后展示邀请好友和奖励徽标", async () => {
-  const source = await readFile("packages/ui/src/WorkspaceSidebarFooter.tsx", "utf8");
+  // Путь относительно файла: тест должен работать и из корня репозитория, и через
+  // `pnpm --filter @zcode/ui test` (cwd = packages/ui).
+  const source = await readFile(
+    new URL("../src/WorkspaceSidebarFooter.tsx", import.meta.url),
+    "utf8",
+  );
   const end = source.indexOf("{onLogin && !user");
   const start = source.lastIndexOf("{user ? (", end);
   const expression = source.slice(start, end).trim().slice(1, -1);
