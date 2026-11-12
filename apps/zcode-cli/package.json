@@ -34,10 +34,7 @@
     "test:browser-headless:linux": "docker build --progress=plain -f packages/browser-use-plugin/e2e/headless-linux.Dockerfile ../..",
     "typecheck": "turbo run typecheck"
   },
-  "dependencies": {
-    "dotenv": "^17.4.2",
-    "proxy-agent": "^8.0.1"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^4.1.5",

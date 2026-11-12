@@ -7,6 +7,15 @@
     "packages/ui": {
       "entry": [
         "test/**/*.test.tsx"
+      ],
+      "ignoreDependencies": [
+        "@radix-ui/react-radio-group",
+        "@rive-app/react-webgl2",
+        "ansi-to-react",
+        "embla-carousel-react",
+        "media-chrome",
+        "react-jsx-parser",
+        "use-stick-to-bottom"
       ]
     },
     "packages/desktop": {

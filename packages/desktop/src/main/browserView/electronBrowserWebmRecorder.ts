@@ -477,5 +477,3 @@ export async function createElectronBrowserWebmRecorder(
 }
 
 // 保持标准 factory 类型出口，调用方不注入诊断时不会产生按分片日志。
-export const defaultElectronBrowserWebmRecorder: BrowserWebmRecorderFactory =
-  createElectronBrowserWebmRecorder;

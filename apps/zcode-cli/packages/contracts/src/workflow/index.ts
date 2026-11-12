@@ -65,7 +65,6 @@ export const WorkflowStrategySchema = z.object({
 });
 export type WorkflowStrategy = z.infer<typeof WorkflowStrategySchema>;
 
-export const ExpertWorkflowStrategySchema = WorkflowStrategySchema;
 export type ExpertWorkflowStrategy = WorkflowStrategy;
 
 export const WorkflowPhaseBehaviorSchema = z.enum([

@@ -12,8 +12,7 @@ const h = React.createElement as (
   ...children: React.ReactNode[]
 ) => React.ReactElement;
 
-export const INPUT_DEFAULT_EDITOR_ROWS = 2;
-export const INPUT_MIN_EDITOR_ROWS = INPUT_DEFAULT_EDITOR_ROWS;
+export const INPUT_MIN_EDITOR_ROWS = 2;
 export const INPUT_MAX_EDITOR_ROWS = 6;
 const INPUT_FRAME_CHROME_ROWS = 3;
 const INPUT_PANE_STATUS_ROWS = 1;
