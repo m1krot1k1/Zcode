@@ -64,6 +64,10 @@
         "@aiden0z/pptx-renderer",
         "@modelcontextprotocol/ext-apps",
         "docx-preview"
+      ],
+      "entry": [
+        "index.ts",
+        "src/adapters/**/*.ts"
       ]
     },
     "apps/zcode-cli": {
@@ -169,5 +173,32 @@
   "entry": [
     "scripts/**/*.{mjs,cjs,ts,mts}",
     ".vscode/*.mjs"
-  ]
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreIssues": {
+    "apps/zcode-cli/packages/bootstrap/src/session-execution/contract.ts": [
+      "types"
+    ],
+    "packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChartView.tsx": [
+      "duplicates"
+    ],
+    "apps/zcode-cli/packages/contracts/src/tools/agent.ts": [
+      "duplicates"
+    ],
+    "apps/zcode-cli/packages/contracts/src/tools/create-workflow.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/validation.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/zcode-protocol/index.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/task-realtime-core.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/streaming-tool-input-preview.ts": [
+      "duplicates"
+    ]
+  }
 }

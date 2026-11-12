@@ -431,7 +431,6 @@ export const WorkflowRunSnapshotSchema = z.object({
 });
 export type WorkflowRunSnapshot = z.infer<typeof WorkflowRunSnapshotSchema>;
 
-export const ExpertWorkflowRunSnapshotSchema = WorkflowRunSnapshotSchema;
 export type ExpertWorkflowRunSnapshot = WorkflowRunSnapshot;
 
 export const WorkflowEventTypeSchema = z.enum([

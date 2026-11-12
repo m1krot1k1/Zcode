@@ -125,5 +125,3 @@ export function RemoteConnectionDialog(props: RemoteConnectionDialogProps) {
     </>
   );
 }
-
-export const SSHDialog = RemoteConnectionDialog;

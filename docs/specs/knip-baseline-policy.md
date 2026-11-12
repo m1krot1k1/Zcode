@@ -69,3 +69,20 @@
 pnpm knip                 # new=0 обязателен
 pnpm knip:update-baseline # только после уменьшения текущего числа
 ```
+
+## Итоговое состояние: baseline 0
+
+`scripts/knip-baseline.json` пуст. Всё, что knip не может вывести статически, описано в
+`knip.json` точечно и с причиной:
+
+| Механизм | Что покрывает |
+| --- | --- |
+| `ignoreExportsUsedInFile: true` | экспорт, используемый внутри своего файла, не мёртв |
+| `entry` (`office-runtime`: `index.ts`, `src/adapters/**`) | точки входа офисного worker-а, чьи импорты knip иначе не видит |
+| `ignore` (`ui/**` у office-runtime и vendored-компоненты) | вендоренные вьюеры/примитивы |
+| `ignoreIssues` (8 файлов) | `duplicates` там, где значения совпадают, но смысл разный (Task/Agent-схема, лимиты фаз/holes, протокольные псевдонимы, lease/mirror target, два порога 8 КиБ, компонент + `default`), и `types` для `contract.example.ts` |
+
+Удалено по ходу разбора (реальные дубли, а не псевдонимы): `zcodeTaskTarget*Schema`
+(3 алиаса), `botCommandPolicySchema`, `applyResolvedShellCommandForTest`,
+`ExpertWorkflowRunSnapshotSchema`, `CUA_TOOL_ICON`, `SSHDialog`,
+`resolveRemoteWorkspaceReconnectLogHistoryIds`, `TEST_ZCODE_ENDPOINT_ORIGIN`.

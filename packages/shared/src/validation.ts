@@ -1793,10 +1793,6 @@ export const zcodeTaskGoalChangedPatchSchema = z.object({
   previousTarget: zcodeTaskGoalSchema.nullable().optional(),
 });
 
-export const zcodeTaskTargetStatusSchema = zcodeTaskGoalStatusSchema;
-export const zcodeTaskTargetSchema = zcodeTaskGoalSchema;
-export const zcodeTaskTargetChangedPatchSchema = zcodeTaskGoalChangedPatchSchema;
-
 export const zcodeTaskMetaSchema = z.object({
   taskId: nonEmptyStringSchema,
   traceId: nonEmptyStringSchema,

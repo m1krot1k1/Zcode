@@ -41,7 +41,7 @@ import { useTabPersistence, type WorkspacePersistenceGate } from "@/hooks/useTab
 import { useTokenRefresh } from "@/hooks/useTokenRefresh.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { SSHDialog } from "@/SSHDialog.js";
+import { RemoteConnectionDialog } from "@/SSHDialog.js";
 import { SettingsPage } from "@/SettingsPage.js";
 import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
 import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
@@ -1405,7 +1405,7 @@ function RootInner({
           onSaved={async () => {}}
         />
       ) : null}
-      <SSHDialog
+      <RemoteConnectionDialog
         completion={remoteConnectionOpenPreference?.completion}
         onCancelled={(background) => {
           void finishDeviceAddition(

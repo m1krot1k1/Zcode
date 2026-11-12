@@ -15,7 +15,6 @@ const compiledZCodeEndpointOrigin =
     : "";
 
 export const DEFAULT_ZCODE_ENDPOINT_ORIGIN = compiledZCodeEndpointOrigin || "https://zcode.z.ai";
-export const TEST_ZCODE_ENDPOINT_ORIGIN = DEFAULT_ZCODE_ENDPOINT_ORIGIN;
 export const CODING_PLAN_LOCAL_WEBVIEW_ORIGIN = "http://localhost:3000";
 export const DEFAULT_BIGMODEL_API_ORIGIN = "https://bigmodel.cn";
 export const TEST_BIGMODEL_API_ORIGIN = "https://bigmodel.cn";
@@ -179,7 +178,6 @@ export function isTrustedCodingPlanWebviewOrigin(
     const origin = normalizeZCodeEndpointOrigin(value);
     if (
       origin === DEFAULT_ZCODE_ENDPOINT_ORIGIN ||
-      origin === TEST_ZCODE_ENDPOINT_ORIGIN ||
       origin === CODING_PLAN_LOCAL_WEBVIEW_ORIGIN
     ) {
       return true;
@@ -209,7 +207,7 @@ export function resolveZCodeEndpointOrigin(options?: {
     return normalizeZCodeEndpointOrigin(overrideOrigin);
   }
 
-  return envBaseOrigin ? normalizeZCodeEndpointOrigin(envBaseOrigin) : TEST_ZCODE_ENDPOINT_ORIGIN;
+  return envBaseOrigin ? normalizeZCodeEndpointOrigin(envBaseOrigin) : DEFAULT_ZCODE_ENDPOINT_ORIGIN;
 }
 
 export function resolveRuntimeZCodeEnv(env: RuntimeZCodeEndpointEnv = {}): ZCodeEnv {

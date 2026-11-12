@@ -10,7 +10,6 @@ import {
   TEST_ZAI_BUSINESS_BASE_URL,
   TEST_ZAI_OAUTH_CLIENT_ID,
   TEST_ZAI_OAUTH_ORIGIN,
-  TEST_ZCODE_ENDPOINT_ORIGIN,
   buildBigModelCodingPlanPersonalManageUrl,
   buildBigModelCodingPlanTeamManageUrl,
   buildBigModelApiUrl,
@@ -32,7 +31,7 @@ import { appSettingsPatchSchema, appSettingsSchema } from "../src/validationAppS
 
 describe("zcodeEndpoint", () => {
   it("defaults to the scoped origin in every env without env base url", () => {
-    expect(resolveZCodeEndpointOrigin({ env: "test" })).toBe(TEST_ZCODE_ENDPOINT_ORIGIN);
+    expect(resolveZCodeEndpointOrigin({ env: "test" })).toBe(DEFAULT_ZCODE_ENDPOINT_ORIGIN);
     expect(resolveZCodeEndpointOrigin({ env: "production" })).toBe(DEFAULT_ZCODE_ENDPOINT_ORIGIN);
   });
 
@@ -52,7 +51,7 @@ describe("zcodeEndpoint", () => {
         env: "test",
         overrideOrigin: "https://zcode.z.ai/api/v1/ignored?x=1",
       }),
-    ).toBe(TEST_ZCODE_ENDPOINT_ORIGIN);
+    ).toBe(DEFAULT_ZCODE_ENDPOINT_ORIGIN);
   });
 
   it("ignores overrides in production", () => {
@@ -137,7 +136,7 @@ describe("zcodeEndpoint", () => {
   it("derives V2 relay from each endpoint origin", () => {
     expect(
       resolveWebRemoteControlRelayWsUrl({
-        endpointOrigin: TEST_ZCODE_ENDPOINT_ORIGIN,
+        endpointOrigin: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
       }),
     ).toBe("wss://zcode.z.ai/api/v1/remote/ws2");
     expect(
@@ -155,7 +154,7 @@ describe("zcodeEndpoint", () => {
   it("allows an explicit web remote control relay url override", () => {
     expect(
       resolveWebRemoteControlRelayWsUrl({
-        endpointOrigin: TEST_ZCODE_ENDPOINT_ORIGIN,
+        endpointOrigin: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
         overrideUrl: " ws://localhost:8787/api/v1/remote/ws2 ",
       }),
     ).toBe("ws://localhost:8787/api/v1/remote/ws2");
@@ -187,7 +186,7 @@ describe("zcodeEndpoint", () => {
   it("resolves all product endpoints for the test product environment", () => {
     expect(resolveRuntimeProductEndpointConfig({ ZCODE_ENV: "test" })).toMatchObject({
       zcodeEnv: "test",
-      zcodeEndpointOrigin: TEST_ZCODE_ENDPOINT_ORIGIN,
+      zcodeEndpointOrigin: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
       zaiOAuthOrigin: TEST_ZAI_OAUTH_ORIGIN,
       zaiBusinessBaseUrl: TEST_ZAI_BUSINESS_BASE_URL,
       zaiOAuthClientId: TEST_ZAI_OAUTH_CLIENT_ID,
@@ -273,7 +272,7 @@ describe("zcodeEndpoint", () => {
     };
 
     expect(resolveRuntimeProductEndpointConfig(env)).toMatchObject({
-      zcodeEndpointOrigin: TEST_ZCODE_ENDPOINT_ORIGIN,
+      zcodeEndpointOrigin: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
       zaiOAuthOrigin: TEST_ZAI_OAUTH_ORIGIN,
       zaiBusinessBaseUrl: TEST_ZAI_BUSINESS_BASE_URL,
       zaiOAuthClientId: TEST_ZAI_OAUTH_CLIENT_ID,
@@ -289,7 +288,7 @@ describe("zcodeEndpoint", () => {
     expect(
       appSettingsSchema.parse({ zcodeEndpointOrigin: "https://zcode.z.ai/path" })
         .zcodeEndpointOrigin,
-    ).toBe(TEST_ZCODE_ENDPOINT_ORIGIN);
+    ).toBe(DEFAULT_ZCODE_ENDPOINT_ORIGIN);
     expect(
       appSettingsPatchSchema.parse({ zcodeEndpointOrigin: "http://localhost:3030/foo" })
         .zcodeEndpointOrigin,

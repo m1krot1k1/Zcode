@@ -710,8 +710,6 @@ export const botAllowedCommandsSchema = z
   })
   .strict();
 
-export const botCommandPolicySchema = botAllowedCommandsSchema;
-
 // 修复原因：第三方 CLI provider 已移除，ZCodeProvider 只剩 glm，但旧 bot 配置与状态文件里可能仍存有
 // 已移除 provider 的历史值。改成严格 literal 会让整份文件 parse 失败、Bot 全部不可用；
 // 因此解析时继续接受这些历史值，并统一归一到当前唯一的 agent provider。

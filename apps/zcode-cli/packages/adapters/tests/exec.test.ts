@@ -32,7 +32,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 import {
-  applyResolvedShellCommandForTest,
+  applyResolvedShellCommand,
   buildExecutionEnv,
   decodeExecutionOutputBuffer,
   NodeExecutionAdapter,
@@ -2672,7 +2672,7 @@ describe("NodeExecutionAdapter", { retry: 2, timeout: 30_000 }, () => {
     const withoutLogin = setResolvedShellLoginMode(command, false);
     expect(withoutLogin.args).toEqual(["-c", "echo before"]);
 
-    const rewritten = applyResolvedShellCommandForTest(withoutLogin, "echo after");
+    const rewritten = applyResolvedShellCommand(withoutLogin, "echo after");
     expect(rewritten.args).toEqual(["-c", "echo after"]);
   });
 

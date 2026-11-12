@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ApplicationIconRequest } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { useToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCapabilities.js";
-import { CUA_TOOL_ICON } from "@/ToolCallBlocks/renderers/cuaIcon.js";
+import { CUA_FALLBACK_ICON } from "@/ToolCallBlocks/renderers/cuaIcon.js";
 
 export function CuaAppSummaryIcon({
   bundleId,
@@ -50,6 +50,6 @@ export function CuaAppSummaryIcon({
       className={cn(className ?? "size-4", "shrink-0 rounded-sm object-contain")}
     />
   ) : (
-    (fallback ?? CUA_TOOL_ICON)
+    (fallback ?? CUA_FALLBACK_ICON)
   );
 }

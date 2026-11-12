@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ExpertWorkflowRunSnapshotSchema,
+  WorkflowRunSnapshotSchema,
   WorkflowAgentCallInputSchema,
   WorkflowDefinitionSchema,
-  WorkflowRunSnapshotSchema,
   WorkflowSchedulerStateSchema,
   WorkflowScriptMetaSchema,
   WorkflowStrategySchema,
@@ -237,7 +236,7 @@ describe("deriveWorkflowSchedulerState", () => {
     };
 
     expect(WorkflowRunSnapshotSchema.parse(snapshot).kind).toBe("audit");
-    expect(ExpertWorkflowRunSnapshotSchema.parse(snapshot).kind).toBe("audit");
+    expect(WorkflowRunSnapshotSchema.parse(snapshot).kind).toBe("audit");
   });
 
   it("derives active child sessions from workflow run activities", () => {

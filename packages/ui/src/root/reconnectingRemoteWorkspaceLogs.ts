@@ -70,6 +70,3 @@ export function resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
     .map((entry) => entry.workspaceKey ?? entry.id ?? "")
     .filter((workspaceKey) => workspaceKey.length > 0);
 }
-
-export const resolveRemoteWorkspaceReconnectLogHistoryIds =
-  resolveRemoteWorkspaceReconnectLogWorkspaceKeys;

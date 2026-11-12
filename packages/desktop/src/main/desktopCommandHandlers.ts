@@ -6,7 +6,6 @@ import {
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   DesktopCommandIds,
   REWARDS_PARTITION,
-  TEST_ZCODE_ENDPOINT_ORIGIN,
   getCommunityUrlFromConfigs,
   getFeedbackUrlFromConfig,
   normalizeZCodeEndpointOrigin,
@@ -638,7 +637,7 @@ export async function executeDesktopCommand(options: {
       return;
     case DesktopCommandIds.SetZCodeEndpointTest:
       await setZCodeEndpointOverride({
-        value: TEST_ZCODE_ENDPOINT_ORIGIN,
+        value: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
         settingService: options.settingService,
         onZCodeEndpointChanged: options.onZCodeEndpointChanged,
         logger: options.logger,

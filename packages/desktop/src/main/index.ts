@@ -78,7 +78,6 @@ import {
   ZCODE_AUTO_UPDATE_ENABLED,
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   DEFAULT_LOCALE,
-  TEST_ZCODE_ENDPOINT_ORIGIN,
   ZCODE_VERSION,
   buildZCodeEndpointUrls,
   resolveWebRemoteControlRelayWsUrl,
@@ -1564,7 +1563,7 @@ async function resolveZCodeEndpointSelection(): Promise<"production" | "test" | 
   if (origin === DEFAULT_ZCODE_ENDPOINT_ORIGIN) {
     return "production";
   }
-  if (origin === TEST_ZCODE_ENDPOINT_ORIGIN) {
+  if (origin === DEFAULT_ZCODE_ENDPOINT_ORIGIN) {
     return "test";
   }
   return "custom";
