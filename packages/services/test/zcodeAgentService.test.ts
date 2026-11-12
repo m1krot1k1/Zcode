@@ -20,6 +20,7 @@ import type { ZCodeProtocolClient } from "../src/zcode-agent/zcodeProtocolClient
 import { ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE } from "../src/zcode-agent/zcodeAgentErrors.js";
 import type { ZCodeAgentServiceEvent } from "../src/zcode-agent/zcodeAgent.js";
 import { getTasksIndexDatabasePath, setDataBaseDir } from "../src/paths.js";
+import { collectServiceMemoryDiagnostics } from "../src/memoryDiagnostics.js";
 
 const protocolModelProperties = {
   inputFormat: {
@@ -130,6 +131,94 @@ process.stdin.on("data", (chunk) => {
           }],
         },
       });
+    }
+  }
+});
+`;
+
+// Host 生命周期清理用例：subscribe 产生 seq/emitter，resume 产生 trace，
+// close 必须释放前两者而不强拆仍在使用的 emitter。
+const SUBSCRIBE_RESUME_CLOSE_FAKE_AGENT = `
+let buf = "";
+function send(obj) { process.stdout.write(JSON.stringify(obj) + "\\n"); }
+function workspaceState(workspace) {
+  return {
+    workspace,
+    settings: {
+      model: {
+        current: { providerId: "zai-api", modelId: "glm-4.6" },
+        available: [{ ref: { providerId: "zai-api", modelId: "glm-4.6" }, label: "GLM 4.6", properties: ${protocolModelPropertiesJson} }],
+      },
+      thoughtLevel: { enabled: false, available: [] },
+      mode: { current: "build" },
+    },
+  };
+}
+function snapshot(workspace, sessionId) {
+  return {
+    protocol: { name: "ZCode Protocol", version: 1 },
+    session: {
+      sessionId,
+      workspace,
+      sessionKind: "interactive",
+      title: "Cleanup",
+      mode: "build",
+      status: "idle",
+      traceId: "trace-cleanup",
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    settings: workspaceState(workspace).settings,
+    projection: {
+      sessionId,
+      status: "idle",
+      mode: "build",
+      turnCount: 1,
+      totalTokenCount: 0,
+      contextUsed: 0,
+      contextWindow: 128000,
+      pendingPermissions: [],
+      activeToolCalls: [],
+      backgroundJobs: [],
+    },
+    runtime: { eventSeq: 0, stateRevision: 1, pendingRequestIds: [] },
+    messages: [],
+  };
+}
+process.stdin.on("data", (chunk) => {
+  buf += chunk.toString("utf8");
+  let idx;
+  while ((idx = buf.indexOf("\\n")) >= 0) {
+    const line = buf.slice(0, idx);
+    buf = buf.slice(idx + 1);
+    if (!line.trim()) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { continue; }
+    if (msg.method === "session/subscribe" && msg.id !== undefined) {
+      send({
+        id: msg.id,
+        result: {
+          sessionId: msg.params.sessionId,
+          eventSeq: 1,
+          events: [{
+            type: "session.titleUpdated",
+            eventId: "evt-cleanup-title",
+            sessionId: msg.params.sessionId,
+            seq: 1,
+            timestamp: 1700000000000,
+            payload: { previousTitle: "", source: "generated", title: "cleanup-title" },
+          }],
+        },
+      });
+      continue;
+    }
+    if (msg.method === "session/resume" && msg.id !== undefined) {
+      send({ id: msg.id, result: snapshot(msg.params.workspace, msg.params.sessionId) });
+      continue;
+    }
+    if (msg.method === "session/close" && msg.id !== undefined) {
+      send({ id: msg.id, result: { closed: true } });
+      continue;
     }
   }
 });
@@ -2427,6 +2516,52 @@ describe("createZCodeAgentService", () => {
 
     firstSubscription.dispose();
     secondSubscription.dispose();
+    await service.disposeAllAndWait();
+  });
+
+  it("releases per-session seq/trace state on close without breaking active subscriptions", async () => {
+    const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-service-forget-"));
+    createdDirs.push(workspacePath);
+    const scriptPath = join(workspacePath, "subscribe-resume-close-agent.cjs");
+    writeFileSync(scriptPath, SUBSCRIBE_RESUME_CLOSE_FAKE_AGENT);
+    const service = createReadyZCodeAgentService({
+      commandResolver: () => ({ command: process.execPath, args: [scriptPath] }),
+    });
+
+    const received: ZCodeAgentServiceEvent[] = [];
+    const subscription = service.onDynamicSessionEvent({
+      workspacePath,
+      sessionId: "sess-cleanup",
+      deliveryKind: "desktop-continuous",
+      includeSnapshot: false,
+    })((event) => received.push(event));
+
+    await vi.waitFor(
+      () => {
+        expect(received.some((event) => event.type === "session.event")).toBe(true);
+      },
+      { timeout: 5000, interval: 50 },
+    );
+
+    await service.resumeSession({ workspacePath, sessionId: "sess-cleanup" });
+    const beforeClose = collectServiceMemoryDiagnostics();
+    expect(beforeClose["agent.seqStates"]).toBe(1);
+    expect(beforeClose["agent.sessionTraceIds"]).toBe(1);
+    expect(beforeClose["agent.sessionEmitters"]).toBe(1);
+
+    await expect(service.closeSession({ workspacePath, sessionId: "sess-cleanup" })).resolves.toBe(
+      true,
+    );
+
+    const afterClose = collectServiceMemoryDiagnostics();
+    expect(afterClose["agent.seqStates"]).toBe(0);
+    expect(afterClose["agent.sessionTraceIds"]).toBe(0);
+    // 还有活跃订阅时 emitter 必须保留，否则 UI 的终态流会被静默切断。
+    expect(afterClose["agent.sessionEmitters"]).toBe(1);
+
+    subscription.dispose();
+    expect(collectServiceMemoryDiagnostics()["agent.sessionEmitters"]).toBe(0);
+
     await service.disposeAllAndWait();
   });
 

@@ -77,6 +77,7 @@ import {
   ZCODE_PROTOCOL_NAME,
   ZCODE_PROTOCOL_VERSION,
   zcodeMcpListResultSchema,
+  zcodeMcpConnectResultSchema,
   zcodePermissionRequestParamsSchema,
   zcodeBrowserListParamsSchema,
   zcodeBrowserExecuteParamsSchema,
@@ -276,6 +277,7 @@ import type {
   ZCodeAgentValidatePluginParams,
   ZCodeAgentDescribePluginParams,
   ZCodeAgentListMcpServerStatusesParams,
+  ZCodeAgentConnectMcpServerParams,
   ZCodeAgentWorkspaceTarget,
   ZCodeAgentCuaPermissionObservation,
   ZCodeAgentCreateAutomationParams,
@@ -381,7 +383,10 @@ import { createBackgroundSessionEventCoalescer } from "#src/zcode-agent/zcodeSes
 import { AutomationService } from "#src/session/automationService.js";
 import { AutomationRepo } from "#src/session/automationRepo.js";
 import { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
-import { ZCodeAgentMcpStatusModeUnsupportedError } from "#src/zcode-agent/zcodeAgentErrors.js";
+import {
+  ZCodeAgentMcpConnectUnsupportedError,
+  ZCodeAgentMcpStatusModeUnsupportedError,
+} from "#src/zcode-agent/zcodeAgentErrors.js";
 import { ZCodeAgentProcessManager } from "./zcodeAgentProcessManager.js";
 import type { ZCodeAgentProcessManagerOptions } from "./zcodeAgentProcessManager.js";
 import type { IOffPeakTaskService } from "#src/session/offPeakTask.js";
@@ -1422,6 +1427,8 @@ export function createZCodeAgentService(
   const memoryDiagnostics = registerMemoryDiagnosticsProvider("agent", () => ({
     sessionEmitters: sessionEmitters.size,
     seqStates: sessionEventSequenceStates.size,
+    sessionTraceIds: sessionTraceIdBySessionKey.size,
+    conversationFrameEmitters: conversationFrameEmitters.size,
     pendingPermissions: pendingPermissions.size,
     pendingUserInputs: pendingUserInputs.size,
   }));
@@ -1698,6 +1705,9 @@ export function createZCodeAgentService(
     // session-closed，也不一定能成功启动下一代 runtime。必须在 unavailable 这个权威
     // 生命周期边界清掉 CUA tracker，否则 Windows 顶部提示和 Helper 恢复门控会永久残留。
     cuaOperationTurnTracker?.clearWorkspaceKey(event.workspaceKey);
+    // Bug 原因：runtime 退出后事件序号/去重/trace 镜像只属于已死进程；不清理会让
+    // 重连后的会话继承旧 seq 基线，同时把已关闭会话的 emitter 永久留在 Host 内存。
+    forgetWorkspaceSessions(event.workspaceKey);
     const active = activeClientsByWorkspaceKey.get(event.workspaceKey);
     if (!active) return;
     // Process manager 只会为当前 available runtime 发布 unavailable；这里再绑定当前
@@ -2094,9 +2104,59 @@ export function createZCodeAgentService(
     if (existing) {
       return existing;
     }
-    const created = new Emitter<ZCodeAgentServiceEvent>();
+    // Bug 原因：旧实现只增不删，已关闭/已删除会话的 emitter 永久留在 Host 内存。
+    // 与 plugin operation progress 同策略：最后一个订阅者离开后自行摘除并 dispose。
+    // 有活跃订阅时不能强制销毁，否则 UI 的 conversation/task 订阅会被静默断流。
+    let created: Emitter<ZCodeAgentServiceEvent>;
+    created = new Emitter({
+      onDidRemoveLastListener: () => {
+        if (sessionEmitters.get(key) !== created) return;
+        sessionEmitters.delete(key);
+        created.dispose();
+      },
+    });
     sessionEmitters.set(key, created);
     return created;
+  }
+
+  /**
+   * 释放单个会话的 Host 内存镜像。会话关闭/删除、或它所属的 Agent runtime 退出后调用。
+   *
+   * 只清理“会话已不存在”后没有意义的状态；emitter 必须保留给仍在渲染的订阅者，
+   * 由最后一个订阅者离开时经 onDidRemoveLastListener 回收。否则关闭一个会话会把
+   * UI 正在等待终态的流直接掐断。
+   */
+  function forgetSession(params: ZCodeAgentSessionTarget): void {
+    const key = sessionEventKey(params);
+    sessionEventSequenceStates.delete(key);
+    sessionTraceIdBySessionKey.delete(key);
+    const emitter = sessionEmitters.get(key);
+    if (emitter && emitter.listenerCount === 0) {
+      sessionEmitters.delete(key);
+      emitter.dispose();
+    }
+  }
+
+  /** runtime 退出会一次性废弃该 workspace 下全部会话的进程内事实，按 key 前缀回收。 */
+  function forgetWorkspaceSessions(workspaceKey: string): void {
+    const prefix = `${workspaceKey}\u0000`;
+    // Map 迭代器允许删除当前项；这里按前缀回收，避免为一次性清理复制整张表。
+    for (const key of sessionEventSequenceStates.keys()) {
+      if (key.startsWith(prefix)) sessionEventSequenceStates.delete(key);
+    }
+    for (const key of sessionTraceIdBySessionKey.keys()) {
+      if (key.startsWith(prefix)) sessionTraceIdBySessionKey.delete(key);
+    }
+    for (const [key, emitter] of sessionEmitters) {
+      if (!key.startsWith(prefix) || emitter.listenerCount > 0) continue;
+      sessionEmitters.delete(key);
+      emitter.dispose();
+    }
+    const frameEmitter = conversationFrameEmitters.get(workspaceKey);
+    if (frameEmitter && frameEmitter.listenerCount === 0) {
+      conversationFrameEmitters.delete(workspaceKey);
+      frameEmitter.dispose();
+    }
   }
 
   function getPluginOperationProgressEmitter(operationId: string) {
@@ -2120,7 +2180,16 @@ export function createZCodeAgentService(
     if (existing) {
       return existing;
     }
-    const created = new Emitter<ConversationTopicWireCandidate>();
+    // workspace 级帧流同样按最后订阅者回收：面板全部关闭后不再常驻空 emitter。
+    // 重订阅会重新创建并拿最新事件流，不能把旧 event 引用跨 dispose 复用。
+    let created: Emitter<ConversationTopicWireCandidate>;
+    created = new Emitter({
+      onDidRemoveLastListener: () => {
+        if (conversationFrameEmitters.get(key) !== created) return;
+        conversationFrameEmitters.delete(key);
+        created.dispose();
+      },
+    });
     conversationFrameEmitters.set(key, created);
     return created;
   }
@@ -4499,6 +4568,7 @@ export function createZCodeAgentService(
     }
     sessionsIndexFrameEmitters.clear();
     sessionEventSequenceStates.clear();
+    sessionTraceIdBySessionKey.clear();
     pendingPermissions.clear();
     pendingUserInputs.clear();
     pendingProviderRuntimeHeaders.clear();
@@ -5290,6 +5360,35 @@ export function createZCodeAgentService(
           message: error instanceof Error ? error.message : String(error),
         });
         return await requestMcpList();
+      }
+    },
+
+    async connectMcpServer(params: ZCodeAgentConnectMcpServerParams) {
+      // 与 mcp/list 复用同一 mcp-status 控制面进程：approval store 与连接都在同一个
+      // agent 进程内，设置页连接成功后紧接着的 status 刷新能看到一致结果。
+      const client = await getMcpStatusClient();
+      try {
+        return await client.request(
+          zcodeProtocolMethods.mcpConnect,
+          {
+            workspace: buildWorkspaceRef(params),
+            serverName: params.serverName,
+            approveProjectScope: params.approveProjectScope === true,
+            ...(params.mcpServers !== undefined ? { mcpServers: params.mcpServers } : {}),
+          },
+          zcodeMcpConnectResultSchema,
+        );
+      } catch (error) {
+        if (isProtocolMethodNotFoundError(error)) {
+          // 旧 Agent 没有 mcp/connect：不能回退到会隐式启动 project MCP 的旧路径，
+          // 用稳定 code 让设置页提示升级/重启 Agent。
+          logger.warn(undefined, "旧 Agent 不支持 MCP 显式连接", {
+            workspaceKey: resolveWorkspaceKey(params),
+            workspacePath: params.workspacePath,
+          });
+          throw new ZCodeAgentMcpConnectUnsupportedError();
+        }
+        throw error;
       }
     },
 
@@ -6393,7 +6492,15 @@ export function createZCodeAgentService(
         zcodeSessionCloseResultSchema,
       );
       // 兼容尚未返回 closed 字段、但已成功执行普通 close 的 Agent。
-      return result.closed ?? true;
+      const closed = result.closed ?? true;
+      // 会话关闭是不可恢复的生命周期终点：Host 的 seq/trace/订阅镜像必须同步释放。
+      // 仍在展示的订阅者由 emitter 的 last-listener 回调负责最终回收，不在这里强拆。
+      if (closed) forgetSession(params);
+      return closed;
+    },
+
+    forgetSession(params) {
+      forgetSession(params);
     },
 
     async setModel(params: ZCodeAgentSetModelParams) {
@@ -7105,6 +7212,15 @@ export function createZCodeAgentService(
         }
       }
       const ack: CommandAck = await client.request(V4_METHODS.command, envelope, commandAckSchema);
+      // 会话删除同样是生命周期终点；accepted/duplicate/noop 都表示目标会话已不可用。
+      // 不在这里清 Host 镜像，UI 删除后 seq/trace/emitter 会一直留到进程退出。
+      if (
+        envelope.type === "deleteSession" &&
+        envelope.sessionId &&
+        (ack.status === "accepted" || ack.status === "duplicate" || ack.status === "noop")
+      ) {
+        forgetSession({ ...params, sessionId: envelope.sessionId });
+      }
       // Prompt command 在 committed TurnStarted 或 committed WorkspaceHookReviewRequested
       // 任一 authority 到达后即返回；人工审核不能占用 Host RPC，因此继续使用统一默认
       // timeout/watchdog。放宽到审核领域 deadline 只会掩盖串行协议队列死锁。

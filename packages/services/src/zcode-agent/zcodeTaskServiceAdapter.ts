@@ -281,6 +281,7 @@ export function createZCodeTaskServiceAdapter(
   // 不清理的 per-task 表，只读 size。
   const memoryDiagnostics = registerMemoryDiagnosticsProvider("task", () => ({
     runtimeCommands: runtimeCommands.size,
+    activePromptInputs: activePromptInputIds.size,
     toolMemoryTasks: toolProjectionMemoryByTaskKey.size,
     taskEmitters: taskEmitters.size,
   }));
@@ -536,18 +537,33 @@ export function createZCodeTaskServiceAdapter(
     error: unknown,
   ): void {
     const key = taskKey(params);
+    // Bug 原因 (2026-11-12): ① статус failed нужен UI/телефону, чтобы показать причину
+    // отклонённого ACK; ② но запись не должна жить вечно. Держим её в очереди как факт
+    // ошибки, ограничиваем хвостом из 50 команд и вычищаем при смене процесса/удалении
+    // задачи — иначе pendingCommands и память растут без границы.
     const failedCommand: ZCodeSendPromptRuntimeCommand = {
       ...command,
       status: "failed",
       updatedAt: Date.now(),
       error: error instanceof Error ? error.message : String(error),
     };
-    runtimeCommands.set(
-      key,
-      (runtimeCommands.get(key) ?? []).map((item) =>
-        item.commandId === command.commandId ? failedCommand : item,
-      ),
+    const commands = runtimeCommands.get(key) ?? [];
+    const next = commands.map((item) =>
+      item.commandId === command.commandId ? failedCommand : item,
     );
+    runtimeCommands.set(key, next.slice(-50));
+    if (activePromptInputIds.get(key) === command.traceId) {
+      activePromptInputIds.delete(key);
+    }
+    logger.info(command.traceId, "ZCode task command drain 失败", {
+      commandId: command.commandId,
+      error: failedCommand.error,
+      taskId: params.taskId,
+      workspaceIdentity: params.workspaceIdentity ?? null,
+      workspaceKey: resolveWorkspaceKey(params),
+      workspacePath: params.workspacePath,
+    });
+    emitRuntimeCommandSnapshotUpdated(params, command.traceId);
   }
 
   function removeRuntimeCommand(params: TaskTarget, commandId: string): void {
@@ -1698,9 +1714,62 @@ export function createZCodeTaskServiceAdapter(
     });
   });
 
+  /**
+   * Agent 进程死亡/换代时，旧 turn 的 active input 永远不会再收到 turn.completed 或
+   * sessions-index ready。旧实现把 id 留在表里，drain 的 `activePromptInputIds.has(key)`
+   * 会永久拒绝该 task 的后续手机命令。
+   *
+   * 同时移除旧 runtime 的 running 命令：它们属于已死进程，既不会终态也不会被重发，
+   * 留着还会让 drain 的 `status === "running"` 闸门永久关闭。accepted 命令只是排队，
+   * 等下一次 ready/enqueue 继续消费，不能一并删掉。
+   */
+  function recoverRuntimeStateAfterRuntimeLoss(workspaceKeyValue: string): void {
+    const prefix = `${workspaceKeyValue}\u0000`;
+    // Map 迭代器允许删除/替换当前项；按前缀就地回收，避免复制整张 per-task 表。
+    for (const key of activePromptInputIds.keys()) {
+      if (key.startsWith(prefix)) activePromptInputIds.delete(key);
+    }
+    for (const [key, commands] of runtimeCommands) {
+      if (!key.startsWith(prefix)) continue;
+      // На смене процесса остаются только ещё не принятые команды: running/failed
+      // принадлежат умершему runtime, их нельзя ни завершить, ни переотправить.
+      const retained = commands.filter((command) => command.status === "accepted");
+      if (retained.length > 0) {
+        runtimeCommands.set(key, retained);
+      } else {
+        runtimeCommands.delete(key);
+      }
+    }
+  }
+
+  const noopDisposable = { dispose() {} };
+  const runtimeLifecycleDisposable =
+    options.zcodeAgentService.onAgentRuntimeLifecycle?.((event) => {
+      // available 也清一次：崩溃后新 runtime 可能先发布 available，旧 turn 的 id 不能跨进程继承。
+      recoverRuntimeStateAfterRuntimeLoss(event.workspaceKey);
+    }) ??
+    options.zcodeAgentService.onAgentRuntimeRestarted?.((event) => {
+      recoverRuntimeStateAfterRuntimeLoss(event.workspaceKey);
+    }) ??
+    noopDisposable;
+
+  /** 删除任务后 Host 侧不再需要该 task 的命令队列/turn 镜像。 */
+  function forgetTaskRuntimeState(params: TaskTarget): void {
+    const key = taskKey(params);
+    activePromptInputIds.delete(key);
+    runtimeCommands.delete(key);
+    runtimeCommandDrains.delete(key);
+    streamedTurnText.delete(key);
+    liveToolProjectionsByTaskKey.delete(key);
+    apiRetryByTaskKey.delete(key);
+    backgroundTaskControlsByTaskKey.delete(key);
+    taskTargets.delete(params.taskId);
+  }
+
   function disposeLocalTaskState(): void {
     taskIndexTerminalDisposable.dispose();
     taskIndexReadyDisposable.dispose();
+    runtimeLifecycleDisposable.dispose();
     taskIndexRepo.close();
     for (const emitter of taskEmitters.values()) emitter.dispose();
     for (const emitter of globalTaskEmitters.values()) emitter.dispose();
@@ -1709,6 +1778,13 @@ export function createZCodeTaskServiceAdapter(
     globalTaskEmitters.clear();
     runtimeCommandDrains.clear();
     streamedTurnText.clear();
+    runtimeCommands.clear();
+    activePromptInputIds.clear();
+    taskTargets.clear();
+    apiRetryByTaskKey.clear();
+    backgroundTaskControlsByTaskKey.clear();
+    toolProjectionMemoryByTaskKey.clear();
+    liveToolProjectionsByTaskKey.clear();
   }
 
   async function disposeZCodeAgentServiceAndWait(): Promise<void> {
@@ -2953,10 +3029,14 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async restartWorkspaceProcess(params): Promise<void> {
+      // runtime 重启会丢弃 CLI 进程内的 turn；旧 active input/running 命令若不清，手机命令 drain 永久卡住。
+      recoverRuntimeStateAfterRuntimeLoss(resolveWorkspaceKey(params));
       await options.zcodeAgentService.disposeWorkspace(normalizeWorkspaceParams(params));
     },
 
     async deleteTask(params): Promise<void> {
+      forgetTaskRuntimeState(params);
+      options.zcodeAgentService.forgetSession?.({ ...params, sessionId: params.taskId });
       await taskIndexSyncer.mutateSessionFacts(
         { ...params, sessionId: params.taskId },
         { type: "delete" },
@@ -2966,6 +3046,8 @@ export function createZCodeTaskServiceAdapter(
     async deleteArchivedTask(params): Promise<boolean> {
       const meta = await taskIndexRepo.deleteArchivedTask(params);
       if (!meta) return false;
+      forgetTaskRuntimeState(params);
+      options.zcodeAgentService.forgetSession?.({ ...params, sessionId: params.taskId });
       await taskIndexSyncer.mutateSessionFacts(
         { ...params, sessionId: params.taskId },
         { type: "delete" },
@@ -3000,6 +3082,8 @@ export function createZCodeTaskServiceAdapter(
             { ...target, sessionId: taskId },
             { type: "delete" },
           );
+          forgetTaskRuntimeState(target);
+          options.zcodeAgentService.forgetSession?.({ ...target, sessionId: taskId });
           result.deletedTaskIds.push(taskId);
         } catch (error) {
           result.failedTaskIds.push(taskId);

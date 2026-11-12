@@ -1041,6 +1041,15 @@ ipcRenderer.on(InternalChannels.DatabaseStartupState, (_event, raw: unknown) => 
   if (parsed.success)
     window.postMessage({ type: InternalChannels.DatabaseStartupState, state: parsed.data }, "*");
 });
+
+// Host 意外退出是运行期故障，不是启动期 schema；只做最小形状校验，避免把任意 IPC 数据当 UI 文案。
+ipcRenderer.on(InternalChannels.HostProcessExited, (_event, raw: unknown) => {
+  if (typeof raw !== "object" || raw === null) return;
+  const notification = raw as { label?: unknown; willRespawn?: unknown; at?: unknown };
+  if (typeof notification.label !== "string" || typeof notification.willRespawn !== "boolean")
+    return;
+  window.postMessage({ type: InternalChannels.HostProcessExited, notification }, "*");
+});
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.data?.type !== InternalChannels.DatabaseStartupControl)
     return;

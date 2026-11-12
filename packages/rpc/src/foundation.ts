@@ -129,6 +129,14 @@ export class Emitter<T> implements IDisposable {
     this.options = options;
   }
 
+  /**
+   * 当前订阅者数量。per-session 缓存需要判断“能否安全 dispose”：
+   * 还有活跃订阅时不能销毁 emitter，否则会静默断掉仍在展示的会话流。
+   */
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
   get event(): Event<T> {
     return (listener: (e: T) => void) => {
       if (this.disposed) {
