@@ -5,7 +5,7 @@ export const DEV_ELECTRON_PROTOCOL_SCHEME = "zcode";
 export const DEV_ELECTRON_APP_NAME = "ZCode Dev";
 export const DEV_ELECTRON_APP_BUNDLE_ID = "dev.zcode.app.development";
 // 副本布局版本，见 prepareDevElectronAppBundle 中的指纹说明。
-export const DEV_ELECTRON_BUNDLE_FORMAT = 2;
+export const DEV_ELECTRON_BUNDLE_FORMAT = 3;
 
 function escapeXml(value) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
@@ -73,12 +73,15 @@ export async function prepareDevElectronAppBundle({
   //
   // format 字段记录副本的布局版本：布局修复（例如符号链接策略变更）时递增，
   // 让已存在的旧副本在源二进制没变的情况下也能被判定为需要重拷。
-  const sourceStats = await stat(sourceExecutablePath).catch(() => undefined);
+  // Причина: mtimeMs имеет миллисекундную точность, а одинаковый размер + запись в ту же
+  // миллисекунду давали «не изменилось» для реально нового бинарника (например source-v1 →
+  // source-v2). Наносекундный mtime сохраняет O(1) проверку и различает такие записи.
+  const sourceStats = await stat(sourceExecutablePath, { bigint: true }).catch(() => undefined);
   const sourceStamp = sourceStats
     ? JSON.stringify({
         format: DEV_ELECTRON_BUNDLE_FORMAT,
-        size: sourceStats.size,
-        mtimeMs: sourceStats.mtimeMs,
+        size: sourceStats.size.toString(),
+        mtimeNs: sourceStats.mtimeNs.toString(),
       })
     : undefined;
   let needsCopy = true;

@@ -52,7 +52,7 @@ describe("detectDesktopCloseToTrayCapability", () => {
   it("returns supported when gdbus reports watcher owner", async () => {
     const execute = vi.fn<TraySupportCommandExecutor>().mockResolvedValue({ stdout: "(true,)" });
     await expect(
-      detectDesktopCloseToTrayCapability({ platform: "linux", execute }),
+      detectDesktopCloseToTrayCapability({ platform: "linux", env: {}, execute }),
     ).resolves.toEqual({ supported: true, gnomeLikeWithoutTray: false });
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0]?.[0]).toBe("gdbus");
@@ -64,7 +64,7 @@ describe("detectDesktopCloseToTrayCapability", () => {
       .mockRejectedValueOnce(new Error("not found"))
       .mockResolvedValueOnce({ stdout: 'b "true"' });
     await expect(
-      detectDesktopCloseToTrayCapability({ platform: "linux", execute }),
+      detectDesktopCloseToTrayCapability({ platform: "linux", env: {}, execute }),
     ).resolves.toEqual({ supported: true, gnomeLikeWithoutTray: false });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute.mock.calls[1]?.[0]).toBe("busctl");
@@ -77,7 +77,7 @@ describe("detectDesktopCloseToTrayCapability", () => {
       .mockResolvedValueOnce({ stdout: "garbage" })
       .mockResolvedValueOnce({ stdout: "false" });
     await expect(
-      detectDesktopCloseToTrayCapability({ platform: "linux", execute }),
+      detectDesktopCloseToTrayCapability({ platform: "linux", env: {}, execute }),
     ).resolves.toEqual({ supported: false, gnomeLikeWithoutTray: false });
     expect(execute).toHaveBeenCalledTimes(3);
     expect(execute.mock.calls[2]?.[0]).toBe("qdbus");
@@ -145,6 +145,7 @@ describe("createCloseToTrayCapabilityMonitor", () => {
     });
     const monitor = createCloseToTrayCapabilityMonitor({
       platform: "linux",
+      env: {},
       execute,
       now: () => clock,
       staleMs: 10_000,
