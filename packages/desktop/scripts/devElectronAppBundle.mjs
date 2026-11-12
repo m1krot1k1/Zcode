@@ -1,11 +1,14 @@
-import { access, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
 import { dirname, posix } from "node:path";
 
 export const DEV_ELECTRON_PROTOCOL_SCHEME = "zcode";
 export const DEV_ELECTRON_APP_NAME = "ZCode Dev";
 export const DEV_ELECTRON_APP_BUNDLE_ID = "dev.zcode.app.development";
 // 副本布局版本，见 prepareDevElectronAppBundle 中的指纹说明。
-export const DEV_ELECTRON_BUNDLE_FORMAT = 3;
+export const DEV_ELECTRON_BUNDLE_FORMAT = 4;
 
 function escapeXml(value) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
@@ -52,6 +55,12 @@ export function resolveDevElectronAppBundlePath({ runtimeRoot, electronVersion, 
   return posix.join(runtimeRoot, `${electronVersion}-${arch}`, `${DEV_ELECTRON_APP_NAME}.app`);
 }
 
+async function hashFile(path) {
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(path), hash);
+  return hash.digest("hex");
+}
+
 export async function prepareDevElectronAppBundle({
   electronAppPath,
   runtimeRoot,
@@ -73,16 +82,14 @@ export async function prepareDevElectronAppBundle({
   //
   // format 字段记录副本的布局版本：布局修复（例如符号链接策略变更）时递增，
   // 让已存在的旧副本在源二进制没变的情况下也能被判定为需要重拷。
-  // Причина: mtimeMs имеет миллисекундную точность, а одинаковый размер + запись в ту же
-  // миллисекунду давали «не изменилось» для реально нового бинарника (например source-v1 →
-  // source-v2). Наносекундный mtime сохраняет O(1) проверку и различает такие записи.
-  const sourceStats = await stat(sourceExecutablePath, { bigint: true }).catch(() => undefined);
-  const sourceStamp = sourceStats
-    ? JSON.stringify({
-        format: DEV_ELECTRON_BUNDLE_FORMAT,
-        size: sourceStats.size.toString(),
-        mtimeNs: sourceStats.mtimeNs.toString(),
-      })
+  // Причина: ни mtimeMs, ни mtimeNs не гарантируют различение двух записей одинакового
+  // размера: tmpfs/сетевые ФС отдают крупнозернистую метку, и source-v1 → source-v2
+  // оставался незамеченным (флейк в полном прогоне). SHA-256 источника — единственный
+  // детерминированный признак; 100 МБ читаются один раз за запуск dev, это дешевле
+  // ложного переиспользования устаревшего Electron.
+  const sourceHash = await hashFile(sourceExecutablePath).catch(() => undefined);
+  const sourceStamp = sourceHash
+    ? JSON.stringify({ format: DEV_ELECTRON_BUNDLE_FORMAT, sha256: sourceHash })
     : undefined;
   let needsCopy = true;
   try {

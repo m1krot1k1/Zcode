@@ -2137,6 +2137,7 @@ describe("createZCodeAgentService", () => {
             nativeSearchEnhancementsEnabled: boolean;
             memoryEnabled: boolean;
             toolSearchMode?: "auto" | "local" | "off";
+            workspaceBoundary?: "strict" | "ask" | "allow";
           }>
         >
       >;
@@ -2146,6 +2147,7 @@ describe("createZCodeAgentService", () => {
         subagentRuntimeConfigEnabled: boolean;
         memoryEnabled: boolean;
         toolSearchMode?: "auto" | "local" | "off";
+        workspaceBoundary: "strict" | "ask" | "allow";
         modelContextBudgetStrategy: "legacy" | "preflight-v1";
       };
       expectedErrorCode?: number;
@@ -2165,6 +2167,7 @@ describe("createZCodeAgentService", () => {
           nativeSearchEnhancementsEnabled: false,
           subagentRuntimeConfigEnabled: false,
           memoryEnabled: false,
+          workspaceBoundary: "allow",
           modelContextBudgetStrategy: "preflight-v1" as const,
         },
         expectedResolverCalls: 1,
@@ -2177,6 +2180,7 @@ describe("createZCodeAgentService", () => {
           nativeSearchEnhancementsEnabled: true,
           subagentRuntimeConfigEnabled: false,
           memoryEnabled: false,
+          workspaceBoundary: "allow",
           modelContextBudgetStrategy: "preflight-v1" as const,
         },
         expectedResolverCalls: 0,
@@ -2234,6 +2238,7 @@ describe("createZCodeAgentService", () => {
                   subagentRuntimeConfigEnabled: boolean;
                   memoryEnabled: boolean;
                   toolSearchMode?: "auto" | "local" | "off";
+                  workspaceBoundary: "strict" | "ask" | "allow";
                   modelContextBudgetStrategy: "legacy" | "preflight-v1";
                 };
               },
