@@ -3422,6 +3422,8 @@ async function requestSessionRuntimePreferences(
         modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
         nativeSearchEnhancementsEnabled: true,
         toolSearchMode: "off",
+        // Без Host-ответа нельзя угадывать политику: fail-closed к прежнему поведению allow.
+        workspaceBoundary: "allow",
       };
     }
     throw error;
