@@ -13,14 +13,14 @@ export interface EnterpriseCodingPlanProductGroup {
   products: EnterpriseCodingPlanProductDisplay[];
 }
 
-export interface EnterpriseTierFormatOptions {
+interface EnterpriseTierFormatOptions {
   locale: string;
   formatMessage?: EnterpriseTierMessageFormatter;
 }
 
-export type EnterpriseTierMessageFormatter = (id: string, fallback: string) => string;
+type EnterpriseTierMessageFormatter = (id: string, fallback: string) => string;
 
-export function formatEnterpriseTier(
+function formatEnterpriseTier(
   tier: string,
   options: EnterpriseTierFormatOptions | string = "en-US",
 ): string {
@@ -40,7 +40,7 @@ export function formatEnterpriseTier(
   return fallback;
 }
 
-export function resolveEnterpriseTierMessageId(normalizedTier: string): string | null {
+function resolveEnterpriseTierMessageId(normalizedTier: string): string | null {
   const key = normalizedTier.trim().toLowerCase();
   if (key === "lite" || key === "pro" || key === "max") {
     return `settings.modelProvider.codingPlan.enterprise.tier.${key}`;
@@ -54,7 +54,7 @@ function normalizeEnterpriseTierFormatOptions(
   return typeof options === "string" ? { locale: options } : options;
 }
 
-export function createEnterpriseTierMessageFormatter(
+function createEnterpriseTierMessageFormatter(
   intl: ReturnType<typeof useZCodeIntl>["intl"],
 ): EnterpriseTierMessageFormatter {
   return (id, fallback) => {

@@ -8,8 +8,8 @@ import { FeedbackErrorTip } from "@/feedback/feedbackBadges.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-export const MAX_SUPPLEMENT_ATTACHMENTS = 6;
-export const MAX_SUPPLEMENT_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const MAX_SUPPLEMENT_ATTACHMENTS = 6;
+const MAX_SUPPLEMENT_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
 export interface SupplementAttachmentDraft {
   id: string;

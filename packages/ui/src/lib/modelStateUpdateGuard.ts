@@ -29,7 +29,7 @@ function normalizeModelIdentity(value: string | null | undefined): string | null
   return providerId && modelId ? `${providerId}/${modelId}` : trimmed;
 }
 
-export function readModelCurrentValueForModelStateGuard(
+function readModelCurrentValueForModelStateGuard(
   configOptions: readonly ZCodeConfigOption[],
 ): string | null {
   const modelOption = configOptions.find(

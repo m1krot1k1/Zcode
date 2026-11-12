@@ -1,6 +1,6 @@
 import type { SessionConfigState, SessionModelTransition } from "@zcode/shared/zcode-protocol-v4";
 
-export interface ModelConfigProjectionObservation {
+interface ModelConfigProjectionObservation {
   sessionId: string;
   config: Pick<SessionConfigState, "provider" | "model" | "thought">;
 }

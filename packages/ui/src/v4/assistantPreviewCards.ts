@@ -4,7 +4,7 @@ import {
   type AssistantPreviewCard,
 } from "@/lib/assistantPreviewCards.js";
 
-export interface BuildAssistantPreviewCardsForAssistantTextRowParams {
+interface BuildAssistantPreviewCardsForAssistantTextRowParams {
   row: AssistantTextRow;
   assistantTextRows: readonly AssistantTextRow[];
   latestAssistantTextRow?: AssistantTextRow;

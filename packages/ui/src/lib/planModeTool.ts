@@ -316,7 +316,7 @@ function extractToolName(raw: unknown): string | null {
   return firstNonEmptyString(raw.name, raw.toolName, raw.tool_name, raw.title);
 }
 
-export function getModeOptionFromConfigOptions(
+function getModeOptionFromConfigOptions(
   configOptions: ZCodeConfigOption[],
 ): ZCodeConfigOption | null {
   const modeOption = configOptions.find(

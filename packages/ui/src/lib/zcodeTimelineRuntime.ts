@@ -4,7 +4,7 @@ import type { TaskChatMessage } from "@/lib/taskChatMessageTypes.js";
 const RUNNING_CONTEXT_COMPACTION_STATUSES = new Set(["started", "retrying"]);
 const RUNNING_GOAL_VERIFICATION_STATUSES = new Set(["started"]);
 
-export function isRunningGoalVerificationTimeline(
+function isRunningGoalVerificationTimeline(
   timeline: ZCodeTimelineMeta | undefined,
 ): boolean {
   return (
@@ -17,7 +17,7 @@ export function isRunningGoalVerificationTimeline(
   );
 }
 
-export function isRunningZCodeTimeline(timeline: ZCodeTimelineMeta | undefined): boolean {
+function isRunningZCodeTimeline(timeline: ZCodeTimelineMeta | undefined): boolean {
   if (!timeline) {
     return false;
   }
@@ -34,7 +34,7 @@ export function hasRunningZCodeTimeline(messages: readonly TaskChatMessage[]): b
   return messages.some((message) => isRunningZCodeTimeline(message.syntheticTimeline));
 }
 
-export function hasRunningContextCompactionTimeline(messages: readonly TaskChatMessage[]): boolean {
+function hasRunningContextCompactionTimeline(messages: readonly TaskChatMessage[]): boolean {
   return messages.some((message) => {
     const timeline = message.syntheticTimeline;
     return (
@@ -44,7 +44,7 @@ export function hasRunningContextCompactionTimeline(messages: readonly TaskChatM
   });
 }
 
-export function hasRunningGoalVerificationTimeline(messages: readonly TaskChatMessage[]): boolean {
+function hasRunningGoalVerificationTimeline(messages: readonly TaskChatMessage[]): boolean {
   return messages.some((message) => isRunningGoalVerificationTimeline(message.syntheticTimeline));
 }
 

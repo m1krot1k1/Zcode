@@ -5,7 +5,7 @@ interface PendingDeadlineEntry {
   messageSeq: number;
 }
 
-export interface AcknowledgedRelayDeadlineState {
+interface AcknowledgedRelayDeadlineState {
   oldestData: PendingDeadlineEntry | null;
   pendingAck: PendingDeadlineEntry | null;
 }

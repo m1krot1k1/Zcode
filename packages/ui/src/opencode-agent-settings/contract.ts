@@ -1,10 +1,10 @@
-export interface OpenCodeAgentSelectValue {
+interface OpenCodeAgentSelectValue {
   value: string;
   name: string;
   description?: string | null;
 }
 
-export interface OpenCodeAgentSelectGroup {
+interface OpenCodeAgentSelectGroup {
   group: string;
   name: string;
   options: OpenCodeAgentSelectValue[];
@@ -29,7 +29,7 @@ export type OpenCodeAgentConfigOption =
       currentValue: boolean;
     };
 
-export interface OpenCodeAgentSession {
+interface OpenCodeAgentSession {
   sessionId: string;
   cwd: string;
   configOptions: OpenCodeAgentConfigOption[];
@@ -47,7 +47,7 @@ export type OpenCodeAgentModelCatalog =
   | { status: "available"; models: string[]; authentication: "not-checked" }
   | { status: "unavailable" | "timed-out"; diagnostic: string };
 
-export type OpenCodeAgentPermissionOptionKind =
+type OpenCodeAgentPermissionOptionKind =
   | "allow_once"
   | "allow_always"
   | "reject_once"
@@ -66,7 +66,7 @@ export interface OpenCodeAgentPermissionRequest {
   }>;
 }
 
-export type OpenCodeAgentPermissionEvent =
+type OpenCodeAgentPermissionEvent =
   | { type: "requested"; request: OpenCodeAgentPermissionRequest }
   | { type: "resolved"; requestId: string; sessionId: string };
 

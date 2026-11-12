@@ -39,7 +39,7 @@ export function shouldShowTaskConfigLoadingOnSwitch(
   return previousTaskId !== nextTaskId;
 }
 
-export function getLatestTaskUserMessageTimestamp(
+function getLatestTaskUserMessageTimestamp(
   messages: readonly TaskRestoreTimestampedMessageLike[],
 ): number | null {
   let latestTimestamp: number | null = null;
