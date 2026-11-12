@@ -56,12 +56,12 @@ function parseMigrationPhase(value: string): WorkspaceMigrationPhase | null {
     : null;
 }
 
-export interface ResolveCanonicalWorkspaceKeyInput {
+interface ResolveCanonicalWorkspaceKeyInput {
   workspacePath: string;
   legacyRouteHint?: string;
 }
 
-export interface ResolveCanonicalWorkspaceKeyResult {
+interface ResolveCanonicalWorkspaceKeyResult {
   canonicalKey: string;
   mergedKeys: string[];
   migrationId?: string;

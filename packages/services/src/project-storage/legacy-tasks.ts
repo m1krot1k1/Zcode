@@ -6,9 +6,9 @@ import {
 } from "@zcode/shared";
 import { tableExists } from "#src/project-storage/schema.js";
 
-export const HANDOFF_DELETE = 1;
-export const HANDOFF_TITLE = 2;
-export const HANDOFF_ORPHAN = 4;
+const HANDOFF_DELETE = 1;
+const HANDOFF_TITLE = 2;
+const HANDOFF_ORPHAN = 4;
 export const OWNERSHIP_DECIDED = 8;
 
 export function hostForWorkspace(workspaceKey: string): { hostId: string; kind: string } {

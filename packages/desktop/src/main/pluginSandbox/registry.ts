@@ -17,7 +17,7 @@ const DEFAULT_MAX_ENTRIES = 64;
 /** 与 HTML transient activation 一致：一次输入事件给 5 秒窗口，一次性消费。 */
 export const PLUGIN_SANDBOX_USER_GESTURE_TTL_MS = 5_000;
 
-export interface CreatePluginSandboxRegistryOptions {
+interface CreatePluginSandboxRegistryOptions {
   now?: () => number;
   ttlMs?: number;
   maxEntries?: number;

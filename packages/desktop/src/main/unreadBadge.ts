@@ -86,7 +86,7 @@ const BADGE_FONT: Record<string, number[]> = {
   "+": [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
 };
 
-export type BadgePixelOptions = {
+type BadgePixelOptions = {
   size?: number;
   glyphScale?: number;
   padding?: number;
@@ -224,7 +224,7 @@ export function blendBadgeIntoBitmap(options: {
   }
 }
 
-export interface AntialiasedDotOptions {
+interface AntialiasedDotOptions {
   size: number;
   centerX: number;
   centerY: number;
@@ -270,7 +270,7 @@ export function renderAntialiasedStatusDotPixels(options: AntialiasedDotOptions)
  * 模糊/缺口；这里在目标尺寸上超采样，生成纯红色、抗锯齿的预乘 BGRA 圆点。
  * scale=1 产出原生 16px 表示，scale=2 产出 32px 高 DPI 表示。
  */
-export type TaskbarOverlayLayout = "windows-10" | "windows-11";
+type TaskbarOverlayLayout = "windows-10" | "windows-11";
 
 export function renderTaskbarStatusDotPixels(
   scale: 1 | 2 = 1,

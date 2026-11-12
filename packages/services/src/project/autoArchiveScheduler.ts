@@ -6,7 +6,7 @@ import { createServiceLogger } from "#src/logger/serviceLogger.js";
  * 扫描只读一次设置 + 一次索引小查询，代价可忽略；5 分钟让刚超期或刚失去保护的任务
  * 很快离开列表，又不会像挂在点击上那样「点开即消失」。
  */
-export const TASK_AUTO_ARCHIVE_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const TASK_AUTO_ARCHIVE_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 
 /** 变更后需要立即补扫的设置键。 */
 const TASK_AUTO_ARCHIVE_SETTING_KEYS: ReadonlySet<string> = new Set([
@@ -18,7 +18,7 @@ export function shouldRescanTaskAutoArchive(keys: readonly string[]): boolean {
   return keys.some((key) => TASK_AUTO_ARCHIVE_SETTING_KEYS.has(key));
 }
 
-export interface TaskAutoArchiveSchedulerOptions {
+interface TaskAutoArchiveSchedulerOptions {
   /** 读取当前策略；返回 null 表示自动归档关闭。 */
   readPolicy(): Promise<AutoArchiveInput | null>;
   repository(): Promise<Pick<ProjectRepositoryContract, "archiveInactive">>;
@@ -27,7 +27,7 @@ export interface TaskAutoArchiveSchedulerOptions {
   intervalMs?: number;
 }
 
-export interface TaskAutoArchiveScheduler {
+interface TaskAutoArchiveScheduler {
   /** 立即扫描一次并按固定间隔重复；重复调用无效。 */
   start(): void;
   /** 串行扫描；扫描进行中的调用合并为一次补扫。返回本次归档的任务。 */

@@ -17,7 +17,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
 
-export interface OffPeakMockGatewayOptions {
+interface OffPeakMockGatewayOptions {
   /** queued→ready 的晋级延迟；默认 15s（演示低峰等待）。 */
   readyDelayMs?: number;
   /** ready 后须发首个 message 的窗口；默认 5min。 */
@@ -38,7 +38,7 @@ export interface OffPeakMockGatewayOptions {
   scenario?: "foreground-subagents" | "capture" | "invalid-ticket";
 }
 
-export interface OffPeakMockGatewayDeps {
+interface OffPeakMockGatewayDeps {
   logger: ServiceLogger;
   /**
    * 准入后 messages 的转发目标：完整 messages URL + 出站头（含上游鉴权）。

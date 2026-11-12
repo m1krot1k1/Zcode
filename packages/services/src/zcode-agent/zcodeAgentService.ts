@@ -1228,8 +1228,8 @@ export function toProtocolOffPeakTaskSnapshot(task: {
   };
 }
 
-export const OFF_PEAK_INTERNAL_ERROR_CODE = "offpeak_internal_error";
-export const OFF_PEAK_INTERNAL_ERROR_MESSAGE = "Internal off-peak service error";
+const OFF_PEAK_INTERNAL_ERROR_CODE = "offpeak_internal_error";
+const OFF_PEAK_INTERNAL_ERROR_MESSAGE = "Internal off-peak service error";
 
 /**
  * offPeak/create、offPeak/list 的兜底 catch 不得把跨层异常文本（SQLite/文件路径/

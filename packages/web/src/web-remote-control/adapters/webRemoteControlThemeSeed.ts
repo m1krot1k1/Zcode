@@ -30,7 +30,7 @@ export function resolveWebRemoteControlInitialTheme({
   return normalizeWebRemoteControlThemeSeed(defaultTheme);
 }
 
-export function seedWebRemoteControlThemePreference(qrTheme?: string | null): void {
+function seedWebRemoteControlThemePreference(qrTheme?: string | null): void {
   if (typeof localStorage === "undefined") {
     return;
   }

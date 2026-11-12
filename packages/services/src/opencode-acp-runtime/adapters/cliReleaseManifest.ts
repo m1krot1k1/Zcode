@@ -1,4 +1,4 @@
-export interface OpenCodeCliReleaseAsset {
+interface OpenCodeCliReleaseAsset {
   fileName: string;
   archive: "zip" | "tar.gz";
   executableName: "opencode" | "opencode.exe";

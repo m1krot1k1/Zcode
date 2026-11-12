@@ -131,7 +131,7 @@ export function resolveRuntimeConfig(
   } as RendererActionTraceConfigV1;
 }
 
-export function disabledRendererActionTraceConfig(): RendererActionTraceConfigV1 {
+function disabledRendererActionTraceConfig(): RendererActionTraceConfigV1 {
   return { ...DISABLED_RENDERER_ACTION_TRACE_CONFIG };
 }
 

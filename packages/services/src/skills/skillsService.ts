@@ -1332,7 +1332,7 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
 }
 
 // 仅供测试/调试，便于在 vitest 里直接 fixture 出诊断结果。
-export const __INTERNAL__ = {
+const __INTERNAL__ = {
   discoverSkills,
   readFrontmatter,
   MAX_DESCRIPTION_LENGTH,

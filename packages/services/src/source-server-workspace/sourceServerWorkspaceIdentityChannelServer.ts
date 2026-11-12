@@ -24,7 +24,7 @@ import { createServiceLogger } from "../logger/serviceLogger.js";
 
 const log = createServiceLogger("source-server-workspace-identity");
 
-export interface SourceServerWorkspaceIdentityMapping {
+interface SourceServerWorkspaceIdentityMapping {
   stableIdentity: string;
   canonicalIdentity: string;
 }

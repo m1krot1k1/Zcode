@@ -21,7 +21,7 @@ import {
   HELP_TOGGLE_DEV_TOOLS_MENU_ID,
 } from "./desktopCommandHandlers.js";
 
-export const HELP_ZCODE_ENDPOINT_PRODUCTION_MENU_ID = "help.zcode-endpoint.production";
+const HELP_ZCODE_ENDPOINT_PRODUCTION_MENU_ID = "help.zcode-endpoint.production";
 export const HELP_ZCODE_ENDPOINT_TEST_MENU_ID = "help.zcode-endpoint.test";
 
 export function getDesktopMenuLabel(

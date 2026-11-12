@@ -7,7 +7,7 @@ import { PLUGIN_SANDBOX_SCHEME } from "./contract.js";
  * permissionGate / session。camera / microphone / geolocation 需要用户确认；clipboardWrite 按声明放行。
  */
 export type PluginSandboxPromptedPermission = Exclude<McpAppsResourcePermission, "clipboardWrite">;
-export type PluginSandboxPermissionDecision = "allow" | "deny" | "prompt";
+type PluginSandboxPermissionDecision = "allow" | "deny" | "prompt";
 
 const PROMPTED: ReadonlySet<McpAppsResourcePermission> = new Set([
   "camera",
@@ -76,7 +76,7 @@ export function isPluginSandboxPermissionGranted(input: {
 }
 
 /** 发起请求的 frame URL 必须是 `zcode-sandbox://plugin-<sandboxId>`；shell 或其他来源返回 null（拒绝）。 */
-export function readPluginSandboxIdFromPluginUrl(url: string | undefined): string | null {
+function readPluginSandboxIdFromPluginUrl(url: string | undefined): string | null {
   if (!url) return null;
   let parsed: URL;
   try {
@@ -92,7 +92,7 @@ export function readPluginSandboxIdFromPluginUrl(url: string | undefined): strin
   return sandboxId.length > 0 ? sandboxId : null;
 }
 
-export interface PluginSandboxPermissionDialogText {
+interface PluginSandboxPermissionDialogText {
   title: string;
   message: string;
   detail: string;

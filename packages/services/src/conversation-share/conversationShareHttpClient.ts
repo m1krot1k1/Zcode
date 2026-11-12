@@ -192,7 +192,7 @@ function normalizeRequestId(value: string | null | undefined): string | undefine
   return trimmed && /^[A-Za-z0-9._:-]{1,128}$/u.test(trimmed) ? trimmed : undefined;
 }
 
-export interface ConversationShareHttpClientOptions {
+interface ConversationShareHttpClientOptions {
   apiClient: ApiClient;
   baseUrl: string;
   tokenProvider: () => Promise<string | null>;

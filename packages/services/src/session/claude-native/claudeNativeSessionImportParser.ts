@@ -364,7 +364,7 @@ export function parseClaudeNativeSessionRecords(params: {
   };
 }
 
-export interface ClaudeNativeVisibleAssistantTurn {
+interface ClaudeNativeVisibleAssistantTurn {
   turnIndex: number;
   content: string;
   terminal: boolean;
@@ -372,7 +372,7 @@ export interface ClaudeNativeVisibleAssistantTurn {
   timestamp?: number;
 }
 
-export interface ClaudeNativeUnknownCommandWarning {
+interface ClaudeNativeUnknownCommandWarning {
   command: string;
   args?: string;
   timestamp?: number;
@@ -389,7 +389,7 @@ function readClaudeNativeTurnMatchTimestamp(
   return turn.userTimestamp ?? turn.timestamp;
 }
 
-export function selectClaudeNativeVisibleAssistantTurnAfter(
+function selectClaudeNativeVisibleAssistantTurnAfter(
   turns: readonly ClaudeNativeVisibleAssistantTurn[],
   lowerBoundMs: number,
 ): ClaudeNativeVisibleAssistantTurn | null {
@@ -421,7 +421,7 @@ export function selectClaudeNativeVisibleAssistantTurnAfter(
   return truncatedTimestampCandidates.at(-1) ?? null;
 }
 
-export function parseClaudeNativeVisibleAssistantTurns(
+function parseClaudeNativeVisibleAssistantTurns(
   records: readonly JsonLineRecord[],
 ): ClaudeNativeVisibleAssistantTurn[] {
   const turns: ClaudeNativeVisibleAssistantTurn[] = [];
@@ -509,7 +509,7 @@ function extractClaudeSystemDiagnosticText(entry: JsonLineRecord): string | null
   return messageContent ? sanitizeClaudeDiagnosticText(messageContent) : null;
 }
 
-export function parseClaudeNativeUnknownCommandWarnings(
+function parseClaudeNativeUnknownCommandWarnings(
   records: readonly JsonLineRecord[],
 ): ClaudeNativeUnknownCommandWarning[] {
   const warnings: ClaudeNativeUnknownCommandWarning[] = [];
@@ -551,7 +551,7 @@ export function parseClaudeNativeUnknownCommandWarnings(
   return warnings;
 }
 
-export function selectClaudeNativeUnknownCommandWarningAfter(
+function selectClaudeNativeUnknownCommandWarningAfter(
   warnings: readonly ClaudeNativeUnknownCommandWarning[],
   lowerBoundMs: number,
 ): ClaudeNativeUnknownCommandWarning | null {

@@ -25,7 +25,7 @@ import {
   type ServerRemoteDuplexFactory,
 } from "./serverRemoteDuplexTransport.js";
 
-export interface ServerRemoteEndpoints {
+interface ServerRemoteEndpoints {
   infoUrl: string;
   wsUrl: string;
   hostCapabilityUrl: string;
@@ -38,7 +38,7 @@ export interface ServerRemoteConnection {
   dispose(): void;
 }
 
-export interface ServerRemoteConnectionOptions {
+interface ServerRemoteConnectionOptions {
   signal?: AbortSignal;
   commitMembership?(sourceServerId: string): Promise<void>;
   topicResourceChannel?: IServerChannel;

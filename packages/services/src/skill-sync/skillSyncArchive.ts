@@ -15,7 +15,7 @@ export interface SkillSyncArchiveEntry {
   archivePath: string;
 }
 
-export interface SkillSyncArchiveExtractOptions {
+interface SkillSyncArchiveExtractOptions {
   maxExtractedBytes?: number;
 }
 

@@ -6,8 +6,8 @@ import {
 } from "./desktopZoom.js";
 
 export const MACOS_TRAFFIC_LIGHT_BASE_POSITION = { x: 22, y: 23 } as const;
-export const MACOS_TRAFFIC_LIGHT_BASE_LEFT_PADDING_PX = 96;
-export const MACOS_TRAFFIC_LIGHT_POSITION_MOVEMENT_GAIN = 1.5;
+const MACOS_TRAFFIC_LIGHT_BASE_LEFT_PADDING_PX = 96;
+const MACOS_TRAFFIC_LIGHT_POSITION_MOVEMENT_GAIN = 1.5;
 export const WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX = 136;
 export const WINDOWS_TITLE_BAR_HEIGHT_PX = 48;
 const MACOS_TRAFFIC_LIGHT_MIN_POSITION_PX = 4;
@@ -114,14 +114,14 @@ export function syncWindowControlsOverlayForZoomLevel(
   }
 }
 
-export function syncMacOSWindowButtonPositionForZoomLevel(
+function syncMacOSWindowButtonPositionForZoomLevel(
   targetWindow: BrowserWindow | null | undefined,
   zoomLevel: number,
 ) {
   syncWindowControlsOverlayForZoomLevel(targetWindow, zoomLevel);
 }
 
-export function syncMacOSWindowButtonPositionForCurrentZoomFactor(
+function syncMacOSWindowButtonPositionForCurrentZoomFactor(
   targetWindow: BrowserWindow | null | undefined,
 ) {
   if (!targetWindow || targetWindow.isDestroyed()) {

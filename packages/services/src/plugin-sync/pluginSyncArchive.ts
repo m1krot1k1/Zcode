@@ -11,7 +11,7 @@ const TAR_END_BLOCK_BYTES = TAR_BLOCK_SIZE * 2;
 
 export const PLUGIN_SYNC_METADATA_ARCHIVE_PATH = ".zcode-plugin-sync.json";
 
-export type PluginSyncArchiveEntry =
+type PluginSyncArchiveEntry =
   | {
       sourcePath: string;
       archivePath: string;
@@ -36,7 +36,7 @@ export interface PluginSyncArchiveMetadata {
   }>;
 }
 
-export interface PluginSyncArchiveExtractOptions {
+interface PluginSyncArchiveExtractOptions {
   maxExtractedBytes?: number;
 }
 

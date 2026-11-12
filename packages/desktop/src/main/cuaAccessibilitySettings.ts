@@ -21,9 +21,9 @@ import type {
 } from "@zcode/shared";
 import { createDesktopCuaHelperInstaller } from "./desktopCuaHelperInstaller.js";
 
-export const MACOS_ACCESSIBILITY_SETTINGS_URL =
+const MACOS_ACCESSIBILITY_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-export const MACOS_SCREEN_RECORDING_SETTINGS_URL =
+const MACOS_SCREEN_RECORDING_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
 export interface OpenCuaAccessibilitySettingsOptions {

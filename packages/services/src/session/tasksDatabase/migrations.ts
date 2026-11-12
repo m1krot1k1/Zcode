@@ -120,7 +120,7 @@ const definitions = [
   },
 ] as const;
 
-export type TasksDatabaseMigrationScope = "base" | "controller-remote" | "source-server";
+type TasksDatabaseMigrationScope = "base" | "controller-remote" | "source-server";
 
 interface TasksDatabaseMigrationOptions {
   scope?: TasksDatabaseMigrationScope;

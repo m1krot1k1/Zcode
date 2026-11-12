@@ -177,7 +177,7 @@ export function createCloseToTrayCapabilityMonitor(options: {
   };
 }
 
-export type CloseToTrayCapabilityMonitor = ReturnType<typeof createCloseToTrayCapabilityMonitor>;
+type CloseToTrayCapabilityMonitor = ReturnType<typeof createCloseToTrayCapabilityMonitor>;
 
 /**
  * 关窗可隐藏能力的最终裁决（CR-01）：DBus watcher 存在只证明"桌面可能有托盘 host"，

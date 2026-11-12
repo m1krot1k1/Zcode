@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
-export interface InstalledPluginRoot {
+interface InstalledPluginRoot {
   defaultEnabled: boolean;
   marketplace: string;
   rootPath: string;

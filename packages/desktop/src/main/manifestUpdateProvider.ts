@@ -19,11 +19,11 @@ import {
 import type { ProviderRuntimeOptions } from "electron-updater/out/providers/Provider.js";
 import { parse as parseYaml } from "yaml";
 
-export const ELECTRON_MANIFEST_API_PATH = "/api/v1/releases/electron/manifest";
+const ELECTRON_MANIFEST_API_PATH = "/api/v1/releases/electron/manifest";
 
 const MANIFEST_ACCEPT_HEADER = "application/x-yaml,text/yaml,text/plain,*/*";
 
-export interface ManifestUpdateProviderOptions extends CustomPublishOptions {
+interface ManifestUpdateProviderOptions extends CustomPublishOptions {
   endpointOrigin?: string;
   manifestUrl?: string;
   deviceMid?: string;

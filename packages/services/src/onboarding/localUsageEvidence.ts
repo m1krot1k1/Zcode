@@ -63,7 +63,7 @@ function pickEnvSessionDbPath(env: NodeJS.ProcessEnv): string | undefined {
   return picked?.trim() || undefined;
 }
 
-export interface ResolveAgentSessionDbPathOptions {
+interface ResolveAgentSessionDbPathOptions {
   /** 默认 process.env。 */
   env?: NodeJS.ProcessEnv;
   /** 默认 os.homedir()。 */
@@ -141,7 +141,7 @@ export async function hasAnyAgentSessionRow(dbPath: string): Promise<boolean> {
   }
 }
 
-export interface CreateHasExistingLocalTaskOptions {
+interface CreateHasExistingLocalTaskOptions {
   /** 设备全局任务索引查询；装配层须传 includeDeleted: true（tombstone 也是使用证据）。 */
   listIndexTasks: () => Promise<unknown[]>;
   /** agent 会话库行查询（组合 resolveAgentSessionDbPath + hasAnyAgentSessionRow）；惰性调用。 */
@@ -150,7 +150,7 @@ export interface CreateHasExistingLocalTaskOptions {
   resolveLegacyTaskSessionsDir: () => string;
 }
 
-export type HasExistingLocalTask = () => Promise<boolean>;
+type HasExistingLocalTask = () => Promise<boolean>;
 
 export function createHasExistingLocalTask(
   options: CreateHasExistingLocalTaskOptions,

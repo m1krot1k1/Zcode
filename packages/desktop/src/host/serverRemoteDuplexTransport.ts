@@ -54,7 +54,7 @@ export async function createReusableDuplexHttpAgent(
   return agent;
 }
 
-export interface DuplexJsonRequestOptions {
+interface DuplexJsonRequestOptions {
   url: string;
   method?: "GET" | "POST";
   headers?: Record<string, string>;
@@ -111,7 +111,7 @@ export async function requestJsonOverDuplex<T>(
   });
 }
 
-export interface DuplexWebSocketOptions {
+interface DuplexWebSocketOptions {
   url: string;
   headers?: Record<string, string>;
   createConnection: ServerRemoteDuplexFactory;

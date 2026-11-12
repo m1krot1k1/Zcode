@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ServicePlatform } from "../platform/serviceManager.js";
 import type { ServerLayout } from "./paths.js";
 
-export interface StableLauncherBootstrap {
+interface StableLauncherBootstrap {
   command: string;
   entry: string;
 }

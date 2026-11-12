@@ -35,11 +35,11 @@ export function uuidv7(now: number = Date.now()): string {
 /** host services 进程稳定 clientId；pendingCommands 展示与幂等表以它区分提交端。 */
 const hostV4ClientId = `host-services-${uuidv7()}`;
 
-export function getHostV4ClientId(): string {
+function getHostV4ClientId(): string {
   return hostV4ClientId;
 }
 
-export interface CreateHostCommandEnvelopeInput<T extends CommandType> {
+interface CreateHostCommandEnvelopeInput<T extends CommandType> {
   type: T;
   payload: CommandPayloadMap[T];
   /** createSession 时为 null。 */

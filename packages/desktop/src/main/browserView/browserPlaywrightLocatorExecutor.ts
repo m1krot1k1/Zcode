@@ -116,7 +116,7 @@ type ActionProbeExecution =
   | { kind: "timeout" }
   | { kind: "cancelled" };
 
-export type IabLocatorExecution =
+type IabLocatorExecution =
   | { kind: "done"; value?: unknown }
   | { kind: "timeout"; reason: string }
   | { kind: "cancelled" };

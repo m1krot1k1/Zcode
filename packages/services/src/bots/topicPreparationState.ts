@@ -1,6 +1,6 @@
 import type { BotInboundMessage } from "@zcode/shared";
 
-export type TopicPreparationStatus = "preparing" | "waitingStop" | "failed";
+type TopicPreparationStatus = "preparing" | "waitingStop" | "failed";
 
 /** 仅保留未提交材料；对外投影不包含文件二进制，重试仍由入站授权链处理。 */
 export function createTopicPreparationState() {

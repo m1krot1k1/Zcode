@@ -110,7 +110,7 @@ interface AutomationRunRow {
   updated_at: number;
 }
 
-export interface ClaimedManualAutomationRun {
+interface ClaimedManualAutomationRun {
   automation: ZCodeAutomation;
   run: ZCodeAutomationRun;
 }

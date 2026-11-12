@@ -1,6 +1,6 @@
 import type { ZCodeAutomationRunOutcome, ZCodeAutomationTrigger } from "@zcode/shared";
 
-export interface CronRunLifecycleRepo {
+interface CronRunLifecycleRepo {
   ensureRunClaimed(params: {
     runId: string;
     automationId: string;
@@ -18,7 +18,7 @@ export interface CronRunLifecycleRepo {
   releaseManualClaim(automationId: string, workspaceKey: string): Promise<void>;
 }
 
-export interface CronRunLifecycleIdentity {
+interface CronRunLifecycleIdentity {
   runId: string;
   automationId: string;
   workspaceKey: string;

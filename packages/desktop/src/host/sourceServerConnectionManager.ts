@@ -52,7 +52,7 @@ export interface ManagedSourceServerConnection {
   services: IServiceAccessor;
 }
 
-export type SourceServerConnectionInvalidatedEvent =
+type SourceServerConnectionInvalidatedEvent =
   | {
       sourceServerId: string;
       reason: "update";
@@ -175,7 +175,7 @@ export interface ConnectSourceServerOptions {
   onAuthenticatedUpgradeRequired?: () => Promise<void>;
 }
 
-export interface StartupReconnectResult {
+interface StartupReconnectResult {
   profileId: string;
   status: "online" | "failed";
   error?: string;

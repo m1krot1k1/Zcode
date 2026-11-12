@@ -41,7 +41,7 @@ interface DiscoveredShareArtifact extends MaterializedShareArtifact {
   row: ArtifactRow;
 }
 
-export interface ConversationShareArtifactSnapshot {
+interface ConversationShareArtifactSnapshot {
   rows: ConversationRow[];
   bytesBySourceRef: Map<string, Uint8Array>;
   additionalArtifacts: ConversationSharePublicArtifact[];

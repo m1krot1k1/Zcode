@@ -61,7 +61,7 @@ export function buildPluginSandboxCsp(input: {
 }
 
 /** CSP host-source 的 host 字符集（ALPHA / DIGIT / "-"）。 */
-export const PLUGIN_SANDBOX_CSP_HOST_SAFE_ID = /^[A-Za-z0-9-]+$/;
+const PLUGIN_SANDBOX_CSP_HOST_SAFE_ID = /^[A-Za-z0-9-]+$/;
 
 /** 受信 shell 只加载打包资源，不联网。 */
 export const PLUGIN_SANDBOX_SHELL_CSP = [
@@ -75,7 +75,7 @@ export const PLUGIN_SANDBOX_SHELL_CSP = [
   "base-uri 'self'",
 ].join("; ");
 
-export const PLUGIN_SANDBOX_PERMISSIONS_POLICY = [
+const PLUGIN_SANDBOX_PERMISSIONS_POLICY = [
   "camera=()",
   "microphone=()",
   "geolocation=()",

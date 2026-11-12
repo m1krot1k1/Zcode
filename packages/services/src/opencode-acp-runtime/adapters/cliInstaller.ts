@@ -8,7 +8,7 @@ import type { OpenCodeCliResolution, OpenCodeCommandSpec } from "./cliResolver.j
 import { INSTALL_TIMEOUT_MS } from "./childProcessSupport.js";
 import { resolveOpenCodeCliReleaseAsset } from "./cliReleaseManifest.js";
 
-export interface OpenCodeCliInstallerDependencies {
+interface OpenCodeCliInstallerDependencies {
   resolveCli: (cliPath?: string) => OpenCodeCliResolution | Promise<OpenCodeCliResolution>;
   runVersion: (spec: OpenCodeCommandSpec) => Promise<OpenCodeCliStatus>;
   installOfficialCli: (timeoutMs: number) => Promise<OpenCodeInstallCommandOutcome>;

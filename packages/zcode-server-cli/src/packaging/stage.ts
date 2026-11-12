@@ -14,7 +14,7 @@ import { createComponentArchive, hashPaths, runPackagingCommand } from "./stageA
 
 export { collectBareModuleSpecifiers, isNodePtyRuntimePath, resolveProductionPackageClosure };
 
-export interface StageOptions {
+interface StageOptions {
   target: ServerTarget;
   appVersion: string;
   /** tsup 产物目录（server-cli.js / server-core.js） */
@@ -43,7 +43,7 @@ export interface StageOptions {
   componentArchives?: boolean;
 }
 
-export interface StagedRelease {
+interface StagedRelease {
   releaseDir: string;
   archivePath: string | null;
   componentArchivePaths: string[];

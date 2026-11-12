@@ -28,7 +28,7 @@ import {
   type ControllerRemoteIdentityMigrationReport,
 } from "@zcode/services/node";
 
-export interface SourceServerDirectoryOptions {
+interface SourceServerDirectoryOptions {
   settingService: ISettingService;
   credentialService: ICredentialService;
   createProfileId?: () => string;
@@ -41,7 +41,7 @@ export interface SourceServerDirectoryOptions {
   logDebug?: (message: string) => void;
 }
 
-export interface SourceServerHandshakeRecord {
+interface SourceServerHandshakeRecord {
   sourceServerId: string;
   osUser?: string;
   hostname?: string;
@@ -50,7 +50,7 @@ export interface SourceServerHandshakeRecord {
   workspaces?: readonly SourceServerDeclaredWorkspaceWire[];
 }
 
-export interface SourceServerHandshakeResult {
+interface SourceServerHandshakeResult {
   identityChanged: boolean;
   migrationFailures: string[];
   effectiveProfileId: string;

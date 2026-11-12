@@ -8,7 +8,7 @@ import {
 } from "@zcode/shared";
 
 const RESOURCE_TIMEOUT_MS = 120_000;
-export interface TopicResourceBridgeDependencies {
+interface TopicResourceBridgeDependencies {
   validate(
     request: ZCodeTopicResourceReadParams,
     signal: AbortSignal,

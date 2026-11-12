@@ -16,7 +16,7 @@ type Logger = {
   warn: (...args: unknown[]) => void;
 };
 
-export interface WindowsOpenFolderRegistryOperation {
+interface WindowsOpenFolderRegistryOperation {
   args: string[];
 }
 

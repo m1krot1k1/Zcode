@@ -17,7 +17,7 @@ const serverInstallOwnershipSchema = z
   })
   .strict();
 
-export type ServerInstallOwnership = z.infer<typeof serverInstallOwnershipSchema>;
+type ServerInstallOwnership = z.infer<typeof serverInstallOwnershipSchema>;
 
 async function readOwnership(layout: ServerLayout): Promise<ServerInstallOwnership> {
   const markerStat = await lstat(layout.installFile).catch(() => null);

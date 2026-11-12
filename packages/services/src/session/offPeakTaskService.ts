@@ -29,8 +29,8 @@ import type { ModelSelection, ModelSelectionValidation } from "@zcode/provider";
 import { OffPeakResidentExecutions } from "./offPeakResidentExecutions.js";
 
 /** 轮询下限/上限与失败退避（服务端 next_poll_after 优先，钳制防打爆/防饿死）。 */
-export const OFF_PEAK_SYNC_MIN_INTERVAL_MS = 5_000;
-export const OFF_PEAK_SYNC_MAX_INTERVAL_MS = 5 * 60_000;
+const OFF_PEAK_SYNC_MIN_INTERVAL_MS = 5_000;
+const OFF_PEAK_SYNC_MAX_INTERVAL_MS = 5 * 60_000;
 const SYNC_FAILURE_BASE_MS = 10_000;
 
 export interface OffPeakTaskServiceDeps {

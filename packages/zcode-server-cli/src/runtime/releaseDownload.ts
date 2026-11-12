@@ -32,7 +32,7 @@ export async function fetchReleaseCatalog(
   return await fetchReleaseJson(url, releaseCatalogSchema, timeoutMs, "Release catalog");
 }
 
-export interface DownloadOptions {
+interface DownloadOptions {
   url: string;
   destination: string;
   sha256: string;

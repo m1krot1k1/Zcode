@@ -64,7 +64,7 @@ const mcpUsageEnvelopeSchema = z.object({
 });
 
 /** 本次 entitlement 查询的连接归属，用于和凭证归属比对。 */
-export interface McpQuotaRequestScope {
+interface McpQuotaRequestScope {
   providerFamily: "zai" | "bigmodel";
   organizationId?: string | null;
   projectId?: string | null;

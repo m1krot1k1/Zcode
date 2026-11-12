@@ -1,6 +1,6 @@
-export type LoafInvokerType = "user-callback" | "event-listener" | "script" | "unknown";
+type LoafInvokerType = "user-callback" | "event-listener" | "script" | "unknown";
 
-export interface LongTaskAttributionSummary {
+interface LongTaskAttributionSummary {
   loaf_script_count: number;
   loaf_top_duration_ms: number;
   loaf_top_invoker_type: LoafInvokerType;

@@ -28,7 +28,7 @@ export function createDefaultBotsConfig(): BotsConfigFile {
   };
 }
 
-export function createDefaultBotCommands(): BotCommandPolicy {
+function createDefaultBotCommands(): BotCommandPolicy {
   return { ...DEFAULT_BOT_COMMANDS };
 }
 

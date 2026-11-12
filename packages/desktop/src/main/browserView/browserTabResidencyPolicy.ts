@@ -30,7 +30,7 @@ export interface BrowserTabResidencyCandidate {
   downloadActive: boolean;
 }
 
-export interface BrowserTabResidencySelectionOptions {
+interface BrowserTabResidencySelectionOptions {
   windowId: number;
   tabLimit?: number;
 }

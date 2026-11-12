@@ -12,7 +12,7 @@ type InstallerFactory = (options: CuaHelperInstallerOptions) => CuaHelperInstall
 
 export { normalizeCuaHelperArch, normalizeCuaHelperArchs } from "@zcode/services/node";
 
-export interface DesktopCuaHelperInstallerOptions extends Pick<
+interface DesktopCuaHelperInstallerOptions extends Pick<
   CuaHelperInstallerOptions,
   "env" | "logger"
 > {

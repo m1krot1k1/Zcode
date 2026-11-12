@@ -1,4 +1,4 @@
-export interface HostUncaughtExceptionGuardOptions {
+interface HostUncaughtExceptionGuardOptions {
   onRecovered: (error: Error, origin: NodeJS.UncaughtExceptionOrigin) => void;
   onFatal: (error: Error, origin: NodeJS.UncaughtExceptionOrigin) => void;
 }

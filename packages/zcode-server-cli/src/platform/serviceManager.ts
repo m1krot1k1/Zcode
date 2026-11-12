@@ -10,7 +10,7 @@ export interface ServiceDescriptor {
   content: string;
 }
 
-export interface ServiceCommandExecutor {
+interface ServiceCommandExecutor {
   run(command: string, args: readonly string[]): Promise<void>;
   runResult?: (
     command: string,
@@ -19,7 +19,7 @@ export interface ServiceCommandExecutor {
   ) => Promise<ServiceCommandResult>;
 }
 
-export interface ServiceCommandResult {
+interface ServiceCommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;

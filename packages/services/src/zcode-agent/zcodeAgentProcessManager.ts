@@ -209,7 +209,7 @@ export function buildE2EAgentCoverageEnv(
  * 首个 getClient 重新拉起）。v4 订阅（sessions-index/workspace-config/conversation）
  * 都活在 CLI 进程内存里，进程换代即失效——订阅方收到本事件后必须重发 subscribe。
  */
-export interface ZCodeAgentRuntimeRestartedEvent {
+interface ZCodeAgentRuntimeRestartedEvent {
   workspaceKey: string;
   runtimeIdentity: ZCodeAgentRuntimeIdentity;
 }
@@ -222,7 +222,7 @@ export interface ZCodeAgentRuntimeLifecycleEvent {
   state: "available" | "unavailable";
 }
 
-export interface ZCodeAgentRuntimeIdentity {
+interface ZCodeAgentRuntimeIdentity {
   generation: number;
   identity: string;
   processId?: number;

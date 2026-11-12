@@ -14,13 +14,13 @@ export const ZCODE_WINDOWS_APP_INSTALL_DIR_ENV = "ZCODE_WINDOWS_APP_INSTALL_DIR"
 const envDataBaseDir = process.env.ZCODE_DATA_BASE_DIR?.trim() || null;
 const defaultDataBaseDir = process.env.HOME?.trim() || homedir();
 
-export interface DataBaseDirTargetValidationOptions {
+interface DataBaseDirTargetValidationOptions {
   platform?: NodeJS.Platform | string;
   env?: Record<string, string | undefined>;
   appInstallDir?: string | null;
 }
 
-export type DataBaseDirTargetValidationResult =
+type DataBaseDirTargetValidationResult =
   | { ok: true }
   | {
       ok: false;

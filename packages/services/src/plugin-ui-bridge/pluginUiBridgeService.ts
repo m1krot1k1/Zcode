@@ -343,7 +343,7 @@ function decodedBase64Length(value: string): number {
 }
 
 /** 兼容旧调用：只要 HTML 文本。 */
-export function pickHtmlContent(result: ZCodeMcpReadResourceResult, uri: string): string {
+function pickHtmlContent(result: ZCodeMcpReadResourceResult, uri: string): string {
   return pickHtmlResource(result, uri).html;
 }
 

@@ -18,7 +18,7 @@ import type {
  * - renderer 的用户决策经 EmbeddedBrowserPermissionResolve 回传；
  * - 20s 无响应按 dismiss/cancel 结算（面板不可见或 agent 后台场景自然拒绝）。
  */
-export interface EmbeddedBrowserPermissionUiBridge {
+interface EmbeddedBrowserPermissionUiBridge {
   promptPermission(request: EmbeddedBrowserPermissionPromptRequest): Promise<EmbeddedBrowserPermissionPromptAction>;
   devicePicker(input: {
     origin: string;

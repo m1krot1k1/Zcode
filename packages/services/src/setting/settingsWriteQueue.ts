@@ -12,7 +12,7 @@ export function getSettingsWriteQueueTimeoutMs(): number {
     : SETTINGS_WRITE_QUEUE_TIMEOUT_MS;
 }
 
-export function buildSettingsTempFile(settingsFile: string): string {
+function buildSettingsTempFile(settingsFile: string): string {
   return `${settingsFile}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 

@@ -10,13 +10,13 @@ const WINDOWS_PACKAGED_RESOURCE_DIRS = ["glm", "tools"];
 // 交接窗口。
 export const WINDOWS_UPDATE_LOCK_RELEASE_GRACE_MS = 750;
 
-export interface WindowsInstallResourceLockProcess {
+interface WindowsInstallResourceLockProcess {
   pid: number;
   commandLine?: string;
   executablePath?: string;
 }
 
-export interface WindowsUpdateProcessCleanupResult<TTerminationResult> {
+interface WindowsUpdateProcessCleanupResult<TTerminationResult> {
   initialLockProcesses: WindowsInstallResourceLockProcess[];
   terminationPids: number[];
   terminationResults: TTerminationResult[];

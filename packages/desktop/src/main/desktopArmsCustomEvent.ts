@@ -6,7 +6,7 @@ import type {
   FinalArmsCustomEventPayload,
 } from "@zcode/shared";
 
-export const MAX_FINAL_ARMS_CUSTOM_EVENT_E2E_ENTRIES = 200;
+const MAX_FINAL_ARMS_CUSTOM_EVENT_E2E_ENTRIES = 200;
 const MAX_SUPPRESSED_EVENT_NAMES = 100;
 const MAX_EVENT_NAME_LENGTH = 256;
 

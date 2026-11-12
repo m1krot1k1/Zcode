@@ -23,7 +23,7 @@ export function resolveStandaloneStatusLaunchCandidates(
   return candidates;
 }
 
-export interface StandaloneStatusLaunchAppPathOptions {
+interface StandaloneStatusLaunchAppPathOptions {
   env: NodeJS.ProcessEnv;
   bundledAppPath: string | undefined;
   exists: (path: string) => boolean;

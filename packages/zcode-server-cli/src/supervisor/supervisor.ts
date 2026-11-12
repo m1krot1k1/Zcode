@@ -32,11 +32,11 @@ import { CrashBudget } from "./crashBudget.js";
 // 高频 heartbeat/task-activity 明细走 debug，避免生产日志膨胀。
 const log = createServiceLogger("server-supervisor");
 
-export interface CoreLauncher {
+interface CoreLauncher {
   launch(generation: number, release?: ReleaseManifest | null): ChildProcess;
 }
 
-export interface SupervisorOptions {
+interface SupervisorOptions {
   layout?: ServerLayout;
   launcher: CoreLauncher;
   version: string;

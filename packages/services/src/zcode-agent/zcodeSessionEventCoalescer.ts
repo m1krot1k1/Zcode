@@ -17,7 +17,7 @@ interface PendingBackgroundSessionEvent {
   event: SessionServiceEvent;
 }
 
-export interface BackgroundSessionEventCoalescer {
+interface BackgroundSessionEventCoalescer {
   accept(event: ZCodeAgentServiceEvent): void;
   flush(): void;
   dispose(): void;

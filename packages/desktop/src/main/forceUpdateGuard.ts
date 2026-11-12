@@ -28,12 +28,12 @@ export interface ForceUpdateGuardLogger {
   warn: (...args: unknown[]) => void;
 }
 
-export interface ForceUpdateGuardResult {
+interface ForceUpdateGuardResult {
   blocked: boolean;
   requirement?: ForceUpdateRequirement;
 }
 
-export interface ForceUpdateGuardOptions {
+interface ForceUpdateGuardOptions {
   locale: Locale;
   logger: ForceUpdateGuardLogger;
   endpointOrigin?: string;

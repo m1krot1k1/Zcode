@@ -40,7 +40,7 @@ interface BrowserDataLogger {
   warn: (...args: unknown[]) => void;
 }
 
-export type WindowsChromeAppBoundImportErrorCode =
+type WindowsChromeAppBoundImportErrorCode =
   | "chrome_cookie_elevation_cancelled"
   | "chrome_cookie_helper_verification_failed"
   | "chrome_cookie_app_bound_decryption_failed";

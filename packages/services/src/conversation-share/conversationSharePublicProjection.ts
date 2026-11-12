@@ -12,7 +12,7 @@ import { ConversationShareServiceError } from "./conversationShare.js";
 
 import type { ShareContentDraft } from "./conversationShareWorkflowSnapshot.js";
 
-export interface ConversationSharePublicProjection {
+interface ConversationSharePublicProjection {
   contentBlocks?: ConversationShareContentBlock[];
   rows: ConversationRow[];
   selectedProductTurnIds: string[];

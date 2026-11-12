@@ -73,7 +73,7 @@ export function resolveRemoteCdnBaseUrls(options: ResolveRemoteCdnOptions = {}):
   return orderedReleaseRoots.map((releaseRoot) => `${releaseRoot}/${version}`);
 }
 
-export function resolvePrimaryRemoteCdnBaseUrl(
+function resolvePrimaryRemoteCdnBaseUrl(
   options: ResolveRemoteCdnOptions = {},
 ): string | undefined {
   return resolveRemoteCdnBaseUrls(options)[0];

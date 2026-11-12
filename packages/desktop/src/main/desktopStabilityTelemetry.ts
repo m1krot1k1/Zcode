@@ -18,8 +18,8 @@ import { getResourceManagerWindowId } from "./resourceManagerWindow.js";
 export const STABILITY_ANR_THRESHOLD_MS = 5_000;
 /** 挂死：未恢复且未 crash 的更长无响应阈值 */
 export const STABILITY_FREEZE_THRESHOLD_MS = 30_000;
-export const AGENT_CRASH_ERROR_DETAIL_MAX_LENGTH = 4_000;
-export const STABILITY_TELEMETRY_SCHEMA_VERSION = 2;
+const AGENT_CRASH_ERROR_DETAIL_MAX_LENGTH = 4_000;
+const STABILITY_TELEMETRY_SCHEMA_VERSION = 2;
 const WINDOWS_CONTROLLED_TERMINATION_EXIT_CODE = 0x40010004;
 const AGENT_EXCEPTION_DEDUP_CAPACITY = 1024;
 const reportedAgentExceptions = new Set<string>();
@@ -39,13 +39,13 @@ const AGENT_CRASH_POSIX_ABSOLUTE_PATH_PATTERN =
   /\/(?:[^/\s"'`()[\]{}<>:]+\/)*[^/\s"'`()[\]{}<>:]+/g;
 const AGENT_CRASH_KNOWN_PATH_PLACEHOLDER_PATTERN = /<(?:workspace|home)>[^\s"'`()[\]{}<>]*/g;
 
-export type StabilityLifecycleScene = "cold_start" | "runtime" | "app_quit" | "update_install";
+type StabilityLifecycleScene = "cold_start" | "runtime" | "app_quit" | "update_install";
 
-export type StabilityWindowScene = "main" | "process_monitor" | "other";
+type StabilityWindowScene = "main" | "process_monitor" | "other";
 
-export type StabilityCrashKind = "native" | "js" | "oom";
+type StabilityCrashKind = "native" | "js" | "oom";
 
-export type StabilityCrashScope =
+type StabilityCrashScope =
   | "app_native_process"
   | "main_window_renderer"
   | "auxiliary_window_renderer"
@@ -53,7 +53,7 @@ export type StabilityCrashScope =
   | "host"
   | "child";
 
-export type StabilityCrashCause =
+type StabilityCrashCause =
   | "oom"
   | "process_crashed"
   | "abnormal_exit"
@@ -62,13 +62,13 @@ export type StabilityCrashCause =
   | "native_crash"
   | "unknown";
 
-export interface StabilityCrashClassification {
+interface StabilityCrashClassification {
   crashKind: StabilityCrashKind;
   crashScope: StabilityCrashScope;
   crashCause: StabilityCrashCause;
 }
 
-export type StabilityProcessRole =
+type StabilityProcessRole =
   | "main"
   | "renderer"
   | "gpu"
@@ -78,9 +78,9 @@ export type StabilityProcessRole =
   | "child"
   | "unknown";
 
-export type AgentCrashPhase = "startup" | "runtime" | "unknown";
-export type AgentTerminationClass = "exit_zero" | "exit_nonzero" | "signal" | "unknown";
-export type AgentDiagnosticClass = "oom" | "sqlite" | "errno" | "generic" | "none";
+type AgentCrashPhase = "startup" | "runtime" | "unknown";
+type AgentTerminationClass = "exit_zero" | "exit_nonzero" | "signal" | "unknown";
+type AgentDiagnosticClass = "oom" | "sqlite" | "errno" | "generic" | "none";
 
 interface StabilityLogger {
   info: (...args: unknown[]) => void;
@@ -107,14 +107,14 @@ interface UnresponsiveWatchState {
   pollTimer: ReturnType<typeof setTimeout> | null;
 }
 
-export interface RenderProcessGoneInput {
+interface RenderProcessGoneInput {
   reason: string;
   exitCode: number;
   webContentsType: string;
   windowScene?: StabilityWindowScene;
 }
 
-export interface ChildProcessGoneInput {
+interface ChildProcessGoneInput {
   type: string;
   reason: string;
   exitCode: number;
@@ -653,7 +653,7 @@ export function reportAgentProcessSpawnErrorToArms(
   });
 }
 
-export function mapRenderProcessGoneToCrashKind(
+function mapRenderProcessGoneToCrashKind(
   input: RenderProcessGoneInput,
 ): StabilityCrashKind | null {
   return classifyRenderProcessCrash(input)?.crashKind ?? null;

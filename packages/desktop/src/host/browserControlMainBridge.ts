@@ -31,7 +31,7 @@ export interface BrowserExecuteRequestMessage {
   command: BrowserCommand;
 }
 
-export interface BrowserExecuteResultMessage {
+interface BrowserExecuteResultMessage {
   requestId: string;
   result: BrowserCommandResult;
 }

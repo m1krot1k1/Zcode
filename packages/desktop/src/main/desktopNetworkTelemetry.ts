@@ -140,7 +140,7 @@ export function ingestHostNetworkObservations(observations: NetworkObservation[]
 }
 
 /** 远控 relay WebSocket：接口维度固定为 web_remote_control.relay */
-export const WEB_REMOTE_RELAY_INTERFACE = "web_remote_control.relay";
+const WEB_REMOTE_RELAY_INTERFACE = "web_remote_control.relay";
 
 export function noteWebRemoteRelayConnectAttempt(
   durationMs: number,

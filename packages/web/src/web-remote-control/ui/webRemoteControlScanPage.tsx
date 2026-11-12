@@ -1,6 +1,6 @@
 import { WebRemoteControlBrand } from "#src/web-remote-control/ui/webRemoteControlBrand.js";
 
-export function WebRemoteControlScanPage({ locale }: { locale: "zh-CN" | "en-US" }) {
+function WebRemoteControlScanPage({ locale }: { locale: "zh-CN" | "en-US" }) {
   const zh = locale === "zh-CN";
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8 text-foreground">

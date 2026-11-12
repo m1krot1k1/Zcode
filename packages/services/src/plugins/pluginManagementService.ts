@@ -10,7 +10,7 @@ import {
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { IPluginManagementService } from "./pluginManagement.js";
 
-export interface PluginManagementServiceDependencies {
+interface PluginManagementServiceDependencies {
   reportTelemetryEvent?: (event: RendererTelemetryEventPayload) => void | Promise<void>;
   now?: () => number;
   zcodeAgentService: Pick<

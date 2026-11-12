@@ -42,7 +42,7 @@ export interface WindowRemoteConnectionHandle<TServices, TCapabilities = never> 
   onDidReconnect?(listener: () => void): { dispose(): void };
 }
 
-export interface WindowRemoteConnectionConnectRequest {
+interface WindowRemoteConnectionConnectRequest {
   membershipIntent?: "add" | "retain";
   existingSourceServerId?: string;
   target: RemoteTarget;

@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, extname, join, win32 } from "node:path";
 
-export interface FileApplicationDef {
+interface FileApplicationDef {
   id: string;
   name: string;
   appPath: string;

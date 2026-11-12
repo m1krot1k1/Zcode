@@ -98,7 +98,7 @@ export interface HostInitMessage {
   runtimeProcessEnvPatch?: Record<string, string>;
 }
 
-export interface SpawnHostProcessOptions {
+interface SpawnHostProcessOptions {
   internalChannel?: typeof InternalChannels.ServicePort | typeof InternalChannels.ScopedServicePort;
   internalPayload?: unknown;
   registerBroadcast?: boolean;

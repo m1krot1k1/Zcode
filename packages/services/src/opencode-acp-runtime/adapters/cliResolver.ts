@@ -14,7 +14,7 @@ export type OpenCodeCliResolution =
       installSupported: boolean;
     };
 
-export interface OpenCodeCliResolverInput {
+interface OpenCodeCliResolverInput {
   platform: NodeJS.Platform;
   pathValue: string | undefined;
   pathExtValue?: string;

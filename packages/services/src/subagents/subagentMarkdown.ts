@@ -31,13 +31,13 @@ const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>([
   "plan",
 ]);
 
-export interface ParseSubagentMarkdownInput {
+interface ParseSubagentMarkdownInput {
   content: string;
   path: string;
   scope: AgentScope;
 }
 
-export interface ParseSubagentMarkdownResult {
+interface ParseSubagentMarkdownResult {
   agent?: AgentSummary;
   diagnostic?: AgentDiagnostic;
 }

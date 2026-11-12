@@ -66,7 +66,7 @@ export function createFailure(
   return { reason, message };
 }
 
-export function safePayloadMetadata(payload: unknown): Record<string, string | undefined> {
+function safePayloadMetadata(payload: unknown): Record<string, string | undefined> {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return {};
   }

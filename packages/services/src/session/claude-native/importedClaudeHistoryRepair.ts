@@ -14,13 +14,13 @@ import { claudeNativeSessionImportRepo } from "#src/session/claude-native/claude
 import { parseClaudeNativeSessionFile } from "#src/session/claude-native/claudeNativeSessionImportParser.js";
 import { safeParseLegacyTaskSessionFile } from "#src/session/legacyTaskSessionFile.js";
 
-export interface ImportedClaudeHistoryRepairTarget {
+interface ImportedClaudeHistoryRepairTarget {
   workspacePath: string;
   workspaceIdentity?: string;
   taskId: string;
 }
 
-export interface ImportedClaudeHistoryRepairResult {
+interface ImportedClaudeHistoryRepairResult {
   title?: string;
   createdAt?: number;
   updatedAt?: number;
@@ -28,11 +28,11 @@ export interface ImportedClaudeHistoryRepairResult {
   source: "legacySnapshot" | "nativeJsonl";
 }
 
-export interface ImportedClaudeSessionRepairTarget extends ImportedClaudeHistoryRepairTarget {
+interface ImportedClaudeSessionRepairTarget extends ImportedClaudeHistoryRepairTarget {
   mcpServers?: ZCodeAgentMcpServer[];
 }
 
-export interface ImportedClaudeSessionRepairCreateParams {
+interface ImportedClaudeSessionRepairCreateParams {
   workspacePath: string;
   workspaceIdentity?: string;
   sessionId: string;

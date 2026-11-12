@@ -10,7 +10,7 @@ export function isPluginSandboxSrc(src: string | undefined): boolean {
   return typeof src === "string" && src.startsWith(`${PLUGIN_SANDBOX_SCHEME}://`);
 }
 
-export type PluginSandboxGuestDecision =
+type PluginSandboxGuestDecision =
   | { ok: true; sandboxId: string }
   | {
       ok: false;
@@ -58,15 +58,15 @@ export function configurePluginSandboxGuest(input: {
   return { ok: true, sandboxId: target.sandboxId };
 }
 
-export interface PluginSandboxMessageChannel {
+interface PluginSandboxMessageChannel {
   port1: PluginSandboxMessagePort;
   port2: PluginSandboxMessagePort;
 }
-export interface PluginSandboxMessagePort {
+interface PluginSandboxMessagePort {
   close(): void;
 }
 
-export interface AttachPluginSandboxGuestInput {
+interface AttachPluginSandboxGuestInput {
   guest: Pick<WebContents, "on" | "once" | "setWindowOpenHandler" | "postMessage" | "isDestroyed">;
   hostWebContents: Pick<WebContents, "postMessage" | "isDestroyed">;
   registry: PluginSandboxRegistryPort;

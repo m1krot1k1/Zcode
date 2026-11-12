@@ -42,7 +42,7 @@ import {
 } from "@zcode/shared";
 import { createHostCapabilityStore, type HostCapabilityStore } from "./hostCapability.js";
 
-export interface CoreHttpServer {
+interface CoreHttpServer {
   host: string;
   port: number;
   close: () => Promise<void>;

@@ -31,7 +31,7 @@ export interface ModelProviderEndpoints {
   paths?: Partial<Record<ModelProviderKind, string>>;
 }
 
-export type RemoteProviderSchema = "anthropic" | "openai:chat" | "openai:messages" | "gemini";
+type RemoteProviderSchema = "anthropic" | "openai:chat" | "openai:messages" | "gemini";
 
 export type ModelProviderSupportedFormat = "anthropic" | "openai" | "responses" | "gemini";
 
@@ -178,13 +178,13 @@ export const modelProviderKindSchema = z.enum(["anthropic", "openai", "openai-co
 
 export const modelProviderCatalogSourceIdSchema = z.enum(["china-llm-zcode-dev"]);
 
-export const modelProviderModalitySchema = z.enum(["text", "image", "video", "audio", "pdf"]);
+const modelProviderModalitySchema = z.enum(["text", "image", "video", "audio", "pdf"]);
 
 const providerOptionsPatchOperationSchema = z.object({
   path: z.array(z.string().min(1)).min(1),
 });
 
-export const providerOptionsPatchSchema = z.object({
+const providerOptionsPatchSchema = z.object({
   set: z.array(providerOptionsPatchOperationSchema.extend({ value: z.unknown() })).optional(),
   unset: z.array(providerOptionsPatchOperationSchema).optional(),
 });
@@ -197,7 +197,7 @@ export const modelProviderReasoningSpecSchema = z.object({
   ),
 });
 
-export const modelProviderEndpointPathsSchema = z.partialRecord(
+const modelProviderEndpointPathsSchema = z.partialRecord(
   modelProviderKindSchema,
   z.string(),
 );
@@ -207,7 +207,7 @@ const modelProviderCatalogEndpointSchema = z.object({
   paths: modelProviderEndpointPathsSchema,
 });
 
-export const modelProviderCatalogModelSchema = z.object({
+const modelProviderCatalogModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   kinds: z.array(modelProviderKindSchema),
@@ -223,7 +223,7 @@ export const modelProviderCatalogModelSchema = z.object({
   priority: z.number().finite().optional(),
 });
 
-export const modelProviderCatalogProviderSchema = z.object({
+const modelProviderCatalogProviderSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   endpoints: modelProviderCatalogEndpointSchema,
@@ -231,12 +231,12 @@ export const modelProviderCatalogProviderSchema = z.object({
   models: z.array(modelProviderCatalogModelSchema),
 });
 
-export const modelProviderCatalogFileSchema = z.object({
+const modelProviderCatalogFileSchema = z.object({
   schemaVersion: z.literal("zcode.model-providers.v1"),
   providers: z.array(modelProviderCatalogProviderSchema),
 });
 
-export const modelProviderModelConfigSchema = modelProviderCatalogModelSchema.extend({
+const modelProviderModelConfigSchema = modelProviderCatalogModelSchema.extend({
   disabledReason: z.string().optional(),
   supportsTools: z.boolean().optional(),
   supportsStructuredOutput: z.boolean().optional(),
@@ -268,7 +268,7 @@ export const modelProviderEndpointsSchema = legacyModelProviderEndpointsSchema.e
   paths: modelProviderEndpointPathsSchema.optional(),
 });
 
-export const legacyModelProviderConfigSchema = z.object({
+const legacyModelProviderConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean().optional(),
@@ -292,7 +292,7 @@ export const legacyModelProviderConfigSchema = z.object({
 
 export const legacyModelProviderListSchema = z.array(legacyModelProviderConfigSchema);
 
-export const modelProviderConfigSchema = z.object({
+const modelProviderConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean().optional(),
@@ -319,12 +319,12 @@ export const modelProviderConfigSchema = z.object({
 
 export const modelProviderListSchema = z.array(modelProviderConfigSchema);
 
-export const modelProviderStoreFileSchema = z.object({
+const modelProviderStoreFileSchema = z.object({
   schemaVersion: z.literal("zcode.model-providers.v2"),
   providers: modelProviderListSchema,
 });
 
-export const modelProviderDisplayOrderStateSchema = z.object({
+const modelProviderDisplayOrderStateSchema = z.object({
   providerIds: z.array(z.string().min(1)),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -345,7 +345,7 @@ export const MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW = 200_000;
 // 老配置和缺 metadata 的模型没有可靠 catalog 事实时，应和设置页新增模型
 // 使用同一个保守默认值，避免 agent registry 与 UI 新增模型出现 128k/200k 分歧。
 const LEGACY_MODEL_CONTEXT_WINDOW = MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW;
-export const MODEL_ONE_MILLION_CONTEXT_WINDOW = 1_000_000;
+const MODEL_ONE_MILLION_CONTEXT_WINDOW = 1_000_000;
 
 export function resolveModelProviderContextWindow(contextWindow: number | undefined): number {
   if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow)) {
@@ -782,7 +782,7 @@ export function migrateLegacyModelProviderConfig(
   };
 }
 
-export function migrateLegacyModelProviderListToStoreFile(raw: unknown): ModelProviderStoreFile {
+function migrateLegacyModelProviderListToStoreFile(raw: unknown): ModelProviderStoreFile {
   const providers = legacyModelProviderListSchema.parse(raw);
   return {
     schemaVersion: "zcode.model-providers.v2",
@@ -858,7 +858,7 @@ export function resolveModelProviderApiFormat(
   return "anthropic-messages";
 }
 
-export function resolveModelProviderBaseUrl(
+function resolveModelProviderBaseUrl(
   provider: Pick<ModelProviderConfig, "apiFormat" | "endpoints"> &
     Partial<Pick<ModelProviderConfig, "defaultKind">>,
 ): string {

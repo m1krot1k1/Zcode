@@ -27,7 +27,7 @@ export interface GitCommitMessageCurrentModelProvider {
   }): Promise<ZCodeWorkspaceGenerateTextParams["selection"] | null>;
 }
 
-export interface GitCommitMessageTextGenerator {
+interface GitCommitMessageTextGenerator {
   generateText(params: {
     workspacePath: string;
     workspaceIdentity?: string;
@@ -37,7 +37,7 @@ export interface GitCommitMessageTextGenerator {
   }): Promise<{ text: string; selection: ZCodeWorkspaceGenerateTextParams["selection"] }>;
 }
 
-export interface GitCommitMessageGeneratorOptions {
+interface GitCommitMessageGeneratorOptions {
   currentModelProvider: GitCommitMessageCurrentModelProvider;
   textGenerator: GitCommitMessageTextGenerator;
   logger?: ServiceLogger;

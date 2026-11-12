@@ -10,7 +10,7 @@ interface EmbeddedBrowserDialogRequest {
   message: string;
 }
 
-export interface EmbeddedBrowserDialogResponse {
+interface EmbeddedBrowserDialogResponse {
   handled: boolean;
   value?: boolean;
 }

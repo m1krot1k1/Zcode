@@ -1,14 +1,14 @@
 import { isActivePersonalCodingPlan } from "#src/bigmodel/codingPlanEntitlement.js";
 import type { UsageQuotaLimit, UsageQuotaUsageDetail } from "@zcode/shared";
 
-export interface BigModelSubscriptionListEnvelope {
+interface BigModelSubscriptionListEnvelope {
   code?: number;
   msg?: string;
   success?: boolean;
   data?: BigModelSubscriptionListItem[] | null;
 }
 
-export interface BigModelSubscriptionListItem {
+interface BigModelSubscriptionListItem {
   productId?: string;
   productName?: string;
   status?: string;
@@ -78,7 +78,7 @@ export function pickPrimaryLimit(limits: UsageQuotaLimit[]): UsageQuotaLimit | n
   );
 }
 
-export function formatPlanName(level: string): string {
+function formatPlanName(level: string): string {
   const normalized = level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
   return `GLM Coding ${normalized}`;
 }

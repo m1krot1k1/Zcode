@@ -70,7 +70,7 @@ export interface PluginSandboxRegistryPort {
 }
 
 /** renderer 侧端口以 `IPlatformService.pluginSandbox` 挂载；类型定义在 shared，这里只保留别名。 */
-export type IPluginSandboxPlatform = PluginSandboxPlatformPort;
+type IPluginSandboxPlatform = PluginSandboxPlatformPort;
 
 /** 注册表容量已满且全部是活实例；renderer 收到后停在错误态并提示，不淘汰别的卡片。 */
 export class PluginSandboxQuotaError extends Error {

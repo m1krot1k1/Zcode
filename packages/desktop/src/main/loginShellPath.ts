@@ -104,7 +104,7 @@ export function resolveLoginShellPath(
   });
 }
 
-export type LoginShellPathResult =
+type LoginShellPathResult =
   | { status: "applied"; pathEntries: number; shell: string }
   | { status: "skipped"; reason: string }
   | { status: "failed"; shell: string };

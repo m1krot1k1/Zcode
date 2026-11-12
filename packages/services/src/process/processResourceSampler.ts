@@ -37,7 +37,7 @@ export interface ProcessResourceRow {
   command: string;
 }
 
-export type ProcessResourceTableReader = (
+type ProcessResourceTableReader = (
   signal?: AbortSignal,
 ) => Promise<ProcessResourceRow[] | undefined>;
 
@@ -176,7 +176,7 @@ export function parseWindowsProcessTable(stdout: string): ProcessResourceRow[] {
   return rows;
 }
 
-export interface CreateProcessResourceTableReaderOptions {
+interface CreateProcessResourceTableReaderOptions {
   platform?: NodeJS.Platform;
   execFile?: ExecFileFn;
   readdir?: (path: string) => Promise<string[]>;
@@ -272,7 +272,7 @@ export interface ProcessResourceSampler {
   sample(signal?: AbortSignal): Promise<Map<number, ProcessResourceSample> | undefined>;
 }
 
-export interface CreateProcessResourceSamplerOptions {
+interface CreateProcessResourceSamplerOptions {
   readTable: ProcessResourceTableReader;
   now?: () => number;
   logicalCpuCount?: number;
@@ -337,7 +337,7 @@ export interface HostResourceUsageAgent {
   children: readonly ZCodeProcessChildProcess[];
 }
 
-export interface AttributeHostProcessTreeOptions {
+interface AttributeHostProcessTreeOptions {
   samples: ReadonlyMap<number, ProcessResourceSample>;
   hostPid: number;
   agents: readonly HostResourceUsageAgent[];

@@ -25,7 +25,7 @@ import {
 } from "#src/session/automationCron.js";
 
 /** 写/单查操作的 workspace 归属；用于跨 workspace 隔离校验。 */
-export interface AutomationWorkspaceScope {
+interface AutomationWorkspaceScope {
   workspacePath: string;
   workspaceIdentity?: string;
 }
