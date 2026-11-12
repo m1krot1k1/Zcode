@@ -47,6 +47,12 @@
       "entry": [
         "scripts/**/*.mjs"
       ]
+    },
+    ".": {
+      "entry": [
+        "scripts/**/*.{mjs,cjs,ts,mts}",
+        ".vscode/*.mjs"
+      ]
     }
   },
   "ignore": [
@@ -57,11 +63,21 @@
     "**/dist-types/**",
     "**/skills/**",
     "**/module.ts",
-    "**/contract.example.ts"
+    "**/contract.example.ts",
+    "packages/ui/test/fixtures/**",
+    "packages/ui/test/browser/**",
+    "apps/zcode-cli/packages/adapters/tests/fixtures/**",
+    "apps/zcode-cli/packages/core/tests/fixtures/**",
+    "apps/zcode-cli/tests/gb2312.js",
+    "packages/rpc/examples/**"
   ],
   "ignoreDependencies": [
     "d3-path",
-    "tailwind-scrollbar-hide"
+    "tailwind-scrollbar-hide",
+    "@modelcontextprotocol/sdk",
+    "node-pty",
+    "ws",
+    "zod"
   ],
   "entry": [
     "scripts/**/*.{mjs,cjs,ts,mts}",
