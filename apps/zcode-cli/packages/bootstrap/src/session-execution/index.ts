@@ -1,6 +1,2 @@
 export { createModelExecutionContext } from "./model-context.js";
-export {
-  acquireSessionResidencyFinalization,
-  runWithSessionResidencyFinalization,
-  type SessionResidencyFinalizationOwner,
-} from "./residency-lease.js";
+export {acquireSessionResidencyFinalization, runWithSessionResidencyFinalization} from "./residency-lease.js";

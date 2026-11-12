@@ -5,15 +5,7 @@ import type { GroupTaskFact, GroupTaskRef, ITaskGroupService } from "#src/task-g
 import { TaskGroupRepository, groupTaskKey } from "#src/task-groups/repository.js";
 export { TaskGroupRepository, groupTaskKey } from "#src/task-groups/repository.js";
 export { ITaskGroupService } from "#src/task-groups/contract.js";
-export type {
-  TaskGroup,
-  TaskGroupColor,
-  TaskGroupStructure,
-  GroupTaskRef,
-  GroupNode,
-  MoveGroupNode,
-  GroupTaskFact,
-} from "#src/task-groups/contract.js";
+
 
 const taskSchema = z
   .object({

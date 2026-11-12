@@ -59,7 +59,7 @@ import {
 
 
 export { createSettingsPageConfig, resolveSettingsSectionForPlatform };
-export { SETTINGS_SECTION_GROUPS, SETTINGS_SECTIONS };
+
 export { isSettingsSectionAvailable };
 
 /** UI route labels reveal only scheme and endpoint, never proxy credentials or URL extras. */

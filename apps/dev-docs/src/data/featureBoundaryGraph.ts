@@ -47,19 +47,19 @@ export interface FeatureBoundaryGraph {
   edges: FeatureBoundaryEdge[];
 }
 
-export interface FeatureBoundaryGraphStats {
+interface FeatureBoundaryGraphStats {
   nodeCount: number;
   edgeCount: number;
   unresolvedEndpointCount: number;
   kindCounts: Partial<Record<FeatureBoundaryNodeKind, number>>;
 }
 
-export interface FeatureBoundaryNeighborhoodEdge extends FeatureBoundaryEdge {
+interface FeatureBoundaryNeighborhoodEdge extends FeatureBoundaryEdge {
   source: string;
   target: string;
 }
 
-export interface FeatureBoundaryNeighborhood {
+interface FeatureBoundaryNeighborhood {
   nodes: FeatureBoundaryNode[];
   edges: FeatureBoundaryNeighborhoodEdge[];
 }

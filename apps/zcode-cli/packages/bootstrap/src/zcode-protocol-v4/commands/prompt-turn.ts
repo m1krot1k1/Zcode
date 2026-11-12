@@ -56,11 +56,6 @@ export class V4PromptRejectedError extends Error {
   }
 }
 
-/** 旧 queue promotion 兼容谓词：新的 Core admission 不再产生 projection authority 不确定态。 */
-export function isPromptTurnStartUncertainFailure(_error: unknown): boolean {
-  return false;
-}
-
 /**
  * 只执行 prompt 的模型准入检查，不接纳输入或修改 turn 生命周期。
  * edit/retry 在提交 branch cut 前复用此入口，避免破坏性操作与普通发送使用两套目录规则。

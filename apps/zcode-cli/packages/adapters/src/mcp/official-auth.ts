@@ -432,7 +432,7 @@ export function mergeOfficialAuthHeaders(
 }
 
 /** 供 adapter 在解析配置时复用，保证黑名单在 parse 与合并两处同源。 */
-export { findOfficialMcpReservedHeaders } from "@zcode/shared";
+
 
 function resolveRequestUrl(resource: Parameters<typeof globalThis.fetch>[0]): string {
   if (typeof resource === "string") return resource;

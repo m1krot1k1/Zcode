@@ -19,7 +19,7 @@ export function resolveRemoteFrontendVersion(packageVersion, override) {
 }
 
 /** SemVer 优先级：主版本号逐段数值比较，正式版高于预发布，忽略 build metadata。 */
-export function compareRemoteFrontendVersions(leftVersion, rightVersion) {
+function compareRemoteFrontendVersions(leftVersion, rightVersion) {
   const left = parseVersion(leftVersion);
   const right = parseVersion(rightVersion);
   const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

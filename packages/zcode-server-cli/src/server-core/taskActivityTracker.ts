@@ -7,7 +7,7 @@ import type {
 } from "@zcode/services";
 import type { ConversationTelemetryFact } from "@zcode/shared/zcode-protocol-v4";
 
-export interface TaskActivityTracker extends IDisposable {
+interface TaskActivityTracker extends IDisposable {
   readonly onDidChangeRunningTaskCount: Event<number>;
   readRunningTaskCount(): number;
   readRunningTasks(): SourceServerRunningTask[];

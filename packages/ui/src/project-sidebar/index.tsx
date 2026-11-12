@@ -57,10 +57,7 @@ import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 export { attachRemoteProjectWorkspace } from "@/project-sidebar/remote-navigation.js";
 export { resolveEntryProject } from "@/project-sidebar/view.js";
-export type {
-  SidebarFileTreeOpenRequest,
-  ProjectSidebarProps,
-} from "@/project-sidebar/contract.js";
+
 
 // 右侧面板显隐曾让所有项目的菜单和 Tooltip 重渲染；只隔离无关父更新，保留目录/context 订阅。
 export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebarProps) {

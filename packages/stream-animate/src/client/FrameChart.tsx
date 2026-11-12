@@ -27,7 +27,7 @@ interface FrameChartProps {
   title: string;
 }
 
-export function FrameChart({
+function FrameChart({
   embedded = false,
   scenario,
   showForecast = true,

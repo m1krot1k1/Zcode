@@ -85,7 +85,6 @@ import type {
   StartSavedWorkflowRunResult,
   TurnAttachment,
   TurnResult,
-  WorkflowAgentRunner,
   WorkspaceCheckpointSummary,
   WorkspaceForkResult,
   WorkspaceGenerateTextInput,
@@ -860,4 +859,4 @@ export interface ListZCodeSessionsOptions {
   sessionStore?: SessionStorePort;
 }
 
-export type { WorkflowAgentRunner };
+

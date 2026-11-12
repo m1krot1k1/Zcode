@@ -9,13 +9,7 @@ export {
   runMemorySelector,
 } from "./selector.js";
 export { formatRelevantMemoryAttachment, readRecalledMemories } from "./content.js";
-export type {
-  MemoryManifestEntry,
-  MemoryRecallState,
-  MemoryRecallType,
-  MemorySelectorResult,
-  RecalledMemory,
-} from "./types.js";
+export type {MemoryManifestEntry, MemoryRecallState, RecalledMemory} from "./types.js";
 
 export const MEMORY_RECALL_SESSION_CHARACTER_LIMIT = 61_440;
 

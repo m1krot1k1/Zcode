@@ -21,7 +21,7 @@ import { migrateLegacyCommonMcp } from "./legacy.js";
 
 // 重新导出类型和函数
 
-export { MCP_SOURCE_DESCRIPTORS, getSourceDescriptor } from "./types.js";
+
 export { migrateLegacyCommonMcp } from "./legacy.js";
 
 interface DirectoryMcpDescriptor {

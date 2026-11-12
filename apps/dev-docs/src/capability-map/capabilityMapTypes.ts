@@ -46,7 +46,7 @@ export interface CapabilityEdgeData extends Record<string, unknown> {
   route?: CapabilityEdgeRoute;
 }
 
-export interface CapabilityGroupComplexity {
+interface CapabilityGroupComplexity {
   inDegree: number;
   outDegree: number;
 }

@@ -62,13 +62,13 @@ export const providerAccessDataSchema = z.discriminatedUnion("type", [
   localAuthAccessDataSchema,
   zhipuAccountAccessDataSchema,
 ]);
-export const completeProviderAccessDataSchema = z.discriminatedUnion("type", [
+const completeProviderAccessDataSchema = z.discriminatedUnion("type", [
   completeApiKeyAccessDataSchema,
   localAuthAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
 ]);
 
-export const opencodeSdkProviderApiDataSchema = z
+const opencodeSdkProviderApiDataSchema = z
   .object({ type: z.literal("opencode-sdk") })
   .strict();
 export const completeProviderApiDataSchema = z

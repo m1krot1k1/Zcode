@@ -8,7 +8,7 @@ import type {
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { Theme } from "@/useTheme.js";
 export { LEGACY_SINGLE_ROOT_PROJECT_PREFIX } from "@zcode/services";
-export type { WebRemoteControlMobileTaskView, WebRemoteControlStatus } from "@zcode/shared";
+export type {WebRemoteControlStatus} from "@zcode/shared";
 export interface ProjectDevice {
   id: string;
   label: string;
@@ -27,10 +27,8 @@ export interface ProjectRowAction {
 export {
   buildRemoteHostWorkspaceIdentity,
   parseRemoteWorkspaceIdentity,
-  buildRemoteWorkspaceIdentity,
   buildServerRemoteWorkspaceIdentity,
-  remoteHostIdFromWorkspaceIdentity,
-} from "@zcode/shared";
+  remoteHostIdFromWorkspaceIdentity} from "@zcode/shared";
 export type {
   WindowHostTaskAddress,
   WindowHostControllerTaskActivity,

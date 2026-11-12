@@ -36,7 +36,7 @@ export interface StructureDoc {
   fields: FieldDoc[];
 }
 
-export interface FlowStep {
+interface FlowStep {
   id: string;
   title: string;
   actor: string;
@@ -64,13 +64,13 @@ export interface StdioTrafficFrame {
   raw: string;
 }
 
-export interface StdioTrafficLogField {
+interface StdioTrafficLogField {
   name: string;
   type: string;
   meaning: string;
 }
 
-export interface StdioTrafficReadStep {
+interface StdioTrafficReadStep {
   id: string;
   title: string;
   command: string;
@@ -1089,7 +1089,7 @@ export const stdioTrafficLogFields: StdioTrafficLogField[] = [
   },
 ];
 
-export const stdioTrafficReadSteps: StdioTrafficReadStep[] = [
+const stdioTrafficReadSteps: StdioTrafficReadStep[] = [
   {
     id: "tail-current",
     title: "实时跟随当前文件",

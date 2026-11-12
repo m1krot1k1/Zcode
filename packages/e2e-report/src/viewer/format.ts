@@ -40,7 +40,7 @@ export function formatNumber(value: number, suffix = "") {
   return `${round(value)}${suffix}`;
 }
 
-export function round(value: number, digits = 2) {
+function round(value: number, digits = 2) {
   if (!Number.isFinite(value)) {
     return 0;
   }

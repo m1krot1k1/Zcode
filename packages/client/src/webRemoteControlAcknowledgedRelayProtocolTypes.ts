@@ -46,14 +46,14 @@ export interface AcknowledgedRelayOutboundBatch {
   nextFrameIndex: number;
 }
 
-export function requirePositiveSafeInteger(value: number, name: string): number {
+function requirePositiveSafeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive safe integer`);
   }
   return value;
 }
 
-export function requireNonnegativeSafeInteger(value: number, name: string): number {
+function requireNonnegativeSafeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a nonnegative safe integer`);
   }
@@ -98,7 +98,7 @@ export function measureAcknowledgedRelayBatchBytes(
   return total;
 }
 
-export interface AcknowledgedRelayResolvedLimits {
+interface AcknowledgedRelayResolvedLimits {
   highWaterMarkBytes: number;
   lowWaterMarkBytes: number;
   replayBufferMaxBytes: number;

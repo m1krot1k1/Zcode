@@ -1,20 +1,14 @@
 export * from "./contract.js";
 export { PluginUiBackgroundHost } from "./adapters/PluginUiBackgroundHost.js";
-export { createPluginUiMessagePortTransport } from "./adapters/messagePortTransport.js";
-export { createPluginUiPagePlane } from "./adapters/pluginUiPagePlane.js";
-export { readPluginUiStyleVariables } from "./adapters/readPluginUiStyleVariables.js";
-export { getPluginUiSessionActions } from "./adapters/pluginUiSessionActions.js";
+
+
+
+
 export { PluginUiToolCallBlock, shouldRenderPluginUi } from "./PluginUiToolCallBlock.js";
 export { formatPluginDisplayName } from "./domain/pluginDisplayName.js";
+export {type PluginUiRowPinResolver} from "./domain/pluginUiRowPolicy.js";
 export {
-  isPluginUiPinnedToolRow,
-  type PluginUiRowPinContext,
-  type PluginUiRowPinResolver,
-} from "./domain/pluginUiRowPolicy.js";
-export {
-  deriveLogicalUiInstances,
-  type PluginUiInstanceDerivation,
-} from "./domain/pluginUiInstancePolicy.js";
+  deriveLogicalUiInstances} from "./domain/pluginUiInstancePolicy.js";
 export {
   getPluginUiManualPin,
   getPluginUiDisclosureVersion,
@@ -39,17 +33,10 @@ export { PluginUiFollowUpDialogHost } from "./components/PluginUiFollowUpDialogH
 export { PluginUiSidePane } from "./PluginUiSidePane.js";
 export {
   PluginUiLauncherItems,
-  SidePaneLauncherRow,
-  buildPluginUiLauncherItemId,
-} from "@/plugin-ui/components/PluginUiLauncherItems.js";
+  SidePaneLauncherRow} from "@/plugin-ui/components/PluginUiLauncherItems.js";
+export {resolvePluginUiSurfaceTitle} from "./adapters/usePluginUiSurfaces.js";
 export {
-  usePluginUiSurfaces,
-  resolvePluginUiSurfaceTitle,
-} from "./adapters/usePluginUiSurfaces.js";
-export {
-  openPluginUiSidePane,
-  type OpenScopedPluginUiSideTabRequest,
-} from "./sidePane/pluginUiSidePaneTab.js";
+  openPluginUiSidePane} from "./sidePane/pluginUiSidePaneTab.js";
 
-export { useMarketPluginUi, type MarketPluginUiTarget } from "./adapters/useMarketPluginUi.js";
+export {useMarketPluginUi} from "./adapters/useMarketPluginUi.js";
 export { useUiPluginRecommendations } from "@/plugin-ui/adapters/useUiPluginRecommendations.js";

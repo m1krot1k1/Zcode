@@ -27,9 +27,7 @@ import { markHighspeedOutputFooterUnits } from "@/highspeed/highspeedOutputFoote
 
 export type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversationTurnFlowItems.js";
 export type {
-  ConversationTurnWorkSegment,
-  ConversationTurnWorkStatus,
-} from "@/v4/conversationTurnWorkSegments.js";
+  ConversationTurnWorkSegment} from "@/v4/conversationTurnWorkSegments.js";
 export { resolveNextHighspeedExpiryMs } from "@/highspeed/highspeedConversationRows.js";
 
 interface DraftTurnRenderUnit {

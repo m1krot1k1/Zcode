@@ -11,15 +11,7 @@ export {
   createTaskAutoArchiveScheduler,
   shouldRescanTaskAutoArchive,
 } from "#src/project/autoArchiveScheduler.js";
-export type {
-  ProjectTree,
-  ProjectTask,
-  ProjectTaskRef,
-  VirtualProject,
-  ProjectRoot,
-  SaveProjectInput,
-  ProjectDirectories,
-} from "#src/project/contract.js";
+
 
 interface ProjectDirectoryPort {
   home(): Promise<string>;

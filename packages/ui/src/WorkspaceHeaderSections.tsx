@@ -70,9 +70,7 @@ import { useRemoteDevicePresentationInput } from "@/hooks/useSourceServerStatuse
 
 export type { WorkspaceHeaderState};
 export {
-  WorkspaceHeaderActionSection,
-  type WorkspaceHeaderActionSectionProps,
-} from "@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js";
+  WorkspaceHeaderActionSection} from "@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js";
 
 function shouldShowRemoteSkillSyncAction(params: {
   remoteSessionId?: string | null;

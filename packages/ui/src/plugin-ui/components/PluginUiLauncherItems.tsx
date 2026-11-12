@@ -26,7 +26,7 @@ interface PluginUiLauncherItemsProps {
   variant?: "launcher" | "menu";
 }
 
-export function buildPluginUiLauncherItemId(pluginId: string, surfaceId: string): string {
+function buildPluginUiLauncherItemId(pluginId: string, surfaceId: string): string {
   return `plugin-ui:${pluginId}/${surfaceId}`;
 }
 

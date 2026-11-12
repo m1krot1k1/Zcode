@@ -1,6 +1,6 @@
 import type { SessionResidencyFinalizationOwner } from "./contract.js";
 
-export type { SessionResidencyFinalizationOwner } from "./contract.js";
+
 
 
 /**

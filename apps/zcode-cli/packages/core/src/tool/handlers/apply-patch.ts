@@ -1,10 +1,7 @@
-import type { ToolEntry, ToolHandler } from "../types.js";
+import type { ToolHandler } from "../types.js";
 import {
   ApplyPatchErrorCode,
-  ApplyPatchInputJsonSchema,
   ApplyPatchInputSchema,
-  ApplyPatchOutputJsonSchema,
-  ApplyPatchOutputSchema,
   CoreErrorType,
   createCoreError,
   isFileSystemPortError,
@@ -23,16 +20,6 @@ import {
   workspaceBoundaryOptions,
 } from "../path-policy.js";
 
-const APPLY_PATCH_MODEL_INSTRUCTIONS = [
-  "Use ApplyPatch for structured, reviewable edits that are easier to express as local diff hunks than exact old_string replacements.",
-  "The patch must start with `*** Begin Patch` and end with `*** End Patch`.",
-  "Use `*** Update File: <path>` with `@@` hunks for existing files. Prefix context lines with a space, removed lines with `-`, and added lines with `+`.",
-  "Use `*** Add File: <path>` for new files and prefix every content line with `+`.",
-  "Use `*** Delete File: <path>` only when deleting the file is intentional.",
-  "Patch hunks are logical Unicode text, just like Read output. Updates preserve each existing file's detected original text encoding and line endings when possible, including GB2312, GBK, and GB18030.",
-  "If verification fails, re-read the relevant range and provide more exact context; do not switch to Python or shell replacement scripts.",
-];
-
 interface VerifiedPatchChange {
   filePath: string;
   type: ApplyPatchFileChange["type"];
@@ -42,12 +29,6 @@ interface VerifiedPatchChange {
   encoding?: FileSystemTextEncoding;
   lineEndings?: "LF" | "CRLF";
   revision?: { id: string; mtimeMs?: number; sizeBytes?: number; hash?: string };
-}
-
-function formatApplyPatchModelContent(output: unknown): string {
-  const parsed = ApplyPatchOutputSchema.safeParse(output);
-  if (!parsed.success) return "Patch applied successfully.";
-  return `Patch applied successfully.\n${parsed.data.summary}`;
 }
 
 export const applyPatchHandler: ToolHandler = async (input, context) => {
@@ -333,77 +314,3 @@ function traceFor(context: Parameters<typeof applyPatchHandler>[1]): TraceContex
     turnId: context.turnId,
   } as unknown as TraceContext;
 }
-
-export const applyPatchToolEntry: ToolEntry = {
-  capability: "Apply a structured patch through the file-system adapter",
-  metadata: {
-    name: "ApplyPatch",
-    description: "Apply structured file patches with verification before writing.",
-    modelInstructions: APPLY_PATCH_MODEL_INSTRUCTIONS,
-    readOnly: false,
-    destructive: false,
-    concurrentSafe: false,
-    timeoutMs: 30000,
-    maxOutputBytes: 1_000_000,
-    sideEffectScope: "workspace",
-    riskLevel: "medium",
-    needsApproval: true,
-  },
-  resolveWorkspaceBoundaryPaths: (input) => {
-    const parsed = ApplyPatchInputSchema.safeParse(input);
-    if (!parsed.success) return [];
-    let sections: ParsedPatch[];
-    try {
-      sections = parseStructuredPatch(parsed.data.patch_text);
-    } catch {
-      // 解析失败由 handler 用统一的 INVALID_PATCH 失败收口；预审批不抢跑。
-      return [];
-    }
-    return sections.flatMap((section) =>
-      [section.path, section.type === "update" ? section.movePath : undefined]
-        .filter((path): path is string => typeof path === "string")
-        .map((path) => ({ path, operation: "write" as const })),
-    );
-  },
-  handler: applyPatchHandler,
-  formatModelContent: formatApplyPatchModelContent,
-  inputSchema: ApplyPatchInputJsonSchema,
-  outputSchema: ApplyPatchOutputJsonSchema,
-  runtimeInputSchema: ApplyPatchInputSchema,
-  runtimeOutputSchema: ApplyPatchOutputSchema,
-  permission: {
-    permission: "edit",
-    reason: "ApplyPatch modifies file contents through the file-system adapter",
-    riskLevel: "medium",
-    sideEffectScope: "workspace",
-    needsApproval: true,
-    patternSources: ["input"],
-    alwaysAllowPatternSources: ["input"],
-    denyPriority: "beforeAsk",
-  },
-  resultBudget: {
-    maxInlineBytes: 1_000_000,
-    maxModelBytes: 100_000,
-    strategy: "truncate",
-    preview: {
-      maxBytes: 100_000,
-      direction: "head",
-    },
-  },
-  timeout: {
-    defaultMs: 30000,
-    maxMs: 30000,
-    allowCallOverride: false,
-  },
-  cancellation: {
-    supported: true,
-    cleanup: "bestEffort",
-    userVisibleMessage: "ApplyPatch was cancelled before file changes completed",
-  },
-  trace: {
-    required: true,
-    propagateToAdapters: true,
-    recordInput: "summary",
-    recordOutput: "summary",
-  },
-};

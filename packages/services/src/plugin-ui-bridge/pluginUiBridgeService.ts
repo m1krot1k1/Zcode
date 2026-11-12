@@ -35,7 +35,7 @@ import type {
   PluginUiWorkspaceTarget,
 } from "./contract.js";
 
-export interface PluginUiBridgeServiceDependencies {
+interface PluginUiBridgeServiceDependencies {
   reportTelemetryEvent?: (event: RendererTelemetryEventPayload) => void | Promise<void>;
   recycleInstance?: (params: import("./contract.js").PluginUiPluginScope) => Promise<boolean>;
   validateInstance?: (params: import("./contract.js").PluginUiPluginScope) => Promise<void>;

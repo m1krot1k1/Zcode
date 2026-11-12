@@ -17,7 +17,7 @@ import {
 import { buildProviderRequestMessages } from "./provider-request-messages.js";
 
 export { buildPostCompactReadStateReminderEntries } from "./compact-post-reminders.js";
-export type { CompactEntrySelection } from "./compact-selection.js";
+
 export { countCompactPreservedRuntimeMessages } from "./compact-preservation.js";
 export {
   estimateRuntimeEntryTokens,

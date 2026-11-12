@@ -4,7 +4,7 @@ export const ENGINEERING_INFRASTRUCTURE_SYSTEM_ID = "engineering-infrastructure"
 export const CAPABILITY_MAP_ROOT_PADDING = 16;
 export const CAPABILITY_MAP_SYSTEM_GAP = 48;
 
-export interface CapabilitySystemPlacementInput {
+interface CapabilitySystemPlacementInput {
   id: string;
   width: number;
   height: number;

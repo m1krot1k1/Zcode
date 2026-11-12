@@ -2,8 +2,6 @@ import {
   BashInputSchema,
   BashOutputSchema,
   SessionEventType,
-  createRootTraceContext,
-  traceContextToLogContext,
   type PermissionBrokerResult,
   type PermissionOptionsPolicy,
   type PermissionUpdate,
@@ -156,29 +154,6 @@ export async function emitToolCallError(
       ...(skillMetadata ? { skillMetadata } : {}),
       ...(pluginId ? { pluginId } : {}),
     },
-  });
-}
-
-export async function emitSkippedToolError(
-  deps: ToolExecutorDeps,
-  result: ToolExecutionResult,
-  traceContext?: TraceContext,
-): Promise<void> {
-  const eventTraceContext =
-    traceContext ??
-    deps.traceContext ??
-    createRootTraceContext({ sessionId: deps.sessionId, turnId: deps.turnId });
-  const turnId = eventTraceContext.turnId ?? deps.turnId;
-
-  await emitToolCallError(deps, result.toolCallId, eventTraceContext, turnId, result.error);
-
-  deps.logger?.warn("Tool call skipped after blocking failure", {
-    ...traceContextToLogContext(eventTraceContext),
-    event: "tool.call.skipped",
-    module: "core.tool.executor",
-    status: "failed",
-    toolCallId: result.toolCallId,
-    toolName: result.toolName,
   });
 }
 

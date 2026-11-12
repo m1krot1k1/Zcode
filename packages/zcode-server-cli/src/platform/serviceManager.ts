@@ -4,7 +4,7 @@ import { stablePathId, type ServerLayout } from "../runtime/paths.js";
 
 export type ServicePlatform = "darwin" | "linux" | "win32";
 
-export interface ServiceDescriptor {
+interface ServiceDescriptor {
   kind: "launchd" | "systemd" | "task-scheduler";
   name: string;
   content: string;

@@ -35,7 +35,6 @@ export function listAvailableCommandNames(options?: SlashCommandSurfaceOptions):
   return visibleHelpEntries(options).map((entry) => `/${entry.name}`);
 }
 
-const SKILL_COMMAND_USAGE = "Usage: /skill [<skill-name> [task]]";
 
 export function parseSlashCommand(input: string): SlashCommand | null {
   if (!input.startsWith("/")) return null;
@@ -263,10 +262,6 @@ export function buildManualSkillPrompt(skillName: string, task: string): string 
     "",
     taskBlock,
   ].join("\n");
-}
-
-export function manualSkillCommandUsage(): string {
-  return SKILL_COMMAND_USAGE;
 }
 
 export function listSlashCommandSuggestions(

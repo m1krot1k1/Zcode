@@ -7,10 +7,7 @@ import {
   type WebRemoteControlScreenLocale,
   type WebRemoteControlScreenCopy,
 } from "#src/web-remote-control/domain/webRemoteControlScreenCopy.js";
-export {
-  resolveWebRemoteControlScreenCopy,
-  resolveWebRemoteControlScreenLocale,
-} from "#src/web-remote-control/domain/webRemoteControlScreenCopy.js";
+export {resolveWebRemoteControlScreenLocale} from "#src/web-remote-control/domain/webRemoteControlScreenCopy.js";
 
 function resolveToneClassName(tone: WebRemoteControlScreenCopy["tone"]): {
   badge: string;

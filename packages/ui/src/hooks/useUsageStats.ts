@@ -69,7 +69,7 @@ const INITIAL_STATE: UsageStatsState = {
   error: null,
 };
 
-export function useUsageStats(
+function useUsageStats(
   range: UsageStatsRange,
   options: {
     dataSource?: "local" | "monitor";
