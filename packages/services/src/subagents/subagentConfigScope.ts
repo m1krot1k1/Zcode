@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from "chokidar";
 import { stat, watch as watchDirectory } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
@@ -253,16 +254,34 @@ export function createSubagentConfigScope<T>(options: {
         current.on("raw", () => {
           if (!direct && !disposed && watcher === current) void checkWatch();
         });
-        // Windows 不报告空目录自身的移动；父目录只订阅原生结构事件，不枚举其内容。
-        // 与 Chokidar 的文件索引分离，避免 AGENTS 被误当作逻辑 agents 的删除事件。
-        // Windows may omit unlinkDir when an empty config root is moved. On other
-        // platforms Chokidar reports the root transition; a second native watcher
-        // per scope only consumes handles and can make multiple Hosts hit EMFILE.
-        if (parent !== anchor && process.platform === "win32") {
+        // Windows не сообщает о перемещении пустого каталога, а Linux/chokidar 4 не
+        // сообщает об удалении и повторном создании самой watched root (см. тест
+        // «recovers after deleting missing-path parents»). Родительский watcher нужен
+        // всегда: он получает только структурные события (unlinkDir/addDir) и не
+        // индексирует содержимое, поэтому не конфликтует с Chokidar.
+        //
+        // Причина, по которой раньше ограничивали Windows: второй watcher на scope
+        // расходует handle. На практике это один inotify-watch на scope; при лимите
+        // 128 instances несколько Host остаются в пределах нормы, а корректность
+        // восстановления важнее экономии fd. При отсутствии root подписываемся на
+        // ближайший существующий предок: его родитель тоже может быть удалён.
+        const nearestExistingAncestor = (path: string): string | undefined => {
+          let current = path;
+          for (;;) {
+            if (existsSync(current)) return current;
+            const up = dirname(current);
+            if (up === current) return undefined;
+            current = up;
+          }
+        };
+        const parentWatchAnchor = nearestExistingAncestor(parent);
+        if (parentWatchAnchor !== undefined && parentWatchAnchor !== anchor) {
           const controller = new AbortController();
           parentWatch = controller;
           parentWatchTask = (async () => {
-            for await (const _event of watchDirectory(parent, { signal: controller.signal })) {
+            for await (const _event of watchDirectory(parentWatchAnchor, {
+              signal: controller.signal,
+            })) {
               if (disposed || watcher !== current) return;
               // Не блокируем цикл нативного watcher'а пересозданием scope: новый bind сначала
               // отменит этот цикл и дождётся его закрытия.
@@ -271,7 +290,7 @@ export function createSubagentConfigScope<T>(options: {
           })().catch((error) => {
             if (!controller.signal.aborted && !disposed)
               logger.warn(undefined, "Subagent 父目录监听异常，显式重载可重建监听", {
-                path: parent,
+                path: parentWatchAnchor,
                 error: String(error),
               });
           });
