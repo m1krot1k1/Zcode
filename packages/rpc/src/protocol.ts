@@ -509,7 +509,7 @@ export interface MessagePortLike {
  * 在 MessagePort 上实现 IMessagePassingProtocol。
  * 这是最简单的传输实现——不需要分帧，因为 MessagePort 本身就是消息边界的。
  */
-export interface MessagePortProtocolOptions {
+interface MessagePortProtocolOptions {
   /** 单个入站/出站消息上限；只能收紧，不能超过 MAX_FRAME_BYTES。 */
   maxFrameBytes?: number;
 }

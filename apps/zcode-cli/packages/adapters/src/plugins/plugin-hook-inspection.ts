@@ -18,9 +18,9 @@ import { HookEventName as HookEventNameValue, HookMatcherConfigSchema } from "@z
 import { isRecord } from "./helpers.js";
 import { listPluginHookSources } from "./hook-sources.js";
 
-export const SUPPORTED_HOOK_EVENTS = new Set<string>(Object.values(HookEventNameValue));
+const SUPPORTED_HOOK_EVENTS = new Set<string>(Object.values(HookEventNameValue));
 
-export interface PluginHookInspection {
+interface PluginHookInspection {
   details: PluginHookDetail[];
   events: Partial<Record<HookEventName, HookMatcherConfig[]>>;
 }

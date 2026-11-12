@@ -55,7 +55,7 @@ export interface WorkspaceBoundaryApprovalRequest {
  * 必须是同步的：调用方先在既有 permission broker / 确认窗里取得用户决定，再把结果交给本端口。
  * path-policy 自己不弹窗、不等待、不用超时兜底。
  */
-export interface WorkspaceBoundaryApprovalPort {
+interface WorkspaceBoundaryApprovalPort {
   decide(request: WorkspaceBoundaryApprovalRequest): {
     decision: "allow" | "deny";
     reason?: string;

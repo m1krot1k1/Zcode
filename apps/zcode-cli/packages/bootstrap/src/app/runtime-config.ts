@@ -48,7 +48,7 @@ interface ResolvedAppRuntimeConfig {
  * 优先级：显式会话值（`options.runtimeConfig.permissionTimeoutMs`）> 配置文件 > 300000。
  * 显式 `0` 表示关闭超时（broker 只在有限正数上排 timer），`??` 不会吞掉 0。
  */
-export const DEFAULT_PERMISSION_APPROVAL_TIMEOUT_MS = 300_000;
+const DEFAULT_PERMISSION_APPROVAL_TIMEOUT_MS = 300_000;
 
 /**
  * 审批等待上限的单一投影：显式会话值 > 配置文件 `permission.approvalTimeoutMs` > 300000。

@@ -278,7 +278,7 @@ const TURN_ERROR_LOG_CONTEXT_KEYS = [
   "transport",
 ] as const;
 
-export interface TurnErrorLogView extends Error {
+interface TurnErrorLogView extends Error {
   cause?: TurnErrorLogView;
   code?: string;
   context?: Record<string, unknown>;

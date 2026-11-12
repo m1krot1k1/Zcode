@@ -1990,7 +1990,6 @@
     "types\tapps/zcode-cli/packages/core/src/embedded-search/capability.ts\tEmbeddedSearchBranchCapabilityContext",
     "types\tapps/zcode-cli/packages/core/src/embedded-search/capability.ts\tEmbeddedSearchBranchCapabilityDecision",
     "types\tapps/zcode-cli/packages/core/src/embedded-search/capability.ts\tEmbeddedSearchBranchCapabilityReason",
-    "types\tapps/zcode-cli/packages/core/src/errors/error-payload.ts\tExecutionErrorPayloadProjection",
     "types\tapps/zcode-cli/packages/core/src/memory/dream.ts\tAutoDreamTimingDecision",
     "types\tapps/zcode-cli/packages/core/src/memory/extraction.ts\tMemoryExtractionDecision",
     "types\tapps/zcode-cli/packages/core/src/memory/extraction.ts\tMemoryExtractionExecutionInput",

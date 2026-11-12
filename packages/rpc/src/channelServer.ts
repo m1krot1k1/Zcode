@@ -14,7 +14,7 @@ import {
   ResponseType,
 } from "./channels.shared.js";
 
-export interface ChannelServerOptions {
+interface ChannelServerOptions {
   /**
    * 单个入站 Channel 消息上限；只能收紧，不能超过 MAX_FRAME_BYTES。
    * 默认与传输层硬上限一致，保证两层不会出现两套极限。

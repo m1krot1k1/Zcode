@@ -105,6 +105,8 @@ Web 模式默认工作目录为当前目录，监听 `127.0.0.1`，默认不启�
 
 直接启动通用 Web 服务的 HTTP 入口时，通过 `ZCODE_SERVER_AUTH_TOKEN` 配置 API／WebSocket 认证；通过程序接口创建服务时，使用 `authToken` 选项。
 
+lite-token cookie 始终带 `Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`。当服务部署在 TLS 终止反向代理之后时，设置 `ZCODE_SERVER_TRUST_PROXY=1`，服务才不会忽略代理上报的 `X-Forwarded-Proto: https`，从而为 cookie 追加 `Secure`。该开关只应在所有直连对端都是受信代理时开启；plain HTTP 本地开发（含 `zcode --web` 默认流程）行为不变，cookie 不带 `Secure`。详见 [lite-token cookie TLS 属性规格](docs/specs/2026-11-11-lite-token-cookie-tls-attributes.md)。
+
 构建方式见下方打包章节。`pnpm build:zcode` 只生成发行包，不会替换 `PATH` 中已有的 `zcode`。如果命令仍指向旧安装或其他源码目录，macOS / Linux 可用 `command -v zcode` 检查，Windows 可用 `where.exe zcode` 检查。
 
 ### CLI 源码开发
