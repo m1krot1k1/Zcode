@@ -1,4 +1,10 @@
 import { mobilePluginDiscoveryTelemetrySchema } from "./telemetry.js";
+import {
+  MAX_TELEMETRY_EVENT_DETAIL_ENTRIES,
+  MAX_TELEMETRY_EVENT_DETAIL_VALUE_LENGTH,
+  MAX_TELEMETRY_EVENT_TEXT_LENGTH,
+  TELEMETRY_EVENT_DETAIL_ALLOWLIST,
+} from "./telemetry.js";
 import { databaseStartupControlSchema, databaseStartupStateSchema } from "./database-startup.js";
 import { mcpAppInstanceSchema } from "./mcp-apps/instance.js";
 import {
@@ -519,8 +525,16 @@ export const rendererTelemetryEventPayloadSchema = z.object({
   elementName: nonEmptyStringSchema,
   eventRegion: nonEmptyStringSchema,
   eventType: nonEmptyStringSchema,
-  eventText: z.string().optional(),
-  eventExtraDetail: z.record(z.string(), z.string()),
+  eventText: z.string().max(MAX_TELEMETRY_EVENT_TEXT_LENGTH).optional(),
+  eventExtraDetail: z
+    .record(z.string().max(64), z.string().max(MAX_TELEMETRY_EVENT_DETAIL_VALUE_LENGTH))
+    .refine((detail) => Object.keys(detail).length <= MAX_TELEMETRY_EVENT_DETAIL_ENTRIES, {
+      message: "too many telemetry detail entries",
+    })
+    .refine(
+      (detail) => Object.keys(detail).every((key) => TELEMETRY_EVENT_DETAIL_ALLOWLIST.has(key)),
+      { message: "telemetry detail key is not allowlisted" },
+    ),
   userId: z.string().optional(),
   talkId: z.string().optional(),
   messageId: z.string().optional(),

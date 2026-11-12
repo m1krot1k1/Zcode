@@ -165,6 +165,7 @@ export {
   collectTelemetryRendererContext,
   resolveSafeTelemetryHostname,
   sanitizeTelemetryErrorMessage,
+  sanitizeTelemetryEventText,
   sanitizeTelemetrySkillName,
   sanitizeTelemetryEventDetail,
 } from "./telemetry.js";
@@ -353,6 +354,7 @@ export * from "./marketingTouch.js";
 export * from "./rewardsEmbedded.js";
 export * from "./rewardsBridge.js";
 export * from "./session-debug.js";
+export * from "./model-cost.js";
 export { redactFeedbackText } from "./feedbackPrivacy.js";
 export { API_KEY_USAGE_SCENE, type ApiKeyCreationUsageScene } from "./api-key-usage-scene.js";
 export {

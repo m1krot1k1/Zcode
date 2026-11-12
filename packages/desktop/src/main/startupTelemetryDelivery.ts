@@ -7,10 +7,13 @@ export function wrapStartupReporterRequest<C, B extends { events?: unknown[] }>(
   options: {
     acknowledged: (ids: string[], status: DeliveryStatus) => void;
     delay?: (ms: number) => Promise<void>;
+    /** Синхронный opt-out: выключенная телеметрия не должна даже ставить событие в очередь. */
+    isEnabled?: () => boolean;
   },
 ): (context: C, bundle: B) => Promise<unknown> {
   const delay = options.delay ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   return async (context, bundle) => {
+    if (options.isEnabled && !options.isEnabled()) return undefined;
     const ids = (bundle.events ?? []).flatMap((event) => {
       const id = (event as { properties?: { startup_event_id?: unknown } })?.properties
         ?.startup_event_id;

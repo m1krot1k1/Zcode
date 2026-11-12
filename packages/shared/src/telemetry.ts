@@ -185,6 +185,204 @@ export function sanitizeTelemetryErrorMessage(value: string | null | undefined):
 const MAX_TELEMETRY_SKILL_NAME_LENGTH = 64;
 const TELEMETRY_SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/u;
 
+/** 自由文本字段只允许短标签；超出部分截断，避免整段 prompt/文件内容出网。 */
+export const MAX_TELEMETRY_EVENT_TEXT_LENGTH = 256;
+/** detail 值的上限；键名必须是已知维度，避免任意 JSON 被塞进上报体。 */
+export const MAX_TELEMETRY_EVENT_DETAIL_VALUE_LENGTH = 1024;
+export const MAX_TELEMETRY_EVENT_DETAIL_ENTRIES = 64;
+
+/**
+ * 允许出网的 detail 维度白名单。新增埋点字段时必须同时在这里登记，
+ * 这样 Host/Main 或旧 Renderer 绕过 UI 清洗时也不会把任意字段带到数仓。
+ */
+export const TELEMETRY_EVENT_DETAIL_ALLOWLIST: ReadonlySet<string> = new Set([
+  "ack_cost_ms",
+  "ack_status",
+  "action",
+  "action_source",
+  "admission_result",
+  "affected_session_count",
+  "agent",
+  "agent_composition",
+  "agent_id",
+  "agent_role",
+  "agent_step_cnt",
+  "ask_mode",
+  "attempt",
+  "automation_id",
+  "automation_kind",
+  "cache_write_input_tokens",
+  "cached_input_tokens",
+  "cached_tokens",
+  "channel",
+  "child_session_id",
+  "child_tool_call_id",
+  "claude_code_history_migration_selected",
+  "client_kind",
+  "command_category",
+  "command_count",
+  "command_name",
+  "command_run_ms",
+  "command_status",
+  "compact_auto",
+  "compact_ratio",
+  "compact_reason",
+  "completed_stage",
+  "component",
+  "connect_trigger",
+  "create_source",
+  "cron_expr",
+  "directories_scanned",
+  "disconnect_reason",
+  "duration_ms",
+  "entry",
+  "entry_kind",
+  "entry_plan_level",
+  "entry_plan_list",
+  "entry_plan_status",
+  "error_category",
+  "error_code",
+  "error_detail_message",
+  "error_fingerprint",
+  "error_id",
+  "error_key",
+  "error_message",
+  "error_msg",
+  "error_name",
+  "error_phase",
+  "error_source",
+  "error_type",
+  "event_id",
+  "exit_action",
+  "exit_code",
+  "exit_kind",
+  "exit_reason",
+  "exit_step",
+  "fail_count",
+  "failed_count",
+  "failure_exception_kind",
+  "failure_phase",
+  "failure_reason",
+  "failure_retryable",
+  "failure_stage",
+  "file_change_cnt",
+  "file_count",
+  "files_scanned",
+  "first_output_ms",
+  "focus_time",
+  "generated_code_lines",
+  "generation_tail_finalize_ms",
+  "hunk_count",
+  "idle_ms",
+  "incident_kind",
+  "input_tokens",
+  "input_id",
+  "input_first_char_time",
+  "input_send_time",
+  "input_start_time",
+  "is_tftt_cached",
+  "is_tool_call",
+  "kind",
+  "lag_ms",
+  "lane",
+  "login_default",
+  "login_provider",
+  "login_url",
+  "loop_index",
+  "marketplace",
+  "memory_enabled",
+  "message_source",
+  "model_name",
+  "model_provider",
+  "model_request_count",
+  "model_request_id",
+  "off_peak_run_type",
+  "off_peak_task_id",
+  "output_tokens",
+  "pair_kind",
+  "parent_tool_call_id",
+  "plan_product_id",
+  "plan_status",
+  "plugin_component",
+  "plugin_id",
+  "post_compact_tokens",
+  "pre_compact_tokens",
+  "proactive_task_recommendations_enabled",
+  "provider_family",
+  "provider_name",
+  "purchase_audience",
+  "purchase_funnel_id",
+  "queue_position",
+  "reaction",
+  "reason",
+  "reasoning_tokens",
+  "remote_kind",
+  "request_time",
+  "result",
+  "result_count",
+  "retry_cnt",
+  "schema_version",
+  "schedule_lag_ms",
+  "scheduled_at",
+  "scope",
+  "send_time",
+  "skill_name",
+  "started_at",
+  "status",
+  "step_id",
+  "step_type",
+  "task_id",
+  "task_trigger",
+  "template_id",
+  "template_name",
+  "template_prompt_hash",
+  "template_prompt_length",
+  "ticket_initial_state",
+  "time_to_first_token",
+  "token_source",
+  "token_usage_scope",
+  "tool_call_failed",
+  "tool_call_id",
+  "tool_call_total",
+  "tool_name",
+  "tool_use_prompt_tokens",
+  "total_tokens",
+  "trigger",
+  "true_post_compact_tokens",
+  "ui_mode",
+  "upgrade_source",
+  "waiting_ms",
+  "workflow_run_id",
+  "workflow_tool_call_id",
+  "workspace_kind",
+  "workspace_memory_enabled",
+  "work_direction",
+]);
+
+/** 只截断、脱敏自由文本；不改变调用方对象。 */
+export function sanitizeTelemetryEventText(value: string | null | undefined): string {
+  if (!value) return "";
+  return redactTelemetryText(value, { maxLength: MAX_TELEMETRY_EVENT_TEXT_LENGTH });
+}
+
+function sanitizeTelemetryEventDetailValue(key: string, value: string): string {
+  if (!TELEMETRY_EVENT_DETAIL_ALLOWLIST.has(key)) {
+    return "";
+  }
+  if (key === "error_msg") {
+    return sanitizeTelemetryErrorMessage(value);
+  }
+  if (key === "skill_name") {
+    return sanitizeTelemetrySkillName(value);
+  }
+  if (key === "login_url") {
+    return sanitizeLoginHostname(value);
+  }
+  return redactTelemetryText(value, {
+    maxLength: MAX_TELEMETRY_EVENT_DETAIL_VALUE_LENGTH,
+  });
+}
+
 /**
  * 只用于已解析的 Skill 名称，不能据此信任模型请求参数。
  * 不 trim 或截断，以免把敏感文本残片变成看似合法的标识；出网时再次检查同一规则。
@@ -219,24 +417,23 @@ export function sanitizeTelemetryEventDetail(
 ): Record<string, string> {
   if ((PLUGIN_TELEMETRY_EVENTS as readonly string[]).includes(elementName))
     return sanitizePluginTelemetryDetail(detail);
+
+  const entries = Object.entries(detail);
+  // 先做键白名单与数量上限，再按字段做脱敏；顺序反过来会把被丢弃的原始值
+  // 先交给 redactor，虽然不出网但会给调用方制造无意义的 CPU 开销。
+  const allowedEntries = entries
+    .filter(([key]) => TELEMETRY_EVENT_DETAIL_ALLOWLIST.has(key))
+    .slice(0, MAX_TELEMETRY_EVENT_DETAIL_ENTRIES);
+
   return Object.fromEntries(
-    Object.entries(detail)
+    allowedEntries
       .filter(
         ([key, value]) =>
           elementName !== "agent_step" ||
           (key !== "plugin_id" && key !== "plugin_component") ||
           key in sanitizePluginTelemetryDetail({ [key]: value }),
       )
-      .map(([key, value]) => [
-        key,
-        key === "error_msg"
-          ? sanitizeTelemetryErrorMessage(value)
-          : key === "skill_name"
-            ? sanitizeTelemetrySkillName(value)
-            : elementName === "app_login_ck" && key === "login_url"
-              ? sanitizeLoginHostname(value)
-              : value,
-      ]),
+      .map(([key, value]) => [key, sanitizeTelemetryEventDetailValue(key, value)]),
   );
 }
 

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   mobilePluginDiscoveryTelemetrySchema,
   resolveSafeTelemetryHostname,
-  sanitizeTelemetrySkillName,
   sanitizeTelemetryEventDetail,
+  sanitizeTelemetryEventText,
+  sanitizeTelemetrySkillName,
 } from "../src/telemetry.js";
+import { rendererTelemetryEventPayloadSchema } from "../src/validation.js";
 import { conversationTelemetryFactSchema } from "../src/zcode-protocol-v4/telemetry.js";
 
 describe("resolveSafeTelemetryHostname", () => {
@@ -114,6 +116,47 @@ describe("mobile plugin discovery schema", () => {
       mobilePluginDiscoveryTelemetrySchema.safeParse({
         ...event,
         eventExtraDetail: { ...event.eventExtraDetail, token: "secret" },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("telemetry detail allowlist and limits", () => {
+  it("drops keys that are not allowlisted", () => {
+    expect(
+      sanitizeTelemetryEventDetail("prompt_template_ck", {
+        template_id: "weekly",
+        template_prompt: "full user prompt",
+        token: "secret",
+      }),
+    ).toEqual({ template_id: "weekly" });
+  });
+
+  it("truncates event_text and detail values", () => {
+    expect(sanitizeTelemetryEventText("x".repeat(5000))).toHaveLength(256);
+    const detail = sanitizeTelemetryEventDetail("message_completion", {
+      status: "y".repeat(5000),
+    });
+    expect(detail.status).toHaveLength(1024);
+  });
+
+  it("rejects non-allowlisted detail keys in the renderer payload schema", () => {
+    const base = {
+      context: { clientTimezone: "UTC", clientLanguage: "en-US", screenResolution: "1x1" },
+      elementName: "prompt_template_ck",
+      eventRegion: "app.session",
+      eventType: "ck",
+    };
+    expect(
+      rendererTelemetryEventPayloadSchema.safeParse({
+        ...base,
+        eventExtraDetail: { template_id: "t" },
+      }).success,
+    ).toBe(true);
+    expect(
+      rendererTelemetryEventPayloadSchema.safeParse({
+        ...base,
+        eventExtraDetail: { template_prompt: "full text" },
       }).success,
     ).toBe(false);
   });

@@ -24,6 +24,7 @@ import type {
   TurnExecutionKind,
 } from "../deps.js";
 import { emptyTokenUsageInfo, toTokenUsageInfo } from "../helpers/index.js";
+import { calculateRuntimeModelCost } from "../helpers/model-cost.js";
 import type { ResolvedTurnAttachment } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import {
@@ -310,6 +311,9 @@ export async function persistAssistantMessage(
   const providerId =
     model?.providerId ?? (selection && createModelProviderId(selection.providerId));
   const modelId = model?.modelId ?? (selection && createModelId(selection.modelId));
+  const tokens = update?.tokens ?? emptyTokenUsageInfo();
+  // 成本只在消息写入路径计算一次；step-finish 与 assistant message 共用同一价格函数。
+  const cost = calculateRuntimeModelCost(modelId, update?.tokens);
 
   await this.persistMessage(
     {
@@ -334,8 +338,8 @@ export async function persistAssistantMessage(
         // cwd 可随 Bash cd 变化，root 必须保留会话初始工作区身份。
         root: this.workspaceRoot,
       },
-      cost: 0,
-      tokens: update?.tokens ?? emptyTokenUsageInfo(),
+      cost,
+      tokens,
       finish: update?.finish,
       semantics: {
         origin: "agent_runtime",

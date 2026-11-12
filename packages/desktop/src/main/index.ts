@@ -43,6 +43,7 @@ import {
   nativeImage,
   net,
   protocol,
+  safeStorage,
   session,
   shell,
   webContents,
@@ -93,6 +94,7 @@ import {
   InternalChannels,
 } from "@zcode/shared";
 import { logger, webRemoteControlRelayLogger } from "./logger.js";
+import { setDesktopTelemetryAllowed } from "./desktopTelemetryGate.js";
 import { markMainLaunchAppReady } from "./desktopLaunchMarks.js";
 import { createCuaPipFocusRouter, resolveCuaPipWindowKey } from "./cuaPipFocusRouter.js";
 import { createDesktopTelemetryFetch } from "./desktopTelemetryFetch.js";
@@ -714,10 +716,10 @@ const UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT = 224;
 const UPDATE_STATUS_WINDOW_READY_HEIGHT = UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT - 54;
 const UPDATE_STATUS_WINDOW_TRAFFIC_LIGHT_POSITION = { x: 10, y: 10 } as const;
 const mainSettingService = createSettingService();
-const webRemoteControlCredentialService = createCredentialService();
+const webRemoteControlCredentialService = createCredentialService({ safeStorage });
 const appLaunchGate = createAppLaunchGate();
 const appLaunchCoordinator = createAppLaunchCoordinator(appLaunchGate);
-const appTelemetryCredentialService = createCredentialService();
+const appTelemetryCredentialService = createCredentialService({ safeStorage });
 async function resolveCurrentZCodeEndpointOrigin() {
   return resolveZCodeEndpointOrigin({
     env: ZCODE_ENV,
@@ -776,6 +778,12 @@ const appTelemetryCore = createTelemetryCore({
   loadAuthorization: createTelemetryAuthorizationLoader(appTelemetryCredentialService),
   loadMarketingParams: createTelemetryMarketingParamsLoader(appTelemetryCredentialService),
   resolveZCodeEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
+  isEnabled: async () => {
+    const enabled = (await mainSettingService.get()).telemetryEnabled !== false;
+    // ARMS-очередь читает значение синхронно; держим его в том же месте, где решается HTTP-отправка.
+    setDesktopTelemetryAllowed(enabled);
+    return enabled;
+  },
   fetchImpl: createDesktopTelemetryFetch({
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
   }),
@@ -952,7 +960,13 @@ const webRemoteControlManager = createWebRemoteControlManager({
     deleteLegacyCredential: () =>
       webRemoteControlCredentialService.delete("web-remote-control:external-relay:pass_hash"),
     loadSettings: () => mainSettingService.get(),
-    patchSettings: (patch) => mainSettingService.update(patch),
+    patchSettings: async (patch) => {
+      await mainSettingService.update(patch);
+      // update() не возвращает снимок: значение для синхронного ARMS-гейта берём из патча.
+      if (patch.telemetryEnabled !== undefined) {
+        setDesktopTelemetryAllowed(patch.telemetryEnabled !== false);
+      }
+    },
   }),
   startupRestoreStorageProvider: {
     load: async () => (await mainSettingService.get()).webRemoteControlLastEnabledContext,
@@ -1931,6 +1945,8 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             runBrowserCommandOnView({ win: browserWin, ...request }),
         },
         {
+          // 本地窗口 Host 崩溃后必须通知 renderer 并允许一次自愈重启；否则 UI 永久停在加载中。
+          respawnOnExit: true,
           taskRealtime: {
             workspaceKeys: windowWorkspaceMap.get(win.id) ?? [],
             onHostId: (hostId) => {
@@ -2081,6 +2097,8 @@ app.whenReady().then(async () => {
   let bootstrapSettings: AppSettings | undefined;
   try {
     bootstrapSettings = await mainSettingService.get();
+    // Стартовая инициализация ARMS не должна ждать первого HTTP-события.
+    setDesktopTelemetryAllowed(bootstrapSettings.telemetryEnabled !== false);
     if (bootstrapSettings.dataBaseDir) {
       setDataBaseDir(bootstrapSettings.dataBaseDir);
     }

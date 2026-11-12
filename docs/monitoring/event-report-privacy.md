@@ -56,6 +56,23 @@ header 保持；以本机受控 HTTP 接收器验证实际收到的 body 不含�
 完整 `pnpm typecheck`、`pnpm lint`（55 条非本次修改文件警告，0 errors）、
 修改文件 oxfmt 检查与 `git diff --check` 通过。
 
+## 2026-11-12 P1：字段上限、allowlist 与 opt-out
+
+- `event_text` 出网前经过 `sanitizeTelemetryEventText`：脱敏后最多 256 字符。
+- `event_extra_detail` 只允许 `TELEMETRY_EVENT_DETAIL_ALLOWLIST` 中的维度；最多 64 项，
+  值脱敏后最多 1024 字符。新增埋点字段必须同时登记，禁止任意 key 透传。
+- `prompt_template_ck` 不再发送 `template_prompt` 正文，改为
+  `template_prompt_length` 与不可逆 `template_prompt_hash`（FNV-1a 32-bit）。
+- `TelemetryCore` 在 `sendReport` 之前统一检查 opt-out：`DO_NOT_TRACK=1/true/yes/on`
+  为进程级硬关闭；桌面 `settings.telemetryEnabled=false` 通过 `isEnabled` 依赖关闭
+  `/event/report`。关闭时不写活跃状态、不发起网络请求。
+- 手机 relay 与 Host 直接调用 Core 的路径复用同一检查；ARMS/OTLP 不在本期范围。
+
+验收：`DO_NOT_TRACK` 与 `telemetryEnabled=false` 下 fetch 调用为 0；`event_text` 超长被截断；
+未知 detail key 被丢弃；模板正文不出现在 payload 中。对应测试：
+`packages/shared/test/telemetry.test.ts`、`packages/services/test/telemetryOptOut.test.ts`、
+`packages/ui/test/promptTemplateTelemetry.test.ts`。
+
 ## 字段表与报表迁移
 
 - [业务监控 agent_step / message_completion 字段表](business-monitoring.md)：使用 `error_type` 聚合失败，不再按 `error_msg` 原文聚类或搜索。

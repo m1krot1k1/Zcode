@@ -1568,9 +1568,10 @@ const enUS: Record<string, string> = {
   "subagentDirectory.status.failed": "Failed",
   "subagentDirectory.status.cancelled": "Cancelled",
   "subagentDirectory.status.lost": "Lost",
-  "subagentDirectory.prismAcceptance.verified": "PRISM verified · {passed}/{total} criteria",
-  "subagentDirectory.prismAcceptance.rejected": "PRISM rejected · {passed}/{total} criteria",
-  "subagentDirectory.prismAcceptance.unknown": "PRISM unknown · {passed}/{total} criteria",
+  "subagentDirectory.prismAcceptance.verified":
+    "Host check: declared command exited 0 · {passed}/{total} criteria",
+  "subagentDirectory.prismAcceptance.rejected": "Host check failed · {passed}/{total} criteria",
+  "subagentDirectory.prismAcceptance.unknown": "Host check not run · {passed}/{total} criteria",
   "chat.statusPanel.endedAgents": "Ended",
   "chat.statusPanel.endedWorkflows": "Ended workflows",
   "chat.statusPanel.workflowsLive": "{count} running",
@@ -2212,6 +2213,9 @@ const enUS: Record<string, string> = {
   "update.toast.ready": "v{version} downloaded, restart to install",
   "update.toast.devSkipped": "Updates are disabled in dev builds",
   "update.toast.error": "Update check failed: {error}",
+  "hostProcess.exited.restarting":
+    "The window background service exited. Recovering automatically…",
+  "hostProcess.exited.failed": "The window background service exited. Please reload the window.",
   "forceUpdate.title": "Update ZCode to continue",
   "forceUpdate.description":
     "Your current version v{currentVersion} is below the minimum supported version v{minimalVersion}. Update first before continuing with this client.",
@@ -3310,6 +3314,13 @@ const enUS: Record<string, string> = {
   "settings.notificationSound": "Notification sound",
   "settings.notificationSoundDescription":
     "When notifications are enabled, you can mute the task notification sound separately.",
+  "settings.telemetryEnabled": "Send anonymous usage telemetry",
+  "settings.telemetryEnabledDescription": "Help improve ZCode with anonymous error and feature-usage events. Code, prompts, file paths and credentials are never sent.",
+  "settings.workspaceBoundary": "Workspace file boundary",
+  "settings.workspaceBoundaryDescription": "Controls access outside the workspace for Read/Write/Edit/Bash: strict denies, ask requires approval, allow keeps legacy behavior. Applies to new sessions.",
+  "settings.workspaceBoundary.strict": "Strict — deny outside paths",
+  "settings.workspaceBoundary.ask": "Ask — require approval",
+  "settings.workspaceBoundary.allow": "Allow — no restriction",
   "notification.taskWithTitle": "Task: {title}",
   "notification.taskWaiting": "Task waiting for your confirmation",
   "notification.completed": "Task completed",
@@ -3777,6 +3788,23 @@ const enUS: Record<string, string> = {
   "settings.mcp.status.errorReason": "The MCP server failed to connect.",
   "settings.mcp.status.disconnectedReason": "The MCP server is not connected.",
   "settings.mcp.status.unknownReason": "The MCP server status is unavailable.",
+  "settings.mcp.status.requiresApprovalReason":
+    "This project MCP server needs your explicit approval before it can run.",
+  "settings.mcp.projectApproval.connect": "Connect",
+  "settings.mcp.projectApproval.title": 'Connect project MCP server "{name}"?',
+  "settings.mcp.projectApproval.description":
+    "This server is defined by the current workspace. Connecting approves exactly this definition; any change to its command, arguments, environment, or URL requires approval again.\n\n{details}",
+  "settings.mcp.projectApproval.commandLine": "Command: {command}",
+  "settings.mcp.projectApproval.url": "URL: {url}",
+  "settings.mcp.projectApproval.env": "Environment: {entries}",
+  "settings.mcp.projectApproval.headers": "Headers: {entries}",
+  "settings.mcp.projectApproval.confirm": "Connect and allow",
+  "settings.mcp.projectApproval.connected": "Connected MCP server {name}.",
+  "settings.mcp.projectApproval.stillRequired":
+    "The server definition changed. Review it and approve it again.",
+  "settings.mcp.projectApproval.unsupported":
+    "This ZCode Agent does not support connecting project MCP servers. Upgrade or restart ZCode, then try again.",
+  "settings.mcp.projectApproval.failed": "Could not connect the project MCP server.",
   "settings.mcp.failure.config_invalid":
     "The MCP configuration is invalid. Check the server settings.",
   "settings.mcp.failure.runtime_unavailable":

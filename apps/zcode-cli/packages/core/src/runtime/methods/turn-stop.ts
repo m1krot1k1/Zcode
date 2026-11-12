@@ -1,6 +1,7 @@
 import { HookEventName, TurnMachineImpl, createMessageId, createPartId } from "../deps.js";
 import type { MessageId, Model, TraceContext } from "../deps.js";
 import { emptyTokenUsageInfo, toTokenUsageInfo } from "../helpers/index.js";
+import { calculateRuntimeModelCost } from "../helpers/model-cost.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
@@ -76,6 +77,7 @@ export async function persistCompletedAssistantStep(
     return false;
   }
   const persistedTokens = toTokenUsageInfo(options.result.usage);
+  const cost = calculateRuntimeModelCost(model.modelId, persistedTokens);
   await runtime.persistPart(
     {
       id: createPartId(),
@@ -83,7 +85,7 @@ export async function persistCompletedAssistantStep(
       messageID: options.assistantMessageId,
       type: "step-finish",
       reason: options.result.finishReason,
-      cost: 0,
+      ...(cost !== undefined ? { cost } : {}),
       tokens: persistedTokens,
     },
     options.modelTraceContext,
@@ -116,6 +118,7 @@ export async function persistOutputTokenLimitErrorCarrier(
   const messageId = createMessageId();
   const createdAt = Date.now();
   const tokens = emptyTokenUsageInfo();
+  const cost = calculateRuntimeModelCost(options.model.modelId, tokens);
 
   // partial 与终态 error 共用 durable assistant 时，Compact 无法同时重放
   // provider partial 并排除 transcript-only error。两者拆成独立消息后沿用既有过滤边界即可。
@@ -134,7 +137,7 @@ export async function persistOutputTokenLimitErrorCarrier(
       messageID: messageId,
       type: "step-finish",
       reason: options.finishReason,
-      cost: 0,
+      ...(cost !== undefined ? { cost } : {}),
       tokens,
     },
     options.modelTraceContext,

@@ -127,7 +127,6 @@ export async function persistAssistantTimelinePartForSession(
         cwd: this.workingDirectory,
         root: this.workspaceRoot,
       },
-      cost: 0,
       tokens: emptyTokenUsageInfo(),
       finish: options.finish ?? options.timeline.status,
       semantics: {

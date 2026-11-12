@@ -472,7 +472,6 @@ export function buildAtomicForkNotice(
         ...(options.executionState ?? readRuntimeExecutionState(runtime)),
         agent: runtime.config.agentName ?? "zcode-agent",
         path: { cwd: runtime.workingDirectory, root: runtime.workspaceRoot },
-        cost: 0,
         tokens: emptyTokenUsageInfo(),
         finish: "completed",
         semantics: {

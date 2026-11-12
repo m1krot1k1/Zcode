@@ -7,6 +7,7 @@ import {
   buildZCodeSourceHeadersFromContext,
   rewriteZCodeEndpointUrl,
   sanitizeTelemetryEventDetail,
+  sanitizeTelemetryEventText,
   type TelemetryEventPayload,
   type TelemetryRendererContext,
   type OAuthLoginAttribution,
@@ -40,6 +41,12 @@ const REPORT_RETRY_DELAY_MS = 300;
 const REPORT_RATE_LIMIT_RETRY_DELAY_MS = 1_000;
 const REPORT_MAX_ATTEMPTS = 2;
 
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 interface TelemetryCoreDependencies {
   fetchImpl?: typeof fetch;
   loadUserId?: () => Promise<string>;
@@ -54,6 +61,8 @@ interface TelemetryCoreDependencies {
   osVersion?: string;
   homeDir?: string;
   resolveZCodeEndpointOrigin?: () => Promise<string> | string;
+  /** 运行期开关：返回 false 时不发任何 /event/report。默认尊重 DO_NOT_TRACK。 */
+  isEnabled?: () => boolean | Promise<boolean>;
   requestTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   warn?: (message: string) => void;
@@ -425,6 +434,11 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
   const osVersion = dependencies.osVersion ?? version();
   const requestTimeoutMs = dependencies.requestTimeoutMs ?? REPORT_REQUEST_TIMEOUT_MS;
   const retrySleep = dependencies.sleep ?? sleep;
+  const isEnabled = async (): Promise<boolean> => {
+    // DO_NOT_TRACK 是进程级硬关闭，优先于任何持久化设置。
+    if (isTruthyEnvFlag(process.env.DO_NOT_TRACK)) return false;
+    return dependencies.isEnabled ? await dependencies.isEnabled() : true;
+  };
   const pendingReports = new Set<Promise<void>>();
   const deviceMidOptions: EnsureTelemetryDeviceMidOptions = {
     homeDir: dependencies.homeDir,
@@ -493,6 +507,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     userId: string,
     deviceMid: string,
   ): Promise<void> {
+    // 用户/环境选择停用时连本地状态都不写，避免下一次启动把禁用态误记成活跃。
+    if (!(await isEnabled())) return;
     // 构建期未配置事件上报端点时不上报（见 docs/desktop/build-time-optional-capabilities.md）
     if (!REPORT_ENDPOINT) return;
     let marketingParams: OAuthLoginAttribution | null = null;
@@ -514,7 +530,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       element_name: payload.elementName,
       event_region: payload.eventRegion,
       event_type: payload.eventType,
-      event_text: payload.eventText ?? "",
+      event_text: sanitizeTelemetryEventText(payload.eventText),
       // 修复原因：Host/Main 或旧 Renderer 可绕过 UI 清洗，最终出网统一禁止错误原文与登录 URL 秘密。
       event_extra_detail: sanitizeTelemetryEventDetail(
         payload.elementName,
