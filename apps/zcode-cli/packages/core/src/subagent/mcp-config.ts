@@ -7,7 +7,7 @@ interface ParsedAgentMcpServers {
   scopedServers: Record<string, McpServerConfig>;
 }
 
-function parseAgentMcpServers(
+function _parseAgentMcpServers(
   mcpServers: readonly unknown[] | undefined,
   configuredServers: Record<string, McpServerConfig>,
 ): ParsedAgentMcpServers {
@@ -59,7 +59,7 @@ export function matchesRequiredMcpServer(
   );
 }
 
-function matchesScopedMcpServer(
+function _matchesScopedMcpServer(
   requiredName: string,
   scopedServers: Record<string, McpServerConfig>,
 ): boolean {

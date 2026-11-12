@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
+
 
 const PACKAGE_ROOT_FROM_DIST = "../.."
 

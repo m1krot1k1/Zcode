@@ -103,18 +103,7 @@ import {
   shouldExposeSessionEventToProtocol,
 } from "./mapper.js";
 import { optionalModelSelectionFromString } from "./model-mapper.js";
-import {
-  ProtocolRequestError,
-  assertExpectedRevision,
-  createProtocolLogger,
-  createProtocolRootTraceContext,
-  protocolTraceFromTraceContext,
-  parseParams,
-  requireSession,
-  type ZCodeProtocolAgentServerContext,
-  type ZCodeProtocolSessionRecord,
-  type ZCodeProtocolToolInputTransmissionState,
-} from "./server-types.js";
+import {ProtocolRequestError, assertExpectedRevision, createProtocolRootTraceContext, parseParams, requireSession, type ZCodeProtocolAgentServerContext, type ZCodeProtocolSessionRecord, type ZCodeProtocolToolInputTransmissionState} from "./server-types.js";
 import { createWorkspaceZCodeApp, ensureSessionModelAvailable } from "./workspace-model-runtime.js";
 import { buildAppUsageSnapshot, resolveTzOffsetMs } from "./usage-stats-builder.js";
 import { createProtocolInteractionBroker } from "./interaction-broker.js";

@@ -54,7 +54,7 @@ export function createScriptWorkflowBridge(deps: ScriptWorkflowBridgeDeps): Scri
   };
 }
 
-function createScriptWorkflowFacade(runtime: ScriptWorkflowRuntime): ScriptWorkflowFacade {
+function _createScriptWorkflowFacade(runtime: ScriptWorkflowRuntime): ScriptWorkflowFacade {
   return {
     listScriptWorkflows: runtime.list.bind(runtime),
     resumeWorkflowScript: (input, options) => runtime.resume(input, toRuntimeOptions(options)),

@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import {join} from "node:path";
 import {
   CoreErrorType,
   createCoreError,
@@ -12,16 +12,7 @@ import {
   type SubagentTaskDagRequest,
 } from "@zcode/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  InMemoryRuntimeTaskRegistry,
-  WORK_LEDGER_SWEEP_INTERVAL_MS,
-  createRuntimeTaskTerminalCatalogEntry,
-  readRuntimeTaskTerminalCatalogRecord,
-  runtimeTaskOutputFile,
-  runtimeTaskSnapshotFromTerminalCatalog,
-  type RuntimeTaskCancellationHandle,
-  type RuntimeTaskSnapshot,
-} from "../src/runtime-task/registry.js";
+import {InMemoryRuntimeTaskRegistry, WORK_LEDGER_SWEEP_INTERVAL_MS, createRuntimeTaskTerminalCatalogEntry, readRuntimeTaskTerminalCatalogRecord, runtimeTaskSnapshotFromTerminalCatalog, type RuntimeTaskCancellationHandle, type RuntimeTaskSnapshot} from "../src/runtime-task/registry.js";
 import {
   createExploreSubagentPort,
   executeSubagentTaskDag,

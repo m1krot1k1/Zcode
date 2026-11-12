@@ -14,23 +14,7 @@ import type { McpTelemetryTracker } from "@zcode/adapters";
 import type { WorkspaceHookPolicyProvider } from "@zcode/core";
 import type { AccountProviderConfigSnapshot } from "@zcode/provider";
 import type { RuntimeProviderCatalogSnapshot } from "@zcode/provider";
-import {
-  zcodeProtocolErrorCodes,
-  type AppToolSearchMode,
-  type ZCodeAutomationBotDeliveryTarget,
-  type ZCodeDeliveryKind,
-  type ModelSelection,
-  type ZCodeModelContextBudgetStrategy,
-  type ZCodeProtocolMessage,
-  type ZCodeProtocolMethod,
-  type ZCodeProtocolNotification,
-  type ZCodeProtocolRequest,
-  type ZCodeProtocolRequestId,
-  type ZCodeProtocolTrace,
-  type ZCodeSessionMode,
-  type ZCodeSessionPersistence,
-  type ZCodeWorkspaceRef,
-} from "@zcode/shared";
+import {zcodeProtocolErrorCodes, type AppToolSearchMode, type ZCodeAutomationBotDeliveryTarget, type ZCodeDeliveryKind, type ModelSelection, type ZCodeModelContextBudgetStrategy, type ZCodeProtocolMessage, type ZCodeProtocolMethod, type ZCodeProtocolNotification, type ZCodeProtocolRequest, type ZCodeProtocolRequestId, type ZCodeProtocolTrace, type ZCodeSessionPersistence, type ZCodeWorkspaceRef} from "@zcode/shared";
 import type { ZCodeApp, ZCodeAppOptions } from "../app/types.js";
 import type { V4InteractionRegistry } from "../zcode-protocol-v4/interaction-registry.js";
 import type { ConversationV4Gateway } from "../zcode-protocol-v4/v4-gateway.js";

@@ -12,7 +12,6 @@
  * 约束：不改变 mid-stream 的 idle 超时（600s），也不改变重试次数。
  */
 
-import { DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS } from "@zcode/contracts";
 
 export { DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS } from "@zcode/contracts";
 

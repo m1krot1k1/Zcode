@@ -912,19 +912,6 @@ export interface DrainedPendingInputDiagnostics {
   toolDisallowlist?: readonly string[];
 }
 
-export interface ProviderContextUsageSnapshot {
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  contextUsageTokens?: number;
-  inputTokens: number;
-  messageCount: number;
-  model: { providerId: Model["providerId"]; modelId: Model["modelId"] };
-  outputTokens?: number;
-  recordedAt: number;
-  traceId: TraceId;
-  turnId?: TurnId;
-}
-
 export interface RunModelTextRequestOptions {
   toolSearchEnabled?: boolean;
   abortSignal?: AbortSignal;

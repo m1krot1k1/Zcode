@@ -12,11 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RewindStrategy, SessionEventType } from "@zcode/contracts";
 import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
 import { V4CommandExecutor } from "../src/zcode-protocol-v4/commands/executor.js";
-import {
-  V4EditTargetNotLatestError,
-  V4RetryTargetNotLatestError,
-  V4RowTranslationError,
-} from "../src/zcode-protocol-v4/commands/handlers/fork-edit-retry.js";
+import {V4EditTargetNotLatestError, V4RetryTargetNotLatestError} from "../src/zcode-protocol-v4/commands/handlers/fork-edit-retry.js";
 import type {
   V4CommandCoreHost,
   V4SessionRecordView,

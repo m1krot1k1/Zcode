@@ -44,7 +44,7 @@ export class V4RowTranslationError extends Error {
 }
 
 /** fork 目标不是所属轮最后一段 assistantText → 明确拒绝。 */
-class V4ForkTargetNotLatestSegmentError extends Error {
+class _V4ForkTargetNotLatestSegmentError extends Error {
   readonly reasonCode = "fault.command.executionFailed";
 
   constructor(targetRowId: number) {

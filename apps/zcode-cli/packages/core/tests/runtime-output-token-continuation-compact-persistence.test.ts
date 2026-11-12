@@ -6,7 +6,7 @@ import {
   createSessionId,
   modelMessageContentToText,
 } from "@zcode/contracts";
-import { type AgentRuntime } from "../src/runtime.js";
+
 import {
   OUTPUT_TOKEN_CONTINUE_PROMPT,
   countContinuePrompts,

@@ -1,23 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type {
-  CustomCommandRoot,
-  HookConfig,
-  HookEventName,
-  HookMatcherConfig,
-  HookPluginContext,
-  PluginConfig,
-  PluginDiagnostic,
-  PluginDiscoverRequest,
-  PluginHookDetail,
-  PluginLoadOutcome,
-  PluginManifest,
-  PluginUiSurfaceDefinition,
-  PluginMetadata,
-  PluginOperationOptions,
-  PluginPort,
-  SkillRoot,
-} from "@zcode/contracts";
+import type {CustomCommandRoot, HookEventName, HookMatcherConfig, HookPluginContext, PluginConfig, PluginDiagnostic, PluginDiscoverRequest, PluginHookDetail, PluginLoadOutcome, PluginManifest, PluginUiSurfaceDefinition, PluginMetadata, PluginOperationOptions, PluginPort, SkillRoot} from "@zcode/contracts";
 import {
   ZCODE_INLINE_PLUGIN_MARKETPLACE,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
@@ -36,12 +19,7 @@ import {
 import { scanSkillFilesUnderRootSync } from "../skills/scan.js";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
 import { parsePluginUiSurfaces } from "./ui-surfaces.js";
-import {
-  createHookPluginContext,
-  emptyHookInspection,
-  inspectPluginHooks,
-  mergeHookEvents,
-} from "./plugin-hook-inspection.js";
+import {createHookPluginContext, inspectPluginHooks, mergeHookEvents} from "./plugin-hook-inspection.js";
 import {
   gatePluginHookInspection,
   loadPluginHookTrustState,
@@ -696,7 +674,7 @@ function scanOfficialCache(
   // 不能简单选择最高 semver，否则官方回滚版本时仍会错误加载旧缓存。
   const bundledRoots = loadBundledOfficialPluginRootsSync(storageRoot);
   if (bundledRoots !== undefined) {
-    for (const rootPath of bundledRoots) {
+    for (const _rootPath of bundledRoots) {
       throwIfAborted(options);
     }
     return bundledRoots;

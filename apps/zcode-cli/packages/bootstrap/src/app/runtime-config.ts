@@ -24,11 +24,7 @@ import { omitMcpServers, resolveTrustedOfficialCuaServerNames } from "../mcp-con
 import { resolveDefaultEmbeddedSearchBackend } from "./embedded-search-backend.js";
 import { getProjectMemoryRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
-import {
-  resolveRegistryOwnedModelSelection,
-  resolveRegistryModelSelection,
-  type ResolvedRegistrySelection,
-} from "./provider-registry-selection.js";
+import {resolveRegistryOwnedModelSelection, type ResolvedRegistrySelection} from "./provider-registry-selection.js";
 
 interface ResolvedAppRuntimeConfig {
   configuredMcpServers: Record<string, McpServerConfig>;

@@ -2422,7 +2422,7 @@ function buildSwarmChildFailureSummary(snapshots: SubagentTaskSnapshot[]): strin
   }
   const lines = failed.slice(0, 4).map((snapshot) => {
     const reason = snapshot.error
-      ?.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ")
+      ?.replace(/\p{Cc}/gu, " ")
       .replace(/\s+/gu, " ")
       .trim();
     return `${snapshot.status} ${truncateUtf8(snapshot.agentId || snapshot.taskId, 48)}: ${truncateUtf8(reason || "причина не сохранена", 140)}`;

@@ -478,7 +478,7 @@ export function isValidPrismHostEvidenceReceipt(value: unknown): value is PrismH
     !isRecord(value.artifact) ||
     !hasOnlyKeys(value.artifact, ["uri", "sha256", "bytes", "evidence"]) ||
     !isBoundedText(value.artifact.uri, 2048) ||
-    /[\u0000-\u001f\u007f]/u.test(value.artifact.uri) ||
+    /\p{Cc}/u.test(value.artifact.uri) ||
     !isSha256(value.artifact.sha256) ||
     !isNonNegativeSafeInteger(value.artifact.bytes) ||
     !isValidPrismBashEvidenceArtifact(value.artifact.evidence) ||
@@ -1310,7 +1310,7 @@ function isBoundedIdentifier(value: unknown, maxBytes: number): value is string 
   return (
     typeof value === "string" &&
     value.length > 0 &&
-    !/[\u0000-\u001f\u007f]/u.test(value) &&
+    !/\p{Cc}/u.test(value) &&
     utf8ByteLength(value) <= maxBytes
   );
 }

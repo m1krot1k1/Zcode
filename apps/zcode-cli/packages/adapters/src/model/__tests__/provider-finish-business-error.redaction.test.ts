@@ -26,7 +26,7 @@ function finishChunk(overrides: Record<string, unknown> = {}): Record<string, un
     request_id: "req-business-1",
     statusCode: 403,
     // Именно эти поля раздували строку до 1.46 MB в исследовании.
-    input: { prompt: PROMPT_MARKER, messages: new Array(670).fill(PROMPT_MARKER) },
+    input: { prompt: PROMPT_MARKER, messages: Array(670).fill(PROMPT_MARKER) },
     messages: [{ role: "user", content: PROMPT_MARKER }],
     tools: [{ name: TOOL_MARKER, parameters: { type: "object" } }],
     headers: { Authorization: `Bearer ${SECRET_MARKER}` },

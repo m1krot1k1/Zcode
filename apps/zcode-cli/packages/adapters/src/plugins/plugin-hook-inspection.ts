@@ -205,7 +205,7 @@ function mergeHookInspection(target: PluginHookInspection, source: PluginHookIns
   target.details.push(...source.details);
 }
 
-export function emptyHookInspection(): PluginHookInspection {
+function emptyHookInspection(): PluginHookInspection {
   return {
     details: [],
     events: {},

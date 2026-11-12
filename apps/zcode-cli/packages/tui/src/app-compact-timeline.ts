@@ -14,7 +14,7 @@ export function compactCommandFromText(text: string): string | undefined {
   return instructions ? `/compact ${instructions}` : "/compact";
 }
 
-function isCompactSlashCommand(text: string): boolean {
+function _isCompactSlashCommand(text: string): boolean {
   return compactCommandFromText(text) !== undefined;
 }
 

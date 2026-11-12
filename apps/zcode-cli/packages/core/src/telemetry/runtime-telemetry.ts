@@ -208,7 +208,7 @@ const NOOP_ATTEMPT: ModelAttemptSpanWriter = {
   setStreamOutputCommitted() {},
 };
 
-const NOOP_CALL: ModelCallSpanWriter = {
+const _NOOP_CALL: ModelCallSpanWriter = {
   ...NOOP_SCOPE,
   finishAbandoned() {},
   finishCancelled() {},

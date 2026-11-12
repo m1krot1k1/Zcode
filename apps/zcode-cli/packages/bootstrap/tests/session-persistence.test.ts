@@ -30,23 +30,7 @@ import {
 } from "@zcode/provider-node";
 import { ModelConfigRules, ProviderConfigMap, ProviderTemplateMap } from "@zcode/provider";
 import { zcodeStorageStartupStateSchema } from "@zcode/shared";
-import {
-  LogLevel,
-  SESSION_ENTRY_BASH_SHELL_SELECTION,
-  SESSION_ENTRY_MODEL_SELECTION,
-  type LogContext,
-  type Logger,
-  type LoggerFactory,
-  SessionEventType,
-  createMessageId,
-  createPartId,
-  createProjectId,
-  createSessionId,
-  type EnvInfo,
-  type ExecutionPort,
-  type TargetChangedPayload,
-  type WorkflowRunSnapshot,
-} from "@zcode/contracts";
+import {LogLevel, SESSION_ENTRY_BASH_SHELL_SELECTION, type LogContext, type Logger, type LoggerFactory, SessionEventType, createMessageId, createPartId, createProjectId, createSessionId, type EnvInfo, type ExecutionPort, type TargetChangedPayload, type WorkflowRunSnapshot} from "@zcode/contracts";
 import { resolveLatestSession, runZCodeProtocolAgent } from "../src/index.js";
 import { ProductProjection } from "../src/zcode-protocol-v4/product-projection.js";
 import { synthesizeEventsFromMessages } from "../src/zcode-protocol-v4/transcript-hydration.js";

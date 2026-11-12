@@ -8,7 +8,7 @@ import { createInputFacade } from "../src/app/input-facade.js";
 import type { SendInputOptions } from "../src/app/types.js";
 import { V4CommandExecutor } from "../src/zcode-protocol-v4/commands/executor.js";
 import { V4PromptRejectedError } from "../src/zcode-protocol-v4/commands/prompt-turn.js";
-import { V4InputAdmissionRejectedError } from "../src/zcode-protocol-v4/commands/input-admission.js";
+
 import type {
   V4CommandCoreHost,
   V4SessionRecordView,

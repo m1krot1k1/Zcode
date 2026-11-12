@@ -159,7 +159,7 @@ export type CommandCenterLoginOptions = {
   onAuthorizeUrl?: (data: CommandCenterLoginAuthorizeData) => Promise<void> | void;
 };
 
-type CommandCenterBigmodelLoginAuthorizeData = CommandCenterLoginAuthorizeData;
+type _CommandCenterBigmodelLoginAuthorizeData = CommandCenterLoginAuthorizeData;
 export type CommandCenterBigmodelLoginOptions = CommandCenterLoginOptions;
 
 export type CommandCenterBigmodelLoginResult = {

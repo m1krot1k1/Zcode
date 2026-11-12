@@ -177,7 +177,7 @@ export function prepareBashPermissionMatcherForCommand(
   return (pattern) => matchesBashPermissionPattern(pattern, normalizedCommand);
 }
 
-function hasBestEffortWritePattern(command: string): boolean {
+function _hasBestEffortWritePattern(command: string): boolean {
   const analysis = analyzeBashCommand(command);
   if (analysis.hasParseErrors) return false;
   return analysis.commands.some(hasKnownBashWriteOption);
@@ -213,13 +213,13 @@ export function isSilentBashCommand(command: string): boolean {
   return hasNonFallbackCommand;
 }
 
-function extractBashSearchText(output: { stderr?: string; stdout?: string }): string {
+function _extractBashSearchText(output: { stderr?: string; stdout?: string }): string {
   const stdout = output.stdout ?? "";
   const stderr = output.stderr ?? "";
   return stderr ? `${stdout}\n${stderr}` : stdout;
 }
 
-function isBashResultTruncated(output: { stderr?: string; stdout?: string }): boolean {
+function _isBashResultTruncated(output: { stderr?: string; stdout?: string }): boolean {
   return lineCount(output.stdout ?? "") > 4 || lineCount(output.stderr ?? "") > 4;
 }
 

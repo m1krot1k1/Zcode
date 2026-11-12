@@ -2,15 +2,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  PdfDocumentPortError,
-  createRootTraceContext,
-  createSessionId,
-  createTurnId,
-  type ExecutionPort,
-  type ExecutionRequest,
-  type ExecutionResult,
-} from "@zcode/contracts";
+import {createRootTraceContext, createSessionId, createTurnId, type ExecutionPort, type ExecutionRequest, type ExecutionResult} from "@zcode/contracts";
 import { createPopplerPdfDocumentAdapter } from "../src/pdf/index.js";
 
 const roots: string[] = [];

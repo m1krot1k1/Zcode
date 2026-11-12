@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import { createTestAgentRuntime } from "./helpers/test-agent-runtime.js";
 import { createInMemorySessionEventStore } from "@zcode/adapters/storage";
 import { parseModelRef, type RuntimeModelConfig } from "@zcode/contracts";
-import { AgentRuntime } from "@zcode/core";
+
 import { InMemoryJournalStore, inputHash } from "@zcode/dynamic-workflow";
 import { createModelAdapter } from "../src/index.js";
 import { workflowActorToolPolicy } from "../src/app/workflow-actor-tools.js";
