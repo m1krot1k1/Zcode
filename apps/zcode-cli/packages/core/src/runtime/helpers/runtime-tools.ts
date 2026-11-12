@@ -232,6 +232,8 @@ function createRuntimeToolExecutor(
     getWorkingDirectory: () => runtime.workingDirectory,
     setWorkingDirectory: runtime.setWorkingDirectory.bind(runtime),
     getWorkspaceRoot: () => runtime.workspaceRoot,
+    getWriteScope: () => runtime.config.writeScope,
+    workspaceBoundary: runtime.config.workspaceBoundary,
     workspaceIdentity: runtime.config.workspaceIdentity?.toString(),
     remoteSessionId: runtime.config.remoteSessionId,
     clientMode: runtime.config.clientMode,

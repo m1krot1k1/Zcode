@@ -66,8 +66,8 @@ affected 使用 Vitest 官方选择，只运行选中的根 UT；选中整个套
 - 手机远控连接桌面已有 Host attachment，复用会话运行时；不为手机另起 Agent、Local Host 或远程会话。
 - Desktop 的 `desktop-continuous` 实时链路与手机的 `web-remote-replayable` 恢复链路必须明确区分。修改 stream、snapshot、queue 或重连时，同时验证两种语义。
 - 外部 relay 与 Main 只做鉴权、配对、心跳、转发及 attachment 调度，不保存任务队列、快照等业务状态。
-- 已接受的 busy/running 输入由 CLI/runtime `CommandInbox` 串行 admission；Renderer 只保留未提交草稿与 pending optimistic overlay，Host owner/lease 负责路由。
-- 保留 owner/lease、跨 Host 路由和 stale run 防护，不能仅根据单一路径删除边界判断。
+- 已接受的 busy/running 输入由 CLI/runtime `CommandInbox` 串行 admission；Renderer 只保留未提交草稿与 pending optimistic overlay，Host 只转发任务元数据和 session route。
+- 跨 Host session route 由 main 的 `TaskRealtimeBus` 承担；Host 不创建 owner/lease/mirror bridge，也不注入 realtime port。恢复镜像前必须同时验证 stale run、跨端去重和手机 relay 恢复语义。
 
 ## Workspace Identity
 

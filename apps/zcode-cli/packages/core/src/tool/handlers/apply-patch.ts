@@ -17,7 +17,11 @@ import {
 import { createStructuredPatch } from "../diff.js";
 import { derivePatchedContent } from "../patch-apply.js";
 import { parseStructuredPatch, type ParsedPatch } from "../patch-parser.js";
-import { resolveWorkspacePath } from "../path-policy.js";
+import {
+  assertPathWithinWriteScope,
+  resolveWorkspacePath,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 
 const APPLY_PATCH_MODEL_INSTRUCTIONS = [
   "Use ApplyPatch for structured, reviewable edits that are easier to express as local diff hunks than exact old_string replacements.",
@@ -287,12 +291,20 @@ function resolvePatchPath(
   inputPath: string,
   context: Parameters<typeof applyPatchHandler>[1],
 ): string {
-  return resolveWorkspacePath({
+  const resolvedPath = resolveWorkspacePath({
     inputPath,
     operation: "write",
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...workspaceBoundaryOptions(context),
   });
+  // Причина та же, что в Write/Edit: объявленный write_paths — граница, а не пожелание.
+  assertPathWithinWriteScope({
+    filePath: resolvedPath,
+    workspaceRoot: context.workspaceRoot,
+    writeScope: context.writeScope,
+  });
+  return resolvedPath;
 }
 
 function createPatchError(
@@ -336,6 +348,22 @@ export const applyPatchToolEntry: ToolEntry = {
     sideEffectScope: "workspace",
     riskLevel: "medium",
     needsApproval: true,
+  },
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = ApplyPatchInputSchema.safeParse(input);
+    if (!parsed.success) return [];
+    let sections: ParsedPatch[];
+    try {
+      sections = parseStructuredPatch(parsed.data.patch_text);
+    } catch {
+      // 解析失败由 handler 用统一的 INVALID_PATCH 失败收口；预审批不抢跑。
+      return [];
+    }
+    return sections.flatMap((section) =>
+      [section.path, section.type === "update" ? section.movePath : undefined]
+        .filter((path): path is string => typeof path === "string")
+        .map((path) => ({ path, operation: "write" as const })),
+    );
   },
   handler: applyPatchHandler,
   formatModelContent: formatApplyPatchModelContent,

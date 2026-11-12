@@ -2,11 +2,11 @@
 
 | 字段     | 值                                                                                                                                                                                                      |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态     | 已实施（path-policy 决策层）；config / executor 接线为后续任务                                                                                                                                          |
-| 日期     | 2026-11-11                                                                                                                                                                                              |
+| 状态     | 已实施（path-policy 决策层 + config / executor / approval / audit 接线）                                                                                                                                |
+| 日期     | 2026-11-11（接线更新 2026-11-12）                                                                                                                                                                       |
 | 来源     | `docs/research/2026-11-11-zcode-wide-competitive-research.md` R03；`docs/research/partials/2026-11-11-zcode-08-tools-providers.md` R-02；`docs/research/partials/2026-11-11-zcode-12-security-trust.md` |
-| 适用范围 | `apps/zcode-cli/packages/core/src/tool/path-policy.ts` 及其调用方（Read/Write/Edit/Glob/Grep/Bash cwd）                                                                                                 |
-| 主要对象 | `resolveWorkspacePath`、`resolveToolWorkingDirectory`、`workspaceBoundary` 选项                                                                                                                         |
+| 适用范围 | `apps/zcode-cli/packages/core/src/tool/path-policy.ts` 及其调用方（Read/Write/Edit/ApplyPatch/Glob/Grep/Bash cwd、bash-read-file-state）                                                                |
+| 主要对象 | `resolveWorkspacePath`、`resolveToolWorkingDirectory`、`describeWorkspaceBoundaryEscape`、`workspaceBoundary` 选项                                                                                      |
 | 安全基线 | 显式模式、realpath 后判定、越界不可静默通过、fail closed                                                                                                                                                |
 | 关联文档 | `docs/specs/workspace-hook-trust.md`（同类“未信任不得执行”的准入思路）                                                                                                                                  |
 
@@ -69,6 +69,13 @@
   由接线任务在具备审批能力后切换。调用方一旦显式传 `strict` 即立刻生效（零额外接线）。
 
 `allow` 默认且未配置审计回调时走快速路径：不做任何文件系统调用，行为与改动前完全一致。
+直接调用 `resolveWorkspacePath` 且不传新选项的嵌入方仍走这条快速路径。
+
+**接线后的取值来源**：`RuntimeConfig.workspaceBoundary`（`DefaultRuntimeConfig` 默认 `"allow"`）
+由 bootstrap 从 user/project 配置文件投影到 `AgentRuntimeConfig`，再经 `ToolExecutorDeps` 进入
+`ToolExecutionContext`。executor 始终把该模式与审计回调一起传给 handler，因此 runtime 内的
+`allow` 会做 realpath 探测并在越界时写一条 `action: "allow"` 审计日志——这是接线带来的
+可观测性变化，不改变判定结果；只有绕过 executor 的直接调用才保留“零系统调用”快速路径。
 
 ## 4. containment 算法
 
@@ -176,27 +183,65 @@ preview，例如 `Tool path "../outside.txt" resolves to "/x/outside.txt" outsid
 - 审批只针对**本次调用**，不缓存、不写会话规则；跨调用复用必须走既有
   `suggestedPermissionUpdates` 机制。
 
-## 7. 接线契约（本任务范围外）
+### 6.1 executor 接线（2026-11-12）
 
-本 spec 交付决策层；以下接线属于后续任务，未在本任务内修改：
+同步端口无法自己等待 broker，因此用户决定在 handler **之前**取得：
 
-1. `RuntimeConfig` / 项目配置新增 `workspaceBoundary?: "strict" | "ask" | "allow"`（含 schema
-   校验与非法值 fail closed）。
-2. `ToolExecutionContext` 透传 `workspaceBoundary`、审批端口与审计回调。
-3. Read/Write/Edit/ApplyPatch/Glob/Grep/Bash 在调用 `resolveWorkspacePath` /
-   `resolveToolWorkingDirectory` 时传入上述字段。
-4. executor 在 `resolvePermissionCapability` 或权限流中把越界判定变成真实 permission request，
-   使 `ask` 拥有用户可见的确认窗（当前 `PermissionEscalation` 仅是 fail-closed 信号）。
+1. 工具在 `ToolEntry.resolveWorkspaceBoundaryPaths` 声明本次调用会解析的路径
+   （Read/Write/Edit/ApplyPatch/Glob/Grep 的模型路径，Bash 的初始 cwd）。声明只描述路径，
+   判定仍只有 `describeWorkspaceBoundaryEscape` 一处实现。
+2. `applyWorkspaceBoundaryGate` 在权限判定之后把“存在越界路径”折叠为一次真实 ask：
+   `approvalMode: "user-once"`、`ruleId: "tool.workspaceBoundary.ask"`、`alwaysAsk: true`。
+   硬 `deny` 优先，不会被改写成 ask；`prepareApproval` 不能把它降级成 proceed，
+   也不会出现“总是允许”。
+3. 用户批准后，`createWorkspaceBoundaryApprovalPort(approvedRequests)` 只对
+   `(operation, resolvedPath)` 完全匹配的请求返回 `allow`；handler 若解析出别的越界路径
+   （改写后的入参、动态计算路径、声明遗漏）均得到带原因的 `deny`。
+4. 输入被 hook / 用户调整而改变时，`resolveToolPermission` 会重新计算预审批；
+   已批准集合不跨调用复用。
 
-在接线完成前：默认 `allow` 保持全部既有行为；显式 `strict` 已可用并立即拒绝越界；
-显式 `ask` 在无审批端口的调用点安全失败。
+## 7. 接线状态（2026-11-12）
+
+已接通：
+
+1. **配置**：`RuntimeConfig.workspaceBoundary: "strict" | "ask" | "allow"`，键名
+   `workspaceBoundary`（顶层）。`DefaultRuntimeConfig` 默认 `"allow"`；user/project 配置文件
+   与 `RuntimeConfigPatch` 均支持；schema（zod enum）在装载阶段拒绝未知值，不会退化成 allow。
+   bootstrap 的 `resolveAppRuntimeConfig` 取
+   `options.runtimeConfig?.workspaceBoundary ?? configResult.config.workspaceBoundary`。
+2. **运行时透传**：`AgentRuntimeConfig.workspaceBoundary` → `ToolExecutorOptions/Deps`
+   → `ToolExecutionContext.workspaceBoundary`；子代理构造 child runtime 时结构性继承，
+   不能把 strict/ask 降级成 allow。
+3. **handler**：Read、Write、Edit、ApplyPatch、Glob、Grep、Bash（cwd）与
+   bash-read-file-state 在调用 `resolveWorkspacePath` / `resolveToolWorkingDirectory` 时统一
+   展开 `workspaceBoundaryOptions(context)`。bash-read-file-state 是 Bash 的辅助效果：
+   越界拒绝只跳过该文件的 read-state 回填，不会让已成功的 Bash 变成工具失败。
+4. **approval**：见 §6.1；`ask` 的确认走既有 permission broker，handler 拿到的是
+   “已取得的用户决定”的同步回放端口。
+5. **审计**：executor 把 `auditWorkspaceBoundary` 接到 runtime logger
+   （`info` / `deny` 为 `warn`），字段与 §5 一致；`allow`、`approve`、`deny` 都会记录。
+
+仍未接通 / 明确留在范围外：
+
+- `memory/memory-file-path.ts` 的 `resolveWorkspacePath` 调用不传边界：Memory 根在
+  `~/.zcode` 下、本来就位于 workspace 之外，其安全性由 `rootDir` containment 与敏感段
+  过滤负责；传入 workspace 边界会直接压掉合法 Memory 写入。
+- Bash 命令内部的完整 shell 语义不解析、不审批（§8）。Реализован лексический guard
+  (`assertBashCommandPathBoundary`): в `strict`/`ask` команда с явными path-токенами за
+  пределы workspace (`../x`, `/etc/passwd`, `--file=/etc/passwd`, `~/x`) отклоняется до
+  запуска; подстановки (`$VAR`, `*`, `{...}`) не разрешаются и не блокируются эвристикой.
+  Точное поведение и тесты — `core/tests/workspace-boundary-wiring.test.ts`.
+- `CodeIndex` 等非 file tool 的索引路径不在本 spec 的接线范围。
+- TOCTOU 窗口与 OS sandbox 仍未收口（§9、§8）。
+- Desktop/Web 设置页没有为 `workspaceBoundary` 增加可视化开关；当前通过配置文件设置。
 
 ## 8. 非目标
 
 - OS 级 sandbox（seatbelt / bwrap / restricted token）：R04。
 - 远程 workspace 的路径语义：`workspaceIdentity` 与远端路径解析不在本 spec。
-- Bash 命令内部的 `cat ../x`、解释器逃逸：本 spec 只约束 file tools 与 Bash cwd 的
-  **初始路径解析**，不解析 shell 命令内容。
+- Полный разбор shell: guard ловит только явные path-токены и не претендует на роль
+  sandbox. Интерпретаторы (`python -c`, `sed`, скрипты) и переменные окружения могут
+  обратиться за пределы workspace — для этого нужен OS sandbox (R04), а не regexp.
 - 完整 TOCTOU 防护：见 §9。
 
 ## 9. TOCTOU（诚实边界）
@@ -214,7 +259,8 @@ preview，例如 `Tool path "../outside.txt" resolves to "/x/outside.txt" outsid
 
 ## 10. 验收场景
 
-单测（`apps/zcode-cli/packages/core/src/tool/path-policy.test.ts`，真实临时目录）：
+单测（`apps/zcode-cli/packages/core/tests/path-policy-workspace-boundary.test.ts` 与
+`packages/core/src/tool/path-policy.test.ts`，真实临时目录）：
 
 1. `strict`：`..` 越界拒绝（`escapeKind = lexical`）；绝对路径越界拒绝；
    `dir/../inside.txt` 这类归一后仍在 root 内的 `..` 允许。
@@ -228,8 +274,23 @@ preview，例如 `Tool path "../outside.txt" resolves to "/x/outside.txt" outsid
 7. 相对路径与绝对路径解析到同一结果；`resolveToolWorkingDirectory` 同样受边界约束。
 8. 纯函数平台用例：`win32` 跨盘符、前缀陷阱、大小写不敏感；`posix` 前缀陷阱。
 
+接线回归（`packages/core/tests/workspace-boundary-wiring.test.ts`，真实临时目录 + handler）：
+
+1. `strict` 从 `ToolExecutionContext` 生效：Read/Write 越界抛 `PermissionDenied`，
+   越界写入不落盘；workspace 内写入仍成功。
+2. `allow` 不阻断越界读写，并产生 `action: "allow"` 审计事件。
+3. `ask` 无审批端口时 Read/Write 均 `PermissionEscalation`，越界文件不落盘。
+4. `ask` 预审批 → 同步端口只放行已批准路径；同一端口拒绝另一条未展示的越界路径。
+5. gate 只改写 `allow` → `ask`；硬 `deny` 保持 deny；`allow`/`strict` 模式不改写判定。
+
+配置回归（`packages/adapters/tests/config.test.ts`）：user config 的 `workspaceBoundary`
+进入 `RuntimeConfig` / `ConfigPort`；缺省为 `allow`；未知枚举值装载失败。
+
 ## 11. 兼容性
 
-- 既有调用点不传新选项 → 行为、返回值、系统调用次数与改动前一致。
+- 既有调用点不传新选项 → 返回值与判定结果与改动前一致。
+- 未接线的直接调用方（不传审计回调）仍是零系统调用快速路径；runtime executor 的
+  `allow` 模式会做 realpath 探测以产生越界审计，这是新增的可观测性，不改变放行结果。
+- 配置文件缺省 `workspaceBoundary` → `allow`，旧配置行为不变。
 - `strict` 只改变越界路径的结果；workspace 内路径（含边界自身）不受影响。
 - Windows 既有测试不新增跳过；软链相关用例按仓库惯例 `skipIf(process.platform === "win32")`。

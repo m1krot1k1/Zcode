@@ -1,14 +1,14 @@
 # Project-scope MCP: untrusted by default + digest-bound approval
 
-| 字段     | 值                                                                                                                                                                                                            |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态     | 已实施（bootstrap app + zcode-protocol）；Desktop 设置页显式审批 UX 与 remote relay 为后续任务                                                                                                                |
-| 日期     | 2026-11-11                                                                                                                                                                                                    |
-| 来源     | `docs/research/2026-11-11-zcode-wide-competitive-research.md`；`docs/research/partials/2026-11-11-zcode-09-context-memory-skills-mcp.md` R-02；`docs/research/partials/2026-11-11-zcode-12-security-trust.md` |
-| 适用范围 | `apps/zcode-cli/packages/bootstrap/src/app`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol`                                                                                                           |
-| 主要对象 | `resolveAppRuntimeConfig`、`listMcpServers`（`mcp/list`）、`ZCodeApp.connectMcpServer`、project-scope MCP 定义 digest                                                                                         |
-| 安全基线 | project-scope 默认拒绝、显式授权、按定义 digest 失效、密钥不入日志/错误、fail closed                                                                                                                          |
-| 关联文档 | `docs/specs/workspace-hook-trust.md`（同类「未信任不得执行」准入）、`docs/specs/workspace-hook-trust-persistent-only.md`                                                                                      |
+| 字段     | 值                                                                                                                                                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 状态     | 已实施（bootstrap app + zcode-protocol + Desktop 设置页显式审批 UX）；remote relay 为后续任务                                                                                                                                    |
+| 日期     | 2026-11-11（2026-11-12 补充 `mcp/connect` 与 UI 审批入口）                                                                                                                                                                       |
+| 来源     | `docs/research/2026-11-11-zcode-wide-competitive-research.md`；`docs/research/partials/2026-11-11-zcode-09-context-memory-skills-mcp.md` R-02；`docs/research/partials/2026-11-11-zcode-12-security-trust.md`                    |
+| 适用范围 | `apps/zcode-cli/packages/bootstrap/src/app`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol`、`packages/shared/src/zcode-protocol`、`packages/services/src/mcp-sync`、`packages/ui/src/store`、`packages/ui/src/settings` |
+| 主要对象 | `resolveAppRuntimeConfig`、`listMcpServers`（`mcp/list`）、`connectMcpServer`（`mcp/connect`）、`ZCodeApp.connectMcpServer`、project-scope MCP 定义 digest                                                                       |
+| 安全基线 | project-scope 默认拒绝、显式授权、按定义 digest 失效、密钥不入日志/错误、fail closed                                                                                                                                             |
+| 关联文档 | `docs/specs/workspace-hook-trust.md`（同类「未信任不得执行」准入）、`docs/specs/workspace-hook-trust-persistent-only.md`                                                                                                         |
 
 > 实现位置说明：规格 §4 的示意图文件名 `bootstrap/app/mcp-project-trust.ts` /
 > `mcp-project-trust-store.ts` 是设计意图，实际落地为
@@ -80,13 +80,13 @@ server 不再进入 `runtimeConfig.mcp.servers`，也不再进入 `mcp/list` 的
 
 ### 2.2 非目标
 
-1. 不改 Desktop 设置页的交互（本批次没有可用的前端审批 UI；UI 仍把 `untrusted` 呈现为
-   unknown + 固定文案）。
-2. 不新增 ZCode Protocol 的 wire 字段（`zcodeProtocolMcpServerSchema` 不携带 scope/approval，
-   见 §7 已知边界）。
-3. 不校验 MCP server 引用的二进制、npm 包或脚本内容（供应链完整性）。
-4. 不改变 OAuth 模型、remote relay、pool/lease 语义。
-5. 不把 approval 写入 workspace 仓库配置，防止项目自我授权。
+1. 不改 Plugin/builtin MCP 的展示与审批（它们不属于 project scope）；Desktop 设置页只对
+   `untrusted` 行提供“连接/批准”入口。
+2. 不校验 MCP server 引用的二进制、npm 包或脚本内容（供应链完整性）。
+3. 不改变 OAuth 模型、remote relay、pool/lease 语义。
+4. 不把 approval 写入 workspace 仓库配置，防止项目自我授权。
+5. `mcp/connect` 请求不接受 server 定义（command/args/env/url/headers）：定义只能由 Agent
+   从当前生效配置读取，UI 只提交 server 名与显式同意位。
 
 ## 3. 术语
 
@@ -239,14 +239,51 @@ AND record.decision === "approved"
 - 宿主内建 server（`builtInMcpServers`，例如 `node_repl`）不进入判定：它们合并优先级最高，
   同名 project 条目已被覆盖，不能据此把宿主 server 判成 untrusted。
 
-### 7.3 显式授权入口（`ZCodeApp.connectMcpServer`）
+### 7.3 显式授权入口（`ZCodeApp.connectMcpServer` / `mcp/connect`）
 
-- `createSessionFacade` 新增可选依赖 `approveProjectMcpServer({ name, config })`；
+- CLI 路径：`createSessionFacade` 新增可选依赖 `approveProjectMcpServer({ name, config })`；
   `create-app` 注入的实现写入 6.1 的 store（identity 来自 app 的 workspace identity）。
+- Desktop 路径：`mcp/connect`（`bootstrap/src/zcode-protocol/mcp.ts`）复用同一个
+  `grantProjectMcpServerApproval`（record 构造 + digest + store 写入），与 CLI 的唯一差异是
+  连接对象来自 `mcp-status` 控制面进程的 `mcpPort`。
 - server 在 untrusted set 中且提供 approve 回调 → 先写 approval，成功后从 set 移除并 connect。
 - 在 untrusted set 中但没有 approve 回调（例如嵌入方只装配了 facade）→ 抛稳定错误，
-  不连接（fail closed）。
+  不连接（fail closed）；`mcp/connect` 在没有 `approveProjectScope: true` 时返回
+  `requiresApproval` 投影，不写 approval。
 - 不在 untrusted set 中 → 行为与今天一致。
+
+### 7.6 UI / RPC 显式连接路径（2026-11-12 补充）
+
+```text
+Settings 行 status=requires_approval
+  -> 点击“连接”
+  -> 确认框展示 command/args 与 env/header 键名（值掩码、URL 去查询串）
+  -> mcpStore.connectMcpServer({ approveProjectScope: true, mcpServers: <与 mcp/list 同一快照> })
+  -> IMcpSyncService.connectWorkspaceMcpServer
+  -> services/zcodeAgentService.connectMcpServer
+  -> ZCode Protocol `mcp/connect`
+  -> bootstrap connectMcpServer
+       -> 重新解析同一 configuredMcpServers 快照 + approval store
+       -> untrusted 且 approveProjectScope -> grantProjectMcpServerApproval -> connectServer
+       -> 返回 { connected, requiresApproval, approval, status }
+  -> mcpStore 写回 status snapshot，设置页按需再触发 mcp/list
+```
+
+- 协议参数 `zcodeMcpConnectParamsSchema` 为 `.strict()`：`workspace`、`serverName`、可选
+  `mcpServers`、`approveProjectScope`（默认 false）。任何额外字段（尤其 `command`/`args`/
+  `env`/`headers`）直接 `-32602`，不会进入 approval 或日志。
+- project-scope 的权威定义是 Agent 本地 `configResult.config.mcp.servers`：wire 上的
+  `mcpServers` 只能覆盖非 project scope（`.agents` fallback、plugin、显式会话下发）。
+  `mcp/list` 与 `mcp/connect` 都做这一层归一，因此 CLI `/mcp connect` 与 Desktop
+  `mcp/connect` 的 digest 输入一致，renderer 也无法凭 wire 定义批准/启动项目里不存在的命令。
+- 结果 `zcodeMcpConnectResultSchema` 为 `.strict()`：`connected`、`requiresApproval`、
+  `approval: granted | not_required | not_requested`、`status`（复用
+  `zcodeMcpServerStatusSnapshotSchema`）。
+- UI 状态映射：`untrusted → requires_approval`（不再降级为 `unknown`），黄色状态点 +
+  “连接”按钮；`McpStatusDot` 与行排序把 `requires_approval` 与 error/OAuth pending 一起置顶。
+- 兼容性：旧 Agent 没有 `mcp/connect` 时返回 JSON-RPC -32601；services 层转换为稳定
+  `ZCODE_AGENT_MCP_CONNECT_UNSUPPORTED`，设置页提示升级/重启，不回退到会隐式启动 project
+  MCP 的旧路径。新 Agent 对旧客户端完全兼容（新增方法不影响 `mcp/list` 契约）。
 
 ### 7.4 授权后的工具可见性
 
@@ -325,3 +362,20 @@ scope 标签。本实现仍以本地 `createConfig` 的 `serverSources` 判定�
 11. `command` / `args` / `env` / `url` / `transport` 任一变化都在**消费侧**
     （`resolveUntrustedProjectMcpServers`）重新判定为 untrusted，而不只是 digest 单测变化
     （r01 补充的合并负例）。
+
+`mcp/connect` 与 UI 路径（2026-11-12 追加，位于同一 bootstrap 测试文件与
+`packages/ui/test/*.test.ts`）：
+
+12. `mcp/connect` 无 `approveProjectScope` → 不调用 `mcpPort.connectServer`、不写
+    approval，返回 `{ connected: false, requiresApproval: true, approval: "not_requested",
+status.status: "untrusted" }`。
+13. `mcp/connect` 带 `approveProjectScope: true` → 先写 approval 再连接；approval record
+    的 `definitionDigest` 等于当前生效定义的 digest，落盘文件不含 env/args 原文。
+14. 协议 schema 拒绝额外字段（`command`/`env` 等），错误消息只包含字段名/`Invalid params`，
+    不包含字段值；不产生 approval、不连接。
+15. UI 状态映射 `untrusted → requires_approval`（保留 `status_unavailable` 诊断），
+    `mcpStore.connectMcpServer` 透传 `approveProjectScope` 并写回 status snapshot。
+16. 确认框预览只显示 stdio 的 command/args 与 env 键名、http 的 origin+pathname 与 header
+    键名；env/header 值掩码，URL 查询串被移除。
+17. wire `mcpServers` 为 project-scope server 提供替换定义时，`mcp/connect` 仍批准并连接
+    Agent 本地配置中的定义；approval digest 与本地定义一致。

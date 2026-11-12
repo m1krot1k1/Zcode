@@ -97,10 +97,7 @@ interface SpawnEnvelopeInput {
  * рекурсии и доступная конкурентная ёмкость.
  */
 export function buildSpawnEnvelope(input: SpawnEnvelopeInput): string | undefined {
-  const parts = [
-    "<zcode-spawn-envelope",
-    `level="${Math.max(0, Math.floor(input.level ?? 1))}"`,
-  ];
+  const parts = ["<zcode-spawn-envelope", `level="${Math.max(0, Math.floor(input.level ?? 1))}"`];
   if (input.maxParallel !== undefined && Number.isFinite(input.maxParallel)) {
     parts.push(`max_parallel="${Math.max(0, Math.floor(input.maxParallel))}"`);
   }
@@ -476,6 +473,11 @@ export function createDefaultSubagentPort(
             // Invalid JSON response；继承父配置可让子 agent 与主链路走同一 streamText 语义。
             modelStreaming: this.config.modelStreaming,
             bashTimeoutPolicy: this.config.bashTimeoutPolicy,
+            // 子代理不能把 strict/ask 降级成 allow：边界是会话级安全策略，结构性继承。
+            workspaceBoundary: this.config.workspaceBoundary,
+            // Объявленный родителем write-scope наследуется ребёнком; иначе ветка писала бы
+            // вне согласованной области, а ledger-конфликт оставался бы только подсказкой.
+            ...(request.writePaths === undefined ? {} : { writeScope: request.writePaths }),
             midConversationSystem: this.config.midConversationSystem,
             toolSearch: this.config.toolSearch,
             bashShellSelection,

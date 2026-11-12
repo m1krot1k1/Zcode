@@ -87,6 +87,8 @@ export class ToolExecutorImpl implements ToolExecutor {
           options.workingDirectory ??
           "."),
       workspaceIdentity: options.workspaceIdentity,
+      getWriteScope: options.getWriteScope,
+      workspaceBoundary: options.workspaceBoundary,
       remoteSessionId: options.remoteSessionId,
       clientMode: options.clientMode,
       deliveryKind: options.deliveryKind,

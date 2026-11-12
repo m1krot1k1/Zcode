@@ -18,7 +18,11 @@ import {
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
 import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
-import { resolveWorkspacePath } from "../path-policy.js";
+import {
+  assertPathWithinWriteScope,
+  resolveWorkspacePath,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import {
   createReadFileStateKey,
   findLatestReadFileState,
@@ -86,6 +90,13 @@ export const writeHandler: ToolHandler = async (input, context) => {
     operation: "write",
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...workspaceBoundaryOptions(context),
+  });
+  // 原因: write_paths был только подсказкой для ledger; фактическая запись не ограничивалась.
+  assertPathWithinWriteScope({
+    filePath,
+    workspaceRoot: context.workspaceRoot,
+    writeScope: context.writeScope,
   });
 
   let originalFile: string | null = null;
@@ -221,6 +232,10 @@ export const writeToolEntry: ToolEntry = {
     sideEffectScope: "workspace",
     riskLevel: "medium",
     needsApproval: true,
+  },
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = WriteInputSchema.safeParse(input);
+    return parsed.success ? [{ path: parsed.data.file_path, operation: "write" }] : [];
   },
   handler: writeHandler,
   formatModelContent: formatWriteModelContent,

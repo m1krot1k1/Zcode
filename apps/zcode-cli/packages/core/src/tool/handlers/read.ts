@@ -31,7 +31,7 @@ import {
   type FileSystemStatResult,
   type TraceContext,
 } from "@zcode/contracts";
-import { resolveWorkspacePath } from "../path-policy.js";
+import { resolveWorkspacePath, workspaceBoundaryOptions } from "../path-policy.js";
 import { createReadFileStateKey, normalizeReadFileStateMtimeMs } from "../read-file-state.js";
 import { createReadFileStateMetadata } from "../read-file-state-metadata.js";
 import { inferImageMimeFromPath, readImageFile } from "./read-image.js";
@@ -162,6 +162,7 @@ export const readHandler: ToolHandler = async (input, context) => {
     operation: "read",
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...workspaceBoundaryOptions(context),
   });
 
   try {
@@ -476,6 +477,11 @@ export const readToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     needsApproval: false,
+  },
+  // ask 模式预审批：只声明路径，边界判定仍在 path-policy。
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = ReadInputSchema.safeParse(input);
+    return parsed.success ? [{ path: parsed.data.file_path, operation: "read" }] : [];
   },
   handler: readHandler,
   validateInput: validateReadInput,

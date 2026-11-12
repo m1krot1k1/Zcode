@@ -76,8 +76,7 @@ import { createPluginFacadeForApp } from "./plugin-facade.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import { createSessionFacade } from "./session-facade.js";
 import {
-  createMcpProjectApprovalRecord,
-  grantMcpProjectTrust,
+  grantProjectMcpServerApproval,
   readMcpProjectTrustRecords,
   resolveAppRuntimeConfig,
   resolveMcpTrustIdentity,
@@ -1038,13 +1037,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       // project-scope MCP 的唯一写入口：显式 connect 才落 approval，且只保存定义 digest。
       // 写失败直接抛出，由 connectMcpServer 中止连接（不降级为临时放行）。
       approveProjectMcpServer: async ({ name, config }) => {
-        await grantMcpProjectTrust({
+        await grantProjectMcpServerApproval({
           storageRoot,
-          record: createMcpProjectApprovalRecord({
-            workspaceIdentity: mcpProjectTrustIdentity,
-            serverName: name,
-            config,
-          }),
+          workspaceIdentity: mcpProjectTrustIdentity,
+          serverName: name,
+          config,
         });
         logger.info("Project MCP server approved", {
           event: "mcp.project.approved",

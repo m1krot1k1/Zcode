@@ -37,7 +37,11 @@ import type {
   ToolRuntimePermissionCapability,
   ToolRuntimePermissionCapabilityContext,
 } from "../types.js";
-import { resolveToolWorkingDirectory } from "../path-policy.js";
+import {
+  assertBashCommandPathBoundary,
+  resolveToolWorkingDirectory,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import { decideBashCwdPolicy } from "./bash-cwd-policy.js";
 export {
   getBashActivityDescription,
@@ -214,6 +218,15 @@ async function executeBashHandler(
     commandTelemetry?.finishCompleted();
     return emptyBashOutput(parsed);
   }
+
+  // Причина: workspace boundary проверяла только входной cwd, а `cat ../secret` проходил.
+  // В strict/ask команда с явными путями за пределы workspace отклоняется до запуска.
+  assertBashCommandPathBoundary({
+    command: parsed.command,
+    workingDirectory: context.workingDirectory,
+    workspaceRoot: context.workspaceRoot,
+    workspaceBoundary: context.workspaceBoundary,
+  });
 
   const request = createExecutionRequest(parsed, context, timeoutPolicy);
   const progressTiming: BashProgressTiming = {};
@@ -490,6 +503,7 @@ function createExecutionRequest(
       operation: "execute",
       workingDirectory: context.workingDirectory,
       workspaceRoot: context.workspaceRoot,
+      ...workspaceBoundaryOptions(context),
     }),
     ...(bashPrelude ? { bashPrelude } : {}),
     captureCwdAfterSuccess: input.run_in_background ? undefined : true,
@@ -534,6 +548,10 @@ export const bashToolEntry: ToolEntry = {
   },
   formatModelContent: formatBashModelContent,
   formatPersistedModelContent: formatPersistedBashModelContent,
+  resolveWorkspaceBoundaryPaths: (_input, context) =>
+    context.workingDirectory === undefined
+      ? []
+      : [{ path: context.workingDirectory, operation: "execute" }],
   handler: bashHandler,
   resolveTimeoutBudgetMs: createBashTimeoutBudgetResolver(DEFAULT_BASH_TIMEOUT_POLICY),
   resolvePermissionCapability: resolveBashPermissionCapability,

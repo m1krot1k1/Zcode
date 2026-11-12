@@ -171,6 +171,8 @@ interface SessionStartupPreferences {
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
+  /** Workspace boundary для file-tools; читается из Host preferences, не из env. */
+  workspaceBoundary: "strict" | "ask" | "allow";
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
 }
 
@@ -1209,7 +1211,6 @@ async function persistImportedSessionHistory(params: {
           cwd: workspace.workspacePath,
           root: workspace.workspacePath,
         },
-        cost: 0,
         tokens: {
           input: 0,
           output: 0,
@@ -1473,11 +1474,48 @@ export async function discardFailedSessionResume(
  * 构建一份完整 legacy snapshot。runtime 激活和 legacy 表示是两个职责；这里保留
  * snapshot 之前的原有顺序与副作用，让 V4 随后用自己的 durable projection 水合。
  */
-export async function activateSessionForResume(
+type ResumeActivation = ActivatedSessionForResume;
+
+// 原因: legacy resume делал `get → 4 await → set` без single-flight. Два параллельных
+// session/resume создавали два app/runtime на один sessionId: дубли истории и два
+// владельца проекции. V4-путь уже коалесцировал активации, здесь тот же владелец
+// должен быть один. Ключ — объект контекста и sessionId, поэтому разные воркспейсы/
+// процессы не смешиваются.
+const resumeActivationFlights = new WeakMap<object, Map<string, Promise<ResumeActivation>>>();
+
+export function activateSessionForResume(
   context: ZCodeProtocolAgentServerContext,
   params: ZCodeSessionResumeParams,
   options: { reusePersistedMessages?: boolean; persistedMessages?: MessageWithParts[] } = {},
-): Promise<ActivatedSessionForResume> {
+): Promise<ResumeActivation> {
+  let flights = resumeActivationFlights.get(context);
+  if (!flights) {
+    flights = new Map();
+    resumeActivationFlights.set(context, flights);
+  }
+  const inFlight = flights.get(params.sessionId);
+  if (inFlight) {
+    context.logger?.debug("ZCode Protocol session resume joined in-flight activation", {
+      event: "zcode_protocol.session.resume_joined",
+      module: "bootstrap.zcode_protocol",
+      sessionId: params.sessionId,
+    });
+    return inFlight;
+  }
+  const flight = activateSessionForResumeInner(context, params, options).finally(() => {
+    if (flights.get(params.sessionId) === flight) {
+      flights.delete(params.sessionId);
+    }
+  });
+  flights.set(params.sessionId, flight);
+  return flight;
+}
+
+async function activateSessionForResumeInner(
+  context: ZCodeProtocolAgentServerContext,
+  params: ZCodeSessionResumeParams,
+  options: { reusePersistedMessages?: boolean; persistedMessages?: MessageWithParts[] } = {},
+): Promise<ResumeActivation> {
   const resumeStartedAt = Date.now();
   const activeBeforeWait = context.sessions.has(params.sessionId);
   context.logger?.debug("ZCode Protocol session resume started", {
@@ -3404,6 +3442,7 @@ async function resolveSessionStartupPreferences(
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
       toolSearchMode: source.parent.toolSearchMode,
+      workspaceBoundary: source.parent.workspaceBoundary ?? "allow",
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
     };
   }
@@ -3425,6 +3464,7 @@ async function resolveSessionStartupPreferences(
     modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: runtimePreferences.toolSearchMode,
+    workspaceBoundary: runtimePreferences.workspaceBoundary,
     resolveInitialBashShellSelection: async () => {
       const executionPreferences = await requestSessionRuntimePreferences(
         context,
@@ -3520,6 +3560,7 @@ async function createRecord(
       toolDisallowlist: resolveSessionToolDenylist(params, workspace),
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       toolSearch: { mode: startupPreferences.toolSearchMode },
+      workspaceBoundary: startupPreferences.workspaceBoundary,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
       // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
@@ -3606,6 +3647,7 @@ async function createRecord(
     modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: startupPreferences.toolSearchMode,
+    workspaceBoundary: startupPreferences.workspaceBoundary,
     ...(parentSessionId ? { parentSessionId } : {}),
     persistence: "persistence" in params ? (params.persistence ?? "immediate") : "immediate",
     protocolEventSequences: new Map(),

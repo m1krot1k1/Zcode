@@ -34,6 +34,7 @@ import type {
   ZCodePluginInfo,
 } from "@zcode/shared";
 import {
+  isZCodeAgentMcpConnectUnsupportedError,
   isZCodeAgentMcpStatusModeUnsupportedError,
   type IServiceAccessor,
   type IMcpSyncService,
@@ -77,6 +78,7 @@ import {
   SettingsResourceList,
 } from "@/settings/SettingsResourceGroup.js";
 import { McpServersImportDialog } from "@/settings/ExternalAgentImportDialog.js";
+import { buildMcpProjectApprovalPreview } from "@/settings/mcpProjectApprovalPreview.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@/settings/RemoteSyncActions.js";
 import { useMcpStore } from "@/store/mcpStore.js";
 import { usePluginManagementStore } from "@/store/pluginManagementStore.js";
@@ -909,6 +911,7 @@ export function McpSettingsSection({
   const beginServerStatusListRefresh = useMcpStore((s) => s.beginServerStatusListRefresh);
   const markServerStatusListRefreshFailed = useMcpStore((s) => s.markServerStatusListRefreshFailed);
   const mergeServerStatusSnapshots = useMcpStore((s) => s.mergeServerStatusSnapshots);
+  const connectMcpServer = useMcpStore((s) => s.connectMcpServer);
 
   const [showForm, setShowForm] = useState(false);
   const [formScopeKey, setFormScopeKey] = useState(parentScopeKey);
@@ -1580,10 +1583,14 @@ export function McpSettingsSection({
           // Bug 原因：Source authority 提交从旧基线重放时恢复了已废弃的「需要关注」分组，
           // 把诊断分组改版重新拆成两套列表。异常项只在 Installed 内稳定置顶，避免重复分组。
           const leftAttention = Boolean(
-            left.server.authorization?.authorizationUrl || left.server.status === "error",
+            left.server.authorization?.authorizationUrl ||
+            left.server.status === "error" ||
+            left.server.status === "requires_approval",
           );
           const rightAttention = Boolean(
-            right.server.authorization?.authorizationUrl || right.server.status === "error",
+            right.server.authorization?.authorizationUrl ||
+            right.server.status === "error" ||
+            right.server.status === "requires_approval",
           );
           return Number(rightAttention) - Number(leftAttention) || left.index - right.index;
         })
@@ -1792,6 +1799,100 @@ export function McpSettingsSection({
     }
   }
 
+  async function handleConnectProjectServer(server: ZCodeMcpServer) {
+    if (!activeWorkspacePath) {
+      return;
+    }
+    const preview = buildMcpProjectApprovalPreview(server.config);
+    const details = [
+      preview.commandLine
+        ? intl.formatMessage(
+            { id: "settings.mcp.projectApproval.commandLine" },
+            { command: preview.commandLine },
+          )
+        : null,
+      preview.url
+        ? intl.formatMessage({ id: "settings.mcp.projectApproval.url" }, { url: preview.url })
+        : null,
+      preview.envEntries.length > 0
+        ? intl.formatMessage(
+            { id: "settings.mcp.projectApproval.env" },
+            { entries: preview.envEntries.join(", ") },
+          )
+        : null,
+      preview.headerEntries.length > 0
+        ? intl.formatMessage(
+            { id: "settings.mcp.projectApproval.headers" },
+            { entries: preview.headerEntries.join(", ") },
+          )
+        : null,
+    ].filter((line): line is string => Boolean(line));
+
+    const confirmed = await confirmDialog({
+      title: intl.formatMessage(
+        { id: "settings.mcp.projectApproval.title" },
+        { name: server.name },
+      ),
+      description: intl.formatMessage(
+        { id: "settings.mcp.projectApproval.description" },
+        { details: details.join("\n"), name: server.name },
+      ),
+      confirmLabel: intl.formatMessage({ id: "settings.mcp.projectApproval.confirm" }),
+      cancelLabel: intl.formatMessage({ id: "common.cancel" }),
+      intent: "mcp-project-approval",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const outcome = await connectMcpServer({
+        approveProjectScope: true,
+        id: server.id,
+        // 与 mcp/list 相同的 UI-resolved 定义（含 `.agents/mcp.json` fallback）。
+        // project-scope 的最终定义仍由 Agent 以本地配置为准，不会因下行快照被替换。
+        mcpServers: useMcpStore.getState().getEnabledMcpServersForZCode("zcode"),
+        service: services.mcpSyncService,
+        ...(activeWorkspaceIdentity ? { workspaceIdentity: activeWorkspaceIdentity } : {}),
+        workspacePath: activeWorkspacePath,
+      });
+      if (outcome === "requires_approval") {
+        // 定义在确认与请求之间发生变化时 Agent 会重新要求批准，绝不静默放行。
+        toast(intl.formatMessage({ id: "settings.mcp.projectApproval.stillRequired" }), {
+          durationMs: 8_000,
+        });
+        return;
+      }
+      if (outcome === "failed") {
+        // 行内已经通过 status snapshot 展示 failureKind 文案与详情入口。
+        toast(intl.formatMessage({ id: "settings.mcp.projectApproval.failed" }), {
+          durationMs: 8_000,
+        });
+        return;
+      }
+      toast(
+        intl.formatMessage({ id: "settings.mcp.projectApproval.connected" }, { name: server.name }),
+      );
+      void requestMcpServerStatusList();
+    } catch (error) {
+      if (isZCodeAgentMcpConnectUnsupportedError(error)) {
+        toast(intl.formatMessage({ id: "settings.mcp.projectApproval.unsupported" }), {
+          durationMs: 8_000,
+        });
+        return;
+      }
+      // 底层错误可能包含 spawn 命令行等定义片段；这里只记录错误类型。
+      logger.warn("[mcp] connect project server failed", {
+        errorName: error instanceof Error ? error.name : "unknown",
+        serverName: server.name,
+        workspacePath: activeWorkspacePath,
+      });
+      toast(intl.formatMessage({ id: "settings.mcp.projectApproval.failed" }), {
+        durationMs: 8_000,
+      });
+    }
+  }
+
   function handleOpenAuthorization(server: ZCodeMcpServer) {
     const authorizationUrl = server.authorization?.authorizationUrl;
     if (!authorizationUrl) {
@@ -1977,6 +2078,7 @@ export function McpSettingsSection({
               onEdit={handleEdit}
               onToggle={handleToggle}
               onOpenAuthorization={handleOpenAuthorization}
+              onConnectProjectServer={handleConnectProjectServer}
               emptyTitle={intl.formatMessage({ id: "settings.mcp.emptyTitle" })}
               emptyDescription={intl.formatMessage({
                 id: "settings.mcp.emptyDescription",

@@ -29,6 +29,7 @@ import type {
   ZCodeToolExecResource,
   ZCodeProcessChildProcess,
   ZCodeMcpListResult,
+  ZCodeMcpConnectResult,
   ZCodePluginsListResult,
   ZCodePluginsOverviewResult,
   ZCodePluginsMarketplaceMutationResult,
@@ -132,6 +133,7 @@ import type {
   ZCodeAgentAutomationIdParams,
   ZCodeAgentCancelPluginOperationParams,
   ZCodeAgentConfigurePluginParams,
+  ZCodeAgentConnectMcpServerParams,
   ZCodeAgentResetPluginConfigParams,
   ZCodeAgentCreateAutomationParams,
   ZCodeAgentDeleteAutomationRunParams,
@@ -662,6 +664,8 @@ export interface IZCodeAgentService {
     params: ZCodeAgentGrantWorkspaceHookTrustParams,
   ): Promise<ZCodeWorkspaceHookTrustGrantResult>;
   listMcpServerStatuses(params: ZCodeAgentListMcpServerStatusesParams): Promise<ZCodeMcpListResult>;
+  /** Settings 显式连接 project-scope MCP；approveProjectScope 才会写 digest approval。 */
+  connectMcpServer(params: ZCodeAgentConnectMcpServerParams): Promise<ZCodeMcpConnectResult>;
   listPlugins(params: ZCodeAgentPluginViewParams): Promise<ZCodePluginsListResult>;
   /**
    * Plugin 对话引用 catalog：session-scoped 只读投影。
@@ -825,6 +829,12 @@ export interface IZCodeAgentService {
   closeSession(
     params: ZCodeAgentSessionTarget & { expectedPersistence?: "deferred" | "immediate" },
   ): Promise<boolean>;
+  /**
+   * 释放 Host 侧 per-session 内存镜像（seq/trace/无订阅者 emitter）。
+   * 会话关闭、删除或所属 runtime 退出时由生命周期路径调用；可选是为了兼容旧测试夹具，
+   * 生产实现始终存在，调用方不可依赖它执行核心业务逻辑。
+   */
+  forgetSession?(params: ZCodeAgentSessionTarget): void;
   setModel(params: ZCodeAgentSetModelParams): Promise<ZCodeSessionStateSnapshot>;
   setThoughtLevel(params: ZCodeAgentSetThoughtLevelParams): Promise<ZCodeSessionStateSnapshot>;
   setMode(params: ZCodeAgentSetModeParams): Promise<ZCodeSessionStateSnapshot>;

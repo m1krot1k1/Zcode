@@ -93,7 +93,7 @@ import {
   updateSavedWorkflowMetaOp,
 } from "./saved-workflows.js";
 import { findSavedWorkflowForRunOp, saveSavedWorkflowFromRunOp } from "./saved-workflows-run.js";
-import { listMcpServers } from "./mcp.js";
+import { connectMcpServer, listMcpServers } from "./mcp.js";
 import {
   callMcpUiTool,
   sampleMcpUi,
@@ -894,6 +894,8 @@ export class ZCodeProtocolAgentServer {
         return await testProviderModelConnectivity(this.context, request.params);
       case zcodeProtocolMethods.mcpList:
         return await listMcpServers(this.context, request.params);
+      case zcodeProtocolMethods.mcpConnect:
+        return await connectMcpServer(this.context, request.params);
       case zcodeProtocolMethods.mcpReadResource:
         return await readMcpUiResource(this.context, request.params);
       case zcodeProtocolMethods.mcpUiOpenInstance:

@@ -770,6 +770,9 @@ export function SettingsPage({
   const { settings: sharedSettings, update: updateSharedSettings } = useSettings({
     services: localHostServices,
   });
+  // 隐私开关：undefined 视为 включено (историческое поведение), явный false отключает отправку.
+  const telemetryEnabled = sharedSettings?.telemetryEnabled !== false;
+  const workspaceBoundary = sharedSettings?.workspaceBoundary ?? "allow";
   const sourceManagement = localHostServices.sourceServerManagementService;
   const { snapshot: sourceManagementSnapshot } = useSourceServerManagementSnapshot(
     sourceManagement,
@@ -1936,6 +1939,14 @@ export function SettingsPage({
                               platform={platform}
                               notificationEnabled={notificationEnabled}
                               notificationSoundEnabled={notificationSoundEnabled}
+                              telemetryEnabled={telemetryEnabled}
+                              setTelemetryEnabled={(enabled) => {
+                                void updateSharedSettings({ telemetryEnabled: enabled });
+                              }}
+                              workspaceBoundary={workspaceBoundary}
+                              onWorkspaceBoundaryChange={(mode) => {
+                                void updateSharedSettings({ workspaceBoundary: mode });
+                              }}
                               closeToTrayOnWindows={closeToTrayOnWindows}
                               keepAwakeWhileRunning={sharedSettings?.keepAwakeWhileRunning ?? false}
                               desktopChromiumHardwareAccelerationEnabled={

@@ -142,14 +142,14 @@
 
 这些不属于"UI chat 状态管理"，但它们是旧协议的消费方或平行实现，协议重写后无法原样存活，列入同一执行计划：
 
-| 文件                                                                                                | 行数  | 处置                                                                                                                                 |
-| --------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/desktop/src/main/taskRealtimeBus.ts`（+ `packages/desktop/test/taskRealtimeBus.test.ts`） | 1,056 | 删。owner/lease/mirror 整层消灭（01-topology），所有客户端对等订阅                                                                   |
-| `packages/client/src/webRemoteControlRelayProtocol.ts`                                              | 217   | 删。全系统只留 `@zcode/rpc` 一层帧级可靠性（05）                                                                                     |
-| `packages/desktop/src/main/webRemoteControlManager.ts`                                              | 1,321 | 大改：去掉 base64 双层编码、bridgeSessionId 易失身份，退化为字节转发 + host attachment 调度                                          |
-| `packages/web/src/main.tsx`                                                                         | 2,141 | 大改：三条 web 链路收敛为"连一个 endpoint"（01 部署收敛）                                                                            |
-| `packages/services/src/zcode-agent/zcodeTaskServiceAdapter.ts`                                      | 5,871 | 删。task→session 适配层的存在理由（旧 UI 讲 task 语言）随旧 UI 一起消失。**注意顺序：新 UI 可用之前它必须活着**，是波次 3 里最后删的 |
-| 旧协议生成目录                                                                                      | —     | 陈旧构建产物，清理 + 重新构建即可                                                                                                    |
+| 文件                                                                                                | 行数  | 处置                                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/desktop/src/main/taskRealtimeBus.ts`（+ `packages/desktop/test/taskRealtimeBus.test.ts`） | 1,056 | 删。owner/lease/mirror 整层消灭（01-topology），所有客户端对等订阅。**2026-11-12 更新**：Host 侧 bridge/port/mirror 已删除；剩余工作是拆分并删除 bus 的 owner/lease/stream 状态机，保留或迁移 session route。 |
+| `packages/client/src/webRemoteControlRelayProtocol.ts`                                              | 217   | 删。全系统只留 `@zcode/rpc` 一层帧级可靠性（05）                                                                                                                                                              |
+| `packages/desktop/src/main/webRemoteControlManager.ts`                                              | 1,321 | 大改：去掉 base64 双层编码、bridgeSessionId 易失身份，退化为字节转发 + host attachment 调度                                                                                                                   |
+| `packages/web/src/main.tsx`                                                                         | 2,141 | 大改：三条 web 链路收敛为"连一个 endpoint"（01 部署收敛）                                                                                                                                                     |
+| `packages/services/src/zcode-agent/zcodeTaskServiceAdapter.ts`                                      | 5,871 | 删。task→session 适配层的存在理由（旧 UI 讲 task 语言）随旧 UI 一起消失。**注意顺序：新 UI 可用之前它必须活着**，是波次 3 里最后删的                                                                          |
+| 旧协议生成目录                                                                                      | —     | 陈旧构建产物，清理 + 重新构建即可                                                                                                                                                                             |
 
 `@zcode/rpc`（`packages/rpc/src`，3,119 行）**不删**，打两个补丁：暴露拥塞信号（`unacknowledgedBytes` + `onSaturated/onDrained`）、重放缓冲加界（见 05）。
 

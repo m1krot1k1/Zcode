@@ -78,7 +78,11 @@ class ConfigStore {
       this.set(ConfigKey.ModelStreamIdleTimeout, config.modelStream.idleTimeoutMs, scope);
     }
     if (config.modelStream?.firstTokenTimeoutMs !== undefined) {
-      this.set(ConfigKey.ModelStreamFirstTokenTimeout, config.modelStream.firstTokenTimeoutMs, scope);
+      this.set(
+        ConfigKey.ModelStreamFirstTokenTimeout,
+        config.modelStream.firstTokenTimeoutMs,
+        scope,
+      );
     }
     if (config.permission) {
       if (config.permission.mode) this.set(ConfigKey.PermissionMode, config.permission.mode, scope);
@@ -189,6 +193,9 @@ class ConfigStore {
     if (config.toolConcurrency) {
       if (config.toolConcurrency.maxConcurrency !== undefined)
         this.set(ConfigKey.ToolConcurrencyMax, config.toolConcurrency.maxConcurrency, scope);
+    }
+    if (config.workspaceBoundary !== undefined) {
+      this.set(ConfigKey.WorkspaceBoundary, config.workspaceBoundary, scope);
     }
     if (config.modelAnomalyGuard) {
       const previous = this.get(ConfigKey.ModelAnomalyGuard) ?? DefaultConfig.modelAnomalyGuard;
@@ -337,6 +344,8 @@ export class ConfigPortImpl implements ConfigPort {
           this.store.get(ConfigKey.ToolConcurrencyMax) ??
           DefaultConfig.toolConcurrency.maxConcurrency,
       },
+      workspaceBoundary:
+        this.store.get(ConfigKey.WorkspaceBoundary) ?? DefaultConfig.workspaceBoundary,
       modelAnomalyGuard:
         this.store.get(ConfigKey.ModelAnomalyGuard) ?? DefaultConfig.modelAnomalyGuard,
       hooks: this.store.get(ConfigKey.Hooks) ?? DefaultConfig.hooks,
@@ -450,6 +459,8 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.logging.format;
     case ConfigKey.ToolConcurrencyMax:
       return defaults.toolConcurrency.maxConcurrency;
+    case ConfigKey.WorkspaceBoundary:
+      return defaults.workspaceBoundary;
     case ConfigKey.ModelAnomalyGuard:
       return defaults.modelAnomalyGuard;
     case ConfigKey.Hooks:

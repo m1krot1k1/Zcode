@@ -37,6 +37,13 @@ export interface ZCodeAgentListMcpServerStatusesParams extends ZCodeAgentWorkspa
   mode?: ZCodeMcpListMode;
 }
 
+export interface ZCodeAgentConnectMcpServerParams extends ZCodeAgentWorkspaceTarget {
+  serverName: string;
+  mcpServers?: ZCodeAgentMcpServer[];
+  /** 用户已在设置页确认该 project-scope 定义；false/缺省不写 approval。 */
+  approveProjectScope?: boolean;
+}
+
 export interface ZCodeAgentAddPluginMarketplaceParams extends ZCodeAgentPluginMutationTarget {
   dryRun?: boolean;
   operationId?: string;

@@ -223,6 +223,10 @@ const toolConcurrencySchema = z.object({
   maxConcurrency: positiveNumberSchema.optional(),
 });
 
+// Workspace 边界模式（docs/specs/2026-11-11-workspace-boundary.md）。
+// 枚举外的值在配置装载阶段直接拒绝，不会退化成 allow。
+const workspaceBoundarySchema = z.enum(["strict", "ask", "allow"]);
+
 const modelAnomalyGuardSchema = z.object({
   toolCallWarningThreshold: positiveIntegerSchema.optional(),
   repeatedToolCallWarningThreshold: positiveIntegerSchema.optional(),
@@ -305,6 +309,7 @@ export const ZCodeConfigFileSchema = z
     logging: loggingSchema.optional(),
     ui: uiSchema.optional(),
     toolConcurrency: toolConcurrencySchema.optional(),
+    workspaceBoundary: workspaceBoundarySchema.optional(),
     modelAnomalyGuard: modelAnomalyGuardSchema.optional(),
     hooks: hooksSchema.optional(),
   })
@@ -422,6 +427,7 @@ function parsedConfigFileToRuntimePatch(parsed: ZCodeConfigFile): RuntimeConfigP
   if (parsed.logging) config.logging = parsed.logging;
   if (parsed.ui) config.ui = parsed.ui;
   if (parsed.toolConcurrency) config.toolConcurrency = parsed.toolConcurrency;
+  if (parsed.workspaceBoundary) config.workspaceBoundary = parsed.workspaceBoundary;
   if (parsed.modelAnomalyGuard) config.modelAnomalyGuard = parsed.modelAnomalyGuard;
   if (parsed.hooks) config.hooks = parsed.hooks;
 

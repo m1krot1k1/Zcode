@@ -247,6 +247,8 @@ export function GeneralSectionContent({
   setInterfaceMode = () => {},
   notificationEnabled,
   notificationSoundEnabled,
+  telemetryEnabled = true,
+  setTelemetryEnabled = () => {},
   closeToTrayOnWindows,
   keepAwakeWhileRunning = false,
   desktopChromiumHardwareAccelerationEnabled = true,
@@ -258,6 +260,8 @@ export function GeneralSectionContent({
   integratedTerminalShell = { mode: "auto" },
   integratedTerminalShellOptions = [],
   toolSearchMode = "off",
+  workspaceBoundary = "allow",
+  onWorkspaceBoundaryChange = () => {},
   onToolSearchModeChange,
   nativeSearchEnhancementsEnabled,
   httpProxy = "",
@@ -316,6 +320,8 @@ export function GeneralSectionContent({
   setInterfaceMode?: (mode: InterfaceMode) => void;
   notificationEnabled: boolean;
   notificationSoundEnabled: boolean;
+  telemetryEnabled?: boolean;
+  setTelemetryEnabled?: (enabled: boolean) => void;
   closeToTrayOnWindows: boolean;
   keepAwakeWhileRunning?: boolean;
   desktopChromiumHardwareAccelerationEnabled?: boolean;
@@ -328,6 +334,8 @@ export function GeneralSectionContent({
   integratedTerminalShellOptions?: IntegratedTerminalShellOption[];
   toolSearchMode?: AppToolSearchMode;
   onToolSearchModeChange: (mode: AppToolSearchMode) => Promise<void>;
+  workspaceBoundary?: "strict" | "ask" | "allow";
+  onWorkspaceBoundaryChange?: (mode: "strict" | "ask" | "allow") => void;
   nativeSearchEnhancementsEnabled: boolean;
   httpProxy?: string;
   httpProxyList?: string;
@@ -735,6 +743,33 @@ export function GeneralSectionContent({
             }
           />
         ) : null}
+        <SettingsRow
+          label={intl.formatMessage({ id: "settings.workspaceBoundary" })}
+          description={intl.formatMessage({
+            id: "settings.workspaceBoundaryDescription",
+          })}
+          control={
+            <Select
+              value={workspaceBoundary}
+              onValueChange={(value) => {
+                if (value === "strict" || value === "ask" || value === "allow") {
+                  onWorkspaceBoundaryChange(value);
+                }
+              }}
+            >
+              <SelectTrigger size="lg" className="w-[220px] min-w-0 justify-between">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(["strict", "ask", "allow"] as const).map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {intl.formatMessage({ id: `settings.workspaceBoundary.${mode}` })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        />
         <SettingsRow
           label={intl.formatMessage({ id: "settings.toolSearch" })}
           description={intl.formatMessage({
@@ -1156,6 +1191,20 @@ export function GeneralSectionContent({
               checked={notificationSoundEnabled}
               disabled={!notificationEnabled}
               onCheckedChange={setNotificationSoundEnabled}
+            />
+          }
+        />
+        <SettingsRow
+          label={intl.formatMessage({ id: "settings.telemetryEnabled" })}
+          description={intl.formatMessage({
+            id: "settings.telemetryEnabledDescription",
+          })}
+          control={
+            <Switch
+              aria-label={intl.formatMessage({ id: "settings.telemetryEnabled" })}
+              checked={telemetryEnabled}
+              data-testid="settings-telemetry-enabled"
+              onCheckedChange={setTelemetryEnabled}
             />
           }
         />

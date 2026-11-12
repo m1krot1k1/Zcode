@@ -5,7 +5,7 @@ import type {
   TraceContext,
 } from "@zcode/contracts";
 import { relative } from "node:path";
-import { resolveWorkspacePath } from "../path-policy.js";
+import { resolveWorkspacePath, workspaceBoundaryOptions } from "../path-policy.js";
 import {
   createReadFileStateKey,
   findLatestReadFileState,
@@ -109,12 +109,21 @@ async function backfillReadFileStateFromBash(input: BashReadFileStateEffectsInpu
   const trace = createBashReadFileStateTrace(input.context);
   await Promise.all(
     sources.map(async (source) => {
-      const resolvedPath = resolveWorkspacePath({
-        inputPath: source.filePath,
-        operation: "read",
-        workingDirectory: input.context.workingDirectory,
-        workspaceRoot: input.context.workspaceRoot,
-      });
+      let resolvedPath: string;
+      try {
+        resolvedPath = resolveWorkspacePath({
+          inputPath: source.filePath,
+          operation: "read",
+          workingDirectory: input.context.workingDirectory,
+          workspaceRoot: input.context.workspaceRoot,
+          ...workspaceBoundaryOptions(input.context),
+        });
+      } catch {
+        // 根因：read-state 回填是 Bash 结果的辅助效果，不是命令本身。strict/ask 拒绝越界
+        // 读取时如果让异常冒泡，已经成功执行的 Bash 会变成工具失败；这里只跳过该文件的
+        // read-state 记录，保持“没读过 = 不能直接 Edit”的既有语义。
+        return;
+      }
       if (findLatestReadFileState(readFileState, resolvedPath)) return;
 
       try {

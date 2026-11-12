@@ -36,6 +36,7 @@ import type {
   WorkflowEscalatePort,
   WorkflowPort,
   WorkflowSubmitPort,
+  WorkspaceBoundaryMode,
 } from "@zcode/contracts";
 import type { HookRunner } from "../../hooks/index.js";
 import type { PermissionService } from "../../permission/service.js";
@@ -132,6 +133,8 @@ export interface ToolExecutorOptions {
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
   workingDirectory?: string;
   workspaceRoot?: string;
+  /** Workspace 边界模式；缺省 = 兼容默认 `allow`。由 runtime config 投影。 */
+  workspaceBoundary?: WorkspaceBoundaryMode;
   workspaceIdentity?: string;
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
@@ -140,6 +143,8 @@ export interface ToolExecutorOptions {
   getWorkingDirectory?: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
+  /** Явный write-scope runtime; undefined — без ограничения. */
+  getWriteScope?: () => readonly string[] | undefined;
   getMemoryRoot?: () => string | undefined;
   traceContext?: TraceContext;
   mode?: CollaborationMode;
@@ -252,6 +257,9 @@ export interface ToolExecutorDeps {
   getWorkingDirectory: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot: () => string;
+  /** Явный write-scope текущего runtime (наследуется ребёнком). */
+  getWriteScope?: () => readonly string[] | undefined;
+  workspaceBoundary?: WorkspaceBoundaryMode;
   workspaceIdentity?: string;
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";

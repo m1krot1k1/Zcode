@@ -579,10 +579,26 @@ export interface CodingPlanWebviewLangChangeDetail {
 // ============================================================================
 // 内部传输频道 —— 框架级别的通信
 // ============================================================================
+/** main → renderer：窗口 Host 意外退出，UI 必须结束 loading 并提示错误（必要时附带一次重启结果）。 */
+export interface HostProcessExitNotification {
+  label: string;
+  code: number | null;
+  /** main 已决定并执行一次有界 respawn；false 表示不会再有后续 Host。 */
+  willRespawn: boolean;
+  /** 已完成的重启次数（0 表示本次是首次退出）。 */
+  respawnAttempt: number;
+  at: number;
+}
+
+/** preload 转交到 renderer main world 的 DOM 事件名；共享常量避免两处手写漂移。 */
+export const HOST_PROCESS_EXITED_DOM_EVENT = "zcode-host-process-exited";
+
 /** 内部传输频道。用于 MessagePort 转发等框架级通信。 */
 export const InternalChannels = {
   DatabaseStartupState: "zcode:database-startup-state",
   DatabaseStartupControl: "zcode:database-startup-control",
+  /** main → renderer：窗口 Host 意外退出（含一次有界 respawn 结果） */
+  HostProcessExited: "zcode:host-process-exited",
   /** main → renderer 转发 MessagePort（通过 webContents.postMessage） */
   ServicePort: "zcode:service-port",
   /** main → renderer 转发窗口 Host 的 scoped MessagePort */

@@ -35,7 +35,11 @@ import {
   normalizeReplacementForMatch,
   preserveQuoteStyle,
 } from "../edit-matchers.js";
-import { resolveWorkspacePath } from "../path-policy.js";
+import {
+  assertPathWithinWriteScope,
+  resolveWorkspacePath,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import {
   createReadFileStateKey,
   findEditableReadFileState,
@@ -119,6 +123,13 @@ export const editHandler: ToolHandler = async (input, context) => {
     operation: "write",
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...workspaceBoundaryOptions(context),
+  });
+  // 原因: write_paths был только подсказкой для ledger; фактическая запись не ограничивалась.
+  assertPathWithinWriteScope({
+    filePath,
+    workspaceRoot: context.workspaceRoot,
+    writeScope: context.writeScope,
   });
 
   const stat = await statEditableFile(filePath, context);
@@ -264,6 +275,10 @@ export const editToolEntry: ToolEntry = {
     sideEffectScope: "workspace",
     riskLevel: "medium",
     needsApproval: true,
+  },
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = EditInputSchema.safeParse(input);
+    return parsed.success ? [{ path: parsed.data.file_path, operation: "write" }] : [];
   },
   handler: editHandler,
   formatModelContent: formatEditModelContent,

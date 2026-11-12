@@ -1,5 +1,22 @@
 # Tool Change Chain Spec
 
+## Workspace boundary（strict | ask | allow）接线（2026-11-12）
+
+配置 `workspaceBoundary` → bootstrap runtime config → `ToolExecutorDeps` → `ToolExecutionContext`
+→ path-policy。Read/Write/Edit/ApplyPatch/Glob/Grep/Bash（cwd）与 bash-read-file-state 在解析
+路径时统一展开同一组边界参数；判定仍只有 path-policy 一处（`describeWorkspaceBoundaryEscape`
+是 ask 预审批复用的同一实现）。
+
+`ask` 的用户决定在 handler 之前取得：工具通过 `ToolEntry.resolveWorkspaceBoundaryPaths` 声明
+本次会解析的路径，`applyWorkspaceBoundaryGate` 把越界折叠成一次真实 permission request
+（user-once、不可 always-allow、不可被 `prepareApproval` 降级），批准后再把已批准
+`(operation, resolvedPath)` 交给同步审批端口回放。未展示的路径、缺失端口、端口异常、
+否定回答都 fail closed（`PermissionDenied` / `PermissionEscalation`）。
+
+审计走 runtime logger（allow/approve = info，deny = warn），不新增 session event；字段以
+`WorkspaceBoundaryAuditEvent` 为准。bash-read-file-state 遇到边界拒绝只跳过 read-state 回填，
+不让已成功执行的 Bash 变成失败。合同与未接线项见 `docs/specs/2026-11-11-workspace-boundary.md`。
+
 ## CodeIndex：выдержка чанка вместо обязательного Read
 
 Поиск и фокусный символ возвращают сохранённый чанк диапазона (потолок 4096 символов) и `endLine`.

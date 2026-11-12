@@ -1030,4 +1030,50 @@ describe("mcpStore", () => {
 
     expect(useMcpStore.getState().servers[0]?.enabled).toBe(true);
   });
+
+  it("connectMcpServer 只在显式批准时透传 approveProjectScope 并写回快照", async () => {
+    useMcpStore.setState({
+      servers: [
+        {
+          config: { type: "stdio", command: "node", args: ["server.js"] },
+          enabled: true,
+          id: "zcodeagentmcp:project-server",
+          name: "project-server",
+          scope: "workspace",
+          source: "zcodeagentmcp",
+          status: "requires_approval",
+        },
+      ],
+    });
+    const connectWorkspaceMcpServer = vi.fn(async () => ({
+      approval: "not_requested" as const,
+      connected: false,
+      requiresApproval: true,
+      status: {
+        error: "Project MCP server requires explicit connection before use.",
+        failureKind: "status_unavailable" as const,
+        status: "untrusted" as const,
+        toolCount: 0,
+        transport: "stdio" as const,
+        updatedAt: "2026-11-11T00:00:00.000Z",
+      },
+    }));
+
+    const outcome = await useMcpStore.getState().connectMcpServer({
+      approveProjectScope: true,
+      id: "zcodeagentmcp:project-server",
+      service: { connectWorkspaceMcpServer },
+      workspacePath: "/workspace/project",
+    });
+
+    expect(outcome).toBe("requires_approval");
+    expect(connectWorkspaceMcpServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approveProjectScope: true,
+        serverName: "project-server",
+        workspacePath: "/workspace/project",
+      }),
+    );
+    expect(useMcpStore.getState().servers[0]?.status).toBe("requires_approval");
+  });
 });

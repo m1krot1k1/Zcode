@@ -3,9 +3,10 @@
 // ============================================================
 
 import { lstatSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { platform as currentPlatform } from "node:process";
-import { CoreErrorType, createCoreError } from "@zcode/contracts";
+import { CoreErrorType, createCoreError, type WorkspaceBoundaryMode } from "@zcode/contracts";
 import {
   getToolPathApi,
   normalizeToolPathForComparison,
@@ -20,8 +21,9 @@ import {
  * - `allow`：越界放行，可选的审计回调记录访问。
  *
  * 未配置时保持兼容默认 `allow`，且在没有审计回调时完全跳过文件系统探测。
+ * 类型定义在 `@zcode/contracts`（配置层是唯一来源），这里只做 re-export 保持既有导入路径。
  */
-export type WorkspaceBoundaryMode = "strict" | "ask" | "allow";
+export type { WorkspaceBoundaryMode };
 
 export type ToolPathOperation = "read" | "write" | "execute";
 
@@ -55,11 +57,28 @@ export interface WorkspaceBoundaryApprovalRequest {
  * 必须是同步的：调用方先在既有 permission broker / 确认窗里取得用户决定，再把结果交给本端口。
  * path-policy 自己不弹窗、不等待、不用超时兜底。
  */
-interface WorkspaceBoundaryApprovalPort {
+export interface WorkspaceBoundaryApprovalPort {
   decide(request: WorkspaceBoundaryApprovalRequest): {
     decision: "allow" | "deny";
     reason?: string;
   };
+}
+
+/** 工具声明的「本次调用会解析的模型路径」，只用于 ask 模式的事先审批。 */
+export interface WorkspaceBoundaryPathRequest {
+  path: string;
+  operation: ToolPathOperation;
+}
+
+/** 越界探测结果：字段与审计/审批请求一一对应，判定只有一个实现。 */
+interface WorkspaceBoundaryEscapeDetails {
+  operation: ToolPathOperation;
+  requestedPath: string;
+  resolvedPath: string;
+  workspaceRoot: string;
+  physicalPath?: string;
+  physicalWorkspaceRoot?: string;
+  escapeKind: WorkspaceBoundaryEscapeKind;
 }
 
 export interface WorkspaceBoundaryAuditEvent {
@@ -93,10 +112,7 @@ interface ToolWorkspacePathOptions {
 }
 
 export function resolveWorkspacePath(options: ToolWorkspacePathOptions): string {
-  const workingDirectory = normalizeAbsoluteDirectory(
-    options.workingDirectory,
-    "workingDirectory",
-  );
+  const workingDirectory = normalizeAbsoluteDirectory(options.workingDirectory, "workingDirectory");
   const workspaceRoot = normalizeAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
   const requestedPath = options.inputPath;
 
@@ -126,16 +142,153 @@ export function resolveToolWorkingDirectory(
   // 没有显式 cwd 时，默认 cwd 同样要经过边界判定：否则 strict/ask 会留下
   // “cwd 由调用方注入即可绕过”的缺口。allow 默认下返回值与旧实现完全一致。
   // 先保留旧实现的配置校验语义（相对/空 workingDirectory 仍是 ConfigurationError）。
-  const workingDirectory = normalizeAbsoluteDirectory(
-    options.workingDirectory,
-    "workingDirectory",
-  );
+  const workingDirectory = normalizeAbsoluteDirectory(options.workingDirectory, "workingDirectory");
   normalizeAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
   const hasExplicitCwd = inputCwd !== undefined && inputCwd.length > 0;
   return resolveWorkspacePath({
     ...options,
     inputPath: hasExplicitCwd ? inputCwd : workingDirectory,
   });
+}
+
+const BASH_PATH_TOKEN_PATTERN = /^(?:~(?:\/|$)|\/|\.\.?\/)/u;
+const BASH_COMMAND_SEPARATORS = /[;&|()<>\s]+/u;
+
+/**
+ * Пути в команде Bash, которые лексически указывают за пределы workspace.
+ *
+ * Причина: граница применялась только к начальному cwd, а `cat ../secret` её обходил.
+ * Здесь намеренно нет полноценного shell-парсера: проверяются только явные path-токены
+ * без подстановок (`$`, `*`, `{`), чтобы не блокировать легитимные команды эвристикой.
+ */
+export function findBashPathsOutsideWorkspace(options: {
+  command: string;
+  workingDirectory: string;
+  workspaceRoot: string;
+  platform?: ToolPathPlatform;
+}): string[] {
+  const workspaceRoot = normalizeAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
+  const workingDirectory = normalizeAbsoluteDirectory(
+    options.workingDirectory,
+    "workingDirectory",
+  );
+  const outside: string[] = [];
+  for (const rawToken of options.command.split(BASH_COMMAND_SEPARATORS)) {
+    const token = rawToken.replace(/^["']|["']$/gu, "").trim();
+    if (token.length === 0) continue;
+    if (token.includes("$") || token.includes("*") || token.includes("{")) continue;
+    if (token.includes("://") || token === "-") continue;
+    // `FOO=/abs/path` и `--flag=/abs/path`: значение после `=` тоже путь.
+    const candidate = token.includes("=") ? (token.split("=").pop() ?? "") : token;
+    // Флаг без значения (`--force`) не путь; флаг со значением уже разобран выше.
+    if (candidate === token && token.startsWith("--")) continue;
+    if (candidate.length === 0) continue;
+    // Одиночный флаг вида `-n` не путь; `-o=/tmp/x` уже разобран выше.
+    if (candidate.startsWith("-") && !BASH_PATH_TOKEN_PATTERN.test(candidate)) continue;
+    const looksLikePath =
+      BASH_PATH_TOKEN_PATTERN.test(candidate) ||
+      candidate.includes("/../") ||
+      candidate.endsWith("/..");
+    if (!looksLikePath) continue;
+    const absolute = candidate.startsWith("~")
+      ? resolve(homedir(), candidate.slice(1).replace(/^[/\\]+/u, ""))
+      : isAbsolute(candidate)
+        ? normalize(candidate)
+        : resolve(workingDirectory, candidate);
+    if (!isPathWithinWorkspaceRoot(absolute, workspaceRoot, options.platform)) {
+      outside.push(candidate);
+    }
+  }
+  return [...new Set(outside)];
+}
+
+/**
+ * Fail-closed проверка Bash-команды для strict/ask.
+ *
+ * `ask` не получает интерактивного согласования по путям внутри произвольной команды:
+ * порт подтверждения работает по конкретным (operation, resolvedPath), которых здесь
+ * может быть много и они не видны пользователю до разбора shell. Поэтому `ask` отклоняет
+ * команду с подсказкой сузить её или выполнить файловый инструмент.
+ */
+export function assertBashCommandPathBoundary(options: {
+  command: string;
+  workingDirectory: string;
+  workspaceRoot: string;
+  workspaceBoundary: WorkspaceBoundaryMode | undefined;
+  platform?: ToolPathPlatform;
+}): void {
+  if (options.workspaceBoundary === undefined || options.workspaceBoundary === "allow") return;
+  const outside = findBashPathsOutsideWorkspace(options);
+  if (outside.length === 0) return;
+  const type =
+    options.workspaceBoundary === "ask"
+      ? CoreErrorType.PermissionEscalation
+      : CoreErrorType.PermissionDenied;
+  throw createCoreError(
+    type,
+    `Bash command references paths outside the workspace: ${outside.join(", ")}`,
+    {
+      context: {
+        code: "workspace_boundary_bash_path",
+        workspaceBoundary: options.workspaceBoundary,
+        paths: outside,
+        workspaceRoot: options.workspaceRoot,
+      },
+      recoverable: true,
+      retryable: false,
+    },
+  );
+}
+
+/**
+ * Проверка объявленного write-scope (поле `write_paths` инструмента Agent/Task).
+ *
+ * Причина: scope был только подсказкой для work-ledger; фактическая запись ничем не
+ * ограничивалась, и параллельные ветки могли писать в один файл. Явный массив
+ * (`[]` включительно) — авторитетная граница, отсутствие поля — прежнее поведение.
+ */
+export function assertPathWithinWriteScope(options: {
+  filePath: string;
+  workspaceRoot: string;
+  writeScope: readonly string[] | undefined;
+  platform?: ToolPathPlatform;
+}): void {
+  if (options.writeScope === undefined) return;
+  const workspaceRoot = normalizeAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
+  const scopedPaths = options.writeScope
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0)
+    .map((path) => (isAbsolute(path) ? normalize(path) : resolve(workspaceRoot, path)));
+  if (scopedPaths.length === 0) {
+    throw createCoreError(
+      CoreErrorType.PermissionDenied,
+      "Declared write scope is empty: this agent may not modify files",
+      {
+        context: { code: "write_scope_violation", reason: "empty_scope", workspaceRoot },
+        recoverable: true,
+        retryable: false,
+      },
+    );
+  }
+  const allowed = scopedPaths.some((scopePath) =>
+    isPathWithinWorkspaceRoot(options.filePath, scopePath, options.platform),
+  );
+  if (!allowed) {
+    throw createCoreError(
+      CoreErrorType.PermissionDenied,
+      `Write outside the declared write_paths scope: ${options.filePath}`,
+      {
+        context: {
+          code: "write_scope_violation",
+          filePath: options.filePath,
+          scope: scopedPaths,
+          workspaceRoot,
+        },
+        recoverable: true,
+        retryable: false,
+      },
+    );
+  }
 }
 
 /**
@@ -169,9 +322,7 @@ export function isPathWithinWorkspaceRoot(
  */
 function normalizeForPlatformComparison(value: string, platform: ToolPathPlatform): string {
   if (platform === "win32") return normalizeToolPathForComparison(value, "win32");
-  return getToolPathApi(platform)
-    .normalize(value)
-    .normalize("NFC");
+  return getToolPathApi(platform).normalize(value).normalize("NFC");
 }
 
 function applyWorkspaceBoundary(
@@ -188,9 +339,10 @@ function applyWorkspaceBoundary(
     return;
   }
 
-  const containment: BoundaryContainment = isPathWithinWorkspaceRoot(resolvedPath, workspaceRoot)
-    ? evaluatePhysicalContainment(resolvedPath, workspaceRoot)
-    : { kind: "escape", escapeKind: "lexical" };
+  const containment: BoundaryContainment = evaluateWorkspaceContainment(
+    resolvedPath,
+    workspaceRoot,
+  );
 
   if (containment.kind === "contained") return;
   const escapeKind = containment.escapeKind;
@@ -308,6 +460,128 @@ function applyWorkspaceBoundary(
   );
 }
 
+/**
+ * 边界探测（同步、只读）：越界返回细节，范围内返回 `undefined`。
+ *
+ * 与 {@link resolveWorkspacePath} 共用同一套词法与物理判定；供权限流在 handler 之前
+ * 取得 `ask` 模式的用户决定，不新增第二套检查。
+ */
+export function describeWorkspaceBoundaryEscape(options: {
+  inputPath: string;
+  workingDirectory: string;
+  workspaceRoot: string;
+  operation: ToolPathOperation;
+}): WorkspaceBoundaryEscapeDetails | undefined {
+  if (options.inputPath.length === 0) return undefined;
+  const workingDirectory = normalizeAbsoluteDirectory(options.workingDirectory, "workingDirectory");
+  const workspaceRoot = normalizeAbsoluteDirectory(options.workspaceRoot, "workspaceRoot");
+  const resolvedPath = isAbsolute(options.inputPath)
+    ? normalize(options.inputPath)
+    : resolve(workingDirectory, options.inputPath);
+  const containment = evaluateWorkspaceContainment(resolvedPath, workspaceRoot);
+  if (containment.kind === "contained") return undefined;
+  return {
+    operation: options.operation,
+    requestedPath: options.inputPath,
+    resolvedPath,
+    workspaceRoot,
+    ...(containment.physicalPath === undefined ? {} : { physicalPath: containment.physicalPath }),
+    ...(containment.physicalWorkspaceRoot === undefined
+      ? {}
+      : { physicalWorkspaceRoot: containment.physicalWorkspaceRoot }),
+    escapeKind: containment.escapeKind,
+  };
+}
+
+/** 把探测结果转成审批端口收到的请求（含确认窗可直接展示的一行 summary）。 */
+export function createWorkspaceBoundaryApprovalRequest(
+  escape: WorkspaceBoundaryEscapeDetails,
+  mode: WorkspaceBoundaryMode,
+): WorkspaceBoundaryApprovalRequest {
+  return {
+    operation: escape.operation,
+    requestedPath: escape.requestedPath,
+    resolvedPath: escape.resolvedPath,
+    workspaceRoot: escape.workspaceRoot,
+    ...(escape.physicalPath === undefined ? {} : { physicalPath: escape.physicalPath }),
+    ...(escape.physicalWorkspaceRoot === undefined
+      ? {}
+      : { physicalWorkspaceRoot: escape.physicalWorkspaceRoot }),
+    escapeKind: escape.escapeKind,
+    summary: formatBoundarySummary({
+      requestedPath: escape.requestedPath,
+      resolvedPath: escape.resolvedPath,
+      workspaceRoot: escape.workspaceRoot,
+      mode,
+      escapeKind: escape.escapeKind,
+    }),
+  };
+}
+
+/**
+ * 由**已经取得的用户决定**构造同步审批端口。
+ *
+ * 端口只对预审批时展示过的 `(operation, resolvedPath)` 返回 allow；handler 若解析出
+ * 另一条路径（例如 hook/用户改写入参、或工具动态计算路径），一律 deny。
+ * 这是 ask 模式不重放、不猜测、不超时兜底的实现约束。
+ */
+export function createWorkspaceBoundaryApprovalPort(
+  approved: readonly WorkspaceBoundaryApprovalRequest[],
+): WorkspaceBoundaryApprovalPort {
+  const allowed = new Set(approved.map(workspaceBoundaryRequestKey));
+  return {
+    decide(request) {
+      if (allowed.has(workspaceBoundaryRequestKey(request))) return { decision: "allow" };
+      return {
+        decision: "deny",
+        reason:
+          `workspaceBoundary=ask path "${request.requestedPath}" was not part of the ` +
+          "approved workspace-boundary request",
+      };
+    },
+  };
+}
+
+function workspaceBoundaryRequestKey(
+  request: Pick<WorkspaceBoundaryApprovalRequest, "operation" | "resolvedPath">,
+): string {
+  return `${request.operation}\u0000${request.resolvedPath}`;
+}
+
+/**
+ * handler 侧的边界参数投影：把 ToolExecutionContext 上的模式/审批/审计一次带进
+ * `resolveWorkspacePath` / `resolveToolWorkingDirectory`，避免每个 handler 重复手写。
+ */
+export function workspaceBoundaryOptions(context: {
+  workspaceBoundary?: WorkspaceBoundaryMode;
+  workspaceBoundaryApproval?: WorkspaceBoundaryApprovalPort;
+  auditWorkspaceBoundary?: (event: WorkspaceBoundaryAuditEvent) => void;
+}): Pick<
+  ToolWorkspacePathOptions,
+  "workspaceBoundary" | "workspaceBoundaryApproval" | "auditWorkspaceBoundary"
+> {
+  return {
+    ...(context.workspaceBoundary === undefined
+      ? {}
+      : { workspaceBoundary: context.workspaceBoundary }),
+    ...(context.workspaceBoundaryApproval === undefined
+      ? {}
+      : { workspaceBoundaryApproval: context.workspaceBoundaryApproval }),
+    ...(context.auditWorkspaceBoundary === undefined
+      ? {}
+      : { auditWorkspaceBoundary: context.auditWorkspaceBoundary }),
+  };
+}
+
+function evaluateWorkspaceContainment(
+  resolvedPath: string,
+  workspaceRoot: string,
+): BoundaryContainment {
+  return isPathWithinWorkspaceRoot(resolvedPath, workspaceRoot)
+    ? evaluatePhysicalContainment(resolvedPath, workspaceRoot)
+    : { kind: "escape", escapeKind: "lexical" };
+}
+
 type BoundaryContainment =
   | {
       kind: "contained";
@@ -409,9 +683,7 @@ function tryRealpath(target: string): string | undefined {
   }
 }
 
-function classifyRealpathFailure(
-  target: string,
-): "missing" | "dangling_symlink" | "unresolvable" {
+function classifyRealpathFailure(target: string): "missing" | "dangling_symlink" | "unresolvable" {
   try {
     return lstatSync(target).isSymbolicLink() ? "dangling_symlink" : "unresolvable";
   } catch (error) {

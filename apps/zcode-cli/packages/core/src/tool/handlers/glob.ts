@@ -14,7 +14,11 @@ import {
   type GlobOutput,
   type TraceContext,
 } from "@zcode/contracts";
-import { resolveToolWorkingDirectory, resolveWorkspacePath } from "../path-policy.js";
+import {
+  resolveToolWorkingDirectory,
+  resolveWorkspacePath,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import type { ToolEntry, ToolHandler } from "../types.js";
 
 const MAX_GLOB_RESULTS = 100;
@@ -46,11 +50,13 @@ export const globHandler: ToolHandler = async (input, context) => {
         operation: "read",
         workingDirectory: context.workingDirectory,
         workspaceRoot: context.workspaceRoot,
+        ...workspaceBoundaryOptions(context),
       })
     : resolveToolWorkingDirectory(undefined, {
         operation: "read",
         workingDirectory: context.workingDirectory,
         workspaceRoot: context.workspaceRoot,
+        ...workspaceBoundaryOptions(context),
       });
 
   const result = await fileSystemPort.searchFiles(
@@ -82,7 +88,8 @@ export const globHandler: ToolHandler = async (input, context) => {
 };
 
 export const globToolEntry: ToolEntry = {
-  capability: "Find files by glob pattern through the file-system adapter without reading file contents",
+  capability:
+    "Find files by glob pattern through the file-system adapter without reading file contents",
   metadata: {
     name: "Glob",
     description: GLOB_TOOL_DESCRIPTION,
@@ -94,6 +101,12 @@ export const globToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     needsApproval: false,
+  },
+  resolveWorkspaceBoundaryPaths: (input, context) => {
+    const parsed = GlobInputSchema.safeParse(input);
+    if (!parsed.success) return [];
+    // 与 handler 同一条解析基准：显式 path 优先，否则读会话 cwd。
+    return [{ path: parsed.data.path ?? context.workingDirectory ?? ".", operation: "read" }];
   },
   handler: globHandler,
   inputSchema: GlobInputJsonSchema,

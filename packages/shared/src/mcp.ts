@@ -53,7 +53,13 @@ export interface McpServerConfig {
   [key: string]: any;
 }
 
-export type McpServerStatus = "connected" | "disconnected" | "error" | "connecting" | "unknown";
+export type McpServerStatus =
+  | "connected"
+  | "disconnected"
+  | "error"
+  | "connecting"
+  | "requires_approval"
+  | "unknown";
 
 export interface CliMcpConfig {
   mcpServers: Record<string, McpServerConfig>;
@@ -666,8 +672,7 @@ export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2.1.1"],
     authRequirement: "none",
-    sourceUrl:
-      "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
+    sourceUrl: "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
   },
   {
     id: "chrome-devtools",

@@ -108,9 +108,7 @@ import {
   REMOTE_WORKSPACE_BIND_SESSION_MISSING_ERROR_CODE,
   formatModelPickerValue,
   type ZCodePromptAttachment,
-  type ZCodeStreamEvent,
   type ZCodeTaskMeta,
-  type TaskStreamMirrorableEvent,
   type TraceId,
   type ZCodeTaskMode,
   type WindowHostAttachmentScope,
@@ -130,7 +128,6 @@ import {
 import type { IRemoteBackend } from "@zcode/server/remote";
 import type { Locale, RemoteTarget } from "@zcode/shared";
 import { wrapElectronPort } from "./electronPort.js";
-import { createTaskRealtimeBridgeForHostInit } from "./taskRealtimeBridge.js";
 import { resolveRpcLogLevel } from "./rpcLogLevel.js";
 import { createHostWorkspaceTaskTracker } from "./hostWorkspaceTaskTracker.js";
 import {
@@ -1305,23 +1302,10 @@ function isZCodeTaskMeta(value: unknown): value is ZCodeTaskMeta {
   );
 }
 
-function isRemoteMirrorableStreamEvent(
-  event: ZCodeStreamEvent,
-): event is TaskStreamMirrorableEvent {
-  return event.type !== "task_stream_mirror_batch" && event.type !== "task_snapshot_updated";
-}
-
 function createReportingRemoteZCodeTaskService<T extends object>(
   service: T,
   options?: {
     reportRunningPromptCount?: boolean;
-    taskRealtimePort?: ReturnType<typeof createTaskRealtimeBridgeForHostInit>;
-    materializePromptAttachments?: (params: {
-      taskId: string;
-      traceId: TraceId;
-      content: string;
-      attachments?: ZCodePromptAttachment[];
-    }) => Promise<{ content: string; attachments?: ZCodePromptAttachment[] }>;
   },
 ): T {
   const workspaceProxyState = createHostRemoteWorkspaceProxyState();
@@ -1393,102 +1377,6 @@ function createReportingRemoteZCodeTaskService<T extends object>(
       rememberTaskMeta((snapshot as { meta?: unknown }).meta);
     }
     rememberTaskMeta((result as { meta?: unknown }).meta);
-  }
-
-  async function prepareRemotePromptParams(params: {
-    taskId: string;
-    traceId: TraceId;
-    content: string;
-    attachments?: ZCodePromptAttachment[];
-  }): Promise<{
-    taskId: string;
-    traceId: TraceId;
-    content: string;
-    attachments?: ZCodePromptAttachment[];
-  }> {
-    if (!options?.materializePromptAttachments) {
-      return params;
-    }
-    return {
-      ...params,
-      ...(await options.materializePromptAttachments(params)),
-    };
-  }
-
-  async function mirrorRemotePrompt(
-    target: T,
-    sendPrompt: (...args: unknown[]) => Promise<unknown>,
-    params: {
-      taskId: string;
-      traceId: TraceId;
-      content: string;
-      attachments?: ZCodePromptAttachment[];
-    },
-  ): Promise<unknown> {
-    const taskRealtimePort = options?.taskRealtimePort;
-    const meta = workspaceProxyState.getTaskMeta(params.taskId);
-    if (!taskRealtimePort || !meta) {
-      return sendPrompt.call(target, params);
-    }
-
-    const mirrorTarget = {
-      workspacePath: meta.workspacePath,
-      workspaceIdentity: meta.workspaceIdentity,
-      workspaceKey: resolveWorkspaceKey(meta),
-      taskId: params.taskId,
-      runId: params.traceId,
-      traceId: params.traceId,
-    };
-    const leaseResult = await taskRealtimePort
-      .acquireTaskRunLease(mirrorTarget)
-      .catch((error: unknown) => {
-        logger.warn("Bot remote runtime realtime lease failed:", error);
-        return null;
-      });
-    if (!leaseResult?.acquired) {
-      return sendPrompt.call(target, params);
-    }
-
-    taskRealtimePort.publishStreamOp(mirrorTarget, {
-      kind: "user_message",
-      messageId: `user-${params.traceId}`,
-      content: params.content,
-      attachments: params.attachments,
-      timestamp: Date.now(),
-    });
-
-    // 写路径（send/stop/交互回执）已收敛 v4 命令面；本镜像属**读路径**——
-    // taskRealtimePort → 手机 relay → 手机端
-    // zcodeSessionStore 的整条消费链词表都是 ZCodeStreamEvent。两个方案的评估结论：
-    // a) relay 直接转发 v4 帧、手机端消费 v4 store（正解）：需要重做 relay stream-op
-    //    协议 + 手机端 store；
-    // b) 帧→ZCodeStreamEvent 薄映射：等价复刻 adapter mapSessionEvent，
-    //    否决。
-    // 结论：本镜像保持 legacy 源不动。
-    const dynamicStreamEvent = Reflect.get(target, "onDynamicStreamEvent");
-    const streamDisposable =
-      typeof dynamicStreamEvent === "function"
-        ? dynamicStreamEvent.call(
-            target,
-            params.taskId,
-          )((event: ZCodeStreamEvent) => {
-            if (isRemoteMirrorableStreamEvent(event)) {
-              taskRealtimePort.publishStreamOp(mirrorTarget, {
-                kind: "stream_event",
-                event,
-              });
-            }
-          })
-        : null;
-
-    try {
-      return await sendPrompt.call(target, params);
-    } finally {
-      // 远端 zcode-server 没有 desktop realtime port；由窗口 Host 内的
-      // remote facade 接管 lease 和 stream mirror，确保 UI 能持续收到远端会话流。
-      streamDisposable?.dispose();
-      taskRealtimePort.releaseTaskRunLease(mirrorTarget);
-    }
   }
 
   function finishWorkspaceTask(taskId: string, meta: ZCodeTaskMeta): void {
@@ -1569,10 +1457,7 @@ function createReportingRemoteZCodeTaskService<T extends object>(
           return result;
         };
       }
-      const shouldWrapSendPrompt =
-        options?.reportRunningPromptCount !== false ||
-        Boolean(options?.taskRealtimePort) ||
-        Boolean(options?.materializePromptAttachments);
+      const shouldWrapSendPrompt = options?.reportRunningPromptCount !== false;
       if (property !== "sendPrompt" || typeof value !== "function" || !shouldWrapSendPrompt) {
         return value;
       }
@@ -1611,12 +1496,7 @@ function createReportingRemoteZCodeTaskService<T extends object>(
               untrackedPromptRpcCount += 1;
               reportHostRunningTaskCount();
             }
-            const preparedParams = await prepareRemotePromptParams(promptParams);
-            return await mirrorRemotePrompt(
-              target,
-              value.bind(target) as (...promptArgs: unknown[]) => Promise<unknown>,
-              preparedParams,
-            );
+            return await value.apply(target, args);
           }
           if (options?.reportRunningPromptCount !== false) {
             tracksOnlyRpcLifetime = true;
@@ -1854,7 +1734,6 @@ const hostResourceUsageResponder = createHostResourceUsageResponder({
   getAgentService: () => activeServices?.getOptional(IZCodeAgentService),
   postMessage: (message) => parentPort?.postMessage(message),
 });
-let activeSessionRealtimePort: ReturnType<typeof createTaskRealtimeBridgeForHostInit> = null;
 let hasDisposedHostResources = false;
 let disposeHostResourcesInFlight: Promise<HostShutdownResult> | null = null;
 
@@ -2791,11 +2670,6 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
     disposeOffPeakRuntime();
     offPeakTaskRepo.close();
 
-    if (activeSessionRealtimePort) {
-      activeSessionRealtimePort.dispose();
-      activeSessionRealtimePort = null;
-    }
-
     const servicesToDispose = activeServices;
     activeServices = null;
     // Registry 是全部远端 connection 的唯一 owner；释放失败不能阻塞本地服务继续收口。
@@ -2885,11 +2759,6 @@ function disposeHostResourcesBestEffort(reason: string): void {
       activeServices = null;
       activeHostApiNetworkTransport = null;
     }
-  }
-
-  if (activeSessionRealtimePort) {
-    activeSessionRealtimePort.dispose();
-    activeSessionRealtimePort = null;
   }
 }
 
@@ -3728,7 +3597,6 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         ),
       initializeServices: async () => {
         logger.info("initializing local services");
-        activeSessionRealtimePort = createTaskRealtimeBridgeForHostInit(msg, parentPort);
         // 旧 Team 补组织必须与网络代理读取共用同一个 Setting 实例及写队列。
         // 只注入 service 会跳过默认装配分支，导致缺组织的升级用户永远无法恢复连接。
         const {

@@ -57,8 +57,14 @@ import type {
   WorkflowEscalatePort,
   WorkflowPort,
   WorkflowSubmitPort,
+  WorkspaceBoundaryMode,
 } from "@zcode/contracts";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
+import type {
+  WorkspaceBoundaryApprovalPort,
+  WorkspaceBoundaryAuditEvent,
+  WorkspaceBoundaryPathRequest,
+} from "./path-policy.js";
 import type {
   PersistedReadFileStateMetadata,
   PersistedReadFileStateTool,
@@ -205,6 +211,17 @@ export interface ToolExecutionContext {
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   workingDirectory: string;
   workspaceRoot: string;
+  /** Явно объявленный write-scope (`write_paths`); undefined — без ограничения. */
+  writeScope?: readonly string[];
+  /** Workspace 边界模式；缺省为兼容默认 `allow`（docs/specs/2026-11-11-workspace-boundary.md）。 */
+  workspaceBoundary?: WorkspaceBoundaryMode;
+  /**
+   * ask 模式的同步审批端口。executor 在权限流里已经取得用户决定后才注入；
+   * 缺席时越界以 `permission_escalation` fail closed，工具不会静默放行。
+   */
+  workspaceBoundaryApproval?: WorkspaceBoundaryApprovalPort;
+  /** 越界访问审计（allow / approve / deny）；由 runtime logger 落结构化日志。 */
+  auditWorkspaceBoundary?: (event: WorkspaceBoundaryAuditEvent) => void;
   workspaceIdentity?: string;
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
@@ -334,6 +351,17 @@ export interface ToolEntry extends ToolContractDeclaration {
   permissionCapabilityGroup?: PermissionCapabilityGroup;
   executionMode?: ToolExecutionMode;
   providerNative?: ProviderNativeToolSpec;
+  /**
+   * ask 模式的预审批声明：本工具本次调用会解析哪些模型路径。
+   *
+   * 只描述路径，不做判定——边界判定仍只有 path-policy 一处。executor 在权限流里据此
+   * 取得真实的用户决定，再把已批准路径作为同步审批端口交给 handler。
+   * 未声明（或声明遗漏）的路径在 ask 模式下由端口拒绝，保持 fail closed。
+   */
+  resolveWorkspaceBoundaryPaths?: (
+    input: unknown,
+    context: ToolInputResolutionContext,
+  ) => readonly WorkspaceBoundaryPathRequest[] | undefined;
   handler: ToolHandler;
   /** 当前 turn 模型能力对 provider descriptor 与 executor schema 的同源投影。 */
   resolveModelContract?: (context: ToolExecutionModelContext) => {

@@ -197,6 +197,10 @@ export function resolveAppRuntimeConfig(input: {
         (options.env ?? process.env)[ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY],
       ),
     mode: options.runtimeConfig?.mode ?? persistedMode ?? configResult.config.permission.mode,
+    // Workspace 边界（docs/specs/2026-11-11-workspace-boundary.md）：显式会话值 >
+    // user/project 配置文件 > 兼容默认 allow。消费链在 core executor → path-policy。
+    workspaceBoundary:
+      options.runtimeConfig?.workspaceBoundary ?? configResult.config.workspaceBoundary,
     // 悬空审批必须有界：显式会话值（含 0 = 无超时）> 配置文件 `permission.approvalTimeoutMs`
     // > 300000 默认。消费链已存在（core runtime-tools → ToolExecutor → PermissionBroker），
     // 这里只做投影。
@@ -429,9 +433,7 @@ function canonicalMcpDefinition(config: McpServerConfig): Record<string, unknown
     ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
     ...(config.alwaysLoad !== undefined ? { alwaysLoad: config.alwaysLoad } : {}),
     ...(config.isolation !== undefined ? { isolation: config.isolation } : {}),
-    ...(config.protocolVersion !== undefined
-      ? { protocolVersion: config.protocolVersion }
-      : {}),
+    ...(config.protocolVersion !== undefined ? { protocolVersion: config.protocolVersion } : {}),
     ...(authConfig ? { auth: { type: authConfig.type, provider: authConfig.provider } } : {}),
     ...(official
       ? {
@@ -550,6 +552,30 @@ export function createMcpProjectApprovalRecord(input: {
 
 export function resolveMcpProjectTrustStorePath(storageRoot: string): string {
   return join(storageRoot, MCP_PROJECT_TRUST_STORE_DIR, MCP_PROJECT_TRUST_STORE_FILE);
+}
+
+/**
+ * 显式批准的唯一写入路径：record 构造 + digest 绑定 + 原子 upsert。
+ *
+ * CLI `/mcp connect`（session facade）与 `mcp/connect` 协议方法都走这里，避免两条
+ * approval 写入路径各自计算 digest 后漂移。本函数不记录日志，调用方按自己的 logger
+ * 约定只输出 serverName/workspaceKey（禁止输出 command/args/env 或 digest 输入）。
+ */
+export async function grantProjectMcpServerApproval(input: {
+  storageRoot: string;
+  workspaceIdentity: string;
+  serverName: string;
+  config: McpServerConfig;
+  now?: Date;
+}): Promise<McpProjectTrustRecord> {
+  const record = createMcpProjectApprovalRecord({
+    workspaceIdentity: input.workspaceIdentity,
+    serverName: input.serverName,
+    config: input.config,
+    ...(input.now ? { now: input.now } : {}),
+  });
+  await grantMcpProjectTrust({ storageRoot: input.storageRoot, record });
+  return record;
 }
 
 interface McpProjectTrustStoreFile {

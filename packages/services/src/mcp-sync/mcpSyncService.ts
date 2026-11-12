@@ -89,6 +89,8 @@ export interface McpSyncServiceDependencies {
    * 构造（纯目录同步用途/单测）调用 listWorkspaceMcpServerStatuses 会显式抛错。
    */
   listMcpServerStatuses?: IMcpSyncService["listWorkspaceMcpServerStatuses"];
+  /** `mcp/connect` 的执行面；与状态列表一样必须发生在 agent 进程。 */
+  connectMcpServer?: IMcpSyncService["connectWorkspaceMcpServer"];
   /** Test seam for the fixed external discovery feed; production always uses the fixed URL. */
   fetchClineMcpMarketplace?: typeof fetch;
   /** Test seam for the Official MCP Registry; production always uses the fixed URL. */
@@ -160,10 +162,7 @@ async function loadClineMcpMarketplaceCatalog(
 
 async function readBoundedRegistryBody(response: Response): Promise<string> {
   const declaredLength = Number(response.headers.get("content-length"));
-  if (
-    Number.isFinite(declaredLength) &&
-    declaredLength > OFFICIAL_MCP_REGISTRY_MAX_BYTES
-  ) {
+  if (Number.isFinite(declaredLength) && declaredLength > OFFICIAL_MCP_REGISTRY_MAX_BYTES) {
     throw new Error("Official MCP Registry response exceeds the response limit");
   }
   const reader = response.body?.getReader();
@@ -245,9 +244,7 @@ function parseRegistryPackages(raw: unknown): McpRegistryInstallOption[] {
         )
       : [];
     const args =
-      runtimeHint === "docker"
-        ? ["run", "-i", "--rm", packageSpec]
-        : [...runtimeArgs, packageSpec];
+      runtimeHint === "docker" ? ["run", "-i", "--rm", packageSpec] : [...runtimeArgs, packageSpec];
     const requiredEnv = parseRegistryEnv(pkg.environmentVariables);
     const env: Record<string, string> = {};
     for (const item of requiredEnv) {
@@ -295,9 +292,7 @@ function parseRegistryRemotes(raw: unknown): McpRegistryInstallOption[] {
   return options;
 }
 
-function parseRegistryEnv(
-  raw: unknown,
-): NonNullable<McpRegistryInstallOption["requiredEnv"]> {
+function parseRegistryEnv(raw: unknown): NonNullable<McpRegistryInstallOption["requiredEnv"]> {
   if (!Array.isArray(raw)) return [];
   const result: NonNullable<McpRegistryInstallOption["requiredEnv"]> = [];
   for (const item of raw) {
@@ -388,6 +383,12 @@ export function createMcpSyncService(
         throw new Error("MCP server status listing is unavailable in this runtime");
       }
       return dependencies.listMcpServerStatuses(params);
+    },
+    async connectWorkspaceMcpServer(params) {
+      if (!dependencies.connectMcpServer) {
+        throw new Error("MCP server connection is unavailable in this runtime");
+      }
+      return dependencies.connectMcpServer(params);
     },
     async saveMcpToUserDirectory(payload) {
       await saveMcpToUserDirectory(payload);

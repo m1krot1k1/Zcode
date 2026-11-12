@@ -27,6 +27,7 @@ import type {
   StableForkTargetMetadata,
   WorkspaceHookBundleSnapshot,
   WorkspaceId,
+  WorkspaceBoundaryMode,
 } from "@zcode/contracts";
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
@@ -147,6 +148,16 @@ export interface AgentRuntimeConfig {
   /** 全部 subagent 的最短任务期限分钟数；0/未设置使用角色默认期限。 */
   subagentTaskTimeoutMinutes?: number;
   permissionTimeoutMs?: number;
+  /**
+   * Workspace 边界模式（docs/specs/2026-11-11-workspace-boundary.md）。
+   * 由 bootstrap 从 `workspaceBoundary` 配置投影；缺省 = 兼容默认 `allow`。
+   */
+  workspaceBoundary?: WorkspaceBoundaryMode;
+  /**
+   * Явно объявленная область записи (`write_paths`), унаследованная дочерним runtime.
+   * `undefined` — ограничения нет (прежнее поведение); `[]` — запись запрещена.
+   */
+  writeScope?: readonly string[];
   compact?: AutoCompactPolicyConfig;
   targetCompletionVerification?: { enabled?: boolean };
   midConversationSystem?: {

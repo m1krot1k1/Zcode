@@ -15,7 +15,9 @@ import type {
   ZCodeMcpListMode,
   ZCodeMcpServerStatusSnapshot,
   ZCodeMcpServer,
+  ZCodeMcpConnectResult,
 } from "@zcode/shared";
+import type { IMcpSyncService } from "@zcode/services";
 import { convertToZCodeAgentMcpServer } from "@zcode/shared";
 import { logger } from "@/logger.js";
 import {
@@ -56,6 +58,18 @@ export function setMcpStoreDirectoryService(service: McpDirectoryService | null)
 
 interface UpdateServerStatusOptions {
   invalidateStatusListRequests?: boolean;
+}
+
+interface ConnectMcpServerRequest {
+  /** mcpStore 的 server id；必须是 `zcodeagentmcp` 来源。 */
+  id: string;
+  workspacePath: string;
+  workspaceIdentity?: string;
+  /** 与 mcp/list 相同的 UI-resolved 定义（含 `.agents` fallback）。 */
+  mcpServers?: ZCodeAgentMcpServer[];
+  /** 用户已在确认框同意：只有 true 才允许写 project-scope digest approval。 */
+  approveProjectScope: boolean;
+  service: Pick<IMcpSyncService, "connectWorkspaceMcpServer">;
 }
 
 interface McpStoreState {
@@ -132,6 +146,9 @@ interface McpStoreState {
     requestEpoch: number,
     mode?: "connect" | "status",
   ) => void;
+  connectMcpServer: (
+    request: ConnectMcpServerRequest,
+  ) => Promise<"connected" | "requires_approval" | "failed">;
   getServer: (id: string) => ZCodeMcpServer | undefined;
   setCurrentProjectPath: (
     path: string,
@@ -615,6 +632,71 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
           }),
         };
       });
+    },
+
+    connectMcpServer: async ({
+      approveProjectScope,
+      id,
+      mcpServers,
+      service,
+      workspaceIdentity,
+      workspacePath,
+    }) => {
+      const server = get().servers.find((candidate) => candidate.id === id);
+      if (!server || server.source !== "zcodeagentmcp") {
+        throw new Error(`MCP server is not managed by ZCode Agent: ${id}`);
+      }
+      // 显式连接与 mcp/list 使用同一份定义快照；连接结果直接写回 snapshot，
+      // 不再等待下一次列表刷新，避免按钮点击后短暂显示旧 unknown。
+      invalidateStatusListRequests();
+      set((state) => ({
+        servers: state.servers.map((candidate) =>
+          candidate.id === id
+            ? {
+                ...candidate,
+                authorization: undefined,
+                error: undefined,
+                failureKind: undefined,
+                serverRequestId: undefined,
+                status: "connecting",
+              }
+            : candidate,
+        ),
+      }));
+
+      let result: ZCodeMcpConnectResult;
+      try {
+        result = await service.connectWorkspaceMcpServer({
+          workspacePath,
+          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          serverName: server.name,
+          ...(mcpServers !== undefined ? { mcpServers } : {}),
+          approveProjectScope,
+        });
+      } catch (error) {
+        // 请求失败不能把行永久留在 connecting（设置页会一直转圈）。
+        set((state) => ({
+          servers: state.servers.map((candidate) =>
+            candidate.id === id && candidate.status === "connecting"
+              ? { ...candidate, status: "disconnected" }
+              : candidate,
+          ),
+        }));
+        throw error;
+      }
+
+      const statusSnapshots = { ...get().statusSnapshots, [server.name]: result.status };
+      set((state) => ({
+        statusSnapshots,
+        servers: mergeMcpServerStatusSnapshots(state.servers, statusSnapshots, {
+          markMissingConnectingAsError: false,
+        }),
+      }));
+      return result.connected
+        ? "connected"
+        : result.requiresApproval
+          ? "requires_approval"
+          : "failed";
     },
 
     getServer: (id) => get().servers.find((s) => s.id === id),

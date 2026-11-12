@@ -11,6 +11,7 @@ import type {
   RemoteSyncWriteAccessResult,
   SaveCliMcpToUserDirectoryRequest,
   ZCodeAgentMcpServer,
+  ZCodeMcpConnectResult,
   ZCodeMcpListMode,
   ZCodeMcpListResult,
 } from "@zcode/shared";
@@ -40,6 +41,17 @@ export interface IMcpSyncService {
     mcpServers?: ZCodeAgentMcpServer[];
     mode?: ZCodeMcpListMode;
   }): Promise<ZCodeMcpListResult>;
+  /**
+   * 设置页显式连接（`mcp/connect`）。只有 `approveProjectScope: true` 才允许
+   * project-scope 写 digest approval；其余情况只返回 requiresApproval 投影。
+   */
+  connectWorkspaceMcpServer(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    serverName: string;
+    mcpServers?: ZCodeAgentMcpServer[];
+    approveProjectScope?: boolean;
+  }): Promise<ZCodeMcpConnectResult>;
   saveMcpToUserDirectory(payload: SaveCliMcpToUserDirectoryRequest): Promise<void>;
   listLocalUserMcpCandidates(): Promise<McpSyncCandidateListResult>;
   listRemoteUserMcpStatuses(params: { names: string[] }): Promise<McpSyncRemoteStatusResult>;

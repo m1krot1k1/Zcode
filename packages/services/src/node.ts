@@ -1687,6 +1687,7 @@ export function createLocalServices(options: {
   const mcpSyncService = createMcpSyncService({
     // mcp/list 的 host 消费点收拢到 mcpSync 服务；真实状态检查仍在 agent 进程。
     listMcpServerStatuses: (params) => zcodeAgentService.listMcpServerStatuses(params),
+    connectMcpServer: (params) => zcodeAgentService.connectMcpServer(params),
   });
   const pluginSyncService = createPluginSyncService();
   const pluginUiAccounts = createPluginUiAccountBindings({
@@ -2488,6 +2489,7 @@ export function createLocalServices(options: {
                 settings.askUserQuestionAutoResolutionEnabled !== false,
               nativeSearchEnhancementsEnabled: settings.nativeSearchEnhancementsEnabled !== false,
               toolSearchMode: settings.toolSearchMode ?? "off",
+              workspaceBoundary: settings.workspaceBoundary ?? "allow",
               memoryEnabled: settings.memoryEnabled === true,
               modelContextBudgetStrategy,
               // user-execution 只消费 Shell；共享默认策略是统一 result schema 的兼容占位，

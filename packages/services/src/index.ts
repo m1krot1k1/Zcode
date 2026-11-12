@@ -145,8 +145,11 @@ export {
   ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE,
 } from "./zcode-agent/zcodeAgent.js";
 export {
+  isZCodeAgentMcpConnectUnsupportedError,
   isZCodeAgentMcpStatusModeUnsupportedError,
+  ZCODE_AGENT_MCP_CONNECT_UNSUPPORTED_ERROR_CODE,
   ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE,
+  ZCodeAgentMcpConnectUnsupportedError,
   ZCodeAgentMcpStatusModeUnsupportedError,
 } from "./zcode-agent/zcodeAgentErrors.js";
 export {
@@ -227,7 +230,6 @@ export type { ProjectMemoryFileSummary, ProjectMemoryWorkspaceSummary } from "./
 
 // OutputStyle service — IOutputStyleService is both a type (interface) and value (descriptor).
 export { IOutputStyleService } from "./output-style/outputStyle.js";
-export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)
 export { IFileWatcherService } from "./fileWatcher/fileWatcher.js";

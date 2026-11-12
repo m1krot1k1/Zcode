@@ -70,6 +70,9 @@ export const ConfigKey = {
   // Tool Concurrency
   ToolConcurrencyMax: "toolConcurrency.maxConcurrency",
 
+  // Workspace boundary (docs/specs/2026-11-11-workspace-boundary.md)
+  WorkspaceBoundary: "workspaceBoundary",
+
   // Model anomaly guards
   ModelAnomalyGuard: "modelAnomalyGuard",
 
@@ -145,15 +148,17 @@ export type ConfigValue<K extends ConfigKey> = K extends
                                         ? "text" | "json"
                                         : K extends "toolConcurrency.maxConcurrency"
                                           ? number
-                                          : K extends "modelAnomalyGuard"
-                                            ? ModelAnomalyGuardConfig
-                                            : K extends "hooks"
-                                              ? HooksRuntimeConfig
-                                              : K extends "ui.locale"
-                                                ? UiLocale
-                                                : K extends "ui.theme"
-                                                  ? UiThemePreference
-                                                  : unknown;
+                                          : K extends "workspaceBoundary"
+                                            ? WorkspaceBoundaryMode
+                                            : K extends "modelAnomalyGuard"
+                                              ? ModelAnomalyGuardConfig
+                                              : K extends "hooks"
+                                                ? HooksRuntimeConfig
+                                                : K extends "ui.locale"
+                                                  ? UiLocale
+                                                  : K extends "ui.theme"
+                                                    ? UiThemePreference
+                                                    : unknown;
 
 // ============================================================
 // Config Scope
@@ -199,6 +204,22 @@ export interface ConfigSource {
 export interface SkillCommandOverride {
   enable?: boolean;
 }
+
+// ============================================================
+// Workspace Boundary
+// ============================================================
+
+/**
+ * Workspace 边界的三种模式（docs/specs/2026-11-11-workspace-boundary.md）。
+ *
+ * - `strict`：越界直接拒绝；
+ * - `ask`：越界必须经过一次真实的用户审批，审批端口缺席时 fail closed；
+ * - `allow`：越界放行，仅记录审计事件。
+ *
+ * 默认 `allow` 保持历史兼容；模式来自 user/project 配置（`workspaceBoundary`）。
+ */
+export const WORKSPACE_BOUNDARY_MODES = ["strict", "ask", "allow"] as const;
+export type WorkspaceBoundaryMode = (typeof WORKSPACE_BOUNDARY_MODES)[number];
 
 // ============================================================
 // Runtime Config
@@ -256,6 +277,11 @@ export interface RuntimeConfig {
     format: "text" | "json";
   };
   toolConcurrency: ToolConcurrencyConfig;
+  /**
+   * Workspace 边界模式（`strict` | `ask` | `allow`）。默认 `allow`，保证旧配置行为不变；
+   * 由 ToolExecutionContext 透传到 path-policy 与全部解析路径的 handler。
+   */
+  workspaceBoundary: WorkspaceBoundaryMode;
   modelAnomalyGuard: ModelAnomalyGuardConfig;
   hooks: HooksRuntimeConfig;
   ui: {
@@ -278,6 +304,7 @@ export interface RuntimeConfigPatch {
   commandOverrides?: RuntimeConfig["commandOverrides"];
   logging?: Partial<RuntimeConfig["logging"]>;
   toolConcurrency?: Partial<RuntimeConfig["toolConcurrency"]>;
+  workspaceBoundary?: WorkspaceBoundaryMode;
   modelAnomalyGuard?: Partial<RuntimeConfig["modelAnomalyGuard"]>;
   hooks?: HooksRuntimeConfigPatch;
   ui?: Partial<RuntimeConfig["ui"]>;
@@ -356,6 +383,8 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
   toolConcurrency: {
     maxConcurrency: 10,
   },
+  // 兼容默认：未配置时不做任何边界拦截，行为与接线前一致。
+  workspaceBoundary: "allow",
   modelAnomalyGuard: {
     maxBudgetWarningsPerTurn: 3,
     repeatedToolCallWarningThreshold: 3,

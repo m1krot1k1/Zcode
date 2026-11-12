@@ -869,6 +869,35 @@ export const zcodeMcpListResultSchema = z
   .strict();
 export type ZCodeMcpListResult = z.infer<typeof zcodeMcpListResultSchema>;
 
+/**
+ * project-scope MCP 显式连接（`mcp/connect`）。
+ *
+ * 请求只带 server 名和用户同意位，不带 command/args/env/url/headers：待批准的定义
+ * 必须由 Agent 从当前生效配置重新读取并与随后 connect 使用的是同一个对象，
+ * 避免 UI 构造/替换定义或把凭据经协议回传。多余字段由 `.strict()` 直接拒绝。
+ */
+export const zcodeMcpConnectApprovalSchema = z.enum(["granted", "not_required", "not_requested"]);
+export type ZCodeMcpConnectApproval = z.infer<typeof zcodeMcpConnectApprovalSchema>;
+
+export const zcodeMcpConnectParamsSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+    serverName: nonEmptyString,
+    mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
+    /** 显式用户同意；缺失/false 时 project-scope server 保持 fail closed。 */
+    approveProjectScope: z.boolean().default(false),
+  })
+  .strict();
+export const zcodeMcpConnectResultSchema = z
+  .object({
+    connected: z.boolean(),
+    requiresApproval: z.boolean(),
+    approval: zcodeMcpConnectApprovalSchema,
+    status: zcodeMcpServerStatusSnapshotSchema,
+  })
+  .strict();
+export type ZCodeMcpConnectResult = z.infer<typeof zcodeMcpConnectResultSchema>;
+
 // 插件 UI：UI 发起的 MCP 资源读取与工具调用，
 // 按 pluginId 限定 server 归属，agent 侧 fail closed。
 export const zcodeMcpUiOpenInstanceParamsSchema = z
@@ -2314,11 +2343,16 @@ export const DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY = "preflight-v1" as con
 export const zcodeModelContextBudgetStrategySchema = z.enum(["legacy", "preflight-v1"]);
 export type ZCodeModelContextBudgetStrategy = z.infer<typeof zcodeModelContextBudgetStrategySchema>;
 
+export const zcodeWorkspaceBoundaryModeSchema = z.enum(["strict", "ask", "allow"]);
+export type ZCodeWorkspaceBoundaryMode = z.infer<typeof zcodeWorkspaceBoundaryModeSchema>;
+
 export const zcodeSessionRuntimePreferencesResultSchema = z
   .object({
     additionalDirectories: z.array(nonEmptyString).max(256).optional(),
     nativeSearchEnhancementsEnabled: z.boolean(),
     toolSearchMode: appToolSearchModeSchema.default("off"),
+    // Граница file-tools: неизвестный старый Host не должен молча ослаблять политику.
+    workspaceBoundary: zcodeWorkspaceBoundaryModeSchema.default("allow"),
     subagentRuntimeConfigEnabled: z.boolean().optional(),
     memoryEnabled: z.boolean().default(false),
     askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
@@ -4657,6 +4691,7 @@ export const zcodeProtocolMethods = {
   workspaceCancelGenerateText: "workspace/cancelGenerateText",
   providerTestModelConnectivity: "provider/testModelConnectivity",
   mcpList: "mcp/list",
+  mcpConnect: "mcp/connect",
   mcpReadResource: "mcp/readResource",
   mcpUiOpenInstance: "mcp/uiOpenInstance",
   mcpUiCloseInstance: "mcp/uiCloseInstance",
@@ -4772,6 +4807,10 @@ export const zcodeProtocolSessionMethodContracts = {
   [zcodeProtocolMethods.mcpList]: {
     params: zcodeMcpListParamsSchema,
     result: zcodeMcpListResultSchema,
+  },
+  [zcodeProtocolMethods.mcpConnect]: {
+    params: zcodeMcpConnectParamsSchema,
+    result: zcodeMcpConnectResultSchema,
   },
   [zcodeProtocolMethods.mcpReadResource]: {
     params: zcodeMcpReadResourceParamsSchema,

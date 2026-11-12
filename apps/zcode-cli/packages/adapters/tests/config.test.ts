@@ -496,6 +496,46 @@ describe("config adapters", () => {
     expect(merged.configPort.get(ConfigKey.PermissionApprovalTimeout)).toBe(300_000);
   });
 
+  // docs/specs/2026-11-11-workspace-boundary.md §7：模式来自 user/project 配置，
+  // 默认 allow 保持旧行为；非法枚举值在装载阶段 fail closed，不能退化成 allow。
+  it("loads workspaceBoundary from user config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
+    const path = join(dir, "config.json");
+
+    try {
+      await writeFile(path, JSON.stringify({ workspaceBoundary: "strict" }));
+
+      const merged = createConfig({ env: {}, userConfigPath: path });
+
+      expect(merged.config.workspaceBoundary).toBe("strict");
+      expect(merged.configPort.get(ConfigKey.WorkspaceBoundary)).toBe("strict");
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("defaults workspaceBoundary to allow", () => {
+    const merged = createConfig({ env: {}, skipUserConfig: true });
+
+    expect(merged.config.workspaceBoundary).toBe("allow");
+    expect(merged.configPort.get(ConfigKey.WorkspaceBoundary)).toBe("allow");
+  });
+
+  it("rejects an unknown workspaceBoundary value", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
+    const path = join(dir, "config.json");
+
+    try {
+      await writeFile(path, JSON.stringify({ workspaceBoundary: "permissive" }));
+
+      const result = loadFileConfig(path);
+
+      expect(result.loaded).toBe(false);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("rejects a negative approval timeout from file config", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-config-"));
     const path = join(dir, "config.json");

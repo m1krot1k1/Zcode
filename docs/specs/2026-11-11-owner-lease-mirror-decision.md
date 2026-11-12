@@ -1,16 +1,82 @@
-# Owner/lease/mirror：保持禁用，波次 3 退役（R09 决策记录）
+# Owner/lease/mirror：Host 侧退役，保留 session route（R09 决策记录）
 
-| 字段     | 值                                                                                                                                                                                                                                                                      |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 状态     | 决策记录（**未实施**）：不接线、不删除代码；R09 **未完成**，等待 owner 产品决定                                                                                                                                                                                         |
-| 日期     | 2026-11-11                                                                                                                                                                                                                                                              |
-| 来源     | `docs/research/2026-11-11-zcode-wide-competitive-research.md` §R09（`:239-248`）                                                                                                                                                                                        |
-| 适用范围 | `packages/desktop/src/host`（`taskRealtimePort` 注入与镜像）、`packages/desktop/src/main/taskRealtimeBus.ts`、`packages/services/src/session/sessionRealtimePort.ts`                                                                                                    |
-| 主要对象 | `createReportingRemoteZCodeTaskService`、`mirrorRemotePrompt`、`createTaskRealtimeBridgeForHostInit`、`TaskRealtimeBus`、`SessionRealtimePort`                                                                                                                          |
-| 结论     | 现在选 **A（保持禁用 + 文档/守卫）**；波次 3 选 **C（退役）**；**不要**把 `activeSessionRealtimePort` 接进 task service                                                                                                                                                 |
-| 关联文档 | `AGENTS.md:69-70`、`docs/agents/runtime-boundaries.md:55-58`、`docs/web-remote-control/task-realtime-sync.md:5-7,19,121-135`、`docs/v4-refactor/11-deletion-plan.md:143-152`、`docs/v4-refactor/01-topology.md:122-124`、`docs/specs/workspace-hook-trust.md:2585-2586` |
+| 字段     | 值                                                                                                                                                                                                                      |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 状态     | **Host 侧已实施（Option B）**：删除死链与注入点；不接线。TaskRealtimeBus 仅保留跨 Host session route，owner/lease/mirror 分支无生产者。                                                                                 |
+| 日期     | 2026-11-11 决策；2026-11-12 实施                                                                                                                                                                                        |
+| 来源     | `docs/research/2026-11-11-zcode-wide-competitive-research.md` §R09（`:239-248`）                                                                                                                                        |
+| 适用范围 | `packages/desktop/src/host/index.ts`、`packages/desktop/src/main/taskRealtimeBus.ts`、`packages/services/src/session/sessionRealtimePort.ts`（已删）                                                                    |
+| 主要对象 | `createReportingRemoteZCodeTaskService`、`TaskRealtimeBus`、shared `task-realtime` schema                                                                                                                               |
+| 结论     | 选 **B（删除 Host 死链）**，不选 A（接线）。镜像路径没有消费者、V4 topic 是权威读路径、bots 走 legacy adapter，接线只会制造双流与无人应答的 owner-command。shared wire schema 暂留，波次 3 再定。                       |
+| 关联文档 | `AGENTS.md:69-70`、`docs/agents/runtime-boundaries.md:45-58`、`docs/web-remote-control/task-realtime-sync.md:5-7,19,121-135`、`docs/v4-refactor/11-deletion-plan.md:143-152`、`docs/v4-refactor/01-topology.md:122-124` |
 
-## 1. 决策摘要
+## 0. 2026-11-12 实施更新（覆盖下文 2026-11-11 的“未实施”状态）
+
+> 以下 §1–§8 保留为 2026-11-11 的决策过程与当时证据；其中引用的 `taskRealtimeBridge.ts`、
+> `sessionRealtimePort.ts` 和 `host/index.ts` 行号已被本节删除/移动。当前可执行命令与状态以 §0 为准。
+
+### 0.1 选择：Option B（删除），不是 Option A（接线）
+
+代码与测试证据（本次按检出源码复核）：
+
+1. `createReportingRemoteZCodeTaskService` 只有一个生产调用点，且只传 `{ reportRunningPromptCount: false }`。在该配置下
+   `shouldWrapSendPrompt` 为 `false`，`sendPrompt` 原样返回；镜像分支不仅没有 port，连包装器都不会创建。
+2. 即使补上 port，`mirrorRemotePrompt` 的产出也没有消费者：host 侧没有 `onDidReceiveEvent` 订阅方，
+   renderer/手机使用 V4 conversation topic，bots 使用 adapter legacy `onDynamicTaskEvent`。
+3. owner-command 在 Host 侧没有消费者。接上 port 后 `stop_generation` / `respond_permission` 等请求会进入
+   `TaskRealtimeBus` 并等待 30s 超时，而不是生效。
+4. 镜像会与 V4 topic 形成双流；desktop-continuous 与 web-remote-replayable 的恢复语义不同，
+   `mirrorRemotePrompt` 没有 `deliveryKind` 参数，无法证明去重或顺序。
+5. bridge 的 lease 以 `runId` 为键，bots 同时 `sendPrompt` 时可能出现 `owned_by_other_host`，
+   行为随窗口时序漂移。以上任一问题都不是“加一行注入”能收口的。
+
+因此按“未验证路径不能进生产”的规则删除 Host 侧死链，而不是把文档改成它已经工作。
+
+### 0.2 本次删除的内容
+
+- `packages/desktop/src/host/index.ts`
+  - 删除 `createReportingRemoteZCodeTaskService` 的 `taskRealtimePort` 与 `materializePromptAttachments` 选项。
+  - 删除 `mirrorRemotePrompt`、`isRemoteMirrorableStreamEvent`、`prepareRemotePromptParams`。
+  - 删除 `activeSessionRealtimePort` 声明、`InitLocal` 赋值和两处 dispose。
+  - `sendPrompt` 包装器只保留 running-prompt 计数；
+  - 生产装配保持 `{ reportRunningPromptCount: false }`，不再存在“传了 port 就启用”的隐式开关。
+- 删除 `packages/desktop/src/host/taskRealtimeBridge.ts` 与 `packages/desktop/test/taskRealtimeBridge.test.ts`：
+  Host 不再创建 bridge，该文件没有生产消费者。
+- 删除 `packages/services/src/session/sessionRealtimePort.ts` 及其 `@zcode/services` 导出：
+  接口只被 bridge 使用。
+- `packages/desktop/src/main/taskRealtimeBus.ts` **保留**：
+  `SessionRouteAnnounce` / `SessionMessageSendRequested` / `SessionMessageDeliver` 仍是窗口 Host 的实时跨 Host 路径。
+  其 lease / stream mirror / owner-command 分支在 Host 退役后没有生产者，属于待波次 3 删除的 inert 状态；
+  本次不删 `TaskRealtimeBus` 类本身，避免同时改动 main IPC 的 workspace-key 同步与 session route。
+
+### 0.3 本次验证
+
+| 检查                                              | 结果                                                                                                                                                                                               |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host 属性审计                                     | `host/index.ts` 对 `taskRealtimePort`、`activeSessionRealtimePort`、`createTaskRealtimeBridgeForHostInit`、`mirrorRemotePrompt`、`acquireTaskRunLease`、`publishStreamOp` 零命中（守卫测试覆盖）。 |
+| 删除文件                                          | `host/taskRealtimeBridge.ts`、`test/taskRealtimeBridge.test.ts`、`services/session/sessionRealtimePort.ts` 不存在（守卫测试覆盖）。                                                                |
+| 保留 continuous 路径                              | session route 单测：host-b `SessionRouteAnnounce` → host-a `SessionMessageSendRequested` → host-b `SessionMessageDeliver` → 结果回 host-a。                                                        |
+| `pnpm exec tsc -b packages/desktop/tsconfig.json` | 本改动无新增错误；工作树里仍有与本次改动无关的既有错误（`botsService.ts`、`zcodeAgentService.ts`、`telemetryCore.ts`，来自并行改动）。                                                             |
+| Vitest                                            | `hostOwnerLeaseRetired.test.ts` + `taskRealtimeBus.test.ts` + `hostRemoteStartupIntegration.test.ts`：3 文件 23 用例通过。                                                                         |
+
+### 0.4 仍未完成（R09 剩余）
+
+1. `TaskRealtimeBus` 的 lease / stream mirror / owner-command 分支与 shared `task-realtime` schema 仍在树上。
+   删除它们需要 §6 的 owner 回答（旧 mobile bundle / 第三方 relay 是否仍依赖 wire frame）与一个发布周期的零流量证据；
+   在拿到证据前保留 schema、删除生产与状态机是允许的下限。
+2. 未新增 mobile owner-command E2E：该路径已被删除，不需要再为不存在的路由做门槛；若恢复，必须先新增该 E2E。
+3. §2 的 F1–F13 是 2026-11-11 的历史快照，行号与部分事实已被本节取代；保留用于说明当时的判断依据。
+
+### 0.5 复现命令
+
+```bash
+pnpm exec tsc -b packages/desktop/tsconfig.json --pretty false
+pnpm exec vitest run packages/desktop/test/hostOwnerLeaseRetired.test.ts \
+  packages/desktop/test/taskRealtimeBus.test.ts \
+  packages/desktop/test/hostRemoteStartupIntegration.test.ts
+```
+
+## 1. （历史）2026-11-11 决策摘要
 
 1. **不接线**：`activeSessionRealtimePort` 虽然被创建（`packages/desktop/src/host/index.ts:3731`），但从未传给唯一消费者
    `createReportingRemoteZCodeTaskService`（`:3983-3991` 只传了 `reportRunningPromptCount: false`）。不要为了“让代码看起来一致”
@@ -324,9 +390,12 @@ node scripts/check-workspace-freshness.mjs
 
 本次未运行（Bash 不可用），因此所有结论仅代表**当前检出源码**的静态事实，不代表基线干净。
 
-## 8. R09 状态
+## 8. R09 状态（2026-11-11 历史；被 §0 取代）
 
-**R09 = NOT complete。**
+> 以下是实施前的记录。当前状态见 §0：Host 死链已删除，R09 的 Host 侧收口完成；
+> 剩余仅为 `TaskRealtimeBus` inert 分支与 shared schema 的波次 3 删除。
+
+**R09 = NOT complete（历史）。**
 
 - 未接线：`activeSessionRealtimePort` 仍未传入 `createReportingRemoteZCodeTaskService`。
 - 未删除：`taskRealtimeBus.ts`、`taskRealtimeBridge.ts`、`sessionRealtimePort.ts` 与 shared schema 全部保留。

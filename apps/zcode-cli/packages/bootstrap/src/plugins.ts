@@ -21,6 +21,7 @@ import {
   ensureDefaultPluginMarketplaces,
   discoverNodePluginsSync,
   ensureMarketplaceManifestAvailable,
+  getPluginCompatibilityDiagnosticCode,
   getPluginSourceDiagnosticCode,
   getPluginDataDir,
   installMarketplacePlugin,
@@ -1417,6 +1418,15 @@ function toMarketplaceInstallDiagnostic(
   if (sourceCode) {
     return toPluginDiagnostic({
       code: sourceCode,
+      message,
+      pluginId,
+      severity: "error",
+    });
+  }
+  const compatibilityCode = getPluginCompatibilityDiagnosticCode(error);
+  if (compatibilityCode) {
+    return toPluginDiagnostic({
+      code: compatibilityCode,
       message,
       pluginId,
       severity: "error",

@@ -1,4 +1,10 @@
 /* oxlint-disable eslint(max-lines) -- task realtime bus owns lease, stream batching, replay and command routing state in one main-process coordinator. */
+/*
+ * 当前生产状态（2026-11-12，见 docs/specs/2026-11-11-owner-lease-mirror-decision.md）：
+ * 只有跨 Host session route（SessionRouteAnnounce / SessionMessageSendRequested / SessionMessageDeliver）
+ * 有 Host 生产者。lease、stream mirror、owner-command 是 wire 兼容的 inert 状态，Host 不再创建
+ * taskRealtimeBridge，也不再注入 realtime port；不要在未补消费者和 stale-run/去重验证前重新接线。
+ */
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
 import {
   type TaskOwnerCommandDelivery,

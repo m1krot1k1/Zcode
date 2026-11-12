@@ -1,5 +1,10 @@
 # Bash Tool
 
+> **现状（2026-11-12）：** ZCode 没有 OS-sandbox。决策见
+> [`docs/specs/2026-11-11-bash-sandbox-honesty.md`](../../../../../docs/specs/2026-11-11-bash-sandbox-honesty.md)：
+> `dangerouslyDisableSandbox` 已从 provider-visible/runtime schema 移除，handler 始终报告
+> `sandboxed: false`。下文保留原始设计；把它当作历史/计划，而不是当前行为。
+
 ## 当前执行合同（2026-09-07）
 
 本次直写重构按根目录 `docs/bash-background-parity.md` 执行：POSIX append/no-follow、Windows w，
@@ -25,7 +30,6 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 | `timeout` | `number` | 否 | 前台等待预算，毫秒，受最大值限制；任务提交到后台后该预算立即失效 |
 | `description` | `string` | 否 | 人类可读的主动语态说明，用于 UI 和权限说明 |
 | `run_in_background` | `boolean` | 否 | 是否转为后台任务。启动结果返回任务 ID 和输出文件路径；完成后向模型注入短通知 |
-| `dangerouslyDisableSandbox` | `boolean` | 否 | 请求绕过 sandbox，受策略控制 |
 
 `timeout`、`run_in_background` 和 `dangerouslyDisableSandbox` 在 provider-facing JSON Schema
 中仍分别是 `number` / `boolean`，但 runtime validation 兼容常见 semantic 输出，例如
@@ -51,7 +55,6 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 | `backgroundTaskId` | `string?` | 后台任务 ID |
 | `backgroundedByUser` | `boolean?` | 是否用户手动后台化 |
 | `assistantAutoBackgrounded` | `boolean?` | 是否被 assistant mode 自动后台化 |
-| `dangerouslyDisableSandbox` | `boolean?` | 是否请求绕过 sandbox |
 | `returnCodeInterpretation` | `string?` | 特殊返回码解释 |
 | `noOutputExpected` | `boolean?` | 成功时是否预期无输出 |
 | `structuredContent` | `any[]?` | 结构化内容块 |
@@ -104,7 +107,7 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 1. 校验输入 schema。
 2. 动态判断是否只读。只有通过 readonly command validation 的命令才并发安全。
 3. 解析命令用于权限匹配。复杂、不可解析或可疑命令默认进入 ask。
-4. 根据 sandbox 配置、排除规则和 `dangerouslyDisableSandbox` 决定是否 sandbox。
+4. Sandbox 不 применяется: поля в схеме нет, выполнение не изолировано (`sandboxed: false` в телеметрии).
 5. 将 session cwd 规范化为绝对路径并作为命令工作目录；Bash tool 输入不接受自定义 `cwd`。
 6. 调用统一 shell adapter，以 shell mode 执行 `command`。
 7. 默认前台等待预算按配置，允许输入覆盖但不能超过最大值；后台提交后必须清除该预算。
@@ -112,7 +115,7 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 9. 支持 `run_in_background`，并记录 background task。
 10. 支持用户或 assistant 自动把长任务转后台。
 11. 命令完成后解释特殊返回码，追踪 git 操作和 code indexing 使用。
-12. 处理 stdout/stderr、sandbox violation 注释、image 输出、大输出落盘。
+12. 处理 stdout/stderr、image 输出、大输出落盘。
 13. 返回结构化输出。
 
 ## Prompt 约束
@@ -145,8 +148,8 @@ ZCode prompt 可以更短，但这些约束应变成 tool policy 和 tests，而
 - compound command 必须拆分子命令，任一子命令匹配 hook 或 deny 规则都要触发。
 - 无法安全解析、过于复杂、包含危险语义时 fail closed 到 ask。
 - deny 规则不能被复杂命令降级成 ask。
-- sandbox 是独立边界，不等同于 WebFetch 的预授权域名。
-- `dangerouslyDisableSandbox` 只能在策略允许且用户批准时生效。
+- OS-sandbox не является текущей границей: не описывайте его как гарантию изоляции.
+- Требования к изоляции должны опираться на permission-политику и workspace boundary, а не на несуществующий sandbox.
 
 ZCode 应把 shell permission 拆成三个层次：
 
@@ -232,7 +235,7 @@ flowchart LR
 | `env` | Bash tool 不从模型输入接收 env overlay。ExecutionPort 仍保留该字段给内部调用，adapter 负责 Windows 环境变量大小写差异 |
 | `timeoutMs` | 普通 `run()` 的单次执行超时；Bash background lifecycle 会把它解释为前台等待预算，并在后台提交时清除 |
 | `signal` | 取消信号。取消必须进入结构化 `cancelled` 状态并触发进程树清理 |
-| `sandbox` | sandbox 策略请求。第一版可以是 no-op，但字段必须贯穿 trace 和审计 |
+| `sandbox` | Не используется: поле удалено из provider-visible схемы; trace помечает `enabled: false` и `metadata.enforcement: "not_implemented"` |
 | `outputLimit` | generic execution 仍按 stdout/stderr 双流预算；Bash 使用单一合并输出预算，运行期每 5 秒检查严格大于 `5GiB` 的软阈值，正常前台保留完整文件。超出 inline 预算后只返回前缀并标记 `truncated` |
 | `onEvent` | 流式事件回调，Bash 覆盖 `started`、`progress`、`completed`、`failed`，不产生逐 chunk 事件；通用执行保留 `stdout`/`stderr` |
 | `close()` | 可选 adapter 生命周期方法。宿主 app/session 正常关闭时调用；必须尽力取消并清理该 adapter 仍持有的前台/后台 shell 进程树 |

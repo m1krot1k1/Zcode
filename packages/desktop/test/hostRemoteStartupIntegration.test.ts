@@ -192,7 +192,6 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
       `${compile(`async function run() { ${initNode.getText(source)} }`)};run;`,
       {
         databaseStartup: undefined,
-        activeSessionRealtimePort: null,
         activeServices: null,
         activeHostApiNetworkTransport: null,
         sourceServerDirectory: null,
@@ -225,7 +224,6 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
             },
           },
         }),
-        createTaskRealtimeBridgeForHostInit: () => null,
         createE2ERepoWikiGenerationFixtureFromEnv: () => undefined,
         createSettingServiceWithMigrations: () => ({
           service: {},

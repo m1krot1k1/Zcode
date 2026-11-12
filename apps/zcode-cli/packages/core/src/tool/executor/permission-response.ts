@@ -5,6 +5,7 @@ import {
   type PermissionBrokerResult,
 } from "@zcode/contracts";
 import type { PermissionDecisionResult } from "../../permission/service.js";
+import type { WorkspaceBoundaryApprovalRequest } from "../path-policy.js";
 import type { ExecutableToolCall, ToolEntry, ToolExecutionResult } from "../types.js";
 import { createErrorResult, createPermissionErrorResult } from "./errors.js";
 import { preparePermissionInput, snapshotPermissionInput } from "./permission-input.js";
@@ -18,6 +19,11 @@ export type PermissionFlowResult =
       permissionWaitMs?: number;
       /** 确认窗里的调整中实际生效的那部分（applyInputAdjustments 的 applied）。 */
       inputAdjustments?: Readonly<Record<string, unknown>>;
+      /**
+       * ask 模式下已经由用户确认的越界路径。executor 用它构造同步审批端口；
+       * 未列出的路径在 handler 里仍会被拒绝。
+       */
+      workspaceBoundaryApproval?: readonly WorkspaceBoundaryApprovalRequest[];
     }
   | { allowed: false; result: ToolExecutionResult };
 

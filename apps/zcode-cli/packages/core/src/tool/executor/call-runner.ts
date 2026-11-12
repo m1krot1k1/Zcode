@@ -38,7 +38,8 @@ import {
   runPreToolUseHooks,
 } from "./hook-flow.js";
 import { resolveToolCallCapabilityFlags } from "./permission-capability.js";
-import { resolveToolPermission } from "./permission-flow.js";
+import { createWorkspaceBoundaryAuditLogger, resolveToolPermission } from "./permission-flow.js";
+import { createWorkspaceBoundaryApprovalPort } from "../path-policy.js";
 import { snapshotPermissionInput } from "./permission-input.js";
 import { buildToolInputResolutionContext } from "./permission-input-adjustments.js";
 import { createMcpToolDisplay, createToolResultDisplay } from "./result-display.js";
@@ -481,13 +482,14 @@ async function executeToolCallImpl(
       const embeddedSearchDecision = resolveEmbeddedSearchBranchCapability({
         bashAvailable: deps.registry.has("Bash"),
       });
+      // 审计只走 runtime logger：handler 的越界（allow/approve/deny）都落结构化日志，
+      // 不新增事件通道，也不改变工具的返回值。
+      const auditWorkspaceBoundary = createWorkspaceBoundaryAuditLogger(deps.logger, traceContext);
       const context: ToolExecutionContext = {
         ...(deps.getAvailableAgentTypes === undefined
           ? {}
           : { availableAgentTypes: deps.getAvailableAgentTypes() }),
-        ...(deps.callerAgentType === undefined
-          ? {}
-          : { callerAgentType: deps.callerAgentType }),
+        ...(deps.callerAgentType === undefined ? {} : { callerAgentType: deps.callerAgentType }),
         toolCallId: canonicalToolCall.id,
         toolSearch: options?.toolSearch,
         telemetry,
@@ -547,6 +549,18 @@ async function executeToolCallImpl(
         setWorkingDirectory: deps.setWorkingDirectory,
         workingDirectory: guardedWorkingDirectory ?? deps.getWorkingDirectory(),
         workspaceRoot: deps.getWorkspaceRoot(),
+        writeScope: deps.getWriteScope?.(),
+        workspaceBoundary: deps.workspaceBoundary,
+        // ask 的同步端口只回放权限流里已经取得的用户决定；没有获批路径时不注入，
+        // 让 path-policy 按契约以 permission_escalation fail closed。
+        ...(permissionResult.workspaceBoundaryApproval === undefined
+          ? {}
+          : {
+              workspaceBoundaryApproval: createWorkspaceBoundaryApprovalPort(
+                permissionResult.workspaceBoundaryApproval,
+              ),
+            }),
+        ...(auditWorkspaceBoundary === undefined ? {} : { auditWorkspaceBoundary }),
         workspaceIdentity: deps.workspaceIdentity,
         remoteSessionId: deps.remoteSessionId,
         clientMode: deps.clientMode,
