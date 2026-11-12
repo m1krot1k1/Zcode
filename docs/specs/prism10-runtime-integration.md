@@ -77,6 +77,15 @@ Git подтверждает коммиты `9eb5944c`, `3ea74212`, `52a7822e`, 
 
 Для проверки без реальной публикации разрешён только инъецируемый fake command runner/API: сценарий должен пройти локальные gates, передать точный commit SHA и asset set в план и остановиться перед любым реальным `push`/`gh release create`. Отдельные negative cases обязаны остановиться при подписи/notarization rejection и tag SHA mismatch.
 
+## Канонические имена Host acceptance
+
+Runtime-приёмка больше не называется PRISM в коде и протоколе: durable-константы
+`SESSION_ENTRY_HOST_ACCEPTANCE_*`, типы `HostAcceptanceContract/EvidenceReceipt/Decision`,
+поле протокола `hostAcceptance`. Строковые значения durable-записей и старое поле
+`prismAcceptance` сохранены для совместимости; UI читает `hostAcceptance` и падает
+обратно на `prismAcceptance`. Имя PRISM осталось только как историческое происхождение
+текста промпта и модулей vendor-пакета.
+
 ## Владельцы и границы
 
 ```text
