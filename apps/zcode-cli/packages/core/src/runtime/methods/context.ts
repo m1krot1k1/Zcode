@@ -26,6 +26,7 @@ import {
   normalizeReadFileStateMtimeMs,
 } from "../../tool/read-file-state.js";
 import { resolveEnabledProjectMemoryRoot } from "../helpers/project-memory.js";
+import { hasSkillTools } from "../helpers/runtime-reminders.js";
 import { buildContextHistoryEntries } from "./context-history-entries.js";
 import { resolveRuntimeEmbeddedSearchEnabled } from "./embedded-search-branch.js";
 import { getContextSourceShellDisplayName } from "./session-shell-environment.js";
@@ -146,13 +147,17 @@ export function createContextBuilderFromSnapshot(
     this.config.envInfo = envInfo;
   }
   if (this.config.subagentContext) {
+    // 原因: router-профили (start/orchestrator) не имеют инструмента Skill, но каталог
+    // навыков добавлялся им в контекст на каждом переходе. Это десятки килобайт, которые
+    // модель не может применить. Показываем каталог только ролям с доступом к Skill.
+    const exposesSkills = hasSkillTools(this.getTools().map((tool) => tool.name));
     return createSubagentContextBuilder({
       agentPrompt: this.config.subagentContext.agentPrompt,
       currentDate: snapshot.currentDate,
       envInfo,
       model: options.model,
       skillMetadataBudget: this.config.skillMetadataBudget,
-      skills: this.skillLoadOutcome,
+      skills: exposesSkills ? this.skillLoadOutcome : undefined,
       userInstructions: this.config.subagentContext.userInstructions,
       bundledHarnessRules:
         snapshot.bundledHarnessRules ?? this.config.subagentContext.bundledHarnessRules,
@@ -313,7 +318,7 @@ export function createConfigOnlyContextSnapshot(
       nodeVersion: "unknown",
     },
     currentDate: this.config.currentDate,
-    // Причина: вложенный агент без ContextSourcePort создаёт config-only snapshot;
+    // Причина: вложенный агент без C�оженный агент без ContextSourcePort создаёт config-only snapshot;
     // без копии принятого снимка его потомки теряли AGENTS.md после первого уровня.
     // Исправление: держать тот же снимок в runtime-owned контексте для следующей делегации.
     userInstructions: this.config.subagentContext?.userInstructions,

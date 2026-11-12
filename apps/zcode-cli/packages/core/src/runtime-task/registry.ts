@@ -1399,6 +1399,14 @@ export interface RuntimeTaskRegistry {
     id: string,
     options?: { signal?: AbortSignal },
   ): Promise<RuntimeTaskSnapshot | undefined>;
+  /**
+   * Ожидание изменения доступной ёмкости worker-слотов.
+   *
+   * Причина: admission отказывал мгновенно `active_limit`, и модель тратила целый
+   * дополнительный запрос, чтобы повторить Task. Рантайм должен ждать освобождения
+   * слота сам, а не превращать перегрузку в ошибку.
+   */
+  waitForCapacityChange(options?: { signal?: AbortSignal }): Promise<void>;
   // Исправление: optional hooks могли молча отключить budget; интерфейс теперь требует весь lifecycle.
   beginRootRunBudget(input: {
     rootRunId: string;
@@ -1565,6 +1573,8 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
   private readonly subagentTaskIdsByParentSession = new Map<SessionId, Set<string>>();
   private readonly activeSubagentTaskIdsByRootSession = new Map<SessionId, Set<string>>();
   private readonly terminalWaiters = new Map<string, Set<RuntimeTaskWaiter>>();
+  /** Ожидающие освобождения worker-слота; резолвятся при терминальном переходе/снятии задачи. */
+  private readonly capacityWaiters = new Set<() => void>();
   private readonly rootRunBudgets = new Map<string, RootRunBudgetState>();
   // Root runs whose budget was deliberately released after turn finish. A terminal
   // task from such a run cannot be resumed without a fresh budget.
@@ -2161,6 +2171,13 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     }
 
     const previous = this.tasks.get(task.taskId);
+    // Освобождение слота: задача была активной, а становится терминальной или перестаёт
+    // быть running. Ждать ёмкость имеет смысл только на таких переходах.
+    const capacityFreed =
+      previous !== undefined &&
+      previous.type === "local_agent" &&
+      !isTerminalRuntimeTask(previous) &&
+      (isTerminalRuntimeTask(task) || task.status !== "running");
     // Единый funnel всех записей задачи: здесь ловим переход в терминальное состояние,
     // чтобы завершение, падение и отмена одинаково снимали claim.
     if (
@@ -2200,6 +2217,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
       );
     }
     this.maybeReleaseRootRunBudget(previous?.rootRunId ?? task.rootRunId);
+    if (capacityFreed) this.notifyCapacityChanged();
   }
 
   private removeTaskIndexes(task: RuntimeTaskSnapshot): void {
@@ -2338,6 +2356,11 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   remove(id: string): void {
     const task = this.tasks.get(id);
+    const capacityFreed =
+      task !== undefined &&
+      task.type === "local_agent" &&
+      !isTerminalRuntimeTask(task) &&
+      task.status === "running";
     if (task && task.type === "local_agent" && !isTerminalRuntimeTask(task)) {
       // Удаление активной задачи без терминального перехода тоже освобождает работу.
       this.releaseWorkClaim(task.agentId);
@@ -2345,6 +2368,7 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     if (task) this.removeTaskIndexes(task);
     this.tasks.delete(id);
     this.terminalSubagentTaskIds.delete(id);
+    if (capacityFreed) this.notifyCapacityChanged();
     if (task?.attemptId) {
       this.archivedTerminalTaskAttempts.delete(terminalArchiveKey(id, task.attemptId));
     }
@@ -2398,6 +2422,36 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
     if (!this.finalizingSubagentTasks.has(id) && (!current || isTerminalRuntimeTask(current)))
       return Promise.resolve(current);
     return this.waitFor(this.terminalWaiters, id, options);
+  }
+
+  waitForCapacityChange(options: { signal?: AbortSignal } = {}): Promise<void> {
+    if (options.signal?.aborted) {
+      return Promise.reject(options.signal.reason ?? new Error("Capacity wait aborted"));
+    }
+    return new Promise<void>((resolve, reject) => {
+      const done = (): void => {
+        cleanup();
+        resolve();
+      };
+      const onAbort = (): void => {
+        cleanup();
+        reject(options.signal?.reason ?? new Error("Capacity wait aborted"));
+      };
+      const cleanup = (): void => {
+        this.capacityWaiters.delete(done);
+        options.signal?.removeEventListener("abort", onAbort);
+      };
+      this.capacityWaiters.add(done);
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  /** Будит ожидающих после освобождения слота; индексы к этому моменту уже обновлены. */
+  private notifyCapacityChanged(): void {
+    if (this.capacityWaiters.size === 0) return;
+    const waiters = [...this.capacityWaiters];
+    this.capacityWaiters.clear();
+    for (const waiter of waiters) waiter();
   }
 
   private waitFor(

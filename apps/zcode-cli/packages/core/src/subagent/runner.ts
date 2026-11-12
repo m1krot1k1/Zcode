@@ -125,6 +125,8 @@ export interface ExploreSubagentRuntimeRequest {
   level?: number;
   workingDirectory: string;
   workspaceRoot: string;
+  /** Явно объявленный родителем write-scope; наследуется child runtime. */
+  writePaths?: readonly string[];
   traceContext: TraceContext;
 }
 
@@ -460,7 +462,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       }
       // Уровень берётся из snapshot родителя, чтобы background/resume не сбрасывали
       // рекурсивную защиту; он не ограничивает общее число задач.
-      const admission = registerSubagentTask(
+      const admission = await registerSubagentTaskWithCapacityWait(
         registry,
         createRuntimeTaskSnapshot({
           isBackgrounded: false,
@@ -983,7 +985,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       const startedAt = new Date(lifecycle.startedAt);
       const output = createAgentBackgroundedOutput(request, lifecycle);
       const taskAbort = createSubagentTaskAbortController(startOptions?.signal);
-      const admission = registerSubagentTask(
+      const admission = await registerSubagentTaskWithCapacityWait(
         registry,
         createRuntimeTaskSnapshot({
           isBackgrounded: true,
@@ -2519,6 +2521,46 @@ function registerSubagentTask(
   return registry.registerSubagentTask(task, cancellation);
 }
 
+/**
+ * Сколько ждать свободный worker-слот, прежде чем вернуть ошибку модели.
+ * Причина: мгновенный отказ `active_limit` стоил полноценного дополнительного
+ * запроса к модели (7–25 с) и превращал перегрузку в провал ветки DAG.
+ */
+const SUBAGENT_CAPACITY_WAIT_TIMEOUT_MS = 10 * 60_000;
+const SUBAGENT_CAPACITY_POLL_MS = 1_000;
+
+async function registerSubagentTaskWithCapacityWait(
+  registry: RuntimeTaskRegistry,
+  task: RuntimeTaskSnapshot,
+  cancellation: SubagentTaskAbortHandle,
+): Promise<RuntimeTaskAdmissionResult> {
+  let admission = registerSubagentTask(registry, task, cancellation);
+  if (admission.accepted || admission.reason !== "active_limit") return admission;
+  const deadlineAt = Date.now() + SUBAGENT_CAPACITY_WAIT_TIMEOUT_MS;
+  while (
+    !admission.accepted &&
+    admission.reason === "active_limit" &&
+    Date.now() < deadlineAt &&
+    !cancellation.signal.aborted
+  ) {
+    const capacityChanged = registry.waitForCapacityChange({
+      signal: cancellation.signal,
+    });
+    const poll = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, SUBAGENT_CAPACITY_POLL_MS);
+      timer.unref?.();
+    });
+    try {
+      await Promise.race([capacityChanged, poll]);
+    } catch {
+      // Отмена родителя: ниже вернём текущий отказ, вызывающий код его обработает.
+      break;
+    }
+    admission = registerSubagentTask(registry, task, cancellation);
+  }
+  return admission;
+}
+
 async function declarePrismTaskContractForAdmission(
   options: ExploreSubagentPortOptions,
   request: SubagentRunRequest,
@@ -3383,6 +3425,7 @@ async function runAgentToCompletion(
       ...(taskSnapshot?.level === undefined ? {} : { level: taskSnapshot.level }),
       workingDirectory: request.workingDirectory,
       workspaceRoot: request.workspaceRoot,
+      ...(request.writePaths === undefined ? {} : { writePaths: request.writePaths }),
       traceContext: lifecycle.childTraceContext,
     },
     runOptions,

@@ -4,6 +4,8 @@ import { AgentRuntime } from "../src/runtime.js";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
 import {
   buildCodeIndexTurnHint,
+  hasCodeReadingTools,
+  hasSkillTools,
   sharedReadFileStateForChild,
 } from "../src/runtime/helpers/runtime-reminders.js";
 import { createAgentToolEntry } from "../src/tool/handlers/agent.js";
@@ -112,5 +114,23 @@ describe("code index read contract", () => {
       },
     ) as unknown as AgentRuntimeInternal;
     expect(runtime.readFileState).toBe(shared);
+  });
+});
+
+describe("role capability gates for injected context", () => {
+  // Причина: router-роли (start/orchestrator) имеют только Task. Подсказка указателя кода
+  // стоила до 2 секунд ожидания и до 12 КБ контекста на каждом переходе цепочки /start.
+  it("injects the code-index hint only for roles that can read code", () => {
+    expect(hasCodeReadingTools(["Task"])).toBe(false);
+    expect(hasCodeReadingTools(["Task", "TaskOutput"])).toBe(false);
+    expect(hasCodeReadingTools(["Read", "Task"])).toBe(true);
+    expect(hasCodeReadingTools(["CodeIndex"])).toBe(true);
+  });
+
+  it("shows the skill catalog only for roles that can load skills", () => {
+    expect(hasSkillTools(["Task"])).toBe(false);
+    expect(hasSkillTools(["Read", "Bash", "Edit"])).toBe(false);
+    expect(hasSkillTools(["Skill", "Read"])).toBe(true);
+    expect(hasSkillTools(["SkillSearch"])).toBe(true);
   });
 });

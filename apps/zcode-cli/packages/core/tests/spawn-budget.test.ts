@@ -67,6 +67,57 @@ describe("legacy spawn budget compatibility", () => {
   });
 });
 
+describe("worker capacity wait", () => {
+  it("wakes a waiter when an active slot is released", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const root = createSessionId("capacity-wait-root");
+    const turnId = createTurnId("capacity-wait-turn");
+    registry.beginRootRunBudget({
+      rootRunId: `${root}:${turnId}`,
+      rootSessionId: root,
+      turnId,
+      maxParallel: 1,
+    });
+    expect(
+      registry.registerSubagentTask(
+        task("capacity-wait-1", root, createSessionId("capacity-wait-child-1"), turnId),
+        settled(),
+      ),
+    ).toMatchObject({ accepted: true });
+    expect(
+      registry.registerSubagentTask(
+        task("capacity-wait-2", root, createSessionId("capacity-wait-child-2"), turnId),
+        settled(),
+      ),
+    ).toEqual({ accepted: false, reason: "active_limit" });
+
+    let woke = false;
+    const waiting = registry.waitForCapacityChange().then(() => {
+      woke = true;
+    });
+    await Promise.resolve();
+    expect(woke).toBe(false);
+
+    registry.update("capacity-wait-1", (current) => ({ ...current, status: "completed" }));
+    await waiting;
+    expect(woke).toBe(true);
+    expect(
+      registry.registerSubagentTask(
+        task("capacity-wait-2", root, createSessionId("capacity-wait-child-2"), turnId),
+        settled(),
+      ),
+    ).toMatchObject({ accepted: true });
+  });
+
+  it("rejects the wait when the parent aborts", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const controller = new AbortController();
+    const waiting = registry.waitForCapacityChange({ signal: controller.signal });
+    controller.abort(new Error("stopped"));
+    await expect(waiting).rejects.toThrow("stopped");
+  });
+});
+
 function task(
   taskId: string,
   parentSessionId: SessionId,

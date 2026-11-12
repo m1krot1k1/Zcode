@@ -269,6 +269,21 @@ function sameWorkspaceDirectory(
   return normalizeWorkspaceDirectory(left) === normalizeWorkspaceDirectory(right);
 }
 
+/** Может ли роль вообще применить подсказку указателя кода и каталог навыков. */
+export function hasCodeReadingTools(toolNames: Iterable<string>): boolean {
+  for (const name of toolNames) {
+    if (name === "Read" || name === "CodeIndex") return true;
+  }
+  return false;
+}
+
+export function hasSkillTools(toolNames: Iterable<string>): boolean {
+  for (const name of toolNames) {
+    if (name === "Skill" || name === "SkillSearch") return true;
+  }
+  return false;
+}
+
 /** Child runtimes in the same workspace reuse the parent's Read range cache. */
 export function sharedReadFileStateForChild(
   parentDirectory: string | undefined,

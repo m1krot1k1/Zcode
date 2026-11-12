@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
-import { buildCodeIndexTurnHint } from "../helpers/runtime-reminders.js";
+import { buildCodeIndexTurnHint, hasCodeReadingTools } from "../helpers/runtime-reminders.js";
 import { ensureGroupTaskPermissionScope } from "./input-intent-persistence.js";
 import { prepareOffPeakTurn } from "../off-peak/runtime.js";
 import {
@@ -2682,6 +2682,11 @@ async function injectCodeIndexTurnHint(
   options?: ExecuteTurnOptions,
 ): Promise<void> {
   if (options?.inputVisibility === "model-only") return;
+  // 原因: у router-ролей (start/orchestrator) единственный инструмент — Task.
+  // Подсказка стоит до 2 секунд ожидания Host и до 12 КБ контекста на каждом
+  // переходе цепочки, но применить её нечем. Выдаём только ролям с доступом к коду.
+  const toolNames = new Set(this.getTools().map((tool) => tool.name));
+  if (!hasCodeReadingTools(toolNames)) return;
   const hint = await buildCodeIndexTurnHint({
     port: this.codeIntelligencePort,
     query: input,

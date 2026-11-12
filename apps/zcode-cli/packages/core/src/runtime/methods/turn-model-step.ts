@@ -720,9 +720,13 @@ async function runModelBackedTurnStepImpl(
 
   this.logger?.info("Model request completed", {
     ...traceContextToLogContext(modelTraceContext),
+    // 原因: по одному trace нельзя разложить /start по переходам.
+    // agentType + sessionId делают каждый hop отдельной записью, пригодной для агрегации.
+    agentType: this.config.agentType ?? "root",
     durationMs: Date.now() - modelStartedAt,
     event: "model.request.completed",
     module: "core.runtime",
+    sessionId: this.sessionId,
     status: "completed",
     totalTokens: state.tokenCount,
     toolCallCount: toolCalls.length,
