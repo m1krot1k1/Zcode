@@ -279,7 +279,10 @@ export function sharedReadFileStateForChild(
   return { sharedReadFileState: readFileState };
 }
 
-const CODE_INDEX_TURN_HINT_TIMEOUT_MS = 800;
+// 800 мс не хватало: на первом обращении после старта Host семафор поиска отдавал
+// результат позже, и подсказка молча пропускалась. 2000 мс выше p95 локального поиска
+// и всё ещё незаметно для пользователя на старте хода.
+const CODE_INDEX_TURN_HINT_TIMEOUT_MS = 2_000;
 const HINT_HITS = 4;
 const HINT_CHAR_BUDGET = 12_000;
 

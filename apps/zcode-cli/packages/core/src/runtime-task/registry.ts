@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { availableParallelism } from "node:os";
+import { availableParallelism, totalmem } from "node:os";
 import { join } from "node:path";
 import type {
   ModelUsage,
@@ -305,10 +305,44 @@ export type RuntimeTaskAdmissionResult =
         | "work_claim_unavailable";
     };
 
-/** Current host capacity is the default concurrency; explicit user settings may cap it. */
-export function resolveAdaptiveSubagentMaxParallel(cpuCount = availableParallelism()): number {
-  const safeCpuCount = Number.isSafeInteger(cpuCount) && cpuCount > 0 ? cpuCount : availableParallelism();
-  return Math.max(1, safeCpuCount);
+/**
+ * Дефолтный параллелизм субагентов.
+ *
+ * Раньше ёмкость равнялась числу ядер. Этого недостаточно: каждый субагент запускает
+ * shell-процессы, и на 16 ГБ / 10 ядрах 112 одновременных агентов упёрлись в
+ * `kern.maxprocperuid`, дав `spawn /bin/zsh EAGAIN`. Watchdog тогда ещё был выключен,
+ * поэтому агенты висели часами.
+ *
+ * Теперь потолок — минимум из двух оценок: CPU и доступная память (по 512 МБ на агента).
+ * Явная настройка пользователя по-прежнему может только уменьшать потолок.
+ */
+export function resolveAdaptiveSubagentMaxParallel(
+  cpuCount = availableParallelism(),
+  host: { totalMemoryBytes?: number } = readHostCapacity(),
+): number {
+  const safeCpuCount =
+    Number.isSafeInteger(cpuCount) && cpuCount > 0 ? cpuCount : availableParallelism();
+  const cpuBound = Math.max(1, safeCpuCount);
+
+  const memoryBound = resolveMemoryBoundAgentCount(host);
+  // Память недоступна (нестандартная платформа) — не ограничиваем ниже CPU.
+  const effective = memoryBound === undefined ? cpuBound : Math.min(cpuBound, memoryBound);
+  return Math.max(1, effective);
+}
+
+const AGENT_MEMORY_FOOTPRINT_BYTES = 512 * 1024 * 1024;
+
+function resolveMemoryBoundAgentCount(host: { totalMemoryBytes?: number }): number | undefined {
+  // Берём долю от total, а не free: ОС отдаёт кэш под нагрузкой, а субагенты стартуют
+  // не мгновенно. Половина RAM оставляет место Host, Electron и индексу кода.
+  const total = host.totalMemoryBytes;
+  if (!Number.isFinite(total) || (total ?? 0) <= 0) return undefined;
+  const budget = Math.floor((total as number) * 0.5);
+  return Math.max(1, Math.floor(budget / AGENT_MEMORY_FOOTPRINT_BYTES));
+}
+
+function readHostCapacity(): { totalMemoryBytes?: number } {
+  return { totalMemoryBytes: totalmem() };
 }
 
 export function resolveSubagentMaxParallel(configured?: number): number {

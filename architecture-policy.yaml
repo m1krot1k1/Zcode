@@ -1055,6 +1055,10 @@ exceptions:
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/tool/untrusted-content.ts]
     reason: 外部内容信任框架（QW6/R17）的唯一所有者：标签、单行警告、闭标签中和与幂等判据。它刻意不 import 任何模块，供 tool / mcp / runtime-task 三个目录共享同一语义而不新增依赖边或循环；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，tool 目录没有独立模块边界，为这一个人文件登记路径级例外。
+  - id: fs-walk-files-unmanaged-file
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/adapters/src/fs/walk-files.ts]
+    reason: 文件树遍历的唯一所有者（排除 VCS 与 node_modules、按批并行 stat、abort 传播）。从 fs/index.ts 拆出是为压缩该文件的多职责并让 Glob/Grep fallback 共用同一条遍历路径；apps/zcode-cli 整体仍是 managed=false 的 legacy 模块，fs 目录没有独立模块边界，为这一个人文件登记路径级例外。
   - id: plugin-hook-trust-unmanaged-file
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/adapters/src/plugins/plugin-hook-trust.ts]

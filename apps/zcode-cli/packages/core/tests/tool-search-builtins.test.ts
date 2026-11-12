@@ -14,6 +14,7 @@ const RESIDENT_NAMES = [
   "Agent",
   "AskUserQuestion",
   "Bash",
+  "CodeIndex",
   "Edit",
   "Glob",
   "Grep",

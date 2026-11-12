@@ -40,6 +40,11 @@
         "**/apps/zcode-cli/packages/contracts/src/model/index.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/events.ts",
         "**/apps/zcode-cli/packages/core/src/runtime-task/registry.ts",
+        // Файловая адаптерная база: 1644 эффективных строки ещё до локальных правок
+        // (обход дерева вынесен в fs/walk-files.ts). Остаток — port-поверхность двух
+        // провайдеров поиска и атомарной записи; дробление требует отдельного рефактора,
+        // поэтому превышение отслеживается предупреждением.
+        "**/apps/zcode-cli/packages/adapters/src/fs/index.ts",
         // Центральный каталог профилей: контракты ролей держим одним owner-файлом,
         // поэтому превышение 800 строк отслеживаем warning'ом, а не механическим split.
         "**/apps/zcode-cli/packages/core/src/subagent/profile.ts",
@@ -53,6 +58,7 @@
         "src/model/index.ts",
         "src/runtime/methods/events.ts",
         "src/runtime-task/registry.ts",
+        "src/fs/index.ts",
         "src/subagent/profile.ts",
         "**/packages/ui/src/remote-connection-flow/index.ts"
       ],

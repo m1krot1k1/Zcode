@@ -46,12 +46,20 @@ import {
   shouldNormalizeLineEndings,
 } from "./text-metadata.js";
 import { readTextFileRangeFromNode } from "./text-range-reader.js";
+import { WALK_EXCLUDED_DIRECTORIES, walkFiles } from "./walk-files.js";
 import { maybeThrowStorageFsFault } from "../storage/fs-fault-injection.js";
 
 const DEFAULT_GLOB_MAX_RESULTS = 100;
 const DEFAULT_GREP_HEAD_LIMIT = 250;
 const DEFAULT_RIPGREP_TIMEOUT_MS = 30_000;
-const VCS_DIRECTORIES_TO_EXCLUDE = new Set([".git", ".svn", ".hg", ".bzr", ".jj", ".sl"]);
+/**
+ * Каталоги, исключаемые из ripgrep-поиска.
+ *
+ * Тот же набор использует `walkFiles`; здесь он нужен для `--glob`-аргументов ripgrep.
+ * Замер на этом репозитории: обход без `node_modules` 0.27 с, с ним 8.18 с — ровно те
+ * секунды, которые Glob проводил на каждый вызов.
+ */
+const VCS_DIRECTORIES_TO_EXCLUDE = WALK_EXCLUDED_DIRECTORIES;
 
 type RipgrepWorker = Pick<Worker, "once" | "terminate">;
 
@@ -1703,31 +1711,6 @@ function lineNumberForIndex(content: string, index: number): number {
     }
   }
   return lineNumber;
-}
-
-async function walkFiles(
-  current: string,
-  signal: AbortSignal | undefined,
-  visitor: (path: string, info: Awaited<ReturnType<typeof stat>>) => Promise<void> | void,
-): Promise<void> {
-  throwIfAborted(signal);
-  const entries = await readdir(current, { withFileTypes: true });
-
-  for (const entry of entries) {
-    throwIfAborted(signal);
-    const childPath = join(current, entry.name);
-
-    if (entry.isDirectory()) {
-      if (VCS_DIRECTORIES_TO_EXCLUDE.has(entry.name)) continue;
-      await walkFiles(childPath, signal, visitor);
-      continue;
-    }
-
-    if (!entry.isFile()) continue;
-
-    const info = await stat(childPath);
-    await visitor(childPath, info);
-  }
 }
 
 function createGlobMatcher(pattern: string): (relativePath: string, fileName: string) => boolean {

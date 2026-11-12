@@ -62,9 +62,11 @@ export const codeIndexToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     needsApproval: false,
-    // CodeIndex не resident: без shouldDefer он попадает в provider-visible список
-    // вместе с полной схемой, ломая контракт ToolSearch «resident или deferred».
-    shouldDefer: true,
+    // Resident-инструмент: схема мала (пять действий), а индекс — основной способ
+    // не читать файлы целиком. Пока CodeIndex был deferred, модель его не видела и
+    // деградировала до Grep (5 412 вызовов Grep против 241 CodeIndex за прогон).
+    alwaysLoad: true,
+    shouldDefer: false,
   },
   handler: codeIndexHandler,
   inputSchema: CodeIndexInputJsonSchema,

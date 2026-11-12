@@ -533,15 +533,17 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (hasForegroundModelOverride) {
         borrowedForegroundAgentIds.add(lifecycle.agentId);
       }
-      // Watchdog бездействия — opt-in: по умолчанию субагент живёт до завершения или Stop.
-      // Транспортный stream idle timeout адаптера остаётся отдельной сетевой защитой.
+      // Watchdog бездействия: по умолчанию выравнивается с idle timeout модели.
+      // Раньше дефолт был 0 (watchdog выключен), из-за чего субагент с неработающим
+      // Bash (spawn EAGAIN) или зависшим провайдером висел часами, не публикуя событий.
+      // Явный 0 в конфиге по-прежнему означает «без watchdog»; отключение — осознанное решение.
       const activityWatchdog = createSubagentActivityWatchdog({
         abort: taskAbort.abort,
         lifecycle,
         logger: options.logger,
         request,
         signal: taskAbort.signal,
-        timeoutMs: options.inactivityTimeoutMs ?? 0,
+        timeoutMs: options.inactivityTimeoutMs ?? DEFAULT_SUBAGENT_INACTIVITY_TIMEOUT_MS,
       });
       const readyGate = createSubagentSessionReadyGate();
       let sessionReady = false;
@@ -1188,6 +1190,16 @@ interface SettledSubagentDagNode {
   output?: AgentOutput;
   error?: unknown;
 }
+
+/**
+ * Дефолтный watchdog бездействия субагента.
+ *
+ * Выровнен с `DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS` (600_000): субагент, не публикующий
+ * событий дольше одного idle-окна модели, считается зависшим. Значение сознательно
+ * дублируется, а не импортируется: core не должен зависеть от config-слоя, но обязан
+ * оставаться совместимым по смыслу. Явный `inactivityTimeoutMs: 0` отключает watchdog.
+ */
+const DEFAULT_SUBAGENT_INACTIVITY_TIMEOUT_MS = 600_000;
 
 const SUBAGENT_DAG_RESULT_MAX_BYTES = 64 * 1024;
 const SUBAGENT_DAG_NODE_OUTPUT_MAX_BYTES = 2 * 1024;
