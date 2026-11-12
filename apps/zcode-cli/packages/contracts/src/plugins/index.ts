@@ -53,7 +53,8 @@ export type PluginDiagnosticCode =
   | "plugin_variable_missing"
   | "plugin_duplicate_id"
   | "plugin_not_found"
-  | "plugin_ambiguous_name";
+  | "plugin_ambiguous_name"
+  | "plugin_incompatible_app_version";
 
 export interface PluginUserConfigOption {
   default?: string | number | boolean;
@@ -148,12 +149,22 @@ export interface PluginManifest {
   commands?: unknown;
   dependencies?: unknown;
   description?: string;
+  /**
+   * 兼容性声明。当前只读取 `engines.zcode`（semver range，例如 `>=0.17.0`）；
+   * 也接受字符串简写。缺省表示不限制内核版本。
+   */
+  engines?: PluginEngines | string;
   homepage?: string;
   hooks?: unknown;
   keywords?: unknown;
   license?: string;
   lspServers?: unknown;
   mcpServers?: unknown;
+  /**
+   * 最低可运行的 ZCode 内核版本（纯 semver，例如 `0.17.0`）。
+   * 安装时与当前 `ZCODE_VERSION` 比较，低于该版本 fail-closed 拒绝安装。
+   */
+  minAppVersion?: string;
   name: string;
   outputStyles?: unknown;
   repository?: string;
@@ -163,6 +174,11 @@ export interface PluginManifest {
   ui?: unknown;
   userConfig?: Record<string, PluginUserConfigOption>;
   version?: string;
+}
+
+/** 插件声明的宿主兼容性；`zcode` 为内核版本范围。 */
+export interface PluginEngines {
+  zcode?: string;
 }
 
 /** 面板生命周期：第一版只接受会话级；`draft` 留待需要时放开。 */

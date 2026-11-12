@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PluginDiagnostic, PluginManifest, PluginStoreListing } from "@zcode/contracts";
+import semver from "semver";
+import type {
+  PluginDiagnostic,
+  PluginDiagnosticCode,
+  PluginManifest,
+  PluginStoreListing,
+} from "@zcode/contracts";
 import { isOfficialMarketplaceId, ZCODE_OFFICIAL_PLUGIN_MARKETPLACE } from "@zcode/contracts";
 import {
   DEFAULT_PLUGIN_MARKETPLACES,
@@ -12,6 +18,7 @@ import {
   sanitizeZCodeRuntimeEnv,
   ZCODE_OFFLINE_PREVIEW,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+  ZCODE_VERSION,
 } from "@zcode/shared";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
 import {
@@ -49,6 +56,127 @@ import {
   isCommandUnavailableError,
   PluginSourceMaterializationError,
 } from "./source-errors.js";
+
+// ============================================================
+// 插件 manifest 的宿主版本兼容门禁
+//
+// 背景：`plugin.json` 之前没有任何内核版本声明，旧插件可以在不兼容的新内核上安装成功，
+// 直到 runtime 发现组件/协议异常才失败。这里在安装与校验阶段 fail-closed：
+// 声明了 `minAppVersion` 或 `engines.zcode` 但当前内核不满足时直接拒绝，而不是装完再降级。
+//
+// 语义：
+// - `minAppVersion` 是纯 semver 版本，表示最低可运行内核版本（等价于 `>=x`）。
+// - `engines.zcode` / 字符串简写 `engines` 是 semver range（`>=0.17.0`、`^0.17.0` 等）。
+// - 两个字段同时出现时都要满足；字段缺省表示不限制，保持旧目录完全兼容。
+// - 声明本身非法（非 semver / 不通用的 range）同样 fail-closed：无法证明兼容就不安装。
+// ============================================================
+
+export class PluginCompatibilityError extends Error {
+  readonly diagnosticCode: PluginDiagnosticCode = "plugin_incompatible_app_version";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PluginCompatibilityError";
+  }
+}
+
+export function getPluginCompatibilityDiagnosticCode(
+  error: unknown,
+): PluginDiagnosticCode | undefined {
+  return error instanceof PluginCompatibilityError ? error.diagnosticCode : undefined;
+}
+
+export interface PluginAppVersionConstraint {
+  /** 用于错误信息的原始声明，例如 `minAppVersion 9.0.0`。 */
+  label: string;
+  range: string;
+}
+
+export function resolvePluginAppVersionConstraints(
+  manifest: PluginManifest,
+): PluginAppVersionConstraint[] {
+  const constraints: PluginAppVersionConstraint[] = [];
+
+  const minAppVersion = readCompatibilityString(manifest.minAppVersion);
+  if (minAppVersion) {
+    const version = semver.valid(minAppVersion);
+    if (!version) {
+      throw new PluginCompatibilityError(
+        `Plugin manifest has an invalid minAppVersion: ${minAppVersion}`,
+      );
+    }
+    constraints.push({ label: `minAppVersion ${minAppVersion}`, range: `>=${version}` });
+  }
+
+  const enginesRange = readEnginesRange(manifest.engines);
+  if (enginesRange) {
+    if (!semver.validRange(enginesRange)) {
+      throw new PluginCompatibilityError(
+        `Plugin manifest has an invalid engines.zcode range: ${enginesRange}`,
+      );
+    }
+    constraints.push({ label: `engines.zcode ${enginesRange}`, range: enginesRange });
+  }
+
+  return constraints;
+}
+
+/**
+ * 校验当前内核版本是否满足 manifest 声明；不满足或声明非法时抛
+ * {@link PluginCompatibilityError}（diagnostic code: `plugin_incompatible_app_version`）。
+ */
+export function assertPluginAppVersionCompatible(input: {
+  appVersion: string;
+  manifest: PluginManifest;
+  pluginId: string;
+}): void {
+  const constraints = resolvePluginAppVersionConstraints(input.manifest);
+  if (constraints.length === 0) return;
+
+  const appVersion = semver.valid(input.appVersion);
+  if (!appVersion) {
+    // 内核版本本身不可解析时不能静默放行，否则声明形同虚设。
+    throw new PluginCompatibilityError(
+      `Cannot verify plugin ${input.pluginId} compatibility against ZCode version ${input.appVersion}`,
+    );
+  }
+
+  for (const constraint of constraints) {
+    if (!semver.satisfies(appVersion, constraint.range)) {
+      throw new PluginCompatibilityError(
+        `Plugin ${input.pluginId} requires ZCode ${constraint.range} ` +
+          `(declared ${constraint.label}); current ZCode version is ${input.appVersion}`,
+      );
+    }
+  }
+}
+
+function readCompatibilityString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readEnginesRange(engines: PluginManifest["engines"]): string | undefined {
+  if (engines === undefined) return undefined;
+  if (typeof engines === "string") {
+    const trimmed = readCompatibilityString(engines);
+    if (!trimmed) {
+      throw new PluginCompatibilityError("Plugin manifest has an empty engines declaration");
+    }
+    return trimmed;
+  }
+  if (typeof engines !== "object" || engines === null || Array.isArray(engines)) {
+    throw new PluginCompatibilityError("Plugin manifest engines must be a string or object");
+  }
+  const zcode = (engines as { zcode?: unknown }).zcode;
+  if (zcode === undefined) return undefined;
+  const trimmed = readCompatibilityString(zcode);
+  if (!trimmed) {
+    throw new PluginCompatibilityError("Plugin manifest has an empty engines.zcode declaration");
+  }
+  return trimmed;
+}
 
 const execFileAsync = promisify(execFile);
 const KNOWN_MARKETPLACES_FILE = "known_marketplaces.json";
@@ -819,6 +947,8 @@ export async function installMarketplacePlugin(input: {
   storageRoot: string;
   scope?: "user" | "workspace";
   allowCrossMarketplaces?: ReadonlySet<string>;
+  /** 当前 ZCode 内核版本；缺省使用构建注入的 `ZCODE_VERSION`。测试/宿主可显式传入。 */
+  appVersion?: string;
 }): Promise<MarketplaceInstallResult> {
   await ensureMarketplaceManifestAvailable({
     marketplace: input.marketplace,
@@ -846,6 +976,7 @@ export async function installMarketplacePlugin(input: {
       const entry = manifest.plugins.find((plugin) => plugin.name === name);
       if (!entry) throw new Error(`Plugin not found: ${pluginId}`);
       const cached = await cacheMarketplacePlugin({
+        appVersion: input.appVersion ?? ZCODE_VERSION,
         entry,
         marketplace,
         signal: input.signal,
@@ -1340,6 +1471,7 @@ function resolveDependencyClosure(input: {
 }
 
 async function cacheMarketplacePlugin(input: {
+  appVersion: string;
   entry: PluginMarketplaceEntry;
   marketplace: string;
   signal?: AbortSignal;
@@ -1364,6 +1496,14 @@ async function cacheMarketplacePlugin(input: {
     if (isZipPluginUrlSource(input.entry.source)) {
       assertZipPluginInstallRoot(sourceRoot.path, input.entry, input.marketplace);
     }
+    // 兼容门禁必须在复制缓存/写 installed record 之前执行：声明了不兼容内核版本的插件
+    // 不能先装进 inventory 再靠 runtime 报错，否则用户看到的是「安装成功但不可用」。
+    assertPluginInstallCompatibility({
+      appVersion: input.appVersion,
+      entry: input.entry,
+      marketplace: input.marketplace,
+      rootPath: sourceRoot.path,
+    });
     // 缓存目录的版本段与安装记录的 version 不能取自 marketplace 条目的
     // version 字段：git/url 源插件的条目通常不带 version，取了也只会兜底成
     // "0.0.0"，导致 Root path 落到 .../<name>/0.0.0；而 UI 展示读的是插件自带 plugin.json 里的
@@ -1713,6 +1853,30 @@ function assertZipPluginInstallRoot(
       `Plugin manifest name '${loaded.manifest.name}' does not match marketplace entry '${entry.name}'`,
     );
   }
+}
+
+/**
+ * 安装期的宿主版本门禁。manifest 不可读时交给既有 validate/runtime 路径处理，
+ * 这里只负责「能读到声明就必须证明兼容」，避免把兼容性判断降级成静默放行。
+ */
+function assertPluginInstallCompatibility(input: {
+  appVersion: string;
+  entry: PluginMarketplaceEntry;
+  marketplace: string;
+  rootPath: string;
+}): void {
+  let manifest: PluginManifest | null = null;
+  try {
+    manifest = readPluginManifestFromRoot(input.rootPath, input.entry)?.manifest ?? null;
+  } catch {
+    return;
+  }
+  if (!manifest) return;
+  assertPluginAppVersionCompatible({
+    appVersion: input.appVersion,
+    manifest,
+    pluginId: `${input.entry.name}@${input.marketplace}`,
+  });
 }
 
 function createManifestFromMarketplaceEntry(
@@ -2454,6 +2618,7 @@ function readPluginManifestFromRoot(
 }
 
 function validatePluginRoot(input: {
+  appVersion?: string;
   entry: PluginMarketplaceEntry;
   marketplace: string;
   rootPath: string;
@@ -2496,6 +2661,13 @@ function validatePluginRoot(input: {
       severity: "error",
     });
   }
+  pushAppVersionValidationDiagnostics({
+    diagnostics,
+    appVersion: input.appVersion ?? ZCODE_VERSION,
+    manifest: loadedManifest.manifest,
+    manifestPath,
+    pluginId,
+  });
   pushManifestCompatibilityDiagnostics({
     diagnostics,
     manifest: loadedManifest.manifest,
@@ -2513,6 +2685,31 @@ function validatePluginRoot(input: {
     storageRoot: input.storageRoot,
   });
   return diagnostics;
+}
+
+function pushAppVersionValidationDiagnostics(input: {
+  appVersion: string;
+  diagnostics: PluginValidationDiagnostic[];
+  manifest: PluginManifest;
+  manifestPath: string;
+  pluginId: string;
+}): void {
+  try {
+    assertPluginAppVersionCompatible({
+      appVersion: input.appVersion,
+      manifest: input.manifest,
+      pluginId: input.pluginId,
+    });
+  } catch (error) {
+    if (!(error instanceof PluginCompatibilityError)) throw error;
+    input.diagnostics.push({
+      code: error.diagnosticCode,
+      message: error.message,
+      path: input.manifestPath,
+      pluginId: input.pluginId,
+      severity: "error",
+    });
+  }
 }
 
 function pushManifestCompatibilityDiagnostics(input: {
@@ -2791,6 +2988,15 @@ function toValidationDiagnostic(error: unknown, pluginId?: string): PluginValida
     return {
       code: "plugin_marketplace_source_unsupported",
       message: error.message,
+      ...(pluginId ? { pluginId } : {}),
+      severity: "error",
+    };
+  }
+  const compatibilityCode = getPluginCompatibilityDiagnosticCode(error);
+  if (compatibilityCode) {
+    return {
+      code: compatibilityCode,
+      message: error instanceof Error ? error.message : String(error),
       ...(pluginId ? { pluginId } : {}),
       severity: "error",
     };

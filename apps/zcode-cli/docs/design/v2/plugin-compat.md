@@ -58,6 +58,27 @@ capability comes from validated manifest `ui.surfaces`, including when disabled;
 `category` remains the independent usage category. See the market interaction
 spec in the root `docs/plugins/` directory for presentation and scope semantics.
 
+## Kernel compatibility metadata
+
+`plugin.json` may declare the ZCode kernel versions it supports:
+
+- `minAppVersion`: a plain semver version, meaning "requires ZCode >= this version".
+- `engines.zcode` (or the string shorthand `engines`): a semver range such as
+  `>=0.17.0` or `^0.17.0`.
+
+Both fields are optional; a catalog that omits them keeps working exactly as
+before. When both are present, both must match. Install validates these fields
+against the running `ZCODE_VERSION` before the plugin is copied into the cache or
+written to `installed_plugins.json`: an incompatible plugin is rejected with the
+`plugin_incompatible_app_version` diagnostic and no installed record is created.
+A malformed declaration (non-semver version, invalid range, non-string value) is
+also rejected fail-closed, because compatibility cannot be proven. Dry-run
+validation reports the same diagnostic so the store can surface it before the
+user clicks install.
+
+The check lives in the plugin adapter (`plugins/compatibility.ts`) and is shared
+by marketplace install, `zcode plugins install`, and marketplace validation.
+
 ## Storage Layout
 
 ZCode stores plugin state under the CLI storage root:

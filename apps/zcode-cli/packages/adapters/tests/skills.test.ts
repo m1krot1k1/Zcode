@@ -3,8 +3,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createNodeSkillAdapter } from "../src/skills/index.js";
+import { resolveDefaultSkillRoots } from "../src/skills/roots.js";
 
 describe("NodeSkillAdapter", () => {
+  it("orders project skill roots before user roots", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-skill-roots-order-"));
+
+    try {
+      const roots = await resolveDefaultSkillRoots(dir, { homeDirectory: join(dir, "home") });
+      const firstProject = roots.findIndex((root) => root.scope === "project");
+      const firstUser = roots.findIndex((root) => root.scope === "user");
+
+      expect(firstProject).toBeGreaterThanOrEqual(0);
+      expect(firstUser).toBeGreaterThanOrEqual(0);
+      // roots 按 priority 升序消费；用户根不能再排到项目根之前，否则同名 load 会被用户副本抢走。
+      expect(roots[firstProject]!.priority).toBeLessThan(roots[firstUser]!.priority);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("discovers project skills from SKILL.md metadata", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-skills-"));
     const skillDir = join(dir, ".zcode", "skills", "demo-skill");
@@ -169,7 +187,7 @@ describe("NodeSkillAdapter", () => {
     }
   });
 
-  it("keeps same-name skills from different paths", async () => {
+  it("keeps same-name skills from different paths and loads the project copy", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-skills-"));
     const projectSkill = join(dir, ".zcode", "skills", "same-skill");
     const userSkill = join(dir, "home", ".zcode", "skills", "same-skill");
@@ -184,14 +202,26 @@ describe("NodeSkillAdapter", () => {
       const outcome = await adapter.discoverSkills({ workingDirectory: dir });
       const loaded = await adapter.loadSkill({ name: "same-skill", workingDirectory: dir });
 
+      // 路径仍是安装身份：两个副本都保留在 discover 结果里。
       expect(outcome.skills.map((skill) => skill.description).toSorted()).toEqual([
         "Project description",
         "User description",
       ]);
-      expect(loaded.metadata.description).toBe("User description");
-      expect(outcome.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
-        "skill_duplicate_name",
+      // 项目局部定制压过用户全局技能；被遮蔽的用户副本必须出现在诊断里，不能静默失效。
+      expect(loaded.metadata.description).toBe("Project description");
+      expect(loaded.baseDirectory).toBe(projectSkill);
+      expect(outcome.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "skill_duplicate_name",
+          path: join(userSkill, "SKILL.md"),
+          severity: "warning",
+          skillName: "same-skill",
+        }),
       );
+      expect(
+        outcome.diagnostics.find((diagnostic) => diagnostic.code === "skill_duplicate_name")
+          ?.message,
+      ).toContain(join(projectSkill, "SKILL.md"));
     } finally {
       await rm(dir, { force: true, recursive: true });
     }

@@ -10,6 +10,7 @@ import { OFFLINE_PREVIEW_ZCODE_ENDPOINT } from "../../scripts/preview-release-co
 import { pdfJsCMapsPlugin } from "../ui/vite/pdfJsCMapsPlugin.js";
 import { getBuildMetadata } from "./scripts/build-metadata.mjs";
 import { resolveDesktopProductFlavor } from "./scripts/desktop-product-identity.mjs";
+import { hardenProductionCsp } from "./scripts/production-csp.js";
 
 // 动态加载仓库根的构建工具，避免配置打包后其 import.meta.dirname 被重定位到 desktop。
 // 构建期可选能力（ARMS、事件上报、自动更新），见 docs/desktop/build-time-optional-capabilities.md
@@ -187,6 +188,15 @@ export default defineConfig(({ mode }) => {
     env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? process.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? "";
   const plugins = [
     ...(e2eCoverageEnabled ? [createE2EUIRendererCoveragePlugin(repoRoot)] : []),
+    // Production не должен исполнять inline-скрипты: в собранном бандле их нет,
+    // а `'unsafe-inline'` остаётся только для Vite dev (Fast Refresh preamble).
+    {
+      name: "zcode-production-csp",
+      apply: "build" as const,
+      transformIndexHtml(html: string) {
+        return hardenProductionCsp(html);
+      },
+    },
     pdfJsCMapsPlugin(),
     react(),
     tailwindcss(),

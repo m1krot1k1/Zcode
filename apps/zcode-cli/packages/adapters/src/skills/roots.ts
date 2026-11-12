@@ -43,10 +43,8 @@ export async function resolveDefaultSkillRoots(
     );
   }
 
-  if (includeZcode) {
-    roots.push(...skillRootsForBase(home, "user", nextPriority));
-  }
-
+  // 项目根先于用户根：同名技能 load 时第一个命中生效，项目局部定制必须压过全局安装。
+  // 用户根仍参与发现（路径是安装身份），只是同名时排在项目之后并被诊断标记为 shadowed。
   const projectDirectories = await resolveProjectSkillDirectories(resolvedWorkingDirectory);
   for (const directory of projectDirectories) {
     if (includeZcode) {
@@ -64,6 +62,10 @@ export async function resolveDefaultSkillRoots(
         namespace: basename(directory),
       })),
     );
+  }
+
+  if (includeZcode) {
+    roots.push(...skillRootsForBase(home, "user", nextPriority));
   }
 
   roots.push(...(options.extraResolvedRoots ?? []));

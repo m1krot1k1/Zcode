@@ -7,8 +7,10 @@
       主窗口 CSP。生产包通过 file:// 加载本页，Electron 无法对 file: 响应加 CSP 头，
       所以策略放在 meta 里（docs/electron/docs/tutorial/security.md:406-411）。
       细节与取舍见 docs/specs/2026-11-11-desktop-csp-navigation.md。
-      - 'unsafe-inline' 仅因 Vite dev 把 React Fast Refresh preamble 注入为 inline module；
-        生产 bundle 自身没有 inline script。
+      - 'unsafe-inline' остаётся только для Vite dev: React Fast Refresh вставляет inline
+        module preamble. Production-сборка прогоняет страницу через плагин
+        `zcode-production-csp` (packages/desktop/scripts/production-csp.ts) и вырезает
+        'unsafe-inline' из script-src.
       - 'wasm-unsafe-eval' 只放行 WebAssembly 编译（office 预览 / shiki oniguruma / pdf.js），
         不放行 eval 或 new Function 的任意 JS。
       - file: 覆盖生产 file:// 文档与同目录资源；ws://…:5174 仅覆盖 Vite HMR。

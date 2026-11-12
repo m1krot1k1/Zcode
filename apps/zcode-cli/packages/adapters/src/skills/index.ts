@@ -17,6 +17,7 @@ import type {
   SkillOperationOptions,
   SkillPort,
   SkillRoot,
+  SkillScope,
 } from "@zcode/contracts";
 import {
   downloadSkillsShSnapshot,
@@ -42,6 +43,14 @@ const PLUGIN_MANIFEST_RELATIVE_PATHS = [
   ".claude-plugin/plugin.json",
   ".codex-plugin/plugin.json",
 ] as const;
+// 同名技能被 loadSkill 命中时的 scope 优先级（数字越小越先）。项目局部技能必须压过
+// 用户全局技能；user/admin 仍高于 system/bundled，保持内置包永远最后兜底。
+const SKILL_SCOPE_PRECEDENCE: Record<SkillScope, number> = {
+  project: 0,
+  user: 1,
+  admin: 2,
+  system: 3,
+};
 
 export interface NodeSkillAdapterOptions extends SkillRootResolutionOptions {
   // 被禁用的 SKILL.md 绝对路径集合（来自 config.json 的 skill.<path>.enable=false）。
@@ -94,8 +103,18 @@ export class NodeSkillAdapter implements SkillPort {
       }
     }
 
+    // 同名时按 scope 优先级排序：项目技能必须排在用户/内建技能之前，loadSkill 的
+    // 「第一个命中生效」才会让项目局部定制压过全局安装。roots 顺序已按此排列，
+    // 这里再显式声明一次，自定义 roots/插件 roots 混入时也不会被插入顺序反噬。
+    const skills = Array.from(selected.values()).toSorted((a, b) => {
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      return skillScopePrecedence(a.scope) - skillScopePrecedence(b.scope);
+    });
+    pushSkillShadowingDiagnostics(skills, diagnostics);
+
     return {
-      skills: Array.from(selected.values()).toSorted((a, b) => a.name.localeCompare(b.name)),
+      skills,
       diagnostics,
       totalDiscovered,
     };
@@ -494,6 +513,44 @@ function parseScalar(value: string | undefined): string | undefined {
 
 function matchesSkillRequest(skill: SkillMetadata, requestName: string): boolean {
   return skill.name === requestName || skill.qualifiedName === requestName;
+}
+
+function skillScopePrecedence(scope: SkillScope): number {
+  return SKILL_SCOPE_PRECEDENCE[scope];
+}
+
+/**
+ * 同名技能按路径全部保留，但 loadSkill 只能命中第一个。跨 scope 遮蔽（如用户技能被项目技能压过）
+ * 会让被遮蔽的版本静默不可用，必须用诊断解释「哪个文件赢了、哪个被忽略」。
+ * 同 scope 的多份同名技能（不同目录、不同插件）保持既有语义：都保留、不互相告警。
+ */
+function pushSkillShadowingDiagnostics(
+  skills: readonly SkillMetadata[],
+  diagnostics: SkillDiagnostic[],
+): void {
+  const groups = new Map<string, SkillMetadata[]>();
+  for (const skill of skills) {
+    const group = groups.get(skill.name) ?? [];
+    group.push(skill);
+    groups.set(skill.name, group);
+  }
+  for (const [name, group] of groups) {
+    if (group.length < 2) continue;
+    const winner = group[0];
+    if (!winner) continue;
+    for (const shadowed of group.slice(1)) {
+      if (skillScopePrecedence(shadowed.scope) <= skillScopePrecedence(winner.scope)) continue;
+      diagnostics.push({
+        code: "skill_duplicate_name",
+        severity: "warning",
+        skillName: name,
+        path: shadowed.path,
+        message:
+          `Skill "${name}" from ${shadowed.scope} scope is shadowed by ` +
+          `${winner.scope} skill: ${winner.path}`,
+      });
+    }
+  }
 }
 
 async function readPluginNameForSkillRoot(skillRootPath: string): Promise<string | undefined> {

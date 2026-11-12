@@ -103,6 +103,14 @@ export {
 
 export { getPluginSourceDiagnosticCode } from "./source-errors.js";
 
+export {
+  assertPluginAppVersionCompatible,
+  getPluginCompatibilityDiagnosticCode,
+  PluginCompatibilityError,
+  resolvePluginAppVersionConstraints,
+  type PluginAppVersionConstraint,
+} from "./marketplace.js";
+
 // 第三方插件 Hook 信任的唯一 owner；barrel 只做透传，禁止在此重复判定或写入。
 export * from "./plugin-hook-trust.js";
 

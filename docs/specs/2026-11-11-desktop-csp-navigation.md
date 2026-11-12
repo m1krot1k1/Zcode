@@ -76,8 +76,10 @@ form-action 'self'
    preamble остаётся inline и требует `'unsafe-inline'`. В production build
    (`command === "build"`) preamble не инжектится
    (`plugin-react/dist/index.js:98`), и этот токен не используется ни одним легитимным
-   скриптом. Убрать его можно только вместе с nonce/hash для dev-preamble, что требует
-   правки `vite.config.ts` (`html.cspNonce`) и вынесено в остаточные работы.
+   скриптом. Поэтому production-сборка прогоняет страницу через плагин
+   `zcode-production-csp` (`packages/desktop/scripts/production-csp.ts`), который
+   вырезает `'unsafe-inline'` из `script-src` прямо в `transformIndexHtml`; dev-режим
+   сохраняет токен для Fast Refresh. Покрытие: `packages/desktop/test/productionCsp.test.ts`.
 3. **`'wasm-unsafe-eval'`** — объективно требуется сборке: office-превью компилирует WASM
    (`@extend-ai/react-xlsx`/`react-docx`, `packages/ui/src/previewPaneOfficeXlsxContent.tsx`,
    `previewPaneOfficeLegacyDocContent.tsx`), diff-подсветка использует oniguruma WASM

@@ -739,6 +739,93 @@ describe("NodePluginAdapter", () => {
     }
   });
 
+  // 回归：manifest 之前没有任何内核版本声明，不兼容插件也能装进 inventory。
+  // 安装必须在写入 installed record 之前 fail-closed，且无声明/满足声明的目录保持原行为。
+  it("rejects plugins whose declared ZCode kernel version is incompatible", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-app-version-"));
+    const storageRoot = join(dir, "storage");
+    const marketplaceRoot = join(dir, "marketplace");
+
+    try {
+      await writeMarketplaceManifest(marketplaceRoot, {
+        name: "compat-market",
+        plugins: [
+          { name: "too-new", source: "./plugins/too-new" },
+          { name: "compatible", source: "./plugins/compatible" },
+          { name: "legacy", source: "./plugins/legacy" },
+          { name: "broken-range", source: "./plugins/broken-range" },
+        ],
+      });
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "too-new"),
+        { name: "too-new", version: "1.0.0", minAppVersion: "999.0.0" },
+        ".claude-plugin",
+      );
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "compatible"),
+        { name: "compatible", version: "1.0.0", engines: { zcode: ">=0.0.0" } },
+        ".claude-plugin",
+      );
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "legacy"),
+        { name: "legacy", version: "1.0.0" },
+        ".claude-plugin",
+      );
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "broken-range"),
+        { name: "broken-range", version: "1.0.0", engines: { zcode: "not a range" } },
+        ".claude-plugin",
+      );
+      await addMarketplace({
+        source: { source: "directory", path: marketplaceRoot },
+        storageRoot,
+      });
+
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "too-new",
+          storageRoot,
+        }),
+      ).rejects.toMatchObject({ diagnosticCode: "plugin_incompatible_app_version" });
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "broken-range",
+          storageRoot,
+        }),
+      ).rejects.toMatchObject({ diagnosticCode: "plugin_incompatible_app_version" });
+      // 被拒绝的插件不能留下 installed record，否则 UI 会显示已安装但不可用。
+      expect(listInstalledPluginRecords(storageRoot)).toHaveLength(0);
+
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "compatible",
+          storageRoot,
+        }),
+      ).resolves.toMatchObject({ closure: ["compatible@compat-market"] });
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "legacy",
+          storageRoot,
+        }),
+      ).resolves.toMatchObject({ closure: ["legacy@compat-market"] });
+      expect(
+        listInstalledPluginRecords(storageRoot)
+          .map((record) => record.name)
+          .toSorted(),
+      ).toEqual(["compatible", "legacy"]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("loads Claude-compatible local plugin components", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-"));
     const pluginRoot = join(dir, "ios-plugin");
