@@ -105,7 +105,8 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "vite": "^7.1.12"
   },
   "peerDependencies": {
     "@tanstack/react-virtual": "^3.13.23",

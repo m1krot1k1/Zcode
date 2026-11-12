@@ -16,7 +16,8 @@
     "@zcode/shared": "workspace:*",
     "@zcode/ui": "workspace:*",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "lucide-react": "^1.17.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
