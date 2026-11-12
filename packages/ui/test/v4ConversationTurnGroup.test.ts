@@ -483,8 +483,9 @@ describe("ConversationTurnGroup Hook footer", () => {
     ({ compactForRemoteControl, highspeed, hasAssistantText }) => {
       const [unit] = buildConversationTurnRenderUnits([
         turnHeader({ state: hasAssistantText ? "completedSuccess" : "completedInterrupted" }),
-        userInputRow(2, {
-          ...(highspeed
+        userInputRow(
+          2,
+          highspeed
             ? {
                 highspeed: {
                   schemaVersion: 1,
@@ -496,8 +497,8 @@ describe("ConversationTurnGroup Hook footer", () => {
                   expiresAt: 10_000,
                 },
               }
-            : {}),
-        }),
+            : {},
+        ),
         hookInvocationRow(3),
         ...(hasAssistantText ? [assistantTextRow(4)] : []),
         forkNoticeTimelineRow(5),
@@ -2308,23 +2309,20 @@ describe("ConversationTurnGroup assistant history status", () => {
 
 describe("ConversationTurnGroup ChatLoading lifecycle", () => {
   it("说明触发回退的是额度限制，而不是把原 Provider 误报为不可用", () => {
-    const html = renderUnit(
-      baseUnit({ isRunning: true, assistantHistoryDefaultOpen: true }),
-      {
-        locale: "en-US",
-        apiRetry: {
-          attempt: 1,
-          maxAttempts: 1,
-          nextRetryAt: 1_700_000_001_000,
-          reasonCode: "provider_fallback",
-          providerFallback: {
-            from: "opencode",
-            to: "opencode-go-responses",
-            reason: "free_usage_limit",
-          },
+    const html = renderUnit(baseUnit({ isRunning: true, assistantHistoryDefaultOpen: true }), {
+      locale: "en-US",
+      apiRetry: {
+        attempt: 1,
+        maxAttempts: 1,
+        nextRetryAt: 1_700_000_001_000,
+        reasonCode: "provider_fallback",
+        providerFallback: {
+          from: "opencode",
+          to: "opencode-go-responses",
+          reason: "free_usage_limit",
         },
       },
-    );
+    });
 
     expect(html).toContain(
       "Free usage limit reached for opencode; continuing with opencode-go-responses.",

@@ -21,11 +21,7 @@ import {
   prepareSSHLifecycle,
   type SSHLifecycleProvider,
 } from "../../../helpers/ssh-remote-lifecycle.js";
-import {
-  readHostProcesses,
-  readRemoteTabSnapshot,
-  runSSHCommand,
-} from "../../../helpers/ssh-remote-p0.js";
+import { readHostProcesses, runSSHCommand } from "../../../helpers/ssh-remote-p0.js";
 import {
   getV4ConversationState,
   hasV4PermissionDialog,

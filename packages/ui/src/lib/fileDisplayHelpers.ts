@@ -171,11 +171,11 @@ export function resolveIconName(filePath: string): string {
   return EXTENSION_ICON_ALIASES[extension] ?? extension ?? DEFAULT_FILE_ICON_NAME;
 }
 
-export function getIconPalette(iconName: string) {
+function getIconPalette(iconName: string) {
   return ICON_COLOR_MAP[iconName] ?? ICON_COLOR_MAP.document!;
 }
 
-export function getIconLabel(iconName: string): string {
+function getIconLabel(iconName: string): string {
   if (iconName === "document") {
     return "DOC";
   }
@@ -189,6 +189,6 @@ export function getIconLabel(iconName: string): string {
   return firstWord.slice(0, 3).toUpperCase();
 }
 
-export function buildInlineSvgDataUrl(svg: string): string {
+function buildInlineSvgDataUrl(svg: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }

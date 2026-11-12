@@ -27,7 +27,7 @@
     "test": "node scripts/generate-libs.mjs && vitest run tests --reporter=verbose",
     "coverage": "node scripts/generate-libs.mjs && vitest run tests --coverage",
     "lint": "oxlint src tests",
-    "lint:fix": "oxlint --write src tests"
+    "lint:fix": "oxlint --fix src tests"
   },
   "dependencies": {
     "typescript": "^5.9.0"

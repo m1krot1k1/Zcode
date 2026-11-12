@@ -23,7 +23,7 @@
     "coverage": "c8 --reporter=text --reporter=html tsx --disable-warning=DEP0205 --test tests/cli.unit.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",
-    "lint:fix": "oxlint --write src"
+    "lint:fix": "oxlint --fix src"
   },
   "dependencies": {
     "@zcode/adapters": "workspace:*",
@@ -37,6 +37,10 @@
     "@zcode/shared-types": "workspace:*",
     "@zcode/tui": "workspace:*",
     "dotenv": "^17.4.2",
-    "playwright-core": "1.59.1"
+    "playwright-core": "1.59.1",
+    "@mbears/opentui-core": "^0.2.15",
+    "@mbears/opentui-react": "^0.2.15",
+    "ai": "^6.0.193",
+    "react": "^19.2.7"
   }
 }

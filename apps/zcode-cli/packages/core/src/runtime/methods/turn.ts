@@ -488,9 +488,7 @@ export async function executeTurnCommand(
         turnTraceContext,
         "regular",
         creationFailure === undefined,
-        {
-          ...(options?.inputId === undefined ? {} : { inputId: options.inputId }),
-        },
+        (options?.inputId === undefined ? {} : { inputId: options.inputId }),
       );
       this.logger?.info("Turn started", {
         ...traceContextToLogContext(turnTraceContext),
@@ -2045,13 +2043,11 @@ async function executeSwarmRun(
         // planner 是元数据消费者：必须按本轮 Active Model 过滤条件工具（WebSearch），
         // 完整注册表不能冒充当前模型的能力。
         getPlannerToolNames(this, state.model),
-        {
-          ...(plannerActiveWorkItems === undefined
+        (plannerActiveWorkItems === undefined
             ? {}
             : {
                 freeWorkerSlots: Math.max(0, plannerActiveCap - plannerActiveWorkItems),
               }),
-        },
       );
       const maxOutputTokens = Math.min(
         SWARM_PLAN_MAX_OUTPUT_TOKENS,
@@ -2480,11 +2476,9 @@ function buildSwarmPlannerPrompt(
   );
   const exampleProfileId = availableProfileIds[0] ?? "";
   const exampleParallelism = Math.max(1, capacity?.freeWorkerSlots ?? 1);
-  const capacityFacts = [
-    ...(capacity?.freeWorkerSlots === undefined
+  const capacityFacts = (capacity?.freeWorkerSlots === undefined
       ? []
-      : [`free_worker_slots=${capacity.freeWorkerSlots}`]),
-  ];
+      : [`free_worker_slots=${capacity.freeWorkerSlots}`]);
   return [
     "Decide whether this task needs independent parallel work. Return only JSON in one of these shapes:",
     '{"decision":"leaf","reason":"..."}',

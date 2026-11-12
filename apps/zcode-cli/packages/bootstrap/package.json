@@ -23,7 +23,7 @@
     "coverage": "vitest run tests --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",
-    "lint:fix": "oxlint --write src"
+    "lint:fix": "oxlint --fix src"
   },
   "dependencies": {
     "@zcode/adapters": "workspace:*",

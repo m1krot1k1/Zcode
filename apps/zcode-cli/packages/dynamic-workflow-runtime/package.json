@@ -20,7 +20,7 @@
     "test": "vitest run tests --reporter=verbose --retry=2",
     "coverage": "vitest run tests --coverage",
     "lint": "oxlint src tests",
-    "lint:fix": "oxlint --write src tests"
+    "lint:fix": "oxlint --fix src tests"
   },
   "dependencies": {
     "@zcode/dynamic-workflow": "workspace:*"

@@ -11,10 +11,7 @@ import {
   type ProviderSource,
   type RuntimeProviderCatalogSnapshot,
 } from "../src/index.js";
-import {
-  createAccountProviderConfig,
-  createApiKeyProviderConfig,
-} from "./provider-config-fixtures.js";
+import { createApiKeyProviderConfig } from "./provider-config-fixtures.js";
 
 class MutableSource<TSnapshot> implements ProviderSource<TSnapshot> {
   current: TSnapshot;

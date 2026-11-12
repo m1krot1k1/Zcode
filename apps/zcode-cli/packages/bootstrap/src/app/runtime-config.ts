@@ -256,7 +256,7 @@ export function resolveAppRuntimeConfig(input: {
       enabled: options.runtimeConfig?.subagents?.enabled ?? configResult.config.features.subagent,
       outputRootDir: options.runtimeConfig?.subagents?.outputRootDir ?? subagentOutputRootDir,
       builtInModelSelectionOverrides: {
-        ...(input.builtInSubagentModelSelectionOverrides ?? {}),
+        ...input.builtInSubagentModelSelectionOverrides,
         ...runtimeBuiltInModelSelectionOverrides,
       },
       profiles: [...(options.runtimeConfig?.subagents?.profiles ?? []), ...subagentProfiles],

@@ -110,9 +110,7 @@ function resolveForkModelSelection(
     providerId: identity.providerId,
     ...(reasoningLevel !== undefined
       ? {
-          options: {
-            ...(reasoningLevel !== undefined ? { reasoningLevel } : {}),
-          },
+          options: (reasoningLevel !== undefined ? { reasoningLevel } : {}),
         }
       : {}),
   };

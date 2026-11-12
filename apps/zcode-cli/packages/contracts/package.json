@@ -94,7 +94,7 @@
     "test": "vitest tests",
     "coverage": "vitest run tests --coverage",
     "lint": "oxlint src",
-    "lint:fix": "oxlint --write src"
+    "lint:fix": "oxlint --fix src"
   },
   "dependencies": {
     "@zcode/shared": "workspace:*",

@@ -115,9 +115,11 @@
     "conventional-changelog-writer": "^8.4.0",
     "dotenv": "^17.4.2",
     "husky": "^9.1.7",
+    "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-instrument": "6.0.3",
     "knip": "^6.0.6",
     "lint-staged": "^17.0.8",
+    "ora": "^9.0.0",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.57.0",
     "postject": "1.0.0-alpha.6",
@@ -126,7 +128,9 @@
     "tsx": "^4.19.4",
     "turbo": "^2.4.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "yaml": "^2.9.0",
+    "yazl": "^3.3.1"
   },
   "peerDependencies": {
     "@tanstack/react-virtual": "^3.13.23"
