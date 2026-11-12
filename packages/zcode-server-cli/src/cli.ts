@@ -54,7 +54,7 @@ export interface CliIO {
   legacyDelegate?: (argv: readonly string[]) => Promise<number>;
 }
 
-export interface ServerCliRuntimeOptions {
+interface ServerCliRuntimeOptions {
   bundledAgentWiring?: BundledAgentWiring | null;
   proxyStdioStreams?: { input: Readable; output: Writable };
   workspaceAliasRepo?: Pick<SourceServerWorkspaceAliasRepo, "retryFailedWorkspace">;

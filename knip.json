@@ -1,11 +1,70 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "tags": ["-lintignore"],
+  "tags": [
+    "-lintignore"
+  ],
   "workspaces": {
     "packages/ui": {
-      "entry": ["test/**/*.test.tsx"]
+      "entry": [
+        "test/**/*.test.tsx"
+      ]
+    },
+    "packages/desktop": {
+      "entry": [
+        "scripts/**/*.{mjs,cjs,js,ts,mts}"
+      ],
+      "ignoreDependencies": [
+        "esbuild",
+        "@opentelemetry/otlp-transformer"
+      ]
+    },
+    "apps/zcode-cli/packages/dynamic-workflow": {
+      "entry": [
+        "tests/**/*.test.ts"
+      ],
+      "ignore": [
+        "tests/graphs/**",
+        "tests/lowering/**",
+        "tests/schemas/**",
+        "tests/schema-errors/**",
+        "tests/workflows/**",
+        "tests/smoke/**"
+      ]
+    },
+    "apps/zcode-cli/packages/office-runtime": {
+      "ignore": [
+        "ui/**",
+        "src/adapters/**"
+      ]
+    },
+    "apps/zcode-cli": {
+      "entry": [
+        "e2e/**/*.mjs",
+        "scripts/**/*.mjs"
+      ]
+    },
+    "packages/zcode-server-cli": {
+      "entry": [
+        "scripts/**/*.mjs"
+      ]
     }
   },
-  "ignore": [".agents/**", ".claude/**", "docs/**", "packages/ui/src/components/**"],
-  "ignoreDependencies": ["d3-path", "tailwind-scrollbar-hide"]
+  "ignore": [
+    ".agents/**",
+    ".claude/**",
+    "docs/**",
+    "packages/ui/src/components/**",
+    "**/dist-types/**",
+    "**/skills/**",
+    "**/module.ts",
+    "**/contract.example.ts"
+  ],
+  "ignoreDependencies": [
+    "d3-path",
+    "tailwind-scrollbar-hide"
+  ],
+  "entry": [
+    "scripts/**/*.{mjs,cjs,ts,mts}",
+    ".vscode/*.mjs"
+  ]
 }
