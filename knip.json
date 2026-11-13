@@ -193,6 +193,9 @@
     "packages/shared/src/validation.ts": [
       "duplicates"
     ],
+    "packages/shared/src/zcode-protocol-v4/protocol-v4-transport-part2.ts": [
+      "duplicates"
+    ],
     "packages/shared/src/zcode-protocol/schema-core.ts": [
       "duplicates"
     ],
