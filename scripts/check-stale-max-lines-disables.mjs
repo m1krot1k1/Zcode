@@ -18,6 +18,7 @@ const SKIP_DIRS = new Set([
   "dist-node",
   "dist-types",
   "build",
+  "out",
   ".turbo",
   "coverage",
 ]);
