@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { IPlatformService, RemoteTarget, RemoteWorkspaceSessionEntry } from "@zcode/shared";
 import { createUuid } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "../contract.ts";
 import type {
   RemoteConnectionFeedbackOptions,
   RemoteWorkspaceRecoveryStatus,

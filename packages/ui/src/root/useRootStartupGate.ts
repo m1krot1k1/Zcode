@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { UserInfo } from "@zcode/shared";
-import type { ModelSelectionView } from "@zcode/services";
+import type { ModelSelectionView } from "./contract.ts";
 import type { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
 import {
   isProviderStartupSyncPending,

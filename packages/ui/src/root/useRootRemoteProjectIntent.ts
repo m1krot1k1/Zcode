@@ -5,7 +5,7 @@ import {
   buildServerRemoteWorkspaceIdentity,
   remoteHostIdFromWorkspaceIdentity,
 } from "@zcode/shared";
-import type { IServiceAccessor, RemoteProjectHost } from "@zcode/services";
+import type { IServiceAccessor, RemoteProjectHost } from "./contract.ts";
 import type { RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import { resolveEntryProject } from "@/project-sidebar/index.js";
 import type { DeviceAdditionReturnRef } from "@/root/useRootDeviceAdditionReturn.js";

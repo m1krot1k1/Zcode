@@ -5,7 +5,7 @@
  */
 import type { ZCodePluginScope } from "@zcode/shared";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { StorePluginItem } from "@/settings/pluginStoreListing.js";
 import { getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
 import type { ConfigWorkspaceTarget } from "@/workspace-config-catalog/index.js";

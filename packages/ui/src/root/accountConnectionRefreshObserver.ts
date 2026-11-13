@@ -1,5 +1,5 @@
 import { isBuiltinModelProviderId, isStartPlanModelProviderId } from "@zcode/shared";
-import type { ProviderSettingsView } from "@zcode/services";
+import type { ProviderSettingsView } from "./contract.ts";
 import { logger } from "@/logger.js";
 
 export interface AccountConnectionLoss {

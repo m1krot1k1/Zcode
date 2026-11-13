@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { IPlatformService, RemoteWorkspaceSessionEntry } from "@zcode/shared";
 import { stripRemoteTargetSecrets } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "../contract.ts";
 import {
   buildWorkspaceSessionKey,
   buildRemoteWorkspaceSessionMutation,

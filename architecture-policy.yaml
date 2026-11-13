@@ -134,6 +134,7 @@ modules:
       - conversation-workspace-target
       - web-remote-control-ui
       - remote-connection-flow
+      - ui-root
     publicEntrypoints:
       - packages/ui/src/project-sidebar/index.tsx
       - packages/ui/src/project-sidebar/contract.ts
@@ -144,6 +145,7 @@ modules:
       - packages/ui/src/project-sidebar/useRemoteProjectConnectionPresentation.ts
       - packages/ui/src/project-sidebar/OfflineRemoteProjectRows.tsx
       - packages/ui/src/project-sidebar/RemoteConversationDisconnected.tsx
+      - packages/ui/src/project-sidebar/RemoteProjectPicker.tsx
     layers:
       contract: contract.ts
       ui: .
@@ -338,6 +340,7 @@ modules:
     requires:
       - shared
       - ui
+      - ui-root
     publicEntrypoints:
       - packages/ui/src/remote-connection-flow/index.ts
       - packages/ui/src/remote-connection-flow/contract.ts
@@ -486,6 +489,7 @@ modules:
       - services
       - shared
       - ui
+      - ui-root
     publicEntrypoints:
       - packages/ui/src/web-remote-control/index.ts
       - packages/ui/src/web-remote-control/contract.ts
@@ -847,6 +851,166 @@ modules:
       - packages/ui/src/preview-pane/contract.ts
     layers:
       contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-root：由 architecture:adopt 登记
+  - id: ui-root
+    roots:
+      - packages/ui/src/root
+    managed: true
+    requires:
+      - conversation-workspace-target
+      - plugin-ui
+      - project-sidebar
+      - provider
+      - remote-connection-flow
+      - services
+      - shared
+      - ui
+      - web-remote-control-ui
+    publicEntrypoints:
+      - packages/ui/src/root/index.ts
+      - packages/ui/src/root/contract.ts
+      - packages/ui/src/root/types.ts
+      - packages/ui/src/root/reconnectRemoteWorkspaceHistoryEntry.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # desktop-remote-sessions：由 architecture:adopt 登记
+  - id: desktop-remote-sessions
+    roots:
+      - packages/desktop/src/main/desktop-remote-sessions
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/desktop-remote-sessions/index.ts
+      - packages/desktop/src/main/desktop-remote-sessions/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-animated-side-pane-panel：由 architecture:adopt 登记
+  - id: ui-animated-side-pane-panel
+    roots:
+      - packages/ui/src/app-shell/animated-side-pane-panel
+    managed: true
+    requires:
+      - agent-workbench
+      - plugin-ui
+      - services
+      - shared
+      - side-pane-full-view
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/app-shell/animated-side-pane-panel/index.ts
+      - packages/ui/src/app-shell/animated-side-pane-panel/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-conversation-turn-group：由 architecture:adopt 登记
+  - id: ui-conversation-turn-group
+    roots:
+      - packages/ui/src/v4/conversation-turn-group
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/conversation-turn-group/index.ts
+      - packages/ui/src/v4/conversation-turn-group/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-external-agent-import-dialog：由 architecture:adopt 登记
+  - id: ui-external-agent-import-dialog
+    roots:
+      - packages/ui/src/settings/external-agent-import-dialog
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/external-agent-import-dialog/index.ts
+      - packages/ui/src/settings/external-agent-import-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-git-cli：由 architecture:adopt 登记
+  - id: services-git-cli
+    roots:
+      - packages/services/src/git/repo/git-cli
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/git/repo/git-cli/index.ts
+      - packages/services/src/git/repo/git-cli/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-plugins-section：由 architecture:adopt 登记
+  - id: ui-plugins-section
+    roots:
+      - packages/ui/src/settings/plugins-section
+    managed: true
+    requires:
+      - conversation-workspace-target
+      - services
+      - shared
+      - ui
+      - workspace-config-catalog
+    publicEntrypoints:
+      - packages/ui/src/settings/plugins-section/index.ts
+      - packages/ui/src/settings/plugins-section/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-bigmodel-usage-quota：由 architecture:adopt 登记
+  - id: services-bigmodel-usage-quota
+    roots:
+      - packages/services/src/usage-stats/providers/bigmodel
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/usage-stats/providers/bigmodel/index.ts
+      - packages/services/src/usage-stats/providers/bigmodel/contract.ts
+    layers:
+      adapters: .
+    owner: usage
+  # dev-docs-app：由 architecture:adopt 登记
+  - id: dev-docs-app
+    roots:
+      - apps/dev-docs/src/app
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/dev-docs/src/app/index.ts
+      - apps/dev-docs/src/app/contract.ts
+    layers:
+      adapters: .
+    owner: docs
+  # ui-app-panels：由 architecture:adopt 登记
+  - id: ui-app-panels
+    roots:
+      - packages/ui/src/hooks/app-panels
+    managed: true
+    requires:
+      - plugin-ui
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/hooks/app-panels/index.ts
+      - packages/ui/src/hooks/app-panels/contract.ts
+    layers:
       ui: .
     owner: conversation
 

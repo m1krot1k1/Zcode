@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { IPlatformService, RemoteWorkspaceSessionEntry } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "../contract.ts";
 import type { RemoteWorkspaceRecoveryStatus } from "@/app-shell/types.js";
 import { useRemoteConnectionEntryVisibility } from "@/hooks/useRemoteConnectionEntryVisibility.js";
 import type { WorkspacePersistenceGate } from "@/hooks/useTabPersistence.js";

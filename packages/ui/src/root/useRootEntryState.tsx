@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import { Button } from "@/components/ui/button.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";

@@ -3,7 +3,7 @@ import {
   type ZCodeStreamEvent,
   type BotTaskStreamBroadcastPayload,
 } from "@zcode/shared";
-import type { BroadcastMessage } from "@zcode/services";
+import type { BroadcastMessage } from "./contract.ts";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import type { WindowTabState } from "@/store/tabStore.js";
 import { isWorkspaceTab } from "@/store/tabStore.js";

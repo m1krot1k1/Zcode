@@ -1,5 +1,5 @@
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
-import type { ISettingsSyncService } from "@zcode/services";
+import type { ISettingsSyncService } from "./contract.ts";
 import type {
   SettingsSyncCategory,
   SettingsSyncCommandImportResult,

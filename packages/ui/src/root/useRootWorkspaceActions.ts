@@ -9,7 +9,7 @@ import {
   type UserInfo,
   type ZCodeTaskClientMode,
 } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type {
   CreateTaskOptions,
   CreateTaskRequest,

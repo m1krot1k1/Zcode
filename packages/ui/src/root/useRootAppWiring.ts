@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { IPlatformService } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import {
   useDynamicWorkflowAvailabilityLoader,
   useDynamicWorkflowUserModeSync,

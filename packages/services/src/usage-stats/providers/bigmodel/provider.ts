@@ -63,6 +63,7 @@ import {
   ZCODE_JWT_TOKEN_KEY,
   log,
 } from "./constants.js";
+import { resolveBigModelAuthorization } from "./authorization.js";
 import {
   buildBigModelQuotaUrl,
   buildModelPerformanceMonitorUrl,
@@ -771,50 +772,15 @@ export class BigModelUsageQuotaProvider {
       allowEnvApiKey?: boolean;
     } = {},
   ): Promise<ResolvedQuotaAuthorization | null> {
-    if (request.allowEnvApiKey !== false && request.requirePreferredProvider !== true) {
-      const envApiKey =
-        readEnv(this.env, "ZCODE_BIGMODEL_USAGE_API_KEY") ??
-        readEnv(this.env, "BIGMODEL_USAGE_API_KEY");
-      if (envApiKey) {
-        return {
-          authorization: envApiKey,
-          quotaUrl: resolveQuotaUrlFromEnv(this.env) ?? buildBigModelQuotaUrl(this.env),
-          teamContext: null,
-          provider: {
-            id: "env:bigmodel-usage",
-            name: "BigModel",
-          },
-        };
-      }
-    }
-
-    const providerId = request.preferredProviderId?.trim() ?? "";
-    const accountAccess = await this.resolveRequestAccountAccess(request.accountAccess);
-    if (providerId && isCodingPlanModelProviderId(providerId)) {
-      if (!accountAccess) return null;
-      const auth = await this.accountRequestAuthService.resolveCurrent({
-        providerId,
-        accountAccess,
-        reason: "usage",
-      });
-      const authorization = auth.apiKey?.trim() ?? "";
-      if (!authorization) return null;
-      return {
-        authorization,
-        quotaUrl:
-          resolveQuotaUrlFromEnv(this.env) ?? resolveAccountProviderQuotaUrl(providerId, this.env),
-        teamContext: resolveTeamPlanContext(accountAccess),
-        provider: {
-          id: providerId,
-          name: resolveAccountProviderLabel(providerId),
-        },
-      };
-    }
-
-    const apiAuthorization = await this.resolveApiAuthorization?.({
-      preferredProviderId: providerId || undefined,
-      requirePreferredProvider: request.requirePreferredProvider === true,
-    });
-    return apiAuthorization ? { ...apiAuthorization, teamContext: null } : null;
+    return resolveBigModelAuthorization(
+      {
+        env: this.env,
+        accountRequestAuthService: this.accountRequestAuthService,
+        resolveApiAuthorization: this.resolveApiAuthorization,
+        resolveRequestAccountAccess: (accountAccess) =>
+          this.resolveRequestAccountAccess(accountAccess),
+      },
+      request,
+    );
   }
 }

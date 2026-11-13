@@ -1,6 +1,6 @@
 import type { CSSProperties, RefObject } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js";

@@ -14,7 +14,7 @@ import type {
   ZCodePluginScope,
   ZCodePluginUserConfigOption,
 } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import { toast } from "@/components/ui/toast.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import type { WorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";

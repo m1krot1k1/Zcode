@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { IPlatformService, RemoteWorkspaceSessionEntry } from "@zcode/shared";
 import { parseRemoteWorkspaceIdentity } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "../contract.ts";
 import type { RemoteSessionClosedEvent, RemoteSessionReconnectedEvent } from "@zcode/shared";
 import type { RemoteWorkspaceRecoveryStatus } from "@/app-shell/types.js";
 import { formatRemoteConnectionError } from "@/lib/remoteConnectionPresentation.js";

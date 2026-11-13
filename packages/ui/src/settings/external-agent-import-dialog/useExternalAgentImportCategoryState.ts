@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ISettingsSyncService } from "@zcode/services";
+import type { ISettingsSyncService } from "./contract.ts";
 import type {
   SettingsSyncDiscoveryResult,
   SettingsSyncImportMode,

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { AppSettings, IPlatformService, SourceServerManagementSnapshot } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import type { WorkspacePersistenceGate } from "@/hooks/useTabPersistence.js";
 import {

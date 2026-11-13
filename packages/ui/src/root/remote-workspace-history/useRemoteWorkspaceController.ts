@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { RemoteWorkspaceSessionEntry } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "../contract.ts";
 import type { RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import { createRemoteWorkspaceController } from "@/remote/remoteWorkspaceController.js";
 import type { RemoteWorkspaceController } from "@/remote/remoteWorkspaceController.js";

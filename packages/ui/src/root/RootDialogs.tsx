@@ -1,4 +1,4 @@
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import { DirectoryBrowser } from "@/DirectoryBrowser.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { logger } from "@/logger.js";

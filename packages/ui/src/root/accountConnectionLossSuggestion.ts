@@ -1,4 +1,4 @@
-import type { IServiceAccessor, ProviderSettingsView } from "@zcode/services";
+import type { IServiceAccessor, ProviderSettingsView } from "./contract.ts";
 import type { ProviderFamilyConnectionSelection } from "@zcode/shared";
 import type { AccountConnectionLoss } from "@/root/accountConnectionRefreshObserver.js";
 import {

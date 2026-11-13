@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import { ensureProviderFamilyDomainMigration } from "@/lib/providerFamilyDomainMigration.js";
 import { logger } from "@/logger.js";
 

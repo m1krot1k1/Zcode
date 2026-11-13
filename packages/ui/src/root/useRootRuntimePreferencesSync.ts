@@ -4,7 +4,7 @@ import {
   appRuntimePreferencesChangedBroadcastPayloadSchema,
   type AppSettings,
 } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import {
   CODE_COMMENT_PREVIEW_RESTORE_BROADCAST_CHANNEL,
   CODE_COMMENT_REMOVE_BROADCAST_CHANNEL,
