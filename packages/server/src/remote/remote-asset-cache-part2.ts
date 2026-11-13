@@ -1,42 +1,51 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  constants as fsConstants,
-  createReadStream,
-  createWriteStream,
-  type Dirent,
-} from "node:fs";
-import {
-  copyFile,
-  link,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { createWriteStream, type Dirent } from "node:fs";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { setTimeout as sleep } from "node:timers/promises";
 import { fileExists } from "@zcode/server/remote/deployShared.js";
-import { extractTarGzArchive } from "@zcode/server/remote/localTarGz.js";
-import {
-  assertRemoteCdnBaseVersionMatches,
-  buildComponentArtifactUrlCandidates,
-  buildReleaseAssetUrlCandidates,
-  buildReleaseBaseCandidates,
-  normalizeRemoteAssetRelativePath,
-  resolveRemoteCdnBaseUrls,
-} from "@zcode/server/remote/remoteAssetCdn.js";
+import { normalizeRemoteAssetRelativePath } from "@zcode/server/remote/remoteAssetCdn.js";
 import {
   resolveRemoteAssetFetch,
   type RemoteAssetNetworkPort,
 } from "@zcode/server/remote/remoteAssetNetwork.js";
-import { READY_MARKER_CANDIDATES, REMOTE_ASSET_READY_MARKER, REMOTE_COMPONENT_MOUNT_RULES, assertExtractedArchiveNotEmpty, assertSafePathSegment, createRemoteAssetManifestRequestSignal, createRemoteAssetProgressReporter, extractContentHashPrefixFromComponentVersion, findMissingLocalRelativePaths, hashDirectoryContent, hashFileContent, isDirectoryPath, isObjectRecord, isValidReleaseDir, linkOrCopyFile, normalizeRequestedComponentIds, parseContentLength, pathExists, readRequiredNumber, readRequiredString, removeRemoteAssetDirectoryBestEffort, renameRemoteAssetDirectoryWithRetry, resolvePathWithinBase, resolveReleaseBaseByAssetUrl, resolveRemoteAssetComponentCacheVersion, selectManifestComponents, usesRemoteAssetContentAddressedCacheIdentity, writeReadyMarker } from "./remote-asset-cache-part1.js";
-import type { RemoteAssetCacheLoggers, RemoteAssetManifest, RemoteAssetManifestComponent, RemoteAssetManifestRef } from "./remote-asset-cache-part1.js";
+import {
+  READY_MARKER_CANDIDATES,
+  REMOTE_ASSET_READY_MARKER,
+  REMOTE_COMPONENT_MOUNT_RULES,
+  assertExtractedArchiveNotEmpty,
+  assertSafePathSegment,
+  createRemoteAssetManifestRequestSignal,
+  createRemoteAssetProgressReporter,
+  extractContentHashPrefixFromComponentVersion,
+  findMissingLocalRelativePaths,
+  hashDirectoryContent,
+  hashFileContent,
+  isDirectoryPath,
+  isObjectRecord,
+  isValidReleaseDir,
+  linkOrCopyFile,
+  normalizeRequestedComponentIds,
+  parseContentLength,
+  pathExists,
+  readRequiredNumber,
+  readRequiredString,
+  removeRemoteAssetDirectoryBestEffort,
+  renameRemoteAssetDirectoryWithRetry,
+  resolvePathWithinBase,
+  resolveReleaseBaseByAssetUrl,
+  resolveRemoteAssetComponentCacheVersion,
+  selectManifestComponents,
+  usesRemoteAssetContentAddressedCacheIdentity,
+  writeReadyMarker,
+} from "./remote-asset-cache-part1.js";
+import type {
+  RemoteAssetCacheLoggers,
+  RemoteAssetManifest,
+  RemoteAssetManifestComponent,
+  RemoteAssetManifestRef,
+} from "./remote-asset-cache-part1.js";
 
 // Часть 2/3 модуля remote-asset-cache: вынесено по лимиту строк.
 
@@ -167,7 +176,10 @@ export function resolveComponentCacheRootDir(
     : join(remoteCacheDir, "components", component.id);
 }
 
-export async function materializeDirectoryContents(sourceDir: string, targetDir: string): Promise<void> {
+export async function materializeDirectoryContents(
+  sourceDir: string,
+  targetDir: string,
+): Promise<void> {
   const entries = await readdir(sourceDir, { withFileTypes: true });
   for (const entry of entries) {
     if (READY_MARKER_CANDIDATES.includes(entry.name)) {
@@ -465,7 +477,10 @@ export function resolveComponentCacheDir(
   );
 }
 
-export async function isReadyReleaseDir(releaseDir: string, platformArch: string): Promise<boolean> {
+export async function isReadyReleaseDir(
+  releaseDir: string,
+  platformArch: string,
+): Promise<boolean> {
   if (!(await isValidReleaseDir(releaseDir, platformArch))) {
     return false;
   }
@@ -486,7 +501,10 @@ export async function isReadyComponentDir(componentDir: string): Promise<boolean
   return hasReadyMarker(componentDir);
 }
 
-export const remoteAssetManifestLocks = new Map<string, Promise<RemoteAssetManifestFetchResult | null>>();
+export const remoteAssetManifestLocks = new Map<
+  string,
+  Promise<RemoteAssetManifestFetchResult | null>
+>();
 
 export const remoteAssetManifestRefreshLocks = new Map<
   string,
