@@ -206,7 +206,7 @@ export async function ensureIndexPublisherExclusive(
   const stored = refreshed ?? (await ctx.host.getStoredSessionSummaries?.(workspaceId)) ?? [];
   for (const summary of stored) publisher.seed(summary);
   // 种子 2：已加载会话用 live 投影覆盖（更准的 phase/preview/backgroundWork）。
-  const liveIds = ctx.host.listWorkspaceSessionIds?.(workspaceId) ?? [...ctx.publishers.keys()];
+  const liveIds = ctx.host.listWorkspaceSessionIds?.(workspaceId) ?? Array.from(ctx.publishers.keys());
   for (const sessionId of liveIds) {
     const conversationPublisher = ctx.publishers.get(sessionId);
     if (!conversationPublisher) continue;
@@ -264,7 +264,7 @@ export function pruneDetachedChildPublishers(
   graceMs: number = DETACHED_CHILD_PUBLISHER_GRACE_MS,
 ): number {
   let released = 0;
-  for (const [childId, terminalAt] of [...ctx.detachedTerminalAt]) {
+  for (const [childId, terminalAt] of Array.from(ctx.detachedTerminalAt)) {
     if (nowMs - terminalAt < graceMs) continue;
     if (ctx.host.sessionExists(childId)) continue;
     if (ctx.publishers.get(childId)?.hasSubscribers()) continue;

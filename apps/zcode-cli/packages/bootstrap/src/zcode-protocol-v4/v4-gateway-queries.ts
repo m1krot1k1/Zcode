@@ -110,7 +110,7 @@ export async function workflowRunEvents(
   await ctx.ensureHostRecordForJournalRead(params.sessionId);
   const page = await ctx.host.listDynamicWorkflowRunEvents(params.sessionId, {
     runId: params.runId,
-    ...(params.afterSequence === undefined ? {} : { afterSequence: params.afterSequence }),
+    ...(params.afterSequence !== undefined && { afterSequence: params.afterSequence }),
     limit: params.limit ?? WORKFLOW_RUN_EVENTS_PAGE_LIMITS.maxEvents,
     maxBytes: WORKFLOW_RUN_EVENTS_PAGE_LIMITS.maxBytes,
   });
@@ -132,7 +132,7 @@ export async function workflowRuns(
   }
   await ctx.ensureHostRecordForJournalRead(params.sessionId);
   const runs = await ctx.host.listDynamicWorkflowRuns(params.sessionId, {
-    ...(params.limit === undefined ? {} : { limit: params.limit }),
+    ...(params.limit !== undefined && { limit: params.limit }),
   });
   return v4ConversationWorkflowRunsResultSchema.parse({ runs });
 }
@@ -187,10 +187,10 @@ export async function workflowRunArtifactData(
   const page = await ctx.host.listDynamicWorkflowRunArtifactItems(params.sessionId, {
     runId: params.runId,
     artifactId: params.artifactId,
-    ...(params.afterSequence === undefined ? {} : { afterSequence: params.afterSequence }),
+    ...(params.afterSequence !== undefined && { afterSequence: params.afterSequence }),
     limit,
     maxBytes: WORKFLOW_ARTIFACT_LIMITS.maxPageBytes,
-    ...(params.fields === undefined ? {} : { fields: params.fields }),
+    ...(params.fields !== undefined && { fields: params.fields }),
   });
   return v4ConversationWorkflowRunArtifactDataResultSchema.parse(page);
 }

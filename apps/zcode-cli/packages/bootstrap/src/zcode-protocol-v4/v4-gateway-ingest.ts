@@ -437,7 +437,7 @@ export function resolveProjectionEventCommit(
   state.appliedEventIds.add(eventId);
   const waiters = ctx.projectionEventCommitWaiters.get(sessionId)?.get(eventId);
   if (!waiters) return;
-  for (const waiter of [...waiters]) waiter.resolve();
+  for (const waiter of Array.from(waiters)) waiter.resolve();
 }
 
 export function rejectProjectionEventCommit(
@@ -450,7 +450,7 @@ export function rejectProjectionEventCommit(
   state.failedEventById.set(eventId, error);
   const waiters = ctx.projectionEventCommitWaiters.get(sessionId)?.get(eventId);
   if (!waiters) return;
-  for (const waiter of [...waiters]) waiter.reject(error);
+  for (const waiter of Array.from(waiters)) waiter.reject(error);
 }
 
 export function rejectProjectionEventWaiters(
@@ -461,7 +461,7 @@ export function rejectProjectionEventWaiters(
   const byEvent = ctx.projectionEventCommitWaiters.get(sessionId);
   if (!byEvent) return;
   for (const waiters of byEvent.values()) {
-    for (const waiter of [...waiters]) waiter.reject(error);
+    for (const waiter of Array.from(waiters)) waiter.reject(error);
   }
   ctx.projectionEventCommitWaiters.delete(sessionId);
 }
