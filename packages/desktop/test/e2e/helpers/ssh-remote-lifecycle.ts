@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- SSH lifecycle case 共用 setup/teardown、身份与故障辅助逻辑，集中维护以保持同一安全边界。 */
 import {
   clickRemoteHostConnect,
   projectSectionSelector,

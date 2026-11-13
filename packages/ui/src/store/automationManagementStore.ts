@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 定时任务管理 store 集中维护列表/运行历史/CRUD 与立即运行等操作，稳定后再拆分。 */
 import { create } from "zustand";
 import {
   AUTOMATION_CREATE_LIMIT,

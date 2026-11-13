@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 设置同步流程聚合了发现、选择与导入状态机，集中维护更利于问题定位 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   SettingsSyncCategory,

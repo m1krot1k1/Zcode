@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- raw RPC 的 schema、精确计量、编码与单 assembly 状态机共享同一组物理不变量。 */
 import { z } from "zod";
 import { PROTOCOL_V4_LIMITS } from "./zcode-protocol-v4/core.js";
 import {

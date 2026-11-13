@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Bot service 的共享测试桩集中维护协议、任务和模型 registry 能力。 */
 import { afterEach, vi } from "vitest";
 import type {
   ZCodeConfigOption,

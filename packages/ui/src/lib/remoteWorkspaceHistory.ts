@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 远端 workspace 历史集中维护持久化、凭据和 MCP 路径映射元数据，拆分会扩大恢复链路回归面。 */
 import type {
   AppSettings,
   PersistedWorkspaceSessionEntry,

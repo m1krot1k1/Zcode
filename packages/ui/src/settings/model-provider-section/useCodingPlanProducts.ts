@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Coding Plan 套餐需要集中处理静态套餐、远端试算、缓存与登录态回退，避免把共享状态拆散。 */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,

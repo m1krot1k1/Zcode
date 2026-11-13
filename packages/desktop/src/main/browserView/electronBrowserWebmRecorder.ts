@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Electron capture authority、renderer 消息协议与文件清理属于同一个录制事务，拆开会让 abort/close 状态跨模块竞态。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";

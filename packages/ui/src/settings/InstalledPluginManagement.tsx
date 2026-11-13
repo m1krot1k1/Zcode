@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 已安装插件列表与详情弹窗共享组件分组/Hook 明细渲染，集中维护更利于与参考图保持一致。 */
 import type { ReactNode } from "react";
 import { AlertTriangle, Cable, ChevronRight, Trash2 } from "lucide-react";
 import type {

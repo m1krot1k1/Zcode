@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- share 公开页的状态文案、Row allow-list 和登录态需保持同一安全边界。 */
 import {
   useCallback,
   useEffect,

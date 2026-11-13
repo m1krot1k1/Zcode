@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Node coverage reporter 需在同一文件保持 V8 归一化、源码基线与 Istanbul 输出合同。 */
 import { execFileSync } from "node:child_process";
 import {
   existsSync,

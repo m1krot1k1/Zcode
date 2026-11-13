@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 自包含热度图需要同时保留 coverage 聚合合同和离线报告模板。 */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 

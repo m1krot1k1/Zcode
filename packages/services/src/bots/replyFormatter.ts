@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Bot bot reply formatter 集中维护第三方消息的文本颗粒度、工具摘要和权限摘要，避免 provider 间文案分叉。 */
 import type {
   ZCodePermissionRequest,
   ZCodeStreamEvent,

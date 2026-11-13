@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 已发布旧 Provider store 只在单向 importer 边界建模。 */
 import { z } from "zod";
 
 export interface ClaudeModelMapping {

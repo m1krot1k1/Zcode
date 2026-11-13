@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Coding Plan 登录、订阅与 Start/Coding 互斥校验需要集中维护，拆散会让系统禁用原因更难追踪。 */
 import {
   ApiError,
   BIGMODEL_PROVIDER_ID,

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- source/product 两种解析模式共享同一稳定错误契约与路径校验，拆开会引入循环依赖 */
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";

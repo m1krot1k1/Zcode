@@ -1,5 +1,4 @@
 import { isAuxiliarySessionKind, OFF_PEAK_EXECUTION_TOOL_DENYLIST } from "@zcode/shared";
-/* eslint-disable max-lines -- ZCode Protocol 的 session/workspace 方法共享同一个 server context 与 snapshot helpers，迁移期先集中维护。 */
 
 import {
   TASK_LIST_SESSION_TYPES,

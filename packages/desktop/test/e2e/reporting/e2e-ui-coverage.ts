@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- renderer coverage reporter 集中维护采集、跨 worker 合并和源码报告，避免 coverage map 合同分散。 */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import {

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 推荐语料按表格逐条维护，集中放置便于对照审核。 */
 import finderIcon from "@/onboarding/assets/finder.png";
 import terminalIcon from "@/onboarding/assets/terminal.png";
 import feishuIcon from "@/onboarding/assets/feishu.png";

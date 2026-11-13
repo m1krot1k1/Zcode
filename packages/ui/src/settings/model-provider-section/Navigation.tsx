@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 设置页 provider 导航同时承载分组、卡片化预置入口和拖拽排序，当前先集中维护交互边界。 */
 import {
   closestCenter,
   DndContext,

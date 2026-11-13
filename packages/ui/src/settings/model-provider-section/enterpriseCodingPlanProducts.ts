@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 企业套餐展示模型集中承载静态目录、实时定价与支付参数转换，拆分会模糊合并边界。 */
 import type {
   CodingPlanCampaignDiscountDetail,
   CodingPlanStaticTeamProduct,

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 微信 iLink provider 集中处理轮询、文本/媒体解析、发送和 typing 协议。 */
 import { Buffer } from "node:buffer";
 import { createDecipheriv, randomInt, randomUUID } from "node:crypto";
 import type {

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Lexical slash 插件的 trigger/面板/键盘导航同属一个协议状态机，oxfmt 换行后略超 400 行。 */
 /**
  * SlashCommandPlugin — Lexical trigger 面板插件
  *

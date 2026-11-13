@@ -1,5 +1,4 @@
 // 能力群、节点与连线必须作为同一份审计数据集整体校验，避免跨文件产生悬空引用。
-/* oxlint-disable max-lines */
 export type CapabilityRelationType = "delivery" | "invariant" | "runtime" | "shared" | "state";
 
 export type CapabilityCodeEstimateConfidence = "high" | "medium-high" | "medium" | "medium-low";

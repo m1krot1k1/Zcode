@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import { access, open, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type {

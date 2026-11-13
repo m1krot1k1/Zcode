@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- zcodeSessionService 聚合 desktop-continuous session 操作、draft lifecycle 和 task index 同步边界，拆分需要单独设计。 */
 import type { IZCodeAgentService } from "#src/zcode-agent/zcodeAgent.js";
 import type { ZCodeTaskIndexSyncer } from "#src/zcode-agent/zcodeTaskIndexSyncer.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 文件树模型集中维护路径、排序、图片和媒体预览 source 构造。 */
 import type { FileEntry, GitFileChange, GitRepositorySummary } from "@zcode/shared";
 import { getPathLeaf } from "@/lib/path.js";
 import { inferImageMediaType, inferMediaPreview, type CodeViewerSource } from "@/lib/codeViewer.js";

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- BrowserCommand 的 Zod discriminated union 必须保持单一运行时事实源，拆分会让协议方法与 schema 漂移。 */
 import { z } from "zod";
 import { browserViewportInputSchema } from "./command-metadata.js";
 

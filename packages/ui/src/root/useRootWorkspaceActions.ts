@@ -1,6 +1,5 @@
 import { stageV4ComposerDraftAttachments } from "@/v4/composer/composerDraftWorkspaceTransfer.js";
 import { readProjectSidebarView } from "@/project-sidebar/index.js";
-/* eslint-disable max-lines -- Root workspace action hook 集中编排项目、远程和 conversation 入口；合并期保持动作边界完整，后续按领域拆分。 */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   DesktopCommandIds,

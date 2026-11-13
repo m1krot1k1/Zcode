@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- MCP store 集中维护配置加载、持久化、状态刷新与运行时状态合并，拆分会增加跨状态同步复杂度。 */
 /**
  * MCP (Model Context Protocol) UI State Store
  */

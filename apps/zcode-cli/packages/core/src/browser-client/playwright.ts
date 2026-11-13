@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 与对外暴露的 Playwright 对象图一一对应，集中可避免 builder/终结操作契约漂移。 */
 import type {
   BrowserCommand,
   BrowserCommandResult,

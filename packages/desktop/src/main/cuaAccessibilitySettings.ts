@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 安装验签、main 级权限会话和拖拽 TOCTOU 共同维护同一 Helper identity */
 // 授权引导不触发任何 macOS 原生权限弹窗。若每个 TCC stage 先经 LaunchServices
 // 拉起 Helper 到一次性权限请求模式，由 Helper 进程内命中 AXIsProcessTrustedWithOptions{prompt:true}
 // / CGRequestScreenCaptureAccess 来让自己“自动出现在权限列表里”，代价是一个打断用户的系统对话框。

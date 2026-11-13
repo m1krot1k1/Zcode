@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- OAuth lifecycle effects intentionally share one coordination point. */
 import { useEffect, useRef } from "react";
 import type {
   IPlatformService,

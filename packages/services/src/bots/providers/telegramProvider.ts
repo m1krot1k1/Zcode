@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Telegram provider 集中处理 Bot API 文本、按钮、媒体解析和附件下载。 */
 import type {
   BotInboundAttachment,
   BotConfig,
