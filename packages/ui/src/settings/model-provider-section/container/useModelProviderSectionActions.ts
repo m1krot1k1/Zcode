@@ -449,4 +449,4 @@ export function useModelProviderSectionActions({
   };
 }
 
-export type ModelProviderSectionActions = ReturnType<typeof useModelProviderSectionActions>;
+type ModelProviderSectionActions = ReturnType<typeof useModelProviderSectionActions>;

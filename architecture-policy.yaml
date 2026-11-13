@@ -1382,6 +1382,215 @@ modules:
       contract: contract.ts
       ui: .
     owner: conversation
+  # services-oauth-service：由 architecture:adopt 登记
+  - id: services-oauth-service
+    roots:
+      - packages/services/src/oauth/service
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/oauth/service/index.ts
+      - packages/services/src/oauth/service/contract.ts
+    layers:
+      adapters: .
+    owner: auth
+  # ui-coding-plan-usage-panel：由 architecture:adopt 登记
+  - id: ui-coding-plan-usage-panel
+    roots:
+      - packages/ui/src/settings/usage-stats/coding-plan-usage-panel
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/usage-stats/coding-plan-usage-panel/index.ts
+      - packages/ui/src/settings/usage-stats/coding-plan-usage-panel/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # ui-remote-connection-fields：由 architecture:adopt 登记
+  - id: ui-remote-connection-fields
+    roots:
+      - packages/ui/src/remote-connection-fields
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/remote-connection-fields/index.ts
+      - packages/ui/src/remote-connection-fields/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-skills-service：由 architecture:adopt 登记
+  - id: services-skills-service
+    roots:
+      - packages/services/src/skills/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/skills/service/index.ts
+      - packages/services/src/skills/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # cli-session-events：由 architecture:adopt 登记
+  - id: cli-session-events
+    roots:
+      - apps/zcode-cli/packages/contracts/src/events/session
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/contracts/src/events/session/index.ts
+      - apps/zcode-cli/packages/contracts/src/events/session/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # ui-elicitation-dialog：由 architecture:adopt 登记
+  - id: ui-elicitation-dialog
+    roots:
+      - packages/ui/src/elicitation-dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/elicitation-dialog/index.ts
+      - packages/ui/src/elicitation-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-model-provider-container：由 architecture:adopt 登记
+  - id: ui-model-provider-container
+    roots:
+      - packages/ui/src/settings/model-provider-section/container
+    managed: true
+    requires:
+      - agent-workbench
+      - opencode-agent-settings
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/model-provider-section/container/index.ts
+      - packages/ui/src/settings/model-provider-section/container/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-plugin-sync-service：由 architecture:adopt 登记
+  - id: services-plugin-sync-service
+    roots:
+      - packages/services/src/plugin-sync/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/plugin-sync/service/index.ts
+      - packages/services/src/plugin-sync/service/contract.ts
+    layers:
+      adapters: .
+    owner: plugins
+  # ui-composer-attachments：由 architecture:adopt 登记
+  - id: ui-composer-attachments
+    roots:
+      - packages/ui/src/v4/composer/composer-attachments
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/composer-attachments/index.ts
+      - packages/ui/src/v4/composer/composer-attachments/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # desktop-locator-executor：由 architecture:adopt 登记
+  - id: desktop-locator-executor
+    roots:
+      - packages/desktop/src/main/browserView/locator-executor
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/browserView/locator-executor/index.ts
+      - packages/desktop/src/main/browserView/locator-executor/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-conversation-projection-store：由 architecture:adopt 登记
+  - id: ui-conversation-projection-store
+    roots:
+      - packages/ui/src/v4/conversation-projection-store
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/conversation-projection-store/index.ts
+      - packages/ui/src/v4/conversation-projection-store/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-model-provider-status-cards：由 architecture:adopt 登记
+  - id: ui-model-provider-status-cards
+    roots:
+      - packages/ui/src/settings/model-provider-section/status-cards
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/model-provider-section/status-cards/index.ts
+      - packages/ui/src/settings/model-provider-section/status-cards/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # ui-model-provider-detail：由 architecture:adopt 登记
+  - id: ui-model-provider-detail
+    roots:
+      - packages/ui/src/settings/model-provider-section/detail
+    managed: true
+    requires:
+      - shared
+      - ui
+      - ui-root
+    publicEntrypoints:
+      - packages/ui/src/settings/model-provider-section/detail/index.ts
+      - packages/ui/src/settings/model-provider-section/detail/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # ui-bots-dialog：由 architecture:adopt 登记
+  - id: ui-bots-dialog
+    roots:
+      - packages/ui/src/bots-dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/bots-dialog/index.ts
+      - packages/ui/src/bots-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

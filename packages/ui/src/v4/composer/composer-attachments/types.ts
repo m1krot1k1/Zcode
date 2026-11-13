@@ -4,7 +4,7 @@
  * 字段、可选性与导出面保持与原文件一致。
  */
 import type { AttachmentRef } from "@zcode/shared/zcode-protocol-v4";
-import type { IPromptAttachmentTransferService } from "@zcode/services";
+import type { IPromptAttachmentTransferService } from "./contract.ts";
 import type { ChatComposerPasteEvent } from "@/LexicalChatInput.js";
 import type { ChatComposerAttachment } from "@/lib/chatAttachments.js";
 import type { AttachmentPutFn } from "@/v4/composer/attachmentUpload.js";

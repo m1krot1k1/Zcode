@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { AttachmentRef } from "@zcode/shared/zcode-protocol-v4";
-import type { IPromptAttachmentTransferService } from "@zcode/services";
+import type { IPromptAttachmentTransferService } from "./contract.ts";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import {
