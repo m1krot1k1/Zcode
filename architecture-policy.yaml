@@ -1825,6 +1825,21 @@ modules:
       contract: contract.ts
       ui: .
     owner: conversation
+  # cli-core-executor：由 architecture:adopt 登记
+  - id: cli-core-executor
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/executor
+    managed: true
+    requires:
+      - mcp-apps-protocol
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/executor/index.ts
+      - apps/zcode-cli/packages/core/src/tool/executor/contract.ts
+    layers:
+      adapters: .
+    owner: agent
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

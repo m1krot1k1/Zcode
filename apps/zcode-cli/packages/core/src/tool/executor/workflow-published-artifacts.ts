@@ -198,7 +198,7 @@ function manifestArtifactKind(kind: string): WorkflowArtifactManifestEntry["kind
  * 形状照样防御性检查：输入跨包而来（端口实现、或一条冷恢复回来的行），一个坏条目不该让整节
  * 消失。不合形的整条跳过。
  */
-export function toPublishedArtifactSummaries(
+function toPublishedArtifactSummaries(
   value: unknown,
 ): PublishedArtifactSummary[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
@@ -231,4 +231,15 @@ export function toPublishedArtifactSummaries(
     });
   }
   return summaries.length === 0 ? undefined : summaries;
+}
+
+/**
+ * 快照上的 dwf 用户面产物（`artifact.*` 发布的产出，不是顶层返回值）。
+ * 与 toPublishedArtifactSummaries 放在同一模块：解析规则只有一份，跨文件引用会让实现绕圈。
+ */
+export function workflowSnapshotArtifacts(
+  snapshot: { artifacts?: unknown } | undefined,
+): ReturnType<typeof toPublishedArtifactSummaries> {
+  if (snapshot === undefined || !("artifacts" in snapshot)) return undefined;
+  return toPublishedArtifactSummaries(snapshot.artifacts);
 }
