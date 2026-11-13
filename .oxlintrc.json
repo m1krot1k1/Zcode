@@ -32,7 +32,6 @@
         // core 包内以 --no-ignore 运行时，oxlint 按 cwd 相对路径匹配同一组存量文件。
         "src/runtime/methods/steering.ts",
         "src/runtime/methods/turn.ts",
-        "src/runtime/methods/turn-model-step.ts",
         "src/runtime/methods/session-fork.ts",
         // 存量超大 модуль远程连接流程 (2057 строк, без изменений с 6225154e):
         // разделение на подмодули — отдельный рефакторинг, не механическая нарезка.
@@ -66,7 +65,6 @@
         "src/runtime/methods/events.ts",
         "src/runtime-task/registry.ts",
         "src/fs/index.ts",
-        "src/subagent/profile.ts",
       ],
       "rules": {
         "max-lines": ["warn", { "max": 800, "skipBlankLines": true, "skipComments": true }]
