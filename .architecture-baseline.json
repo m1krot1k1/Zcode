@@ -336,6 +336,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/projects.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2015c8818d0d5635",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/desktopTraySupport.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -525,6 +534,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/bundles.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "328e8b63b9f1ee1f",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/settings/pluginCreatorPrefill.ts",
       "module": "ui",
       "detail": "ui",
@@ -552,6 +570,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/providers.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "36167e3cfc7b978d",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/plugins/marketplace-types.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -575,6 +602,15 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "36b429becedc1cf2",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/registration.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "3944ae4067d5b33b",
       "global": false
     },
     {
@@ -768,6 +804,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/cua-helpers.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "47129775bbb433b0",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/host/hostOffPeakDispatch.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -863,6 +908,15 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "4a9ae18ae0bdc5f4",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/cua-services.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4c9cdde92b20919b",
       "global": false
     },
     {
@@ -1002,6 +1056,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/lifecycle.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "58271817747354ef",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/core/src/tool/handlers/amend-workflow-source.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1061,6 +1124,15 @@
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5d7d7dd80b3d753b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/reexports.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5dae00315eb3ed27",
       "global": false
     },
     {
@@ -1169,6 +1241,15 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "62c2548e976b2c5a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/agent.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "63bb5f329a96c915",
       "global": false
     },
     {
@@ -1524,6 +1605,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/createLocalServicesOptions.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "8faea8f8d425a28a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/mcp/connection-teardown.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1641,6 +1731,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/features.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "9a88ff5ed98d23da",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/bots/botsServiceCommandPorts.ts",
       "module": "services",
       "detail": "services",
@@ -1745,6 +1844,15 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "a61fdab759ea6089",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/core.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a78b8fca3f72ed00",
       "global": false
     },
     {
@@ -2451,6 +2559,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/runtime.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e488ee06e7deb9ab",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/marketingNavigation.ts",
       "module": "ui",
       "detail": "ui",
@@ -2465,6 +2582,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e49931e786d78b58",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/node/side-tables.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e51f00a7703ae00d",
       "global": false
     },
     {
