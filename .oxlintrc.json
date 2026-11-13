@@ -18,9 +18,6 @@
         // core 包内以 --no-ignore 运行时，oxlint 按 cwd 相对路径匹配同一组存量文件。
         "src/runtime/methods/steering.ts",
         "src/runtime/methods/session-fork.ts",
-        // 存量超大 модуль远程连接流程 (2057 строк, без изменений с 6225154e):
-        // разделение на подмодули — отдельный рефакторинг, не механическая нарезка.
-        "**/packages/ui/src/remote-connection-flow/index.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/cold-event-merge.ts",
         "**/apps/zcode-cli/packages/contracts/src/model/index.ts",
         // Файловая адаптерная база: 1644 эффективных строки ещё до локальных правок

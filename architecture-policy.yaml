@@ -940,10 +940,6 @@ exceptions:
       - packages/services/src/onboarding/
       - packages/ui/src/onboarding/
     reason: onboarding 目录（记录持久化服务与触发 hook）是已合入 staging 的存量功能模块，本轮修复在其既有边界内收紧老用户判定与兜底；模块 adopt 登记需单独的边界梳理，不在本缺陷修复内展开。
-  - id: remote-connection-flow-existing-size
-    rule: max-file-lines
-    paths: [ packages/ui/src/remote-connection-flow/index.ts ]
-    reason: Preserve the existing single hook owner and closure; module adoption must not mechanically split state to satisfy line counts.
   - id: gen-ui-tweak-runtime-size
     rule: max-file-lines
     paths: [ packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js ]
