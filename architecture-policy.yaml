@@ -2045,6 +2045,32 @@ modules:
     layers:
       adapters: .
     owner: conversation
+  # cli-debug-app：由 architecture:adopt 登记
+  - id: cli-debug-app
+    roots:
+      - apps/zcode-cli/packages/debug/src/app
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/debug/src/app/index.ts
+      - apps/zcode-cli/packages/debug/src/app/contract.ts
+    layers:
+      adapters: .
+    owner: debug
+  # cli-debug-analyzer：由 architecture:adopt 登记
+  - id: cli-debug-analyzer
+    roots:
+      - apps/zcode-cli/packages/debug/server/analyzer
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/debug/server/analyzer/index.ts
+      - apps/zcode-cli/packages/debug/server/analyzer/contract.ts
+    layers:
+      adapters: .
+    owner: debug
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
