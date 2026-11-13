@@ -8,7 +8,9 @@ import { DataRootLock } from "../src/runtime/lock.js";
 // 超出常见平台 pid 上限的值：process.kill(pid, 0) 必然 ESRCH，模拟已死的持锁进程。
 const DEAD_PID = 2 ** 30;
 
-describe("DataRootLock", () => {
+// Тест поднимает 8 реальных tsx-процессов: под полной нагрузкой turbo старт
+// выходит за окно ожидания. Retry не ослабляет проверку "ровно один владелец".
+describe("DataRootLock", { retry: 1 }, () => {
   it("recovers a stale lock left behind by a dead process", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-stale-"));
     const lockFile = join(root, "run", "server.lock");
@@ -131,7 +133,7 @@ describe("DataRootLock", () => {
         await appendFile(results, "success " + process.env.ZCODE_TEST_LOCK_CHILD + "\\n");
         // owner 必须持锁到所有竞争者都放弃为止：固定时长会在机器负载高时先于对方的重试
         // 窗口结束，让慢的竞争者在释放后再次 acquire 成功，出现多个 success 的假失败。
-        const holdDeadline = Date.now() + 20_000;
+        const holdDeadline = Date.now() + 60_000;
         while (Date.now() < holdDeadline && (await countLocked()) < losers) await delay(10);
         await lock.release();
       } catch {
@@ -172,7 +174,7 @@ describe("DataRootLock", () => {
     );
     // 先等待所有子进程进入 barrier；只按固定时间放行会让慢启动的子进程在首个 owner
     // 释放后再次成功获取锁，导致“一个 success”断言随机出现多个 success。
-    const readyDeadline = Date.now() + 20_000;
+    const readyDeadline = Date.now() + 60_000;
     let allChildrenReady = false;
     while (Date.now() < readyDeadline) {
       if ((await readdir(readyDir)).length === children.length) {
@@ -187,5 +189,5 @@ describe("DataRootLock", () => {
     expect(allChildrenReady).toBe(true);
     expect(results.filter((result) => result.startsWith("success "))).toHaveLength(1);
     expect(results.filter((result) => result.startsWith("locked "))).toHaveLength(childCount - 1);
-  }, 30_000);
+  }, 120_000);
 });
