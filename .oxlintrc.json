@@ -10,8 +10,6 @@
       // 本次上游整合保留既有职责完整的实现；这些文件超 800 行只告警，不机械拆分。
       "files": [
         // 插件市场沿用上游存量大文件，只补充目录字段投影；不为行数机械拆分安装流程。
-        // MCP 连接入口沿用上游存量实现；连接屏障修复不为行数重排整个 adapter。
-        "**/apps/zcode-cli/packages/adapters/src/mcp/index.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/app/create-app.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/app/session-facade.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway.ts",
@@ -75,7 +73,6 @@
       "files": [
         "apps/zcode-cli/packages/adapters/src/config/config-merger.ts",
         "apps/zcode-cli/packages/adapters/src/logging/serialize.ts",
-        "apps/zcode-cli/packages/adapters/src/mcp/index.ts",
         "apps/zcode-cli/packages/adapters/src/mcp/oauth-refresh.ts",
         "apps/zcode-cli/packages/adapters/src/mcp/pool.ts",
         "apps/zcode-cli/packages/adapters/src/mcp/resource-subscriptions.ts",
@@ -88,7 +85,6 @@
         "apps/zcode-cli/packages/dynamic-workflow/tests/lowering/expected/holes.js",
         "src/config/config-merger.ts",
         "src/logging/serialize.ts",
-        "src/mcp/index.ts",
         "src/mcp/oauth-refresh.ts",
         "src/mcp/pool.ts",
         "src/mcp/resource-subscriptions.ts",
