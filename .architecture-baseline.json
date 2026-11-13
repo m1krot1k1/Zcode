@@ -21,6 +21,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/settings-sync/settings-sync-service-part2.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "142d21f6a6151398",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/browserView/browserGuestRuntime.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -66,6 +75,24 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-task-runtime.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1e487981fbf4f2aa",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/settings-sync/settings-sync-service-part5.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1fe506e417717400",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/desktopTraySupport.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -80,6 +107,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "26de93ad0d08c264",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-types.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2d61e67d362aa2a0",
       "global": false
     },
     {
@@ -147,6 +183,51 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-bounded-text.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "47c68a88fc094cff",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-admission.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "49b91537a5de6e8d",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-messages.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4d823524d04e790f",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-notifications.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4eef4f90083d215c",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-dag.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5092c056be8888e4",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/browserView/browserGuestRecording.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -174,6 +255,24 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/settings-sync/settings-sync-service-part3.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "66d6071604d56ced",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-run.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "6ac46f279ca7c2bf",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/startupTelemetryDelivery.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -183,11 +282,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-start.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "8657018d4d1a1dd7",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/storage/session-store/migrations-schema.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "94bf4fed93de2d48",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-execution.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "9650711853ab7567",
       "global": false
     },
     {
@@ -206,6 +323,15 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "a309f3131edbc71e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-parallel.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a5343178b5d191eb",
       "global": false
     },
     {
@@ -282,6 +408,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-artifacts.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "cd726cdde7a364ea",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/dynamic-workflow/src/engine/replay-order.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -309,11 +444,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/settings-sync/settings-sync-service-part4.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e08285a8b9054d54",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/project-access-token.ts",
       "module": "shared",
       "detail": "shared",
       "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e219b941c04a154e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/settings-sync/settings-sync-service-part1.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e36e6bd0b2758faf",
       "global": false
     },
     {
@@ -359,6 +512,24 @@
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "f1d7ccaa57ac7b17",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-finalize.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f70c126970a7a5e8",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/subagent/runner-work-result.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "fe68f70ec61e1e42",
       "global": false
     }
   ]
