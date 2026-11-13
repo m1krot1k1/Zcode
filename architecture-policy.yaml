@@ -24,6 +24,7 @@ modules:
     publicEntrypoints:
       - packages/services/src/session/contract.ts
       - packages/services/src/session/taskIndexRepo.ts
+      - packages/services/src/session/zcodeTaskListTypes.ts
       - packages/services/src/session/automationRepo.ts
       - packages/services/src/session/offPeakTaskRepo.ts
       - packages/services/src/session/tasksDatabase/migrations.ts
@@ -1013,6 +1014,148 @@ modules:
     layers:
       ui: .
     owner: conversation
+  # cli-model-execution：由 architecture:adopt 登记
+  - id: cli-model-execution
+    roots:
+      - apps/zcode-cli/packages/adapters/src/model/model-execution
+    managed: true
+    requires:
+      - provider
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/model/model-execution/index.ts
+      - apps/zcode-cli/packages/adapters/src/model/model-execution/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-agent-trace：由 architecture:adopt 登记
+  - id: cli-agent-trace
+    roots:
+      - apps/zcode-cli/packages/telemetry/src/agent-trace
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/telemetry/src/agent-trace/index.ts
+      - apps/zcode-cli/packages/telemetry/src/agent-trace/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # desktop-auto-updater：由 architecture:adopt 登记
+  - id: desktop-auto-updater
+    roots:
+      - packages/desktop/src/main/auto-updater
+    managed: true
+    requires:
+      - desktop
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/auto-updater/index.ts
+      - packages/desktop/src/main/auto-updater/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-lifecycle：由 architecture:adopt 登记
+  - id: desktop-lifecycle
+    roots:
+      - packages/desktop/src/main/lifecycle
+    managed: true
+    requires:
+      - desktop
+      - desktop-web-remote-relay
+      - embedded-browser-permission
+      - plugin-sandbox
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/lifecycle/index.ts
+      - packages/desktop/src/main/lifecycle/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-web-remote-control：由 architecture:adopt 登记
+  - id: desktop-web-remote-control
+    roots:
+      - packages/desktop/src/main/web-remote-control
+    managed: true
+    requires:
+      - client
+      - desktop
+      - desktop-web-remote-relay
+      - rpc
+      - shared
+      - web-remote-relay
+    publicEntrypoints:
+      - packages/desktop/src/main/web-remote-control/index.ts
+      - packages/desktop/src/main/web-remote-control/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-feishu：由 architecture:adopt 登记
+  - id: services-feishu
+    roots:
+      - packages/services/src/bots/providers/feishu
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/bots/providers/feishu/index.ts
+      - packages/services/src/bots/providers/feishu/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # services-conversation-share：由 architecture:adopt 登记
+  - id: services-conversation-share
+    roots:
+      - packages/services/src/conversation-share/service
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/conversation-share/service/index.ts
+      - packages/services/src/conversation-share/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # services-task-index：由 architecture:adopt 登记
+  - id: services-task-index
+    roots:
+      - packages/services/src/zcode-agent/task-index
+    managed: true
+    requires:
+      - rpc
+      - services
+      - session
+      - shared
+      - task-facts
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/task-index/index.ts
+      - packages/services/src/zcode-agent/task-index/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # web-bootstrap：由 architecture:adopt 登记
+  - id: web-bootstrap
+    roots:
+      - packages/web/src/bootstrap
+    managed: true
+    requires:
+      - client
+      - shared
+      - ui
+      - web
+      - web-remote-control
+    publicEntrypoints:
+      - packages/web/src/bootstrap/index.ts
+      - packages/web/src/bootstrap/contract.ts
+    layers:
+      adapters: .
+    owner: web
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

@@ -6,15 +6,12 @@ import {
   mobilePluginDiscoveryTelemetrySchema,
   sessionCreateTelemetrySchema,
   createWebRemoteControlConnectionRecoveryTimeoutFailure,
-  resolveWebRemoteControlInitialWorkspaceSelection,
-  resolveWebRemoteControlWorkspaceKey,
   type RendererTelemetryEventPayload,
   type WebRemoteControlAppPayload,
   type WebRemoteControlExternalWorkspaceBridge,
   type WebRemoteControlFailure,
   type WebRemoteControlWorkspaceListResult,
   type WebRemoteControlWorkspaceSwitchOptions,
-  type WebRemoteControlWindowBootstrapResult,
 } from "@zcode/shared";
 import {
   setWebRemoteControlTerminalTransportState,
@@ -32,17 +29,13 @@ import {
   createWebRemoteControlVersionGuard,
   connectWebRemoteControlWorkspaceBridgeServices,
   getWebRemoteControlBridgeRecoveryRetryDelay,
-  readKnownDevices,
   replayWebRemoteControlWorkspaceBridgeFrames,
   registerWebRemoteControlWorkspaceBridgeServices,
   type WebRemoteControlEntryConnection,
   type WebRemoteControlTerminalTransportDiagnostic,
   type WebRemoteControlWorkspaceBridgeServiceRegistration,
 } from "#src/web-remote-control/index.js";
-import {
-  showWebRemoteControlVersionNotice,
-  type WebRemoteControlConnectingDevice,
-} from "#src/web-remote-control/views.js";
+import { showWebRemoteControlVersionNotice } from "#src/web-remote-control/views.js";
 
 import {
   createWebRemoteControlRequestId,
@@ -50,21 +43,21 @@ import {
   seedStableWebRemoteControlClientId,
   toWebRemoteControlFailure,
 } from "./relay-helpers.js";
+import {
+  buildRelayDeviceNavigation,
+  resolveRelayBootstrapWorkspace,
+  resolveRelayConnectingDevice,
+  sendRelayMobileDiagnostic,
+} from "./relay-bootstrap-workspace.js";
 import { createRelayRpcLayer } from "./relay-rpc.js";
 import { createRelayRootView } from "./relay-root-view.js";
-import { isPageUnloading, webRemoteControlStorage } from "./runtime.js";
+import { isPageUnloading } from "./runtime.js";
 import { renderWebRemoteControlLoading } from "./screens.js";
 import { markOpenedWebRemoteControlBridgeTaskRead } from "./task-read.js";
 
 type WebRemoteControlWorkspaceListUpdateListener = (
   result: WebRemoteControlWorkspaceListResult,
 ) => void;
-
-function selectInitialWebRemoteControlWorkspace(
-  snapshot: WebRemoteControlWindowBootstrapResult,
-): ReturnType<typeof resolveWebRemoteControlInitialWorkspaceSelection> {
-  return resolveWebRemoteControlInitialWorkspaceSelection(snapshot);
-}
 
 export async function bootstrapExternalRelayWebRemoteControl(
   connection: WebRemoteControlEntryConnection,
@@ -74,21 +67,14 @@ export async function bootstrapExternalRelayWebRemoteControl(
   const { params: relayParams, getToken } = connection;
   seedStableWebRemoteControlClientId(relayParams.deviceSid);
   // 平台只是展示偏好：取本机按 MID 记住的记录，扫码直连的陌生设备显示通用电脑图标。
-  const connectingDevice: WebRemoteControlConnectingDevice = {
-    name: relayParams.deviceName,
-    platform: relayParams.deviceMid
-      ? readKnownDevices(webRemoteControlStorage).get(relayParams.deviceMid)
-          ?.platform
-      : undefined,
-  };
+  const connectingDevice = resolveRelayConnectingDevice(relayParams);
   // 只由入口 owner 负责取消连接并选设备；不能重启 start()，否则会自动连回最近设备。
-  const deviceNavigation = {
+  const deviceNavigation = buildRelayDeviceNavigation({
     deviceName: relayParams.deviceName,
     devicePlatform: connectingDevice.platform,
-    chooseOtherDevice: () => {
-      if (!connection.signal.aborted) void entry.chooseOtherDevice();
-    },
-  };
+    signal: connection.signal,
+    chooseOtherDevice: () => entry.chooseOtherDevice(),
+  });
 
   let bootstrapping = false;
   let ready = false;
@@ -171,28 +157,7 @@ export async function bootstrapExternalRelayWebRemoteControl(
 
   const sendMobileDiagnostic = (
     diagnostic: WebRemoteControlTerminalTransportDiagnostic,
-  ) => {
-    if (diagnostic.type === "socket-extensions") {
-      return;
-    }
-    sendMobileDiagnosticPayload?.({
-      zcode_type: "mobile-diagnostic",
-      event: diagnostic.type,
-      timestamp: diagnostic.timestamp,
-      state: diagnostic.state,
-      previousState:
-        "previousState" in diagnostic ? diagnostic.previousState : undefined,
-      pairStatus:
-        "pairStatus" in diagnostic ? diagnostic.pairStatus : undefined,
-      closeCode: "code" in diagnostic ? diagnostic.code : undefined,
-      closeReason: "reason" in diagnostic ? diagnostic.reason : undefined,
-      wasClean: "wasClean" in diagnostic ? diagnostic.wasClean : undefined,
-      wasPaired: "wasPaired" in diagnostic ? diagnostic.wasPaired : undefined,
-      visibilityState: diagnostic.visibilityState,
-      online: diagnostic.online,
-      hiddenDurationMs: diagnostic.hiddenDurationMs,
-    });
-  };
+  ) => sendRelayMobileDiagnostic(diagnostic, sendMobileDiagnosticPayload);
 
   const sendMobileFailureDiagnostic = (failure: WebRemoteControlFailure) => {
     sendMobileDiagnosticPayload?.({
@@ -769,25 +734,10 @@ export async function bootstrapExternalRelayWebRemoteControl(
   }) => {
     const bootstrapResult = await checkDesktopVersion();
     if (!bootstrapResult || terminated || versionGuard.isBlocked()) return;
-    const preferredWorkspace = options?.preferredWorkspaceKey
-      ? bootstrapResult.workspaces.find(
-          (workspace) =>
-            resolveWebRemoteControlWorkspaceKey(workspace) ===
-            options.preferredWorkspaceKey,
-        )
-      : undefined;
-    const selectedWorkspace = preferredWorkspace
-      ? {
-          workspaceKey: resolveWebRemoteControlWorkspaceKey(preferredWorkspace),
-          taskId: options?.preferredTaskId,
-          canBridge:
-            preferredWorkspace.kind !== "remote" ||
-            Boolean(
-              preferredWorkspace.workspaceIdentity &&
-              preferredWorkspace.remoteSessionId,
-            ),
-        }
-      : selectInitialWebRemoteControlWorkspace(bootstrapResult);
+    const selectedWorkspace = resolveRelayBootstrapWorkspace(
+      bootstrapResult,
+      options,
+    );
     if (!selectedWorkspace) {
       throw toWebRemoteControlFailure(
         "workspace-closed",

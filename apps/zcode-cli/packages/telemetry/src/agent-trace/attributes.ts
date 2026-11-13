@@ -16,7 +16,6 @@ import {
   spanContextFromCausation,
   type WriterTerminalObservation,
 } from "../agent-trace-support.js";
-import type { ModelCallWriter } from "./writers/model-writers.js";
 
 export function terminalMetricLabels(
   labels: Attributes,
@@ -84,7 +83,7 @@ export function modelCallMetricLabels(input: ModelCallTraceStart): Attributes {
 
 export function modelAttemptMetricLabels(
   input: ModelAttemptTraceStart,
-  parent: ModelCallWriter,
+  parent: { operation?: string; modelRole?: string },
 ): Attributes {
   return compactAttributes({
     model: safeString(input.target.requestedModel, 128),
