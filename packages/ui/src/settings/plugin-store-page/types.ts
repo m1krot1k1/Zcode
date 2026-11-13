@@ -1,5 +1,5 @@
 import type { IPlatformService, ZCodePluginDiagnostic } from "@zcode/shared";
-import type { IServiceAccessor, IPluginManagementService } from "@zcode/services";
+import type { IServiceAccessor, IPluginManagementService } from "./contract.ts";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import type { usePluginStoreOrder } from "@/hooks/usePluginStoreOrder.js";

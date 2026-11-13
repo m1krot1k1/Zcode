@@ -1,4 +1,4 @@
-import { withPluginTelemetry } from "@zcode/services";
+import { withPluginTelemetry } from "./contract.js";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID } from "@zcode/shared";
 import { useEffect } from "react";
 import { claimMarketplaceAutoRefresh } from "@/settings/officialMarketplaceAutoRefresh.js";

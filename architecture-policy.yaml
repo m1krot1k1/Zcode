@@ -1604,6 +1604,227 @@ modules:
     layers:
       adapters: .
     owner: agent
+  # services-commands-service：由 architecture:adopt 登记
+  - id: services-commands-service
+    roots:
+      - packages/services/src/commands/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/commands/service/index.ts
+      - packages/services/src/commands/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-workspace-slice：由 architecture:adopt 登记
+  - id: ui-workspace-slice
+    roots:
+      - packages/ui/src/store/workspace-slice
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/store/workspace-slice/index.ts
+      - packages/ui/src/store/workspace-slice/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-plugin-store-page：由 architecture:adopt 登记
+  - id: ui-plugin-store-page
+    roots:
+      - packages/ui/src/settings/plugin-store-page
+    managed: true
+    requires:
+      - conversation-workspace-target
+      - plugin-ui
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/plugin-store-page/index.ts
+      - packages/ui/src/settings/plugin-store-page/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-bigmodel-monitor-mapper：由 architecture:adopt 登记
+  - id: services-bigmodel-monitor-mapper
+    roots:
+      - packages/services/src/usage-stats/providers/bigmodel-monitor-mapper
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - packages/services/src/usage-stats/providers/bigmodel-monitor-mapper/index.ts
+      - packages/services/src/usage-stats/providers/bigmodel-monitor-mapper/contract.ts
+    layers:
+      adapters: .
+    owner: usage
+  # services-zcode-agent：由 architecture:adopt 登记
+  - id: services-zcode-agent
+    roots:
+      - packages/services/src/zcode-agent/agent
+    managed: true
+    requires:
+      - mcp-apps-protocol
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/agent/index.ts
+      - packages/services/src/zcode-agent/agent/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-task-slice：由 architecture:adopt 登记
+  - id: ui-task-slice
+    roots:
+      - packages/ui/src/store/task-slice
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/store/task-slice/index.ts
+      - packages/ui/src/store/task-slice/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-off-peak-mock-gateway：由 architecture:adopt 登记
+  - id: services-off-peak-mock-gateway
+    roots:
+      - packages/services/src/session/off-peak-mock-gateway
+    managed: true
+    requires:
+      - services
+    publicEntrypoints:
+      - packages/services/src/session/off-peak-mock-gateway/index.ts
+      - packages/services/src/session/off-peak-mock-gateway/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # services-conversation-share-public-projection：由 architecture:adopt 登记
+  - id: services-conversation-share-public-projection
+    roots:
+      - packages/services/src/conversation-share/public-projection
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/conversation-share/public-projection/index.ts
+      - packages/services/src/conversation-share/public-projection/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-preload-bridge：由 architecture:adopt 登记
+  - id: desktop-preload-bridge
+    roots:
+      - packages/desktop/src/preload/bridge
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/preload/bridge/index.ts
+      - packages/desktop/src/preload/bridge/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-window-host-controller：由 architecture:adopt 登记
+  - id: desktop-window-host-controller
+    roots:
+      - packages/desktop/src/host/window-host-controller
+    managed: true
+    requires:
+      - desktop
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/host/window-host-controller/index.ts
+      - packages/desktop/src/host/window-host-controller/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-stability-telemetry：由 architecture:adopt 登记
+  - id: desktop-stability-telemetry
+    roots:
+      - packages/desktop/src/main/stability-telemetry
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/stability-telemetry/index.ts
+      - packages/desktop/src/main/stability-telemetry/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-zcode-agent-connection-scope：由 architecture:adopt 登记
+  - id: services-zcode-agent-connection-scope
+    roots:
+      - packages/services/src/zcode-agent/connection-scope
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/connection-scope/index.ts
+      - packages/services/src/zcode-agent/connection-scope/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-task-realtime-bus：由 architecture:adopt 登记
+  - id: desktop-task-realtime-bus
+    roots:
+      - packages/desktop/src/main/task-realtime-bus
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/task-realtime-bus/index.ts
+      - packages/desktop/src/main/task-realtime-bus/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-remote-connection-connecting-step：由 architecture:adopt 登记
+  - id: ui-remote-connection-connecting-step
+    roots:
+      - packages/ui/src/remote-connection/connecting-step
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/remote-connection/connecting-step/index.ts
+      - packages/ui/src/remote-connection/connecting-step/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-permission-dialog：由 architecture:adopt 登记
+  - id: ui-permission-dialog
+    roots:
+      - packages/ui/src/permission-dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/permission-dialog/index.ts
+      - packages/ui/src/permission-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

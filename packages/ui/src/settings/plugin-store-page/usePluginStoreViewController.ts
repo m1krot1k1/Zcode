@@ -1,4 +1,4 @@
-import { withPluginTelemetry } from "@zcode/services";
+import { withPluginTelemetry } from "./contract.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { consumePluginStoreOpenTarget } from "@/lib/pluginStoreNavigation.js";
 import type { PluginStoreTab } from "@/settings/PluginStoreListView.js";
