@@ -178,9 +178,6 @@
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreIssues": {
-    "apps/zcode-cli/packages/bootstrap/src/session-execution/contract.ts": [
-      "types"
-    ],
     "packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChartView.tsx": [
       "duplicates"
     ],
