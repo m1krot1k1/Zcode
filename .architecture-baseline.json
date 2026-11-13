@@ -30,11 +30,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/automationEditSaveAndRun.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "06f75d314868be79",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/app-shell/workspace-shell-layout/useWorkspaceSidebarResize.ts",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "08add1cc2e1f24d4",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/importIndex.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "094d9e908dd33d64",
       "global": false
     },
     {
@@ -129,11 +147,38 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/theme.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "17ae23035933a138",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/AutomationEditCronPickers.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1ae663492a2f7edc",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/shared-bots-part1.ts",
       "module": "shared",
       "detail": "shared",
       "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "1b02f25cae5f3d41",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/relay-root-view.tsx",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1b5aebf4e7566b0e",
       "global": false
     },
     {
@@ -183,6 +228,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsPageSettingsHandlers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2012077595412ee1",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/session/source-server-workspace-alias/reports.ts",
       "module": "session",
       "detail": "session",
@@ -201,11 +255,38 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/automationEditFormModel.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "217dc3f4dba2139c",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/runtime.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2229aa087aed8240",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-status-panel/PlanStatusSection.tsx",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "2268f76e9b7371eb",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/runtime.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2350cb420337e143",
       "global": false
     },
     {
@@ -255,6 +336,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/SettingsSidebar.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2c7648d3a729a5e3",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/session/source-server-workspace-alias/repo.ts",
       "module": "session",
       "detail": "session",
@@ -269,6 +359,24 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "2f8c0da5e3cb4fee",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/automationEditCronShared.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "3086615f962134be",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/SettingsSectionContent.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "31982eb285697105",
       "global": false
     },
     {
@@ -336,6 +444,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/publishing.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "39e0a5b694e113b5",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/app-shell/workspace-shell-layout/useWorkspaceShellPaneState.ts",
       "module": "ui",
       "detail": "ui",
@@ -399,11 +516,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsUsageSources.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "42853afb0e7fb48a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/app-shell/workspace-shell-layout/helpers.ts",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "428accb57c4932de",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/AutomationEditRunsHistory.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "43ee3e6540c6238a",
       "global": false
     },
     {
@@ -422,6 +557,24 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "44601b016e8e1f8d",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/web-app.tsx",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4470d2d3486a05e2",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/platform.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "45d21d5a2cb9b4f6",
       "global": false
     },
     {
@@ -471,6 +624,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/helpers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4c40c54c7fe88b3b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/settings/mcp-settings-section/PluginMcpServerList.tsx",
       "module": "ui",
       "detail": "ui",
@@ -507,6 +669,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/app.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4f9b74ffc35f0c5e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-row-view/readAssistantFeedback.ts",
       "module": "ui",
       "detail": "ui",
@@ -525,11 +696,38 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/share-page.tsx",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "54c92e64a98d6ff1",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/model/model-execution/provider-business-error.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5753f6de37158113",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/AutomationEditScheduleField.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "57de225073bd4cfa",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/keys.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "583645cc8a27e15d",
       "global": false
     },
     {
@@ -570,11 +768,47 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsPageShell.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5b438c944bc64c68",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsPageRuntime.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5ca9d83318ec1898",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-status-panel/WorkflowStatusSection.tsx",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5d6c6419dca1e418",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/AutomationEditCustomRepeatDialog.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5f0fb366e997bd79",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/AutomationEditHeader.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "60056495615db50a",
       "global": false
     },
     {
@@ -615,6 +849,33 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsPageWorkspace.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "696cab01b82057e8",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/projection.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "6bd41bdf7e64f336",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/screens.tsx",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "6cdbe9877f2c3f85",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/bots/providers/feishu/cards.ts",
       "module": "services",
       "detail": "services",
@@ -629,6 +890,24 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "72306dbba4d95980",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/service-types.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "72ca758487520f23",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/useAutomationEditModelSelection.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "74ba1c6244447d80",
       "global": false
     },
     {
@@ -674,6 +953,15 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "76df2f42266a8444",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsFormState.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "77b7ffb1508b87f1",
       "global": false
     },
     {
@@ -759,6 +1047,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/automationEditTypes.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "83fc1a7ed111df0c",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/model/model-execution/opencode-provider.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -831,11 +1128,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/remote-control-relay.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "98e963893747140e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-status-panel/StatusSummaryRow.tsx",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "9903852c89a11e86",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/relay-rpc.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "9aa3ba180b467aac",
       "global": false
     },
     {
@@ -876,11 +1191,38 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/SettingsUsageProviderTabs.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a22718393afe1b4b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/dwf-journal-fields.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "a309f3131edbc71e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/preflight.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a39d9bccadf4ab5e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/SettingsSidebarButton.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a4840e6a74bbbf8e",
       "global": false
     },
     {
@@ -912,6 +1254,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/http.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "aac5641b3321c271",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/contracts/src/model/model-usage.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -921,11 +1272,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/AutomationEditInstructionsField.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "ab9c8c21e2076ca2",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/app-shell/workspace-shell-layout/WorkspaceSidebarSlot.tsx",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "acc2d575a138c5b5",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/relay-helpers.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "ad07d10f2fa2f6c2",
       "global": false
     },
     {
@@ -953,6 +1322,24 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "b058d3166ff612ee",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/importing.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b1acc9d2bd59fce9",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/routes.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b37a56b7161606c8",
       "global": false
     },
     {
@@ -989,6 +1376,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "b725dd8f4b7d5f76",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/shareRows.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b86177ffcbcdd8a8",
       "global": false
     },
     {
@@ -1038,6 +1434,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/task-read.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "bf1b60112318458f",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/workspace-side-pane/workflow.ts",
       "module": "ui",
       "detail": "ui",
@@ -1061,6 +1466,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "c17ae05f97710715",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/preflightSnapshots.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c238f616b8c0044f",
       "global": false
     },
     {
@@ -1115,6 +1529,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "cbd3609fa69e37f8",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/home-only-services.ts",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "cc7ad9929fcc22f9",
       "global": false
     },
     {
@@ -1200,6 +1623,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automation-edit-view/useAutomationEditViewState.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "d32ca1e18e14dac3",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-row-view/AssistantTextRowView.tsx",
       "module": "ui",
       "detail": "ui",
@@ -1268,6 +1700,24 @@
       "detail": "session",
       "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "dff688e25b7e5490",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/artifacts.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e038d042f7eafd54",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/types.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e0a84cb03f290c61",
       "global": false
     },
     {
@@ -1344,11 +1794,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/web/src/bootstrap/remote-entry.tsx",
+      "module": "web",
+      "detail": "web",
+      "message": "新文件落在未受管模块 web；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "ee5019f909da635d",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/zcodeSessionProjection/projectionState.ts",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "efd679abcc156643",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/conversation-share/service/progress.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "efd965809c0e5f43",
       "global": false
     },
     {
@@ -1421,6 +1889,15 @@
       "detail": "shared",
       "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "fa869587a010566b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings-page/useSettingsPagePreferenceHandlers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "fcbc5ba32d93c411",
       "global": false
     },
     {
