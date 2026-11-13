@@ -847,13 +847,3 @@ global:
   forbidDeepImports: true
   managedOnly: true
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
-
-exceptions:
-  - id: gen-ui-tweak-runtime-size
-    rule: max-file-lines
-    paths: [ packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js ]
-    reason: Keep parameter binding and registration lifecycle together; runtime-manifest.json and tests verify file integrity.
-  - id: gen-ui-tweak-runtime-lint
-    rule: disable-count
-    paths: [ packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js ]
-    reason: Allow the control-character validation regex and the single-file parameter-control runtime.
