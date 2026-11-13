@@ -21,6 +21,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/activity.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "0afdaf29ef40d56a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway-errors.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -66,6 +75,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/reports.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "20745af3ec3988c0",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/desktopTraySupport.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -80,6 +98,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "26de93ad0d08c264",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/repo.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2c87171cf589a735",
       "global": false
     },
     {
@@ -120,15 +147,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/server/src/remote/remote-asset-cache-part3.ts",
-      "module": "server",
-      "detail": "server",
-      "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "46341912c2671429",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/shared-channels-part2.ts",
       "module": "shared",
       "detail": "shared",
@@ -138,11 +156,47 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/database.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5855f6f965b91d99",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/ledger.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "688cb277450de5ca",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/resolve.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "6943d486fdf096c7",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/main/startupTelemetryDelivery.ts",
       "module": "desktop",
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "83989acdf247a7e5",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/variants.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "8822a94e7efcec81",
       "global": false
     },
     {
@@ -183,6 +237,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/configDirectories.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a5795339241917e6",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/contracts/src/model/model-usage.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -215,6 +278,15 @@
       "detail": "server",
       "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "b4bd42b7b3b8dcfc",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/records.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "bb312dca27e0ecdb",
       "global": false
     },
     {
@@ -273,15 +345,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/server/src/remote/remote-asset-cache-part1.ts",
-      "module": "server",
-      "detail": "server",
-      "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "cc9373317c34813b",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/zcode-protocol-v4/protocol-v4-transport-part2.ts",
       "module": "shared",
       "detail": "shared",
@@ -314,6 +377,33 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "d7dc9ce1eb448f36",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/types.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "da75507374361ba2",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/fileSystem.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "dc45eaa37cd28a43",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/session/source-server-workspace-alias/plan.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "dff688e25b7e5490",
       "global": false
     },
     {
@@ -381,11 +471,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/server/src/remote/remote-asset-cache-part2.ts",
-      "module": "server",
-      "detail": "server",
-      "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "f1b415ef06fbdbf4",
+      "file": "packages/services/src/session/source-server-workspace-alias/sessionDatabase.ts",
+      "module": "session",
+      "detail": "session",
+      "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f37bf87e382f17a0",
       "global": false
     },
     {
