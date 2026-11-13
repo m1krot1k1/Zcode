@@ -127,6 +127,11 @@ it.each(["timeout", "cancel", "output_limit", "signal"] as const)(
       expect(result.status).toBe(
         kind === "timeout" ? "timed_out" : kind === "signal" ? "failed" : "cancelled",
       );
+      // Отчёт о ресурсах публикуется после выхода процесса, отдельным тиком:
+      // под нагрузкой он приходит позже run(), поэтому ждём его явно.
+      await vi.waitFor(() => expect(onToolExecResource).toHaveBeenCalledOnce(), {
+        timeout: 10_000,
+      });
       expect(onToolExecResource).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           durationMs: 40000,

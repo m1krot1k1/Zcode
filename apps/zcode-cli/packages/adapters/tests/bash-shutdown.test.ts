@@ -56,7 +56,9 @@ async function main() {
     : adapter.run(request, options);
   const background = mode === 'background' || mode === 'crash' ? await pending : undefined;
   if (background) console.log('ROOT_PID ' + background.task.pid);
-  const deadline = Date.now() + 5000;
+  // Драйвер стартует дочерний shell; под полной нагрузкой turbo 5 секунд мало.
+  // Ждём дольше, но по-прежнему падаем, если процесс так и не поднялся.
+  const deadline = Date.now() + 30000;
   while (true) {
     try { await access(ready); break; } catch {}
     if (Date.now() >= deadline) throw new Error('Worker did not start');
