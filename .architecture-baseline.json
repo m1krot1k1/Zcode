@@ -129,11 +129,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/AutomationActionsMenu.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "0b644c9a47da4575",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/settings/mcp-settings-section/McpSettingsEditorView.tsx",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "0b807df56f8a72a5",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/useAutomationActionHandlers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "0bd06c7146d46be0",
       "global": false
     },
     {
@@ -197,6 +215,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "141236beb6c2bc67",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/AutomationCardGrid.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "144c6f3a640ec938",
       "global": false
     },
     {
@@ -507,6 +534,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/useAutomationNavigationEffects.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "307399cbdeb4ad31",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/settings/automation-edit-view/automationEditCronShared.ts",
       "module": "ui",
       "detail": "ui",
@@ -759,6 +795,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/useAutomationOffPeakActionHandlers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "489ad2e9734102d1",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/root/remote-workspace-history/reconnectExecution.ts",
       "module": "ui",
       "detail": "ui",
@@ -773,6 +818,15 @@
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "4a59ec36fc4e8c65",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/automationsSectionToast.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "4b025da179f9f832",
       "global": false
     },
     {
@@ -881,6 +935,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5165026241e00dad",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/OffPeakCreateButton.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5561b8d58c42c55d",
       "global": false
     },
     {
@@ -1065,6 +1128,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/automationViewResolvers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "69efc8d26e8721a3",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/desktop/src/host/window-remote-registry/connectionKeys.ts",
       "module": "desktop",
       "detail": "desktop",
@@ -1169,6 +1241,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "7661fd1fe8319242",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/AutomationsDashboardListView.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "76c1939cc12caa51",
       "global": false
     },
     {
@@ -1286,6 +1367,15 @@
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "83989acdf247a7e5",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/automationsSectionTypes.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "83cf48401567ce9b",
       "global": false
     },
     {
@@ -1875,6 +1965,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/useAutomationsDashboardState.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c672382880574216",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/shared-validation-part2.ts",
       "module": "shared",
       "detail": "shared",
@@ -2217,6 +2316,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/AutomationTemplateSections.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e8c9868affe5047b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-row-view/RowShell.tsx",
       "module": "ui",
       "detail": "ui",
@@ -2375,6 +2483,15 @@
       "detail": "shared",
       "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "fa869587a010566b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/settings/automations-section/AutomationsSectionBody.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "fb678c931aeedc05",
       "global": false
     },
     {
