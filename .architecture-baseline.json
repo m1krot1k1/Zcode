@@ -111,6 +111,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterRuntimeCommands.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "0e709df97391f31d",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-row-view/RunRowViews.tsx",
       "module": "ui",
       "detail": "ui",
@@ -345,6 +354,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterRuntimePayloads.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "28a080e5cd210902",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/workspace-side-pane/tabs.ts",
       "module": "ui",
       "detail": "ui",
@@ -377,6 +395,15 @@
       "detail": "session",
       "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "2c87171cf589a735",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterAdminMethods.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2e3c45f42b0a5825",
       "global": false
     },
     {
@@ -759,6 +786,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterMessageMapping.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "54d14c19864fc473",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/model/model-execution/provider-business-error.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -831,6 +867,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterToolUpdateMapping.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5be5c50e6fa6f4e1",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/settings-page/useSettingsPageRuntime.ts",
       "module": "ui",
       "detail": "ui",
@@ -845,6 +890,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5d6c6419dca1e418",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterSessionInfoPayloads.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "5ee334e80abfefdb",
       "global": false
     },
     {
@@ -1191,6 +1245,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterTaskIndex.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "95d967d4311ccaa8",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/web/src/bootstrap/remote-control-relay.ts",
       "module": "web",
       "detail": "web",
@@ -1272,6 +1335,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterContext.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a33fb583c4e0f027",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/conversation-share/service/preflight.ts",
       "module": "services",
       "detail": "services",
@@ -1286,6 +1358,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "a4840e6a74bbbf8e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterCommandMethods.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a543d28ef61a2f38",
       "global": false
     },
     {
@@ -1389,6 +1470,24 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterServiceEvents.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b10bc3d53482a1d2",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterPrompt.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b18e889b24542c98",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/conversation-share/service/importing.ts",
       "module": "services",
       "detail": "services",
@@ -1488,11 +1587,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterCore.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "bbf682df1e2cbad4",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/zcodeSessionProjection/timelines.ts",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "bc093f918d2cd482",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterBotMethods.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "bdcea43724a9f70a",
       "global": false
     },
     {
@@ -1740,6 +1857,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterTaskMethods.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "d7d707a9a28fb2e9",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/sessions-index-fanout-throttle.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1794,6 +1920,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterTaskSettingsMethods.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "de78a5dca4f98e12",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/session/source-server-workspace-alias/plan.ts",
       "module": "session",
       "detail": "session",
@@ -1817,6 +1952,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e0a84cb03f290c61",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterToolProjection.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e1bc920ffc7fb8c5",
       "global": false
     },
     {
@@ -1853,6 +1997,15 @@
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e7581861672aa8ae",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterElicitationMapping.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e92912dd274209c5",
       "global": false
     },
     {
@@ -1974,6 +2127,24 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterSessionEventMapping.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f765cab57aa3a069",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterStreamingToolInput.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f88fb6df052d2c9a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/shared-bots-part2.ts",
       "module": "shared",
       "detail": "shared",
@@ -2015,6 +2186,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "fdaae454d892f5fb",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterSnapshotSupport.ts",
+      "module": "services",
+      "detail": "services",
+      "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "fe2d8faeb1ce4c99",
       "global": false
     }
   ]
