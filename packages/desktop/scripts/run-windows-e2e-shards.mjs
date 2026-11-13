@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable max-lines -- Windows E2E 父 runner 需要集中维护构建、分片、取消和 summary 完整性门禁。 */
 
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";

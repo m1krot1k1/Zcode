@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 
-/* eslint-disable max-lines */
-// 该脚本聚合了打包入口、重试策略、计时与产物校验逻辑，短期内拆文件会影响 CI 稳定性。
-// 先保留集中实现，后续再按“参数解析/构建执行/产物校验”拆分模块。
-
 import { spawn } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";

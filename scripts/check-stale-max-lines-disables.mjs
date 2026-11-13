@@ -12,13 +12,20 @@ import { join, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SCAN_ROOTS = ["apps", "packages"];
-const SKIP_DIRS = new Set(["node_modules", "dist", "dist-node", "dist-types", "build", ".turbo", "coverage"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "dist-node",
+  "dist-types",
+  "build",
+  ".turbo",
+  "coverage",
+]);
 const MAX_EFFECTIVE_LINES = 800;
-const DISABLE_PATTERN = /\/\*\s*(?:eslint|oxlint)-disable\s+([^*]*?)\*\//u;
 
 function isExempt(file) {
   return (
-    /\.(?:test|spec)\.tsx?$/u.test(file) ||
+    /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(file) ||
     file.includes("/i18n/locales/") ||
     file.endsWith(".d.ts")
   );
@@ -53,20 +60,31 @@ function effectiveLines(text) {
 }
 
 function disablesMaxLines(text) {
+  // Многострочный комментарий ищется целиком: `/* eslint-disable max-lines --\n ... */`
+  // раньше не попадал в regex построчного поиска и протухал незамеченным.
+  for (const match of text.matchAll(/\/\*([\s\S]*?)\*\//gu)) {
+    if (matchesMaxLines(match[1])) return true;
+  }
   for (const line of text.split("\n")) {
-    const match = DISABLE_PATTERN.exec(line);
-    if (!match) continue;
-    const rulePart = match[1].split("--")[0];
-    const rules = rulePart
-      .split(",")
-      .map((rule) => rule.trim())
-      .filter(Boolean);
-    // Интересует только явное отключение max-lines. Пустой список правил —
-    // это `eslint-disable` для всего файла (генераторы, записанные фикстуры),
-    // такие случаи не являются протухшим max-lines-исключением.
-    if (rules.some((rule) => rule.includes("max-lines"))) return true;
+    if (!line.trim().startsWith("//")) continue;
+    const match = /\/\/(.*)$/u.exec(line);
+    if (match && matchesMaxLines(match[1])) return true;
   }
   return false;
+}
+
+function matchesMaxLines(commentBody) {
+  const match = /(?:eslint|oxlint)-disable\s+([^*\n]*?)(?:\*\/|$)/u.exec(commentBody);
+  if (!match) return false;
+  const rulePart = match[1].split("--")[0];
+  const rules = rulePart
+    .split(",")
+    .map((rule) => rule.trim())
+    .filter(Boolean);
+  // Интересует только явное отключение max-lines. Пустой список правил —
+  // это `eslint-disable` для всего файла (генераторы, записанные фикстуры),
+  // такие случаи не являются протухшим max-lines-исключением.
+  return rules.some((rule) => rule.includes("max-lines"));
 }
 
 async function* walk(dir) {
@@ -80,7 +98,7 @@ async function* walk(dir) {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
       yield* walk(join(dir, entry.name));
-    } else if (/\.tsx?$/u.test(entry.name)) {
+    } else if (/\.(?:[cm]?[jt]sx?)$/u.test(entry.name)) {
       yield join(dir, entry.name);
     }
   }

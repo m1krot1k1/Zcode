@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable max-lines */
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";

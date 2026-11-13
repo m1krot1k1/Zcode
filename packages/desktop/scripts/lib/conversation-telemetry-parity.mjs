@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- final payload 的归一化、关系验证和结构化 diff 必须共享同一字段表，拆文件会让白名单与 invariant 漂移。 */
 // 纯数据比较器：可由 Vitest、WDIO 或独立 Node runner 复用，不依赖测试框架全局变量。
 
 export const CONVERSATION_TELEMETRY_DIFF_CATEGORIES = [
