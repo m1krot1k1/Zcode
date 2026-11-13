@@ -15,7 +15,9 @@
     "test/e2e",
     "src/host/botRemoteWorkspaceResolver.ts",
     "src/host/sourceServerDirectory.ts",
-    "src/host/windowRemoteConnectionRegistry.ts"
+    "src/host/windowRemoteConnectionRegistry.ts",
+    // Реестр разделён на модули в этом каталоге; e2e типизирует его целиком.
+    "src/host/window-remote-registry"
   ],
   "references": [
     { "path": "../shared" },
