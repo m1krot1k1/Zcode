@@ -1,254 +1,66 @@
 import { rm } from "node:fs/promises";
-import {basename, dirname, isAbsolute, join, resolve, win32} from "node:path";
+import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import {
-  addSuppressedBuiltinInFileConfig,
-  createConfig,
-  resolvePath,
-  enablePluginsByDefaultInFileConfig,
-  removePluginEnabledFromFileConfig,
-  removePluginFromFileConfig,
-  removeSuppressedBuiltinInFileConfig,
-  updatePluginEnabledInFileConfig,
-  updatePluginOptionsInFileConfig,
-  type ConfigResult,
-} from "@zcode/adapters/config";
-import {
-  addMarketplace,
-  comparePluginUpdate,
-  describeMarketplacePlugin,
-  enrichCachedClaudeMarketplaceIcons,
-  ensureDefaultPluginMarketplaces,
-  discoverNodePluginsSync,
-  ensureMarketplaceManifestAvailable,
-  getPluginCompatibilityDiagnosticCode,
-  getPluginSourceDiagnosticCode,
-  getPluginDataDir,
-  installMarketplacePlugin,
-  listInstalledPluginRecords,
-  loadKnownMarketplacesSync,
-  loadMarketplaceManifestSync,
-  parseMarketplaceSourceInput,
-  parseEntryStoreListing,
-  readPluginSourceIdentityPin,
-  removeMarketplace,
-  uninstallMarketplacePlugin,
-  updateMarketplace,
-  validateLocalPluginPath,
-  validateMarketplacePlugin,
-  validateMarketplaceSource,
-  type DescribeMarketplacePluginResult,
-  type InstalledPluginRecord,
-  type KnownMarketplaceRecord,
-  type MarketplaceSource,
-  type PluginMarketplaceEntry,
-} from "@zcode/adapters/plugins";
-import type {
-  Logger,
-  PluginHookDetail,
-  PluginLoadOutcome,
-  PluginMetadata,
-  PluginStoreListing,
-} from "@zcode/contracts";
-import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE, isOfficialMarketplaceId } from "@zcode/contracts";
-import { ZCODE_CUA_OFFICIAL_PLUGIN_ID, isZCodeCuaInternalFeatureEnabled } from "@zcode/shared";
+import { addSuppressedBuiltinInFileConfig, createConfig, enablePluginsByDefaultInFileConfig, removePluginEnabledFromFileConfig, removePluginFromFileConfig, removeSuppressedBuiltinInFileConfig, updatePluginEnabledInFileConfig, updatePluginOptionsInFileConfig } from "@zcode/adapters/config";
+import { addMarketplace, comparePluginUpdate, describeMarketplacePlugin, enrichCachedClaudeMarketplaceIcons, ensureDefaultPluginMarketplaces, discoverNodePluginsSync, ensureMarketplaceManifestAvailable, getPluginDataDir, installMarketplacePlugin, listInstalledPluginRecords, loadKnownMarketplacesSync, loadMarketplaceManifestSync, parseMarketplaceSourceInput, parseEntryStoreListing, readPluginSourceIdentityPin, removeMarketplace, uninstallMarketplacePlugin, updateMarketplace, validateLocalPluginPath, validateMarketplacePlugin, validateMarketplaceSource, type DescribeMarketplacePluginResult, type KnownMarketplaceRecord, type PluginMarketplaceEntry } from "@zcode/adapters/plugins";
+import type { PluginLoadOutcome, PluginStoreListing } from "@zcode/contracts";
+import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE } from "@zcode/contracts";
+import { isZCodeCuaInternalFeatureEnabled } from "@zcode/shared";
 import { resolveOfficialPluginRoots } from "./app/bundled-plugins.js";
-import {
-  DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
-  OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME,
-  OFFICIAL_PLUGIN_DEFINITIONS,
-} from "./app/official-plugin-definitions.js";
-import { getCliStorageRoot, getPluginStorageRoot } from "./app/paths.js";
+import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS, OFFICIAL_PLUGIN_DEFINITIONS } from "./app/official-plugin-definitions.js";
+
 import { withPluginStorageLock } from "./lib/plugin-storage-lock.js";
 
-export interface ResolveZCodePluginsOptions {
-  configResult?: ConfigResult;
-  env?: NodeJS.ProcessEnv;
-  logger?: Logger;
-  officialPluginRoots?: string[];
-  pluginStorageRoot?: string;
-  projectConfigPath?: string;
-  skipUserConfig?: boolean;
-  userConfigPath?: string;
-  workingDirectory?: string;
-}
+export type {
+  ResolveZCodePluginsOptions,
+  ListZCodePluginsOptions,
+  SetZCodePluginEnabledOptions,
+  SetZCodePluginEnabledResult,
+  ZCodeMarketplaceSummaryData,
+  ZCodeAvailablePluginData,
+  ZCodeInstalledPluginData,
+  ZCodePluginsOverviewData,
+  ZCodeMarketplaceUpdateData,
+  AddZCodeMarketplaceOptions,
+  RemoveZCodeMarketplaceOptions,
+  UpdateZCodeMarketplaceOptions,
+  InstallZCodeMarketplacePluginOptions,
+  UninstallZCodeMarketplacePluginOptions,
+  UpdateZCodeMarketplacePluginOptions,
+  ValidateZCodePluginPathOptions,
+  ZCodePluginUpdateData,
+  ZCodePluginInstallData,
+} from "./plugins-types.js";
 
-export interface ListZCodePluginsOptions extends ResolveZCodePluginsOptions {}
+import { createMarketplaceSourceRepointDiagnostic, materializeDeclaredMarketplaceForExplicitAction, normalizePluginOptionKeys, normalizePluginOptions, resolveDeclaredMarketplaceSources, resolveEffectiveMarketplaceRecords, resolveMarketplaceDeclarationDiagnostics, resolveMarketplaceRefreshTargetIds, resolvePluginConfigPath, resolvePluginContext, resolvePluginIdForMutation, resolvePluginSelector, toAvailablePluginData, toInstalledPluginData, toMarketplaceInstallDiagnostic, toMarketplaceRefreshDiagnostic, toMarketplaceSummaryData, toPluginDiagnostic, countVisibleMarketplacePlugins, loadPluginListingsById, applySparsePaths, restoreBuiltinPluginCore } from "./plugins-helpers.js";
 
-export interface SetZCodePluginEnabledOptions extends ResolveZCodePluginsOptions {
-  enabled: boolean;
-  plugin: string;
-  scope?: "user" | "workspace";
-}
+export { isWorkspacePluginConfigPath, resolveMarketplaceRefreshTargetIds } from "./plugins-helpers.js";
+import type {
+  AddZCodeMarketplaceOptions,
+  ConfigureZCodePluginOptions,
+  DescribeZCodePluginOptions,
+  InstallZCodeMarketplacePluginOptions,
+  ListZCodePluginsOptions,
+  RemoveZCodeMarketplaceOptions,
+  ResetZCodePluginConfigOptions,
+  ResolveZCodePluginsOptions,
+  RestoreBuiltinPluginOptions,
+  SetZCodePluginEnabledOptions,
+  SetZCodePluginEnabledResult,
+  UninstallZCodeMarketplacePluginOptions,
+  UpdateZCodeMarketplaceOptions,
+  UpdateZCodeMarketplacePluginOptions,
+  ValidateZCodePluginOptions,
+  ValidateZCodePluginPathOptions,
+  ZCodeAvailablePluginData,
+  ZCodeInstalledPluginData,
+  ZCodeMarketplaceSummaryData,
+  ZCodeMarketplaceUpdateData,
+  ZCodePluginInstallData,
+  ZCodePluginUpdateData,
+  ZCodePluginsOverviewData,
+} from "./plugins-types.js";
 
-export interface SetZCodePluginEnabledResult {
-  enabled: boolean;
-  path: string;
-  plugin: PluginMetadata;
-}
-
-export interface ZCodeMarketplaceSummaryData {
-  id: string;
-  name: string;
-  source: Record<string, unknown>;
-  description?: string;
-  lastUpdated?: string;
-  pluginCount: number;
-  isOfficial: boolean;
-  refreshFailure?: {
-    code: string;
-    failedAt: string;
-    message: string;
-  };
-  // 目录顶层 featured 策展名单（商店「公开」分段 Featured 区），随 manifest 下发。
-  featured?: string[];
-}
-
-export interface ZCodeAvailablePluginData {
-  id: string;
-  name: string;
-  marketplace: string;
-  description?: string;
-  version?: string;
-  installed: boolean;
-  componentTypes?: string[];
-  hookDetails?: PluginHookDetail[];
-  // 商店信息（显示名/icon/分类/作者/链接/hero/示例提示词），来自目录条目。
-  listing?: PluginStoreListing;
-}
-
-export interface ZCodeInstalledPluginData {
-  id: string;
-  name: string;
-  marketplace: string;
-  description?: string;
-  version?: string;
-  enabled: boolean;
-  scope: "user" | "workspace";
-  installPath?: string;
-  installedAt?: string;
-  componentTypes?: string[];
-  hookDetails?: PluginHookDetail[];
-  updateStatus?: "none" | "update-available" | "version-changed";
-  latestVersion?: string;
-  // 已安装插件的商店信息由目录条目按 id join 得到（市场被移除时缺失，UI 走降级）。
-  listing?: PluginStoreListing;
-}
-
-export interface ZCodePluginsOverviewData {
-  marketplaces: ZCodeMarketplaceSummaryData[];
-  availablePlugins: ZCodeAvailablePluginData[];
-  installedPlugins: ZCodeInstalledPluginData[];
-  restorableBuiltins: ZCodeAvailablePluginData[];
-  diagnostics: PluginLoadOutcome["diagnostics"];
-}
-
-export interface ZCodeMarketplaceUpdateData {
-  diagnostics: PluginLoadOutcome["diagnostics"];
-  marketplaces: ZCodeMarketplaceSummaryData[];
-}
-
-export interface AddZCodeMarketplaceOptions extends ResolveZCodePluginsOptions {
-  abortSignal?: AbortSignal;
-  dryRun?: boolean;
-  source: string;
-  /** `marketplace add --sparse`：仅 git/github 源支持 sparse checkout 子目录。 */
-  sparsePaths?: string[];
-}
-
-export interface RemoveZCodeMarketplaceOptions extends ResolveZCodePluginsOptions {
-  marketplace: string;
-}
-
-export interface UpdateZCodeMarketplaceOptions extends ResolveZCodePluginsOptions {
-  abortSignal?: AbortSignal;
-  marketplace?: string;
-}
-
-export interface InstallZCodeMarketplacePluginOptions extends ResolveZCodePluginsOptions {
-  abortSignal?: AbortSignal;
-  dryRun?: boolean;
-  marketplace: string;
-  pluginName: string;
-  scope?: "user" | "workspace";
-}
-
-export interface UninstallZCodeMarketplacePluginOptions extends ResolveZCodePluginsOptions {
-  pluginId?: string;
-  pluginName?: string;
-  marketplace?: string;
-  removeCache?: boolean;
-  /** 保留 data/<plugin-id> 用户数据目录（`zcode plugins uninstall --keep-data`）。 */
-  keepData?: boolean;
-}
-
-export interface UpdateZCodeMarketplacePluginOptions extends ResolveZCodePluginsOptions {
-  abortSignal?: AbortSignal;
-  pluginId: string;
-}
-
-export interface ValidateZCodePluginPathOptions extends ResolveZCodePluginsOptions {
-  abortSignal?: AbortSignal;
-  path: string;
-}
-
-export interface ZCodePluginUpdateData extends ZCodePluginInstallData {
-  previousVersion: string;
-}
-
-interface RestoreBuiltinPluginOptions extends ResolveZCodePluginsOptions {
-  pluginId: string;
-}
-
-interface ConfigureZCodePluginOptions extends ResolveZCodePluginsOptions {
-  clearOptionKeys?: string[];
-  dryRun?: boolean;
-  options: Record<string, unknown>;
-  pluginId: string;
-  scope?: "user" | "workspace";
-}
-
-interface ResetZCodePluginConfigOptions extends ResolveZCodePluginsOptions {
-  pluginId: string;
-  scope?: "user" | "workspace";
-}
-
-interface ValidateZCodePluginOptions extends ResolveZCodePluginsOptions {
-  marketplace?: string;
-  pluginName?: string;
-  source?: string;
-}
-
-interface DescribeZCodePluginOptions extends ResolveZCodePluginsOptions {
-  marketplace: string;
-  pluginName: string;
-  withWriteLock?: <T>(write: () => Promise<T>) => Promise<T>;
-}
-
-export interface ZCodePluginInstallData {
-  dependencyClosure: string[];
-  installedPlugins: ZCodeInstalledPluginData[];
-  diagnostics: PluginLoadOutcome["diagnostics"];
-}
-
-/**
- * 市场插件计数只数用户可见条目。
- *
- * node-repl-host 是 Browser Use 与 Computer Use 共用的运行时宿主：它必须留在官方 manifest 里
- * （否则不会被发现、安装、启用），但没有 skill、没有 listing，也不该出现在设置页。计进去会让
- * 显示的插件数比它能列出的条目多一个。
- *
- * 判据故意是「官方市场里的这个具名条目」，而不是「没有 listing 的条目」—— 后者会误伤第三方
- * 市场：自定义 manifest 里的条目本来就可以不带 listing，它们是真实可见的插件。
- */
-function countVisibleMarketplacePlugins(
-  marketplaceId: string,
-  plugins: readonly { name: string }[] | undefined,
-): number | undefined {
-  if (!plugins) return undefined;
-  if (marketplaceId !== ZCODE_OFFICIAL_PLUGIN_MARKETPLACE) return plugins.length;
-  return plugins.filter((entry) => entry.name !== OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME).length;
-}
 
 export function resolveZCodePlugins(options: ResolveZCodePluginsOptions = {}): PluginLoadOutcome {
   const { configResult, pluginStorageRoot, workingDirectory } = resolvePluginContext(options);
@@ -428,28 +240,6 @@ export function listZCodePlugins(options: ListZCodePluginsOptions = {}): PluginL
   };
 }
 
-function loadPluginListingsById(storageRoot: string): Record<string, PluginStoreListing> {
-  const listings = new Map<string, PluginStoreListing>();
-
-  // 没有 marketplace 快照时，bundled official definition 仍是内置插件 listing 的安全回退。
-  for (const definition of OFFICIAL_PLUGIN_DEFINITIONS) {
-    if (!definition.listing) continue;
-    const listing = parseEntryStoreListing({ name: definition.name, ...definition.listing });
-    if (listing) {
-      listings.set(`${definition.name}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`, listing);
-    }
-  }
-
-  // 目录条目按完整 `${name}@${marketplace}` 关联；同名插件不会互相覆盖。
-  for (const marketplace of loadKnownMarketplacesSync(storageRoot)) {
-    const manifest = loadMarketplaceManifestSync(storageRoot, marketplace.id);
-    for (const entry of manifest?.plugins ?? []) {
-      if (entry.listing) listings.set(`${entry.name}@${marketplace.id}`, entry.listing);
-    }
-  }
-
-  return Object.fromEntries(listings);
-}
 
 export async function setZCodePluginEnabled(
   options: SetZCodePluginEnabledOptions,
@@ -885,17 +675,6 @@ export async function validateZCodePluginPath(
   ).map(toPluginDiagnostic);
 }
 
-function applySparsePaths(
-  source: MarketplaceSource,
-  sparsePaths: string[] | undefined,
-): MarketplaceSource {
-  const paths = (sparsePaths ?? []).map((item) => item.trim()).filter((item) => item.length > 0);
-  if (paths.length === 0) return source;
-  if (source.source !== "git" && source.source !== "github") {
-    throw new Error("--sparse only applies to git or GitHub marketplace sources");
-  }
-  return { ...source, sparsePaths: paths };
-}
 
 /**
  * 恢复一个被抑制（uninstall）的内置（官方）插件的无锁核心。
@@ -903,27 +682,6 @@ function applySparsePaths(
  * 调用方可能已经持有同一 storageRoot 的 storage lock（例如协议 install handler），
  * 因此核心不能再次获取 promise-chain lock；公开入口再负责提供锁保护。
  */
-async function restoreBuiltinPluginCore(options: RestoreBuiltinPluginOptions): Promise<void> {
-  const zcodeCuaPluginId = ZCODE_CUA_OFFICIAL_PLUGIN_ID;
-  if (
-    options.pluginId === zcodeCuaPluginId &&
-    !isZCodeCuaInternalFeatureEnabled(options.env ?? process.env)
-  ) {
-    // overview 虽然隐藏了恢复入口，但协议调用仍可绕过 UI 写用户配置。
-    // 功能开关关闭时在写盘前失败，确保用户配置与插件缓存都保持零痕迹。
-    throw new Error("computer-use built-in plugin requires ZCODE_CUA_PRODUCT_HELPER to be enabled");
-  }
-  const { configResult } = resolvePluginContext(options);
-  await removeSuppressedBuiltinInFileConfig(configResult.sources.user.path, options.pluginId);
-  // 重读磁盘上的最新 config（patch 后），确保抑制集合不再包含刚恢复的 id；
-  // 不能复用 patch 前可能被传入的 configResult。
-  const fresh = resolvePluginContext({ ...options, configResult: undefined });
-  // 立即重新 seed，让插件即刻可用，无需等待下一次 resolve。
-  resolveOfficialPluginRoots({
-    storageRoot: fresh.pluginStorageRoot,
-    suppressedBuiltins: new Set(fresh.configResult.config.plugins.suppressedBuiltins),
-  });
-}
 
 export async function restoreBuiltinPlugin(options: RestoreBuiltinPluginOptions): Promise<void> {
   const { pluginStorageRoot } = resolvePluginContext(options);
@@ -1027,471 +785,5 @@ export async function describeZCodePlugin(
     name: options.pluginName,
     storageRoot: pluginStorageRoot,
     ...(options.withWriteLock ? { withWriteLock: options.withWriteLock } : {}),
-  });
-}
-
-function resolvePluginContext(options: ResolveZCodePluginsOptions): {
-  configResult: ConfigResult;
-  pluginStorageRoot: string;
-  workingDirectory: string;
-} {
-  const workingDirectory = resolve(options.workingDirectory ?? process.cwd());
-  const configResult =
-    options.configResult ??
-    createConfig({
-      env: options.env,
-      projectConfigPath: options.projectConfigPath,
-      workingDirectory,
-      skipUserConfig: options.skipUserConfig,
-      userConfigPath: options.userConfigPath,
-    });
-  const storageRoot = resolvePath(configResult.config.storage.dir);
-  return {
-    configResult,
-    pluginStorageRoot:
-      options.pluginStorageRoot ?? getPluginStorageRoot(getCliStorageRoot(storageRoot)),
-    workingDirectory,
-  };
-}
-
-function resolveDeclaredMarketplaceSources(input: {
-  configResult: ConfigResult;
-}): Map<string, MarketplaceSource> {
-  return new Map(
-    Object.entries(input.configResult.config.plugins.extraKnownMarketplaces ?? {}).map(
-      ([marketplaceId, declaration]) => {
-        const baseDirectory = dirname(input.configResult.sources.plugins.paths.user);
-        return [marketplaceId, resolveDeclaredMarketplaceSource(declaration.source, baseDirectory)];
-      },
-    ),
-  );
-}
-
-function resolveDeclaredMarketplaceSource(
-  source: ConfigResult["config"]["plugins"]["extraKnownMarketplaces"][string]["source"],
-  baseDirectory: string,
-): MarketplaceSource {
-  // User Marketplace 的相对路径按 User config 所在目录解析；配置读取不触碰 source，
-  // 只有显式 refresh/install 才会真正读取、复制或联网。
-  if (source.source === "file" || source.source === "directory") {
-    return {
-      ...source,
-      path: isAbsolute(source.path) ? resolve(source.path) : resolve(baseDirectory, source.path),
-    };
-  }
-  return source;
-}
-
-function resolveEffectiveMarketplaceRecords(input: {
-  configResult: ConfigResult;
-  known: KnownMarketplaceRecord[];
-  workingDirectory: string;
-}): Array<{ record: KnownMarketplaceRecord; useCachedManifest: boolean }> {
-  const declared = resolveDeclaredMarketplaceSources(input);
-  const knownIds = new Set(input.known.map((record) => record.id));
-  const records = input.known.map((record) => {
-    const declarationSource = declared.get(record.id);
-    if (!declarationSource) return { record, useCachedManifest: true };
-    if (isDeepStrictEqual(record.source, declarationSource)) {
-      return { record, useCachedManifest: true };
-    }
-    // 官方 marketplace id 是 Host 保留身份。Workspace 声明同 id 异 source
-    // 只能产生诊断，不能把官方缓存投影替换成 pluginCount=0 的空目录。
-    if (isOfficialMarketplaceId(record.id)) {
-      return { record, useCachedManifest: true };
-    }
-    return {
-      record: createDeclaredMarketplaceRecord(record.id, declarationSource),
-      useCachedManifest: false,
-    };
-  });
-  for (const [marketplaceId, source] of declared) {
-    if (knownIds.has(marketplaceId)) continue;
-    if (isOfficialMarketplaceId(marketplaceId)) continue;
-    records.push({
-      record: createDeclaredMarketplaceRecord(marketplaceId, source),
-      useCachedManifest: false,
-    });
-  }
-  return records;
-}
-
-function resolveMarketplaceDeclarationDiagnostics(input: {
-  configResult: ConfigResult;
-  known: KnownMarketplaceRecord[];
-  workingDirectory: string;
-}): PluginLoadOutcome["diagnostics"] {
-  const declared = resolveDeclaredMarketplaceSources(input);
-  const knownById = new Map(input.known.map((record) => [record.id, record]));
-  return [...declared.entries()].flatMap(([marketplaceId, source]) => {
-    if (!isOfficialMarketplaceId(marketplaceId)) return [];
-    const known = knownById.get(marketplaceId);
-    if (known && isDeepStrictEqual(known.source, source)) return [];
-    return [createReservedMarketplaceDeclarationDiagnostic(marketplaceId)];
-  });
-}
-
-function createDeclaredMarketplaceRecord(
-  marketplaceId: string,
-  source: MarketplaceSource,
-): KnownMarketplaceRecord {
-  return {
-    id: marketplaceId,
-    source,
-    name: marketplaceId,
-    addedAt: "",
-    pluginCount: 0,
-  };
-}
-
-async function materializeDeclaredMarketplaceForExplicitAction(input: {
-  abortSignal?: AbortSignal;
-  configResult: ConfigResult;
-  marketplaceId: string;
-  pluginStorageRoot: string;
-  workingDirectory: string;
-}): Promise<void> {
-  const source = resolveDeclaredMarketplaceSources(input).get(input.marketplaceId);
-  if (!source) return;
-  const known = loadKnownMarketplacesSync(input.pluginStorageRoot).find(
-    (record) => record.id === input.marketplaceId,
-  );
-  if (known && !isDeepStrictEqual(known.source, source)) {
-    throw new MarketplaceSourceRepointError(
-      createMarketplaceSourceRepointDiagnostic(input.marketplaceId).message,
-    );
-  }
-  if (known && loadMarketplaceManifestSync(input.pluginStorageRoot, input.marketplaceId)) {
-    return;
-  }
-  await addMarketplace({
-    expectedId: input.marketplaceId,
-    signal: input.abortSignal,
-    source,
-    storageRoot: input.pluginStorageRoot,
-  });
-}
-
-function resolvePluginSelector(selector: string, plugins: PluginMetadata[]): PluginMetadata {
-  const normalized = selector.trim();
-  const exact = plugins.find((plugin) => plugin.id === normalized);
-  if (exact) return exact;
-
-  const nameMatches = plugins.filter((plugin) => plugin.name === normalized);
-  if (nameMatches.length === 1 && nameMatches[0]) return nameMatches[0];
-  if (nameMatches.length > 1) {
-    throw new Error(`Plugin name is ambiguous, use full plugin id: ${normalized}`);
-  }
-  throw new Error(`Plugin not found: ${normalized}`);
-}
-
-function toMarketplaceSummaryData(
-  record: KnownMarketplaceRecord,
-  featured?: string[],
-  pluginCount?: number,
-): ZCodeMarketplaceSummaryData {
-  return {
-    id: record.id,
-    name: record.name,
-    source: record.source as unknown as Record<string, unknown>,
-    ...(record.description ? { description: record.description } : {}),
-    ...(record.lastUpdated ? { lastUpdated: record.lastUpdated } : {}),
-    pluginCount: pluginCount ?? record.pluginCount,
-    isOfficial: isOfficialMarketplaceId(record.id),
-    ...(record.lastRefreshFailure
-      ? {
-          refreshFailure: {
-            code: record.lastRefreshFailure.code,
-            failedAt: record.lastRefreshFailure.failedAt,
-            message: record.lastRefreshFailure.message,
-          },
-        }
-      : {}),
-    ...(featured && featured.length > 0 ? { featured } : {}),
-  };
-}
-
-function toAvailablePluginData(
-  entry: PluginMarketplaceEntry,
-  marketplace: string,
-  installedIds: ReadonlySet<string>,
-): ZCodeAvailablePluginData {
-  const id = `${entry.name}@${marketplace}`;
-  return {
-    id,
-    name: entry.name,
-    marketplace,
-    ...(entry.description ? { description: entry.description } : {}),
-    ...(entry.version ? { version: entry.version } : {}),
-    installed: installedIds.has(id),
-    componentTypes: inferComponentTypes(entry.raw),
-    ...(entry.listing ? { listing: entry.listing } : {}),
-  };
-}
-
-function toInstalledPluginData(
-  record: InstalledPluginRecord,
-  enabled: boolean,
-  loaded?: PluginMetadata,
-): ZCodeInstalledPluginData {
-  return {
-    id: record.id,
-    name: record.name,
-    marketplace: record.marketplace,
-    ...((loaded?.description ?? undefined) ? { description: loaded?.description } : {}),
-    version: loaded?.version ?? record.version,
-    enabled,
-    scope: record.scope,
-    installPath: record.installPath,
-    installedAt: record.installedAt,
-    componentTypes: loaded ? inferComponentTypesFromMetadata(loaded) : undefined,
-    ...(loaded ? { hookDetails: loaded.hookDetails } : {}),
-  };
-}
-
-function inferComponentTypes(raw: Record<string, unknown>): string[] {
-  const types: string[] = [];
-  if ("agents" in raw) types.push("agent");
-  if ("commands" in raw) types.push("command");
-  if ("skills" in raw) types.push("skill");
-  if ("hooks" in raw) types.push("hook");
-  if ("mcpServers" in raw) types.push("mcp");
-  if ("lspServers" in raw) types.push("lsp");
-  if (Array.isArray(raw.componentTypes) && raw.componentTypes.includes("ui")) types.push("ui");
-  return types;
-}
-
-function inferComponentTypesFromMetadata(plugin: PluginMetadata): string[] {
-  const types: string[] = [];
-  // agent 由约定目录枚举，不一定出现在 manifest；只看 manifest 会让已安装列表漏报子代理能力。
-  if (plugin.components.some((group) => group.kind === "agent" && group.items.length > 0)) {
-    types.push("agent");
-  }
-  if (plugin.commandRootCount > 0) types.push("command");
-  if (plugin.skillRootCount > 0 || plugin.skillCount > 0) types.push("skill");
-  if (plugin.declaredMcpServerNames.length > 0 || plugin.mcpServerNames.length > 0) {
-    types.push("mcp");
-  }
-  if (plugin.hookDetails.length > 0) types.push("hook");
-  if (plugin.uiSurfaces?.length) types.push("ui");
-  return types;
-}
-
-function resolvePluginIdForMutation(options: UninstallZCodeMarketplacePluginOptions): string {
-  if (options.pluginId) return options.pluginId;
-  if (options.pluginName && options.marketplace) {
-    return `${options.pluginName}@${options.marketplace}`;
-  }
-  throw new Error("pluginId or pluginName + marketplace is required");
-}
-
-function normalizePluginOptions(
-  options: Record<string, unknown>,
-): Record<string, string | number | boolean> {
-  const result: Record<string, string | number | boolean> = {};
-  for (const [key, value] of Object.entries(options)) {
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      result[key] = value;
-    }
-  }
-  return result;
-}
-
-function normalizePluginOptionKeys(keys: string[] | undefined): string[] {
-  return [...new Set((keys ?? []).map((key) => key.trim()).filter((key) => key.length > 0))];
-}
-
-function resolvePluginConfigPath(
-  options: ResolveZCodePluginsOptions & { scope?: "user" | "workspace" },
-  configResult: ConfigResult,
-  workingDirectory: string,
-): string {
-  if (options.scope !== "workspace") {
-    return configResult.sources.user.path;
-  }
-
-  // Workspace Plugin 配置固定落在当前 `<workspace>/.zcode/config.json`。嵌套 workspace
-  // 可能同时发现仓库根与自身的配置，读取端 innermost 优先；写入端也必须锁定当前
-  // workspace，不能用 project discovery 的第一个 outermost 文件。
-  const workspaceConfigPath = join(workingDirectory, ".zcode", "config.json");
-  const projectConfigPaths = [
-    ...(options.projectConfigPath ? [options.projectConfigPath] : []),
-    ...configResult.sources.project.paths,
-  ];
-  const existingWorkspaceConfig = projectConfigPaths.find(
-    (path) =>
-      normalizePluginConfigPathForComparison(path) ===
-      normalizePluginConfigPathForComparison(workspaceConfigPath),
-  );
-  if (existingWorkspaceConfig) return existingWorkspaceConfig;
-  return workspaceConfigPath;
-}
-
-function normalizePluginConfigPathForComparison(
-  path: string,
-  platform: NodeJS.Platform = process.platform,
-): string {
-  const resolvedPath = platform === "win32" ? win32.resolve(path) : resolve(path);
-  return platform === "win32" ? resolvedPath.replaceAll("\\", "/").toLowerCase() : resolvedPath;
-}
-
-export function isWorkspacePluginConfigPath(
-  path: string,
-  platform: NodeJS.Platform = process.platform,
-): boolean {
-  if (platform === "win32") {
-    return (
-      win32.basename(path).toLowerCase() === "config.json" &&
-      win32.basename(win32.dirname(path)).toLowerCase() === ".zcode"
-    );
-  }
-  return basename(path) === "config.json" && basename(dirname(path)) === ".zcode";
-}
-
-export function resolveMarketplaceRefreshTargetIds(input: {
-  declaredIds: Iterable<string>;
-  knownIds: Iterable<string>;
-  marketplace?: string;
-}): string[] {
-  if (input.marketplace) return [input.marketplace];
-  // refresh-all 只刷新已经物化的 Host known records；项目声明必须逐个显式物化，
-  // 避免一次全量刷新把任意 Workspace 声明写进全局 marketplace 状态。
-  return [...new Set(input.knownIds)];
-}
-
-function createMarketplaceSourceRepointDiagnostic(
-  marketplaceId: string,
-): PluginLoadOutcome["diagnostics"][number] {
-  return {
-    code: "plugin_marketplace_invalid",
-    message:
-      `Workspace marketplace declaration "${marketplaceId}" conflicts with an existing Host source. ` +
-      "Remove the existing marketplace or use a different marketplace id before materializing it.",
-    pluginId: marketplaceId,
-    severity: "error",
-  };
-}
-
-function createReservedMarketplaceDeclarationDiagnostic(
-  marketplaceId: string,
-): PluginLoadOutcome["diagnostics"][number] {
-  return {
-    code: "plugin_marketplace_declaration_reserved",
-    message:
-      `Workspace marketplace declaration "${marketplaceId}" uses a reserved official id and was ignored. ` +
-      "Use a different marketplace id for project declarations.",
-    pluginId: marketplaceId,
-    severity: "warning",
-  };
-}
-
-class MarketplaceSourceRepointError extends Error {}
-
-function toPluginDiagnostic(diagnostic: {
-  code: string;
-  message: string;
-  pluginId?: string;
-  severity: "warning" | "error";
-}): PluginLoadOutcome["diagnostics"][number] {
-  return {
-    code: diagnostic.code as PluginLoadOutcome["diagnostics"][number]["code"],
-    message: diagnostic.message,
-    ...(diagnostic.pluginId ? { pluginId: diagnostic.pluginId } : {}),
-    severity: diagnostic.severity,
-  };
-}
-
-function toMarketplaceInstallDiagnostic(
-  error: unknown,
-  pluginId: string,
-): PluginLoadOutcome["diagnostics"][number] {
-  const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof MarketplaceSourceRepointError) {
-    return toPluginDiagnostic({
-      code: "plugin_marketplace_invalid",
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  const sourceCode = getPluginSourceDiagnosticCode(error);
-  if (sourceCode) {
-    return toPluginDiagnostic({
-      code: sourceCode,
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  const compatibilityCode = getPluginCompatibilityDiagnosticCode(error);
-  if (compatibilityCode) {
-    return toPluginDiagnostic({
-      code: compatibilityCode,
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  if (message.startsWith("Plugin not found:")) {
-    return toPluginDiagnostic({
-      code: "plugin_not_found",
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  if (message.includes("Cross-marketplace dependency")) {
-    return toPluginDiagnostic({
-      code: "plugin_dependency_cross_marketplace",
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  if (message.includes("dependency cycle")) {
-    return toPluginDiagnostic({
-      code: "plugin_dependency_cycle",
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  if (
-    message.includes("Dependency not found") ||
-    message.includes("Marketplace not found for dependency")
-  ) {
-    return toPluginDiagnostic({
-      code: "plugin_dependency_missing",
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  if (message.includes("source is recognized but not supported")) {
-    return toPluginDiagnostic({
-      code: "plugin_marketplace_source_unsupported",
-      message,
-      pluginId,
-      severity: "error",
-    });
-  }
-  return toPluginDiagnostic({
-    code: "plugin_marketplace_invalid",
-    message,
-    pluginId,
-    severity: "error",
-  });
-}
-
-function toMarketplaceRefreshDiagnostic(
-  error: unknown,
-  marketplaceId: string,
-): PluginLoadOutcome["diagnostics"][number] {
-  const message = error instanceof Error ? error.message : String(error);
-  return toPluginDiagnostic({
-    code: getPluginSourceDiagnosticCode(error) ?? "plugin_marketplace_invalid",
-    message,
-    pluginId: marketplaceId,
-    severity: "error",
   });
 }
