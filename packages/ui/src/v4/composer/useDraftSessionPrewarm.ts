@@ -164,7 +164,7 @@ interface DraftSessionPrewarm {
   waitForSession(): Promise<DraftPrewarmBinding>;
 }
 
-interface DraftPrewarmBinding {
+export interface DraftPrewarmBinding {
   workspaceKey: string;
   sessionId: string;
   /** 首条 admission 命令发出前同步占住生命周期；false 表示 binding 已不是当前 owner。 */

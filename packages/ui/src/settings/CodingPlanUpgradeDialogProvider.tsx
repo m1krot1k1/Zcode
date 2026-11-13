@@ -20,7 +20,7 @@ import {
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { reportCodingPlanUpgradeClick } from "@/lib/codingPlanFunnelTelemetry.js";
 
-interface CodingPlanUpgradeDialogContextValue {
+export interface CodingPlanUpgradeDialogContextValue {
   inventory: CodingPlanEntryInventory;
   openCodingPlanUpgrade: (
     target: CodingPlanUpgradeDialogTarget,

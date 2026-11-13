@@ -50,7 +50,7 @@ export function composerScopeKey(scope: ComposerScope): string {
   return JSON.stringify([scope.clientNamespace, scope.hostId, scope.projectId]);
 }
 
-interface PendingTaskDraft {
+export interface PendingTaskDraft {
   draftId: string;
   workspacePath?: string;
   commandId?: string;

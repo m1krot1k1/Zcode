@@ -1,4 +1,4 @@
-interface ConfigCommandBarrier {
+export interface ConfigCommandBarrier {
   enqueue<T>(command: () => Promise<T>): Promise<T>;
   wait(): Promise<void>;
 }

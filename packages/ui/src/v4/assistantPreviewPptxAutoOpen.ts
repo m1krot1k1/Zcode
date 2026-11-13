@@ -11,7 +11,7 @@ export interface AssistantPreviewPptxAutoOpenTarget {
   key: string;
 }
 
-interface AssistantPreviewPptxAutoOpenGateState {
+export interface AssistantPreviewPptxAutoOpenGateState {
   scopeKey: string;
   armed: boolean;
 }

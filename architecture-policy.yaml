@@ -1130,3 +1130,15 @@ exceptions:
       Публичный API runStreamText не менялся, порядок yield/await и семантика ошибок сохранены;
       новые файлы лежат рядом с точкой входа в том же managed=false модуле zcode-cli, границы
       импортов и владение состоянием не меняются.
+  - id: ui-session-pane-split
+    rule: unmanaged-new-file
+    paths: [ packages/ui/src/v4/session-pane/** ]
+    reason: >-
+      Механическое разделение SessionPane.tsx (5547 эффективных строк, max-lines override) на
+      файлы ≤800 строк без изменения поведения: хуки перенесены в session-pane/use*.ts в исходном
+      порядке вызова, презентационные части — в чистые функции рендера, чистые помощники — в
+      helpers.ts. Публичный API SessionPane.tsx сохранён (SessionPane, SessionPaneProps,
+      QueuedComposerRestoreTarget, resolveQueuedComposerRestore, shouldRestoreQueuedComposerFromAck,
+      useSessionPaneLease). packages/ui/src остаётся managed=false, adopt всего каталога требует
+      отдельной проработки границ, поэтому регистрируется путь-исключение по образцу
+      ui-theme-utilities-unmanaged-file.
