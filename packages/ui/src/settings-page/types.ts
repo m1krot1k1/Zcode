@@ -4,4 +4,3 @@ import type { createSettingsPageConfig } from "@/settingsPageHelpers.js";
 type SettingsPageConfigShape = ReturnType<typeof createSettingsPageConfig>;
 
 export type SettingsSectionGroup = SettingsPageConfigShape["settingsSectionGroups"][number];
-export type SettingsSectionMeta = SettingsPageConfigShape["settingsSections"][number];
