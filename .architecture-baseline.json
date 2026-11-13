@@ -345,6 +345,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/components/workflow-timeline/WorkflowArtifactIndex.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "7342decb38d12419",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/bots/botsServiceReply.ts",
       "module": "services",
       "detail": "services",
