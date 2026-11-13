@@ -7,7 +7,6 @@ import type { OpenCodeAgentRunAdmission, OpenCodeAgentRunHostEventTransition, Op
 import { AgentTaskGraphSchema } from "@zcode/contracts";
 import { encodeJson } from "../json.js";
 
-import * as sessionEntryRepository from "./session-entries.js";
 
 export interface SessionInputRow {
   id: string;
