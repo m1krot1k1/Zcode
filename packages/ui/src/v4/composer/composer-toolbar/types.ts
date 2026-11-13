@@ -17,7 +17,7 @@ import type {
   SessionPhase,
   SessionUsageState,
 } from "@zcode/shared/zcode-protocol-v4";
-import type { ModelSelectionView } from "@zcode/services";
+import type { ModelSelectionView } from "./contract.ts";
 import type {
   ModelSelectionState,
   ModelSelectionRefreshResult,

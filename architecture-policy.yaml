@@ -822,6 +822,7 @@ modules:
     publicEntrypoints:
       - packages/ui/src/agent-workbench/index.ts
       - packages/ui/src/agent-workbench/contract.ts
+      - packages/ui/src/agent-workbench/CodeIndexPopover.tsx
     layers:
       contract: contract.ts
       ui: .
@@ -1156,6 +1157,231 @@ modules:
     layers:
       adapters: .
     owner: web
+  # ui-message-telemetry：由 architecture:adopt 登记
+  - id: ui-message-telemetry
+    roots:
+      - packages/ui/src/lib/message-telemetry
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lib/message-telemetry/index.ts
+      - packages/ui/src/lib/message-telemetry/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-settings-page-helpers：由 architecture:adopt 登记
+  - id: ui-settings-page-helpers
+    roots:
+      - packages/ui/src/settings-page-helpers
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings-page-helpers/index.ts
+      - packages/ui/src/settings-page-helpers/contract.ts
+    layers:
+      ui: .
+    owner: settings
+  # ui-lexical-chat-input：由 architecture:adopt 登记
+  - id: ui-lexical-chat-input
+    roots:
+      - packages/ui/src/lexical-chat-input
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lexical-chat-input/index.ts
+      - packages/ui/src/lexical-chat-input/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # desktop-source-server-connection：由 architecture:adopt 登记
+  - id: desktop-source-server-connection
+    roots:
+      - packages/desktop/src/host/source-server-connection
+    managed: true
+    requires:
+      - desktop
+      - rpc
+      - server
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/host/source-server-connection/index.ts
+      - packages/desktop/src/host/source-server-connection/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-task-index-repo：由 architecture:adopt 登记
+  - id: services-task-index-repo
+    roots:
+      - packages/services/src/session/task-index-repo
+    managed: true
+    requires:
+      - project-storage
+      - services
+      - session
+      - shared
+      - task-groups
+    publicEntrypoints:
+      - packages/services/src/session/task-index-repo/index.ts
+      - packages/services/src/session/task-index-repo/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-telemetry-parity-scenarios：由 architecture:adopt 登记
+  - id: ui-telemetry-parity-scenarios
+    roots:
+      - packages/ui/src/lib/telemetry-parity-scenarios
+    managed: true
+    requires:
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lib/telemetry-parity-scenarios/index.ts
+      - packages/ui/src/lib/telemetry-parity-scenarios/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # dev-docs-protocol-docs：由 architecture:adopt 登记
+  - id: dev-docs-protocol-docs
+    roots:
+      - apps/dev-docs/src/data/protocol-docs
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/dev-docs/src/data/protocol-docs/index.ts
+      - apps/dev-docs/src/data/protocol-docs/contract.ts
+    layers:
+      adapters: .
+    owner: docs
+  # services-automation-repo：由 architecture:adopt 登记
+  - id: services-automation-repo
+    roots:
+      - packages/services/src/session/automation-repo
+    managed: true
+    requires:
+      - services
+      - session
+      - shared
+    publicEntrypoints:
+      - packages/services/src/session/automation-repo/index.ts
+      - packages/services/src/session/automation-repo/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-share-readonly-timeline：由 architecture:adopt 登记
+  - id: ui-share-readonly-timeline
+    roots:
+      - packages/ui/src/v4/share-readonly-timeline
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/share-readonly-timeline/index.ts
+      - packages/ui/src/v4/share-readonly-timeline/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # desktop-source-server-directory：由 architecture:adopt 登记
+  - id: desktop-source-server-directory
+    roots:
+      - packages/desktop/src/host/source-server-directory
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/host/source-server-directory/index.ts
+      - packages/desktop/src/host/source-server-directory/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-bigmodel-subscription：由 architecture:adopt 登记
+  - id: services-bigmodel-subscription
+    roots:
+      - packages/services/src/coding-plan-subscription/bigmodel-subscription
+    managed: true
+    requires:
+      - provider
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/coding-plan-subscription/bigmodel-subscription/index.ts
+      - packages/services/src/coding-plan-subscription/bigmodel-subscription/contract.ts
+    layers:
+      adapters: .
+    owner: usage
+  # services-process-manager：由 architecture:adopt 登记
+  - id: services-process-manager
+    roots:
+      - packages/services/src/zcode-agent/process-manager
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/process-manager/index.ts
+      - packages/services/src/zcode-agent/process-manager/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-git-action-menu：由 architecture:adopt 登记
+  - id: ui-git-action-menu
+    roots:
+      - packages/ui/src/git-action-menu
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/git-action-menu/index.ts
+      - packages/ui/src/git-action-menu/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-app-root：由 architecture:adopt 登记
+  - id: ui-app-root
+    roots:
+      - packages/ui/src/app-root
+    managed: true
+    requires:
+      - services
+      - shared
+      - side-pane-full-view
+      - ui
+      - ui-root
+    publicEntrypoints:
+      - packages/ui/src/app-root/index.ts
+      - packages/ui/src/app-root/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-composer-toolbar：由 architecture:adopt 登记
+  - id: ui-composer-toolbar
+    roots:
+      - packages/ui/src/v4/composer/composer-toolbar
+    managed: true
+    requires:
+      - agent-workbench
+      - provider
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/composer-toolbar/index.ts
+      - packages/ui/src/v4/composer/composer-toolbar/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

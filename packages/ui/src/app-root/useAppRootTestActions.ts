@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { toLegacyBilingualLocale } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { taskListE2EActions } from "@/lib/taskListE2EActions.js";
 import type { TaskChatMessage as TestChatMessage } from "@/lib/taskChatMessageTypes.js";

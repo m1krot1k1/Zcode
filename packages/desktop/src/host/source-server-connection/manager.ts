@@ -15,7 +15,7 @@ import { SourceServerOperationLogs } from "../sourceServerOperationLogs.js";
 import { getFileTransfer, getOnlineConnection } from "./access.js";
 import { connect } from "./connect.js";
 import { disconnect, dispose, removeProfile } from "./lifecycle.js";
-import { reconnectOnStartup } from "./recovery.js";
+import { handleUnexpectedClose, reconnectOnStartup } from "./recovery.js";
 import { getStateByProfile, listStates } from "./state.js";
 import { updateServer } from "./update.js";
 import type {
@@ -69,6 +69,7 @@ export class SourceServerConnectionManager {
         connect: (options) => this.connect(options),
         disconnect: (sourceServerId) => this.disconnect(sourceServerId),
       },
+      onUnexpectedClose: handleUnexpectedClose,
     };
     this.onDidChangeState = stateEmitter.event;
     this.onDidReconnect = reconnectEmitter.event;

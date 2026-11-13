@@ -10,7 +10,7 @@ import { isSourceServerAutomaticRecoveryTerminalState } from "../sourceServerRec
 import { connectForSource } from "./connect.js";
 import { isAutomaticRecoveryUserActionCode, readErrorRetryable } from "./compatibility.js";
 import { createConcurrencyGate } from "./concurrency.js";
-import { profileIdsForSource, setState } from "./state.js";
+import { clearRecoveryTimers, profileIdsForSource, setState } from "./state.js";
 import {
   SourceServerExplicitDisconnectError,
   SourceServerProfileRemovedError,
@@ -300,11 +300,3 @@ export function stopAutomaticRecoveryForTerminalFailure(
   return true;
 }
 
-export function clearRecoveryTimers(ctx: ManagerContext, sourceServerId: string): void {
-  const retryTimer = ctx.retryTimers.get(sourceServerId);
-  if (retryTimer) clearTimeout(retryTimer);
-  ctx.retryTimers.delete(sourceServerId);
-  const probeTimer = ctx.offlineProbeTimers.get(sourceServerId);
-  if (probeTimer) clearTimeout(probeTimer);
-  ctx.offlineProbeTimers.delete(sourceServerId);
-}

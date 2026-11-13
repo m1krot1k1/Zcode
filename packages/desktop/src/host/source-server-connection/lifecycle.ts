@@ -1,4 +1,5 @@
-import { clearRecoveryTimers, scheduleOnlineRetry } from "./recovery.js";
+import { scheduleOnlineRetry } from "./recovery.js";
+import { clearRecoveryTimers } from "./state.js";
 import { getStateByProfile, setState } from "./state.js";
 import {
   SourceServerExplicitDisconnectError,

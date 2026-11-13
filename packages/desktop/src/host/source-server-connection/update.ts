@@ -9,12 +9,11 @@ import { getAdapter } from "./adapters.js";
 import { preserveCompatibilityState } from "./compatibility.js";
 import { connectForSource } from "./connect.js";
 import {
-  clearRecoveryTimers,
   invalidateOnlineConnectionForUpdate,
   scheduleOnlineRetry,
   stopAutomaticRecoveryForTerminalFailure,
 } from "./recovery.js";
-import { getStateByProfile, setState } from "./state.js";
+import { clearRecoveryTimers, getStateByProfile, setState } from "./state.js";
 import type {
   ManagedSourceServerConnection,
   ManagerContext,

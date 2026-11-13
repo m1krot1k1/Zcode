@@ -120,7 +120,6 @@ import type {
 } from "./types.js";
 
 const log = createServiceLogger("codingPlanSubscription");
-
 export class BigModelCodingPlanSubscriptionProvider {
   protected readonly apiClient: ApiClient;
   protected readonly credentialService: Pick<ICredentialService, "load">;
@@ -128,7 +127,6 @@ export class BigModelCodingPlanSubscriptionProvider {
   private clientConfigSnapshot: ZCodeClientConfigEnvelope | null = null;
   private clientConfigSnapshotExpiresAt = 0;
   private clientConfigRequest: Promise<ZCodeClientConfigEnvelope> | null = null;
-
   constructor(options: BigModelCodingPlanSubscriptionProviderOptions) {
     this.apiClient = options.apiClient;
     this.credentialService = options.credentialService;

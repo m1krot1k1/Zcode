@@ -74,3 +74,12 @@ export function setState(
   }
   ctx.stateEmitter.fire(snapshot);
 }
+
+export function clearRecoveryTimers(ctx: ManagerContext, sourceServerId: string): void {
+  const retryTimer = ctx.retryTimers.get(sourceServerId);
+  if (retryTimer) clearTimeout(retryTimer);
+  ctx.retryTimers.delete(sourceServerId);
+  const probeTimer = ctx.offlineProbeTimers.get(sourceServerId);
+  if (probeTimer) clearTimeout(probeTimer);
+  ctx.offlineProbeTimers.delete(sourceServerId);
+}

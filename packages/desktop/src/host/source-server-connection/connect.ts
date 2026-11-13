@@ -15,8 +15,7 @@ import type {
 import type { TransportContext } from "@zcode/server/source-server";
 import { getAdapter } from "./adapters.js";
 import { buildCompatibilityState } from "./compatibility.js";
-import { clearRecoveryTimers, handleUnexpectedClose } from "./recovery.js";
-import { rememberSourceProfiles, setState } from "./state.js";
+import { clearRecoveryTimers, rememberSourceProfiles, setState } from "./state.js";
 import {
   SourceServerHandshakeClosedError,
   SourceServerIdentityChangePendingError,
@@ -314,7 +313,7 @@ export async function connectOnce(
           closedBeforePublish = reason || "connection closed";
           return;
         }
-        handleUnexpectedClose(ctx, published.sourceServerId, reason, published.connection);
+        ctx.onUnexpectedClose(ctx, published.sourceServerId, reason, published.connection);
       },
     };
     const connection = await ctx.connectServer(connectOptions);

@@ -235,4 +235,10 @@ export interface ManagerContext {
   readonly reconnectEmitter: Emitter<ManagedSourceServerConnection>;
   readonly connectionInvalidatedEmitter: Emitter<SourceServerConnectionInvalidatedEvent>;
   readonly ports: SourceServerManagerPorts;
+  readonly onUnexpectedClose: (
+    ctx: ManagerContext,
+    sourceServerId: string,
+    reason: string,
+    connection: ServerRemoteConnection,
+  ) => void;
 }
