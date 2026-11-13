@@ -36,6 +36,7 @@ import {
   type BackgroundTaskLifecycleProvider,
   type BackgroundTaskSnapshot,
   isBackgroundTaskLaunch,
+  normalizeBackgroundTaskNotificationStatus,
   normalizeBashTaskNotificationStatus,
   resolveBashBackgroundResultTitle,
   buildBackgroundTaskSummary,

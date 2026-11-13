@@ -238,8 +238,10 @@ function toPublishedArtifactSummaries(
  * 与 toPublishedArtifactSummaries 放在同一模块：解析规则只有一份，跨文件引用会让实现绕圈。
  */
 export function workflowSnapshotArtifacts(
-  snapshot: { artifacts?: unknown } | undefined,
+  snapshot: unknown,
 ): ReturnType<typeof toPublishedArtifactSummaries> {
-  if (snapshot === undefined || !("artifacts" in snapshot)) return undefined;
+  if (snapshot === null || typeof snapshot !== "object" || !("artifacts" in snapshot)) {
+    return undefined;
+  }
   return toPublishedArtifactSummaries(snapshot.artifacts);
 }

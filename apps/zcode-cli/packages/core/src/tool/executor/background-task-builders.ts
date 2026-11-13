@@ -5,9 +5,12 @@
 import {
   type BackgroundResultOriginMeta,
   type DynamicWorkflowRunError,
+  type DynamicWorkflowRunSnapshot,
   type DynamicWorkflowRunStopReason,
   type ExecutionPort,
+  type SubagentTaskSnapshot,
   type WorkflowNotificationMeta,
+  type WorkflowTaskSnapshot,
 } from "@zcode/contracts";
 import { isSubagentDispatchToolName } from "../compat.js";
 import type { ExecutableToolCall } from "../types.js";
@@ -376,6 +379,20 @@ export function stringField(record: Record<string, unknown> | undefined, key: st
   const value = record?.[key];
   return typeof value === "string" ? value : undefined;
 }
+
+type BackgroundTaskWaiter = {
+  waitForBackgroundTask(
+    taskId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<BackgroundTaskSnapshot | undefined>;
+};
+
+type WorkflowTaskWaiter = {
+  waitForTask(
+    taskId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<BackgroundTaskSnapshot | undefined>;
+};
 
 export function getBackgroundTaskWaiter(
   executionPort: ExecutionPort | undefined,
