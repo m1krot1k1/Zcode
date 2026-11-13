@@ -1,7 +1,7 @@
 // PreviewPane 拆分（max-lines）：媒体预览（视频/音频）的 URL 生命周期与播放失败恢复。
 // 生成号（generation）保证切源后晚到的 prepare/refresh 结果不会覆盖新源。
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { MediaCodeViewerSource } from "@/lib/codeViewer.js";
 import { decodeBase64ToArrayBuffer } from "@/lib/officeFilePreview.js";

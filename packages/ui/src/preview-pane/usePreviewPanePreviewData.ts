@@ -3,7 +3,7 @@
 // 该顺序与拆分前各 effect 的注册顺序一致。
 import { useState, type RefObject } from "react";
 import type { FileBinaryPreview, FileMediaPreview, FileTextSlice } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { PdfViewerSource } from "@/components/ui/pdf-viewer.js";
 import type { CodeViewerSource, MediaCodeViewerSource } from "@/lib/codeViewer.js";

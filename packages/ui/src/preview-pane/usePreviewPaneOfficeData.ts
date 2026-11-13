@@ -1,7 +1,7 @@
 // PreviewPane 拆分（max-lines）：Office（xlsx/docx/doc）二进制预览读取。
 import { useEffect, useState } from "react";
 import type { FileBinaryPreview } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { OfficeFilePreviewKind } from "@/lib/officeFilePreview.js";

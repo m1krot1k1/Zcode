@@ -2,7 +2,7 @@
 // effect 顺序与依赖数组与拆分前一致：文本 → 图片。
 import { useEffect, useState, type RefObject } from "react";
 import type { FileMediaPreview, FileTextSlice } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import { FILE_VIEWER_MAX_TEXT_BYTES } from "@/lib/codeViewer.js";
 import { logger } from "@/logger.js";

@@ -834,6 +834,21 @@ modules:
       - packages/zcode-server-cli/src/packaging/contract.ts
     layers:
       adapters: .
+  # ui-preview-pane：由 architecture:adopt 登记
+  - id: ui-preview-pane
+    roots:
+      - packages/ui/src/preview-pane
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/preview-pane/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

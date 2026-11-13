@@ -1,7 +1,7 @@
 // PreviewPane 拆分（max-lines）：PDF 预览数据读取。
 // 小文件整档读取，大文件交给 pdf.js 按 range 拉取；旧远端没有 size 时回退 base64 通道。
 import { useEffect, useState } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { PdfViewerSource } from "@/components/ui/pdf-viewer.js";
 import { logger } from "@/logger.js";

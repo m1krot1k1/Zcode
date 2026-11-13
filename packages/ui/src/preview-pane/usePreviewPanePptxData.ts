@@ -1,7 +1,7 @@
 // PreviewPane 拆分（max-lines）：PPTX 预览数据读取与 reference navigation 校验。
 // 先等 file watch ready，再按 size/range 读取；再次 stat 防止把被替换的旧版本前缀当成完整文件。
 import { useEffect, useState } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import { toast } from "@/components/ui/toast.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
