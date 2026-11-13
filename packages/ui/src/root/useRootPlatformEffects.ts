@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- 平台事件和分享导入共用同一生命周期。 */
 import { getConversationShareErrorDetails } from "@/lib/conversationShareError.js";
 import { useEffect, useRef, useState } from "react";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";

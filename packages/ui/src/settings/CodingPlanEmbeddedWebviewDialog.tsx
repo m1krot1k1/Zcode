@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Coding Plan webview 容器集中维护凭据注入、购买完成回传、三方支付导航和错误兜底。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
 import { usePlatform } from "@/hooks/usePlatform.js";

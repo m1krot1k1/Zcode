@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- 有状态 Mock 集中模拟 revision 23 六条路由及其共享幂等状态，拆散会隐藏跨路由状态机。 */
 /**
  * 分享 API 的有状态测试替身。
  *

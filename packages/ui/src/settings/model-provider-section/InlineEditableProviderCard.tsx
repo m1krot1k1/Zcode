@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- provider 卡片同时承载名称、连接、鉴权、模型和映射编辑；本阶段先维持单组件，后续再按表单域拆分。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   getProviderFormApiKey,

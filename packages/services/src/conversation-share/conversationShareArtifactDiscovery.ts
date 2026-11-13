@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- input attachment staging and preview artifact discovery share one immutable snapshot boundary. */
 import { createHash } from "node:crypto";
 import { isWorkflowShareFallbackRow } from "#src/conversation-share/conversationShareWorkflowSnapshot.js";
 

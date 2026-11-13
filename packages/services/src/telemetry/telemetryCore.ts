@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- telemetry state lock、deviceMid 编排和上报路径共享同一状态文件，拆分会增加锁语义漂移风险。 */
 import {
   createUuid,
   ZCODE_VERSION,
