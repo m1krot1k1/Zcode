@@ -170,5 +170,5 @@ export function PluginStoreSourcesDialog({
 function formatSourceTime(value: string): string {
   const time = new Date(value);
   if (Number.isNaN(time.getTime())) return value;
-  return time.toLocaleString();
+  return time.toLocaleString("en-US");
 }

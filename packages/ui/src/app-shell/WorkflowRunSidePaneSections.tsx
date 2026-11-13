@@ -26,7 +26,7 @@ import { RunHolesWaitingChip } from "@/components/workflow-timeline/WorkflowHole
 import { WorkflowTruncatedNotice } from "@/components/workflow-timeline/WorkflowTruncatedNotice.js";
 import { useNowTicker } from "@/components/workflow-graph/use-now-ticker.js";
 
-const formatCount = (value: number): string => value.toLocaleString();
+const formatCount = (value: number): string => value.toLocaleString("en-US");
 
 /**
  * 摘要行的模型段：run 能配置时它也是一枚按钮（悬停下划线），打开同一个「配置」弹层、锚在它自己身上；

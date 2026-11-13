@@ -380,10 +380,10 @@ function CallMetadata({
 }) {
   const items: Array<{ text: string; title?: string }> = [];
   if (typeof usage?.inputTokens === "number") {
-    items.push({ text: `IN ${usage.inputTokens.toLocaleString()}` });
+    items.push({ text: `IN ${usage.inputTokens.toLocaleString("en-US")}` });
   }
   if (typeof usage?.outputTokens === "number") {
-    items.push({ text: `OUT ${usage.outputTokens.toLocaleString()}` });
+    items.push({ text: `OUT ${usage.outputTokens.toLocaleString("en-US")}` });
   }
   if (typeof record.durationMs === "number") {
     items.push({ text: formatTrajectoryDuration(record.durationMs) });

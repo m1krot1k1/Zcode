@@ -269,7 +269,7 @@ export function ModelTrajectoryPane({
                 className="font-mono"
                 title={intl.formatMessage({ id: "modelTrajectory.summaryTokens" })}
               >
-                · {summary.totalTokens.toLocaleString()} tok
+                · {summary.totalTokens.toLocaleString("en-US")} tok
               </span>
             ) : null}
             {summary.models.length > 0 ? (

@@ -114,7 +114,7 @@ export const WorkflowRunArtifactsSection = memo(function WorkflowRunArtifactsSec
           className="shrink-0 font-mono text-ui-xs tabular-nums text-foreground-subtlest"
           data-testid="workflow-run-artifacts-count"
         >
-          {artifacts.length.toLocaleString()}
+          {artifacts.length.toLocaleString("en-US")}
         </span>
         {/* 收起时交付物的名字仍在节头上：它是用户打开面板最常要找的那一件。 */}
         {!expanded && primary !== undefined ? (

@@ -135,7 +135,7 @@ export async function copyHighspeedCardImage(
     standardSpeed: "standard generation speed",
     speedSummary: `HighSpeed · ${formatHighspeedDurationShort(metrics.durationMs)}`,
     lessWaiting: `${savedPercent}% less waiting`,
-    imageSummary: `${Math.floor(metrics.outputTokens).toLocaleString()} tokens · ${savedSeconds}s saved`,
+    imageSummary: `${Math.floor(metrics.outputTokens).toLocaleString("en-US")} tokens · ${savedSeconds}s saved`,
   };
   const { width, height } = HIGHSPEED_CARD_IMAGE_SIZE;
   const fontStack = "Geist,-apple-system,'Segoe UI',Arial,sans-serif";

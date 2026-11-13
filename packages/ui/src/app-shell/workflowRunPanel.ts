@@ -273,7 +273,7 @@ export function workflowRunEventLines(
           label: formatMessage(key("usageUpdated")),
           ...(spentTokens === undefined
             ? {}
-            : { detail: `${spentTokens.toLocaleString()} tokens` }),
+            : { detail: `${spentTokens.toLocaleString("en-US")} tokens` }),
           tone: "default",
         };
       }
