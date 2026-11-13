@@ -66,6 +66,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/shared-validation-part3.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1cf59c5852c63836",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/storage/session-store/migrations-late.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -161,6 +170,15 @@
       "detail": "session",
       "message": "新文件落在未受管模块 session；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5855f6f965b91d99",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/shared-validation-part1.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "6568a38a640d974f",
       "global": false
     },
     {
@@ -314,6 +332,15 @@
       "detail": "shared",
       "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "c2c4a97a4ece12f9",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/shared-validation-part2.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c84c5a5fafb4fef9",
       "global": false
     },
     {

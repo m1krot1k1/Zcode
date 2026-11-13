@@ -190,7 +190,7 @@
     "apps/zcode-cli/packages/contracts/src/tools/create-workflow.ts": [
       "duplicates"
     ],
-    "packages/shared/src/validation.ts": [
+    "packages/shared/src/shared-validation-part1.ts": [
       "duplicates"
     ],
     "packages/shared/src/zcode-protocol-v4/protocol-v4-transport-part2.ts": [
