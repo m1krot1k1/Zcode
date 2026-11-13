@@ -34,7 +34,6 @@
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/cold-event-merge.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts",
         "**/apps/zcode-cli/packages/contracts/src/model/index.ts",
-        "**/apps/zcode-cli/packages/core/src/runtime-task/registry.ts",
         // Файловая адаптерная база: 1644 эффективных строки ещё до локальных правок
         // (обход дерева вынесен в fs/walk-files.ts). Остаток — port-поверхность двух
         // провайдеров поиска и атомарной записи; дробление требует отдельного рефактора,
@@ -49,7 +48,6 @@
         "src/zcode-protocol-v4/conversation-topic-publisher.ts",
         "src/zcode-protocol-v4/product-projection.ts",
         "src/model/index.ts",
-        "src/runtime-task/registry.ts",
         "src/fs/index.ts",
       ],
       "rules": {
