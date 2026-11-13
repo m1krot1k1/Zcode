@@ -3,6 +3,15 @@
   "violations": [
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/ComposerControlNodes.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "01525014a28bbde1",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/cua-permission-broker/cuaStandaloneStatusLaunch.ts",
       "module": "services",
       "detail": "services",
@@ -242,6 +251,15 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "156f18da6dedbdf6",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/helpers.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1652b4ef6f451110",
       "global": false
     },
     {
@@ -647,6 +665,15 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "3ab3302ce64c485a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/ComposerRoot.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "3bf519a50a82268f",
       "global": false
     },
     {
@@ -1470,6 +1497,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/useComposerHighspeedPresentation.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "7f06f077ad3fb85a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/bots/botsServiceSupport.ts",
       "module": "services",
       "detail": "services",
@@ -1758,6 +1794,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/ComposerTopContent.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "9ee5fe89fd88957b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/highspeed/useHighspeedComposerEntrance.ts",
       "module": "ui",
       "detail": "ui",
@@ -1853,6 +1898,15 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "a78b8fca3f72ed00",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/useComposerAttachmentSurfaces.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "a7e9b3b9827193f2",
       "global": false
     },
     {
@@ -2469,6 +2523,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/composerSubmit.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "d8932f6497a44fe3",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway-ingest.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -2541,6 +2604,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/types.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e28c03e31833c122",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/services/src/bots/botsServiceTaskStream.ts",
       "module": "services",
       "detail": "services",
@@ -2582,6 +2654,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e49931e786d78b58",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/useComposerConfigPicker.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "e505c3e6d43178a6",
       "global": false
     },
     {
@@ -2730,6 +2811,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/useComposerDraftController.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f2763374fdb68bfd",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/core/src/subagent/runner-finalize.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -2744,6 +2834,15 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "f8d3cffee350323f",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-composer/useComposerSendController.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "fc4c7d1d6b03e21d",
       "global": false
     },
     {
