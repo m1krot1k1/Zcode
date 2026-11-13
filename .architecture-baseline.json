@@ -21,6 +21,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/shared-bots-part1.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "1b02f25cae5f3d41",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/browser-use/browserPermissionCapabilities.ts",
       "module": "ui",
       "detail": "ui",
@@ -201,6 +210,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/web-remote-control-part2.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c2c4a97a4ece12f9",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/server/src/remote/remote-asset-installer-part3.ts",
       "module": "server",
       "detail": "server",
@@ -318,11 +336,29 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/web-remote-control-part1.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f156ab079f530126",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/server/src/remote/remote-asset-cache-part2.ts",
       "module": "server",
       "detail": "server",
       "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "f1b415ef06fbdbf4",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/shared/src/shared-bots-part2.ts",
+      "module": "shared",
+      "detail": "shared",
+      "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f926dcfc1f60cb7f",
       "global": false
     },
     {
