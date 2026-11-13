@@ -101,11 +101,7 @@ type SessionFacade = Pick<
   | "updateTargetStatus"
 >;
 
-import {
-  closeSessionResources,
-  DEFAULT_SESSION_RESOURCE_CLOSE_TIMEOUT_MS,
-  type SessionResourceCloseInput,
-} from "./session-facade-shutdown.js";
+import { closeSessionResources } from "./session-facade-shutdown.js";
 
 export {
   closeSessionResources,

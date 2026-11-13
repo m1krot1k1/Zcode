@@ -10,7 +10,7 @@ import {
   synthesizeEventsFromMessages,
   type HydratedGoalVerificationEntry,
 } from "./transcript-hydration.js";
-import type { ConversationMaterializationSource } from "./cold-event-merge-materialization.js";
+
 
 export {
   loadPersistedConversationMaterialization,

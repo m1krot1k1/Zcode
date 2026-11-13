@@ -2,37 +2,13 @@ import type { ToolSearchExecutionContext } from "@zcode/contracts";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 
 import { beginLocalTurnPreparation } from "@zcode/contracts";
-import {
-  CompactTrigger,
-  CoreErrorType,
-  SessionEventType,
-  createChildTraceContext,
-  createCoreError,
-  createMessageId,
-  createPartId,
-  getModelUsageTotalTokens,
-  traceContextToLogContext,
-  TurnMachineImpl,
-} from "../deps.js";
+import { CoreErrorType, SessionEventType, createChildTraceContext, createCoreError, createMessageId, createPartId, getModelUsageTotalTokens, traceContextToLogContext, TurnMachineImpl } from "../deps.js";
 import type { MessageId, ModelNetworkStatusEvent, ModelToolContract } from "../deps.js";
 import {
   createRuntimeAssistantEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
-import {
-  createModelContextExceededFinishError,
-  createCompactRapidRefillError,
-  objectKeys,
-  projectExecutionErrorPayload,
-  finalizeSuspiciousEmptyModelResult,
-  isContextExceededFinishReason,
-  isSuspiciousEmptyModelResult,
-  readRawFinishReason,
-  throwIfTurnAborted,
-  isModelContextExceededError,
-  isTurnCancellationError,
-  buildTurnFileChangeSummary,
-} from "../helpers/index.js";
+import { createModelContextExceededFinishError, objectKeys, projectExecutionErrorPayload, finalizeSuspiciousEmptyModelResult, isContextExceededFinishReason, isSuspiciousEmptyModelResult, readRawFinishReason, throwIfTurnAborted, isModelContextExceededError, isTurnCancellationError, buildTurnFileChangeSummary } from "../helpers/index.js";
 import type {
   DrainedPendingInputDiagnostics,
   RunModelTextRequestOptions,
@@ -58,15 +34,7 @@ import {
   isStartPlanBusyStreamRecoveryFailure,
 } from "./streaming-recovery.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
-import {
-  evaluateRapidRefill,
-  getTurnTools,
-  MAX_CONSECUTIVE_RAPID_REFILLS,
-  RAPID_REFILL_TOOL_TURN_THRESHOLD,
-  recordCompactHistoryRound,
-  recordCompactSuccess,
-  recordModelHistoryRound,
-} from "./turn-loop-state.js";
+import { recordModelHistoryRound } from "./turn-loop-state.js";
 import {
   querySourceForTask,
   recordMainTurnCacheHitUsage,
