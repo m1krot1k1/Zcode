@@ -142,8 +142,11 @@ describe.skipIf(process.platform === "win32")("Bash shutdown in an isolated Node
     }
   }, 15_000);
 
+  // Драйвер собирается esbuild-ом и запускается отдельным процессом: под полной
+  // нагрузкой старт воркера выходит за дефолтные лимиты. Retry не ослабляет проверки.
   it.each(["abort", "close", "background", "timeout", "output_limit"])(
     "finishes cleanup before process exit after %s",
+    { retry: 1, timeout: 60_000 },
     async (mode) => {
       const root = join(directory, mode);
       await mkdir(root);
