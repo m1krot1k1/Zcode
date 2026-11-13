@@ -21,15 +21,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/node-repl-host/src/cua-broker.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "0582afcdb80e5689",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/fs/text-search-scan.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -57,11 +48,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/amend-workflow-retune.ts",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-prism-history.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "0f82f45dabb8537c",
+      "fingerprint": "0e0cc72ce10416a3",
       "global": false
     },
     {
@@ -174,11 +165,20 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/executor/permission-input-adjustments.ts",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-types.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "2549661379c7d4be",
+      "fingerprint": "24e547a768915938",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-lifecycle.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "262bb5c4be30b245",
       "global": false
     },
     {
@@ -233,15 +233,6 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "365013f953764395",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-fill.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "39a7bab42eb43d96",
       "global": false
     },
     {
@@ -327,11 +318,20 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-roster.ts",
+      "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-dispatch.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "493d1aea3327cd95",
+      "fingerprint": "49568a6ebc031562",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-store.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "49fc64a7ea3f41a6",
       "global": false
     },
     {
@@ -363,15 +363,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/amend-workflow-source.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "586eff51aa664253",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/workflowRunLine.ts",
       "module": "ui",
       "detail": "ui",
@@ -386,24 +377,6 @@
       "detail": "desktop",
       "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5bb4bb52a97b604c",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/fill-workflow-hole-resolve.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "5dc09b50d2431e71",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-holes.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "5dc6fe765d5f4806",
       "global": false
     },
     {
@@ -453,29 +426,20 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/workflow-skill-gate.ts",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-tasks.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "6bb553b0c17aaab3",
+      "fingerprint": "68244d7654d15e2e",
       "global": false
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/workflow-draft-read-state.ts",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-root-run.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "6c9d7393120bcf85",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/workflow-script-models.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "6dd4bdc7fcd70459",
+      "fingerprint": "696e6b546828eeb5",
       "global": false
     },
     {
@@ -489,56 +453,20 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/steering-queue.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "70b5dfce094f2234",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/session-fork-entry.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "752769f09601a22d",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/search/exposure.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "762ec6a3f97c4a83",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/get-workflow-run-summary.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "769aac8a81e2eca2",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/execution-state.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "79f8a6e219f60e70",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/cli/src/workflow-mode.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "7c8f51bc5ec0d96a",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-state.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "7d2c4d78309f3d0d",
       "global": false
     },
     {
@@ -552,20 +480,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/cli/src/plugins-command-shared.ts",
+      "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-plugin-ops.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "8ae5e1b51aabbe17",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/session-fork-side-chat.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "8d1648f709aa1106",
+      "fingerprint": "86d6a20c793bdb01",
       "global": false
     },
     {
@@ -579,20 +498,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-compact-recovery.ts",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-admission.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "8d81a147fed0230c",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/plugin-ui-surfaces.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "94087bb4cad45bfa",
+      "fingerprint": "8f2d3ad1772c0617",
       "global": false
     },
     {
@@ -602,24 +512,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "94bf4fed93de2d48",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/dynamic-workflow-policy.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "980f4b3b3a65a55e",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-retune.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "98773f98bb9947d2",
       "global": false
     },
     {
@@ -741,15 +633,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/session-fork-basis.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "b021a7bb1a039b23",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/dynamic-workflow/src/engine/engine-phase-stamp.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -795,20 +678,20 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/bootstrap/src/plugins-helpers.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "b85da0978094ea54",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/ToolCallBlocks/renderers/workflow-draft-row.tsx",
       "module": "ui",
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "b916eec5cd546523",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-catalog.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "bcf42067171d2dde",
       "global": false
     },
     {
@@ -849,6 +732,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-cancel.ts",
+      "module": "zcode-cli",
+      "detail": "zcode-cli",
+      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c1e306a3b4ce292e",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/session-mapper-projection.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -867,20 +759,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/events-part1.ts",
+      "file": "apps/zcode-cli/packages/core/src/runtime-task/registry-prism.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "c5c102f566360c97",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/events-part2.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "c8cc3c9cc372e95a",
+      "fingerprint": "c7acbb28aa6de98b",
       "global": false
     },
     {
@@ -921,29 +804,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/events-part3.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "cdc58c2bf043d59c",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/dynamic-workflow/src/engine/replay-order.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "cf62923ecfc92ca2",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/runtime/methods/dynamic-workflow-activation.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "d0d7434b635c200b",
       "global": false
     },
     {
@@ -998,15 +863,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e115e2cd25a31b3e",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "apps/zcode-cli/packages/core/src/tool/handlers/workflow-settings-adjustment.ts",
-      "module": "zcode-cli",
-      "detail": "zcode-cli",
-      "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "e1b4be9d22e360a6",
       "global": false
     },
     {
