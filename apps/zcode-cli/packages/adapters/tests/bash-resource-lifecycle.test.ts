@@ -34,6 +34,11 @@ describe("Bash 执行适配器资源生命周期", { retry: 1 }, () => {
       );
       expect(result.stdout.text).toContain("telemetry-output");
       expect(result.exitCode).toBe(7);
+      // Отчёт о ресурсах публикуется после завершения процесса, а не синхронно с run():
+      // под нагрузкой колбэк приходит следующим тиком. Ждём его детерминированно.
+      await vi.waitFor(() => expect(onToolExecResource).toHaveBeenCalledOnce(), {
+        timeout: 10_000,
+      });
       expect(onToolExecResource).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ durationMs: 40000, exitKind: "completed", toolName: "bash" }),
       );
