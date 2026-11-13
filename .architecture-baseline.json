@@ -183,15 +183,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostShutdown.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "0f5c4adfd9396441",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection-subagents.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -422,15 +413,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "260a4a276078ffd3",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostAutomationMessages.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "261c757ff6df3c73",
       "global": false
     },
     {
@@ -840,15 +822,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostOffPeakDispatch.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "47a89e725d5566f9",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/core/src/permission/workflow-draft-path.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -957,15 +930,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostProcessBridges.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "4d52835ed0b652da",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/core/src/subagent/runner-messages.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1020,15 +984,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostTaskReporting.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "5253fedf51fcd64e",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/core/src/tool/handlers/workflow-path-source.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1061,15 +1016,6 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "561b16ad1f1f53ee",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostSourceServices.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "572f50a6e8b573f8",
       "global": false
     },
     {
@@ -1142,15 +1088,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "5d0cfbe6ee2109c9",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostWorkspaceMessages.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "5d7d7dd80b3d753b",
       "global": false
     },
     {
@@ -1295,15 +1232,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "67154efc72d821d2",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostCronDispatch.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "67a9ef706aeececc",
       "global": false
     },
     {
@@ -1457,15 +1385,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "79f8a6e219f60e70",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostWindowRuntime.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "7aa87c3c25ca80c0",
       "global": false
     },
     {
@@ -1695,15 +1614,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostAttachmentRuntime.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "986902327a630309",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-retune.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1799,6 +1709,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "9ee5fe89fd88957b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/server/src/remote/remote-asset-installer-part2.ts",
+      "module": "server",
+      "detail": "server",
+      "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "9ef7751a36f4079d",
       "global": false
     },
     {
@@ -2028,20 +1947,11 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostState.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "b4e36e5ce1dda36f",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostRemoteConnection.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "b52761f3152f9e9c",
+      "file": "packages/server/src/remote/remote-asset-installer-part1.ts",
+      "module": "server",
+      "detail": "server",
+      "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b4bd42b7b3b8dcfc",
       "global": false
     },
     {
@@ -2307,6 +2217,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/server/src/remote/remote-asset-installer-part3.ts",
+      "module": "server",
+      "detail": "server",
+      "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c857bc5e0ccb5235",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/core/src/runtime/methods/events-part2.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -2384,15 +2303,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "cd726cdde7a364ea",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostMessageRouter.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "cdc00554cd894b6c",
       "global": false
     },
     {
@@ -2690,15 +2600,6 @@
       "detail": "zcode-cli",
       "message": "新文件落在未受管模块 zcode-cli；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "e6153fbe48b109b8",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/host/hostLocalInit.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "e71c2dda719d99f2",
       "global": false
     },
     {
