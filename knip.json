@@ -193,7 +193,10 @@
     "packages/shared/src/validation.ts": [
       "duplicates"
     ],
-    "packages/shared/src/zcode-protocol/index.ts": [
+    "packages/shared/src/zcode-protocol/schema-core.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/zcode-protocol/schema-mcp.ts": [
       "duplicates"
     ],
     "packages/shared/src/task-realtime-core.ts": [

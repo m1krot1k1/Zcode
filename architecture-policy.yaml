@@ -849,6 +849,29 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: zcode-protocol-schema-split-new-files
+    rule: unmanaged-new-file
+    paths:
+      - packages/shared/src/zcode-protocol/schema-core.ts
+      - packages/shared/src/zcode-protocol/schema-telemetry.ts
+      - packages/shared/src/zcode-protocol/schema-mcp.ts
+      - packages/shared/src/zcode-protocol/schema-model.ts
+      - packages/shared/src/zcode-protocol/schema-session-state.ts
+      - packages/shared/src/zcode-protocol/schema-events.ts
+      - packages/shared/src/zcode-protocol/schema-session-commands.ts
+      - packages/shared/src/zcode-protocol/schema-workspace.ts
+      - packages/shared/src/zcode-protocol/schema-interaction.ts
+      - packages/shared/src/zcode-protocol/schema-plugin-catalog.ts
+      - packages/shared/src/zcode-protocol/schema-workflows.ts
+      - packages/shared/src/zcode-protocol/schema-plugin-store.ts
+      - packages/shared/src/zcode-protocol/schema-automation.ts
+      - packages/shared/src/zcode-protocol/schema-opencode-agent.ts
+      - packages/shared/src/zcode-protocol/schema-methods.ts
+    reason: >-
+      拆分超出 800 行上限的 packages/shared/src/zcode-protocol/index.ts，按协议域落到同目录 schema-*.ts：
+      公开入口仍只有 index.ts（再导出全部原名字），schema 体逐字搬移，依赖方向为「基础 → 域 → index」。
+      新文件位于既有的未受管模块 shared，不改变其导入边界；把整个 shared 包纳入 managed 模块是单独的治理任务，
+      不应阻塞本次按域拆分。
   - id: audit-2026-11-12-new-helpers
     rule: unmanaged-new-file
     paths:
