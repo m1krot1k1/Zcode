@@ -1,13 +1,12 @@
 name: Checks
 
-# 质量门禁：PR 与 dev/main push 都执行。
+# 质量门禁（typecheck / lint / unit / knip）。
+# 只手动触发：仓库策略要求 hosted runners 在 Actions 计费不可用期间保持
+# manual-only（见 scripts/test/prism-candidate-workflow.test.mjs），否则 tag/push
+# 会不断生成失败的 hosted run。需要时在 Actions 页面手动 Run workflow。
 # 桌面 E2E 不在本工作流内（见 packages/desktop 的 test:e2e 入口）。
 on:
-  pull_request:
-  push:
-    branches:
-      - dev
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: read

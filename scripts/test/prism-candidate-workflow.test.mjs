@@ -10,8 +10,18 @@ test("hosted runners are manual-only while Actions billing is unavailable", asyn
     if (error.code === "ENOENT") return [];
     throw error;
   });
-  const workflowFiles = entries.filter((entry) => /\.ya?ml$/iu.test(entry));
-  assert.deepEqual(workflowFiles, ["cross-platform-preview-release.yml"]);
+  const workflowFiles = entries.filter((entry) => /\.ya?ml$/iu.test(entry)).sort();
+  // Политика: ни один workflow не должен запускаться на hosted runners автоматически
+  // (push/pull_request/тег) — иначе при недоступном Actions billing копятся упавшие раны.
+  for (const file of workflowFiles) {
+    const parsed = YAML.parse(await readFile(new URL(file, workflowsDirectory), "utf8"));
+    assert.deepEqual(
+      Object.keys(parsed.on ?? {}).sort(),
+      ["workflow_dispatch"],
+      `${file} должен запускаться только вручную`,
+    );
+  }
+  assert.ok(workflowFiles.includes("cross-platform-preview-release.yml"));
   const workflow = YAML.parse(
     await readFile(
       new URL("../../.github/workflows/cross-platform-preview-release.yml", import.meta.url),
