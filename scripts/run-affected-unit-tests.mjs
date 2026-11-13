@@ -52,6 +52,11 @@ export async function main(argv = process.argv.slice(2)) {
       return 0;
     }
     const root = (await git(process.cwd(), ["rev-parse", "--show-toplevel"])).toString().trim();
+    // UI-тесты проверяют форматирование чисел в en-US (как в CI). Под C/POSIX
+    // Intl отдаёт «386 412» вместо «386,412», поэтому фиксируем локаль, если она
+    // не задана явно; этот же прогон используется в pre-push hook.
+    process.env.LANG ??= "en_US.UTF-8";
+    process.env.LC_ALL ??= "en_US.UTF-8";
     const env = await cleanGitEnv(root);
     // hook 的临时 index 不能污染官方 Git 选择及测试中的临时仓库。
     for (const key of Object.keys(process.env)) {
