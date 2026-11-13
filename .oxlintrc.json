@@ -10,7 +10,6 @@
       // 本次上游整合保留既有职责完整的实现；这些文件超 800 行只告警，不机械拆分。
       "files": [
         // 插件市场沿用上游存量大文件，只补充目录字段投影；不为行数机械拆分安装流程。
-        "**/apps/zcode-cli/packages/bootstrap/src/app/create-app.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/app/session-facade.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol/v4-bridge.ts",
         "**/apps/zcode-cli/packages/contracts/src/interfaces/session-store.port.ts",
