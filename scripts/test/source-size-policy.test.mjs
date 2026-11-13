@@ -20,7 +20,22 @@ test("800 行为默认阻断阈值，已接纳的大文件仅降级行数诊断"
     config.ignorePatterns = [];
     await writeFile(join(cwd, ".oxlintrc.json"), JSON.stringify(config));
     const regular = "packages/example/src/new.ts";
-    const accepted = "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway.ts";
+    // «Принятый» файл берём из фактического реестра max-lines в .oxlintrc.json:
+    // после дробления конкретные пути меняются, а контракт «зарегистрирован →
+    // warning вместо error» должен проверяться на текущей конфигурации.
+    const registered = (config.overrides ?? [])
+      .flatMap((override) => override.files ?? [])
+      .filter((file) => !String(file).startsWith("**/") && /\.(ts|tsx)$/u.test(String(file)));
+    let accepted = registered[0] ?? "packages/example/src/accepted.ts";
+    if (!registered.length) {
+      config.overrides = [
+        ...(config.overrides ?? []),
+        {
+          files: [accepted],
+          rules: { "max-lines": ["warn", { max: 800, skipBlankLines: true, skipComments: true }] },
+        },
+      ];
+    }
     async function lint(file, lines) {
       await mkdir(dirname(join(cwd, file)), { recursive: true });
       await writeFile(
