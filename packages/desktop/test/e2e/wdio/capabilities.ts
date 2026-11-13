@@ -42,7 +42,7 @@ export function createCapabilities(): WebdriverIO.Config["capabilities"] {
         args: [...(containerE2E ? containerChromeArgs : [])],
       },
       "wdio:chromedriverOptions": {
-        // 修复原因：固定 repo 内 cache，避免 /tmp 半解压 chromedriver 导致本地 macOS E2E 找不到可执行文件。
+        // 修复原因：固定 repo 内 cache，避免把 chromedriver 半解压到系统临时目录，导致本地 macOS E2E 找不到可执行文件。
         cacheDir: E2E_BROWSER_DRIVER_CACHE_DIR,
       },
     },
