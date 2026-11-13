@@ -25,6 +25,30 @@ export interface ParamsSchema<T> {
   parse(input: unknown): T;
 }
 
+export type ZCodeProtocolOutboundMessage = ZCodeProtocolNotification | ZCodeProtocolRequest;
+
+/**
+ * subscribe/resync 的 initial frame 批次：messages 只在该 request 的 response line 写完后
+ * 才允许写出，全部 write 成功后才 commit（transport 负责顺序，server 只持有引用）。
+ */
+export interface ZCodeProtocolPostResponseBatch {
+  readonly messages: readonly ZCodeProtocolOutboundMessage[];
+  commit(): boolean;
+}
+
+/** server → client 反向请求的挂起项；应答/取消/超时都经同一条 cleanup 路径注销。 */
+export interface PendingClientRequest<T> {
+  method: string;
+  reject: (error: Error) => void;
+  resolve: (value: T) => void;
+  resultSchema: ParamsSchema<T>;
+  requestKeys: Set<string>;
+  signal?: AbortSignal;
+  timeout?: ReturnType<typeof setTimeout>;
+  reannounceTimer?: ReturnType<typeof setTimeout>;
+  abortHandler?: () => void;
+}
+
 export interface ZCodeProtocolAgentDependencies {
   createZCodeApp(options?: Omit<ZCodeAppOptions, "providerRegistry">): ZCodeApp | Promise<ZCodeApp>;
   /**

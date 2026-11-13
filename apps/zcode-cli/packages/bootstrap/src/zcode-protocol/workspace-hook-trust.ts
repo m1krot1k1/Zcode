@@ -12,8 +12,27 @@ import {
   grantWorkspaceHookTrust,
   type WorkspaceHookTrustCliStatus,
 } from "../workspace-hook-trust-cli.js";
+import type { ZCodeProtocolSessionRecord } from "./server-types.js";
 
 type GrantWorkspaceHookTrust = typeof grantWorkspaceHookTrust;
+
+/**
+ * Trust store 落盘后各 session 的 coordinator
+ * 内存镜像（仅创建时 load）不会自动更新，已信任 Hook 继续被拒、banner pendingCount
+ * 停留旧值。pretrust 授权成功后按 workspaceKey 通知所有匹配的活跃 session 重载。
+ * 独立导出为纯调度函数（不触网、不发事件），便于回归测试直接构造 sessions Map。
+ */
+export async function notifyWorkspaceHookTrustGrantSessions(input: {
+  grantedWorkspaceKey?: string;
+  sessions: Map<string, ZCodeProtocolSessionRecord>;
+}): Promise<void> {
+  if (!input.grantedWorkspaceKey) return;
+  await Promise.all(
+    [...input.sessions.values()]
+      .filter((record) => record.workspace.workspaceKey === input.grantedWorkspaceKey)
+      .map((record) => record.app.reloadWorkspaceHookTrust()),
+  );
+}
 
 /**
  * 没有 task/session 时的 workspace 级 Trust authority。
