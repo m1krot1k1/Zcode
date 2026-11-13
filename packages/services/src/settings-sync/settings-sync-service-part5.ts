@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- settings-sync 需要集中维护外部 skills/commands/plugins/MCP 扫描、去重和导入状态机，后续按资源类别拆分 */
 import type {
   McpServerConfig,
   SettingsSyncAgent,
