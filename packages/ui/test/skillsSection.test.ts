@@ -376,10 +376,6 @@ vi.mock("@/hooks/useWorkspaceServices.js", () => ({
   }),
 }));
 
-vi.mock("@/lib/providerCliIcon.js", () => ({
-  renderProviderCliIcon: () => createElement("span", null, "icon"),
-}));
-
 async function renderSkillsSection(searchQuery = "", onOpenPluginStore?: () => void) {
   useStateCallCount = 0;
   mockLoadedSkillTargetKeyState = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";

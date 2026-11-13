@@ -14,7 +14,6 @@ import type {
   useClaudeSessionMigration,
 } from "@/hooks/useClaudeSessionMigration.js";
 import { UNLIMITED_SCAN_LIMIT_INPUT } from "@/hooks/useClaudeSessionMigration.js";
-import "@/settings-sync/SettingsSyncSelectionStep.js";
 
 import { Badge } from "@/components/ui/badge.js";
 import {

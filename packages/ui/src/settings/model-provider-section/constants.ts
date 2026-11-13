@@ -25,9 +25,6 @@ export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [
   },
 ];
 
-export const PRESET_PROVIDER_SPEC_BY_ID = new Map<BuiltinModelProviderId, PresetProviderSpec>(
-  PRESET_PROVIDER_SPECS.map((item) => [item.id, item]),
-);
 
 export type CodingPlanProviderId =
   | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan
