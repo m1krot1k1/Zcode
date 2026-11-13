@@ -6,6 +6,7 @@ import {
   registerE2EElectronServiceBridgeReload,
   reloadE2EElectronServiceBridge,
 } from "./e2e/helpers/e2e-electron-service-lifecycle.js";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
 describe("desktop e2e Electron service lifecycle", () => {
   it("does not reconnect when the first bridge probe succeeds", async () => {
@@ -74,7 +75,7 @@ describe("desktop e2e Electron service lifecycle", () => {
       new URL("./e2e/helpers/e2e-electron-service.ts", import.meta.url),
       "utf8",
     );
-    const wdioSource = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const wdioSource = readWdioConfigSource();
 
     expect(packageJson.devDependencies?.["wdio-electron-service"]).toBe("^9.2.1");
     expect(packageJson.devDependencies?.["@wdio/electron-types"]).toBe("^9.2.1");

@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { resolveE2EScheduledSpecFiles } from "#e2e/helpers/e2e-spec-resolution";
@@ -8,6 +7,7 @@ import {
   MANUAL_REVIEW_SPEC_GLOB,
   resolveEnvironmentGatedFormalSpecExcludes,
 } from "../scripts/e2e-formal-spec-selection.mjs";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
 describe("desktop E2E environment-gated formal spec admission", () => {
   it("excludes every manual-review domain from the default recursive glob", () => {
@@ -52,7 +52,7 @@ describe("desktop E2E environment-gated formal spec admission", () => {
   });
 
   it("uses the shared admission helper in the WDIO exclude list", () => {
-    const source = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const source = readWdioConfigSource();
     expect(source).toContain("resolveEnvironmentGatedFormalSpecExcludes({");
     expect(source).toContain("hasRequiredSshE2EEnvironment(process.env)");
   });

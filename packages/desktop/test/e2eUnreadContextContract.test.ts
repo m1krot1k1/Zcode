@@ -1,10 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import ts from "typescript";
 import { expect, it } from "vitest";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
 it("MRO03 pending与formal保持普通上下文，显式compact用例仍用小窗口", async () => {
-  const source = await readFile(resolve(import.meta.dirname, "../wdio.conf.ts"), "utf8");
+  const source = readWdioConfigSource();
   const file = ts.createSourceFile("wdio.conf.ts", source, ts.ScriptTarget.Latest, true);
   const expressions = new Map<string, string>();
   const visit = (node: ts.Node) => {

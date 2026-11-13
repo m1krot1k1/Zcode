@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { ensureSshRemoteReleaseAssets } from "./e2e/helpers/e2e-ssh-remote-release-assets.js";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
 const RELEASE_DIR = "/repo/packages/desktop/mock-cdn/releases/3.12.0";
 // 与 stage:remote-assets（remoteAssetRelease.ts collectSourceServerRemoteReleaseArchives）
@@ -120,7 +120,7 @@ describe("ensureSshRemoteReleaseAssets", () => {
 
 describe("wdio.conf.ts SSH remote assets wiring", () => {
   it("auto-prepares missing remote release assets via the root prepare:remote-assets script", () => {
-    const source = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const source = readWdioConfigSource();
     const stageDesktopE2EAppOutput = source.slice(
       source.indexOf("async function stageDesktopE2EAppOutput()"),
       source.indexOf("function isRendererE2EStoreBridgeCompiled"),

@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
-const source = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+const source = readWdioConfigSource();
 const seedHelperSource = readFileSync(
   new URL("./e2e/helpers/model-provider-restart-config.ts", import.meta.url),
   "utf8",
