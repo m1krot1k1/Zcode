@@ -120,6 +120,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineRenderData.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "133b8613e5389909",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/zcodeSessionProjection/usage.ts",
       "module": "ui",
       "detail": "ui",
@@ -143,6 +152,15 @@
       "detail": "shared",
       "message": "新文件落在未受管模块 shared；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "153b6f0c531c47a9",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelinePanels.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "16504bca15ce95ee",
       "global": false
     },
     {
@@ -291,6 +309,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineScrollRestoration.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "24c2aac95b130853",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/app-shell/workspace-shell-layout/WorkspaceRemoteShell.tsx",
       "module": "ui",
       "detail": "ui",
@@ -359,6 +386,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "2f8c0da5e3cb4fee",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineVirtualizer.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "2face1c3672e44e9",
       "global": false
     },
     {
@@ -471,6 +507,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/timelineUtils.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "3d086f3abda112c3",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/zcode-protocol-v4/workflow-runs-unlisted.ts",
       "module": "shared",
       "detail": "shared",
@@ -512,6 +557,15 @@
       "detail": "unregistered",
       "message": "新文件不属于任何已登记模块；请用 pnpm architecture:adopt <id> --root <dir> 登记后再提交",
       "fingerprint": "420e3713881e60da",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/ConversationBackToBottomButton.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "422f11de25e04012",
       "global": false
     },
     {
@@ -1074,6 +1128,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineScrollPersistence.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "89c6f7275f0a8fe5",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/v4/conversation-row-view/UserInputRowView.tsx",
       "module": "ui",
       "detail": "ui",
@@ -1335,6 +1398,24 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineMessageMask.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b271fc7f1e17eb2b",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineDomRefs.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "b2e3e05d26727a30",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "packages/web/src/bootstrap/routes.ts",
       "module": "web",
       "detail": "web",
@@ -1506,6 +1587,15 @@
     },
     {
       "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/scrollMemoryScope.tsx",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "c90f45f876616595",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/dynamic-workflow/src/analysis/hole-id.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1565,6 +1655,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "cdf07ba4bb0184bd",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineScrollGestures.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "cea00414413aa413",
       "global": false
     },
     {
@@ -1844,6 +1943,15 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "f29b19ca8cad8201",
+      "global": false
+    },
+    {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/v4/conversation-timeline/useTimelineScrollMemory.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f2d6900c675d91dd",
       "global": false
     },
     {
