@@ -21,15 +21,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/browser.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "03b9305e7464c5a7",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/shared/src/shared-channels-part1.ts",
       "module": "shared",
       "detail": "shared",
@@ -260,15 +251,6 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "1e62b0b7f20252a3",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/deepLinks.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "1e753fb69ced02f0",
       "global": false
     },
     {
@@ -912,15 +894,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/startup.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "5daf617900f1d859",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/services/src/zcode-agent/zcodeTaskServiceAdapterSessionInfoPayloads.ts",
       "module": "services",
       "detail": "services",
@@ -1110,15 +1083,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/ipc.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "78cea99fc323e991",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "packages/ui/src/lib/zcodeSessionProjection/primitives.ts",
       "module": "ui",
       "detail": "ui",
@@ -1178,15 +1142,6 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "8297714f5ed497e8",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/updater.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "838de31db91567dd",
       "global": false
     },
     {
@@ -1430,15 +1385,6 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "a6c9550eef058ea3",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/appMenu.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "a6d840d1071f0e2c",
       "global": false
     },
     {
@@ -1704,15 +1650,6 @@
     },
     {
       "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/windows.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "bfa00080ab9216eb",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
       "file": "apps/zcode-cli/packages/adapters/src/model/model-execution/provider-factory.ts",
       "module": "zcode-cli",
       "detail": "zcode-cli",
@@ -1727,15 +1664,6 @@
       "detail": "ui",
       "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "c17ae05f97710715",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/services.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "c1813af8df0e8d9e",
       "global": false
     },
     {
@@ -1772,15 +1700,6 @@
       "detail": "server",
       "message": "新文件落在未受管模块 server；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "c857bc5e0ccb5235",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/tray.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "c86b5a2e3ae116ec",
       "global": false
     },
     {
@@ -2213,15 +2132,6 @@
       "detail": "services",
       "message": "新文件落在未受管模块 services；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
       "fingerprint": "f765cab57aa3a069",
-      "global": false
-    },
-    {
-      "rule": "unmanaged-new-file",
-      "file": "packages/desktop/src/main/lifecycle/shutdown.ts",
-      "module": "desktop",
-      "detail": "desktop",
-      "message": "新文件落在未受管模块 desktop；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
-      "fingerprint": "f7f40e12a1ef634e",
       "global": false
     },
     {
