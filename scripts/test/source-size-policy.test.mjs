@@ -18,16 +18,21 @@ test("800 行为默认阻断阈值，已接纳的大文件仅降级行数诊断"
     );
     // 只验证规则本身；根 runner 排除 CLI，由独立 CLI runner 检查。
     config.ignorePatterns = [];
-    await writeFile(join(cwd, ".oxlintrc.json"), JSON.stringify(config));
     const regular = "packages/example/src/new.ts";
     // «Принятый» файл берём из фактического реестра max-lines в .oxlintrc.json:
     // после дробления конкретные пути меняются, а контракт «зарегистрирован →
     // warning вместо error» должен проверяться на текущей конфигурации.
-    const registered = (config.overrides ?? [])
+    const maxLinesOverrides = (config.overrides ?? []).filter(
+      (override) => (override.rules ?? {})["max-lines"] !== undefined,
+    );
+    const registered = maxLinesOverrides
       .flatMap((override) => override.files ?? [])
       .filter((file) => !String(file).startsWith("**/") && /\.(ts|tsx)$/u.test(String(file)));
-    let accepted = registered[0] ?? "packages/example/src/accepted.ts";
-    if (!registered.length) {
+    // Пути из CLI-пакета здесь не годятся: линт запускается из корня пакета,
+    // и относительный target не совпадёт с временным деревом.
+    const usable = registered.filter((file) => !String(file).startsWith("apps/zcode-cli/"));
+    let accepted = usable[0] ?? "packages/example/src/accepted.ts";
+    if (!usable.length) {
       config.overrides = [
         ...(config.overrides ?? []),
         {
@@ -36,6 +41,9 @@ test("800 行为默认阻断阈值，已接纳的大文件仅降级行数诊断"
         },
       ];
     }
+    // Конфиг пишем после возможной инъекции override — иначе принятый файл
+    // теряет warn-исключение и тест проверяет не тот контракт.
+    await writeFile(join(cwd, ".oxlintrc.json"), JSON.stringify(config));
     async function lint(file, lines) {
       await mkdir(dirname(join(cwd, file)), { recursive: true });
       await writeFile(
