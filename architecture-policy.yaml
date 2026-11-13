@@ -1591,6 +1591,19 @@ modules:
       contract: contract.ts
       ui: .
     owner: conversation
+  # cli-core-subagent：由 architecture:adopt 登记
+  - id: cli-core-subagent
+    roots:
+      - apps/zcode-cli/packages/core/src/runtime/methods/subagent
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/contract.ts
+    layers:
+      adapters: .
+    owner: agent
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
