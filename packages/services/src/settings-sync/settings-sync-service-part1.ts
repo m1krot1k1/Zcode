@@ -2,49 +2,24 @@ import type {
   McpServerConfig,
   SettingsSyncAgent,
   SettingsSyncCategory,
-  SettingsSyncClaudeAgentsFileCopyResult,
-  SettingsSyncClaudeAgentsFileMigrationStatus,
-  SettingsSyncCommandImportResult,
-  SettingsSyncCommandSkipReason,
-  SettingsSyncDiscoveryResult,
-  SettingsSyncImportResult,
-  SettingsSyncPluginImportResult,
-  SettingsSyncPluginSkipReason,
-  SettingsSyncMcpServerImportResult,
-  SettingsSyncMcpServerImportWarning,
-  SettingsSyncMcpServerSkipReason,
-  SettingsSyncSelection,
   SettingsSyncImportMode,
-  SettingsSyncSkillImportResult,
-  SettingsSyncSkillSkipReason,
   SettingsSyncSourceScope,
-  SettingsSyncSourceRootSummary,
   SettingsSyncSourceDiagnostic,
-  SettingsSyncTaskImportResult,
 } from "@zcode/shared";
-import { COMMUNITY_MCP_PRESETS, communityMcpPresetConfig } from "@zcode/shared";
 import {
-  chmod,
-  copyFile,
   cp,
   link,
   lstat,
-  mkdir,
   readFile,
   readdir,
-  realpath,
   symlink,
-  writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { parse as parseYaml } from "yaml";
-import { parse as parseToml } from "smol-toml";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CommandFileParser } from "../commands/commandFileParser.js";
 import type { ISettingService } from "../setting/setting.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import { walkSkillMarkdownPaths } from "../skills/skillDiscoveryWalk.js";
-import type { ISettingsSyncService } from "./settingsSync.js";
 
 // Часть 1/5 модуля settings-sync-service: вынесено по лимиту строк.
 

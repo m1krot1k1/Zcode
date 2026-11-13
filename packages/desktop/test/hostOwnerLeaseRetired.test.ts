@@ -34,7 +34,12 @@ function makeLogger() {
   };
 }
 
-const hostSourcePath = new URL("../src/host/index.ts", import.meta.url);
+// Host 入口拆分后，装配与 remote task service 包装分属不同模块；守卫覆盖全部归属文件。
+const hostSourcePaths = [
+  "../src/host/index.ts",
+  "../src/host/hostTaskReporting.ts",
+  "../src/host/hostLocalInit.ts",
+].map((relative) => new URL(relative, import.meta.url));
 const retiredBridgePath = new URL("../src/host/taskRealtimeBridge.ts", import.meta.url);
 const retiredPortPath = new URL(
   "../../services/src/session/sessionRealtimePort.ts",
@@ -43,7 +48,9 @@ const retiredPortPath = new URL(
 
 describe("R09 owner/lease mirror retirement", () => {
   it("Host 不声明、不创建也不注入 owner/lease mirror port", async () => {
-    const source = await readFile(hostSourcePath, "utf8");
+    const source = (await Promise.all(hostSourcePaths.map((path) => readFile(path, "utf8")))).join(
+      "\n",
+    );
 
     expect(source).not.toMatch(/\btaskRealtimePort\b/);
     expect(source).not.toMatch(/\bactiveSessionRealtimePort\b/);

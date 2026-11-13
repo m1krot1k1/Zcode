@@ -123,7 +123,10 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("forces the Host to exit after its parent IPC disconnects", () => {
-    const hostSource = readFileSync(new URL("../src/host/index.ts", import.meta.url), "utf8");
+    const hostSource = readFileSync(
+      new URL("../src/host/hostShutdown.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(hostSource).toMatch(
       /process\.once\("disconnect"[\s\S]*?disposeHostResources\("disconnect"\)\.finally\(\(\) => process\.exit\(1\)\)/u,
@@ -131,12 +134,20 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("Host waits for the remote stdio close handshake", () => {
-    const hostSource = readFileSync(new URL("../src/host/index.ts", import.meta.url), "utf8");
-
-    expect(hostSource).toMatch(
-      /async function disposeHostRemoteConnection[\s\S]*?connection\.dispose\(\)[\s\S]*?name: "remote-registry-dispose"[\s\S]*?timeoutMs: 6_000/u,
+    const connectionSource = readFileSync(
+      new URL("../src/host/hostRemoteConnection.ts", import.meta.url),
+      "utf8",
     );
-    expect(hostSource).toContain('name: "source-server-manager-dispose"');
+    const shutdownSource = readFileSync(
+      new URL("../src/host/hostShutdown.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(connectionSource).toMatch(
+      /async function disposeHostRemoteConnection[\s\S]*?connection\.dispose\(\)/u,
+    );
+    expect(shutdownSource).toMatch(/name: "remote-registry-dispose"[\s\S]*?timeoutMs: 6_000/u);
+    expect(shutdownSource).toContain('name: "source-server-manager-dispose"');
   });
 
   it("collects only the current run root and its child process tree", () => {

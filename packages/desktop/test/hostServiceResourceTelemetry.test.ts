@@ -252,7 +252,7 @@ describe("registerHostServiceResourceTelemetry", () => {
     const attachmentSamples: AgentLaneResourceSample[] = [];
     const closeListeners: (() => void)[] = [];
     // attachment 与生产一致：只在已就绪的 collection 上再开一个 Agent connection scope。
-    // 等价依据：生产的 expose 是 host/index.ts 的 exposeServicesOnMessagePort，它同样
+    // 等价依据：生产的 expose 是 hostAttachmentRuntime.ts 的 exposeServicesOnMessagePort，它同样
     // `createZCodeAgentConnectionScope(agentService, { connectionId, clientMode })` 且**不传 role**，
     // 因此 attachment 一律是 terminal-client；这里只把那一步搬进测试，registry 与 scope 都是真实实现。
     // 若哪天生产给 attachment 传了 role，本测试不会自动变红——那一层的边界断言在

@@ -1,50 +1,24 @@
 import type {
   McpServerConfig,
-  SettingsSyncAgent,
-  SettingsSyncCategory,
-  SettingsSyncClaudeAgentsFileCopyResult,
   SettingsSyncClaudeAgentsFileMigrationStatus,
-  SettingsSyncCommandImportResult,
   SettingsSyncCommandSkipReason,
-  SettingsSyncDiscoveryResult,
-  SettingsSyncImportResult,
-  SettingsSyncPluginImportResult,
-  SettingsSyncPluginSkipReason,
-  SettingsSyncMcpServerImportResult,
   SettingsSyncMcpServerImportWarning,
-  SettingsSyncMcpServerSkipReason,
-  SettingsSyncSelection,
   SettingsSyncImportMode,
-  SettingsSyncSkillImportResult,
-  SettingsSyncSkillSkipReason,
   SettingsSyncSourceScope,
-  SettingsSyncSourceRootSummary,
-  SettingsSyncSourceDiagnostic,
-  SettingsSyncTaskImportResult,
 } from "@zcode/shared";
 import { COMMUNITY_MCP_PRESETS, communityMcpPresetConfig } from "@zcode/shared";
 import {
   chmod,
-  copyFile,
   cp,
-  link,
   lstat,
   mkdir,
   readFile,
   readdir,
   realpath,
-  symlink,
   writeFile,
 } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { parse as parseToml } from "smol-toml";
-import { CommandFileParser } from "../commands/commandFileParser.js";
-import type { ISettingService } from "../setting/setting.js";
-import { createServiceLogger } from "../logger/serviceLogger.js";
-import { walkSkillMarkdownPaths } from "../skills/skillDiscoveryWalk.js";
-import type { ISettingsSyncService } from "./settingsSync.js";
 import { INLINE_PLUGIN_MARKETPLACE, PRIVATE_MCP_CONFIG_FILE_MODE, SUPPORTED_COMMAND_AGENT_SOURCES, SUPPORTED_PLUGIN_AGENT_SOURCES, SUPPORTED_SKILL_AGENT_SOURCES, collectExistingCommandNameKeys, createDirectorySymlink, findPluginManifestPath, getClaudeUserAgentsFileSourcePath, getClineMcpServersRoot, getUserZcodeAgentsFilePath, getUserZcodeCliConfigPath, getUserZcodeCommandRoot, getUserZcodePluginRoot, getUserZcodeSkillRoot, getWorkspaceZcodeCommandRoot, getWorkspaceZcodeConfigPath, getWorkspaceZcodePluginRoot, getWorkspaceZcodeSkillRoot, isPathWithin, isRecord, isValidUrl, normalizeOpenCodeMcpConfig, pathExists, readLooseSkillName, readLooseSkillVersion, readStringArray, resolveUserHomeDir } from "./settings-sync-service-part1.js";
 import type { ClineMcpConfigPathOptions, ClineNpmBinCommand, CommandImportCandidate, CommandImportScope, CommandSourceRoot, McpImportCandidate, PluginImportScope, PluginSourceRoot, SkillImportScope, SkillSourceRoot } from "./settings-sync-service-part1.js";
 

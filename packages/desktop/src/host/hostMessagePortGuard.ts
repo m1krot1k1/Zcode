@@ -1,5 +1,8 @@
 import { hostIncomingMessageSchema } from "@zcode/shared";
 
+/** schema 解析后的 main → Host 入站消息联合类型，供分域 handler 精确收窄。 */
+export type HostIncomingMessage = ReturnType<typeof hostIncomingMessageSchema.parse>;
+
 export interface CloseableTransferredPort {
   close(): void;
 }

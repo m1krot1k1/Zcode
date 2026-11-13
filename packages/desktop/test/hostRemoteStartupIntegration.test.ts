@@ -6,8 +6,8 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 /** Host 入口依赖 Electron utilityProcess；执行真实函数体，平台与连接端口在本边界注入。 */
-async function loadHostSource() {
-  const file = new URL("../src/host/index.ts", import.meta.url);
+async function loadHostSource(fileName = "hostRemoteConnection.ts") {
+  const file = new URL(`../src/host/${fileName}`, import.meta.url);
   return ts.createSourceFile(
     file.pathname,
     await readFile(file, "utf8"),
@@ -17,8 +17,10 @@ async function loadHostSource() {
 }
 
 function compile(source: string) {
-  return ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } })
-    .outputText;
+  // 提取到的是模块内声明，去掉 export 修饰符后才能在 None/CommonJS 沙箱里裸执行。
+  return ts.transpileModule(source.replace(/^export\s+/gmu, ""), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
 }
 
 interface RemoteServices {
@@ -80,14 +82,21 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
         `${compile(node.getText(source))};createWindowRemoteConnectionHandle;`,
         {
           connectSourceServerTarget,
-          activeServices: { get: () => clientConfig },
-          IClientConfigService: {},
-          sourceServerDirectory: {
-            ensureProfile: async () => ({ profileId: "profile-1" }),
-            snapshot: async () => ({ servers: [] }),
+          hostState: {
+            activeServices: { get: () => clientConfig },
+            sourceServerDirectory: {
+              ensureProfile: async () => ({ profileId: "profile-1" }),
+              snapshot: async () => ({ servers: [] }),
+            },
+            sourceServerDisplayNameById: new Map(),
+            sourceServerConnectionManager: null,
+            sourceServerArtifactPolicy: "release-versioned",
           },
           ensureSourceServerConnectionManager: async () => manager,
-          sourceServerDisplayNameById: new Map(),
+          remoteRegistry: () => ({ getOnlineSource: () => undefined }),
+          attachmentRegistry: () => ({ detachSourceSettingsAttachments() {} }),
+          remoteConnectionProgressContext: { report() {} },
+          IClientConfigService: {},
           parentPort: {},
           logger: { warn() {} },
           remoteMediaRangePreviewEnabled: false,
@@ -160,19 +169,12 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
   );
 
   it("数据库准备前不创建业务服务；Source 初始化保留但后台迁移不阻塞 base attachment 和 ready", async () => {
-    const source = await loadHostSource();
-    let initNode: ts.IfStatement | undefined;
-    function findInit(node: ts.Node): void {
-      if (
-        ts.isIfStatement(node) &&
-        node.expression.getText(source) === "msg.type === HostMessageTypes.InitLocal"
-      ) {
-        initNode = node;
-      } else {
-        ts.forEachChild(node, findInit);
-      }
-    }
-    findInit(source);
+    // Host 入口拆分后 init-local 的装配体在 hostLocalInit.initializeLocalHost。
+    const source = await loadHostSource("hostLocalInit.ts");
+    const initNode = source.statements.find(
+      (item): item is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(item) && item.name?.text === "initializeLocalHost",
+    );
     if (!initNode) throw new Error("Host InitLocal handler is missing");
     const events: string[] = [];
     const { promise: prepared, resolve: finishPreparation } = Promise.withResolvers<void>();
@@ -189,24 +191,26 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
       return services;
     });
     const run = runInNewContext(
-      `${compile(`async function run() { ${initNode.getText(source)} }`)};run;`,
+      `${compile(`${initNode.getText(source)};`)};(async () => initializeLocalHost(msg, port));`,
       {
-        databaseStartup: undefined,
-        activeServices: null,
-        activeHostApiNetworkTransport: null,
-        sourceServerDirectory: null,
-        sourceServerArtifactPolicy: null,
-        sourceServerConnectionManager: null,
-        sourceServerManagementService: null,
-        sourceSettingsStateSubscription: null,
-        hasDisposedHostResources: false,
-        disposeHostResourcesInFlight: null,
+        hostState: {
+          databaseStartup: undefined,
+          activeServices: null,
+          activeHostApiNetworkTransport: null,
+          sourceServerDirectory: null,
+          sourceServerArtifactPolicy: null,
+          sourceServerConnectionManager: null,
+          sourceServerManagementService: null,
+          sourceSettingsStateSubscription: null,
+          hasDisposedHostResources: false,
+          disposeHostResourcesInFlight: null,
+          pendingStartupAttachments: new Map(),
+        },
         msg: { type: "init-local", remoteAssets: {} },
         HostMessageTypes: { InitLocal: "init-local" },
         HostResponseTypes: { DatabaseStartupState: "db-state" },
         port: { once() {}, close() {} },
         logger: { info() {}, warn() {}, error() {} },
-        pendingStartupAttachments: new Map(),
         parentPort: {
           postMessage: (message: { state: { phase: string } }) => events.push(message.state.phase),
         },
@@ -272,11 +276,11 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
         wireLocalResourceTelemetry() {
           events.push("local-telemetry");
         },
-        windowHostAttachmentRegistry: {
+        attachmentRegistry: () => ({
           attach() {
             events.push("base-attachment");
           },
-        },
+        }),
         randomUUID: () => "id",
         logWindowHostTopology() {},
       },
