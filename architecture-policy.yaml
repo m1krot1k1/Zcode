@@ -1123,3 +1123,14 @@ exceptions:
       - packages/ui/src/settings/pluginCatalogModel.ts
       - packages/ui/src/settings/skillsMarketplaceCatalogView.ts
     reason: Shared catalog sort, badge, and curated-rank helpers plus the Skills, MCP, and Plugin view adapters live in the existing managed=false shared and ui trees. They do not invent install metrics and do not change ownership; adopting the whole shared and ui trees needs a separate boundary refactor.
+  - id: runner-stream-split
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/adapters/src/model/runner-stream-handlers.ts
+      - apps/zcode-cli/packages/adapters/src/model/runner-stream-failure.ts
+    reason: >-
+      Механическое разделение существующего runner-stream.ts (1602 эффективные строки) на три
+      файла ≤800 строк: обработчики чанков/статусов, обработка отказа попытки и сама точка входа.
+      Публичный API runStreamText не менялся, порядок yield/await и семантика ошибок сохранены;
+      новые файлы лежат рядом с точкой входа в том же managed=false модуле zcode-cli, границы
+      импортов и владение состоянием не меняются.

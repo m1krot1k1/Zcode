@@ -25,8 +25,6 @@
         // 存量超大 модуль远程连接流程 (2057 строк, без изменений с 6225154e):
         // разделение на подмодули — отдельный рефакторинг, не механическая нарезка.
         "**/packages/ui/src/remote-connection-flow/index.ts",
-        // CLI 存量实现：上游快照后被本地修改，职责仍完整；先以告警跟踪行数，不做机械拆分。
-        "**/apps/zcode-cli/packages/adapters/src/model/runner-stream.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/cold-event-merge.ts",
         "**/apps/zcode-cli/packages/contracts/src/model/index.ts",
         // Файловая адаптерная база: 1644 эффективных строки ещё до локальных правок
@@ -37,7 +35,6 @@
         // поэтому превышение 800 строк отслеживаем warning'ом, а не механическим split.
         "**/apps/zcode-cli/packages/core/src/subagent/profile.ts",
         // 包级 lint 以包目录为 cwd，补充同一组文件的相对路径匹配。
-        "src/model/runner-stream.ts",
         "src/zcode-protocol-v4/cold-event-merge.ts",
         "src/zcode-protocol-v4/transcript-hydration.ts",
         "src/zcode-protocol-v4/conversation-topic-publisher.ts",
