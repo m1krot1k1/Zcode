@@ -2,7 +2,7 @@ import { useCallback, useRef } from "react";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { RefObject } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import { logger } from "@/logger.js";
 import {
   TERMINAL_RESIZE_DRAG_THROTTLE_MS,

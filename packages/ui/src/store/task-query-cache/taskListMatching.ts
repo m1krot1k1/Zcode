@@ -1,4 +1,4 @@
-import type { ZCodeTaskListItem } from "@zcode/services";
+import type { ZCodeTaskListItem } from "./contract.ts";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { matchesTaskListMembershipKind } from "@zcode/shared/zcode-protocol-v4";
 import {

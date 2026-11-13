@@ -15,7 +15,7 @@ import type {
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { StorePluginItem } from "@/settings/pluginStoreListing.js";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 
 export type { CreateTaskRequest, IServiceAccessor };
 

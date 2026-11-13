@@ -1840,6 +1840,211 @@ modules:
     layers:
       adapters: .
     owner: agent
+  # ui-task-list-item：由 architecture:adopt 登记
+  - id: ui-task-list-item
+    roots:
+      - packages/ui/src/task-list-item
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/task-list-item/index.ts
+      - packages/ui/src/task-list-item/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-mcp-sync-service：由 architecture:adopt 登记
+  - id: services-mcp-sync-service
+    roots:
+      - packages/services/src/mcp-sync/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/mcp-sync/service/index.ts
+      - packages/services/src/mcp-sync/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-export-logs：由 architecture:adopt 登记
+  - id: desktop-export-logs
+    roots:
+      - packages/desktop/src/main/export-logs
+    managed: true
+    requires:
+      - desktop
+      - services
+    publicEntrypoints:
+      - packages/desktop/src/main/export-logs/index.ts
+      - packages/desktop/src/main/export-logs/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-task-query-cache：由 architecture:adopt 登记
+  - id: ui-task-query-cache
+    roots:
+      - packages/ui/src/store/task-query-cache
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/store/task-query-cache/index.ts
+      - packages/ui/src/store/task-query-cache/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # cli-browser-client-facade：由 architecture:adopt 登记
+  - id: cli-browser-client-facade
+    roots:
+      - apps/zcode-cli/packages/core/src/browser-client/facade
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/browser-client/facade/index.ts
+      - apps/zcode-cli/packages/core/src/browser-client/facade/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # ui-share-confirmation-dock：由 architecture:adopt 登记
+  - id: ui-share-confirmation-dock
+    roots:
+      - packages/ui/src/v4/share-confirmation-dock
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/share-confirmation-dock/index.ts
+      - packages/ui/src/v4/share-confirmation-dock/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-skills-section：由 architecture:adopt 登记
+  - id: ui-skills-section
+    roots:
+      - packages/ui/src/settings/skills-section
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/skills-section/index.ts
+      - packages/ui/src/settings/skills-section/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-feedback-http-client：由 architecture:adopt 登记
+  - id: services-feedback-http-client
+    roots:
+      - packages/services/src/feedback/http-client
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/feedback/http-client/index.ts
+      - packages/services/src/feedback/http-client/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-build-config：由 architecture:adopt 登记
+  - id: desktop-build-config
+    roots:
+      - packages/desktop/build-config
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/desktop/build-config/index.ts
+      - packages/desktop/build-config/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-terminal-session：由 architecture:adopt 登记
+  - id: ui-terminal-session
+    roots:
+      - packages/ui/src/terminal/session
+    managed: true
+    requires:
+      - rpc
+      - services
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/terminal/session/index.ts
+      - packages/ui/src/terminal/session/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-unified-browser-view：由 architecture:adopt 登记
+  - id: ui-unified-browser-view
+    roots:
+      - packages/ui/src/browser-use/unified-browser-view
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/browser-use/unified-browser-view/index.ts
+      - packages/ui/src/browser-use/unified-browser-view/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-command-center-dialog：由 architecture:adopt 登记
+  - id: ui-command-center-dialog
+    roots:
+      - packages/ui/src/command-center/dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/command-center/dialog/index.ts
+      - packages/ui/src/command-center/dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-context-usage：由 architecture:adopt 登记
+  - id: ui-context-usage
+    roots:
+      - packages/ui/src/chat-input-toolbar/context-usage
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/chat-input-toolbar/context-usage/index.ts
+      - packages/ui/src/chat-input-toolbar/context-usage/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-legacy-config-reader：由 architecture:adopt 登记
+  - id: services-legacy-config-reader
+    roots:
+      - packages/services/src/model-provider/legacy-config-reader
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/model-provider/legacy-config-reader/index.ts
+      - packages/services/src/model-provider/legacy-config-reader/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

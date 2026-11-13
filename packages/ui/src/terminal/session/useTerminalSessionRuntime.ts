@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { ITheme, Terminal as XTerm } from "@xterm/xterm";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import { useTerminalFocus } from "./useTerminalFocus.js";
 import { useTerminalResizeController } from "./useTerminalResizeController.js";
 import type { TerminalSessionContext } from "./terminalSessionContext.js";

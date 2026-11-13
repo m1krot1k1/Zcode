@@ -1,7 +1,7 @@
 import type { FitAddon } from "@xterm/addon-fit";
 import type { ITheme, Terminal as XTerm } from "@xterm/xterm";
 import type { RefObject } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type {
   PendingTerminalInputFallback,
   TerminalInputFallbackHandledData,
