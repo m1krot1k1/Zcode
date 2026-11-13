@@ -19,7 +19,6 @@
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol/v4-bridge.ts",
         "**/apps/zcode-cli/packages/contracts/src/interfaces/session-store.port.ts",
-        "**/apps/zcode-cli/packages/core/src/runtime/methods/steering.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/turn.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
         // 存量超大文件；本次仅改一行 cost 归属，移除 pristine 豁免后需显式保留告警。
