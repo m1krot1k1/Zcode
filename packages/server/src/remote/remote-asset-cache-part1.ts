@@ -1,11 +1,21 @@
 import { createHash } from "node:crypto";
 import { constants as fsConstants, createReadStream } from "node:fs";
-import { copyFile, link, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  link,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileExists } from "@zcode/server/remote/deployShared.js";
-import { normalizeRemoteAssetRelativePath } from "@zcode/server/remote/remoteAssetCdn.js";
+import {
+  normalizeRemoteAssetRelativePath,
+} from "@zcode/server/remote/remoteAssetCdn.js";
 
 // Часть 1/3 модуля remote-asset-cache: вынесено по лимиту строк.
 
@@ -54,9 +64,7 @@ export interface RemoteAssetCacheLoggers {
   logWarn: (...args: unknown[]) => void;
 }
 
-export function normalizeRequestedComponentIds(
-  componentIds: string[] | undefined,
-): Set<string> | null {
+export function normalizeRequestedComponentIds(componentIds: string[] | undefined): Set<string> | null {
   if (!componentIds) {
     return null;
   }
@@ -75,9 +83,7 @@ export function normalizeRequestedComponentIds(
   return new Set(normalizedIds);
 }
 
-export function normalizeRequiredReleasePaths(
-  requiredReleasePaths: string[] | undefined,
-): string[] {
+export function normalizeRequiredReleasePaths(requiredReleasePaths: string[] | undefined): string[] {
   if (!requiredReleasePaths) {
     return [];
   }
@@ -131,11 +137,7 @@ export function shouldFallbackToCopy(error: unknown): boolean {
   return code === "EXDEV" || code === "EPERM" || code === "EACCES" || code === "EMLINK";
 }
 
-export function resolvePathWithinBase(
-  baseDir: string,
-  relativePath: string,
-  label: string,
-): string {
+export function resolvePathWithinBase(baseDir: string, relativePath: string, label: string): string {
   const normalizedRelativePath = normalizeRemoteAssetRelativePath(relativePath, label);
   const targetPath = resolve(baseDir, ...normalizedRelativePath.split("/"));
   const normalizedBaseDir = resolve(baseDir);
@@ -226,10 +228,7 @@ export async function assertExtractedArchiveNotEmpty(
   }
 }
 
-export async function isValidReleaseDir(
-  releaseDir: string,
-  platformArch: string,
-): Promise<boolean> {
+export async function isValidReleaseDir(releaseDir: string, platformArch: string): Promise<boolean> {
   try {
     const dirStat = await stat(releaseDir);
     if (!dirStat.isDirectory()) {
@@ -264,11 +263,7 @@ export function isObjectRecord(value: unknown): value is Record<string, unknown>
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function readRequiredString(
-  value: Record<string, unknown>,
-  key: string,
-  context: string,
-): string {
+export function readRequiredString(value: Record<string, unknown>, key: string, context: string): string {
   const fieldValue = value[key];
   if (typeof fieldValue !== "string") {
     throw new Error(`[remote-assets] ${context}.${key} must be string`);
@@ -280,11 +275,7 @@ export function readRequiredString(
   return trimmed;
 }
 
-export function readRequiredNumber(
-  value: Record<string, unknown>,
-  key: string,
-  context: string,
-): number {
+export function readRequiredNumber(value: Record<string, unknown>, key: string, context: string): number {
   const fieldValue = value[key];
   if (typeof fieldValue !== "number" || !Number.isFinite(fieldValue)) {
     throw new Error(`[remote-assets] ${context}.${key} must be finite number`);
@@ -304,10 +295,7 @@ export function assertSafePathSegment(value: string, label: string): void {
   }
 }
 
-export const READY_MARKER_CANDIDATES = [
-  REMOTE_ASSET_READY_MARKER,
-  LEGACY_REMOTE_ASSET_READY_MARKER,
-];
+export const READY_MARKER_CANDIDATES = [REMOTE_ASSET_READY_MARKER, LEGACY_REMOTE_ASSET_READY_MARKER];
 
 export interface RemoteAssetManifest {
   schemaVersion: number;

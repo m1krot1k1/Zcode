@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { extractTarGzArchive } from "@zcode/server/remote/localTarGz.js";
 import {
@@ -13,51 +17,10 @@ import {
   resolveRemoteAssetFetch,
   type RemoteAssetNetworkPort,
 } from "@zcode/server/remote/remoteAssetNetwork.js";
-import {
-  MANIFEST_FILE_NAME_PREFIX,
-  REMOTE_ASSET_READY_MARKER,
-  assertExtractedArchiveNotEmpty,
-  assertSafePathSegment,
-  buildRemoteManifestFileCandidates,
-  computeFileSha256,
-  fetchFirstAvailableUrl,
-  findMissingLocalRelativePaths,
-  isValidReleaseDir,
-  normalizeRequestedComponentIds,
-  normalizeRequiredReleasePaths,
-  pathExists,
-  remoteAssetComponentLocks,
-  remoteAssetReleaseLocks,
-  resolveContentAddressedReleaseSegments,
-  resolveRequiredComponentPaths,
-  runWithReleaseMaterializeLock,
-  selectManifestComponents,
-  usesRemoteAssetContentAddressedCacheIdentity,
-  writeReadyMarker,
-} from "./remote-asset-cache-part1.js";
-import type {
-  RemoteAssetCacheLoggers,
-  RemoteAssetManifest,
-  RemoteAssetManifestComponent,
-  RemoteAssetManifestRef,
-} from "./remote-asset-cache-part1.js";
-import {
-  commitStagingDirectoryAtomically,
-  fetchRemoteAssetManifestInternal,
-  findMissingReadyComponentPaths,
-  isReadyReleaseDirForRequestedPaths,
-  materializeComponentIntoReleaseDir,
-  remoteAssetManifestLocks,
-  remoteAssetManifestRefreshLocks,
-  resolveComponentCacheDir,
-  tryMigrateComponentDirFromHashVersionComponentCache,
-  tryMigrateComponentDirFromLegacyReleaseCache,
-  writeResponseBodyToFile,
-} from "./remote-asset-cache-part2.js";
-import type {
-  EnsureRemoteReleaseDirOptions,
-  RemoteAssetManifestFetchResult,
-} from "./remote-asset-cache-part2.js";
+import { MANIFEST_FILE_NAME_PREFIX, REMOTE_ASSET_READY_MARKER, assertExtractedArchiveNotEmpty, assertSafePathSegment, buildRemoteManifestFileCandidates, computeFileSha256, fetchFirstAvailableUrl, findMissingLocalRelativePaths, isValidReleaseDir, normalizeRequestedComponentIds, normalizeRequiredReleasePaths, pathExists, remoteAssetComponentLocks, remoteAssetReleaseLocks, resolveContentAddressedReleaseSegments, resolveRequiredComponentPaths, runWithReleaseMaterializeLock, selectManifestComponents, usesRemoteAssetContentAddressedCacheIdentity, writeReadyMarker } from "./remote-asset-cache-part1.js";
+import type { RemoteAssetCacheLoggers, RemoteAssetManifest, RemoteAssetManifestComponent, RemoteAssetManifestRef } from "./remote-asset-cache-part1.js";
+import { commitStagingDirectoryAtomically, fetchRemoteAssetManifestInternal, findMissingReadyComponentPaths, isReadyReleaseDirForRequestedPaths, materializeComponentIntoReleaseDir, remoteAssetManifestLocks, remoteAssetManifestRefreshLocks, resolveComponentCacheDir, tryMigrateComponentDirFromHashVersionComponentCache, tryMigrateComponentDirFromLegacyReleaseCache, writeResponseBodyToFile } from "./remote-asset-cache-part2.js";
+import type { EnsureRemoteReleaseDirOptions, RemoteAssetManifestFetchResult } from "./remote-asset-cache-part2.js";
 
 // Часть 3/3 модуля remote-asset-cache: вынесено по лимиту строк.
 
