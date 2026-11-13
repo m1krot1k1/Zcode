@@ -10,9 +10,7 @@ import type {
   SettingsSyncSourceDiagnostic,
   SettingsSyncTaskImportResult,
 } from "@zcode/shared";
-import {
-  mkdir,
-} from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { SUPPORTED_PLUGIN_AGENT_SOURCES, exists, normalizeMcpServerNameKey, pathExists, resolveUserHomeDir, stripExternalMcpTimeoutFields } from "./settings-sync-service-part1.js";
 import type { ExternalAgentMcpPathSource, McpImportCandidate, McpSourceRoot, PluginImportCandidate, SkillImportCandidate } from "./settings-sync-service-part1.js";

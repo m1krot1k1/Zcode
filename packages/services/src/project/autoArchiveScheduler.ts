@@ -27,7 +27,7 @@ interface TaskAutoArchiveSchedulerOptions {
   intervalMs?: number;
 }
 
-interface TaskAutoArchiveScheduler {
+export interface TaskAutoArchiveScheduler {
   /** 立即扫描一次并按固定间隔重复；重复调用无效。 */
   start(): void;
   /** 串行扫描；扫描进行中的调用合并为一次补扫。返回本次归档的任务。 */

@@ -16,9 +16,9 @@ import {
   copyFile,
   mkdir,
   readFile,
-} from "node:fs/promises";
+  } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { parse as parseToml } from "smol-toml";
+import {parse as parseToml} from "smol-toml";
 import { CLINE_EDITOR_PROFILE_DIRS, CLINE_EXTENSION_ID, CLINE_SETTINGS_RELATIVE_PATH, SUPPORTED_COMMAND_AGENT_SOURCES, collectCommandMarkdownPaths, collectSkillMarkdownPaths, exists, getClaudeUserAgentsFileSourcePath, getUserZcodeAgentsFilePath, importCommandFile, isRecord, normalizeCommandNameKey, normalizeMcpServerNameKey, normalizeSkillNameKey, pathExists, readCommandMetadata, readStringArray, resolveUserHomeDir, selectClineMcpConfigPath } from "./settings-sync-service-part1.js";
 import type { ClineMcpConfigPathOptions, CommandImportCandidate, McpConfigFormat, McpImportCandidate, McpSourceFileReadResult, PluginImportCandidate, SkillImportCandidate } from "./settings-sync-service-part1.js";
 import { collectPluginPaths, findPortableClinePreset, getClineEditorUserDataRoot, getCommandImportCandidateSkipReason, getExternalCommandRoots, getExternalPluginRoots, getExternalSkillRoots, normalizeClineMcpConfig, parseClineNpmBinCommand, prepareMcpConfigForTargetScope, readJsonFileOrEmpty, readOpenCodeMcpServers, readPluginMetadata, readSkillMetadataFromMarkdown, readTomlMcpServers, readWrappedMcpServers, readZcodeMcpServers, resolveCandidateTargetRoot, resolveCommandCandidateTargetRoot, resolveCommandTargetRootForScope, resolveMcpConfigPathForScope, resolvePluginCandidateTargetRoot, resolvePluginConfigPathForScope, writeJsonFile } from "./settings-sync-service-part2.js";

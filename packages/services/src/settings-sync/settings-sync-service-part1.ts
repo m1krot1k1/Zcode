@@ -5,7 +5,7 @@ import type {
   SettingsSyncImportMode,
   SettingsSyncSourceScope,
   SettingsSyncSourceDiagnostic,
-} from "@zcode/shared";
+  } from "@zcode/shared";
 import {
   cp,
   link,
@@ -13,7 +13,7 @@ import {
   readFile,
   readdir,
   symlink,
-} from "node:fs/promises";
+  } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CommandFileParser } from "../commands/commandFileParser.js";

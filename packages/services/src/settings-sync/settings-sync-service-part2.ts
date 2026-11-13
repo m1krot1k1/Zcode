@@ -5,7 +5,7 @@ import type {
   SettingsSyncMcpServerImportWarning,
   SettingsSyncImportMode,
   SettingsSyncSourceScope,
-} from "@zcode/shared";
+  } from "@zcode/shared";
 import { COMMUNITY_MCP_PRESETS, communityMcpPresetConfig } from "@zcode/shared";
 import {
   chmod,
@@ -18,7 +18,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
+import {parse as parseYaml} from "yaml";
 import { INLINE_PLUGIN_MARKETPLACE, PRIVATE_MCP_CONFIG_FILE_MODE, SUPPORTED_COMMAND_AGENT_SOURCES, SUPPORTED_PLUGIN_AGENT_SOURCES, SUPPORTED_SKILL_AGENT_SOURCES, collectExistingCommandNameKeys, createDirectorySymlink, findPluginManifestPath, getClaudeUserAgentsFileSourcePath, getClineMcpServersRoot, getUserZcodeAgentsFilePath, getUserZcodeCliConfigPath, getUserZcodeCommandRoot, getUserZcodePluginRoot, getUserZcodeSkillRoot, getWorkspaceZcodeCommandRoot, getWorkspaceZcodeConfigPath, getWorkspaceZcodePluginRoot, getWorkspaceZcodeSkillRoot, isPathWithin, isRecord, isValidUrl, normalizeOpenCodeMcpConfig, pathExists, readLooseSkillName, readLooseSkillVersion, readStringArray, resolveUserHomeDir } from "./settings-sync-service-part1.js";
 import type { ClineMcpConfigPathOptions, ClineNpmBinCommand, CommandImportCandidate, CommandImportScope, CommandSourceRoot, McpImportCandidate, PluginImportScope, PluginSourceRoot, SkillImportScope, SkillSourceRoot } from "./settings-sync-service-part1.js";
 
