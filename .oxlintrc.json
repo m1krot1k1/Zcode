@@ -34,7 +34,6 @@
         // CLI 存量实现：上游快照后被本地修改，职责仍完整；先以告警跟踪行数，不做机械拆分。
         "**/apps/zcode-cli/packages/adapters/src/model/runner-stream.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/cold-event-merge.ts",
-        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/transcript-hydration.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts",
         "**/apps/zcode-cli/packages/contracts/src/model/index.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/events.ts",
