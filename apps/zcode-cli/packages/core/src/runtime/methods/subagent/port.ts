@@ -29,6 +29,7 @@ import { AgentRuntime } from "../../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../../internal.js";
 import { cloneModelSelection } from "../../model-selection.js";
 import { resolveSubagentSelection } from "../../helpers/subagent-selection.js";
+import { resolveSubagentEffortLevel } from "../../helpers/subagent-effort.js";
 import { sharedReadFileStateForChild } from "../../helpers/runtime-reminders.js";
 import { deriveChildClientPorts } from "../../helpers/child-client-ports.js";
 import type { AgentRuntimeDeps } from "../../types.js";
@@ -194,16 +195,17 @@ export function createDefaultSubagentPort(
         const bundledHarnessRules =
           this.contextSourceSnapshot?.bundledHarnessRules ??
           this.config.subagentContext?.bundledHarnessRules;
+        const parentSelection = this.getSessionModelSelection();
         const { selection: profileChildSelection, hasConcreteModel } = resolveSubagentSelection({
           profileSelection: request.profile.modelSelection,
-          parentSelection: this.getSessionModelSelection(),
+          parentSelection,
           overrideSelection: options?.modelOverride?.selection,
           resolveSelection: deps.resolveEffectiveModelSelection,
         });
         const modelOverride = options?.modelOverride;
         const inheritedModel = !modelOverride && !hasConcreteModel ? options?.model : undefined;
         // Core Server override 优先于持久化 profile 与父模型继承，但仍只是标准 Selection。
-        const childSelection = inheritedModel
+        let childSelection = inheritedModel
           ? modelSelectionFromActiveModel(inheritedModel)
           : profileChildSelection;
         const embeddedSearchEnabled = resolveSubagentEmbeddedSearchEnabled();
@@ -304,7 +306,7 @@ export function createDefaultSubagentPort(
         // child Model 必须先于 allowlist 解析创建：WebSearch 是模型能力条件工具，child 能力
         // 清单（SubagentSpawned.allowedTools）只能按 child 自己的 Active Model 过滤。
         // 创建顺序前移只改变错误优先级，不改变其它 preflight 的语义。
-        const baseChildModelFactory = modelOverride
+        let baseChildModelFactory = modelOverride
           ? createSubagentOverrideModelFactory(modelOverride, this.modelFactory)
           : inheritedModel
             ? createInheritedSubagentModelFactory(childSelection, inheritedModel, this.modelFactory)
@@ -316,7 +318,84 @@ export function createDefaultSubagentPort(
             { recoverable: true },
           );
         }
-        const childModel = baseChildModelFactory({ selection: childSelection });
+        let childModel = baseChildModelFactory({ selection: childSelection });
+        // Класс effort применяется после profile/parent/override резолва: модель остаётся
+        // той же, меняется только уровень в её собственной шкале. Без поля поведение
+        // не меняется вообще; абсолютный reasoningLevel из tool input не принимается.
+        if (request.effort !== undefined) {
+          const catalogEntries = this.modelCatalogPort?.listModels();
+          const findCatalogEntry = (selection: typeof childSelection) =>
+            catalogEntries?.find(
+              (entry) =>
+                entry.providerId === selection.providerId &&
+                entry.modelId === selection.modelId &&
+                entry.disabledReason === undefined,
+            );
+          const parentCatalogEntry = parentSelection
+            ? findCatalogEntry(parentSelection)
+            : undefined;
+          const parentLevel =
+            options?.model?.options.reasoningLevel ??
+            parentSelection?.options?.reasoningLevel ??
+            parentCatalogEntry?.defaultReasoningLevel;
+          const childCatalogEntry = findCatalogEntry(childSelection);
+          const supportedLevels =
+            childCatalogEntry?.reasoningLevels ?? childModel.optionSpecs.reasoningLevel.values;
+          const effortResolution = resolveSubagentEffortLevel({
+            effort: request.effort,
+            effortAboveParent: request.effortAboveParent,
+            baseLevel: childSelection.options?.reasoningLevel,
+            parentLevel,
+            supportedLevels,
+          });
+          if (effortResolution.outcome === "unknown-class") {
+            this.logger?.warn("Subagent effort class is unknown; keeping the resolved level", {
+              event: "subagent.effort.unknown_class",
+              module: "core.subagent",
+              agentType: request.agentType,
+              effort: request.effort,
+            });
+          } else {
+            this.logger?.debug("Subagent effort resolved", {
+              event: "subagent.effort.resolved",
+              module: "core.subagent",
+              agentType: request.agentType,
+              effort: request.effort,
+              outcome: effortResolution.outcome,
+              reasoningLevel: effortResolution.level,
+              baseClamped: effortResolution.baseClamped,
+            });
+          }
+          if (
+            effortResolution.level &&
+            effortResolution.level !== childSelection.options?.reasoningLevel
+          ) {
+            childSelection = {
+              ...childSelection,
+              options: { ...childSelection.options, reasoningLevel: effortResolution.level },
+            };
+            baseChildModelFactory = modelOverride
+              ? createSubagentOverrideModelFactory(
+                  { ...modelOverride, selection: childSelection },
+                  this.modelFactory,
+                )
+              : inheritedModel
+                ? createInheritedSubagentModelFactory(
+                    childSelection,
+                    inheritedModel,
+                    this.modelFactory,
+                  )
+                : this.modelFactory;
+            if (!baseChildModelFactory) {
+              throw createCoreError(
+                CoreErrorType.ConfigurationError,
+                `Subagent model factory cannot resolve ${childSelection.providerId}/${childSelection.modelId}`,
+                { recoverable: true },
+              );
+            }
+            childModel = baseChildModelFactory({ selection: childSelection });
+          }
+        }
         const childToolAllowlist = resolveSubagentToolAllowlist.call(
           this,
           request,
@@ -380,9 +459,9 @@ export function createDefaultSubagentPort(
           }) ?? this.browserControlPort;
         const mirroredToolNameByChildToolCallId = new Map<string, string>();
         let sessionReadyNotified = false;
-        const notifySessionReady = async () => {
+        const notifySessionReady = async (info?: { reasoningLevel?: string }) => {
           if (sessionReadyNotified) return;
-          await request.onSessionReady?.();
+          await request.onSessionReady?.(info);
           sessionReadyNotified = true;
         };
         this.logger?.debug("Starting subagent child runtime", {
@@ -638,7 +717,7 @@ export function createDefaultSubagentPort(
             traceContext: request.traceContext,
           });
         }
-        await notifySessionReady();
+        await notifySessionReady({ reasoningLevel: childModel.options.reasoningLevel });
         if (
           !resumesExistingChild ||
           (previousSelection && !sameModelSelection(previousSelection, childSelection))
@@ -666,7 +745,7 @@ export function createDefaultSubagentPort(
           if (options?.signal?.aborted) {
             throw options.signal.reason ?? new Error("Subagent runtime start aborted");
           }
-          return await childRuntime.executeTurn(request.prompt, undefined, {
+          const turnResult = await childRuntime.executeTurn(request.prompt, undefined, {
             ...(childBinding
               ? {
                   offPeakTaskId: offPeak!.offPeakTaskId,
@@ -689,6 +768,12 @@ export function createDefaultSubagentPort(
             inputPresentation: "coordinator_input",
             traceContext: request.traceContext,
           });
+          return {
+            ...turnResult,
+            ...(childModel.options.reasoningLevel
+              ? { reasoningLevel: childModel.options.reasoningLevel }
+              : {}),
+          };
         } finally {
           const cancelled = options?.signal?.aborted === true;
           childRuntime.sealBackgroundTaskNotifications({

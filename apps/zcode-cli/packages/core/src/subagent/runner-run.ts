@@ -227,7 +227,7 @@ export async function runExploreSubagent(
       reportActivity: activityWatchdog.reportActivity,
     },
     {
-      onSessionReady: async () => {
+      onSessionReady: async (info) => {
         await persistSwarmFact("running");
         await emitSubagentEvent(
           ctx.options,
@@ -247,6 +247,7 @@ export async function runExploreSubagent(
             model: profile.modelSelection
               ? `${profile.modelSelection.providerId}/${profile.modelSelection.modelId}`
               : undefined,
+            ...(info?.reasoningLevel ? { reasoningLevel: info.reasoningLevel } : {}),
           },
         );
         // Причина гонки: registry admission предшествует созданию читаемой child-сессии.

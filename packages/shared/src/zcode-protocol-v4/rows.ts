@@ -274,12 +274,18 @@ export const subagentRowSchema = z.object({
   subagentType: z.string(),
   status: z.enum(["running", "success", "failed", "cancelled"]),
   summaryText: z.string(),
+  /** Effective reasoning level of the child run, when the model supports levels. */
+  reasoningLevel: z.string().optional(),
   // 存在 → UI 可下钻订阅 conversation/<childSessionId>（不内嵌 child rows）。
   childSessionId: z.string().optional(),
   backgrounded: z.literal(true).optional(),
   workId: z.string().optional(),
   startedAt: timestampSchema.optional(),
   endedAt: timestampSchema.optional(),
+  /** Итоговый расход токенов run-а, когда runtime его сообщил. */
+  totalTokens: z.number().int().nonnegative().optional(),
+  /** Итоговая длительность run-а, когда runtime её сообщил. */
+  totalDurationMs: z.number().int().nonnegative().optional(),
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
 

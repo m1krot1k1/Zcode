@@ -117,7 +117,7 @@ export async function startExploreSubagentInBackground(
       ...(startOptions?.modelOverride ? { modelOverride: startOptions.modelOverride } : {}),
     },
     {
-      onSessionReady: async () => {
+      onSessionReady: async (info) => {
         await emitSubagentEvent(
           ctx.options,
           SessionEventType.SubagentSpawned,
@@ -138,6 +138,7 @@ export async function startExploreSubagentInBackground(
             model: profile.modelSelection
               ? `${profile.modelSelection.providerId}/${profile.modelSelection.modelId}`
               : undefined,
+            ...(info?.reasoningLevel ? { reasoningLevel: info.reasoningLevel } : {}),
           },
         );
         readyGate.resolve();

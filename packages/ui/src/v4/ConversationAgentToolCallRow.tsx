@@ -91,6 +91,16 @@ export function ConversationAgentToolCallRow({
         onOpenAutomationsMain={context.onOpenAutomationsMain}
         agentSummaryAction={agentSummaryAction}
         authoritativeAgentType={subagentType}
+        authoritativeReasoningLevel={item.subagentRow.reasoningLevel}
+        {...(item.subagentRow.totalTokens === undefined &&
+        item.subagentRow.totalDurationMs === undefined
+          ? {}
+          : {
+              authoritativeSubagentUsage: {
+                totalTokens: item.subagentRow.totalTokens,
+                totalDurationMs: item.subagentRow.totalDurationMs,
+              },
+            })}
       />
     </div>
   );

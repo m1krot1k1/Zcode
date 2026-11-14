@@ -2,6 +2,7 @@ import { useToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCa
 import { BotIcon } from "lucide-react";
 import { useCallback, useMemo, type ReactNode } from "react";
 import type { AgentColor } from "@zcode/shared";
+import { formatBackgroundTaskElapsedLabel } from "@/BackgroundTaskElapsedLabel.js";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -22,6 +23,12 @@ import {
 } from "./agentHelpers.js";
 
 const AGENT_TOOL_ICON = <BotIcon className="size-4 shrink-0 text-foreground-subtle" />;
+
+function formatCompactTokenCount(value: number): string {
+  if (value < 1_000) return String(value);
+  const thousands = value / 1_000;
+  return `${thousands >= 10 ? Math.round(thousands) : thousands.toFixed(1)}k`;
+}
 
 function AgentChildToolList({
   nestedToolRenderer,
@@ -218,8 +225,40 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const agentColor = agentName
     ? (configuredAgentColor ?? getAgentColor(toolCall) ?? resolveSubagentColorFromName(agentName))
     : null;
-  const agentNameDetail =
+  const agentNameText =
     agentName && agentColor ? <AgentNameText color={agentColor} name={agentName} /> : null;
+  const reasoningLevel = context.authoritativeReasoningLevel?.trim();
+  const subagentUsage = context.authoritativeSubagentUsage;
+  const usageParts = [
+    ...(subagentUsage?.totalTokens === undefined
+      ? []
+      : [`${formatCompactTokenCount(subagentUsage.totalTokens)} tok`]),
+    ...(subagentUsage?.totalDurationMs === undefined
+      ? []
+      : [
+          formatBackgroundTaskElapsedLabel(
+            Math.max(0, subagentUsage.totalDurationMs),
+            intl.formatMessage,
+          ),
+        ]),
+  ];
+  const usageText = usageParts.join(" · ");
+  const agentNameDetail =
+    agentNameText || reasoningLevel || usageText ? (
+      <span className="inline-flex min-w-0 items-center gap-1">
+        {agentNameText}
+        {reasoningLevel ? (
+          <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-ui-xs text-[var(--color-foreground-subtle)]">
+            {reasoningLevel}
+          </span>
+        ) : null}
+        {usageText ? (
+          <span className="shrink-0 text-ui-xs tabular-nums text-[var(--color-foreground-subtle)]">
+            {usageText}
+          </span>
+        ) : null}
+      </span>
+    ) : null;
   // Agent 父块的完成/进行中边界只由父 Agent tool 决定。
   // 子 tool 是展开区明细，不能反向续住父块运行态，否则父 Agent completed 后
   // 仍会显示渐变和子工具摘要，和协议里的父工具生命周期不一致。

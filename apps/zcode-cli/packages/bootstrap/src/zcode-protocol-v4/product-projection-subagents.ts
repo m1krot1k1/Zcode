@@ -275,6 +275,9 @@ export function onSubagentSpawned(
       // 已存在的锚点不能作为生命周期字段被覆盖，否则 UI 无法再关联原 Agent 行。
       ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
       ...(childSessionId ? { childSessionId } : {}),
+      ...(self.stringPayload(payload, "reasoningLevel")
+        ? { reasoningLevel: self.stringPayload(payload, "reasoningLevel") }
+        : {}),
       ...(payload.background === true ? { backgrounded: true as const } : {}),
       ...(payload.background === true ? { workId: agentId } : {}),
       startedAt: self.ms(event),
@@ -297,6 +300,9 @@ export function onSubagentSpawned(
       "",
     ...(self.stringPayload(payload, "childSessionId")
       ? { childSessionId: self.stringPayload(payload, "childSessionId") }
+      : {}),
+    ...(self.stringPayload(payload, "reasoningLevel")
+      ? { reasoningLevel: self.stringPayload(payload, "reasoningLevel") }
       : {}),
     ...(payload.background === true ? { backgrounded: true as const } : {}),
     ...(payload.background === true ? { workId: agentId } : {}),
@@ -382,12 +388,22 @@ export function onSubagentStopped(
     self.stringPayload(payload, "description") ??
     existing?.summaryText ??
     "";
+  const totalTokens =
+    typeof payload.totalTokens === "number" && Number.isFinite(payload.totalTokens)
+      ? payload.totalTokens
+      : undefined;
+  const totalDurationMs =
+    typeof payload.totalDurationMs === "number" && Number.isFinite(payload.totalDurationMs)
+      ? payload.totalDurationMs
+      : undefined;
   const row: SubagentRow = existing
     ? {
         ...existing,
         status,
         summaryText,
         endedAt: self.ms(event),
+        ...(totalTokens === undefined ? {} : { totalTokens }),
+        ...(totalDurationMs === undefined ? {} : { totalDurationMs }),
         // resumed child 的终态同样属于原 Agent row，只在旧 row 缺失锚点时补齐。
         ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
         ...(self.stringPayload(payload, "childSessionId")
@@ -411,6 +427,8 @@ export function onSubagentStopped(
         ...(payload.background === true ? { backgrounded: true as const } : {}),
         ...(payload.background === true ? { workId: agentId } : {}),
         endedAt: self.ms(event),
+        ...(totalTokens === undefined ? {} : { totalTokens }),
+        ...(totalDurationMs === undefined ? {} : { totalDurationMs }),
       };
   self.subagentRowIdByAgentId.set(agentId, row.rowId);
   return [{ op: existing ? "row.upserted" : "row.appended", row }];

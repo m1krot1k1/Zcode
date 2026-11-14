@@ -30,7 +30,7 @@ export interface ExploreSubagentRuntimeRequest {
   description: string;
   maxTurns?: number;
   /** child session 已持久化且可被 projection/query 读取后、首次模型执行前调用。 */
-  onSessionReady?: () => Promise<void>;
+  onSessionReady?: (info?: { reasoningLevel?: string }) => Promise<void>;
   permissionMode?: AgentProfile["permissionMode"];
   prompt: string;
   profile: AgentProfile;
@@ -38,6 +38,10 @@ export interface ExploreSubagentRuntimeRequest {
   reportActivity?: () => void;
   resumeFromStore?: boolean;
   systemPrompt?: string;
+  /** Относительный класс effort, выбранный родителем для этого спавна. */
+  effort?: string;
+  /** Явное разрешение поднять ребёнка выше уровня родителя. */
+  effortAboveParent?: boolean;
   /** Фактический параллелизм, рассчитанный по доступной ёмкости runtime. */
   maxParallel?: number;
   /** 本 child 的嵌套层级；仅记录，不设硬上限。 */
@@ -53,6 +57,8 @@ export interface ExploreSubagentRuntimeResult {
   response: string;
   traceId: TraceContext["traceId"];
   events: SessionEvent[];
+  /** Фактический уровень ребёнка после резолва класса effort. */
+  reasoningLevel?: string;
 }
 
 export interface CompletedAgentRun {

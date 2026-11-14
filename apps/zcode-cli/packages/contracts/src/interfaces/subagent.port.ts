@@ -123,7 +123,11 @@ export interface SubagentRunRequest {
   agentType: string;
   description: string;
   prompt: string;
-  /** Exact write scope for the work ledger; absent keeps legacy prompt extraction. */
+  /**
+   * Exact write scope, propagated to the child runtime as writeScope. Required for
+   * write-capable profiles; admission rejects an absent value, while [] means the
+   * branch may not modify files.
+   */
   writePaths?: readonly string[];
   callerCanReadOutputFile?: boolean;
   workingDirectory: string;
@@ -140,6 +144,10 @@ export interface SubagentRunRequest {
   spawnBudget?: number;
   /** 模型声明的嵌套层级；仅记录，不用于深度熔断。 */
   level?: number;
+  /** Относительный класс effort (`lower`/`same`/`higher`); резолвится в момент спавна. */
+  effort?: string;
+  /** Явное разрешение поднять ребёнка выше уровня родителя. */
+  effortAboveParent?: boolean;
 }
 
 /** Foreground DAG request; individual nodes own their prompts, agent types, and evidence criteria. */

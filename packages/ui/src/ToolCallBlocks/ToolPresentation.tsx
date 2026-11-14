@@ -31,6 +31,8 @@ export function ToolPresentation({
     | "codePreviewSettings"
     | "onOpenBrowserUrl"
     | "authoritativeAgentType"
+    | "authoritativeReasoningLevel"
+    | "authoritativeSubagentUsage"
     | "showTodoToolCalls"
   >
 > & {
