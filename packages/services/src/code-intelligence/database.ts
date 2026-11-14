@@ -156,6 +156,26 @@ export function cosineSimilarity(left: number[], right: number[]): number {
   return leftNorm > 0 && rightNorm > 0 ? dot / Math.sqrt(leftNorm * rightNorm) : 0;
 }
 
+/**
+ * Endpoint, введённый как origin (`http://host:port`), раньше уходил POST-ом в `/`.
+ * Локальные OpenAI-compatible/Ollama-серверы часто отвечают 200 на любой путь,
+ * поэтому проверка соединения проходила HTTP-слой и падала только на разборе JSON.
+ * Дописываем стандартный путь, не трогая уже указанные пользователем пути.
+ */
+function normalizeEmbeddingEndpoint(provider: EmbeddingProvider, parsed: URL): string {
+  const path = parsed.pathname.replace(/\/+$/u, "");
+  if (path === "") {
+    return `${parsed.origin}${provider === "ollama" ? "/api/embeddings" : "/v1/embeddings"}`;
+  }
+  if (provider === "openai-compatible" && path === "/v1") {
+    return `${parsed.origin}/v1/embeddings`;
+  }
+  if (provider === "ollama" && path === "/api") {
+    return `${parsed.origin}/api/embeddings`;
+  }
+  return `${parsed.origin}${path}`;
+}
+
 export function validateEmbeddingConfig(
   providerValue: EmbeddingProvider | null | undefined,
   endpointValue?: string | null,
@@ -200,7 +220,7 @@ export function validateEmbeddingConfig(
       "Embedding configuration must use an allowed credential-free endpoint and a valid model name.",
     );
   }
-  const normalizedEndpoint = parsed.toString().replace(/\/$/, "");
+  const normalizedEndpoint = normalizeEmbeddingEndpoint(provider, parsed);
   return {
     provider,
     endpoint: normalizedEndpoint,

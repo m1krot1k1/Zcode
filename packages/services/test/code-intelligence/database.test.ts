@@ -52,6 +52,21 @@ describe("embedding providers", () => {
     ).toThrow();
   });
 
+  it("normalizes an origin-only endpoint to the provider embedding path", () => {
+    expect(
+      validateEmbeddingConfig("openai-compatible", "https://example.test", "example/embed"),
+    ).toMatchObject({ endpoint: "https://example.test/v1/embeddings" });
+    expect(
+      validateEmbeddingConfig("openai-compatible", "https://example.test/v1", "example/embed"),
+    ).toMatchObject({ endpoint: "https://example.test/v1/embeddings" });
+    expect(
+      validateEmbeddingConfig("ollama", "http://127.0.0.1:11434", "nomic-embed-text"),
+    ).toMatchObject({ endpoint: "http://127.0.0.1:11434/api/embeddings" });
+    expect(
+      validateEmbeddingConfig("ollama", "http://127.0.0.1:11434/api", "nomic-embed-text"),
+    ).toMatchObject({ endpoint: "http://127.0.0.1:11434/api/embeddings" });
+  });
+
   it("maps OpenAI-compatible response indexes back to input order and sends a bearer token", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-secret");
