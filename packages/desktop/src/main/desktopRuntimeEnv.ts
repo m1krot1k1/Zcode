@@ -233,14 +233,17 @@ function resolveDevelopmentMockCdnDir(): string {
 }
 
 function resolveBundledRemoteAssetsDir(): string | undefined {
-  const candidates = isElectronAppPackaged()
-    ? [join(process.resourcesPath, "remote-assets")]
-    : [join(import.meta.dirname, "../../bundled-remote-assets")];
+  const packagedResources =
+    typeof process.resourcesPath === "string" ? process.resourcesPath : undefined;
+  const candidates = [
+    ...(isElectronAppPackaged() && packagedResources
+      ? [join(packagedResources, "remote-assets")]
+      : []),
+    ...(isElectronAppPackaged() ? [] : [join(import.meta.dirname, "../../bundled-remote-assets")]),
+  ];
   // Собранный fork-релиз может не содержать remote-архив (например Windows:
   // Source Server target отсутствует). Тогда не передаём заведомо пустой путь.
-  return candidates.find((candidate) =>
-    existsSync(join(candidate, "releases", ZCODE_VERSION)),
-  );
+  return candidates.find((candidate) => existsSync(join(candidate, "releases", ZCODE_VERSION)));
 }
 
 function resolveAvailableDevelopmentMockCdnDir(): string | undefined {
