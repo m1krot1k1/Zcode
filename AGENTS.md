@@ -50,6 +50,14 @@ affected 使用 Vitest 官方选择，只运行选中的根 UT；选中整个套
 - 使用异步文件和网络 IO；跨包导入使用公开入口，遵守现有路径别名。
 - 禁止 UI 直接调用 Repo、Service 引用 Runtime 具体实现、跨域导入实现细节及循环依赖。
 
+## 本地资源与并行度
+
+- 本机是开发者的工作机，可能同时在跑游戏、录屏和 IDE；`pnpm typecheck`、`pnpm test` 和整包构建都是满核负载，不是免费操作。
+- 同时存活的 subagent 不超过 `max(1, availableParallelism() − 2)` 个；上一批没有收敛前不要开下一批。多波次任务按波串行，不要一次把 q/z/y/x 全放出去。
+- 跨工作树验证串行执行：一个工作树跑完再跑下一个，不要为每个工作树各起一份 `pnpm typecheck` / `pnpm test`。
+- subagent 只跑自己改动相关的验证范围，不要全量 `pnpm test`、全量构建或反复整包 bundle。
+- 需要长时间满核任务时先限流：`nice -n 19 …` 或 `systemd-run --user --scope -p CPUQuota=40% …`。
+
 ## UI 与平台边界
 
 - 遵守 `DESIGN.md`，复用已有组件，兼顾桌面与手机 Web 的布局、交互、主题和国际化。
