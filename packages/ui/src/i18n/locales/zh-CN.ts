@@ -6018,6 +6018,7 @@ const zhCN: Record<string, string> = {
   "chat.contextCompaction.skipped": "上下文已是最新，无需压缩",
   "chat.contextCompaction.completed": "上下文已压缩",
   "chat.modelChange.switched": "模型已切换 {from} → {to}",
+  "chat.modelChange.effortChanged": "推理强度已切换 {from} → {to}",
   "chat.modelChange.using": "正在使用 {model}",
   "chat.contextCompaction.completedAuto": "上下文已自动压缩",
   "chat.contextCompaction.failed": "上下文压缩失败",

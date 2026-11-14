@@ -171,6 +171,9 @@ export const TimelineMarkerRowView = memo(function TimelineMarkerRowView({
         const fromProvider = resolveProviderLabel(marker.fromProvider, modelSelectionView);
         const toProvider = resolveProviderLabel(marker.toProvider, modelSelectionView);
         const to = formatModelChangeLabel(marker.toProvider, toProvider, marker.toModel, intl);
+        const toThought = marker.toThought?.trim();
+        const withEffort = (label: string, effort: string | undefined) =>
+          effort ? `${label} (${effort})` : label;
         if (marker.fromProvider === undefined || marker.fromModel === undefined) {
           return {
             // source-less 表示首次使用的模型事实，不是模型切换，因此不显示切换箭头。
@@ -179,18 +182,45 @@ export const TimelineMarkerRowView = memo(function TimelineMarkerRowView({
             running: false,
           };
         }
+        const fromThought = marker.fromThought?.trim();
+        if (
+          marker.fromProvider === marker.toProvider &&
+          marker.fromModel === marker.toModel &&
+          fromThought &&
+          toThought &&
+          fromThought !== toThought
+        ) {
+          return {
+            icon: MARKER_MODEL_ICON,
+            label: intl.formatMessage(
+              { id: "chat.modelChange.effortChanged" },
+              { from: fromThought, to: toThought },
+            ),
+            running: false,
+          };
+        }
         return {
           icon: MARKER_MODEL_ICON,
           label: intl.formatMessage(
             { id: "chat.modelChange.switched" },
             {
-              from: formatModelChangeLabel(
-                marker.fromProvider,
-                fromProvider,
-                marker.fromModel,
-                intl,
-              ),
-              to,
+              from: fromThought
+                ? withEffort(
+                    formatModelChangeLabel(
+                      marker.fromProvider,
+                      fromProvider,
+                      marker.fromModel,
+                      intl,
+                    ),
+                    fromThought,
+                  )
+                : formatModelChangeLabel(
+                    marker.fromProvider,
+                    fromProvider,
+                    marker.fromModel,
+                    intl,
+                  ),
+              to: fromThought ? withEffort(to, toThought) : to,
             },
           ),
           running: false,

@@ -6440,6 +6440,7 @@ const enUS: Record<string, string> = {
   "chat.contextCompaction.skipped": "Context is up to date; no compression needed",
   "chat.contextCompaction.completed": "Context compressed",
   "chat.modelChange.switched": "Model switched {from} → {to}",
+  "chat.modelChange.effortChanged": "Reasoning effort switched {from} → {to}",
   "chat.modelChange.using": "Using {model}",
   "chat.contextCompaction.completedAuto": "Context automatically compressed",
   "chat.contextCompaction.failed": "Context compression failed",

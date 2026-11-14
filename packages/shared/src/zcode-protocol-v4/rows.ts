@@ -453,6 +453,8 @@ export const timelineMarkerPayloadSchema = z.union([
     type: z.literal("modelChange"),
     fromProvider: z.string(),
     fromModel: z.string(),
+    /** Prior effective level; absent in old persisted markers. */
+    fromThought: z.string().optional(),
     toProvider: z.string(),
     toModel: z.string(),
     toThought: z.string(),

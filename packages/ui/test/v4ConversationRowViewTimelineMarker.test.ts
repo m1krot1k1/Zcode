@@ -101,6 +101,31 @@ describe("ConversationRowView timeline marker contract", () => {
     expect(html).toContain("lucide-arrow-right-left");
   });
 
+  it("только смена reasoning level не схлопывается в X → X", () => {
+    const row: TimelineMarkerRow = {
+      rowId: 14,
+      turnId: "turn-effort",
+      createdAt: 1_700_000_001_500,
+      createdAtSeq: 3,
+      kind: "timelineMarker",
+      marker: {
+        type: "modelChange",
+        fromProvider: "primary-provider",
+        fromModel: "glm-5.2",
+        fromThought: "low",
+        toProvider: "primary-provider",
+        toModel: "glm-5.2",
+        toThought: "high",
+      },
+    };
+    const html = renderMarker(row);
+    const englishHtml = renderMarker(row, "en-US");
+
+    expect(html).toContain("推理强度已切换 low → high");
+    expect(html).not.toContain("glm-5.2 → glm-5.2");
+    expect(englishHtml).toContain("Reasoning effort switched low → high");
+  });
+
   it("source 缺失的初始模型事实渲染为正在使用实际模型", () => {
     replaceProviders([{ providerId: "child-provider", label: "Child Provider" }]);
 

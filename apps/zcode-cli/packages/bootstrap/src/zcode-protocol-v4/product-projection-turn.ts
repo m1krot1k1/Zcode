@@ -95,7 +95,9 @@ export function onTurnStarted(
   } else if (
     hasModel &&
     self.lastTurnModel.kind === "known" &&
-    (self.lastTurnModel.provider !== config.provider || self.lastTurnModel.model !== config.model)
+    (self.lastTurnModel.provider !== config.provider ||
+      self.lastTurnModel.model !== config.model ||
+      self.lastTurnModel.thought !== config.thought)
   ) {
     deltas.push({
       op: "row.appended",
@@ -103,7 +105,7 @@ export function onTurnStarted(
         ...self.rowBase(
           event,
           turnId,
-          `model-change:${turnId}:${self.lastTurnModel.provider}/${self.lastTurnModel.model}->${config.provider}/${config.model}`,
+          `model-change:${turnId}:${self.lastTurnModel.provider}/${self.lastTurnModel.model}->${config.provider}/${config.model}:${self.lastTurnModel.thought}->${config.thought}`,
         ),
         kind: "timelineMarker",
         // lane 由投影裁决（UI 不得按 marker type 自行推断落位语义）。
@@ -112,6 +114,7 @@ export function onTurnStarted(
           type: "modelChange",
           fromProvider: self.lastTurnModel.provider,
           fromModel: self.lastTurnModel.model,
+          fromThought: self.lastTurnModel.thought,
           toProvider: config.provider,
           toModel: config.model,
           toThought: config.thought,

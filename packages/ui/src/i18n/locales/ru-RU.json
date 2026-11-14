@@ -3756,6 +3756,7 @@
   "chat.mention.whiteboards.strokeCount": "Штрихов: {count}",
   "chat.mention.whiteboards.title": "Доски",
   "chat.modelChange.switched": "Модель изменена: {from} → {to}",
+  "chat.modelChange.effortChanged": "Уровень ризонинга изменён: {from} → {to}",
   "chat.modelChange.using": "Используется модель {model}",
   "chat.modelChangeNotice.changed": "Выполнен переход с {fromModel} на {toModel}",
   "chat.modelSwitch.contextWindowGuard.compress": "Сжать",
