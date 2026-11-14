@@ -248,24 +248,30 @@ async function resolveReleaseAsset(
     };
   }
 
-  if (installMode === "local-download-upload") {
-    // Bug 原因：开发态曾直接信任 gitignore 的 dist-release；同版本源码变化后仍会部署旧包。
-    // 现在只接受本轮 staging 写入 mock-cdn 且通过 descriptor SHA/size 校验的本地产物。
-    const localReleaseDirs = remoteAssets.mockCdnDir
+  // Fork-local release: приложение везёт собственный Source Server archive и
+  // загружает его на remote host. Локальный проверенный archive имеет приоритет
+  // для любого install mode: транспорт сам выбирает upload, если путь задан.
+  const localReleaseDirs = [
+    ...(remoteAssets.bundledReleaseDir
+      ? [join(remoteAssets.bundledReleaseDir, "releases", ZCODE_VERSION)]
+      : []),
+    ...(remoteAssets.mockCdnDir
       ? [join(remoteAssets.mockCdnDir, "releases", ZCODE_VERSION)]
-      : [];
-    for (const releaseDir of localReleaseDirs) {
-      const local = await resolveLocalDescriptor(releaseDir, target);
-      if (!local) continue;
-      return {
-        localArchivePath: local.archivePath,
-        target,
-        version: ZCODE_VERSION,
-        sha256: local.archive.sha256,
-        sizeBytes: local.archive.sizeBytes,
-        urls: local.archive.urls,
-      };
-    }
+      : []),
+  ];
+  for (const releaseDir of localReleaseDirs) {
+    // Ошибка верификации bundled archive остаётся фатальной: молчаливая
+    // подмена версии с CDN недопустима.
+    const local = await resolveLocalDescriptor(releaseDir, target);
+    if (!local) continue;
+    return {
+      localArchivePath: local.archivePath,
+      target,
+      version: ZCODE_VERSION,
+      sha256: local.archive.sha256,
+      sizeBytes: local.archive.sizeBytes,
+      urls: local.archive.urls,
+    };
   }
 
   const resolvedDescriptor = await resolveRemoteDescriptor(

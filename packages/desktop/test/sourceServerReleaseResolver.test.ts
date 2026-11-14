@@ -103,6 +103,35 @@ describe("Source Server release resolver", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("uses the bundled fork release for SSH remote-download instead of the CDN", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-source-release-bundled-"));
+    const releaseDir = join(root, "releases", ZCODE_VERSION);
+    const contents = "bundled-source-server";
+    await mkdir(releaseDir, { recursive: true });
+    await writeFile(join(releaseDir, fileName), contents);
+    await writeFile(
+      join(releaseDir, "source-server-release.json"),
+      JSON.stringify(descriptor(contents)),
+    );
+    const fetchMock = vi.fn(async () => {
+      throw new Error("bundled release must win over the CDN");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const release = await resolveSourceServerReleaseAsset(
+      probe,
+      { bundledReleaseDir: root },
+      { ...target, assetInstallMode: "remote-download" },
+    );
+
+    expect(release).toMatchObject({
+      localArchivePath: join(releaseDir, fileName),
+      version: ZCODE_VERSION,
+      sha256: sha256(contents),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("fails closed without a staged local development descriptor", async () => {
     const fetchMock = vi.fn(async () => new Response("production-release", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

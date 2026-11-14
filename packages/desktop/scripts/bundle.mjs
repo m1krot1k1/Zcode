@@ -845,6 +845,11 @@ async function main() {
 
   if (!skipPrepare) {
     run(pnpmCommand, ["prepare:runtime-assets"], buildEnv);
+    // Fork-local Source Server: upstream CDN не публикует наши версии, поэтому
+    // архив кладётся в resources/remote-assets и загружается на remote host.
+    if (process.env.ZCODE_SKIP_BUNDLED_REMOTE_ASSETS !== "1") {
+      run(process.execPath, ["scripts/prepare-bundled-remote-assets.mjs"], buildEnv);
+    }
   }
 
   if (!skipBuild) {

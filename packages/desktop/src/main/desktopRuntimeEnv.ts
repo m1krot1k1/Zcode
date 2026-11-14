@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, win32 } from "node:path";
-import type { ConnectOptions } from "@zcode/server/remote";
 import { listSSHConfigAliasesFromLocalConfig } from "@zcode/services/node";
 import { DEV_HELPER_APP_NAME, HELPER_APP_NAME } from "@zcode/zcode-cua/broker/helperConstants";
 import {
@@ -89,12 +88,15 @@ export function getCredentialsDir() {
   return getAppConfigDir();
 }
 
-export type RemoteAssetDirs = Pick<
-  ConnectOptions,
-  "mockCdnDir" | "remoteCdnBaseUrl" | "remoteCdnBaseUrls" | "remoteCacheDir"
-> & {
+export interface RemoteAssetDirs {
+  /** Приложение несёт собственный Source Server release и загружает его на remote host. */
+  bundledReleaseDir?: string;
+  mockCdnDir?: string;
+  remoteCdnBaseUrl?: string;
+  remoteCdnBaseUrls?: string[];
+  remoteCacheDir?: string;
   sourceServerArtifactPolicy?: SourceServerArtifactPolicy;
-};
+}
 type LocalRuntimeEnv = Record<string, string | undefined>;
 
 export async function isDockerDaemonAvailable(): Promise<boolean> {
@@ -230,6 +232,17 @@ function resolveDevelopmentMockCdnDir(): string {
   return join(import.meta.dirname, "../../mock-cdn");
 }
 
+function resolveBundledRemoteAssetsDir(): string | undefined {
+  const candidates = isElectronAppPackaged()
+    ? [join(process.resourcesPath, "remote-assets")]
+    : [join(import.meta.dirname, "../../bundled-remote-assets")];
+  // Собранный fork-релиз может не содержать remote-архив (например Windows:
+  // Source Server target отсутствует). Тогда не передаём заведомо пустой путь.
+  return candidates.find((candidate) =>
+    existsSync(join(candidate, "releases", ZCODE_VERSION)),
+  );
+}
+
 function resolveAvailableDevelopmentMockCdnDir(): string | undefined {
   const mockCdnDir = resolveDevelopmentMockCdnDir();
   const releaseDir = join(mockCdnDir, "releases", ZCODE_VERSION);
@@ -339,8 +352,10 @@ export function resolveRemoteAssetDirs(
   // 不再暴露任何安装包内 remote-assets 路径，避免 remote 资源再次被塞回安装包。
   // 功能开关：开发态默认继续走 mock-cdn，只有显式打开开关才切到公网 CDN。
   // 这样能兼容离线开发场景，同时允许在开发环境提前验证真实 CDN 下载链路。
+  const bundledReleaseDir = resolveBundledRemoteAssetsDir();
   if (isElectronAppPackaged() || shouldUseRemoteCdnInDevelopment(localEnv)) {
     return {
+      ...(bundledReleaseDir ? { bundledReleaseDir } : {}),
       remoteCdnBaseUrl,
       remoteCdnBaseUrls,
       remoteCacheDir: resolveRemoteAssetCacheDir(localEnv),
@@ -349,6 +364,7 @@ export function resolveRemoteAssetDirs(
 
   const developmentMockCdnDir = resolveAvailableDevelopmentMockCdnDir();
   return {
+    ...(bundledReleaseDir ? { bundledReleaseDir } : {}),
     ...(developmentMockCdnDir ? { mockCdnDir: developmentMockCdnDir } : {}),
     // Bug 原因：ZCODE_ENV 表示测试/生产产品环境，dev:desktop 也可能取 production；
     // 同版本开发制品刷新必须由未打包 Electron 这一运行形态显式授权。

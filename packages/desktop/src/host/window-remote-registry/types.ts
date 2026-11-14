@@ -1,6 +1,7 @@
 import type { RemoteTarget, SourceServerArtifactPolicy, WorkspacePurpose } from "@zcode/shared";
 
 export interface WindowRemoteAssetDirs {
+  bundledReleaseDir?: string;
   mockCdnDir?: string;
   remoteCdnBaseUrl?: string;
   remoteCdnBaseUrls?: string[];

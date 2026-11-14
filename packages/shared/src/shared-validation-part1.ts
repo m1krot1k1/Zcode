@@ -120,6 +120,7 @@ export const rendererLogPayloadSchema = z.object({
 });
 
 export const remoteAssetDirsSchema = z.object({
+  bundledReleaseDir: z.string().optional(),
   mockCdnDir: z.string().optional(),
   remoteCdnBaseUrl: z.string().optional(),
   remoteCdnBaseUrls: z.array(z.string()).optional(),

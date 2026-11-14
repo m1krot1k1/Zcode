@@ -1,10 +1,23 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { noticesFileName } from "../../../scripts/third-party-notices.mjs";
 import { CUA_HELPER_APP_NAME } from "./context.mjs";
 
 export function createExtraResources(ctx) {
   const { targetPlatform } = ctx;
+  const bundledRemoteAssets = resolve(ctx.desktopPackageRoot, "bundled-remote-assets");
   return [
+    ...(existsSync(bundledRemoteAssets)
+      ? [
+          {
+            // Fork-local Source Server release: SSH/WSL установка не зависит от
+            // upstream CDN, приложение загружает собственный архив на remote host.
+            from: bundledRemoteAssets,
+            to: "remote-assets",
+            filter: ["**/*"],
+          },
+        ]
+      : []),
     { from: resolve(ctx.workspaceRoot, noticesFileName), to: noticesFileName },
     ...(targetPlatform.os === "darwin"
       ? [
