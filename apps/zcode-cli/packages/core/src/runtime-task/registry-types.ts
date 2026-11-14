@@ -130,6 +130,8 @@ export type RuntimeTaskAdmissionResult =
         | "task_finalizing"
         /** Пути задачи пересекаются с живым claim'ом другого агента. */
         | "write_claim_conflict"
+        /** Write-capable роль не объявила write_paths: запись нельзя ограничить. */
+        | "write_scope_required"
         /** Ledger подключён, но чтение/запись claim'а недоступны (fail-closed). */
         | "work_claim_unavailable";
     };

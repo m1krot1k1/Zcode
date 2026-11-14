@@ -259,14 +259,17 @@ export function throwOnSubagentAdmissionFailure(
 ): never {
   const isCapacityLimit = admission.reason === "active_limit";
   const isWriteConflict = admission.reason === "write_claim_conflict";
+  const isWriteScopeRequired = admission.reason === "write_scope_required";
   const isClaimUnavailable = admission.reason === "work_claim_unavailable";
   const message = isWriteConflict
       ? "Work claim conflict: another agent holds an overlapping file path. Choose non-overlapping files, read the held path first, or wait for that agent to finish. The spawn was not started."
-      : isClaimUnavailable
-        ? "Work ledger is unavailable: the host could not reserve this agent's file claim, so the spawn was not started to avoid a silent write conflict."
-        : isCapacityLimit
-          ? "No worker slot is currently available for this root session; retry after active work finishes or reduce parallelism."
-          : "The parent runtime no longer accepts subagent work.";
+      : isWriteScopeRequired
+        ? "Write scope required: this agent profile can modify files, but the Task call did not declare write_paths. Pass the exact files/directories this branch will write, or [] if it is read-only. The spawn was not started."
+        : isClaimUnavailable
+          ? "Work ledger is unavailable: the host could not reserve this agent's file claim, so the spawn was not started to avoid a silent write conflict."
+          : isCapacityLimit
+            ? "No worker slot is currently available for this root session; retry after active work finishes or reduce parallelism."
+            : "The parent runtime no longer accepts subagent work.";
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
     `${message} (reason: ${admission.reason})`,

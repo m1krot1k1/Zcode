@@ -146,8 +146,9 @@ function normalizeAgentTypeName(agentType: string | null | undefined): string {
 }
 
 const ROOT_CALLER_AGENT_TYPES = new Set(["", "main", "root", "zcode", "zcode-agent"]);
+/** Researcher is a leaf: it must not appear in its own delegation catalog. */
+const RESEARCH_LEAF_CALLER_ROLE_NAME = "researcher";
 const INSPECTION_CALLER_ROLE_NAMES = new Set([
-  "researcher",
   "reviewer",
   "security-reviewer",
   "evaluator",
@@ -171,6 +172,9 @@ export function isAgentTypeAllowedForCaller(
   if (caller === "start") {
     return normalizeAgentTypeName(agentType) === START_ROUTING_TARGET_AGENT_TYPE;
   }
+  if (caller === RESEARCH_LEAF_CALLER_ROLE_NAME) {
+    return false;
+  }
   if (INSPECTION_CALLER_ROLE_NAMES.has(caller)) {
     return normalizeAgentTypeName(agentType) === "researcher";
   }
@@ -191,6 +195,9 @@ export function filterAgentTypesForCaller<T extends Pick<AgentProfile, "name" | 
   const caller = normalizeAgentTypeName(callerAgentType);
   if (caller === "start") {
     return profiles.filter((profile) => isAgentTypeAllowedForCaller(profile.name, caller));
+  }
+  if (caller === RESEARCH_LEAF_CALLER_ROLE_NAME) {
+    return [];
   }
   if (INSPECTION_CALLER_ROLE_NAMES.has(caller)) {
     return profiles.filter(

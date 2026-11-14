@@ -169,7 +169,7 @@ export const INSPECTION_SUBAGENT_TOOL_NAMES = [
  * Task отсутствует в surface, чтобы рекурсивный fan-out был невозможен в runtime,
  * а не только в тексте промпта.
  */
-export const RESEARCHER_SUBAGENT_TOOL_NAMES = INSPECTION_SUBAGENT_TOOL_NAMES.filter(
+const RESEARCHER_SUBAGENT_TOOL_NAMES = INSPECTION_SUBAGENT_TOOL_NAMES.filter(
   (tool) => tool !== "Task",
 );
 
