@@ -116,6 +116,9 @@ export async function finalizeBackgroundCompletion(
       totalDurationMs: completed.output.totalDurationMs,
       totalToolUseCount: completed.output.totalToolUseCount,
       totalTokens: completed.output.totalTokens,
+      subtreeTotalDurationMs: completed.output.subtreeTotalDurationMs,
+      subtreeToolUseCount: completed.output.subtreeToolUseCount,
+      subtreeTotalTokens: completed.output.subtreeTotalTokens,
     },
   );
 

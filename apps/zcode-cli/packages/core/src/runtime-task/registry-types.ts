@@ -27,6 +27,13 @@ export interface RuntimeTaskUsageSnapshot {
   totalTokens?: number;
 }
 
+/** Own usage plus every admitted descendant, without double counting. */
+export interface RuntimeTaskSubtreeUsage {
+  totalTokens?: number;
+  totalDurationMs?: number;
+  toolUseCount?: number;
+}
+
 export interface RuntimeTaskPendingMessage {
   id: string;
   isMeta?: boolean;
@@ -90,6 +97,8 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   traceContext?: TraceContext;
   turnId?: TurnId;
   usage?: RuntimeTaskUsageSnapshot;
+  /** Immediate parent subagent task; absent for a task spawned directly by the root turn. */
+  parentTaskId?: string;
   /** Workspace спавна; вместе с agentId задаёт область claim'а в work ledger. */
   workspacePath?: string;
   /**
@@ -198,6 +207,11 @@ export interface RuntimeTaskRegistry {
   isTerminalTaskArchived?(taskId: string, attemptId: string): boolean;
   markTerminalTaskArchived?(taskId: string, attemptId: string): void;
   getSubagentTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined;
+  /** Own usage plus all admitted descendants; undefined when the task is unknown. */
+  getSubtreeUsage(
+    taskId: string,
+    ownUsage?: RuntimeTaskUsageSnapshot,
+  ): RuntimeTaskSubtreeUsage | undefined;
   drainMessages(id: string): RuntimeTaskPendingMessage[];
   queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
   register(task: RuntimeTaskSnapshot): void;

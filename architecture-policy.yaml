@@ -2072,6 +2072,14 @@ modules:
       adapters: .
     owner: debug
 
+exceptions:
+  # Two focused helpers added with the root-auto and crash-resume specs. Keep the
+  # exception path-exact; do not widen it to the whole zcode-cli tree.
+  - rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
+      - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。

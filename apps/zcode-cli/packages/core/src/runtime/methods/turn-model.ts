@@ -7,6 +7,7 @@ import {
   type TurnInputIntentMetadata,
 } from "@zcode/contracts";
 import { getCurrentModelInvocationContext } from "../deps.js";
+import { resolveRootAutoEffort } from "../helpers/root-auto-effort.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
@@ -24,6 +25,9 @@ const selectionAdmissions = new WeakMap<
 >();
 // 只用于 ModelSelected 的前后展示边界，不参与选模、续跑或持久化。
 const publishedSelections = new WeakMap<AgentRuntimeInternal, ModelSelection | undefined>();
+// Последний выбор, сделанный root-auto: если клиент присылает его же, auto пересчитывается,
+// а не считается явным выбором пользователя. Ручной выбор другого уровня очищает запись.
+const autoSelections = new WeakMap<AgentRuntimeInternal, ModelSelection>();
 
 /** 先固定旧会话候选，再接纳用户选择；声明目标失效时仍能退回原会话模型。 */
 export function captureHighspeedFallbackSelection(
@@ -128,6 +132,61 @@ export function createTurnModel(
   }));
 }
 
+interface RootAutoSelection {
+  selection: ModelSelection;
+  previousSelection: ModelSelection;
+  supportedLevels: readonly string[];
+}
+
+const TASK_GRAPH_HINT = /(?:task_graph|task graph|граф задач)/iu;
+
+/**
+ * Явный level пользователя всегда главнее. Auto включается только когда level не задан
+ * либо совпадает с прошлым auto-выбором (клиент присылает текущую session selection).
+ * Execution-scoped модель (off-peak) не переопределяется.
+ */
+function resolveRootAutoSelection(options: {
+  runtime: AgentRuntimeInternal;
+  selection: ModelSelection | undefined;
+  intent: TurnInputIntentMetadata | undefined;
+  prompt: string | undefined;
+  modelExecution: import("../types.js").ModelExecutionContext | undefined;
+}): RootAutoSelection | undefined {
+  const { runtime, selection, intent, prompt, modelExecution } = options;
+  if (!selection || !prompt?.trim()) return undefined;
+  if (runtime.config.autoReasoningLevel === false) return undefined;
+  if (modelExecution?.selectionScope === "execution") return undefined;
+  const lastAuto = autoSelections.get(runtime);
+  const explicitLevel = selection.options?.reasoningLevel;
+  if (explicitLevel && (!lastAuto || !sameModelSelection(lastAuto, selection))) {
+    return undefined;
+  }
+  const baseModel = createTurnModel(runtime, {
+    selection,
+    requestDependencies: modelExecution?.requestDependencies,
+    retryBudget: resolveExecutionModelRetryBudget({
+      selection,
+      selectionFallback: modelExecution?.selectionFallback,
+    }),
+  });
+  const supportedLevels = baseModel.optionSpecs.reasoningLevel.values;
+  const auto = resolveRootAutoEffort({
+    prompt,
+    planEnabled: intent?.planEnabled,
+    hasTaskGraph: TASK_GRAPH_HINT.test(prompt),
+    supportedLevels,
+  });
+  if (!auto || auto.level === explicitLevel) return undefined;
+  return {
+    selection: {
+      ...cloneModelSelection(selection),
+      options: { ...selection.options, reasoningLevel: auto.level },
+    },
+    previousSelection: cloneModelSelection(selection),
+    supportedLevels,
+  };
+}
+
 /**
  * 在 Submission 真正开始执行或 Guide 被下一次 model step 消费时应用其执行配置。
  * 选择只决定新创建的 Model；已经被其他 Loop 持有的 Model 不会被修改。
@@ -138,8 +197,22 @@ export async function applySubmissionExecutionState(
   traceContext: TraceContext,
   modelExecution?: import("../types.js").ModelExecutionContext,
   preparedModel?: Model,
+  prompt?: string,
 ): Promise<Model | undefined> {
-  const selection = intent?.modelSelection;
+  const requestedSelection = intent?.modelSelection ?? runtime.getSessionModelSelection();
+  const auto = resolveRootAutoSelection({
+    runtime,
+    selection: requestedSelection,
+    intent,
+    prompt,
+    modelExecution,
+  });
+  if (auto) autoSelections.set(runtime, cloneModelSelection(auto.selection));
+  else autoSelections.delete(runtime);
+  const selection = auto?.selection ?? intent?.modelSelection;
+  const previousSelection = auto?.previousSelection ?? publishedSelections.get(runtime);
+  const supportedThoughtLevels =
+    auto?.supportedLevels ?? preparedModel?.optionSpecs.reasoningLevel.values;
   let model = preparedModel;
 
   if (selection) {
@@ -151,10 +224,14 @@ export async function applySubmissionExecutionState(
         selectionFallback: modelExecution?.selectionFallback,
       }),
     });
-    await acceptSubmissionModelSelection(runtime, intent, traceContext, modelExecution);
+    await acceptSubmissionModelSelection(
+      runtime,
+      intent ? { ...intent, modelSelection: selection } : intent,
+      traceContext,
+      modelExecution,
+    );
     if (modelExecution?.selectionScope !== "execution") {
       // ModelSelected 展示实际 Loop 的切换；接纳只保存意图，不提前创建可调用 Model。
-      const previousSelection = publishedSelections.get(runtime);
       publishedSelections.set(runtime, cloneModelSelection(selection));
       if (!sameModelSelection(previousSelection, selection)) {
         await runtime.emitModelSelected({
@@ -162,7 +239,8 @@ export async function applySubmissionExecutionState(
           modelSelection: selection,
           effectiveReasoningLevel: model.options.reasoningLevel,
           previousModelSelection: previousSelection,
-          supportedThoughtLevels: model.optionSpecs.reasoningLevel.values,
+          supportedThoughtLevels:
+            supportedThoughtLevels ?? model.optionSpecs.reasoningLevel.values,
           traceContext,
         });
       }

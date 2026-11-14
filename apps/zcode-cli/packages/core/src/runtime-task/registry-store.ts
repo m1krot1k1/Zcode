@@ -6,6 +6,8 @@ import {
   isTerminalRuntimeTask,
   makeRootRunId,
   type RuntimeTaskSnapshot,
+  type RuntimeTaskSubtreeUsage,
+  type RuntimeTaskUsageSnapshot,
   type RuntimeTaskWaiter,
 } from "./registry-types.js";
 import { maybeReleaseRootRunBudget } from "./registry-root-run.js";
@@ -124,6 +126,49 @@ export function getSubagentTaskByChildSession(
 ): RuntimeTaskSnapshot | undefined {
   const taskId = state.subagentTaskIdByChildSession.get(sessionId);
   return taskId ? state.tasks.get(taskId) : undefined;
+}
+
+function addUsage(target: RuntimeTaskSubtreeUsage, usage: RuntimeTaskUsageSnapshot | undefined): void {
+  if (!usage) return;
+  if (usage.totalTokens !== undefined) {
+    target.totalTokens = (target.totalTokens ?? 0) + usage.totalTokens;
+  }
+  if (usage.durationMs !== undefined) {
+    target.totalDurationMs = (target.totalDurationMs ?? 0) + usage.durationMs;
+  }
+  if (usage.toolUseCount !== undefined) {
+    target.toolUseCount = (target.toolUseCount ?? 0) + usage.toolUseCount;
+  }
+}
+
+/** Own usage plus every admitted descendant; each task contributes exactly once. */
+export function sumTaskSubtreeUsage(
+  state: RegistryState,
+  taskId: string,
+  ownUsage?: RuntimeTaskUsageSnapshot,
+  seen: Set<string> = new Set(),
+): RuntimeTaskSubtreeUsage | undefined {
+  if (seen.has(taskId)) return undefined;
+  seen.add(taskId);
+  const task = state.tasks.get(taskId);
+  if (!task && ownUsage === undefined) return undefined;
+  const total: RuntimeTaskSubtreeUsage = {};
+  addUsage(total, ownUsage ?? task?.usage);
+  for (const candidate of state.tasks.values()) {
+    if (candidate.parentTaskId !== taskId) continue;
+    const child = sumTaskSubtreeUsage(state, candidate.taskId, undefined, seen);
+    if (!child) continue;
+    if (child.totalTokens !== undefined) {
+      total.totalTokens = (total.totalTokens ?? 0) + child.totalTokens;
+    }
+    if (child.totalDurationMs !== undefined) {
+      total.totalDurationMs = (total.totalDurationMs ?? 0) + child.totalDurationMs;
+    }
+    if (child.toolUseCount !== undefined) {
+      total.toolUseCount = (total.toolUseCount ?? 0) + child.toolUseCount;
+    }
+  }
+  return total;
 }
 
 export function getActiveSubagentWorkItems(

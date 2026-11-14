@@ -41,6 +41,7 @@ import {
   getSubagentTaskByChildSession,
   isTerminalTaskArchived,
   markTerminalTaskArchived,
+  sumTaskSubtreeUsage,
 } from "./registry-store.js";
 import type {
   InMemoryRuntimeTaskRegistryOptions,
@@ -49,6 +50,8 @@ import type {
   RuntimeTaskPendingMessage,
   RuntimeTaskRegistry,
   RuntimeTaskSnapshot,
+  RuntimeTaskSubtreeUsage,
+  RuntimeTaskUsageSnapshot,
 } from "./registry-types.js";
 
 export type {
@@ -287,6 +290,13 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   getSubagentTaskByChildSession(sessionId: SessionId): RuntimeTaskSnapshot | undefined {
     return getSubagentTaskByChildSession(this.state, sessionId);
+  }
+
+  getSubtreeUsage(
+    taskId: string,
+    ownUsage?: RuntimeTaskUsageSnapshot,
+  ): RuntimeTaskSubtreeUsage | undefined {
+    return sumTaskSubtreeUsage(this.state, taskId, ownUsage);
   }
 
   update(

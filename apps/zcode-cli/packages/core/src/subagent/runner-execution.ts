@@ -151,6 +151,11 @@ export async function runAgentToCompletion(
   const totalTokens = usage?.totalTokens;
   const totalToolUseCount = resolveSubagentToolUseCount(childResult.events);
   const totalDurationMs = Date.now() - lifecycle.startedAt;
+  const subtreeUsage = registry.getSubtreeUsage(lifecycle.agentId, {
+    durationMs: totalDurationMs,
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    toolUseCount: totalToolUseCount,
+  });
   const workResult = deriveWorkResult({
     text: childResult.response,
     events: childResult.events,
@@ -181,6 +186,15 @@ export async function runAgentToCompletion(
     totalToolUseCount,
     totalDurationMs,
     ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(subtreeUsage?.totalTokens === undefined
+      ? {}
+      : { subtreeTotalTokens: subtreeUsage.totalTokens }),
+    ...(subtreeUsage?.totalDurationMs === undefined
+      ? {}
+      : { subtreeTotalDurationMs: subtreeUsage.totalDurationMs }),
+    ...(subtreeUsage?.toolUseCount === undefined
+      ? {}
+      : { subtreeToolUseCount: subtreeUsage.toolUseCount }),
     ...(resolvedReasoningLevel ? { reasoningLevel: resolvedReasoningLevel } : {}),
     ...(usage === undefined ? {} : { usage }),
     workResult,

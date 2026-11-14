@@ -193,6 +193,11 @@ export function resolveAppRuntimeConfig(input: {
         (options.env ?? process.env)[ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY],
       ),
     mode: options.runtimeConfig?.mode ?? persistedMode ?? configResult.config.permission.mode,
+    // Root-auto level: explicit session value > config.ui.autoReasoningLevel > on.
+    autoReasoningLevel:
+      options.runtimeConfig?.autoReasoningLevel ??
+      configResult.config.ui.autoReasoningLevel ??
+      true,
     // Workspace 边界（docs/specs/2026-11-11-workspace-boundary.md）：显式会话值 >
     // user/project 配置文件 > 兼容默认 allow。消费链在 core executor → path-policy。
     workspaceBoundary:

@@ -396,6 +396,20 @@ export function onSubagentStopped(
     typeof payload.totalDurationMs === "number" && Number.isFinite(payload.totalDurationMs)
       ? payload.totalDurationMs
       : undefined;
+  const subtreeTotalTokens =
+    typeof payload.subtreeTotalTokens === "number" && Number.isFinite(payload.subtreeTotalTokens)
+      ? payload.subtreeTotalTokens
+      : undefined;
+  const subtreeTotalDurationMs =
+    typeof payload.subtreeTotalDurationMs === "number" &&
+    Number.isFinite(payload.subtreeTotalDurationMs)
+      ? payload.subtreeTotalDurationMs
+      : undefined;
+  const subtreeToolUseCount =
+    typeof payload.subtreeToolUseCount === "number" &&
+    Number.isFinite(payload.subtreeToolUseCount)
+      ? payload.subtreeToolUseCount
+      : undefined;
   const row: SubagentRow = existing
     ? {
         ...existing,
@@ -404,6 +418,9 @@ export function onSubagentStopped(
         endedAt: self.ms(event),
         ...(totalTokens === undefined ? {} : { totalTokens }),
         ...(totalDurationMs === undefined ? {} : { totalDurationMs }),
+        ...(subtreeTotalTokens === undefined ? {} : { subtreeTotalTokens }),
+        ...(subtreeTotalDurationMs === undefined ? {} : { subtreeTotalDurationMs }),
+        ...(subtreeToolUseCount === undefined ? {} : { subtreeToolUseCount }),
         // resumed child 的终态同样属于原 Agent row，只在旧 row 缺失锚点时补齐。
         ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
         ...(self.stringPayload(payload, "childSessionId")
@@ -429,6 +446,9 @@ export function onSubagentStopped(
         endedAt: self.ms(event),
         ...(totalTokens === undefined ? {} : { totalTokens }),
         ...(totalDurationMs === undefined ? {} : { totalDurationMs }),
+        ...(subtreeTotalTokens === undefined ? {} : { subtreeTotalTokens }),
+        ...(subtreeTotalDurationMs === undefined ? {} : { subtreeTotalDurationMs }),
+        ...(subtreeToolUseCount === undefined ? {} : { subtreeToolUseCount }),
       };
   self.subagentRowIdByAgentId.set(agentId, row.rowId);
   return [{ op: existing ? "row.upserted" : "row.appended", row }];

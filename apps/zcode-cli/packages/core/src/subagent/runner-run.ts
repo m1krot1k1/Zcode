@@ -120,6 +120,10 @@ export async function runExploreSubagent(
       // Эффективная поверхность родителя: профиль не может объявить запись,
       // которой нет у фактического tool surface родителя.
       parentToolNames: ctx.options.parentToolNames,
+      // Ребро поддерева для агрегата токенов/времени; root-turn не имеет parent task.
+      ...(ctx.registry.getSubagentTaskByChildSession(request.sessionId)?.taskId
+        ? { parentTaskId: ctx.registry.getSubagentTaskByChildSession(request.sessionId)!.taskId }
+        : {}),
     }),
     taskAbort,
   );
@@ -474,6 +478,9 @@ export async function runExploreSubagent(
           totalDurationMs: completed.output.totalDurationMs,
           totalToolUseCount: completed.output.totalToolUseCount,
           totalTokens: completed.output.totalTokens,
+          subtreeTotalDurationMs: completed.output.subtreeTotalDurationMs,
+          subtreeToolUseCount: completed.output.subtreeToolUseCount,
+          subtreeTotalTokens: completed.output.subtreeTotalTokens,
         },
       );
     } catch (eventError) {

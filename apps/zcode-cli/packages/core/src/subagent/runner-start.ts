@@ -56,6 +56,9 @@ export async function startExploreSubagentInBackground(
       // 同一父级链推导 level，避免后台子代理丢失递归保护上下文。
       level: deriveChildTaskLevel(request, undefined, ctx.registry),
       parentToolNames: ctx.options.parentToolNames,
+      ...(ctx.registry.getSubagentTaskByChildSession(request.sessionId)?.taskId
+        ? { parentTaskId: ctx.registry.getSubagentTaskByChildSession(request.sessionId)!.taskId }
+        : {}),
     }),
     taskAbort,
   );

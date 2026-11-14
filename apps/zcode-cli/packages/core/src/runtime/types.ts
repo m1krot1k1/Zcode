@@ -137,6 +137,8 @@ export interface AgentRuntimeConfig {
   genUiOutputRoot?: string;
   mode?: CollaborationMode;
   planEnabled?: boolean;
+  /** Root-auto reasoning level; explicit user selection always wins. Default true. */
+  autoReasoningLevel?: boolean;
   modelStreaming?: "off" | "on";
   streamingToolExecution?: "off" | "readOnly";
   /** Session 创建时固定；缺省使用共享的模型上下文预算默认策略。 */

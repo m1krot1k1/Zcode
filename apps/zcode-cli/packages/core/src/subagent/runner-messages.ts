@@ -235,6 +235,7 @@ async function resumeTerminalAgentInBackground(
       status: "running",
       // Resume保留 level；旧 snapshot 中的 spawnGrant 是弃用字段，运行时不再恢复。
       level: task.level ?? deriveChildTaskLevel(resumeRequest, undefined, registry),
+      ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
     }),
     taskAbort,
   );

@@ -392,6 +392,10 @@ export interface AgentCompletedOutput {
   totalToolUseCount: number;
   totalDurationMs: number;
   totalTokens?: number;
+  /** Own + all admitted descendants; absent when no descendant usage was reported. */
+  subtreeTotalTokens?: number;
+  subtreeTotalDurationMs?: number;
+  subtreeToolUseCount?: number;
   /** Effective reasoning level of this child run, when the model supports levels. */
   reasoningLevel?: string;
   usage?: ModelUsage;
@@ -436,6 +440,9 @@ export const AgentCompletedOutputSchema = z
     totalToolUseCount: z.number().int().nonnegative(),
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
+    subtreeTotalTokens: z.number().int().nonnegative().optional(),
+    subtreeTotalDurationMs: z.number().int().nonnegative().optional(),
+    subtreeToolUseCount: z.number().int().nonnegative().optional(),
     reasoningLevel: z.string().optional(),
     usage: z.record(z.unknown()).optional(),
     workResult: WorkResultSchema.optional(),

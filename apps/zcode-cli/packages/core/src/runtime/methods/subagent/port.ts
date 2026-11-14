@@ -29,7 +29,7 @@ import { AgentRuntime } from "../../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../../internal.js";
 import { cloneModelSelection } from "../../model-selection.js";
 import { resolveSubagentSelection } from "../../helpers/subagent-selection.js";
-import { resolveSubagentEffortLevel } from "../../helpers/subagent-effort.js";
+import { applySubagentEffortSelection } from "./effort-application.js";
 import { sharedReadFileStateForChild } from "../../helpers/runtime-reminders.js";
 import { deriveChildClientPorts } from "../../helpers/child-client-ports.js";
 import type { AgentRuntimeDeps } from "../../types.js";
@@ -319,83 +319,37 @@ export function createDefaultSubagentPort(
           );
         }
         let childModel = baseChildModelFactory({ selection: childSelection });
-        // Класс effort применяется после profile/parent/override резолва: модель остаётся
-        // той же, меняется только уровень в её собственной шкале. Без поля поведение
-        // не меняется вообще; абсолютный reasoningLevel из tool input не принимается.
-        if (request.effort !== undefined) {
-          const catalogEntries = this.modelCatalogPort?.listModels();
-          const findCatalogEntry = (selection: typeof childSelection) =>
-            catalogEntries?.find(
-              (entry) =>
-                entry.providerId === selection.providerId &&
-                entry.modelId === selection.modelId &&
-                entry.disabledReason === undefined,
-            );
-          const parentCatalogEntry = parentSelection
-            ? findCatalogEntry(parentSelection)
-            : undefined;
-          const parentLevel =
-            options?.model?.options.reasoningLevel ??
-            parentSelection?.options?.reasoningLevel ??
-            parentCatalogEntry?.defaultReasoningLevel;
-          const childCatalogEntry = findCatalogEntry(childSelection);
-          const supportedLevels =
-            childCatalogEntry?.reasoningLevels ?? childModel.optionSpecs.reasoningLevel.values;
-          const effortResolution = resolveSubagentEffortLevel({
-            effort: request.effort,
-            effortAboveParent: request.effortAboveParent,
-            baseLevel: childSelection.options?.reasoningLevel,
-            parentLevel,
-            supportedLevels,
-          });
-          if (effortResolution.outcome === "unknown-class") {
-            this.logger?.warn("Subagent effort class is unknown; keeping the resolved level", {
-              event: "subagent.effort.unknown_class",
-              module: "core.subagent",
-              agentType: request.agentType,
-              effort: request.effort,
-            });
-          } else {
-            this.logger?.debug("Subagent effort resolved", {
-              event: "subagent.effort.resolved",
-              module: "core.subagent",
-              agentType: request.agentType,
-              effort: request.effort,
-              outcome: effortResolution.outcome,
-              reasoningLevel: effortResolution.level,
-              baseClamped: effortResolution.baseClamped,
-            });
-          }
-          if (
-            effortResolution.level &&
-            effortResolution.level !== childSelection.options?.reasoningLevel
-          ) {
-            childSelection = {
-              ...childSelection,
-              options: { ...childSelection.options, reasoningLevel: effortResolution.level },
-            };
-            baseChildModelFactory = modelOverride
+        // Относительный effort применяется после override→profile→parent резолва.
+        // Модель не меняется; абсолютный level из tool input не принимается.
+        const catalogEntries = this.modelCatalogPort?.listModels();
+        const effortApplied = applySubagentEffortSelection({
+          effort: request.effort,
+          effortAboveParent: request.effortAboveParent,
+          agentType: request.agentType,
+          childSelection,
+          parentSelection,
+          ...(options?.model ? { parentModel: options.model } : {}),
+          childModel,
+          baseFactory: baseChildModelFactory,
+          rebuildFactory: (selection) =>
+            modelOverride
               ? createSubagentOverrideModelFactory(
-                  { ...modelOverride, selection: childSelection },
+                  { ...modelOverride, selection },
                   this.modelFactory,
                 )
               : inheritedModel
                 ? createInheritedSubagentModelFactory(
-                    childSelection,
+                    selection,
                     inheritedModel,
                     this.modelFactory,
                   )
-                : this.modelFactory;
-            if (!baseChildModelFactory) {
-              throw createCoreError(
-                CoreErrorType.ConfigurationError,
-                `Subagent model factory cannot resolve ${childSelection.providerId}/${childSelection.modelId}`,
-                { recoverable: true },
-              );
-            }
-            childModel = baseChildModelFactory({ selection: childSelection });
-          }
-        }
+                : this.modelFactory,
+          ...(catalogEntries ? { catalogEntries } : {}),
+          ...(this.logger ? { logger: this.logger } : {}),
+        });
+        childSelection = effortApplied.childSelection;
+        childModel = effortApplied.childModel;
+        baseChildModelFactory = effortApplied.baseFactory;
         const childToolAllowlist = resolveSubagentToolAllowlist.call(
           this,
           request,

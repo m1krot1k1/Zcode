@@ -273,6 +273,7 @@ export async function executeTurnCommand(
           turnTraceContext,
           options?.modelExecution,
           state.model.admittedModel,
+          input,
         );
         return this.executeManualCompact(
           input,
@@ -326,6 +327,7 @@ export async function executeTurnCommand(
             turnTraceContext,
             options?.modelExecution,
             state.model.admittedModel,
+            input,
           );
       state.startedTarget = state.model.creationFailure
         ? null

@@ -262,6 +262,9 @@ export interface ToolCallBlockRenderContext {
   authoritativeSubagentUsage?: {
     totalTokens?: number;
     totalDurationMs?: number;
+    subtreeTotalTokens?: number;
+    subtreeTotalDurationMs?: number;
+    subtreeToolUseCount?: number;
   };
   /** ExitPlanMode 计划卡片：由会话宿主绑定 parent/session scope 后打开 Side Pane。 */
   onOpenPlanDetail?: (request: Omit<OpenPlanDetailSideTabRequest, "parentSessionId">) => void;

@@ -93,12 +93,17 @@ export function ConversationAgentToolCallRow({
         authoritativeAgentType={subagentType}
         authoritativeReasoningLevel={item.subagentRow.reasoningLevel}
         {...(item.subagentRow.totalTokens === undefined &&
-        item.subagentRow.totalDurationMs === undefined
+        item.subagentRow.totalDurationMs === undefined &&
+        item.subagentRow.subtreeTotalTokens === undefined &&
+        item.subagentRow.subtreeTotalDurationMs === undefined
           ? {}
           : {
               authoritativeSubagentUsage: {
                 totalTokens: item.subagentRow.totalTokens,
                 totalDurationMs: item.subagentRow.totalDurationMs,
+                subtreeTotalTokens: item.subagentRow.subtreeTotalTokens,
+                subtreeTotalDurationMs: item.subagentRow.subtreeTotalDurationMs,
+                subtreeToolUseCount: item.subagentRow.subtreeToolUseCount,
               },
             })}
       />

@@ -1,7 +1,12 @@
 # Автоматический reasoning effort у корневой сессии
 
-Статус: дизайн, не реализовано. Связано с
+Статус: реализовано 2026-11-14. Связано с
 [относительным классом effort для сабагентов](./2026-11-14-subagent-reasoning-effort-level.md).
+
+Реализация:
+`apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts` (чистая эвристика),
+`runtime/methods/turn-model.ts` (применение на admission), `RuntimeConfig.ui.autoReasoningLevel`
+(отключение в конфиге, default true). Тесты: `tests/root-auto-effort.test.ts`.
 
 ## Scope
 
@@ -64,6 +69,9 @@ submission (prompt, mode, explicit selection?)
 
 ## Открытые вопросы
 
-- Эвристика первой версии: порог по длине prompt или явные классы задач?
-- Нужен ли auto-режим по умолчанию или только opt-in?
-- Как показывать marker, чтобы чат не заполнялся разделителями при каждом turn?
+- Эвристика первой версии: детерминированная оценка по длине, структуре (списки/заголовки/
+  code fence), implementation/complex-маркерам, plan и task_graph-подсказкам. Без вызова модели.
+- Auto включён по умолчанию; отключается `ui.autoReasoningLevel: false` в конфиге. Явный
+  `reasoningLevel` пользователя всегда главнее.
+- Marker использует существующий `ModelSelected`/`model_change`; при повторном auto-выборе
+  того же уровня событие не эмитится, поэтому чат не заполняется разделителями.

@@ -287,6 +287,8 @@ export interface RuntimeConfig {
   ui: {
     locale: UiLocale;
     theme: UiThemePreference;
+    /** Root-auto reasoning level; set false to keep the session default level. */
+    autoReasoningLevel?: boolean;
   };
 }
 
@@ -398,6 +400,7 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
   ui: {
     locale: "en-US",
     theme: "auto",
+    autoReasoningLevel: true,
   },
 };
 

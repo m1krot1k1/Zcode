@@ -286,6 +286,10 @@ export const subagentRowSchema = z.object({
   totalTokens: z.number().int().nonnegative().optional(),
   /** Итоговая длительность run-а, когда runtime её сообщил. */
   totalDurationMs: z.number().int().nonnegative().optional(),
+  /** Own + все потомки; отсутствует, если runtime не сообщил aggregate. */
+  subtreeTotalTokens: z.number().int().nonnegative().optional(),
+  subtreeTotalDurationMs: z.number().int().nonnegative().optional(),
+  subtreeToolUseCount: z.number().int().nonnegative().optional(),
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
 

@@ -463,6 +463,8 @@ export function createRuntimeTaskSnapshot(input: {
   level?: number;
   /** Эффективная tool surface родителя; undefined — legacy-поведение. */
   parentToolNames?: readonly string[];
+  /** Immediate parent subagent task for subtree telemetry. */
+  parentTaskId?: string;
 }): RuntimeTaskSnapshot {
   return {
     taskId: input.lifecycle.agentId,
@@ -474,6 +476,7 @@ export function createRuntimeTaskSnapshot(input: {
     outputFile: input.lifecycle.outputFile,
     parentToolCallId: input.request.parentToolCallId,
     parentSessionId: input.request.sessionId,
+    ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
     ...(input.pendingMessages?.length ? { pendingMessages: input.pendingMessages } : {}),
     prompt: input.request.prompt,
     startedAt: input.startedAt,
