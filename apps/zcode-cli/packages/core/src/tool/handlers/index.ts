@@ -41,6 +41,7 @@ import {
 import { isSubagentDispatchToolName } from "../compat.js";
 import { skillToolEntry } from "./skill.js";
 import { skillInstallToolEntry, skillSearchToolEntry } from "./skill-marketplace.js";
+import { capabilityInstallToolEntry } from "./capability-install.js";
 import { todoReadToolEntry, todoWriteToolEntry } from "./todo.js";
 import {
   cronCreateToolEntry,
@@ -121,6 +122,7 @@ export const builtInTools: ToolEntry[] = [
   skillToolEntry,
   skillSearchToolEntry,
   skillInstallToolEntry,
+  capabilityInstallToolEntry,
   jsToolEntry,
   createWorkflowToolEntry,
   amendWorkflowToolEntry,

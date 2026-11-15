@@ -188,6 +188,7 @@ function createRuntimeToolExecutor(
     embeddedSearchBackend: runtime.config.embeddedSearchBackend,
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
     skillPort: deps.skillPort,
+    capabilityInstallPort: deps.capabilityInstallPort,
     subagentPort: runtime.subagentPort,
     // Каталог и admission читают один и тот же caller-scoped фильтр: start видит только
     // orchestrator, orchestrator — worker-роли, root/main — все активные профили.

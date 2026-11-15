@@ -27,14 +27,19 @@ const MAX_AGENT_MODEL_BYTES = 120_000;
 
 /**
  * Жёсткий preflight перед спавном: `requires` объявляет уже установленные
- * capability. Отсутствующий skill блокирует spawn до установки; MCP/plugin
- * подключаются средой, поэтому объявлять их в Task нельзя — fail closed.
+ * capability. Отсутствующий skill блокирует spawn до SkillInstall; отсутствующий
+ * MCP/plugin — до InstallCapability с user approval. После установки родитель
+ * повторяет тот же Task.
  */
 export async function assertRequiredCapabilities(
   requires: readonly string[] | undefined,
   context: Pick<
     ToolExecutionContext,
-    "skillPort" | "workingDirectory" | "traceContext" | "toolCallId"
+    | "skillPort"
+    | "capabilityInstallPort"
+    | "workingDirectory"
+    | "traceContext"
+    | "toolCallId"
   >,
 ): Promise<void> {
   const requested = (requires ?? []).map((value) => value.trim()).filter(Boolean);
@@ -133,19 +138,68 @@ export async function assertRequiredCapabilities(
   }
 
   if (environment.length > 0) {
-    throw createCoreError(
-      CoreErrorType.ToolExecutionFailed,
-      `MCP servers and plugins are installed through the environment, not by Task: ${environment.join(", ")}. Configure/install them, then retry the same Task. The spawn was not started.`,
-      {
-        context: {
-          code: AgentErrorCode.CAPABILITY_REQUIRES_ENVIRONMENT,
-          required: [...requested],
-          toolCallId: context.toolCallId,
-          toolName: "Agent",
+    if (!context.capabilityInstallPort) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        `MCP servers and plugins are installed through the environment, and this runtime has no installer port: ${environment.join(", ")}. Configure/install them, then retry the same Task. The spawn was not started.`,
+        {
+          context: {
+            code: AgentErrorCode.CAPABILITY_REQUIRES_ENVIRONMENT,
+            required: [...requested],
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
         },
-        recoverable: true,
-      },
-    );
+      );
+    }
+    const missing: string[] = [];
+    for (const capability of environment) {
+      const separator = capability.indexOf(":");
+      const kind = capability.slice(0, separator);
+      const id = capability.slice(separator + 1).trim();
+      if ((kind !== "mcp" && kind !== "plugin") || id.length === 0) {
+        missing.push(capability);
+        continue;
+      }
+      let installed = false;
+      try {
+        installed = await context.capabilityInstallPort.isInstalled(kind, id);
+      } catch (error) {
+        throw createCoreError(
+          CoreErrorType.ToolExecutionFailed,
+          `Could not verify capability '${capability}': ${error instanceof Error ? error.message : String(error)}. The spawn was not started.`,
+          {
+            context: {
+              code: AgentErrorCode.CAPABILITY_MISSING,
+              capability,
+              required: [...requested],
+              toolCallId: context.toolCallId,
+              toolName: "Agent",
+            },
+            recoverable: true,
+          },
+        );
+      }
+      if (!installed) missing.push(capability);
+    }
+    if (missing.length > 0) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        `Capability not installed: ${missing.join(", ")}. Call InstallCapability { kind, id, ... } (user approval required), wait for installed, then retry the same Task once. The spawn was not started.`,
+        {
+          context: {
+            code: AgentErrorCode.CAPABILITY_MISSING,
+            required: [...requested],
+            missingCapabilities: missing,
+            installTool: "InstallCapability",
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
+        },
+      );
+    }
   }
 }
 

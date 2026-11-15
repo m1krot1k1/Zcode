@@ -88,6 +88,7 @@ import type {
   PdfDocumentPort,
   HooksRuntimeConfig,
   SkillPort,
+  CapabilityInstallPort,
   McpPort,
   McpServerConfig,
   SubagentPort,
@@ -399,6 +400,7 @@ export interface AgentRuntimeDeps {
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   mcpPort?: McpPort;
   subagentPort?: SubagentPort;
   /**

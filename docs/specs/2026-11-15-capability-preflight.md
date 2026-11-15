@@ -16,11 +16,15 @@
 2. Перед спавном runtime проверяет требования:
    - `skill:` — через `SkillPort.discoverSkills`; отсутствующий skill отклоняет spawn
      с `agent_capability_missing` и указанием `SkillInstall`;
-   - `mcp:`/`plugin:` — fail closed с `agent_capability_requires_environment`: они
-     подключаются средой, а не Task;
+   - `mcp:`/`plugin:` — через `CapabilityInstallPort.isInstalled`; отсутствующая
+     capability отклоняет spawn с `agent_capability_missing` и указанием
+     `InstallCapability`; без installer-порта — прежний fail-closed
+     `agent_capability_requires_environment`;
    - неизвестный синтаксис — отклоняется.
 3. Отказ означает «ветка не запущена», а не «ветка упала». Родитель обязан устранить
    capability gap и повторить тот же Task; повторять неизменённый вызов нельзя.
+   Для MCP/plugin путь — `InstallCapability` (alwaysAsk, approval) и один retry
+   (см. [capability install](./2026-11-15-capability-install.md)).
 4. Проверка fail closed: если registry недоступен или discovery бросил ошибку, spawn
    отклоняется, а не пропускается.
 5. `requires` не расширяет полномочия: проверяется только наличие, не загружает skill и
@@ -35,7 +39,9 @@ Task/Agent input { requires }
 assertRequiredCapabilities (core handler)
         ├─ skill: discoverSkills → all present → launch
         │                       └─ missing → CoreError capability_missing (no spawn)
-        ├─ mcp:/plugin: → CoreError capability_requires_environment (no spawn)
+        ├─ mcp:/plugin: isInstalled → present → launch
+        │                        └─ missing → CoreError capability_missing
+        │                           (installTool: InstallCapability, no spawn)
         └─ unknown → CoreError capability_missing (no spawn)
 ```
 
@@ -45,7 +51,9 @@ assertRequiredCapabilities (core handler)
 | --- | --- | --- |
 | Нужен отсутствующий skill | ветка могла стартовать | spawn отклонён до установки |
 | `skill:` установлен | — | spawn разрешён |
-| `mcp:`/`plugin:` в Task | молчаливое продолжение | fail closed с инструкцией среды |
+| `mcp:`/`plugin:` отсутствует | fail closed без пути установки | spawn отклонён; InstallCapability → retry |
+| `mcp:`/`plugin:` установлен | — | spawn разрешён |
+| Runtime без installer-порта | fail closed | fail closed (`capability_requires_environment`) |
 | Registry недоступен | не проверялось | spawn отклонён |
 
 ## Проверки

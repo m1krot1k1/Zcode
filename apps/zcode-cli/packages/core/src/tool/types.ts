@@ -39,6 +39,7 @@ import type {
   SessionModePort,
   SessionStorePort,
   SkillPort,
+  CapabilityInstallPort,
   SkillTelemetryMetadata,
   SubagentPort,
   SubagentRunOptions,
@@ -179,6 +180,7 @@ export interface ToolExecutionContext {
   /** Core Server 对前台 child 的 Selection override。 */
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果并等待引擎裁决的端口；仅在 workflow actor 会话注入。 */

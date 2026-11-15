@@ -23,6 +23,7 @@ import type {
   McpConnectionSnapshot,
   SkillLoadOutcome,
   SkillPort,
+  CapabilityInstallPort,
   McpPort,
   DynamicWorkflowRunPort,
   ModelCatalogPort,
@@ -114,6 +115,7 @@ export interface AgentRuntimeInternal
   pendingMemoryUpdate?: ProjectMemoryUpdate;
   contextSourcePort?: ContextSourcePort;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;
   residencyBlockingWorkCount: number;

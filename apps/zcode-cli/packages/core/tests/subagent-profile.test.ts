@@ -973,7 +973,10 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("После каждого терминального отчёта пересматривай план");
     expect(prompt).toContain("SkillSearch/SkillInstall");
     expect(prompt).toContain("requires:");
-    expect(prompt).toContain("runtime отклонит spawn до установки");
+    expect(prompt).toContain("Runtime отклонит spawn, пока capability не установлена");
+    expect(prompt).toContain("InstallCapability");
+    expect(prompt).toContain("alwaysAsk");
+    expect(prompt).toContain("повтори тот же Task");
   });
 
   it("turns subagent-factory into a real profile author with catalog boundaries", () => {
@@ -1058,6 +1061,7 @@ describe("built-in role capability matrix", () => {
     "Skill",
     "SkillSearch",
     "SkillInstall",
+    "InstallCapability",
     "TodoRead",
     "TodoWrite",
     "AskUserQuestion",

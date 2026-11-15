@@ -28,6 +28,7 @@ import type {
   SessionModePort,
   SessionStorePort,
   SkillPort,
+  CapabilityInstallPort,
   SubagentPort,
   SubagentRunOptions,
   ToolArtifactStorePort,
@@ -105,6 +106,7 @@ export interface ToolExecutorOptions {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
@@ -229,6 +231,7 @@ export interface ToolExecutorDeps {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;

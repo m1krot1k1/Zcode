@@ -5,7 +5,7 @@ import { assertRequiredCapabilities } from "../src/tool/handlers/agent.js";
 
 type CapabilityContext = Pick<
   ToolExecutionContext,
-  "skillPort" | "workingDirectory" | "traceContext" | "toolCallId"
+  "skillPort" | "capabilityInstallPort" | "workingDirectory" | "traceContext" | "toolCallId"
 >;
 
 function skill(name: string, qualifiedName?: string): SkillMetadata {
@@ -23,11 +23,15 @@ function skill(name: string, qualifiedName?: string): SkillMetadata {
   };
 }
 
-function contextWith(discover: SkillPort["discoverSkills"] | null): CapabilityContext {
+function contextWith(
+  discover: SkillPort["discoverSkills"] | null,
+  capabilityInstallPort?: CapabilityContext["capabilityInstallPort"],
+): CapabilityContext {
   return {
     workingDirectory: "/workspace",
     toolCallId: "call-1",
     ...(discover ? { skillPort: { discoverSkills: discover } as unknown as SkillPort } : {}),
+    ...(capabilityInstallPort ? { capabilityInstallPort } : {}),
   } as CapabilityContext;
 }
 
@@ -89,5 +93,28 @@ describe("Task capability preflight", () => {
     await expect(
       assertRequiredCapabilities(["skill:review"], contextWith(failing)),
     ).rejects.toThrow(/Skill discovery failed: registry offline/u);
+  });
+
+  it("accepts installed MCP/plugin and rejects missing ones with InstallCapability hint", async () => {
+    const isInstalled = vi.fn(async (_kind: string, id: string) => id === "ready");
+    const capabilityInstallPort = {
+      isInstalled,
+      install: vi.fn(),
+    } as unknown as CapabilityContext["capabilityInstallPort"];
+
+    await expect(
+      assertRequiredCapabilities(["mcp:ready", "plugin:ready"], contextWith(null, capabilityInstallPort)),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      assertRequiredCapabilities(["mcp:missing"], contextWith(null, capabilityInstallPort)),
+    ).rejects.toThrow(/InstallCapability.*retry the same Task/u);
+    expect(isInstalled).toHaveBeenCalledWith("mcp", "missing");
+  });
+
+  it("fails closed when MCP/plugin capability cannot be verified without an installer port", async () => {
+    await expect(
+      assertRequiredCapabilities(["mcp:github"], contextWith(null)),
+    ).rejects.toThrow(/no installer port/u);
   });
 });

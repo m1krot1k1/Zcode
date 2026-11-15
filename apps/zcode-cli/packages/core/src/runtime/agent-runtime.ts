@@ -56,6 +56,7 @@ import type {
   McpConnectionSnapshot,
   SkillLoadOutcome,
   SkillPort,
+  CapabilityInstallPort,
   McpPort,
   DynamicWorkflowRunPort,
   ModelCatalogPort,
@@ -213,6 +214,7 @@ export class AgentRuntime {
   private pendingMemoryUpdate?: ProjectMemoryUpdate;
   private contextSourcePort?: ContextSourcePort;
   private skillPort?: SkillPort;
+  private capabilityInstallPort?: CapabilityInstallPort;
   private mcpPort?: McpPort;
   private mcpStartupPromise?: Promise<McpConnectionSnapshot>;
   private residencyBlockingWorkCount = 0;
@@ -375,6 +377,7 @@ export class AgentRuntime {
       ? structuredClone(deps.initialContextSourceSnapshot)
       : undefined;
     this.skillPort = deps.skillPort;
+    this.capabilityInstallPort = deps.capabilityInstallPort;
     this.mcpPort = deps.mcpPort;
     if (deps.runtimeTaskRegistry) {
       this.runtimeTaskRegistry = deps.runtimeTaskRegistry;
