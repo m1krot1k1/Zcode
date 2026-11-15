@@ -2079,6 +2079,12 @@ exceptions:
     paths:
       - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
       - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
+      # Child effort resolver for the relative effort class; path-exact for the
+      # same unmanaged zcode-cli module.
+      - apps/zcode-cli/packages/core/src/runtime/helpers/subagent-effort.ts
+      # Tool presentation projection added with the UI usage/telemetry work;
+      # the ui module is unmanaged, so keep the exception path-exact.
+      - packages/ui/src/ToolCallBlocks/ToolPresentation.tsx
       # Initial-import runtime file; the legacy zcode-cli module is unmanaged, and a
       # path-exact exception is the existing convention for these two helpers.
       - apps/zcode-cli/packages/core/src/runtime/off-peak/runtime.ts
