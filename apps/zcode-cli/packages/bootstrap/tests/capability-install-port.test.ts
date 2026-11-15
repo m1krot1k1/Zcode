@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -55,6 +58,44 @@ describe("capability install port", () => {
       url: "https://x.test",
     });
     await expect(port.isInstalled("mcp", "other")).resolves.toBe(true);
+  });
+
+  it("persists the approved MCP server config to the user config before connecting", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-capability-install-"));
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({}));
+    const connectServer = vi.fn(async () => ({
+      status: "connected",
+      transport: "http",
+      toolCount: 1,
+      updatedAt: "now",
+    }));
+    const port = createCapabilityInstallPort({
+      configResult: { sources: { user: { path: configPath } } } as never,
+      mcpPort: { connectServer, status: vi.fn() } as never,
+      pluginStorageRoot: "/storage/plugins",
+      workingDirectory: "/workspace",
+    });
+
+    try {
+      await expect(
+        port.install({
+          kind: "mcp",
+          id: "echo",
+          config: { type: "http", url: "https://example.test/mcp" },
+        }),
+      ).resolves.toMatchObject({ status: "installed" });
+      const parsed = JSON.parse(await readFile(configPath, "utf8"));
+      expect(parsed).toMatchObject({
+        mcp: {
+          servers: {
+            echo: { type: "http", url: "https://example.test/mcp" },
+          },
+        },
+      });
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
   });
 
   it("rejects MCP install without a config or MCP port", async () => {

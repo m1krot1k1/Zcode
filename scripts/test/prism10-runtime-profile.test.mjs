@@ -25,6 +25,10 @@ test("PRISM runtime profile derives from the checksum-verified coding source", a
   // Причина: runtime использует компактный профиль. Полный `all` весил 15 080 символов и
   // проигрывал по вниманию/токенам, поэтому размер зафиксирован порогом, а не только хешем.
   assert.ok(artifact.prompt.length <= COMPACT_PROMPT_CHAR_LIMIT);
+  assert.ok(artifact.compactPrompt.length <= 2_500);
+  assert.doesNotMatch(artifact.compactPrompt, /## 5\. Контур проверки поколения/u);
+  assert.doesNotMatch(artifact.compactPrompt, /МОДУЛЬ EVIDENCE & EVALUATION/u);
+  assert.match(artifact.compactPrompt, /Never claim a command, test, commit/u);
   assert.match(artifact.prompt, /## 5\. Контур проверки поколения/u);
   assert.match(artifact.prompt, /МОДУЛЬ EVIDENCE & EVALUATION/u);
   assert.match(artifact.prompt, /МОДУЛЬ RUNTIME & ENGINEERING/u);
@@ -47,6 +51,9 @@ test("identity.ts is the current generated PRISM runtime artifact", async () => 
   assert.equal(identity, artifact.identitySource);
   assert.ok(identity.includes(`// PRISM_SOURCE_SHA256: ${artifact.sourceDigest}`));
   assert.ok(identity.includes(`// PRISM_PROFILE_SHA256: ${artifact.profileDigest}`));
+  assert.ok(identity.includes(`// COMPACT_PROFILE_SHA256: ${artifact.compactDigest}`));
+  assert.match(identity, /ZCODE_SYSTEM_PROMPT_PROFILE/);
+  assert.match(identity, /COMPACT_CODING_CORE_SYSTEM_PROMPT/);
 });
 
 test("Git checks out the generated identity source with LF even when autocrlf is enabled", () => {
