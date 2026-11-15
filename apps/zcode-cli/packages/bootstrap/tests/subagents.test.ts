@@ -602,6 +602,41 @@ architect prompt`,
   });
 });
 
+it("видит профиль, созданный subagent-factory после предыдущего чтения каталога", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zcode-factory-profile-"));
+  try {
+    const storageRoot = join(root, "state");
+    const initial = await loadZCodeAgentProfiles({ storageRoot, workingDirectory: root });
+    expect(initial.profiles).toEqual([]);
+
+    await mkdir(join(root, ".zcode", "agents"), { recursive: true });
+    await writeFile(
+      join(root, ".zcode", "agents", "conventional-commit-reviewer.md"),
+      [
+        "---",
+        "name: conventional-commit-reviewer",
+        "description: Проверяет сообщения коммитов по Conventional Commits",
+        "tools: Read, Grep, Skill",
+        "skills: conventional-commit",
+        "---",
+        "Проверяй сообщения коммитов по правилам загруженного навыка.",
+      ].join("\n"),
+    );
+
+    const reloaded = await loadZCodeAgentProfiles({ storageRoot, workingDirectory: root });
+    expect(reloaded.diagnostics).toEqual([]);
+    expect(reloaded.profiles).toEqual([
+      expect.objectContaining({
+        name: "conventional-commit-reviewer",
+        skills: ["conventional-commit"],
+        source: "project",
+      }),
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("附加目录 subagent 用限定名并存，权限仍按项目级规则过滤", async () => {
   const root = await mkdtemp(join(tmpdir(), "zcode-additional-agents-"));
   try {
