@@ -199,6 +199,18 @@ const AgentInputObjectSchema = z.object({
     .describe(
       "Exact workspace-relative or absolute files/directories this branch will write. Required for write-capable agent profiles; use [] for a read-only branch. Write-capable spawns without write_paths are rejected.",
     ),
+  /**
+   * Hard capability gate: missing capabilities reject the spawn before the child starts.
+   * Use `skill:<name>` for workspace skills, `mcp:<server>` / `plugin:<id>` for environment
+   * capabilities. The model must install/connect them, then retry the same Task.
+   */
+  requires: z
+    .array(z.string().min(1).max(200))
+    .max(20)
+    .optional()
+    .describe(
+      "Capabilities that must already be installed before this branch starts: skill:<name>, mcp:<server>, or plugin:<id>. Admission rejects the spawn with capability_missing / capability_requires_environment instead of silently running without them. Install the capability, then retry the same Task.",
+    ),
   // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
   // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
   // Reasoning effort 允许相对 класс (`lower`/`same`/`higher`), который резолвится
@@ -502,6 +514,8 @@ export const AgentErrorCode = {
   BACKGROUND_UNAVAILABLE: "agent_background_unavailable",
   UNKNOWN_AGENT_TYPE: "agent_unknown_type",
   CHILD_RUNTIME_FAILED: "agent_child_runtime_failed",
+  CAPABILITY_MISSING: "agent_capability_missing",
+  CAPABILITY_REQUIRES_ENVIRONMENT: "agent_capability_requires_environment",
 } as const;
 
 export type AgentErrorCode = (typeof AgentErrorCode)[keyof typeof AgentErrorCode];

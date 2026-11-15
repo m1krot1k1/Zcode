@@ -17,13 +17,137 @@ import {
   type TraceContext,
 } from "@zcode/contracts";
 import { TASK_TOOL_NAME } from "../compat.js";
-import type { ToolEntry, ToolHandler } from "../types.js";
+import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
 import {
   isAgentTypeAllowedForCaller,
   matchAgentTypeInCatalog,
 } from "../../subagent/profile.js";
 
 const MAX_AGENT_MODEL_BYTES = 120_000;
+
+/**
+ * Жёсткий preflight перед спавном: `requires` объявляет уже установленные
+ * capability. Отсутствующий skill блокирует spawn до установки; MCP/plugin
+ * подключаются средой, поэтому объявлять их в Task нельзя — fail closed.
+ */
+export async function assertRequiredCapabilities(
+  requires: readonly string[] | undefined,
+  context: Pick<
+    ToolExecutionContext,
+    "skillPort" | "workingDirectory" | "traceContext" | "toolCallId"
+  >,
+): Promise<void> {
+  const requested = (requires ?? []).map((value) => value.trim()).filter(Boolean);
+  if (requested.length === 0) return;
+
+  const skills = requested
+    .filter((value) => value.startsWith("skill:"))
+    .map((value) => value.slice("skill:".length).trim())
+    .filter(Boolean);
+  const environment = requested.filter(
+    (value) => value.startsWith("mcp:") || value.startsWith("plugin:"),
+  );
+  const unknown = requested.filter(
+    (value) =>
+      !value.startsWith("skill:") &&
+      !value.startsWith("mcp:") &&
+      !value.startsWith("plugin:"),
+  );
+  if (unknown.length > 0) {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      `Unsupported capability requirement: ${unknown.join(", ")}. Use skill:<name>, mcp:<server>, or plugin:<id>. The spawn was not started.`,
+      {
+        context: {
+          code: AgentErrorCode.CAPABILITY_MISSING,
+          required: [...requested],
+          toolCallId: context.toolCallId,
+          toolName: "Agent",
+        },
+        recoverable: true,
+      },
+    );
+  }
+
+  if (skills.length > 0) {
+    if (!context.skillPort) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        "Skill discovery is unavailable; cannot verify required skills. The spawn was not started.",
+        {
+          context: {
+            code: AgentErrorCode.CAPABILITY_MISSING,
+            required: [...requested],
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
+        },
+      );
+    }
+    let available: Set<string>;
+    try {
+      const outcome = await context.skillPort.discoverSkills({
+        workingDirectory: context.workingDirectory,
+        ...(context.traceContext ? { trace: context.traceContext } : {}),
+      });
+      available = new Set(
+        outcome.skills.flatMap((skill) =>
+          [skill.name, skill.qualifiedName].filter(
+            (name): name is string => typeof name === "string" && name.length > 0,
+          ),
+        ),
+      );
+    } catch (error) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        `Skill discovery failed: ${error instanceof Error ? error.message : String(error)}. The spawn was not started.`,
+        {
+          context: {
+            code: AgentErrorCode.CAPABILITY_MISSING,
+            required: [...requested],
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
+        },
+      );
+    }
+    const missing = skills.filter((name) => !available.has(name));
+    if (missing.length > 0) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        `Required skill(s) not installed: ${missing.join(", ")}. Run SkillInstall for each, then retry the same Task. The spawn was not started.`,
+        {
+          context: {
+            code: AgentErrorCode.CAPABILITY_MISSING,
+            required: [...requested],
+            requiredSkills: missing,
+            toolCallId: context.toolCallId,
+            toolName: "Agent",
+          },
+          recoverable: true,
+        },
+      );
+    }
+  }
+
+  if (environment.length > 0) {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      `MCP servers and plugins are installed through the environment, not by Task: ${environment.join(", ")}. Configure/install them, then retry the same Task. The spawn was not started.`,
+      {
+        context: {
+          code: AgentErrorCode.CAPABILITY_REQUIRES_ENVIRONMENT,
+          required: [...requested],
+          toolCallId: context.toolCallId,
+          toolName: "Agent",
+        },
+        recoverable: true,
+      },
+    );
+  }
+}
 
 const AGENT_TOOL_OUTPUT_SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -332,6 +456,7 @@ export function formatAgentOutputForModel(output: unknown): string {
 
 const agentHandler: ToolHandler = async (input, context) => {
   const parsed = AgentInputSchema.parse(input) as AgentInput;
+  await assertRequiredCapabilities(parsed.requires, context);
   const agentType = parsed.subagent_type;
   const callerAgentType = context.callerAgentType;
   const isStart = callerAgentType?.trim().toLocaleLowerCase("en-US") === "start";
