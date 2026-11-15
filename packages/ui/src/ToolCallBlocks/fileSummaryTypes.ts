@@ -265,6 +265,12 @@ export interface ToolCallBlockRenderContext {
     subtreeTotalTokens?: number;
     subtreeTotalDurationMs?: number;
     subtreeToolUseCount?: number;
+    /** Own usage breakdown (без потомков). */
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    reasoningTokens?: number;
   };
   /** ExitPlanMode 计划卡片：由会话宿主绑定 parent/session scope 后打开 Side Pane。 */
   onOpenPlanDetail?: (request: Omit<OpenPlanDetailSideTabRequest, "parentSessionId">) => void;

@@ -363,7 +363,30 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
     subagentUsage?.subtreeTotalDurationMs,
     (value) => formatBackgroundTaskElapsedLabel(Math.max(0, value), intl.formatMessage),
   );
-  const usageText = [tokenUsage, durationUsage].filter(Boolean).join(" · ");
+  // Own breakdown рядом с суммой: видно, сколько ушло во вход, выход и кэш.
+  const usageBreakdown = [
+    subagentUsage?.inputTokens === undefined
+      ? undefined
+      : intl.formatMessage(
+          { id: "chat.toolCall.agent.usage.input" },
+          { count: formatCompactTokenCount(subagentUsage.inputTokens) },
+        ),
+    subagentUsage?.outputTokens === undefined
+      ? undefined
+      : intl.formatMessage(
+          { id: "chat.toolCall.agent.usage.output" },
+          { count: formatCompactTokenCount(subagentUsage.outputTokens) },
+        ),
+    subagentUsage?.cacheReadTokens === undefined
+      ? undefined
+      : intl.formatMessage(
+          { id: "chat.toolCall.agent.usage.cache" },
+          { count: formatCompactTokenCount(subagentUsage.cacheReadTokens) },
+        ),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const usageText = [tokenUsage, durationUsage, usageBreakdown].filter(Boolean).join(" · ");
   const agentNameDetail =
     agentNameText || reasoningLevel || usageText || hasGraph ? (
       <span className="inline-flex min-w-0 items-center gap-1">

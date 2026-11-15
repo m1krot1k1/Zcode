@@ -478,6 +478,23 @@ export async function runExploreSubagent(
           totalDurationMs: completed.output.totalDurationMs,
           totalToolUseCount: completed.output.totalToolUseCount,
           totalTokens: completed.output.totalTokens,
+          // Пословный расход нужен UI для per-agent breakdown (input/output/cache),
+          // а не только сумма: одна totalTokens не показывает, где именно расход.
+          ...(completed.output.usage?.inputTokens === undefined
+            ? {}
+            : { inputTokens: completed.output.usage.inputTokens }),
+          ...(completed.output.usage?.outputTokens === undefined
+            ? {}
+            : { outputTokens: completed.output.usage.outputTokens }),
+          ...(completed.output.usage?.cacheReadTokens === undefined
+            ? {}
+            : { cacheReadTokens: completed.output.usage.cacheReadTokens }),
+          ...(completed.output.usage?.cacheWriteTokens === undefined
+            ? {}
+            : { cacheWriteTokens: completed.output.usage.cacheWriteTokens }),
+          ...(completed.output.usage?.reasoningTokens === undefined
+            ? {}
+            : { reasoningTokens: completed.output.usage.reasoningTokens }),
           subtreeTotalDurationMs: completed.output.subtreeTotalDurationMs,
           subtreeToolUseCount: completed.output.subtreeToolUseCount,
           subtreeTotalTokens: completed.output.subtreeTotalTokens,

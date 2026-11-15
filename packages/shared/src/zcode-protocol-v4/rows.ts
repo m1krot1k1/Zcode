@@ -288,6 +288,12 @@ export const subagentRowSchema = z.object({
   totalDurationMs: z.number().int().nonnegative().optional(),
   /** Own + все потомки; отсутствует, если runtime не сообщил aggregate. */
   subtreeTotalTokens: z.number().int().nonnegative().optional(),
+  /** Own usage breakdown (без потомков), когда runtime его сообщил. */
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  cacheReadTokens: z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
+  reasoningTokens: z.number().int().nonnegative().optional(),
   subtreeTotalDurationMs: z.number().int().nonnegative().optional(),
   subtreeToolUseCount: z.number().int().nonnegative().optional(),
 });

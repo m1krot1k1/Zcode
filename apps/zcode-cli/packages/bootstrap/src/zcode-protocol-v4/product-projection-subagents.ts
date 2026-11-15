@@ -410,6 +410,35 @@ export function onSubagentStopped(
     Number.isFinite(payload.subtreeToolUseCount)
       ? payload.subtreeToolUseCount
       : undefined;
+  // Own usage breakdown приходит в terminal-событии вместе с totalTokens; храним её в row,
+  // чтобы UI показывал input/output/cache без повторного разбора child events.
+  const inputTokens =
+    typeof payload.inputTokens === "number" && Number.isFinite(payload.inputTokens)
+      ? payload.inputTokens
+      : undefined;
+  const outputTokens =
+    typeof payload.outputTokens === "number" && Number.isFinite(payload.outputTokens)
+      ? payload.outputTokens
+      : undefined;
+  const cacheReadTokens =
+    typeof payload.cacheReadTokens === "number" && Number.isFinite(payload.cacheReadTokens)
+      ? payload.cacheReadTokens
+      : undefined;
+  const cacheWriteTokens =
+    typeof payload.cacheWriteTokens === "number" && Number.isFinite(payload.cacheWriteTokens)
+      ? payload.cacheWriteTokens
+      : undefined;
+  const reasoningTokens =
+    typeof payload.reasoningTokens === "number" && Number.isFinite(payload.reasoningTokens)
+      ? payload.reasoningTokens
+      : undefined;
+  const usageFields = {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
+    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
+  };
   const row: SubagentRow = existing
     ? {
         ...existing,
@@ -421,6 +450,7 @@ export function onSubagentStopped(
         ...(subtreeTotalTokens === undefined ? {} : { subtreeTotalTokens }),
         ...(subtreeTotalDurationMs === undefined ? {} : { subtreeTotalDurationMs }),
         ...(subtreeToolUseCount === undefined ? {} : { subtreeToolUseCount }),
+        ...usageFields,
         // resumed child 的终态同样属于原 Agent row，只在旧 row 缺失锚点时补齐。
         ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
         ...(self.stringPayload(payload, "childSessionId")
@@ -449,6 +479,7 @@ export function onSubagentStopped(
         ...(subtreeTotalTokens === undefined ? {} : { subtreeTotalTokens }),
         ...(subtreeTotalDurationMs === undefined ? {} : { subtreeTotalDurationMs }),
         ...(subtreeToolUseCount === undefined ? {} : { subtreeToolUseCount }),
+        ...usageFields,
       };
   self.subagentRowIdByAgentId.set(agentId, row.rowId);
   return [{ op: existing ? "row.upserted" : "row.appended", row }];

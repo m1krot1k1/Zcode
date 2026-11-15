@@ -3094,6 +3094,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
         childSessionId: "sess_child_1",
         status: "completed",
         summaryText: "项目结构已经梳理完成",
+        totalTokens: 1200,
+        inputTokens: 900,
+        outputTokens: 300,
+        cacheReadTokens: 800,
+        cacheWriteTokens: 0,
+        reasoningTokens: 100,
       },
       { turnId },
     );
@@ -3106,6 +3112,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
       status: "success",
       subagentType: "Explore",
       summaryText: "项目结构已经梳理完成",
+      totalTokens: 1200,
+      inputTokens: 900,
+      outputTokens: 300,
+      cacheReadTokens: 800,
+      cacheWriteTokens: 0,
+      reasoningTokens: 100,
     });
     expect(projection.getSnapshot().subagents).toMatchObject({
       childSessionIds: ["sess_child_1"],
