@@ -975,7 +975,8 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("requires:");
     expect(prompt).toContain("Runtime отклонит spawn, пока capability не установлена");
     expect(prompt).toContain("InstallCapability");
-    expect(prompt).toContain("alwaysAsk");
+    expect(prompt).toContain("needsApproval");
+    expect(prompt).toContain("yolo");
     expect(prompt).toContain("повтори тот же Task");
   });
 

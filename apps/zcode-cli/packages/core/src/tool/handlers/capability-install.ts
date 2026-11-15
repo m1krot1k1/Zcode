@@ -59,7 +59,6 @@ export const capabilityInstallToolEntry: ToolEntry = {
     riskLevel: "high",
     sideEffectScope: "system",
     needsApproval: true,
-    alwaysAsk: true,
     patternSources: ["input"],
     denyPriority: "beforeAsk",
     askOptions: { allowAlways: false },

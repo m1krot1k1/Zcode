@@ -11,8 +11,8 @@
 ## Продуктовое правило
 
 1. `InstallCapability` — единственный агентский путь установки MCP/plugin. Он объявлен
-   `alwaysAsk: true`: approval требуется в любом permission mode, включая yolo. Обход
-   approval запрещён.
+   `needsApproval: true`: в обычных permission modes требуется approval, в yolo установка
+   выполняется автоматически. Явный deny всё равно блокирует.
 2. Вход: `kind` (`mcp`|`plugin`), `id`; для MCP — `config`; для plugin — `marketplace` и/или
    `pluginName` (можно передать id в форме `<name>@<marketplace>`).
 3. Handler вызывает host-owned `CapabilityInstallPort`; сам ничего не пишет в конфиг и не
@@ -39,7 +39,7 @@ assertRequiredCapabilities
         └─ missing → CoreError capability_missing (installTool: InstallCapability)
                 │
                 ▼
-InstallCapability (alwaysAsk → user approval)
+InstallCapability (needsApproval; yolo auto, normal ask)
         │
         ▼
 CapabilityInstallPort.install

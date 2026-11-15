@@ -19,11 +19,11 @@ function contextWith(port: CapabilityInstallPort | undefined): InstallerContext 
 describe("InstallCapability tool", () => {
   it("requires explicit user approval in every permission mode", () => {
     expect(capabilityInstallToolEntry.permission).toMatchObject({
-      alwaysAsk: true,
       needsApproval: true,
       riskLevel: "high",
       sideEffectScope: "system",
     });
+    expect(capabilityInstallToolEntry.permission.alwaysAsk).toBeUndefined();
     expect(capabilityInstallToolEntry.metadata.name).toBe("InstallCapability");
   });
 
