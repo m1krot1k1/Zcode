@@ -3636,6 +3636,9 @@ const enUS: Record<string, string> = {
   "settings.mcp.registry.description":
     "Use the search above to filter local suggestions and search the official MCP Registry.",
   "settings.mcp.registry.searchPlaceholder": "Search MCP servers",
+  "settings.mcp.registry.showSimilar": "Show similar ({count})",
+  "settings.mcp.registry.hideSimilar": "Hide similar",
+  "settings.mcp.registry.similarCount": "{count} similar",
   "settings.mcp.registry.clearSearch": "Clear search",
   "settings.mcp.registry.search": "Search",
   "settings.mcp.registry.loading": "Searching the Official MCP Registry…",

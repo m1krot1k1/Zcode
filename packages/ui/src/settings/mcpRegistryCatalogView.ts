@@ -232,6 +232,102 @@ interface McpCatalogViewEntry {
   /** 当前展示顺序中的排名，从 1 开始。 */
   rank: number;
   badges: CatalogBadge[];
+  /** Number of registry entries hidden behind this capability family. */
+  similarCount?: number;
+}
+
+
+/**
+ * Capability family for the registry list. Different marketplace/registry entries may
+ * implement the same function (five filesystem servers, several playwright servers).
+ * We keep one best entry per family and expose the rest behind "show similar".
+ */
+const MCP_FAMILY_KEYWORDS = [
+  "filesystem",
+  "playwright",
+  "puppeteer",
+  "browser",
+  "github",
+  "gitlab",
+  "git",
+  "postgresql",
+  "postgres",
+  "sqlite",
+  "mysql",
+  "mongodb",
+  "redis",
+  "memory",
+  "slack",
+  "notion",
+  "linear",
+  "jira",
+  "docker",
+  "kubernetes",
+  "aws",
+  "gcp",
+  "azure",
+  "fetch",
+  "search",
+  "database",
+  "sql",
+  "email",
+  "calendar",
+  "drive",
+  "sheets",
+  "docs",
+  "pdf",
+  "shell",
+  "terminal",
+  "weather",
+  "news",
+  "files",
+  "file",
+] as const;
+const MCP_FAMILY_GENERIC_TOKENS = new Set([
+  "mcp",
+  "server",
+  "servers",
+  "srv",
+  "api",
+  "io",
+  "github",
+  "com",
+  "org",
+  "net",
+  "official",
+  "plugin",
+  "plugins",
+  "tool",
+  "tools",
+  "the",
+  "ai",
+]);
+
+export function mcpCapabilityFamily(name: string): string {
+  const raw = name.trim().toLowerCase();
+  const tail = raw.slice(raw.lastIndexOf("/") + 1);
+  const tokens = tail
+    .replace(/[^a-z0-9]+/gu, "-")
+    .split("-")
+    .filter(Boolean)
+    .filter((token) => !MCP_FAMILY_GENERIC_TOKENS.has(token));
+  for (const keyword of MCP_FAMILY_KEYWORDS) {
+    if (tokens.includes(keyword) || tail.includes(keyword)) return keyword;
+  }
+  return tokens.join("-") || tail;
+}
+
+function pickBestFamilyEntry(entries: readonly McpCatalogEntryLike[]): McpCatalogEntryLike {
+  return entries.reduce((best, candidate) => {
+    const bestRank = best.curatedRank;
+    const candidateRank = candidate.curatedRank;
+    if (bestRank !== undefined && candidateRank === undefined) return best;
+    if (bestRank === undefined && candidateRank !== undefined) return candidate;
+    if (bestRank !== undefined && candidateRank !== undefined) {
+      return candidateRank < bestRank ? candidate : best;
+    }
+    return best;
+  });
 }
 
 interface McpCatalogViewInput {
@@ -241,6 +337,8 @@ interface McpCatalogViewInput {
   filter: string;
   /** An explicit Registry search must not be hidden by the curated-only tab. */
   searchResults?: boolean;
+  /** Show every registry entry instead of one per capability family. */
+  showSimilar?: boolean;
   now?: Date;
 }
 
@@ -252,16 +350,41 @@ interface McpCatalogViewInput {
  */
 export function buildMcpCatalogView(input: McpCatalogViewInput): McpCatalogViewEntry[] {
   const ranked = withMcpCuratedRank(input.entries);
-  return ranked
+  const visible = ranked
     .filter(
       (entry) => input.searchResults || input.tab === "all" || entry.curatedRank !== undefined,
     )
     .filter((entry) => matchesMcpCatalogQuery(entry, input.filter))
     .slice()
-    .sort((left, right) => compareCatalogEntries(left, right, input.sort))
-    .map((item, index) => ({
+    .sort((left, right) => compareCatalogEntries(left, right, input.sort));
+
+  if (input.showSimilar) {
+    return visible.map((item, index) => ({
       item,
       rank: index + 1,
       badges: mcpCatalogBadges(item, input.now),
     }));
+  }
+
+  const groups = new Map<string, McpCatalogEntryLike[]>();
+  for (const entry of visible) {
+    const family = mcpCapabilityFamily(entry.name);
+    const group = groups.get(family);
+    if (group) group.push(entry);
+    else groups.set(family, [entry]);
+  }
+  const order = new Map(visible.map((entry, index) => [entry.id, index]));
+  const selected = [...groups.values()].map((group) => ({
+    item: pickBestFamilyEntry(group),
+    similarCount: group.length - 1,
+  }));
+  selected.sort(
+    (left, right) => (order.get(left.item.id) ?? 0) - (order.get(right.item.id) ?? 0),
+  );
+  return selected.map(({ item, similarCount }, index) => ({
+    item,
+    rank: index + 1,
+    badges: mcpCatalogBadges(item, input.now),
+    ...(similarCount > 0 ? { similarCount } : {}),
+  }));
 }

@@ -8,6 +8,7 @@ import {
   buildMcpCatalogView,
   filterReviewedClinePresetDuplicates,
   filterUninstalledMcpPresets,
+  mcpCapabilityFamily,
   removeReviewedMcpPresetDuplicates,
 } from "../src/settings/mcpRegistryCatalogView.js";
 
@@ -204,5 +205,45 @@ describe("MCP registry catalog view", () => {
 
     expect(filterReviewedClinePresetDuplicates([alias, unknown], [context7])).toEqual([unknown]);
     expect(filterReviewedClinePresetDuplicates([alias, unknown], [])).toEqual([alias, unknown]);
+  });
+
+  it("collapses servers with the same capability family and exposes the hidden count", () => {
+    const filesystemA: McpRegistryMarketplaceEntry = {
+      ...nonCurated,
+      id: "io.a/mcp-server-filesystem",
+      name: "io.a/mcp-server-filesystem",
+    };
+    const filesystemB: McpRegistryMarketplaceEntry = {
+      ...nonCurated,
+      id: "io.b/filesystem-mcp",
+      name: "io.b/filesystem-mcp",
+    };
+    const github: McpRegistryMarketplaceEntry = {
+      ...nonCurated,
+      id: "io.c/server-github",
+      name: "io.c/server-github",
+    };
+
+    expect(mcpCapabilityFamily(filesystemA.name)).toBe("filesystem");
+    expect(mcpCapabilityFamily(filesystemB.name)).toBe("filesystem");
+    expect(mcpCapabilityFamily(github.name)).toBe("github");
+
+    const collapsed = buildMcpCatalogView({
+      entries: [filesystemA, filesystemB, github],
+      tab: "all",
+      sort: "name",
+      filter: "",
+    });
+    expect(collapsed.map((entry) => entry.item.id)).toEqual([filesystemA.id, github.id]);
+    expect(collapsed[0]?.similarCount).toBe(1);
+
+    const expanded = buildMcpCatalogView({
+      entries: [filesystemA, filesystemB, github],
+      tab: "all",
+      sort: "name",
+      filter: "",
+      showSimilar: true,
+    });
+    expect(expanded).toHaveLength(3);
   });
 });
