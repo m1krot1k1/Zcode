@@ -150,6 +150,8 @@ export interface SupervisorOptions {
   workspaceScopeKey: string;
   workspaceTelemetryDetail?: ConversationTelemetryWorkspaceDetail;
   now?: () => number;
+  /** Live own-usage child session → UI; null снимает запись на terminal/cleanup. */
+  onSubagentUsageChanged?: (childSessionId: string, usage: ZCodeUsage | null) => void;
 }
 
 /**
@@ -163,6 +165,7 @@ export class SupervisorState {
   readonly workspaceTelemetryDetail: ConversationTelemetryWorkspaceDetail | null;
   readonly workspaceScopeKey: string;
   readonly now: () => number;
+  readonly onSubagentUsageChanged?: SupervisorOptions["onSubagentUsageChanged"];
   readonly eventIds = new BoundedKeySet();
   readonly acceptedCommandIds = new BoundedKeySet();
   readonly settledSendClickIds = new BoundedKeySet();
@@ -192,6 +195,7 @@ export class SupervisorState {
     this.workspaceTelemetryDetail = options.workspaceTelemetryDetail ?? null;
     this.workspaceScopeKey = options.workspaceScopeKey;
     this.now = options.now ?? Date.now;
+    this.onSubagentUsageChanged = options.onSubagentUsageChanged;
   }
 
   taskKey(sessionId: string): string {

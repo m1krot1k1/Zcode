@@ -405,11 +405,16 @@ tools:
     ).toEqual(swarmProfiles.find(({ name }) => name === "reviewer"));
     expect(swarmProfiles.every((profile) => profile.injectAgentsMd)).toBe(true);
     const reviewOnlyRoles = new Set(["reviewer", "security-reviewer"]);
+    const leafRoles = new Set(["researcher"]);
     expect(
       swarmProfiles
-        .filter((profile) => !reviewOnlyRoles.has(profile.name))
+        .filter((profile) => !reviewOnlyRoles.has(profile.name) && !leafRoles.has(profile.name))
         .every((profile) => profile.tools?.includes("Task")),
     ).toBe(true);
+    for (const name of leafRoles) {
+      const tools = swarmProfiles.find((profile) => profile.name === name)?.tools ?? [];
+      expect(tools, name).not.toContain("Task");
+    }
     for (const name of reviewOnlyRoles) {
       const tools = swarmProfiles.find((profile) => profile.name === name)?.tools ?? [];
       expect(tools, name).toContain("Task");
@@ -959,6 +964,22 @@ describe("specialized worker roster", () => {
     expect(prompt).not.toContain("5–8 действительно независимых областей");
   });
 
+  it("re-dispatches after claim conflict and reacts to each terminal report", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("write_claim_conflict");
+    expect(prompt).toContain("не считай её выполненной");
+    expect(prompt).toContain("отложи спавн и повтори после терминала держателя claim");
+    expect(prompt).toContain("После каждого терминального отчёта пересматривай план");
+    expect(prompt).toContain("SkillSearch/SkillInstall");
+    expect(prompt).toContain("requires:");
+    expect(prompt).toContain("Runtime отклонит spawn, пока capability не установлена");
+    expect(prompt).toContain("InstallCapability");
+    expect(prompt).toContain("needsApproval");
+    expect(prompt).toContain("yolo");
+    expect(prompt).toContain("повтори тот же Task");
+  });
+
   it("turns subagent-factory into a real profile author with catalog boundaries", () => {
     const factory = profile("subagent-factory");
     const prompt = factory?.systemPrompt ?? "";
@@ -1008,6 +1029,7 @@ describe("built-in role capability matrix", () => {
     "TaskOutput",
     "TaskStop",
   ];
+  const RESEARCHER_TOOLS = INSPECTION_TOOLS.filter((tool) => tool !== "Task");
   const REVIEW_TOOLS = [
     "CodeIndex",
     "Read",
@@ -1040,6 +1062,7 @@ describe("built-in role capability matrix", () => {
     "Skill",
     "SkillSearch",
     "SkillInstall",
+    "InstallCapability",
     "TodoRead",
     "TodoWrite",
     "AskUserQuestion",
@@ -1063,18 +1086,25 @@ describe("built-in role capability matrix", () => {
     },
   );
 
-  it.each(["researcher", "evaluator"])(
-    "%s inspects and may delegate with Bash but cannot write files",
-    (name) => {
-      const tools = toolsOf(name);
+  it("researcher inspects with Bash but is a leaf without Task or write tools", () => {
+    const tools = toolsOf("researcher");
 
-      expect(tools).toEqual(INSPECTION_TOOLS);
-      expect(tools).toContain("Task");
-      expect(tools).toContain("Bash");
-      expect(tools).not.toContain("Write");
-      expect(tools).not.toContain("Edit");
-    },
-  );
+    expect(tools).toEqual(RESEARCHER_TOOLS);
+    expect(tools).not.toContain("Task");
+    expect(tools).toContain("Bash");
+    expect(tools).not.toContain("Write");
+    expect(tools).not.toContain("Edit");
+  });
+
+  it("evaluator inspects and may delegate with Bash but cannot write files", () => {
+    const tools = toolsOf("evaluator");
+
+    expect(tools).toEqual(INSPECTION_TOOLS);
+    expect(tools).toContain("Task");
+    expect(tools).toContain("Bash");
+    expect(tools).not.toContain("Write");
+    expect(tools).not.toContain("Edit");
+  });
 
   it.each(["reviewer", "security-reviewer"])(
     "%s reviews the given diff with bounded researcher delegation",
@@ -1135,6 +1165,16 @@ describe("built-in role capability matrix", () => {
       expect(prompt, role).toContain("Bash");
       expect(prompt, role).toContain("Write/Edit недоступны");
     }
+  });
+
+  it("keeps researcher a leaf and forbids re-opening settled facts", () => {
+    const prompt =
+      builtInProfiles().find((profile) => profile.name === "researcher")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("leaf-исследователь");
+    expect(prompt).toContain("не запускай других агентов");
+    expect(prompt).toContain("settled facts");
+    expect(prompt).not.toContain("запускай researcher-подагентов");
   });
 
   it("advertises the Task-only router toolset in the orchestrator prompt", () => {
@@ -1239,7 +1279,7 @@ describe("caller-scoped agent catalog", () => {
     expect(names).not.toContain("orchestrator");
   });
 
-  it.each(["reviewer", "security-reviewer", "evaluator", "researcher"] as const)(
+  it.each(["reviewer", "security-reviewer", "evaluator"] as const)(
     "gives %s only the model-selectable researcher entry",
     (caller) => {
       const visible = filterAgentTypesForCaller(profiles(), caller);
@@ -1248,6 +1288,10 @@ describe("caller-scoped agent catalog", () => {
       expect(visible.every(isModelSelectableAgentProfile)).toBe(true);
     },
   );
+
+  it("gives researcher no delegation catalog because it is a leaf", () => {
+    expect(filterAgentTypesForCaller(profiles(), "researcher")).toEqual([]);
+  });
 
   it("leaves root and main sessions unrestricted", () => {
     expect(filterAgentTypesForCaller(profiles(), undefined)).toEqual(profiles());
@@ -1262,9 +1306,10 @@ describe("caller-scoped agent catalog", () => {
     expect(isAgentTypeAllowedForCaller("start", "orchestrator")).toBe(false);
     expect(isAgentTypeAllowedForCaller("coder", "orchestrator")).toBe(true);
     expect(isAgentTypeAllowedForCaller("coder", undefined)).toBe(true);
+    expect(isAgentTypeAllowedForCaller("researcher", "researcher")).toBe(false);
   });
 
-  it.each(["reviewer", "security-reviewer", "evaluator", "researcher"] as const)(
+  it.each(["reviewer", "security-reviewer", "evaluator"] as const)(
     "admits only researcher for inspection caller %s",
     (caller) => {
       const forbiddenTargets = [
@@ -1283,6 +1328,14 @@ describe("caller-scoped agent catalog", () => {
       }
     },
   );
+
+  it("admits no delegation target for researcher caller", () => {
+    for (const target of ["researcher", "coder", "start", "orchestrator"]) {
+      expect(isAgentTypeAllowedForCaller(target, "researcher"), `researcher -> ${target}`).toBe(
+        false,
+      );
+    }
+  });
 
   it("keeps runner-resolvable fuzzy role names admissible", () => {
     expect(matchAgentTypeInCatalog("coder", ["coder", "researcher"])).toBe("exact");

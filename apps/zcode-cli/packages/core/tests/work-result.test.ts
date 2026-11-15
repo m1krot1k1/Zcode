@@ -581,6 +581,7 @@ describe("WorkResult claims ownership", () => {
         agentType: "coder",
         description: "Изучить реестр",
         prompt: `Прочитай \`${claimPath}\``,
+        writePaths: [claimPath],
         callerCanReadOutputFile: true,
         workingDirectory: workspacePath,
         workspaceRoot: workspacePath,

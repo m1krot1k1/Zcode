@@ -21,6 +21,8 @@ import {
 } from "./dynamic-workflow-run-service.js";
 import { createDynamicWorkflowSnippetService } from "./dynamic-workflow-snippet-service.js";
 import { createModelCatalogPort } from "./model-catalog-port.js";
+import { createCapabilityInstallPort } from "./capability-install-port.js";
+import { getPluginStorageRoot } from "./paths.js";
 import { createScriptWorkflowAgentRuntime } from "./script-workflow-child-runtime.js";
 import { createScriptWorkflowBridge } from "./script-workflow-methods.js";
 import { workflowActorModelPolicy } from "./workflow-actor-model.js";
@@ -183,6 +185,7 @@ export function prepareAppSession(
                 pluginSkillRoots: pluginOutcome.skillRoots,
                 bundledSkillRoots,
                 runtime: parentRuntime,
+                capabilityInstallPort: parentRuntime.getCapabilityInstallPort(),
                 runtimeConfig,
                 sessionId,
                 sessionStore,
@@ -359,6 +362,15 @@ export function prepareAppSession(
             ],
           }))
         : undefined,
+    capabilityInstallPort: createCapabilityInstallPort({
+      configResult,
+      env: options.env,
+      logger,
+      mcpPort,
+      officialPluginRoots: options.officialPluginRoots,
+      pluginStorageRoot: options.pluginStorageRoot ?? getPluginStorageRoot(env.cliStorageRoot),
+      workingDirectory,
+    }),
     mcpPort,
     eventSink: options.eventSink,
     onOffPeakLifecycleEvent: options.onOffPeakLifecycleEvent

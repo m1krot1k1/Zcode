@@ -778,6 +778,10 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
 
 async function persistSessionModelSelection(deps: CreateSessionFacadeDeps): Promise<void> {
   if (!deps.sessionStore.saveSessionEntry) return;
+  // Draft-сессия ещё не имеет строки `session`, а `session_entry.session_id` — FK на неё.
+  // Выбор живёт в runtime state и записывается штатным core `persistSession` при создании
+  // сессии; прямой write здесь давал `FOREIGN KEY constraint failed` и не был durable.
+  if (deps.runtime.isSessionPersisted?.() !== true) return;
   const selection = readUserModelSelection(deps);
   if (!selection) return;
   const timestamp = Date.now();

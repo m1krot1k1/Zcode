@@ -144,6 +144,8 @@ export function handleForegroundSubagentFact(
 
   child.usage = mergeUsage(child.usage, toUsage(fact));
   child.requestCount += 1;
+  // Live breakdown для UI: usage.delta приходит на каждый model request ребёнка.
+  state.onSubagentUsageChanged?.(fact.sessionId, child.usage);
   if (fact.requestId && !child.requestIds.includes(fact.requestId)) {
     child.requestIds.push(fact.requestId);
   }
@@ -198,6 +200,7 @@ export function handleBackgroundSubagentFact(
       if (fact.requestId) child.requestIds.push(fact.requestId);
       child.requestCount += 1;
       child.usage = mergeUsage(child.usage, toUsage(fact));
+      state.onSubagentUsageChanged?.(child.childSessionId, child.usage);
       if (fact.providerId || fact.modelId) {
         child.modelName = runtimeTelemetryModelName(fact.providerId, fact.modelId);
         child.modelProvider = fact.providerId ?? child.modelProvider;
@@ -442,6 +445,7 @@ export function cleanupBackgroundSubagentTelemetry(
   child: BackgroundSubagentTelemetry,
 ): void {
   discardPromptTelemetry(child.taskKey);
+  state.onSubagentUsageChanged?.(child.childSessionId, null);
   state.backgroundSubagentTelemetryByChildSession.delete(child.childSessionId);
 }
 

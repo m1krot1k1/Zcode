@@ -46,6 +46,10 @@ const AgentTaskGraphNodeSchema = z
     depends_on: z.array(z.string().min(1).max(128)).optional(),
     // 修复依据：task graph 中缺失角色时 runner 会继承父角色，仍可能绕过节点级 profile 选择。
     subagent_type: z.string().min(1).max(128),
+    /** Relative effort class for this node; resolved against the child model scale. */
+    effort: z.string().optional(),
+    /** Explicit permission for this node to exceed the parent reasoning level. */
+    effort_above_parent: z.boolean().optional(),
     /** Exact write scope for the work ledger; absent keeps legacy text extraction. */
     write_paths: z.array(z.string().min(1).max(260)).max(50).optional(),
     acceptance_criteria: z.array(AgentAcceptanceCriterionSchema).max(16).optional(),
@@ -183,19 +187,46 @@ const AgentInputObjectSchema = z.object({
     .max(128)
     .describe("Required exact ID of an active agent profile listed in the current conversation"),
   /**
-   * Explicit write scope. The work ledger uses this list instead of extracting paths
-   * from the prompt, so a shared plan in the prompt cannot create a false conflict.
-   * An empty array means "this branch writes nothing"; absent keeps legacy extraction.
+   * Explicit write scope. Required at runtime for write-capable profiles; the
+   * optional schema keeps old tool calls parseable for replay, but admission rejects
+   * a write-capable spawn without this field so the child always gets writeScope.
+   * An empty array means "this branch writes nothing".
    */
   write_paths: z
     .array(z.string().min(1).max(260))
     .max(50)
     .optional()
     .describe(
-      "Exact workspace-relative or absolute files/directories this branch will write. The work ledger uses these paths instead of extracting them from the prompt. Use [] for a read-only branch.",
+      "Exact workspace-relative or absolute files/directories this branch will write. Required for write-capable agent profiles; use [] for a read-only branch. Write-capable spawns without write_paths are rejected.",
+    ),
+  /**
+   * Hard capability gate: missing capabilities reject the spawn before the child starts.
+   * Use `skill:<name>` for workspace skills, `mcp:<server>` / `plugin:<id>` for environment
+   * capabilities. The model must install/connect them, then retry the same Task.
+   */
+  requires: z
+    .array(z.string().min(1).max(200))
+    .max(20)
+    .optional()
+    .describe(
+      "Capabilities that must already be installed before this branch starts: skill:<name>, mcp:<server>, or plugin:<id>. Admission rejects the spawn with capability_missing / capability_requires_environment instead of silently running without them. Install the capability, then retry the same Task.",
     ),
   // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
   // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
+  // Reasoning effort 允许相对 класс (`lower`/`same`/`higher`), который резолвится
+  // в уровень конкретной модели в момент спавна; абсолютный level не принимается.
+  effort: z
+    .string()
+    .optional()
+    .describe(
+      "Relative reasoning-effort class for this spawn: lower, same, or higher. Omit to inherit the resolved profile/parent level. Unknown values are ignored with a warning.",
+    ),
+  effort_above_parent: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set true only when this branch must exceed the parent reasoning level. Ignored for models without reasoning levels.",
+    ),
   run_in_background: z
     .boolean()
     .optional()
@@ -373,6 +404,12 @@ export interface AgentCompletedOutput {
   totalToolUseCount: number;
   totalDurationMs: number;
   totalTokens?: number;
+  /** Own + all admitted descendants; absent when no descendant usage was reported. */
+  subtreeTotalTokens?: number;
+  subtreeTotalDurationMs?: number;
+  subtreeToolUseCount?: number;
+  /** Effective reasoning level of this child run, when the model supports levels. */
+  reasoningLevel?: string;
   usage?: ModelUsage;
   /** Machine-readable итог: status/summary/files/tests/evidence/unresolved/claims. */
   workResult?: WorkResult;
@@ -415,6 +452,10 @@ export const AgentCompletedOutputSchema = z
     totalToolUseCount: z.number().int().nonnegative(),
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
+    subtreeTotalTokens: z.number().int().nonnegative().optional(),
+    subtreeTotalDurationMs: z.number().int().nonnegative().optional(),
+    subtreeToolUseCount: z.number().int().nonnegative().optional(),
+    reasoningLevel: z.string().optional(),
     usage: z.record(z.unknown()).optional(),
     workResult: WorkResultSchema.optional(),
     presentation: AgentPresentationSchema.optional(),
@@ -473,6 +514,8 @@ export const AgentErrorCode = {
   BACKGROUND_UNAVAILABLE: "agent_background_unavailable",
   UNKNOWN_AGENT_TYPE: "agent_unknown_type",
   CHILD_RUNTIME_FAILED: "agent_child_runtime_failed",
+  CAPABILITY_MISSING: "agent_capability_missing",
+  CAPABILITY_REQUIRES_ENVIRONMENT: "agent_capability_requires_environment",
 } as const;
 
 export type AgentErrorCode = (typeof AgentErrorCode)[keyof typeof AgentErrorCode];

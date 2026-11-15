@@ -3,6 +3,7 @@ import {
   normalizeAgentProviderToZCodeAgent,
   ZCODE_AGENT_PROVIDER,
   type ZCodeProvider,
+  type ZCodeUsage,
   type AgentSummary,
   type AgentsCapability,
   type SubAgentConfig,
@@ -398,4 +399,60 @@ export async function refreshLoadedSubagentsStoreForWorkspace(params: {
     );
   }
   await Promise.all(refreshes);
+}
+
+/**
+ * Live own-usage субагента для UI. Ключ — child session id; значения приходят из
+ * telemetry supervisor на каждый `usage.delta`, поэтому строка агента обновляется
+ * в реальном времени, не дожидаясь terminal-события projection.
+ */
+export interface LiveSubagentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+}
+
+interface SubagentUsageStoreState {
+  byChildSessionId: Record<string, LiveSubagentUsage>;
+  setUsage: (childSessionId: string, usage: LiveSubagentUsage) => void;
+  clearUsage: (childSessionId: string) => void;
+  clearAll: () => void;
+}
+
+export function toLiveSubagentUsage(usage: ZCodeUsage): LiveSubagentUsage {
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cacheReadTokens: usage.cachedInputTokens ?? 0,
+    cacheWriteTokens: usage.cachedWriteInputTokens ?? 0,
+    reasoningTokens: usage.reasoningTokens ?? 0,
+  };
+}
+
+export const useSubagentUsageStore = create<SubagentUsageStoreState>((set) => ({
+  byChildSessionId: {},
+  setUsage: (childSessionId, usage) =>
+    set((state) => ({
+      byChildSessionId: { ...state.byChildSessionId, [childSessionId]: usage },
+    })),
+  clearUsage: (childSessionId) =>
+    set((state) => {
+      if (!(childSessionId in state.byChildSessionId)) return state;
+      const byChildSessionId = { ...state.byChildSessionId };
+      delete byChildSessionId[childSessionId];
+      return { byChildSessionId };
+    }),
+  clearAll: () => set({ byChildSessionId: {} }),
+}));
+
+export function useLiveSubagentUsage(
+  childSessionId: string | undefined,
+): LiveSubagentUsage | undefined {
+  return useSubagentUsageStore((state) =>
+    childSessionId ? state.byChildSessionId[childSessionId] : undefined,
+  );
 }

@@ -514,7 +514,7 @@ describe("built-in profile capability gate at the runtime boundary", () => {
     expect(allowlist).not.toContain("Edit");
   });
 
-  it.each(["researcher", "reviewer", "security-reviewer", "evaluator"])(
+  it.each(["reviewer", "security-reviewer", "evaluator"])(
     "%s receives Bash but not Write/Edit",
     (name) => {
       const allowlist = resolveChildAllowlist(name);
@@ -524,6 +524,15 @@ describe("built-in profile capability gate at the runtime boundary", () => {
       expect(allowlist).not.toContain("Edit");
     },
   );
+
+  it("researcher receives Bash but is a leaf without Task or Write/Edit", () => {
+    const allowlist = resolveChildAllowlist("researcher");
+
+    expect(allowlist).toContain("Bash");
+    expect(allowlist).not.toContain("Task");
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+  });
 
   it.each([
     "implementer",

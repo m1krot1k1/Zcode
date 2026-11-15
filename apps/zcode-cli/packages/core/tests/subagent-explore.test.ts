@@ -740,7 +740,14 @@ describe("Explore subagent", () => {
     expect(childSystemMessages[1]).toMatch(
       /^\n<zcode-spawn-envelope level="1" max_parallel="\d+" \/>\n\n/,
     );
-    expect(childSystemMessages[1]).toContain(exploreSystemMessages[1].slice(1));
+    expect(childSystemMessages[1]).toContain(
+      exploreSystemMessages[1]
+        .slice(1)
+        .replace(
+          "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.",
+          "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc",
+        ),
+    );
     expect(childSystemMessages[1]).not.toContain("remaining_spawns");
     expect(childRequests[0].messages[1].content).not.toContain(
       "You help the user with software engineering work in the current workspace.",
@@ -2825,7 +2832,7 @@ describe("Explore subagent", () => {
     expect(loadedSkillCount).toBe(0);
   });
 
-  it("fails before the child request when a scoped MCP server is unavailable in the parent startup snapshot", async () => {
+  it("fails before the child request when a scoped MCP server is unavailable in the parent MCP snapshot", async () => {
     const sessionId = createSessionId(
       "runtime-subagent-scoped-mcp-server-unavailable",
     );
@@ -2920,7 +2927,7 @@ describe("Explore subagent", () => {
     expect(secondParentRequestText).toContain("required-server");
   });
 
-  it("fails fast when an explicitly allowed MCP descriptor is absent from the parent startup snapshot", async () => {
+  it("fails fast when an explicitly allowed MCP descriptor is absent from the parent MCP snapshot", async () => {
     const sessionId = createSessionId(
       "runtime-subagent-missing-mcp-descriptor",
     );
@@ -3007,7 +3014,7 @@ describe("Explore subagent", () => {
     expect(result.response).toBe("父 agent 看到了 MCP tool 缺失错误。");
     expect(childRequests).toEqual([]);
     expect(secondParentRequestText).toContain(
-      "Required MCP tool is not available in the parent startup snapshot",
+      "Required MCP tool is not available in the parent MCP snapshot",
     );
     expect(secondParentRequestText).toContain("mcp__required-server__search");
   });
@@ -3156,7 +3163,7 @@ describe("Explore subagent", () => {
     );
   });
 
-  it("scopes custom Explore wildcard MCP tools to the fixed parent startup snapshot", async () => {
+  it("scopes custom Explore wildcard MCP tools to the parent MCP snapshot", async () => {
     const sessionId = createSessionId("runtime-custom-explore-wildcard-mcp");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -3265,7 +3272,7 @@ describe("Explore subagent", () => {
                       input: {
                         description: "测试 wildcard MCP snapshot",
                         prompt:
-                          "确认 custom Explore 只看到 scoped startup snapshot。",
+                          "确认 custom Explore 只看到 scoped MCP snapshot。",
                         subagent_type: "Explore",
                       },
                     },

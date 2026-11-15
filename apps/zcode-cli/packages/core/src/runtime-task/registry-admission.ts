@@ -11,7 +11,10 @@ import type { RuntimeTaskSnapshot } from "./registry-types.js";
 
 export type WorkClaimAdmission =
   | { accepted: true; claimed: boolean }
-  | { accepted: false; reason: "write_claim_conflict" | "work_claim_unavailable" };
+  | {
+      accepted: false;
+      reason: "write_claim_conflict" | "write_scope_required" | "work_claim_unavailable";
+    };
 
 /**
  * Text-derived путь, который после нормализации совпадает с корнем workspace.
@@ -40,6 +43,12 @@ export function admitWorkClaim(
   const ledger = state.workLedger;
   const workspacePath = task.workspacePath?.trim();
   if (!ledger || !workspacePath) return { accepted: true, claimed: false };
+  // 根因: write-capable роль без write_paths получала claim из эвристики prompt'а,
+  // но child runtime не получал writeScope и мог писать вне заявленной области.
+  // Исправление: без явного write_paths (включая []) write-роль не допускается.
+  if (task.writeCapable === true && task.writePaths === undefined) {
+    return { accepted: false, reason: "write_scope_required" };
+  }
   // 根因: read-only профили (researcher/reviewer/evaluator и т.п.) не пишут файлы, но их
   // prompt-пути трактовались как write-intent: параллельные исследователи с общим файлом
   // падали с write_claim_conflict. Write-capability приходит из профиля, а не из текста.

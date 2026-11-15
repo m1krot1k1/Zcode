@@ -62,12 +62,14 @@ export async function runAgentToCompletion(
     }
   }
   let sessionReady = false;
-  const notifySessionReady = async () => {
+  let resolvedReasoningLevel: string | undefined;
+  const notifySessionReady = async (info?: { reasoningLevel?: string }) => {
+    if (info?.reasoningLevel) resolvedReasoningLevel = info.reasoningLevel;
     if (sessionReady) return;
     if (runOptions?.signal?.aborted) {
       throw runOptions.signal.reason ?? new Error("Subagent startup aborted before readiness");
     }
-    await executionOptions.onSessionReady?.();
+    await executionOptions.onSessionReady?.(info);
     if (runOptions?.signal?.aborted) {
       throw runOptions.signal.reason ?? new Error("Subagent startup aborted before readiness");
     }
@@ -115,6 +117,10 @@ export async function runAgentToCompletion(
       systemPrompt: lifecycle.profile.systemPrompt,
       ...(childMaxParallel === undefined ? {} : { maxParallel: childMaxParallel }),
       ...(taskSnapshot?.level === undefined ? {} : { level: taskSnapshot.level }),
+      ...(request.effort === undefined ? {} : { effort: request.effort }),
+      ...(request.effortAboveParent === undefined
+        ? {}
+        : { effortAboveParent: request.effortAboveParent }),
       workingDirectory: request.workingDirectory,
       workspaceRoot: request.workspaceRoot,
       ...(request.writePaths === undefined ? {} : { writePaths: request.writePaths }),
@@ -122,8 +128,9 @@ export async function runAgentToCompletion(
     },
     runOptions,
   );
-  // 测试桩和旧注入实现可能尚未主动调用 readiness hook；真实 AgentRuntime 会在
-  // persist 后调用。回落只保证兼容，不改变生产链路的 persist-before-spawn 顺序。
+  // Тестовые реализации порта могут не вызвать readiness hook; реальный runtime
+  // вызывает его после persist. Уровень берём из результата как fallback.
+  if (!resolvedReasoningLevel) resolvedReasoningLevel = childResult.reasoningLevel;
   await notifySessionReady();
 
   let evidenceEvents: SessionEvent[] = [];
@@ -144,6 +151,11 @@ export async function runAgentToCompletion(
   const totalTokens = usage?.totalTokens;
   const totalToolUseCount = resolveSubagentToolUseCount(childResult.events);
   const totalDurationMs = Date.now() - lifecycle.startedAt;
+  const subtreeUsage = registry.getSubtreeUsage(lifecycle.agentId, {
+    durationMs: totalDurationMs,
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    toolUseCount: totalToolUseCount,
+  });
   const workResult = deriveWorkResult({
     text: childResult.response,
     events: childResult.events,
@@ -174,6 +186,16 @@ export async function runAgentToCompletion(
     totalToolUseCount,
     totalDurationMs,
     ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(subtreeUsage?.totalTokens === undefined
+      ? {}
+      : { subtreeTotalTokens: subtreeUsage.totalTokens }),
+    ...(subtreeUsage?.totalDurationMs === undefined
+      ? {}
+      : { subtreeTotalDurationMs: subtreeUsage.totalDurationMs }),
+    ...(subtreeUsage?.toolUseCount === undefined
+      ? {}
+      : { subtreeToolUseCount: subtreeUsage.toolUseCount }),
+    ...(resolvedReasoningLevel ? { reasoningLevel: resolvedReasoningLevel } : {}),
     ...(usage === undefined ? {} : { usage }),
     workResult,
     ...(presentation === undefined ? {} : { presentation }),
@@ -381,7 +403,7 @@ export async function runBackgroundAgent(
 
 export interface SubagentExecutionOptions {
   resumeFromStore?: boolean;
-  onSessionReady?: () => Promise<void>;
+  onSessionReady?: (info?: { reasoningLevel?: string }) => Promise<void>;
   onSessionStartFailed?: (error: unknown) => void;
 }
 

@@ -100,9 +100,28 @@ export function getSessionModelSelection(this: AgentRuntimeInternal): ModelSelec
 export function setSessionModelSelection(
   this: AgentRuntimeInternal,
   selection: ModelSelection | undefined,
+  options?: { reasoningLevelExplicit?: boolean },
 ): void {
+  const previous = this.sessionModelSelection;
   // 恢复/配置刷新可以清除失效选择；未绑定不应借用默认模型，也不影响正在执行的 Active Model。
   this.sessionModelSelection = selection && cloneModelSelection(selection);
+  // Явность — отдельное состояние, иначе persisted default `max` навсегда выключает auto.
+  // Internal callers (submission admission, off-peak, resume) передают флаг явно; внешние
+  // setter-вызовы bootstrap — это `/effort`/`/model`, где level уже выбран пользователем.
+  if (options?.reasoningLevelExplicit !== undefined) {
+    this.reasoningLevelExplicit = options.reasoningLevelExplicit;
+    return;
+  }
+  if (!selection) {
+    this.reasoningLevelExplicit = false;
+    return;
+  }
+  const modelChanged =
+    !previous ||
+    previous.providerId !== selection.providerId ||
+    previous.modelId !== selection.modelId;
+  // Смена модели приносит default/resolved level новой модели — это не пользовательский пин.
+  this.reasoningLevelExplicit = !modelChanged && selection.options?.reasoningLevel !== undefined;
 }
 
 export function getProjectId(this: AgentRuntimeInternal): ProjectId {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyLintDiagnostics, parseLintCommand } from "../cli-lint-admission.mjs";
+import { classifyLintDiagnostics, parseLintCommand, parseOxlintReport } from "../cli-lint-admission.mjs";
 
 test("只接纳原样上游的行数诊断，其他错误与修改过的文件仍阻断", () => {
   const diagnostics = [
@@ -31,4 +31,14 @@ test("保留包原有参数；不默默绕过未知或复合命令", () => {
     "oxlint --format text src",
   ])
     assert.throws(() => parseLintCommand(command), /不支持/);
+});
+
+test("парсит JSON после информационного префикса oxlint и отвергает пустой вывод", () => {
+  const report = parseOxlintReport(
+    'No files found to lint. Please check your paths and ignore patterns.\n{ "diagnostics": [], "number_of_files": 0 }',
+    "example",
+  );
+  assert.deepEqual(report.diagnostics, []);
+  assert.throws(() => parseOxlintReport("no json here", "example"), /не вернул JSON/u);
+  assert.throws(() => parseOxlintReport("{ not json", "example"), /无法解析/u);
 });

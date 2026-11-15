@@ -88,7 +88,10 @@ export interface AgentRuntimeCoreMethods {
     traceContext?: TraceContext,
   ): Promise<void>;
   getSessionModelSelection(): ModelSelection | undefined;
-  setSessionModelSelection(selection: ModelSelection | undefined): void;
+  setSessionModelSelection(
+    selection: ModelSelection | undefined,
+    options?: { reasoningLevelExplicit?: boolean },
+  ): void;
   getProjectId(): ProjectId;
   setWorkingDirectory(cwd: string): void;
   ensureSessionPersistedForExternalActivity(

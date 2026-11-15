@@ -42,6 +42,7 @@ import {
   restoreWorkspaceFileRewindEntries,
 } from "./workspace-checkpoint-persistence.js";
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
+import { restoreReasoningLevelExplicitOnResume } from "./turn-model.js";
 import { restorePrismProjectionEvents } from "./events.js";
 import {
   childAssistantResultText,
@@ -278,6 +279,11 @@ export async function resumeFromStore(
     (message) => message.info.role === "user" && !message.info.summary,
   ).length;
   this.sessionPersisted = true;
+  // Строка session уже существует у resume-сессии, поэтому session_entry-записи разрешены.
+  this.sessionRowCreated = true;
+  // Явность уровня — session-local факт: читаем core-owned sidecar; старые сессии без него
+  // сохраняют прежнее поведение (level в selection считается явным).
+  await restoreReasoningLevelExplicitOnResume(this);
   await syncPersistedSessionTitleForResume.call(this, {
     restoredEvents,
     session,

@@ -135,6 +135,12 @@ export async function executeSubagentTaskDag(
           error:
             "Work claim conflict: another agent holds an overlapping write path. This branch is blocked; independent branches continue.",
         });
+      } else if (admissionReason === "write_scope_required") {
+        states.set(settled.nodeId, {
+          status: "blocked",
+          error:
+            "Write scope required: this DAG node uses a write-capable profile but did not declare write_paths. Add the exact files/directories to write_paths (or [] for read-only). This branch is blocked; independent branches continue.",
+        });
       } else {
         states.set(settled.nodeId, {
           status: "failed",
@@ -508,6 +514,10 @@ export async function runSubagentTaskDag(
           agentType: node.subagent_type,
           description: node.description,
           prompt,
+          ...(node.effort === undefined ? {} : { effort: node.effort }),
+          ...(node.effort_above_parent === undefined
+            ? {}
+            : { effortAboveParent: node.effort_above_parent }),
           ...(node.write_paths === undefined ? {} : { writePaths: node.write_paths }),
           callerCanReadOutputFile: rawRequest.callerCanReadOutputFile,
           workingDirectory: rawRequest.workingDirectory,

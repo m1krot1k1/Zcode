@@ -3094,6 +3094,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
         childSessionId: "sess_child_1",
         status: "completed",
         summaryText: "项目结构已经梳理完成",
+        totalTokens: 1200,
+        inputTokens: 900,
+        outputTokens: 300,
+        cacheReadTokens: 800,
+        cacheWriteTokens: 0,
+        reasoningTokens: 100,
       },
       { turnId },
     );
@@ -3106,6 +3112,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
       status: "success",
       subagentType: "Explore",
       summaryText: "项目结构已经梳理完成",
+      totalTokens: 1200,
+      inputTokens: 900,
+      outputTokens: 300,
+      cacheReadTokens: 800,
+      cacheWriteTokens: 0,
+      reasoningTokens: 100,
     });
     expect(projection.getSnapshot().subagents).toMatchObject({
       childSessionIds: ["sess_child_1"],
@@ -6186,7 +6198,7 @@ describe("fork / modelChange marker", () => {
     ).toHaveLength(1);
   });
 
-  it("modelChange：仅思考深度变化不产 marker", () => {
+  it("modelChange：仅思考深度变化產出 level marker", () => {
     const log = new EventLog();
     log.push(SessionEventType.ModelSelected, {
       modelSelection: { providerId: "default-deepseek", modelId: "deepseek-v4-flash" },
@@ -6216,13 +6228,23 @@ describe("fork / modelChange marker", () => {
       model: "deepseek-v4-flash",
       thought: "max",
     });
-    expect(
-      projection
-        .getSnapshot()
-        .rows.window.filter(
-          (row) => row.kind === "timelineMarker" && row.marker.type === "modelChange",
-        ),
-    ).toHaveLength(0);
+    const markers = projection
+      .getSnapshot()
+      .rows.window.filter(
+        (row) => row.kind === "timelineMarker" && row.marker.type === "modelChange",
+      );
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      marker: {
+        type: "modelChange",
+        fromProvider: "default-deepseek",
+        fromModel: "deepseek-v4-flash",
+        fromThought: "",
+        toProvider: "default-deepseek",
+        toModel: "deepseek-v4-flash",
+        toThought: "max",
+      },
+    });
   });
 
   // ── M4：rowId → messageId 侧表（forkAssistant/editUserQuery 桥接翻译，13 §E 组前置）──

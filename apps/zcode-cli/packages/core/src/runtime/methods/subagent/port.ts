@@ -29,6 +29,7 @@ import { AgentRuntime } from "../../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../../internal.js";
 import { cloneModelSelection } from "../../model-selection.js";
 import { resolveSubagentSelection } from "../../helpers/subagent-selection.js";
+import { applySubagentEffortSelection } from "./effort-application.js";
 import { sharedReadFileStateForChild } from "../../helpers/runtime-reminders.js";
 import { deriveChildClientPorts } from "../../helpers/child-client-ports.js";
 import type { AgentRuntimeDeps } from "../../types.js";
@@ -194,16 +195,17 @@ export function createDefaultSubagentPort(
         const bundledHarnessRules =
           this.contextSourceSnapshot?.bundledHarnessRules ??
           this.config.subagentContext?.bundledHarnessRules;
+        const parentSelection = this.getSessionModelSelection();
         const { selection: profileChildSelection, hasConcreteModel } = resolveSubagentSelection({
           profileSelection: request.profile.modelSelection,
-          parentSelection: this.getSessionModelSelection(),
+          parentSelection,
           overrideSelection: options?.modelOverride?.selection,
           resolveSelection: deps.resolveEffectiveModelSelection,
         });
         const modelOverride = options?.modelOverride;
         const inheritedModel = !modelOverride && !hasConcreteModel ? options?.model : undefined;
         // Core Server override 优先于持久化 profile 与父模型继承，但仍只是标准 Selection。
-        const childSelection = inheritedModel
+        let childSelection = inheritedModel
           ? modelSelectionFromActiveModel(inheritedModel)
           : profileChildSelection;
         const embeddedSearchEnabled = resolveSubagentEmbeddedSearchEnabled();
@@ -294,7 +296,7 @@ export function createDefaultSubagentPort(
           }),
           this.config.toolDisallowlist,
         );
-        // 修复依据：先按父级 allow/deny policy 保留显式 MCP 请求，再验证 startup snapshot；
+        // 修复依据：先按父级 allow/deny policy 保留显式 MCP 请求，再验证 current MCP snapshot；
         // 先构造 child toolset 会静默丢掉缺失 descriptor，让本应报错的子会话错误启动。
         validateSubagentMcpRequirements(
           { ...request, allowedTools: requestedMcpTools },
@@ -304,7 +306,7 @@ export function createDefaultSubagentPort(
         // child Model 必须先于 allowlist 解析创建：WebSearch 是模型能力条件工具，child 能力
         // 清单（SubagentSpawned.allowedTools）只能按 child 自己的 Active Model 过滤。
         // 创建顺序前移只改变错误优先级，不改变其它 preflight 的语义。
-        const baseChildModelFactory = modelOverride
+        let baseChildModelFactory = modelOverride
           ? createSubagentOverrideModelFactory(modelOverride, this.modelFactory)
           : inheritedModel
             ? createInheritedSubagentModelFactory(childSelection, inheritedModel, this.modelFactory)
@@ -316,7 +318,38 @@ export function createDefaultSubagentPort(
             { recoverable: true },
           );
         }
-        const childModel = baseChildModelFactory({ selection: childSelection });
+        let childModel = baseChildModelFactory({ selection: childSelection });
+        // Относительный effort применяется после override→profile→parent резолва.
+        // Модель не меняется; абсолютный level из tool input не принимается.
+        const catalogEntries = this.modelCatalogPort?.listModels();
+        const effortApplied = applySubagentEffortSelection({
+          effort: request.effort,
+          effortAboveParent: request.effortAboveParent,
+          agentType: request.agentType,
+          childSelection,
+          parentSelection,
+          ...(options?.model ? { parentModel: options.model } : {}),
+          childModel,
+          baseFactory: baseChildModelFactory,
+          rebuildFactory: (selection) =>
+            modelOverride
+              ? createSubagentOverrideModelFactory(
+                  { ...modelOverride, selection },
+                  this.modelFactory,
+                )
+              : inheritedModel
+                ? createInheritedSubagentModelFactory(
+                    selection,
+                    inheritedModel,
+                    this.modelFactory,
+                  )
+                : this.modelFactory,
+          ...(catalogEntries ? { catalogEntries } : {}),
+          ...(this.logger ? { logger: this.logger } : {}),
+        });
+        childSelection = effortApplied.childSelection;
+        childModel = effortApplied.childModel;
+        baseChildModelFactory = effortApplied.baseFactory;
         const childToolAllowlist = resolveSubagentToolAllowlist.call(
           this,
           request,
@@ -380,9 +413,9 @@ export function createDefaultSubagentPort(
           }) ?? this.browserControlPort;
         const mirroredToolNameByChildToolCallId = new Map<string, string>();
         let sessionReadyNotified = false;
-        const notifySessionReady = async () => {
+        const notifySessionReady = async (info?: { reasoningLevel?: string }) => {
           if (sessionReadyNotified) return;
-          await request.onSessionReady?.();
+          await request.onSessionReady?.(info);
           sessionReadyNotified = true;
         };
         this.logger?.debug("Starting subagent child runtime", {
@@ -538,6 +571,7 @@ export function createDefaultSubagentPort(
             memoryRoot: persistentMemory?.rootDir,
             mcpPort: childMcpAccess.port,
             skillPort: childSkillPort,
+            capabilityInstallPort: this.capabilityInstallPort,
             artifactStore: deps.artifactStore,
             appVersion: this.appVersion,
             eventSink: {
@@ -638,7 +672,7 @@ export function createDefaultSubagentPort(
             traceContext: request.traceContext,
           });
         }
-        await notifySessionReady();
+        await notifySessionReady({ reasoningLevel: childModel.options.reasoningLevel });
         if (
           !resumesExistingChild ||
           (previousSelection && !sameModelSelection(previousSelection, childSelection))
@@ -666,7 +700,7 @@ export function createDefaultSubagentPort(
           if (options?.signal?.aborted) {
             throw options.signal.reason ?? new Error("Subagent runtime start aborted");
           }
-          return await childRuntime.executeTurn(request.prompt, undefined, {
+          const turnResult = await childRuntime.executeTurn(request.prompt, undefined, {
             ...(childBinding
               ? {
                   offPeakTaskId: offPeak!.offPeakTaskId,
@@ -689,6 +723,12 @@ export function createDefaultSubagentPort(
             inputPresentation: "coordinator_input",
             traceContext: request.traceContext,
           });
+          return {
+            ...turnResult,
+            ...(childModel.options.reasoningLevel
+              ? { reasoningLevel: childModel.options.reasoningLevel }
+              : {}),
+          };
         } finally {
           const cancelled = options?.signal?.aborted === true;
           childRuntime.sealBackgroundTaskNotifications({

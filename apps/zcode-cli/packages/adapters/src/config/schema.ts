@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { RuntimeConfigPatch } from "@zcode/contracts";
+import type { McpServerConfig, RuntimeConfigPatch } from "@zcode/contracts";
 
 const stringRecordSchema = z.record(z.string(), z.string());
 const _unknownRecordSchema = z.record(z.string(), z.unknown());
@@ -111,6 +111,19 @@ const mcpServerSchema = z.preprocess(
   normalizeMcpServerConfigInput,
   z.discriminatedUnion("type", [mcpStdioServerSchema, mcpHttpServerSchema, mcpSseServerSchema]),
 );
+
+/**
+ * Единая проверка MCP-конфига для install/write path. Без неё агентский
+ * InstallCapability мог сохранить `args` объектом, подключить сервер, получить
+ * timeout и всё равно отчитаться `installed`.
+ */
+export function parseMcpServerConfig(value: unknown): McpServerConfig {
+  const parsed = mcpServerSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(`Invalid MCP server config: ${formatMcpServerError(parsed.error)}`);
+  }
+  return parsed.data as McpServerConfig;
+}
 
 const mcpSchema = z.object({
   servers: z.record(z.string(), mcpServerSchema).optional(),

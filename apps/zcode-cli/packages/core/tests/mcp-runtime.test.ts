@@ -201,6 +201,54 @@ describe("AgentRuntime MCP integration", () => {
     expect(toolNames).toContain("mcp__local__ping");
   });
 
+  it("registers a directly connected MCP server on the next turn", async () => {
+    const sessionId = createSessionId("runtime-mcp-direct-connect-refresh");
+    const eventStore = createTestSessionEventStore();
+    let tools: McpConnectionSnapshot["tools"] = [];
+    let statuses: McpConnectionSnapshot["statuses"] = {};
+    let revision = 0;
+    const turnToolNames: string[][] = [];
+    const mcpPort = createMockMcpPort({
+      connectConfiguredServers: async () => ({ statuses, tools }),
+      connectServer: async () => {
+        statuses = { late: { status: "connected", transport: "stdio", toolCount: 1, updatedAt: "now" } };
+        tools = [
+          {
+            serverName: "late",
+            toolName: "echo",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ];
+        revision += 1;
+        return statuses.late!;
+      },
+      listTools: async () => tools,
+      status: async () => statuses,
+      toolListRevision: () => revision,
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", mcp: { enabled: true, servers: {} } },
+      {
+        eventStore,
+        mcpPort,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            turnToolNames.push((request.tools ?? []).map((tool) => tool.name));
+            return { finishReason: "stop", text: "done", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } };
+          },
+        }),
+      },
+    );
+
+    await runtime.executeTurn("first");
+    expect(turnToolNames[0]).not.toContain("mcp__late__echo");
+    await mcpPort.connectServer("late", { type: "stdio", command: "node" });
+    await runtime.executeTurn("second");
+
+    expect(turnToolNames[1]).toContain("mcp__late__echo");
+  });
+
   it("registers configured MCP tools before the first model request", async () => {
     const sessionId = createSessionId("runtime-mcp-tools");
     const eventStore = createTestSessionEventStore();

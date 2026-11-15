@@ -56,6 +56,9 @@ export async function startExploreSubagentInBackground(
       // 同一父级链推导 level，避免后台子代理丢失递归保护上下文。
       level: deriveChildTaskLevel(request, undefined, ctx.registry),
       parentToolNames: ctx.options.parentToolNames,
+      ...(ctx.registry.getSubagentTaskByChildSession(request.sessionId)?.taskId
+        ? { parentTaskId: ctx.registry.getSubagentTaskByChildSession(request.sessionId)!.taskId }
+        : {}),
     }),
     taskAbort,
   );
@@ -117,7 +120,7 @@ export async function startExploreSubagentInBackground(
       ...(startOptions?.modelOverride ? { modelOverride: startOptions.modelOverride } : {}),
     },
     {
-      onSessionReady: async () => {
+      onSessionReady: async (info) => {
         await emitSubagentEvent(
           ctx.options,
           SessionEventType.SubagentSpawned,
@@ -138,6 +141,7 @@ export async function startExploreSubagentInBackground(
             model: profile.modelSelection
               ? `${profile.modelSelection.providerId}/${profile.modelSelection.modelId}`
               : undefined,
+            ...(info?.reasoningLevel ? { reasoningLevel: info.reasoningLevel } : {}),
           },
         );
         readyGate.resolve();

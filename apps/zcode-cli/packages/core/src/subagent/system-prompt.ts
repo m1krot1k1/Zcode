@@ -22,8 +22,13 @@ export function buildSubagentEnvironmentContext(
   options: SubagentEnvironmentContextOptions,
 ): string {
   const { envInfo, model } = options;
+  const reasoningLevel = model?.options.reasoningLevel;
   const modelLine = model
-    ? [`You are powered by the model named ${model.providerId}/${model.modelId}.`]
+    ? [
+        `You are powered by the model named ${model.providerId}/${model.modelId}${
+          reasoningLevel ? ` (reasoning effort: ${reasoningLevel})` : ""
+        }.`,
+      ]
     : [];
 
   return [

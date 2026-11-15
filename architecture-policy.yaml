@@ -2072,6 +2072,23 @@ modules:
       adapters: .
     owner: debug
 
+exceptions:
+  # Two focused helpers added with the root-auto and crash-resume specs. Keep the
+  # exception path-exact; do not widen it to the whole zcode-cli tree.
+  - rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
+      - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
+      # Initial-import runtime file; the legacy zcode-cli module is unmanaged, and a
+      # path-exact exception is the existing convention for these two helpers.
+      - apps/zcode-cli/packages/core/src/runtime/off-peak/runtime.ts
+      # Capability installer feature: four focused files, not a new module. Keep the
+      # exception path-exact; do not widen it to the whole zcode-cli tree.
+      - apps/zcode-cli/packages/bootstrap/src/app/capability-install-port.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/capability-install.port.ts
+      - apps/zcode-cli/packages/contracts/src/tools/capability-install.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/capability-install.ts
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。

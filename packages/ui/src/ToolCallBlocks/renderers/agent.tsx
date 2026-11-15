@@ -1,9 +1,17 @@
 import { useToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCapabilities.js";
-import { BotIcon } from "lucide-react";
-import { useCallback, useMemo, type ReactNode } from "react";
+import { BotIcon, WaypointsIcon } from "lucide-react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { AgentColor } from "@zcode/shared";
+import { formatBackgroundTaskElapsedLabel } from "@/BackgroundTaskElapsedLabel.js";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import { cn } from "@/components/lib/utils.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { resolveSubagentColorFromName, SUBAGENT_TEXT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import { ToolSnapshotFieldNotice } from "@/ToolCallBlocks/ToolSnapshotFieldNotice.js";
@@ -22,6 +30,111 @@ import {
 } from "./agentHelpers.js";
 
 const AGENT_TOOL_ICON = <BotIcon className="size-4 shrink-0 text-foreground-subtle" />;
+
+function formatCompactTokenCount(value: number): string {
+  if (value < 1_000) return String(value);
+  const thousands = value / 1_000;
+  return `${thousands >= 10 ? Math.round(thousands) : thousands.toFixed(1)}k`;
+}
+
+type AgentGraphToolNode = ToolCallBlockRenderContext["toolCallNode"];
+const AGENT_TOOL_NAMES = new Set(["Agent", "Task", "agent", "subagent"]);
+
+interface AgentGraphNode {
+  id: string;
+  label: string;
+  agentType: string;
+  status: string;
+  usage?: string;
+  children: AgentGraphNode[];
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function textField(source: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function readAgentGraphUsage(output: unknown): string | undefined {
+  const text =
+    typeof output === "string"
+      ? output
+      : typeof asRecord(output).content === "string"
+        ? (asRecord(output).content as string)
+        : "";
+  const tokens = text.match(/subagent_tokens:\s*(\d+)/u)?.[1];
+  const duration = text.match(/duration_ms:\s*(\d+)/u)?.[1];
+  const parts = [
+    ...(tokens ? [`${formatCompactTokenCount(Number(tokens))} tok`] : []),
+    ...(duration ? [`${Math.round(Number(duration) / 1_000)}s`] : []),
+  ];
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function buildAgentGraphNode(node: AgentGraphToolNode): AgentGraphNode | undefined {
+  const name = node.toolCall.toolName ?? node.toolCall.kind;
+  if (!AGENT_TOOL_NAMES.has(name)) return undefined;
+  const input = asRecord(node.toolCall.input);
+  const output = node.toolCall.output;
+  const children = node.childToolCalls
+    .map((child) => buildAgentGraphNode(child))
+    .filter((child): child is AgentGraphNode => child !== undefined);
+  return {
+    id: node.toolCall.toolId,
+    label: textField(input, "description") ?? node.toolCall.title ?? name,
+    agentType: textField(input, "subagent_type", "agent", "agentType") ?? name,
+    status: node.toolCall.status,
+    ...(readAgentGraphUsage(output) ? { usage: readAgentGraphUsage(output) } : {}),
+    children,
+  };
+}
+
+function AgentGraphNodeView({ node, depth }: { node: AgentGraphNode; depth: number }) {
+  const statusClass =
+    node.status === "completed" || node.status === "success"
+      ? "bg-emerald-500"
+      : node.status === "failed" || node.status === "error"
+        ? "bg-red-500"
+        : "bg-amber-500";
+  return (
+    <li className="min-w-0">
+      <div
+        className="flex min-w-0 items-start gap-2 rounded-md py-1"
+        style={{ paddingLeft: depth === 0 ? 0 : depth * 16 }}
+      >
+        <span aria-hidden className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", statusClass)} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="truncate font-medium text-foreground">{node.label}</span>
+            <span className="shrink-0 rounded border border-border bg-surface px-1 py-0.5 font-mono text-ui-xs text-foreground-subtle">
+              {node.agentType}
+            </span>
+            {node.usage ? (
+              <span className="shrink-0 text-ui-xs tabular-nums text-foreground-subtle">
+                {node.usage}
+              </span>
+            ) : null}
+          </div>
+          {node.children.length > 0 ? (
+            <ul className="mt-1 space-y-0.5 border-border border-l pl-3">
+              {node.children.map((child) => (
+                <AgentGraphNodeView key={child.id} node={child} depth={depth + 1} />
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+    </li>
+  );
+}
 
 function AgentChildToolList({
   nestedToolRenderer,
@@ -210,6 +323,12 @@ function BackgroundAgentProcessSection({
 export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall, childToolCalls } = context.toolCallNode;
+  const [graphOpen, setGraphOpen] = useState(false);
+  const graphRoot = useMemo(
+    () => buildAgentGraphNode(context.toolCallNode),
+    [context.toolCallNode],
+  );
+  const hasGraph = graphRoot !== undefined && graphRoot.children.length > 0;
   const prompt = getAgentPrompt(toolCall);
   const fallbackLabel = formatAgentMessage(intl, "chat.toolCall.agent.fallback", "SubAgent");
   const primaryText = getAgentPrimaryText(toolCall, fallbackLabel);
@@ -218,8 +337,92 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const agentColor = agentName
     ? (configuredAgentColor ?? getAgentColor(toolCall) ?? resolveSubagentColorFromName(agentName))
     : null;
-  const agentNameDetail =
+  const agentNameText =
     agentName && agentColor ? <AgentNameText color={agentColor} name={agentName} /> : null;
+  const reasoningLevel = context.authoritativeReasoningLevel?.trim();
+  const subagentUsage = context.authoritativeSubagentUsage;
+  // own / subtree: второй компонент появляется только когда потомки реально добавили расход.
+  const formatOwnVsSubtree = (
+    own: number | undefined,
+    subtree: number | undefined,
+    format: (value: number) => string,
+  ): string | undefined => {
+    if (own === undefined && subtree === undefined) return undefined;
+    if (own !== undefined && subtree !== undefined && subtree !== own) {
+      return `${format(own)} / ${format(subtree)}`;
+    }
+    return format(own ?? subtree!);
+  };
+  const tokenUsage = formatOwnVsSubtree(
+    subagentUsage?.totalTokens,
+    subagentUsage?.subtreeTotalTokens,
+    (value) => `${formatCompactTokenCount(value)} tok`,
+  );
+  const durationUsage = formatOwnVsSubtree(
+    subagentUsage?.totalDurationMs,
+    subagentUsage?.subtreeTotalDurationMs,
+    (value) => formatBackgroundTaskElapsedLabel(Math.max(0, value), intl.formatMessage),
+  );
+  // Own breakdown рядом с суммой: видно, сколько ушло во вход, выход и кэш.
+  const usageBreakdown = [
+    subagentUsage?.inputTokens === undefined
+      ? undefined
+      : intl.formatMessage(
+          { id: "chat.toolCall.agent.usage.input" },
+          { count: formatCompactTokenCount(subagentUsage.inputTokens) },
+        ),
+    subagentUsage?.outputTokens === undefined
+      ? undefined
+      : intl.formatMessage(
+          { id: "chat.toolCall.agent.usage.output" },
+          { count: formatCompactTokenCount(subagentUsage.outputTokens) },
+        ),
+    subagentUsage?.cacheReadTokens === undefined
+      ? undefined
+      : intl.formatMessage(
+          { id: "chat.toolCall.agent.usage.cache" },
+          { count: formatCompactTokenCount(subagentUsage.cacheReadTokens) },
+        ),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const usageText = [tokenUsage, durationUsage, usageBreakdown].filter(Boolean).join(" · ");
+  const agentNameDetail =
+    agentNameText || reasoningLevel || usageText || hasGraph ? (
+      <span className="inline-flex min-w-0 items-center gap-1">
+        {agentNameText}
+        {reasoningLevel ? (
+          <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-ui-xs text-[var(--color-foreground-subtle)]">
+            {reasoningLevel}
+          </span>
+        ) : null}
+        {usageText ? (
+          <span className="shrink-0 text-ui-xs tabular-nums text-[var(--color-foreground-subtle)]">
+            {usageText}
+          </span>
+        ) : null}
+        {hasGraph ? (
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 text-ui-xs text-foreground-subtle transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
+            onClick={(event) => {
+              event.stopPropagation();
+              setGraphOpen(true);
+            }}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setGraphOpen(true);
+              }
+            }}
+          >
+            <WaypointsIcon aria-hidden className="size-3" />
+            {formatAgentMessage(intl, "chat.toolCall.agent.graph", "Graph")}
+          </button>
+        ) : null}
+      </span>
+    ) : null;
   // Agent 父块的完成/进行中边界只由父 Agent tool 决定。
   // 子 tool 是展开区明细，不能反向续住父块运行态，否则父 Agent completed 后
   // 仍会显示渐变和子工具摘要，和协议里的父工具生命周期不一致。
@@ -381,6 +584,27 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
             : undefined
         }
       />
+      {graphRoot && hasGraph ? (
+        <Dialog open={graphOpen} onOpenChange={setGraphOpen}>
+          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {formatAgentMessage(intl, "chat.toolCall.agent.graphTitle", "Agent graph")}
+              </DialogTitle>
+              <DialogDescription>
+                {formatAgentMessage(
+                  intl,
+                  "chat.toolCall.agent.graphDescription",
+                  "Who spawned whom, with status and token/time where runtime reported it.",
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="space-y-1">
+              <AgentGraphNodeView node={graphRoot} depth={0} />
+            </ul>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
   );
 }

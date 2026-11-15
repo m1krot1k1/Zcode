@@ -137,6 +137,13 @@ export class NodePluginAdapter implements PluginPort {
     const mcpServers: PluginLoadOutcome["mcpServers"] = {};
     const plugins: PluginMetadata[] = [];
     const seen = new Set<string>();
+    // Plugin id includes the marketplace, so the same plugin installed from two
+    // marketplaces has two ids. MCP server names are namespaced by manifest name
+    // (`plugin:<name>:<server>`), which means both copies produce the same runtime
+    // keys and the later one silently overwrites the first. Dedupe by manifest name
+    // before any components are merged; candidate order is the priority order
+    // (inline > official > installed marketplaces), so the first copy wins.
+    const seenByName = new Map<string, LoadedPlugin>();
     const skillRoots: SkillRoot[] = [];
     let priority = FIRST_PLUGIN_PRIORITY;
 
@@ -161,7 +168,19 @@ export class NodePluginAdapter implements PluginPort {
         });
         continue;
       }
+      const sameName = seenByName.get(loaded.manifest.name);
+      if (sameName) {
+        diagnostics.push({
+          code: "plugin_duplicate_name",
+          message: `Plugin '${loaded.manifest.name}' from marketplace '${loaded.marketplace}' ignored: already loaded from '${sameName.marketplace}'`,
+          path: loaded.rootPath,
+          pluginId: loaded.id,
+          severity: "warning",
+        });
+        continue;
+      }
       seen.add(loaded.id);
+      seenByName.set(loaded.manifest.name, loaded);
       warnUnsupportedComponents(loaded, diagnostics);
 
       // candidate.defaultEnabled 在 candidate 构造时无法访问 plugin id,
@@ -209,7 +228,22 @@ export class NodePluginAdapter implements PluginPort {
         : emptyComponents(hookInspection.details);
       priority += PRIORITY_STEP;
 
-      Object.assign(mcpServers, component.mcpServers);
+      for (const [serverName, serverConfig] of Object.entries(component.mcpServers)) {
+        if (serverName in mcpServers) {
+          // Defensive guard: even if two distinct plugin names ever normalize to the same
+          // namespaced key, never silently replace the first server. The duplicate-name
+          // check above is the primary fix; this keeps the merge first-wins and visible.
+          diagnostics.push({
+            code: "plugin_mcp_server_duplicate",
+            message: `MCP server '${serverName}' from plugin '${loaded.id}' ignored: already provided by another plugin`,
+            path: loaded.manifestPath,
+            pluginId: loaded.id,
+            severity: "warning",
+          });
+          continue;
+        }
+        mcpServers[serverName] = serverConfig;
+      }
       mergeHookEvents(hooks, component.hooks);
       skillRoots.push(...component.skillRoots);
       commandRoots.push(...component.commandRoots);

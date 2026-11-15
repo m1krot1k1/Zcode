@@ -93,7 +93,10 @@ export function prepareOffPeakTurn(
         original.modelExecution!,
       );
       controllers.set(runtime, execution);
-      runtime.setSessionModelSelection(selection);
+      // Execution-scoped подмена не меняет пользовательскую явность reasoning level.
+      runtime.setSessionModelSelection(selection, {
+        reasoningLevelExplicit: runtime.reasoningLevelExplicit,
+      });
     }
   }
   const ownsTurn =
@@ -290,6 +293,10 @@ class OffPeakRuntimeExecution {
     this.unsubscribeRegistry?.();
     this.runtime.eventSinks.delete(this.eventSink);
     this.runtime.runtimeTaskRegistry.setOffPeakExecutionId?.(undefined);
-    if (!this.lifecycle.ownedByUser) this.runtime.setSessionModelSelection(this.ordinarySelection);
+    if (!this.lifecycle.ownedByUser)
+      this.runtime.setSessionModelSelection(this.ordinarySelection, {
+        // Возврат обычного selection не должен переписывать явность пользователя.
+        reasoningLevelExplicit: this.runtime.reasoningLevelExplicit,
+      });
   }
 }

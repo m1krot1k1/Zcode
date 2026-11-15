@@ -13,6 +13,7 @@ export * from "./interfaces/provider-endpoint-routing.port.js";
 export * from "./interfaces/http-client.port.js";
 export * from "./interfaces/image-processor.port.js";
 export * from "./interfaces/pdf-document.port.js";
+export * from "./interfaces/capability-install.port.js";
 export * from "./interfaces/permission.port.js";
 export * from "./interfaces/session.port.js";
 export * from "./interfaces/session-mailbox.port.js";

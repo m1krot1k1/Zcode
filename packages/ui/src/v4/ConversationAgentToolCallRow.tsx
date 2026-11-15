@@ -6,6 +6,7 @@ import type { ConversationAssistantWorkRenderItem } from "@/v4/conversationAssis
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
+import { useLiveSubagentUsage } from "@/store/subagentsStore.js";
 
 export function openSubagentSessionFromSummary({
   backgrounded: _backgrounded = false,
@@ -46,6 +47,9 @@ export function ConversationAgentToolCallRow({
   const toolCallNode = useMemo(() => toolCallRowToLegacyNode(item.row), [item.row]);
   const childSessionId = item.subagentRow.childSessionId;
   const subagentType = item.subagentRow.subagentType;
+  // Live usage приходит из telemetry supervisor по childSessionId; projection-поля
+  // остаются fallback для холодного восстановления/после terminal.
+  const liveUsage = useLiveSubagentUsage(childSessionId);
   // 与 Agent 摘要行复用同一 title resolver，保证右侧 tab 和用户点击的可见标题逐字一致。
   const title = getAgentPrimaryText(toolCallNode.toolCall, "");
   const canOpenChildSession = Boolean(
@@ -91,6 +95,19 @@ export function ConversationAgentToolCallRow({
         onOpenAutomationsMain={context.onOpenAutomationsMain}
         agentSummaryAction={agentSummaryAction}
         authoritativeAgentType={subagentType}
+        authoritativeReasoningLevel={item.subagentRow.reasoningLevel}
+        authoritativeSubagentUsage={{
+          totalTokens: liveUsage?.totalTokens ?? item.subagentRow.totalTokens,
+          totalDurationMs: item.subagentRow.totalDurationMs,
+          subtreeTotalTokens: item.subagentRow.subtreeTotalTokens,
+          subtreeTotalDurationMs: item.subagentRow.subtreeTotalDurationMs,
+          subtreeToolUseCount: item.subagentRow.subtreeToolUseCount,
+          inputTokens: liveUsage?.inputTokens ?? item.subagentRow.inputTokens,
+          outputTokens: liveUsage?.outputTokens ?? item.subagentRow.outputTokens,
+          cacheReadTokens: liveUsage?.cacheReadTokens ?? item.subagentRow.cacheReadTokens,
+          cacheWriteTokens: liveUsage?.cacheWriteTokens ?? item.subagentRow.cacheWriteTokens,
+          reasoningTokens: liveUsage?.reasoningTokens ?? item.subagentRow.reasoningTokens,
+        }}
       />
     </div>
   );

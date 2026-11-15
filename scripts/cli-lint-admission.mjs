@@ -7,6 +7,26 @@ export function parseLintCommand(command) {
   return command.split(" ").slice(1);
 }
 
+/**
+ * oxlint печатает человекочитаемый преамбул («No files found to lint…») перед
+ * JSON-отчётом, когда путь не дал совпадений. JSON.parse на всём stdout падал,
+ * хотя отчёт валиден и diagnostics пуст. Выделяем объект отчёта и проверяем форму.
+ */
+export function parseOxlintReport(stdout, packageName = "package") {
+  const start = stdout.indexOf("{");
+  if (start < 0)
+    throw new Error(`${packageName}: oxlint не вернул JSON-отчёт`);
+  let report;
+  try {
+    report = JSON.parse(stdout.slice(start));
+  } catch {
+    throw new Error(`${packageName}: 无法解析 oxlint 结果`);
+  }
+  if (!Array.isArray(report.diagnostics))
+    throw new Error(`${packageName}: 无法解析 oxlint 结果`);
+  return report;
+}
+
 export function classifyLintDiagnostics(diagnostics, { relativeDirectory, pristine }) {
   const accepted = [],
     errors = [],

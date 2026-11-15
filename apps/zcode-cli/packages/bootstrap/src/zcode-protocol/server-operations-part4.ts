@@ -8,6 +8,11 @@ import type { SendInputOptions } from "../app/types.js";
 
 import { SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION, type EventId, type MessageWithParts, type MessageId, type QueryId, type SessionEvent, SessionEventType, type SessionId, type TraceId, type TurnBackgroundAttribution, type TurnId } from "@zcode/contracts";
 import { zcodeProtocolErrorCodes, zcodeSessionCancelBackgroundTaskParamsSchema, zcodeSessionSetModeParamsSchema, zcodeSessionSetModelParamsSchema, zcodeSessionSetThoughtLevelParamsSchema, zcodeSessionStopParamsSchema, type ZCodeAutomationBotDeliveryTarget, type ZCodeDeliveryKind, type ZCodeSessionEvent, type ZCodeSessionHistoryTarget, type ZCodeSessionResumeParams } from "@zcode/shared";
+import {
+  SESSION_ENTRY_AUTO_RESUME,
+  buildAutoResumePrompt,
+  findInterruptedUserMessage,
+} from "./auto-resume.js";
 import { buildWorkspaceRef, mapSessionEventForProtocol, shouldExposeSessionEventToProtocol } from "./mapper.js";
 
 import { ProtocolRequestError, assertExpectedRevision, parseParams, requireSession, type ZCodeProtocolAgentServerContext, type ZCodeProtocolSessionRecord, type ZCodeProtocolToolInputTransmissionState } from "./server-types.js";
@@ -93,6 +98,60 @@ export function logProtocolSessionEventSent(
 // должен быть один. Ключ — объект контекста и sessionId, поэтому разные воркспейсы/
 // процессы не смешиваются.
 export const resumeActivationFlights = new WeakMap<object, Map<string, Promise<ResumeActivation>>>();
+
+/**
+ * Safe continuation after a crash: only the root interactive session, only when
+ * no tool was left running, and only once per source user message. The continuation
+ * prompt explicitly forbids repeating tool calls whose results are already saved.
+ */
+async function maybeAutoResumeInterruptedSession(
+  context: ZCodeProtocolAgentServerContext,
+  record: ZCodeProtocolSessionRecord,
+  session: { id: string; lastOutcome?: string | null; parentID?: string | null; taskType?: string | null },
+  persistedMessages: readonly MessageWithParts[],
+): Promise<void> {
+  if (session.lastOutcome !== "interrupted") return;
+  if (session.parentID) return;
+  if (session.taskType && session.taskType !== "interactive") return;
+  const lastUser = findInterruptedUserMessage(persistedMessages);
+  if (!lastUser || lastUser.hasPendingTool) return;
+  const store = context.deps.sessionStore;
+  if (!store) return;
+  const entries = await store.sessionEntries?.({
+    sessionID: session.id as SessionId,
+    type: SESSION_ENTRY_AUTO_RESUME,
+  });
+  if (
+    entries?.some(
+      (entry) => asRecord(entry.data).sourceUserMessageId === lastUser.messageId,
+    )
+  ) {
+    return;
+  }
+  const now = Date.now();
+  await store.saveSessionEntry?.({
+    id: `${session.id}:auto-resume:${lastUser.messageId}`,
+    sessionID: session.id as SessionId,
+    type: SESSION_ENTRY_AUTO_RESUME,
+    touchSession: false,
+    time: { created: now, updated: now },
+    data: { sourceUserMessageId: lastUser.messageId, attemptedAt: now },
+  });
+  context.logger?.info("Auto-resuming interrupted session", {
+    event: "zcode_protocol.session.auto_resume_started",
+    module: "bootstrap.zcode_protocol",
+    sessionId: session.id,
+    sourceUserMessageId: lastUser.messageId,
+  });
+  void record.app.submitPrompt(buildAutoResumePrompt()).catch((error: unknown) => {
+    context.logger?.warn("Auto-resume turn failed", {
+      event: "zcode_protocol.session.auto_resume_failed",
+      module: "bootstrap.zcode_protocol",
+      sessionId: session.id,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 export async function activateSessionForResumeInner(
   context: ZCodeProtocolAgentServerContext,
@@ -199,6 +258,7 @@ export async function activateSessionForResumeInner(
       sessionId: params.sessionId,
       traceId: record.traceContext.traceId,
     });
+    await maybeAutoResumeInterruptedSession(context, record, session, persistedMessages);
     return {
       knownSession: session,
       record,

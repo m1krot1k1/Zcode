@@ -1,6 +1,7 @@
 # Реестр работ агентов (Agent Work Ledger)
 
-> Статус: реализованы ядро, интеграция в спавн субагентов и жёсткий registrar-gate.
+> Статус: реализованы ядро, интеграция в спавн субагентов, жёсткий registrar-gate,
+> обязательный `write_paths` для write-capable профилей и write-time `writeScope`.
 > Протокол не меняется.
 > Код: `apps/zcode-cli/packages/core/src/runtime-task/work-ledger.ts`,
 > `apps/zcode-cli/packages/core/src/runtime-task/work-ledger-wire.ts`,
@@ -36,12 +37,13 @@
 - нормализация и сравнение путей, TTL, дедупликация намерений;
 - registrar-gate в `runtime-task/registry.ts`: конфликт путей блокирует admission **до**
   создания задачи;
+- обязательный `write_paths` для write-capable субагентов и write-time enforcement:
+  `Write`/`Edit`/`ApplyPatch` не выходят за declared `writeScope`;
 - periodic sweep протухших claim'ов внутри registry;
 - `workResult` в контракте завершённого субагента и агрегация WorkResult для DAG.
 
 Вне скоупа (следующие шаги, требуют отдельного согласования):
 
-- принудительная блокировка записи инструментов (реестр блокирует только spawn, не Write/Edit);
 - изменения протокола `packages/shared/src/zcode-protocol/`, UI и remote-каналов;
 - очередь работ, планировщик, распределение задач между агентами.
 
@@ -203,25 +205,45 @@ interface WorkConflict {
 состояния (`setTaskSnapshot`, запись в индексы) он выполняет:
 
 1. `text = task.prompt || task.description`.
-2. `paths = extractTaskPaths(text)` (консервативный экстрактор явных путей).
-   Backtick-спан сначала проверяется целиком: пробелы разрешены внутри сегментов
-   (`/tmp/zcode workspace/repo/src/a.ts`), поэтому workspace с пробелом не оставляет
-   частичный claim на родительский каталог. Команда (`pnpm test src/a.test.ts`)
-   распадается на токены, и путём становится только её аргумент. Каталог из двух
-   сегментов без расширения принимается только для известных исходных каталогов
-   (`src/runtime-task`), а `text/html` — нет.
-3. Если передан `workLedger` и известен `workspacePath` и `paths.length > 0`:
+2. Если `task.writeCapable === true` и `task.writePaths === undefined` →
+   `{ accepted: false, reason: "write_scope_required" }`. Write-роль без явного scope
+   не допускается: иначе child runtime не получит `writeScope` и сможет писать вне
+   заявленной области. `[]` — валидный scope «ничего не писать».
+3. `paths = task.writePaths` при наличии; иначе legacy `extractTaskPaths(text)`
+   (консервативный экстрактор явных путей). Backtick-спан сначала проверяется целиком:
+   пробелы разрешены внутри сегментов (`/tmp/zcode workspace/repo/src/a.ts`), поэтому
+   workspace с пробелом не оставляет частичный claim на родительский каталог. Команда
+   (`pnpm test src/a.test.ts`) распадается на токены, и путём становится только её
+   аргумент. Каталог из двух сегментов без расширения принимается только для известных
+   исходных каталогов (`src/runtime-task`), а `text/html` — нет.
+4. Если передан `workLedger` и известен `workspacePath` и `paths.length > 0`:
    `conflicts = ledger.findConflicts({ workspacePath, paths, agentId: task.agentId })`.
-4. Непустые `conflicts` → `{ accepted: false, reason: "write_claim_conflict" }`.
+5. Непустые `conflicts` → `{ accepted: false, reason: "write_claim_conflict" }`.
    Задача не создаётся, claim не появляется.
-5. Ошибка ledger'а на чтении или записи → `{ accepted: false, reason: "work_claim_unavailable" }`.
+6. Ошибка ledger'а на чтении или записи → `{ accepted: false, reason: "work_claim_unavailable" }`.
    Это fail-closed: при включённом ledger'е нельзя гарантировать отсутствие конфликта.
-6. Без ledger'а или без workspacePath gate выключен (обратная совместимость).
-7. Только после всех admission-gates создаётся claim с `runId = rootRunId` и
+7. Без ledger'а или без workspacePath gate выключен (обратная совместимость).
+8. Только после всех admission-gates создаётся claim с `runId = rootRunId` и
    `attemptId = stamped.attemptId`. Если claim бросает, spawn отклоняется
    (`work_claim_unavailable`), а частичный claim не остаётся.
-8. `agentId` в `findConflicts` исключает собственные claim'ы: repair/повторный admission
+9. `agentId` в `findConflicts` исключает собственные claim'ы: repair/повторный admission
    того же агента не конфликтует сам с собой.
+
+### 6.1 Write-time scope
+
+`write_paths` — не только ключ конфликтов. Для write-capable child runtime он
+передаётся как `writeScope` (`runtime/methods/subagent/port.ts`), а
+`assertPathWithinWriteScope` в `tool/path-policy.ts` проверяет каждый `Write`,
+`Edit` и `ApplyPatch`:
+
+- `writeScope === undefined` — legacy-поведение, запись не ограничена;
+- `writeScope === []` — запись запрещена (`write_scope_violation`, `empty_scope`);
+- непустой scope — целевой путь должен лежать внутри одного из объявленных файлов
+  или каталогов; иначе `write_scope_violation`.
+
+Это закрывает гонку, которую registrar-gate сам по себе не закрывает: два агента
+могут объявить разные пути, но один попытается выйти за свой scope. Проверка
+выполняется в момент записи, а не только при spawn.
 
 Write-capability для gate выводится из **эффективной (унаследованной) поверхности** профиля,
 а не из декларированного списка `tools` самого по себе. `tools: undefined` и `tools: []`
@@ -241,7 +263,7 @@ security-reviewer, evaluator) остаётся non-writer: ledger намерен
 `declareWorkClaim` больше не пишет `console.warn` и не игнорирует конфликты: конфликт
 блокирует spawn до claim'а. Release остаётся в `setTaskSnapshot` (единый funnel) и `remove`.
 
-### 6.1 Фактический maxParallel
+### 6.2 Фактический maxParallel
 
 `InMemoryRuntimeTaskRegistry` — владелец активной ёмкости root run, а не остатка spawn-бюджета.
 Наружу добавлены read-only методы:
@@ -449,6 +471,11 @@ Registrar:
 
 - same-file и directory-overlap конфликт блокируют `registerSubagentTask`
   (`write_claim_conflict`), задача и claim не создаются, spawn-ёмкость не расходуется;
+- write-capable задача без `writePaths` блокируется (`write_scope_required`), задача и
+  claim не создаются;
+- write-capable задача с `writePaths: []` допускается, но её `Write`/`Edit`/`ApplyPatch`
+  получают `write_scope_violation` с `reason: "empty_scope"`;
+- write в пределах declared scope проходит, запись вне scope — `write_scope_violation`;
 - без ledger'а тот же спавн проходит (backward compat);
 - ошибка ledger'а на gate/claim → `work_claim_unavailable`, задача не создаётся;
 - fail/cancel/timeout(killed/stopped/lost) освобождают путь; новый claim после release

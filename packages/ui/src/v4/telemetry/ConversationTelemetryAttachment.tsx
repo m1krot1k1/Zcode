@@ -3,6 +3,10 @@ import type { ConversationTelemetryFact } from "@zcode/shared/zcode-protocol-v4"
 import { resolveWorkspaceTelemetryDetail, type IPlatformService } from "@zcode/shared";
 import { createConversationTelemetryService, type IServiceAccessor } from "@zcode/services";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
+import {
+  toLiveSubagentUsage,
+  useSubagentUsageStore,
+} from "@/store/subagentsStore.js";
 import { ConversationTelemetrySupervisor } from "@/v4/telemetry/conversationTelemetrySupervisor.js";
 
 interface ConversationTelemetryAttachmentScope {
@@ -96,6 +100,12 @@ function acquireSupervisor(
         platform,
         workspaceScopeKey: key,
         workspaceTelemetryDetail: resolveWorkspaceTelemetryDetail(scope),
+        // Живой own-usage ребёнка обновляет строку агента до terminal-события.
+        onSubagentUsageChanged: (childSessionId, usage) => {
+          const store = useSubagentUsageStore.getState();
+          if (usage) store.setUsage(childSessionId, toLiveSubagentUsage(usage));
+          else store.clearUsage(childSessionId);
+        },
       }),
       refCount: 1,
       subscription: null,

@@ -120,6 +120,10 @@ export async function runExploreSubagent(
       // Эффективная поверхность родителя: профиль не может объявить запись,
       // которой нет у фактического tool surface родителя.
       parentToolNames: ctx.options.parentToolNames,
+      // Ребро поддерева для агрегата токенов/времени; root-turn не имеет parent task.
+      ...(ctx.registry.getSubagentTaskByChildSession(request.sessionId)?.taskId
+        ? { parentTaskId: ctx.registry.getSubagentTaskByChildSession(request.sessionId)!.taskId }
+        : {}),
     }),
     taskAbort,
   );
@@ -227,7 +231,7 @@ export async function runExploreSubagent(
       reportActivity: activityWatchdog.reportActivity,
     },
     {
-      onSessionReady: async () => {
+      onSessionReady: async (info) => {
         await persistSwarmFact("running");
         await emitSubagentEvent(
           ctx.options,
@@ -247,6 +251,7 @@ export async function runExploreSubagent(
             model: profile.modelSelection
               ? `${profile.modelSelection.providerId}/${profile.modelSelection.modelId}`
               : undefined,
+            ...(info?.reasoningLevel ? { reasoningLevel: info.reasoningLevel } : {}),
           },
         );
         // Причина гонки: registry admission предшествует созданию читаемой child-сессии.
@@ -473,6 +478,26 @@ export async function runExploreSubagent(
           totalDurationMs: completed.output.totalDurationMs,
           totalToolUseCount: completed.output.totalToolUseCount,
           totalTokens: completed.output.totalTokens,
+          // Пословный расход нужен UI для per-agent breakdown (input/output/cache),
+          // а не только сумма: одна totalTokens не показывает, где именно расход.
+          ...(completed.output.usage?.inputTokens === undefined
+            ? {}
+            : { inputTokens: completed.output.usage.inputTokens }),
+          ...(completed.output.usage?.outputTokens === undefined
+            ? {}
+            : { outputTokens: completed.output.usage.outputTokens }),
+          ...(completed.output.usage?.cacheReadTokens === undefined
+            ? {}
+            : { cacheReadTokens: completed.output.usage.cacheReadTokens }),
+          ...(completed.output.usage?.cacheWriteTokens === undefined
+            ? {}
+            : { cacheWriteTokens: completed.output.usage.cacheWriteTokens }),
+          ...(completed.output.usage?.reasoningTokens === undefined
+            ? {}
+            : { reasoningTokens: completed.output.usage.reasoningTokens }),
+          subtreeTotalDurationMs: completed.output.subtreeTotalDurationMs,
+          subtreeToolUseCount: completed.output.subtreeToolUseCount,
+          subtreeTotalTokens: completed.output.subtreeTotalTokens,
         },
       );
     } catch (eventError) {

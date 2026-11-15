@@ -86,6 +86,7 @@ export function McpRegistryMarketplace({
   const [searchResultQuery, setSearchResultQuery] = useState("");
   const [tab, setTab] = useState<McpCatalogTab>("popular");
   const [sort, setSort] = useState<McpCatalogSortMode>("recommended");
+  const [showSimilar, setShowSimilar] = useState(false);
   const [preloadLoading, setPreloadLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [preloadError, setPreloadError] = useState<string | null>(null);
@@ -203,6 +204,7 @@ export function McpRegistryMarketplace({
         sort,
         filter: "",
         searchResults: hasSearched,
+        showSimilar,
       }),
     [
       catalogEntries,
@@ -214,8 +216,12 @@ export function McpRegistryMarketplace({
       reviewedPresets,
       tab,
       sort,
+      showSimilar,
     ],
   );
+  const hiddenSimilarCount = showSimilar
+    ? 0
+    : viewEntries.reduce((sum, entry) => sum + (entry.similarCount ?? 0), 0);
   const listReady = hasSearched
     ? !searchLoading && searchResultQuery === normalizedQuery
     : !preloadLoading;
@@ -271,6 +277,25 @@ export function McpRegistryMarketplace({
               {intl.formatMessage({ id: `catalog.sort.${mode}` })}
             </Button>
           ))}
+          {hiddenSimilarCount > 0 || showSimilar ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={showSimilar ? "secondary" : "ghost"}
+              aria-pressed={showSimilar}
+              data-testid="mcp-registry-similar-toggle"
+              onClick={() => setShowSimilar((current) => !current)}
+            >
+              {intl.formatMessage(
+                {
+                  id: showSimilar
+                    ? "settings.mcp.registry.hideSimilar"
+                    : "settings.mcp.registry.showSimilar",
+                },
+                { count: hiddenSimilarCount },
+              )}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -322,7 +347,7 @@ export function McpRegistryMarketplace({
 
       {listReady && !error && viewEntries.length > 0 ? (
         <ul className="space-y-2" data-testid="mcp-registry-results">
-          {viewEntries.map(({ item: entry, rank, badges }) => (
+          {viewEntries.map(({ item: entry, rank, badges, similarCount }) => (
             <li
               key={entry.id}
               className="space-y-3 rounded-xl border border-card-border bg-card px-4 py-3"
@@ -347,6 +372,14 @@ export function McpRegistryMarketplace({
                     </Badge>
                   ))}
                   {entry.version ? <Badge variant="outline">v{entry.version}</Badge> : null}
+                  {similarCount ? (
+                    <Badge variant="outline">
+                      {intl.formatMessage(
+                        { id: "settings.mcp.registry.similarCount" },
+                        { count: similarCount },
+                      )}
+                    </Badge>
+                  ) : null}
                 </div>
                 {entry.description ? (
                   <p className="text-ui-sm text-foreground-subtle">{entry.description}</p>

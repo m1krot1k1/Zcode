@@ -2,10 +2,11 @@
 
 ## Назначение и владельцы
 
-Встроенные профили ZCode делятся на четыре класса по реальной способности, а не по описанию в промпте:
+Встроенные профили ZCode делятся на пять классов по реальной способности, а не по описанию в промпте:
 
-- **read-only маршрутизатор** (`start`, `orchestrator`) — только читает и делегирует;
-- **инспекция** (`researcher`, `evaluator`) — читает, воспроизводит проверки командой и может делегировать, но не меняет файлы;
+- **read-only маршрутизатор** (`start`, `orchestrator`) — только делегирует;
+- **leaf-исследование** (`researcher`) — читает и воспроизводит проверки командой, не меняет файлы и не делегирует;
+- **инспекция** (`evaluator`) — читает, воспроизводит проверки командой и может делегировать bounded researcher-ветки, но не меняет файлы;
 - **review-only** (`reviewer`, `security-reviewer`) — читает и воспроизводит проверки командой, но не меняет файлы; `Task` разрешён только для bounded researcher-подагентов, `Agent` не выдан, recursive review и writer-роли запрещены caller-policy;
 - **исполнитель** (`implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory`) — полный рабочий набор, включая запись и команды.
 
@@ -20,13 +21,14 @@
 | Класс                   | Профили                                                                                                                                             | Инструменты                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Read-only маршрутизатор | `start`, `orchestrator`                                                                                                                             | `Task`                                                                                                                                                          |
-| Инспекция               | `researcher`, `evaluator`                                                                                                                           | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
+| Leaf-исследование       | `researcher`                                                                                                                                        | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                          |
+| Инспекция               | `evaluator`                                                                                                                                         | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
 | Review-only             | `reviewer`, `security-reviewer`                                                                                                                     | `Read`, `Glob`, `Grep`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop`                  |
 | Исполнитель             | `implementer`, `coder`, `frontend-coder`, `backend-coder`, `infra-coder`, `test-engineer`, `self-improver`, `knowledge-curator`, `subagent-factory` | `Read`, `Glob`, `Grep`, `Write`, `Edit`, `Bash`, `WebFetch`, `WebSearch`, `Task`, `Skill`, `TodoRead`, `TodoWrite`, `AskUserQuestion`, `TaskOutput`, `TaskStop` |
 
 `start` и `orchestrator` не получают `Read`, `Glob`, `Grep`, `Skill`, `Bash`, `Write`, `Edit`, `WebFetch` и `WebSearch`: маршрутизатор не читает репозиторий, не исполняет команды, не правит файлы и не подменяет делегирование собственной реализацией. Если `Task` недоступен или хост отклонил вызов, профиль фиксирует blocker и возвращает его вызывающему.
 
-Инспекционные профили получают `Bash` для воспроизведения, но не получают `Write`/`Edit`: проверка не должна переписывать проверяемый код. Исполнительские профили сохраняют полный набор, и их промпты не ослабляются.
+Инспекционные профили получают `Bash` для воспроизведения, но не получают `Write`/`Edit`: проверка не должна переписывать проверяемый код. `researcher` — leaf: `Task` отсутствует в его surface, caller-policy не показывает ему делегацию, и промпт запрещает создавать подвопросы. `evaluator` сохраняет `Task` для bounded researcher-веток. Исполнительские профили сохраняют полный набор, и их промпты не ослабляются.
 
 Review-only профили получают `Task` только для bounded researcher-подагентов; `Agent` не выдан. Caller-policy разрешает reviewer/security-reviewer запускать только `researcher`, поэтому recursive review и writer-роли остаются запрещены. Это профильный тир, а не runtime-губернатор: контракт держится списком инструментов профиля, caller-policy и промптом.
 
@@ -44,8 +46,9 @@ Review-only профили получают `Task` только для bounded r
 10. Router-грант: `start`/`orchestrator` могут делегировать worker-набор, не имея `Write`/`Edit`/`Bash` сами. Грант ограничен политикой выдавшей его сессии: `toolAllowlist` (`*` = allow-all, `Agent`/`Task` считаются одной способностью) и `toolDisallowlist` через те же `buildSubagentChildDisallowRules`/`filterSubagentChildToolNames`. `WebSearch` дополнительно фильтруется по Active Model child.
 11. Грант наследуют только router-дети; worker- и read-only-дети его не получают и пересекаются со своим фактическим tool surface.
 12. Каталог агентов, показываемый модели, использует тот же ограниченный delegation-набор (видимые инструменты ∪ `resolveRuntimeDelegationToolNames`). Каталог не рекламирует инструмент, который spawn срежет, и не скрывает worker-набор у router-ребёнка.
-13. `reviewer`/`security-reviewer` получают `Task` только для `researcher`-подагентов; `Agent` не выдан. `researcher`/`evaluator` сохраняют `Task` и также могут запускать только `researcher`. Recursive review и writer-роли запрещены caller-policy.
+13. `reviewer`/`security-reviewer` получают `Task` только для `researcher`-подагентов; `Agent` не выдан. `evaluator` сохраняет `Task` и также может запускать только `researcher`. `researcher` — leaf: `Task` отсутствует, caller-policy возвращает ему пустой каталог делегации. Recursive review и writer-роли запрещены caller-policy.
 14. Review-промпты начинаются с выданного diff, ограничивают findings числом 10 и возвращают partial/blocked только при объективной невозможности продолжить. Число параллельных review-веток определяется независимыми вопросами и фактическими свободными слотами; фиксированного числа нет.
+15. Research bounded: `orchestrator` планирует одного researcher на независимый вопрос (максимум 3 на run), не дублирует вопрос и не отправляет researcher подтверждать settled facts. `researcher` не делегирует.
 
 ## Router delegation grant
 
@@ -108,12 +111,12 @@ sequenceDiagram
 
 ## Приёмочные сценарии
 
-1. Матрица ролей: `start`/`orchestrator` имеют ровно `Task`; `researcher`/`evaluator` имеют `Bash` и `Task`, но не `Write`/`Edit`; `reviewer`/`security-reviewer` имеют `Bash`/`Read`/`Grep`/`Glob` и `Task` только для `researcher`, но не имеют `Agent`/`Write`/`Edit`; исполнительские роли имеют `Write`/`Edit`/`Bash`.
+1. Матрица ролей: `start`/`orchestrator` имеют ровно `Task`; `researcher` имеет `Bash`, но не `Task`/`Write`/`Edit`; `evaluator` имеет `Bash` и `Task`, но не `Write`/`Edit`; `reviewer`/`security-reviewer` имеют `Bash`/`Read`/`Grep`/`Glob` и `Task` только для `researcher`, но не имеют `Agent`/`Write`/`Edit`; исполнительские роли имеют `Write`/`Edit`/`Bash`.
 2. Runtime enforcement: при родителе, который отдаёт `Write`/`Edit`/`Bash`, итоговый allowlist `start`/`orchestrator` содержит только `Task` и не содержит `Read`/`Glob`/`Grep`/`Skill`/`Write`/`Edit`/`Bash`.
-3. Runtime enforcement: инспекционные роли получают `Bash` и не получают `Write`/`Edit`.
+3. Runtime enforcement: `researcher` получает `Bash` и не получает `Task`/`Write`/`Edit`; `evaluator` получает `Bash` и `Task`, но не `Write`/`Edit`.
 4. Runtime enforcement: исполнительские роли получают `Write`/`Edit`/`Bash`.
 5. Runtime enforcement: если родитель не имеет инструмента, профиль не получает его даже при наличии в `profile.tools`.
-6. Prompt honesty: промпт `start` перечисляет реальный набор и явно сообщает, что `Read`/`Glob`/`Grep`/`Skill`/`Bash`/`Write`/`Edit` недоступны; промпты инспекционных ролей сообщают «Bash доступен, Write/Edit недоступны».
+6. Prompt honesty: промпт `start` перечисляет реальный набор и явно сообщает, что `Read`/`Glob`/`Grep`/`Skill`/`Bash`/`Write`/`Edit` недоступны; промпты `researcher`/`evaluator` сообщают «Bash доступен, Write/Edit недоступны», а промпт `researcher` явно запрещает делегирование и повторное открытие settled facts.
 7. Ни один профиль не рекламирует root-only инструменты и инструменты без child-обработчика.
 8. Roster содержит ровно 15 канонических ролей в стабильном порядке; `getSwarmAgentProfiles` возвращает их независимо от custom-каталога.
 9. Custom-профиль `start`/`implementer` не меняет built-in tools и systemPrompt; custom-профиль с уникальным именем добавляется в каталог и виден в model prompt.

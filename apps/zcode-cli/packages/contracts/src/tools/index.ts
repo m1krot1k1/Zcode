@@ -4,6 +4,7 @@
 
 // Re-export all tool types
 export * from "./contract.js";
+export * from "./capability-install.js";
 export * from "./json-schema.js";
 export * from "./read.js";
 export * from "./write.js";

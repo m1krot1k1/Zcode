@@ -617,11 +617,12 @@ describe("write-capability admission", () => {
         return { response: "done", traceId, events: [] };
       },
     });
-    const run = (agentType: string, prompt: string) =>
+    const run = (agentType: string, prompt: string, writePaths?: readonly string[]) =>
       port.run({
         agentType,
         description: `${agentType} task`,
         prompt,
+        ...(writePaths === undefined ? {} : { writePaths }),
         sessionId,
         trace: { traceId, sessionId },
         workingDirectory: WORKSPACE,
@@ -633,7 +634,7 @@ describe("write-capability admission", () => {
     expect(registry.get("registrar-port-agent-1")?.writeCapable).toBe(false);
     expect(claimOf(ledger, "registrar-port-agent-1")).toBeUndefined();
 
-    const coder = await run("coder", `Правлю \`${path}\``);
+    const coder = await run("coder", `Правлю \`${path}\``, [path]);
     expect(coder.status).toBe("completed");
     expect(registry.get("registrar-port-agent-2")?.writeCapable).toBe(true);
     expect(claimOf(ledger, "registrar-port-agent-2")?.paths).toEqual([path]);
@@ -666,11 +667,12 @@ describe("write-capability admission", () => {
       async emitParentEvent() {},
       runExploreAgent: () => pendingRun.promise,
     });
-    const run = (prompt: string) =>
+    const run = (prompt: string, writePaths: readonly string[]) =>
       port.run({
         agentType: "plugin-writer",
         description: "plugin writer task",
         prompt,
+        writePaths,
         sessionId,
         trace: { traceId, sessionId },
         workingDirectory: WORKSPACE,
@@ -678,12 +680,12 @@ describe("write-capability admission", () => {
       });
 
     // writeCapable выводится настоящим классификатором внутри порта, а не задаётся вручную.
-    const first = run(`Правлю \`${path}\``);
+    const first = run(`Правлю \`${path}\``, [path]);
     await flushMicrotasks();
     expect(registry.get("registrar-inherit-agent-1")?.writeCapable).toBe(true);
     expect(claimOf(ledger, "registrar-inherit-agent-1")?.paths).toEqual([path]);
 
-    await expect(run(`Тоже правлю \`${path}\``)).rejects.toMatchObject({
+    await expect(run(`Тоже правлю \`${path}\``, [path])).rejects.toMatchObject({
       context: expect.objectContaining({ reason: "write_claim_conflict" }),
     });
     expect(registry.get("registrar-inherit-agent-2")).toBeUndefined();
@@ -737,6 +739,7 @@ describe("write-capability admission", () => {
           prompt: `Правлю \`${path}\``,
           agentType: "coder",
           writeCapable: true,
+          writePaths: [path],
         }),
         pending(),
       ).accepted,
@@ -748,6 +751,7 @@ describe("write-capability admission", () => {
         prompt: `Тоже правлю \`${path}\``,
         agentType: "coder",
         writeCapable: true,
+        writePaths: [path],
       }),
       pending(),
     );
@@ -755,6 +759,46 @@ describe("write-capability admission", () => {
     expect(second).toEqual({ accepted: false, reason: "write_claim_conflict" });
     expect(claimOf(ledger, "coder-b")).toBeUndefined();
     expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(1);
+  });
+
+  it("rejects a write-capable spawn without explicit write_paths", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+    const path = "apps/zcode-cli/packages/core/src/runtime-task/registry.ts";
+
+    const result = registry.registerSubagentTask(
+      task("coder-unscoped", {
+        childSessionId: createSessionId("coder-unscoped-child"),
+        prompt: `Правлю \`${path}\``,
+        agentType: "coder",
+        writeCapable: true,
+      }),
+      pending(),
+    );
+
+    expect(result).toEqual({ accepted: false, reason: "write_scope_required" });
+    expect(registry.get("coder-unscoped")).toBeUndefined();
+    expect(claimOf(ledger, "coder-unscoped")).toBeUndefined();
+    expect(ledger.list({ workspacePath: WORKSPACE, status: "active" })).toHaveLength(0);
+  });
+
+  it("admits an explicit empty write scope and keeps the claim pathless", () => {
+    const ledger = memoryLedger();
+    const registry = new InMemoryRuntimeTaskRegistry({ workLedger: ledger });
+
+    const result = registry.registerSubagentTask(
+      task("coder-empty-scope", {
+        childSessionId: createSessionId("coder-empty-scope-child"),
+        prompt: "Проверяю без изменений",
+        agentType: "coder",
+        writeCapable: true,
+        writePaths: [],
+      }),
+      pending(),
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(claimOf(ledger, "coder-empty-scope")?.paths).toEqual([]);
   });
 
   it("does not create claims for start and orchestrator routers", () => {
@@ -786,6 +830,7 @@ describe("write-capability admission", () => {
           prompt: `Правлю \`${path}\``,
           agentType: "coder",
           writeCapable: true,
+          writePaths: [path],
         }),
         pending(),
       ).accepted,
@@ -805,6 +850,7 @@ describe("write-capability admission", () => {
           prompt: `Правлю \`${path}\``,
           agentType: "coder",
           writeCapable: true,
+          writePaths: [path],
         }),
         pending(),
       ).accepted,
@@ -887,11 +933,12 @@ describe("effective write-capability", { retry: 1 }, () => {
       });
       return {
         agentIds,
-        run: (prompt: string) =>
+        run: (prompt: string, writePaths?: readonly string[]) =>
           port.run({
             agentType: "plugin-writer",
             description: "plugin writer task",
             prompt,
+            ...(writePaths === undefined ? {} : { writePaths }),
             sessionId,
             trace: { traceId, sessionId },
             workingDirectory: WORKSPACE,
@@ -906,14 +953,17 @@ describe("effective write-capability", { retry: 1 }, () => {
     expect(claimOf(ledger, readOnlyParent.agentIds[0]!)).toBeUndefined();
 
     const writerParent = makeRun("effective-writer", writerSurface);
-    expect((await writerParent.run(`Правлю \`${path}\``)).status).toBe("completed");
+    expect((await writerParent.run(`Правлю \`${path}\``, [path])).status).toBe("completed");
     expect(registry.get(writerParent.agentIds[0]!)?.writeCapable).toBe(true);
     expect(claimOf(ledger, writerParent.agentIds[0]!)?.paths).toEqual([path]);
+    await expect(writerParent.run(`Правлю \`${path}\``)).rejects.toThrow("Write scope required");
 
     // Legacy-порт без parentToolNames продолжает считать такой профиль writer'ом.
     const legacyParent = makeRun("effective-legacy");
     const legacyPath = "apps/zcode-cli/packages/core/src/runtime/methods/subagent.ts";
-    expect((await legacyParent.run(`Правлю \`${legacyPath}\``)).status).toBe("completed");
+    expect((await legacyParent.run(`Правлю \`${legacyPath}\``, [legacyPath])).status).toBe(
+      "completed",
+    );
     expect(registry.get(legacyParent.agentIds[0]!)?.writeCapable).toBe(true);
   });
 });
@@ -973,6 +1023,7 @@ describe("DAG write-claim conflicts", () => {
     const request = makeTaskDagRequest([
       dagNode("writer-a", "coder"),
       dagNode("writer-b", "coder"),
+      dagNode("writer-d", "coder"),
       dagNode("dependent", "coder", ["writer-b"]),
       dagNode("researcher-c", "researcher"),
     ]);
@@ -991,6 +1042,17 @@ describe("DAG write-claim conflicts", () => {
           recoverable: true,
         });
       }
+      if (node.id === "writer-d") {
+        throw createCoreError(CoreErrorType.ToolExecutionFailed, "Write scope required", {
+          context: {
+            code: "agent_subagent_admission_rejected",
+            reason: "write_scope_required",
+            parentSessionId: request.sessionId,
+            parentToolCallId: request.parentToolCallId,
+          },
+          recoverable: true,
+        });
+      }
       return completedDagOutput(node.id);
     });
 
@@ -999,6 +1061,7 @@ describe("DAG write-claim conflicts", () => {
     expect(started).toContain("researcher-c");
     expect(started).not.toContain("dependent");
     expect(text).toContain('[blocked] "writer-b"');
+    expect(text).toContain('[blocked] "writer-d"');
     expect(text).toContain('[blocked] "dependent"');
     expect(text).toContain('[completed] "writer-a"');
     expect(text).toContain('[completed] "researcher-c"');
