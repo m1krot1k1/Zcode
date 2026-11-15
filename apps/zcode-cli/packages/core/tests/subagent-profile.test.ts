@@ -964,6 +964,18 @@ describe("specialized worker roster", () => {
     expect(prompt).not.toContain("5–8 действительно независимых областей");
   });
 
+  it("re-dispatches after claim conflict and reacts to each terminal report", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("write_claim_conflict");
+    expect(prompt).toContain("не считай её выполненной");
+    expect(prompt).toContain("отложи спавн и повтори после терминала держателя claim");
+    expect(prompt).toContain("После каждого терминального отчёта пересматривай план");
+    expect(prompt).toContain("SkillSearch/SkillInstall");
+    expect(prompt).toContain("requires:");
+    expect(prompt).toContain("runtime отклонит spawn до установки");
+  });
+
   it("turns subagent-factory into a real profile author with catalog boundaries", () => {
     const factory = profile("subagent-factory");
     const prompt = factory?.systemPrompt ?? "";
