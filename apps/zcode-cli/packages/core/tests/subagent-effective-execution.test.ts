@@ -32,6 +32,10 @@ describe("Subagent 有效选择到实际执行", () => {
         createSessionId(`effective-child-${kind}`),
         {
           mode: "yolo",
+          // Этот тест проверяет resolveEffectiveModelSelection/inherit, а не root-auto
+          // эвристику: без отключения auto дочерний inherit получает effective low
+          // вместо настроенного high и тест теряет исходную цель.
+          autoReasoningLevel: false,
           planEnabled: kind === "inherit-plan",
           workingDirectory: "/workspace/project",
           modelSelection: parent,
