@@ -52,6 +52,8 @@ export type PluginDiagnosticCode =
   | "plugin_validation_deferred"
   | "plugin_variable_missing"
   | "plugin_duplicate_id"
+  | "plugin_duplicate_name"
+  | "plugin_mcp_server_duplicate"
   | "plugin_not_found"
   | "plugin_ambiguous_name"
   | "plugin_incompatible_app_version";

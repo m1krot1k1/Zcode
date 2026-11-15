@@ -522,6 +522,58 @@ describe("NodePluginAdapter", () => {
     }
   });
 
+  it("dedupes the same plugin name across marketplaces and keeps the first MCP server", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-duplicate-name-"));
+    const inlineRoot = join(dir, "inline-shared");
+    const officialRoot = join(dir, "official-shared");
+    const mcpServers = {
+      shared: { type: "stdio", command: "node", args: ["server.js"] },
+    };
+
+    try {
+      await writePluginManifest(inlineRoot, {
+        name: "shared-plugin",
+        version: "1.0.0",
+        mcpServers,
+      });
+      await writePluginManifest(officialRoot, {
+        name: "shared-plugin",
+        version: "2.0.0",
+        mcpServers,
+      });
+
+      const outcome = discoverNodePluginsSync({
+        config: {
+          dirs: [inlineRoot],
+          enabled: true,
+          enabledPlugins: {},
+          options: {},
+          suppressedBuiltins: [],
+        },
+        env: {},
+        officialPluginRoots: [officialRoot],
+        storageRoot: join(dir, "storage"),
+        workingDirectory: join(dir, "workspace"),
+      });
+
+      expect(outcome.plugins).toHaveLength(1);
+      expect(outcome.plugins[0]).toMatchObject({
+        marketplace: "inline",
+        name: "shared-plugin",
+      });
+      expect(Object.keys(outcome.mcpServers)).toEqual(["plugin:shared-plugin:shared"]);
+      expect(
+        outcome.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === "plugin_duplicate_name" &&
+            diagnostic.pluginId === "shared-plugin@zcode-plugins-official",
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   // Guard: suppression only targets official candidates. An inline/cache plugin whose id
   // collides with a suppressed string must NOT be dropped.
   it("does not suppress inline plugins that share a suppressed built-in's name", async () => {
