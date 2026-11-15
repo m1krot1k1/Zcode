@@ -24,7 +24,8 @@
    Ошибка live-снимка логируется и не отменяет spawn; fallback остаётся startup-снимок.
 5. Успешный `connectServer` увеличивает `toolListRevision`. На следующем turn boundary
    root runtime перерегистрирует инструменты, даже если сервер подключён из
-   `InstallCapability`, а не через `list_changed`.
+   `InstallCapability`, а не через `list_changed`. Успехом установки считается только
+   статус `connected`: `failed`/`connecting` не попадают в live-снимок и не кэшируются.
 6. Для MCP `InstallCapability` возвращает `requiresReload: false` и evidence про следующий
    Task. Для plugin `requiresReload: true` сохраняется: plugin skills/agents/MCP входят в
    startup-набор runtime и активируются в следующей сессии.

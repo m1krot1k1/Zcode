@@ -8,7 +8,7 @@ import type {
 } from "@zcode/contracts";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ConfigResult } from "@zcode/adapters/config";
+import { parseMcpServerConfig, type ConfigResult } from "@zcode/adapters/config";
 import { installZCodeMarketplacePlugin, resolveZCodePlugins } from "../plugins.js";
 
 
@@ -98,18 +98,26 @@ export function createCapabilityInstallPort(
       if (request.kind === "mcp") {
         if (!options.mcpPort) throw new Error("MCP port is unavailable in this runtime");
         if (!request.config) throw new Error("MCP install requires a server config");
-        const configPath = options.configResult.sources?.user?.path;
-        if (configPath) {
-          await persistMcpServerConfig(
-            configPath,
-            request.id,
-            request.config as unknown as McpServerConfig,
+        const config = parseMcpServerConfig(request.config);
+        const status = await options.mcpPort.connectServer(request.id, config);
+        if (status.status !== "connected") {
+          throw new Error(
+            `MCP server '${request.id}' did not connect (status=${status.status})${
+              status.error ? `: ${status.error}` : ""
+            }`,
           );
         }
-        await options.mcpPort.connectServer(
-          request.id,
-          request.config as unknown as McpServerConfig,
-        );
+        const configPath = options.configResult.sources?.user?.path;
+        if (configPath) {
+          try {
+            await persistMcpServerConfig(configPath, request.id, config);
+          } catch (error) {
+            // Durable install is part of success: без записи следующий старт потеряет
+            // уже подключённый сервер, поэтому не оставляем частично установленное состояние.
+            await options.mcpPort.disconnectServer(request.id).catch(() => undefined);
+            throw error;
+          }
+        }
         installed.add(key("mcp", request.id));
         return {
           kind: "mcp",

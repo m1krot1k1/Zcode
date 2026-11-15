@@ -14,12 +14,16 @@
    `needsApproval: true`: в обычных permission modes требуется approval, в yolo установка
    выполняется автоматически. Явный deny всё равно блокирует.
 2. Вход: `kind` (`mcp`|`plugin`), `id`; для MCP — `config`; для plugin — `marketplace` и/или
-   `pluginName` (можно передать id в форме `<name>@<marketplace>`).
+   `pluginName` (можно передать id в форме `<name>@<marketplace>`). MCP `config` проходит
+   `parseMcpServerConfig` (та же схема, что у файла конфигурации): например, `args` обязан
+   быть массивом строк. Неверный config отклоняется до connect и до записи на диск.
 3. Handler вызывает host-owned `CapabilityInstallPort`; сам ничего не пишет в конфиг и не
    подключает процессы.
 4. `isInstalled` проверяет live MCP status (`connected`) или enabled plugin в discovery;
    успешная установка кэшируется в порту, чтобы немедленный retry видел capability.
-5. Успешный результат: `installed` + evidence. Для MCP `requiresReload: false`: сервер
+5. Успешный результат: `installed` + evidence. Для MCP успех — только `connectServer`
+   со статусом `connected`: `failed`/`connecting`/`disconnected` отклоняют установку, не
+   кэшируются и не пишутся durable config. Для MCP `requiresReload: false`: сервер
    подключён, его tools входят в live-снимок следующего child/Task (см.
    [mcp-live-snapshot](2026-11-15-mcp-live-snapshot.md)). Для plugin `requiresReload: true`:
    plugin skills/agents/MCP активируются в следующей сессии. Повторная установка
@@ -56,7 +60,9 @@ installed + requiresReload → retry same Task once
 
 | Сценарий | До | После |
 | --- | --- | --- |
-| Нужен отсутствующий MCP | spawn blocked, пути установки нет | approval → connect → retry в том же turn |
+| Нужен отсутствующий MCP | spawn blocked, пути установки нет | approval → validate → connect → retry в том же turn |
+| Неверный MCP config (`args` не массив) | мог сохраниться и «установиться» | ошибка схемы до connect и записи |
+| MCP connect вернул `failed` | отчёт `installed` при мёртвом сервере | ошибка, без cache и durable config |
 | Нужен отсутствующий plugin | spawn blocked | approval → install → reload для components |
 | Повторная установка | — | `already_installed` |
 | Отказ/ошибка установки | — | `blocked` с evidence |
@@ -69,7 +75,8 @@ installed + requiresReload → retry same Task once
 - `apps/zcode-cli/packages/core/tests/capability-preflight.test.ts` — installed/missing
   MCP/plugin, подсказка `InstallCapability`, fail-closed без порта.
 - `apps/zcode-cli/packages/bootstrap/tests/capability-install-port.test.ts` — MCP live
-  status/cache и `requiresReload: false`, plugin install/cache и `requiresReload: true`,
-  ошибка без installedPlugins.
+  status/cache, `requiresReload: false`, отклонение неверного config до connect,
+  отклонение `failed` без cache и durable config, plugin install/cache и
+  `requiresReload: true`, ошибка без installedPlugins.
 - `apps/zcode-cli/packages/core/tests/subagent-mcp-live-snapshot.test.ts` — MCP,
   подключённый после старта runtime, виден следующему child без reload.

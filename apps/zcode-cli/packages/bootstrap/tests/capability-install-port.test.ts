@@ -106,6 +106,71 @@ describe("capability install port", () => {
     );
   });
 
+  it("rejects invalid MCP config before connecting or persisting it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-capability-invalid-"));
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({}));
+    const connectServer = vi.fn();
+    const port = createCapabilityInstallPort({
+      configResult: { sources: { user: { path: configPath } } } as never,
+      mcpPort: { connectServer, disconnectServer: vi.fn(), status: vi.fn() } as never,
+      pluginStorageRoot: "/storage/plugins",
+      workingDirectory: "/workspace",
+    });
+
+    try {
+      await expect(
+        port.install({
+          kind: "mcp",
+          id: "bad-args",
+          config: { type: "stdio", command: "node", args: { item: "/tmp/server.mjs" } },
+        }),
+      ).rejects.toThrow(/Invalid MCP server config.*args/u);
+      expect(connectServer).not.toHaveBeenCalled();
+      expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({});
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("fails the install and keeps it uncached when the MCP connection does not reach connected", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-capability-failed-"));
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({}));
+    const disconnectServer = vi.fn(async () => undefined);
+    const port = createCapabilityInstallPort({
+      configResult: { sources: { user: { path: configPath } } } as never,
+      mcpPort: {
+        connectServer: vi.fn(async () => ({
+          status: "failed",
+          transport: "stdio",
+          toolCount: 0,
+          updatedAt: "now",
+          error: "connection timed out",
+        })),
+        disconnectServer,
+        status: vi.fn(async () => ({})),
+      } as never,
+      pluginStorageRoot: "/storage/plugins",
+      workingDirectory: "/workspace",
+    });
+
+    try {
+      await expect(
+        port.install({
+          kind: "mcp",
+          id: "timeout",
+          config: { type: "stdio", command: "node", args: ["/tmp/server.mjs"] },
+        }),
+      ).rejects.toThrow(/did not connect.*connection timed out/u);
+      expect(disconnectServer).not.toHaveBeenCalled();
+      await expect(port.isInstalled("mcp", "timeout")).resolves.toBe(false);
+      expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({});
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("installs a plugin through the marketplace installer and caches the installed id", async () => {
     mocks.resolveZCodePlugins.mockReturnValue({
       plugins: [{ id: "documents@market", enabled: true }],
