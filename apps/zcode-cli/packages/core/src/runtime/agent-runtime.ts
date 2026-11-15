@@ -193,6 +193,7 @@ export class AgentRuntime {
   /** 模型请求准入端口；随每次模型请求进调用上下文。 */
   private modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
   private sessionModelSelection: ModelSelection | undefined;
+  private reasoningLevelExplicit = false;
   private messageHistory: MessageHistory;
   private readFileState: ReadFileStateMap;
   private cachedTools: ModelToolContract[] | null = null;
@@ -244,6 +245,7 @@ export class AgentRuntime {
   private workspaceRoot: string;
   private sessionStore?: SessionStorePort;
   private sessionPersisted = false;
+  private sessionRowCreated = false;
   private needsPlanModeExitReminder = false;
   private latestConversationMessageId?: MessageId;
   private latestAssistantMessageId?: MessageId;
@@ -496,7 +498,10 @@ export interface AgentRuntime {
     traceContext?: TraceContext,
   ): Promise<void>;
   getSessionModelSelection(): ModelSelection | undefined;
-  setSessionModelSelection(selection: ModelSelection | undefined): void;
+  setSessionModelSelection(
+    selection: ModelSelection | undefined,
+    options?: { reasoningLevelExplicit?: boolean },
+  ): void;
   getProjectId(): ProjectId;
   ensureSessionPersistedForExternalActivity(
     input: string,

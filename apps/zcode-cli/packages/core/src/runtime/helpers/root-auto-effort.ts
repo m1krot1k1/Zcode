@@ -6,7 +6,45 @@
  * Явный выбор пользователя (композер или /effort) всегда главнее и сюда не попадает.
  */
 
+import type { ModelSelection } from "@zcode/contracts";
+
 export type RootAutoEffortTier = "simple" | "normal" | "complex";
+
+/**
+ * Явность reasoning level — отдельный факт, а не «в selection есть reasoningLevel».
+ * Default модели/workspace preference и persisted default не должны навсегда выключать auto.
+ *
+ * - Значение из intent (протокольный флаг) главнее: старые клиенты его не присылают.
+ * - Пользователь сменил level/provider/model в самом submission → это новый явный выбор.
+ * - Echo текущей session selection наследует session explicit.
+ * - Свежая сессия без baseline — default, не explicit. Session без собственного level
+ *   (default модели) не даёт сравнения: level в submission — это echo UI, а явный выбор
+ *   приходит командой (switchModelConfig / `/effort`), которая пишет level в session.
+ */
+export function resolveExplicitReasoningLevel(input: {
+  intentSelection?: ModelSelection;
+  intentExplicit?: boolean;
+  sessionSelection?: ModelSelection;
+  sessionExplicit: boolean;
+}): boolean {
+  const sessionExplicit = input.sessionExplicit === true;
+  if (input.intentExplicit !== undefined) return input.intentExplicit;
+  const requested = input.intentSelection;
+  if (!requested) return sessionExplicit;
+  // Selection без уровня не пинит reasoning: auto остаётся возможным.
+  if (requested.options?.reasoningLevel === undefined) return sessionExplicit;
+  const session = input.sessionSelection;
+  if (!session) return false;
+  const modelChanged =
+    session.providerId !== requested.providerId || session.modelId !== requested.modelId;
+  // Смена модели приносит default/resolved level новой модели — это не пин пользователя.
+  if (modelChanged) return false;
+  const sessionLevel = session.options?.reasoningLevel;
+  // У сессии нет собственного level: сравнивать не с чем, level в intent — echo модели.
+  if (sessionLevel === undefined) return sessionExplicit;
+  if (requested.options.reasoningLevel !== sessionLevel) return true;
+  return sessionExplicit;
+}
 
 export interface RootAutoEffortInput {
   prompt: string;

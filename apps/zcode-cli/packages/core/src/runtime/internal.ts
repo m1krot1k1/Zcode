@@ -89,6 +89,12 @@ export interface AgentRuntimeInternal
   browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
   sessionModelSelection: ModelSelection | undefined;
+  /**
+   * Явно ли пользователь выбрал текущий reasoningLevel. Default модели/workspace
+   * preference не делают уровень явным; `/effort` и смена уровня в submission — делают.
+   * Живёт рядом с sessionModelSelection и переживает resume через core-owned sidecar entry.
+   */
+  reasoningLevelExplicit: boolean;
   messageHistory: MessageHistory;
   readFileState: ReadFileStateMap;
   cachedTools: ModelToolContract[] | null;
@@ -145,6 +151,12 @@ export interface AgentRuntimeInternal
   sessionStore?: SessionStorePort;
   sessionMailboxPort?: SessionMailboxPort;
   sessionPersisted: boolean;
+  /**
+   * Строка `session` уже создана в store. Именно это, а не `sessionPersisted`,
+   * определяет допустимость записи session_entry: FK `session_entry.session_id`.
+   * Draft-сессия в desktop создаёт строку только при первом сообщении.
+   */
+  sessionRowCreated: boolean;
   needsPlanModeExitReminder: boolean;
   latestConversationMessageId?: MessageId;
   latestAssistantMessageId?: MessageId;

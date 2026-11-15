@@ -7,7 +7,10 @@ import {
   type TurnInputIntentMetadata,
 } from "@zcode/contracts";
 import { getCurrentModelInvocationContext } from "../deps.js";
-import { resolveRootAutoEffort } from "../helpers/root-auto-effort.js";
+import {
+  resolveExplicitReasoningLevel,
+  resolveRootAutoEffort,
+} from "../helpers/root-auto-effort.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
@@ -25,9 +28,6 @@ const selectionAdmissions = new WeakMap<
 >();
 // 只用于 ModelSelected 的前后展示边界，不参与选模、续跑或持久化。
 const publishedSelections = new WeakMap<AgentRuntimeInternal, ModelSelection | undefined>();
-// Последний выбор, сделанный root-auto: если клиент присылает его же, auto пересчитывается,
-// а не считается явным выбором пользователя. Ручной выбор другого уровня очищает запись.
-const autoSelections = new WeakMap<AgentRuntimeInternal, ModelSelection>();
 
 /** 先固定旧会话候选，再接纳用户选择；声明目标失效时仍能退回原会话模型。 */
 export function captureHighspeedFallbackSelection(
@@ -59,6 +59,7 @@ export function acceptSubmissionModelSelection(
   > & {
     highspeedFallbackSelection?: ModelSelection;
   },
+  options?: { reasoningLevelExplicit?: boolean },
 ): Promise<void> {
   const selection =
     modelExecution?.selectionScope === "execution"
@@ -76,13 +77,24 @@ export function acceptSubmissionModelSelection(
   const previousSelection = runtime.getSessionModelSelection();
   if (!publishedSelections.has(runtime)) publishedSelections.set(runtime, previousSelection);
   const appliedSelection = cloneModelSelection(selection);
-  runtime.setSessionModelSelection(appliedSelection);
+  // Auto-выбор никогда не становится пользовательским пином; execution-scoped модель не
+  // меняет явность session. Обычный submission наследует explicit из intent/сессии, а
+  // смена уровня в самом submission считается явной.
+  const reasoningLevelExplicit =
+    options?.reasoningLevelExplicit ??
+    (modelExecution?.selectionScope === "execution"
+      ? runtime.reasoningLevelExplicit
+      : resolveExplicitReasoningLevel({
+          intentSelection: intent.modelSelection,
+          intentExplicit: readIntentReasoningLevelExplicit(intent),
+          sessionSelection: previousSelection,
+          sessionExplicit: runtime.reasoningLevelExplicit,
+        }));
+  runtime.setSessionModelSelection(appliedSelection, { reasoningLevelExplicit });
   acceptOffPeakUserTakeover(runtime);
   // 保存串行化，防止旧异步写入在新选择之后落库；不引入另一份输入队列。
   const persisted = (previous?.persisted ?? Promise.resolve()).then(async () => {
-    // 新 Session 的 entry 由 ensureSessionPersisted 创建时统一写入，避免先写外键失败。
-    if (runtime.sessionPersisted !== false)
-      await persistRuntimeModelSelection(runtime, appliedSelection);
+    if (runtime.sessionRowCreated) await persistRuntimeModelSelection(runtime, appliedSelection);
   });
   selectionAdmissions.set(runtime, {
     sequence: Number.isFinite(intent.admissionSeq)
@@ -92,6 +104,20 @@ export function acceptSubmissionModelSelection(
     persisted,
   });
   return persisted;
+}
+
+/**
+ * Поле появилось в протоколе позже; старые клиенты его не присылают. Читаем структурно и
+ * принимаем только boolean, чтобы рантайм не зависел от расширения contracts в этом изменении.
+ */
+function readIntentReasoningLevelExplicit(
+  intent: TurnInputIntentMetadata | undefined,
+): boolean | undefined {
+  const intentWithFlag = intent as
+    | (TurnInputIntentMetadata & { reasoningLevelExplicit?: unknown })
+    | undefined;
+  const value = intentWithFlag?.reasoningLevelExplicit;
+  return typeof value === "boolean" ? value : undefined;
 }
 
 /**
@@ -141,8 +167,9 @@ interface RootAutoSelection {
 const TASK_GRAPH_HINT = /(?:task_graph|task graph|граф задач)/iu;
 
 /**
- * Явный level пользователя всегда главнее. Auto включается только когда level не задан
- * либо совпадает с прошлым auto-выбором (клиент присылает текущую session selection).
+ * Явный level пользователя всегда главнее. Явность — отдельное состояние сессии
+ * (`reasoningLevelExplicit`), а не наличие `options.reasoningLevel`: default модели,
+ * workspace preference и persisted default не должны навсегда выключать auto.
  * Execution-scoped модель (off-peak) не переопределяется.
  */
 function resolveRootAutoSelection(options: {
@@ -156,11 +183,13 @@ function resolveRootAutoSelection(options: {
   if (!selection || !prompt?.trim()) return undefined;
   if (runtime.config.autoReasoningLevel === false) return undefined;
   if (modelExecution?.selectionScope === "execution") return undefined;
-  const lastAuto = autoSelections.get(runtime);
-  const explicitLevel = selection.options?.reasoningLevel;
-  if (explicitLevel && (!lastAuto || !sameModelSelection(lastAuto, selection))) {
-    return undefined;
-  }
+  const explicit = resolveExplicitReasoningLevel({
+    intentSelection: intent?.modelSelection,
+    intentExplicit: readIntentReasoningLevelExplicit(intent),
+    sessionSelection: runtime.getSessionModelSelection(),
+    sessionExplicit: runtime.reasoningLevelExplicit,
+  });
+  if (explicit) return undefined;
   const baseModel = createTurnModel(runtime, {
     selection,
     requestDependencies: modelExecution?.requestDependencies,
@@ -176,7 +205,7 @@ function resolveRootAutoSelection(options: {
     hasTaskGraph: TASK_GRAPH_HINT.test(prompt),
     supportedLevels,
   });
-  if (!auto || auto.level === explicitLevel) return undefined;
+  if (!auto || auto.level === selection.options?.reasoningLevel) return undefined;
   return {
     selection: {
       ...cloneModelSelection(selection),
@@ -207,8 +236,6 @@ export async function applySubmissionExecutionState(
     prompt,
     modelExecution,
   });
-  if (auto) autoSelections.set(runtime, cloneModelSelection(auto.selection));
-  else autoSelections.delete(runtime);
   const selection = auto?.selection ?? intent?.modelSelection;
   const previousSelection = auto?.previousSelection ?? publishedSelections.get(runtime);
   const supportedThoughtLevels =
@@ -216,19 +243,25 @@ export async function applySubmissionExecutionState(
   let model = preparedModel;
 
   if (selection) {
-    model ??= createTurnModel(runtime, {
-      selection,
-      requestDependencies: modelExecution?.requestDependencies,
-      retryBudget: resolveExecutionModelRetryBudget({
+    // Auto меняет reasoningLevel уже после admission-prepared Model: preparedModel
+    // собран под исходный selection и сохранил бы старый level. Пересобираем из
+    // финального selection; без auto по-прежнему переиспользуем prepared Model.
+    const createSelectedModel = () =>
+      createTurnModel(runtime, {
         selection,
-        selectionFallback: modelExecution?.selectionFallback,
-      }),
-    });
+        requestDependencies: modelExecution?.requestDependencies,
+        retryBudget: resolveExecutionModelRetryBudget({
+          selection,
+          selectionFallback: modelExecution?.selectionFallback,
+        }),
+      });
+    model = auto ? createSelectedModel() : (model ?? createSelectedModel());
     await acceptSubmissionModelSelection(
       runtime,
       intent ? { ...intent, modelSelection: selection } : intent,
       traceContext,
       modelExecution,
+      auto ? { reasoningLevelExplicit: false } : undefined,
     );
     if (modelExecution?.selectionScope !== "execution") {
       // ModelSelected 展示实际 Loop 的切换；接纳只保存意图，不提前创建可调用 Model。
@@ -265,11 +298,35 @@ export function sameModelSelection(
   );
 }
 
-export async function persistRuntimeModelSelection(
+/**
+ * Core-owned sidecar: `runtime/model_selection` хранит только ModelSelection (формат
+ * совместим со старыми сборками), а явность уровня живёт отдельной entry.
+ */
+const SESSION_ENTRY_REASONING_LEVEL_EXPLICIT = "runtime/reasoning_level_explicit" as const;
+
+// Один write-path и один порядок: записи не должны обгонять друг друга при параллельных
+// первых сообщениях/`/effort`. Очередь local-runtime, без таймаутов и ретраев.
+const modelSelectionPersistenceChains = new WeakMap<AgentRuntimeInternal, Promise<void>>();
+
+export function persistRuntimeModelSelection(
+  runtime: AgentRuntimeInternal,
+  selection: ModelSelection,
+): Promise<void> {
+  const previous =
+    modelSelectionPersistenceChains.get(runtime) ?? Promise.resolve();
+  const next = previous.then(() => writeRuntimeModelSelection(runtime, selection));
+  modelSelectionPersistenceChains.set(runtime, next);
+  return next;
+}
+
+async function writeRuntimeModelSelection(
   runtime: AgentRuntimeInternal,
   selection: ModelSelection,
 ): Promise<void> {
   if (!runtime.sessionStore?.saveSessionEntry) return;
+  // FK `session_entry.session_id -> session(id)`: draft-сессия ещё не имеет строки.
+  // Выбор остаётся в runtime state и пишется штатным persistSession после createSession.
+  if (!runtime.sessionRowCreated) return;
   const persistentSelection = selectionForPersistence(runtime, selection);
   if (!persistentSelection) return;
   const timestamp = Date.now();
@@ -292,5 +349,72 @@ export async function persistRuntimeModelSelection(
       status: "failed",
       thoughtLevel: selection.options?.reasoningLevel,
     });
+    return;
   }
+  try {
+    await runtime.sessionStore.saveSessionEntry({
+      id: `${runtime.sessionId}:runtime-reasoning-level-explicit`,
+      sessionID: runtime.sessionId,
+      type: SESSION_ENTRY_REASONING_LEVEL_EXPLICIT,
+      touchSession: false,
+      time: { created: timestamp, updated: timestamp },
+      data: {
+        explicit: runtime.reasoningLevelExplicit,
+        // Уровень фиксируем вместе с явностью: bootstrap `/effort` после первого сообщения
+        // пишет только selection entry. Несовпадение означает внешнюю запись выбора —
+        // трактуем её как пользовательскую и не перетираем auto.
+        level: persistentSelection.options?.reasoningLevel ?? null,
+      },
+    });
+  } catch (error) {
+    // Selection уже сохранён; потеря sidecar не должна откатывать выбор и не блокирует turn.
+    runtime.logger?.warn("Session reasoning level explicitness persistence failed", {
+      error: error instanceof Error ? error.message : String(error),
+      event: "session.reasoning_level_explicit.persist_failed",
+      module: "core.runtime",
+      status: "failed",
+    });
+  }
+}
+
+/**
+ * Восстанавливает явность уровня при холодном resume. Новая entry читается первой;
+ * старые сессии без sidecar сохраняют прежнее поведение (level в selection = explicit),
+ * чтобы auto не перетёр реальный выбор пользователя из прошлой версии.
+ */
+export async function restoreReasoningLevelExplicitOnResume(
+  runtime: AgentRuntimeInternal,
+): Promise<void> {
+  const selection = runtime.getSessionModelSelection();
+  let persisted: boolean | undefined;
+  try {
+    const entries = await runtime.sessionStore?.sessionEntries?.({
+      sessionID: runtime.sessionId,
+      type: SESSION_ENTRY_REASONING_LEVEL_EXPLICIT,
+      limit: 1,
+      order: "desc",
+    });
+    const data = entries?.at(-1)?.data;
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const explicit = (data as { explicit?: unknown }).explicit;
+      if (typeof explicit === "boolean") {
+        const sidecarLevel = (data as { level?: unknown }).level;
+        const currentLevel = selection?.options?.reasoningLevel ?? null;
+        // Selection entry новее sidecar (его писала не core-точка, например bootstrap
+        // `/effort`): сохраняем выбор пользователя, не полагаемся на устаревший флаг.
+        persisted =
+          sidecarLevel !== undefined && sidecarLevel !== currentLevel ? true : explicit;
+      }
+    }
+  } catch (error) {
+    // Чтение sidecar не должно блокировать resume; fallback ниже консервативен.
+    runtime.logger?.warn("Session reasoning level explicitness restore failed", {
+      error: error instanceof Error ? error.message : String(error),
+      event: "session.reasoning_level_explicit.restore_failed",
+      module: "core.runtime",
+      status: "failed",
+    });
+  }
+  runtime.reasoningLevelExplicit =
+    persisted ?? selection?.options?.reasoningLevel !== undefined;
 }

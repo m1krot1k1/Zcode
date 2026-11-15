@@ -449,6 +449,8 @@ export async function persistSession(
     // 冷恢复从末尾 assistant 反推时只能得到 provider/model，必选 reasoning 会丢失，
     // Subagent 因此在 hydration 前就无法重新创建 Model。会话创建时同步固定完整选型，
     // 后续显式切模仍复用同一个稳定 entry 覆盖。
+    // FK `session_entry.session_id` теперь разрешён: строка `session` уже создана выше.
+    this.sessionRowCreated = true;
     phase = "session_model_selection";
     const initialSelection = this.getSessionModelSelection();
     if (initialSelection) await persistRuntimeModelSelection(this, initialSelection);
