@@ -161,6 +161,10 @@ import { cloneModelSelection } from "./model-selection.js";
 
 // oxlint-disable typescript-eslint/no-unsafe-declaration-merging
 export class AgentRuntime {
+  getCapabilityInstallPort(): CapabilityInstallPort | undefined {
+    return this.capabilityInstallPort;
+  }
+
   controlOffPeakExecution(
     input: import("@zcode/shared").OffPeakControlParams,
   ): Promise<import("@zcode/shared").OffPeakControlResult> {

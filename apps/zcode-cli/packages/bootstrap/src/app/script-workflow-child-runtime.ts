@@ -39,6 +39,7 @@ import {
 import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { parseProviderQualifiedModelSelection } from "./provider-registry-selection.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
+import type { CapabilityInstallPort } from "@zcode/contracts";
 import type { ZCodeAppOptions } from "./types.js";
 
 export interface ScriptWorkflowAgentRuntimeDeps {
@@ -46,6 +47,7 @@ export interface ScriptWorkflowAgentRuntimeDeps {
   appOptions: ZCodeAppOptions;
   appVersion: string;
   artifactStore?: ToolArtifactStorePort;
+  capabilityInstallPort?: CapabilityInstallPort;
   configResult: ConfigResult;
   contextSourcePort?: ContextSourcePort;
   fileSystemPort: FileSystemPort;
@@ -284,6 +286,7 @@ function createRuntimeDeps(
     permissionService: deps.permissionService,
     sessionStore: deps.sessionStore,
     skillPort: createWorkflowChildSkillPort(deps),
+    capabilityInstallPort: deps.capabilityInstallPort,
     traceContext,
   };
 }

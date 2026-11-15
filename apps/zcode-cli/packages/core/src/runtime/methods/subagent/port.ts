@@ -571,6 +571,7 @@ export function createDefaultSubagentPort(
             memoryRoot: persistentMemory?.rootDir,
             mcpPort: childMcpAccess.port,
             skillPort: childSkillPort,
+            capabilityInstallPort: this.capabilityInstallPort,
             artifactStore: deps.artifactStore,
             appVersion: this.appVersion,
             eventSink: {

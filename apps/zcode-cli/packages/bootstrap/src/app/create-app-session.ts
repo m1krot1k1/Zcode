@@ -185,6 +185,7 @@ export function prepareAppSession(
                 pluginSkillRoots: pluginOutcome.skillRoots,
                 bundledSkillRoots,
                 runtime: parentRuntime,
+                capabilityInstallPort: parentRuntime.getCapabilityInstallPort(),
                 runtimeConfig,
                 sessionId,
                 sessionStore,
