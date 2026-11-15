@@ -115,8 +115,11 @@ export function createCapabilityInstallPort(
           kind: "mcp",
           id: request.id,
           status: "installed",
-          requiresReload: true,
-          evidence: `MCP server '${request.id}' connected`,
+          // Новый сервер сразу попадает в live-снимок, который получает следующий
+          // child/Task; полный reload приложения не нужен. Текущий turn модели
+          // увидит инструменты со следующего turn boundary.
+          requiresReload: false,
+          evidence: `MCP server '${request.id}' connected; its tools are available to the next Task`,
         };
       }
 
@@ -151,8 +154,10 @@ export function createCapabilityInstallPort(
         kind: "plugin",
         id: match.id,
         status: "installed",
+        // Плагинные skills/agents/MCP входят в startup-набор runtime; их подхватывает
+        // следующая сессия/перезапуск приложения, а не текущий child.
         requiresReload: true,
-        evidence: `Plugin '${match.id}' installed`,
+        evidence: `Plugin '${match.id}' installed; reload the app to activate its components`,
       };
     },
   };

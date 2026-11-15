@@ -43,8 +43,34 @@ describe("MCP connection pool isolation", () => {
     await pool.close();
   });
 
-  it("reports one startup count snapshot for a session lease", async () => {
-    const events: unknown[] = [];
+  it("returns a live snapshot through the lease after a direct MCP connect", async () => {
+    const status: McpServerStatus = {
+      status: "connected",
+      toolCount: 1,
+      transport: "stdio",
+      updatedAt: new Date(0).toISOString(),
+    };
+    const tool = {
+      serverName: "late",
+      toolName: "echo",
+      inputSchema: { type: "object" as const },
+    };
+    const adapter = createFakeAdapter("late");
+    adapter.listTools = vi.fn(async () => [tool]);
+    const pool = createMcpConnectionPool({ createAdapter: () => adapter, idleGraceMs: 0 });
+    const session = pool.acquireLease({ leaseId: "session-live", sessionId: "session-live" });
+
+    await session.connectServer("late", { command: "node", type: "stdio" });
+
+    await expect(session.currentSnapshot!()).resolves.toEqual({
+      statuses: { late: status },
+      tools: [tool],
+    });
+    await session.close();
+    await pool.close();
+  });
+
+  it("reports one startup count snapshot for a session lease", async () => {    const events: unknown[] = [];
     const telemetry = createMcpTelemetryTracker({
       idSalt: "device-a",
       onEvent: (event) => events.push(event),

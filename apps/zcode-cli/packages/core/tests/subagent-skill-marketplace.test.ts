@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OfficialCuaPolicy } from "../src/subagent/computer-use-policy.js";
-import type { SkillPort } from "../src/runtime/deps.js";
+import type { SkillLoadOutcome, SkillPort } from "../src/runtime/deps.js";
 import { resolveSubagentSkillPort } from "../src/runtime/methods/subagent/skill-port.js";
 
 const cuaPolicy: OfficialCuaPolicy = {
@@ -59,5 +59,67 @@ describe("FilteredSkillPort marketplace delegation", () => {
         workingDirectory: "/w",
       }),
     ).rejects.toThrow(/marketplace install is not available/u);
+  });
+
+  it("lets the next child discover and load a skill installed through the previous child port", async () => {
+    const installed: SkillLoadOutcome["skills"] = [];
+    const parent = createPort({
+      discoverSkills: async () => ({
+        skills: installed.map((skill) => ({ ...skill })),
+        diagnostics: [],
+        totalDiscovered: installed.length,
+      }),
+      installMarketplaceSkill: async (request) => {
+        installed.push({
+          name: request.skillId,
+          description: "Installed on demand",
+          directory: "/w/.agents/skills/conventional-commit",
+          frontmatterKeys: ["name", "description"],
+          path: "/w/.agents/skills/conventional-commit/SKILL.md",
+          rootPath: "/w/.agents/skills",
+          safeToAutoLoad: true,
+          scope: "project",
+          source: "agents",
+        });
+        return {
+          name: request.skillId,
+          source: request.source,
+          skillId: request.skillId,
+          path: "/w/.agents/skills/conventional-commit",
+          scope: "workspace",
+          filesWritten: 2,
+          alreadyInstalled: false,
+        };
+      },
+      loadSkill: async (request) => {
+        const metadata = installed.find((skill) => skill.name === request.name);
+        if (!metadata) throw new Error("not installed");
+        return {
+          metadata,
+          content: "Conventional commit instructions",
+          baseDirectory: metadata.directory,
+          bytesRead: 32,
+          sizeBytes: 32,
+          truncated: false,
+        };
+      },
+    } as never);
+    const first = resolveSubagentSkillPort(parent, ["*"], cuaPolicy)!;
+    await first.installMarketplaceSkill!({
+      source: "github/awesome-copilot",
+      skillId: "conventional-commit",
+      workingDirectory: "/w",
+    });
+
+    const second = resolveSubagentSkillPort(parent, ["conventional-commit"], cuaPolicy)!;
+    await expect(
+      second.discoverSkills({ workingDirectory: "/w" }),
+    ).resolves.toMatchObject({
+      skills: [expect.objectContaining({ name: "conventional-commit" })],
+      totalDiscovered: 1,
+    });
+    await expect(
+      second.loadSkill({ name: "conventional-commit", workingDirectory: "/w" }),
+    ).resolves.toMatchObject({ content: "Conventional commit instructions" });
   });
 });

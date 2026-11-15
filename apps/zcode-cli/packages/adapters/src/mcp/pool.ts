@@ -487,6 +487,9 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       async listTools(): Promise<McpToolDescriptor[]> {
         return (await snapshot()).tools;
       },
+      async currentSnapshot(): Promise<McpConnectionSnapshot> {
+        return await snapshot();
+      },
       toolListRevision(): number {
         let revision = 0;
         for (const key of new Set(leased.values())) {

@@ -323,6 +323,11 @@ class NodeMcpAdapter implements McpPort {
     return this.toolListRevisionCounter;
   }
 
+  async currentSnapshot(): Promise<McpConnectionSnapshot> {
+    const [statuses, tools] = await Promise.all([this.status(), this.listTools()]);
+    return { statuses, tools };
+  }
+
   async listTools(): Promise<McpToolDescriptor[]> {
     // 收到 notifications/tools/list_changed 的 server 在下一次 listTools 时重新拉取
     // （runtime 只在回合开始前调用，回合内工具表不变）。

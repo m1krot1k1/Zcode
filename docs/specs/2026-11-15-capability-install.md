@@ -19,9 +19,11 @@
    подключает процессы.
 4. `isInstalled` проверяет live MCP status (`connected`) или enabled plugin в discovery;
    успешная установка кэшируется в порту, чтобы немедленный retry видел capability.
-5. Успешный результат: `installed` + `requiresReload` (tools могут стать видны после
-   refresh/следующего turn) + evidence. Повторная установка идемпотентна:
-   `already_installed`.
+5. Успешный результат: `installed` + evidence. Для MCP `requiresReload: false`: сервер
+   подключён, его tools входят в live-снимок следующего child/Task (см.
+   [mcp-live-snapshot](2026-11-15-mcp-live-snapshot.md)). Для plugin `requiresReload: true`:
+   plugin skills/agents/MCP активируются в следующей сессии. Повторная установка
+   идемпотентна: `already_installed`.
 6. После `capability_missing` родитель вызывает `InstallCapability`, ждёт `installed` и
    повторяет **тот же** Task один раз. Отказ пользователя/ошибка установки → `blocked`, без
    повторных попыток и без подмены capability.
@@ -54,8 +56,8 @@ installed + requiresReload → retry same Task once
 
 | Сценарий | До | После |
 | --- | --- | --- |
-| Нужен отсутствующий MCP | spawn blocked, пути установки нет | approval → connect → retry |
-| Нужен отсутствующий plugin | spawn blocked | approval → install → retry |
+| Нужен отсутствующий MCP | spawn blocked, пути установки нет | approval → connect → retry в том же turn |
+| Нужен отсутствующий plugin | spawn blocked | approval → install → reload для components |
 | Повторная установка | — | `already_installed` |
 | Отказ/ошибка установки | — | `blocked` с evidence |
 | Runtime без порта | fail closed | fail closed (`capability_requires_environment`) |
@@ -67,4 +69,7 @@ installed + requiresReload → retry same Task once
 - `apps/zcode-cli/packages/core/tests/capability-preflight.test.ts` — installed/missing
   MCP/plugin, подсказка `InstallCapability`, fail-closed без порта.
 - `apps/zcode-cli/packages/bootstrap/tests/capability-install-port.test.ts` — MCP live
-  status/cache, plugin install/cache, ошибка без installedPlugins.
+  status/cache и `requiresReload: false`, plugin install/cache и `requiresReload: true`,
+  ошибка без installedPlugins.
+- `apps/zcode-cli/packages/core/tests/subagent-mcp-live-snapshot.test.ts` — MCP,
+  подключённый после старта runtime, виден следующему child без reload.

@@ -38,7 +38,7 @@ export const capabilityInstallToolEntry: ToolEntry = {
   metadata: {
     name: CAPABILITY_INSTALL_TOOL_NAME,
     description:
-      "Install an MCP server or plugin. Always asks the user for approval. Call only after Task returns capability_missing, then retry the same Task once.",
+      "Install an MCP server or plugin after user approval. Call only after Task returns capability_missing, then retry the same Task once. Installed MCP tools are visible to the next child/Task without an app reload; plugin components may require reload when the result says so.",
     readOnly: false,
     destructive: false,
     concurrentSafe: false,

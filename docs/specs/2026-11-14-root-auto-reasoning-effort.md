@@ -50,6 +50,9 @@
 9. Смена модели сбрасывает явность уровня: новый level — это default/resolved level
    новой модели, auto снова разрешён. Повторный выбор того же уровня пользователем
    (`/effort max` при уже выбранном max) явность сохраняет.
+10. Auto применяется только к корневому turn. `subagent_child` использует level из
+    profile/override или относительный `effort`-класс; эвристика на prompt ребёнка
+    не перетирает его explicit level (например, profile `high` на коротком prompt).
 
 ## Матрица default / explicit / auto
 

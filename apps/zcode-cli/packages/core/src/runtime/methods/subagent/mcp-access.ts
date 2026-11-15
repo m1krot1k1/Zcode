@@ -1,5 +1,5 @@
 /** Заимствование parent MCP-снапшота и preflight требований профиля child. */
-import { createCoreError, CoreErrorType } from "../../deps.js";
+import { createCoreError, CoreErrorType, traceContextToLogContext } from "../../deps.js";
 import type {
   ExploreSubagentRuntimeRequest,
   McpConnectionSnapshot,
@@ -49,7 +49,10 @@ export async function resolveSubagentMcpAccess(
     };
   }
 
-  // child 不拥有连接生命周期，只能复用 parent constructor 已创建的启动快照。
+  // child не владеет жизненным циклом соединений, но снимок берём live: MCP,
+  // подключённый через InstallCapability после старта сессии, должен быть виден
+  // следующей дочерней задаче без reload. Startup promise остаётся barrier'ом
+  // первичной инициализации; порты без currentSnapshot сохраняют прежний снимок.
   const parentStartupSnapshot = await this.mcpStartupPromise;
   if (!parentStartupSnapshot) {
     if (scopedServerNames) {
@@ -62,9 +65,23 @@ export async function resolveSubagentMcpAccess(
       snapshot: undefined,
     };
   }
+  let parentSnapshot = parentStartupSnapshot;
+  if (this.mcpPort.currentSnapshot) {
+    try {
+      parentSnapshot = await this.mcpPort.currentSnapshot();
+    } catch (error) {
+      this.logger?.warn("MCP current snapshot failed during subagent spawn", {
+        ...traceContextToLogContext(request.traceContext),
+        error: error instanceof Error ? error.message : String(error),
+        event: "mcp.subagent_snapshot.failed",
+        module: "core.runtime",
+        status: "failed",
+      });
+    }
+  }
 
   const unavailableScopedServerNames = (scopedServerNames ?? []).filter(
-    (serverName) => parentStartupSnapshot.statuses[serverName]?.status !== "connected",
+    (serverName) => parentSnapshot.statuses[serverName]?.status !== "connected",
   );
   if (unavailableScopedServerNames.length > 0) {
     throw createCoreError(
@@ -82,13 +99,13 @@ export async function resolveSubagentMcpAccess(
 
   const borrowed = createBorrowedSubagentMcpAccess(
     this.mcpPort,
-    parentStartupSnapshot,
+    parentSnapshot,
     scopedServerNames,
     officialCuaServerNames,
   );
   return {
     config: { enabled: true },
-    parentSnapshot: parentStartupSnapshot,
+    parentSnapshot,
     port: borrowed.port,
     snapshot: borrowed.snapshot,
   };
@@ -146,7 +163,7 @@ export function validateSubagentMcpRequirements(
 
   throw createCoreError(
     CoreErrorType.ConfigurationError,
-    `Required MCP tool is not available in the parent startup snapshot: ${missingToolNames.join(", ")}`,
+    `Required MCP tool is not available in the parent MCP snapshot: ${missingToolNames.join(", ")}`,
     {
       context: {
         agentType: request.agentType,
@@ -175,7 +192,7 @@ function createSubagentMcpUnavailableError(
 ) {
   return createCoreError(
     CoreErrorType.ConfigurationError,
-    "Subagent MCP is unavailable because the parent startup snapshot is unavailable",
+    "Subagent MCP is unavailable because the parent MCP snapshot is unavailable",
     {
       context: {
         agentType: request.agentType,

@@ -51,7 +51,8 @@ describe("capability install port", () => {
       kind: "mcp",
       id: "other",
       status: "installed",
-      requiresReload: true,
+      requiresReload: false,
+      evidence: expect.stringContaining("next Task"),
     });
     expect(connectServer).toHaveBeenCalledWith("other", {
       type: "http",

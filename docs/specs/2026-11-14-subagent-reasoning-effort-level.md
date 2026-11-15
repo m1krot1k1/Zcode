@@ -6,7 +6,7 @@
 
 - [Subagent 模型与 Reasoning Effort 覆盖](../subagents-built-in-model-overrides.md) — этот spec заменяет
   правило «不增加 Agent tool 调用级 model/effort override» только в части effort.
-- [Каталог кейсов](../conversation-session-case-catalog.md:1089) — случай I20; его пункт
+- [Каталог кейсов](../conversation-session-case-catalog.md) — случай I20; его пункт
   «provider-visible `Agent` schema 不新增 model/effort» заменяется разделом «Конфликт правил».
 - [Root-auto reasoning effort](./2026-11-14-root-auto-reasoning-effort.md) — отдельный владелец
   автоматического уровня у корневого агента.

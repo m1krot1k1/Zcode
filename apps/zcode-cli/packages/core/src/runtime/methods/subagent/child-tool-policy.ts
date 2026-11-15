@@ -55,7 +55,7 @@ export function resolveSubagentToolAllowlist(
   const parentBuiltInToolNames = [
     ...new Set([
       ...this.getTools()
-        // child MCP must use the same descriptors as the parent's startup snapshot.
+        // child MCP must use the same descriptors as the parent's current MCP snapshot.
         .filter((tool) => tool.permission?.permission !== "mcp")
         .map((tool) => tool.name),
       ...resolveRuntimeDelegationToolNames(this),

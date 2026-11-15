@@ -291,6 +291,10 @@ export async function openServerConnection(
       tools,
       transport,
     });
+    // 直接 connectServer（设置页或 InstallCapability）也会改变工具表，但不会触发
+    // notifications/tools/list_changed。Без этого root runtime оставлял старый registry
+    // до перезапуска: следующий turn не видел инструменты нового server.
+    ctx.toolListRevisionCounter += 1;
     // A3：重连（同一 adapter 实例）后按登记表重放订阅；首次连接登记表为空，直接跳过。
     await replayResourceSubscriptions(ctx, name, client);
     const mcpTransportPid = getStdioTransportPid(transport);

@@ -182,6 +182,10 @@ function resolveRootAutoSelection(options: {
   const { runtime, selection, intent, prompt, modelExecution } = options;
   if (!selection || !prompt?.trim()) return undefined;
   if (runtime.config.autoReasoningLevel === false) return undefined;
+  // Auto — только для корневого turn. Child/worker получает уровень из profile,
+  // override или относительного effort-класса; повторная эвристика на его prompt
+  // перетирала explicit profile level (например high → low на коротком prompt).
+  if (runtime.config.taskType === "subagent_child") return undefined;
   if (modelExecution?.selectionScope === "execution") return undefined;
   const explicit = resolveExplicitReasoningLevel({
     intentSelection: intent?.modelSelection,

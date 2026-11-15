@@ -296,7 +296,7 @@ export function createDefaultSubagentPort(
           }),
           this.config.toolDisallowlist,
         );
-        // 修复依据：先按父级 allow/deny policy 保留显式 MCP 请求，再验证 startup snapshot；
+        // 修复依据：先按父级 allow/deny policy 保留显式 MCP 请求，再验证 current MCP snapshot；
         // 先构造 child toolset 会静默丢掉缺失 descriptor，让本应报错的子会话错误启动。
         validateSubagentMcpRequirements(
           { ...request, allowedTools: requestedMcpTools },
