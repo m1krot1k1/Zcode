@@ -186,16 +186,19 @@ export const TimelineMarkerRowView = memo(function TimelineMarkerRowView({
         if (
           marker.fromProvider === marker.toProvider &&
           marker.fromModel === marker.toModel &&
-          fromThought &&
           toThought &&
           fromThought !== toThought
         ) {
+          // Старые persisted marker и первый marker уровня могут не иметь fromThought.
+          // Это всё равно смена уровня, а не «X → X»: показываем явную установку.
           return {
             icon: MARKER_MODEL_ICON,
-            label: intl.formatMessage(
-              { id: "chat.modelChange.effortChanged" },
-              { from: fromThought, to: toThought },
-            ),
+            label: fromThought
+              ? intl.formatMessage(
+                  { id: "chat.modelChange.effortChanged" },
+                  { from: fromThought, to: toThought },
+                )
+              : intl.formatMessage({ id: "chat.modelChange.effortSet" }, { to: toThought }),
             running: false,
           };
         }
@@ -220,7 +223,8 @@ export const TimelineMarkerRowView = memo(function TimelineMarkerRowView({
                     marker.fromModel,
                     intl,
                   ),
-              to: fromThought ? withEffort(to, toThought) : to,
+              // Уровень новой модели известен и без старого уровня — не теряем его.
+              to: withEffort(to, toThought),
             },
           ),
           running: false,

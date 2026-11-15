@@ -97,7 +97,7 @@ describe("ConversationRowView timeline marker contract", () => {
       },
     });
 
-    expect(html).toContain("模型已切换 Primary Coding Plan/glm-5.2 → Alternate API/glm-5.2");
+    expect(html).toContain("模型已切换 Primary Coding Plan/glm-5.2 → Alternate API/glm-5.2 (high)");
     expect(html).toContain("lucide-arrow-right-left");
   });
 
@@ -124,6 +124,30 @@ describe("ConversationRowView timeline marker contract", () => {
     expect(html).toContain("推理强度已切换 low → high");
     expect(html).not.toContain("glm-5.2 → glm-5.2");
     expect(englishHtml).toContain("Reasoning effort switched low → high");
+  });
+
+  it("смена уровня без fromThought не схлопывается в X → X", () => {
+    const row: TimelineMarkerRow = {
+      rowId: 15,
+      turnId: "turn-effort-initial",
+      createdAt: 1_700_000_001_600,
+      createdAtSeq: 4,
+      kind: "timelineMarker",
+      marker: {
+        type: "modelChange",
+        fromProvider: "primary-provider",
+        fromModel: "glm-5.2",
+        toProvider: "primary-provider",
+        toModel: "glm-5.2",
+        toThought: "high",
+      },
+    };
+    const html = renderMarker(row);
+    const englishHtml = renderMarker(row, "en-US");
+
+    expect(html).toContain("推理强度已设为 high");
+    expect(englishHtml).toContain("Reasoning effort set to high");
+    expect(html).not.toContain("glm-5.2 → glm-5.2");
   });
 
   it("source 缺失的初始模型事实渲染为正在使用实际模型", () => {

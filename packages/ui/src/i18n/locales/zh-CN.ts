@@ -6019,6 +6019,7 @@ const zhCN: Record<string, string> = {
   "chat.contextCompaction.completed": "上下文已压缩",
   "chat.modelChange.switched": "模型已切换 {from} → {to}",
   "chat.modelChange.effortChanged": "推理强度已切换 {from} → {to}",
+  "chat.modelChange.effortSet": "推理强度已设为 {to}",
   "chat.modelChange.using": "正在使用 {model}",
   "chat.contextCompaction.completedAuto": "上下文已自动压缩",
   "chat.contextCompaction.failed": "上下文压缩失败",
@@ -7063,6 +7064,9 @@ const zhCN: Record<string, string> = {
   "chat.toolCall.source.subAgent": "子智能体",
   // agent 工具块缺少 fallback 文案时会把内部 i18n id 直接渲染到界面。
   "chat.toolCall.agent.label": "子智能体",
+  "chat.toolCall.agent.usage.input": "输入 {count}",
+  "chat.toolCall.agent.usage.output": "输出 {count}",
+  "chat.toolCall.agent.usage.cache": "缓存 {count}",
   "chat.toolCall.agent.prompt": "提示词",
   "chat.toolCall.agent.fallback": "子智能体",
   "chat.toolCall.agent.backgroundProcess": "后台 Agent 过程",
