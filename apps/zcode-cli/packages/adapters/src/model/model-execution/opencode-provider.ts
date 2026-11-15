@@ -400,7 +400,14 @@ function isOpenCodeAbortError(error: unknown): boolean {
 }
 
 function captureOpenCodeSignalListeners(): Map<OpenCodeProcessSignal, OpenCodeSignalListener[]> {
-  return new Map(OPENCODE_PROCESS_SIGNALS.map((signal) => [signal, process.listeners(signal)]));
+  return new Map(
+    OPENCODE_PROCESS_SIGNALS.map((signal) => [
+      signal,
+      // @types/node 24 типизирует listeners конкретным сигналом, а карта хранит общий
+      // SignalsListener; это один и тот же runtime-контракт process.listeners.
+      process.listeners(signal) as OpenCodeSignalListener[],
+    ]),
+  );
 }
 
 function removeNewOpenCodeSignalListeners(
@@ -408,7 +415,7 @@ function removeNewOpenCodeSignalListeners(
 ): void {
   for (const signal of OPENCODE_PROCESS_SIGNALS) {
     const previousCounts = countOpenCodeSignalListeners(before.get(signal) ?? []);
-    for (const listener of process.listeners(signal)) {
+    for (const listener of process.listeners(signal) as OpenCodeSignalListener[]) {
       const previousCount = previousCounts.get(listener) ?? 0;
       if (previousCount > 0) {
         previousCounts.set(listener, previousCount - 1);
