@@ -2079,6 +2079,9 @@ exceptions:
     paths:
       - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
       - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
+      # Initial-import runtime file; the legacy zcode-cli module is unmanaged, and a
+      # path-exact exception is the existing convention for these two helpers.
+      - apps/zcode-cli/packages/core/src/runtime/off-peak/runtime.ts
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

@@ -6,7 +6,7 @@ import { dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPolicy } from "./architecture/policy.mjs";
 import { pristineUpstreamFiles } from "./architecture/upstream-admission.mjs";
-import { classifyLintDiagnostics, parseLintCommand } from "./cli-lint-admission.mjs";
+import { classifyLintDiagnostics, parseLintCommand, parseOxlintReport } from "./cli-lint-admission.mjs";
 
 const exec = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,15 +59,21 @@ async function main() {
         if (error.code !== 1 || !error.stdout) throw error;
         result = error;
       }
-      const report = JSON.parse(result.stdout);
-      if (!Array.isArray(report.diagnostics))
-        throw new Error(`${manifest.name}: 无法解析 oxlint 结果`);
+      const report = parseOxlintReport(result.stdout, manifest.name);
+      const noFilesMatched = report.number_of_files === 0;
+      if (noFilesMatched)
+        console.log(`${manifest.name}: 0 files linted (package globs matched nothing)`);
       const groups = classifyLintDiagnostics(report.diagnostics, {
         pristine,
         relativeDirectory: relative(root, cwd).replaceAll("\\", "/"),
       });
-      // 非诊断性失败不能被“零错误”误判为成功。
-      if (result.code === 1 && !report.diagnostics.some((item) => item.severity === "error"))
+      // 非诊断性失败不能被“零错误”误判为成功；но пустой glob — это явный отчёт
+      // oxlint (`number_of_files === 0`), а не падение парсера или самого линтера.
+      if (
+        result.code === 1 &&
+        !noFilesMatched &&
+        !report.diagnostics.some((item) => item.severity === "error")
+      )
         throw new Error(`${manifest.name}: oxlint 异常退出：${result.stderr}`);
       for (const item of [...groups.errors, ...groups.warnings])
         console.log(
