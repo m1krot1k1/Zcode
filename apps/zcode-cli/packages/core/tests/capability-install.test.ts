@@ -22,7 +22,7 @@ describe("InstallCapability tool", () => {
       alwaysAsk: true,
       needsApproval: true,
       riskLevel: "high",
-      sideEffectScope: "user",
+      sideEffectScope: "system",
     });
     expect(capabilityInstallToolEntry.metadata.name).toBe("InstallCapability");
   });

@@ -7,6 +7,12 @@ import type {
   SkillOperationOptions,
   SkillPort,
 } from "../../deps.js";
+import type {
+  SkillMarketplaceInstallRequest,
+  SkillMarketplaceInstallResult,
+  SkillMarketplaceSearchRequest,
+  SkillMarketplaceSearchResult,
+} from "@zcode/contracts";
 import {
   SUBAGENT_COMPUTER_USE_UNAVAILABLE_CODE,
   SUBAGENT_COMPUTER_USE_UNAVAILABLE_MESSAGE,
@@ -72,6 +78,46 @@ class FilteredSkillPort implements SkillPort {
       );
     }
     return this.parent.loadSkill({ ...request, name: resolvedName }, options);
+  }
+
+  async searchMarketplace(
+    request: SkillMarketplaceSearchRequest,
+    options?: SkillOperationOptions,
+  ): Promise<SkillMarketplaceSearchResult> {
+    const search = this.parent.searchMarketplace;
+    if (!search) {
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "Skill marketplace search is not available in this runtime",
+        {
+          context: { skillQuery: request.query, toolName: "SkillSearch" },
+          recoverable: false,
+        },
+      );
+    }
+    return search.call(this.parent, request, options);
+  }
+
+  async installMarketplaceSkill(
+    request: SkillMarketplaceInstallRequest,
+    options?: SkillOperationOptions,
+  ): Promise<SkillMarketplaceInstallResult> {
+    const install = this.parent.installMarketplaceSkill;
+    if (!install) {
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "Skill marketplace install is not available in this runtime",
+        {
+          context: {
+            skillId: request.skillId,
+            source: request.source,
+            toolName: "SkillInstall",
+          },
+          recoverable: false,
+        },
+      );
+    }
+    return install.call(this.parent, request, options);
   }
 
   private async hasUniqueOfficialSkillMatch(
