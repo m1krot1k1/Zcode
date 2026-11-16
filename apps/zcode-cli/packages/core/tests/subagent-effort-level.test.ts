@@ -4,6 +4,7 @@ import {
   resolveSubagentEffortLevel,
   type ResolveSubagentEffortLevelInput,
 } from "../src/runtime/helpers/subagent-effort.js";
+import { applySubagentEffortSelection } from "../src/runtime/methods/subagent/effort-application.js";
 
 const LEVELS = ["disabled", "low", "medium", "high", "max"] as const;
 
@@ -14,6 +15,55 @@ function resolve(
 }
 
 describe("resolveSubagentEffortLevel", () => {
+  it("forces the highest supported level for the orchestrator policy", () => {
+    expect(
+      resolveSubagentEffortLevel({
+        policy: "highest",
+        effort: "lower",
+        baseLevel: "low",
+        parentLevel: "low",
+        supportedLevels: LEVELS,
+      }),
+    ).toEqual({ level: "max", outcome: "applied" });
+    expect(
+      resolveSubagentEffortLevel({
+        policy: "highest",
+        supportedLevels: [],
+      }),
+    ).toEqual({ outcome: "no-supported-levels" });
+  });
+
+  it("applies orchestrator highest without changing the selected model", () => {
+    const childModel = {
+      optionSpecs: { reasoningLevel: { values: [...LEVELS] } },
+      options: { reasoningLevel: "low" },
+    } as never;
+    const factory = (() => childModel) as never;
+    const result = applySubagentEffortSelection({
+      agentType: "orchestrator",
+      childModel,
+      childSelection: {
+        modelId: "deepseek-v4.1-flash",
+        options: { reasoningLevel: "low" },
+        providerId: "opencode-go",
+      },
+      parentSelection: {
+        modelId: "deepseek-v4.1-flash",
+        options: { reasoningLevel: "low" },
+        providerId: "opencode-go",
+      },
+      parentModel: {
+        options: { reasoningLevel: "low" },
+      } as never,
+      baseFactory: factory,
+      rebuildFactory: () => factory,
+    });
+
+    expect(result.childSelection.providerId).toBe("opencode-go");
+    expect(result.childSelection.modelId).toBe("deepseek-v4.1-flash");
+    expect(result.childSelection.options?.reasoningLevel).toBe("max");
+  });
+
   it("is a no-op for models without reasoning levels", () => {
     expect(
       resolveSubagentEffortLevel({

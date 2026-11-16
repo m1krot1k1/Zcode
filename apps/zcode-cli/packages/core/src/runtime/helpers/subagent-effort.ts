@@ -20,6 +20,8 @@ export type SubagentEffortOutcome =
 export interface ResolveSubagentEffortLevelInput {
   /** Как пришло из tool input/истории; сужение до класса делает resolver. */
   effort?: string;
+  /** highest — служебная политика роли (оркестратор), не выбор модели. */
+  policy?: "relative" | "highest";
   /** Явное разрешение поднять ребёнка выше родителя. */
   effortAboveParent?: boolean;
   /** Уровень из уже разрешённой child selection (profile/override/parent). */
@@ -60,6 +62,12 @@ export function resolveSubagentEffortLevel(
 
   if (supportedLevels.length === 0) {
     return { outcome: "no-supported-levels" };
+  }
+
+  if (input.policy === "highest") {
+    // Оркестратор — единственная роль с политикой highest: модель остаётся
+    // выбранной пользователем, меняется только reasoning level в её шкале.
+    return { level: supportedLevels[supportedLevels.length - 1]!, outcome: "applied" };
   }
 
   const effort = input.effort?.trim().toLowerCase();

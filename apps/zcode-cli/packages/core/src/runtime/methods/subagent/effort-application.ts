@@ -41,7 +41,7 @@ export interface ApplySubagentEffortResult {
 export function applySubagentEffortSelection(
   input: ApplySubagentEffortInput,
 ): ApplySubagentEffortResult {
-  if (input.effort === undefined) {
+  if (input.effort === undefined && input.agentType !== "orchestrator") {
     return {
       childSelection: input.childSelection,
       childModel: input.childModel,
@@ -64,15 +64,25 @@ export function applySubagentEffortSelection(
     parentCatalogEntry?.defaultReasoningLevel;
   const childCatalogEntry = findCatalogEntry(input.childSelection);
   const supportedLevels =
-    childCatalogEntry?.reasoningLevels ?? input.childModel.optionSpecs.reasoningLevel.values;
+    childCatalogEntry?.reasoningLevels ?? input.childModel.optionSpecs.reasoningLevel?.values ?? [];
   const effortResolution = resolveSubagentEffortLevel({
     effort: input.effort,
     effortAboveParent: input.effortAboveParent,
+    policy: input.agentType === "orchestrator" ? "highest" : "relative",
     baseLevel: input.childSelection.options?.reasoningLevel,
     parentLevel,
     supportedLevels,
   });
-  if (effortResolution.outcome === "unknown-class") {
+  if (input.agentType === "orchestrator") {
+    input.logger?.debug("Orchestrator reasoning level forced to highest supported", {
+      event: "subagent.effort.orchestrator_highest",
+      module: "core.subagent",
+      agentType: input.agentType,
+      reasoningLevel: effortResolution.level,
+      providerId: input.childSelection.providerId,
+      modelId: input.childSelection.modelId,
+    });
+  } else if (effortResolution.outcome === "unknown-class") {
     input.logger?.warn("Subagent effort class is unknown; keeping the resolved level", {
       event: "subagent.effort.unknown_class",
       module: "core.subagent",

@@ -40,6 +40,12 @@
 
 ## Продуктовые правила
 
+### RF-0. Модель не меняется
+
+Effort никогда не переключает provider/model. `childSelection.providerId` и `modelId` остаются
+теми же, что выбраны пользователем/профилем; меняется только `options.reasoningLevel` в шкале
+этой модели. Model routing между моделями не вводится.
+
 ### RF-1. Поля tool input
 
 В `AgentInputObjectSchema` и `TaskInputSchema` (общий контракт,
@@ -81,10 +87,11 @@ SubagentRunOptions.modelOverride.selection  (Core Server / settings override)
 export type SubagentEffortClass = "lower" | "same" | "higher";
 
 export interface ResolveSubagentEffortLevelInput {
-  effort?: string;                 // как пришло из истории/tool input, без предварительного сужения
-  effortAboveParent?: boolean;     // default false
-  baseLevel?: string;              // уровень из resolved child selection
-  parentLevel?: string;            // эффективный уровень родителя в этом turn
+  effort?: string; // как пришло из истории/tool input, без предварительного сужения
+  policy?: "relative" | "highest"; // highest — только для встроенного orchestrator
+  effortAboveParent?: boolean; // default false
+  baseLevel?: string; // уровень из resolved child selection
+  parentLevel?: string; // эффективный уровень родителя в этом turn
   supportedLevels: readonly string[]; // optionSpecs.reasoningLevel.values, от низкого к высокому
 }
 
@@ -113,22 +120,25 @@ export function resolveSubagentEffortLevel(
 1. `supportedLevels` пуст или отсутствует → `{ outcome: "no-supported-levels" }`, `level: undefined`.
    Ребёнок исполняется без level, ошибки нет. Если в унаследованной selection level был, он
    в child selection не переносится.
-2. `effort` не входит в `"lower" | "same" | "higher"` → `{ outcome: "unknown-class", level: baseLevel }`.
+2. `policy === "highest"` (встроенный orchestrator) → `{ level: supportedLevels.at(-1), outcome: "applied" }`.
+   Модель не меняется, elevation guard не применяется: оркестратор всегда получает верхнюю
+   ступень шкалы выбранной модели. Это единственная роль с такой политикой.
+3. `effort` не входит в `"lower" | "same" | "higher"` → `{ outcome: "unknown-class", level: baseLevel }`.
    Selection не меняется, вызывающий пишет `logger.warn`, ретрая модели нет.
-3. Опорный индекс (`anchorIndex`), от низкого к высокому:
+4. Опорный индекс (`anchorIndex`), от низкого к высокому:
    1. `baseLevel` есть в `supportedLevels` → его индекс;
    2. иначе `parentLevel` есть в `supportedLevels` → его индекс, `baseClamped: true`;
    3. иначе индекс `0` (низшая поддерживаемая ступень), `baseClamped: true`.
-4. Если и `baseLevel`, и `parentLevel` отсутствуют → `{ outcome: "no-anchor" }`, `level: undefined`.
-5. `delta`: `lower = -1`, `same = 0`, `higher = +1`;
+5. Если и `baseLevel`, и `parentLevel` отсутствуют → `{ outcome: "no-anchor" }`, `level: undefined`.
+6. `delta`: `lower = -1`, `same = 0`, `higher = +1`;
    `targetIndex = min(max(anchorIndex + delta, 0), supportedLevels.length - 1)`.
-6. Elevation guard:
+7. Elevation guard:
    - если `parentLevel` присутствует в `supportedLevels` и `targetIndex > parentIndex`
      и `effortAboveParent !== true` → `targetIndex = parentIndex`, `outcome: "clamped"`;
    - иначе если `parentLevel` отсутствует в `supportedLevels` (или его нет) и `delta > 0`
      и `effortAboveParent !== true` → `targetIndex = anchorIndex`, `outcome: "elevation-denied"`;
    - иначе `outcome: "applied"`.
-7. Результат: `supportedLevels[targetIndex]`.
+8. Результат: `supportedLevels[targetIndex]`.
 
 `baseLevel` берётся из уже разрешённой child selection. Если level пришёл из явного profile
 override, он к этому моменту уже провалидирован `resolveSubagentSelection`/`resolveEffectiveModelSelection`
@@ -147,13 +157,13 @@ override, он к этому моменту уже провалидирован 
 Profile override — это осознанная настройка пользователя, но класс — это указание вызывающего
 агента на конкретный спавн. Контракт:
 
-| Ситуация | Итог |
-| --- | --- |
-| `effort` отсутствует | уровень профиля сохраняется как есть (resolver не вызывается) |
-| `effort: "same"` | `clamped` до уровня родителя, если профиль выше родителя |
-| `effort: "lower"` | `targetIndex = anchorIndex - 1`; если всё ещё выше родителя — `clamped` до родителя |
-| `effort: "higher"` | `clamped` до уровня родителя без флага; с `effort_above_parent: true` — `anchorIndex + 1` (или top) |
-| любой класс + `effort_above_parent: true` | guard не применяется, профиль сохраняет своё преимущество |
+| Ситуация                                  | Итог                                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `effort` отсутствует                      | уровень профиля сохраняется как есть (resolver не вызывается)                                       |
+| `effort: "same"`                          | `clamped` до уровня родителя, если профиль выше родителя                                            |
+| `effort: "lower"`                         | `targetIndex = anchorIndex - 1`; если всё ещё выше родителя — `clamped` до родителя                 |
+| `effort: "higher"`                        | `clamped` до уровня родителя без флага; с `effort_above_parent: true` — `anchorIndex + 1` (или top) |
+| любой класс + `effort_above_parent: true` | guard не применяется, профиль сохраняет своё преимущество                                           |
 
 То есть: настройка профиля без класса никогда не понижается, а любой переданный класс без флага
 подчиняется инварианту «не выше родителя».
@@ -198,6 +208,14 @@ You are powered by the model named <providerId>/<modelId> (reasoning effort: <le
   с типом, используя существующее отображение thought-level; неизвестное значение печатается как есть.
 - Child `ModelSelected` **не зеркалится** в родительский topic: это перезаписало бы `config` родителя.
   Родитель узнаёт уровень только из результата и `SubagentSpawned`.
+
+### RF-8a. Оркестратор всегда highest
+
+Встроенный `orchestrator` — единственная роль с `policy: "highest"`. Независимо от уровня
+родителя и переданного `effort`, runtime выбирает последний элемент `supportedLevels` выбранной
+модели. Модель при этом не меняется: `providerId`/`modelId` остаются прежними. Это гарантия
+«оркестратор всегда анализирует на максимуме своей шкалы», пока пользователь не выбрал модель
+без reasoning levels.
 
 ### RF-9. Инструкции профилей
 
@@ -272,57 +290,57 @@ capability без Model (`apps/zcode-cli/packages/core/src/runtime/types.ts:464`
 
 Supported: `low, medium, high`; `parent` — эффективный уровень родителя в этом turn.
 
-| parent | effort | flag | anchor = parent | итог | outcome |
-| --- | --- | --- | --- | --- | --- |
-| high | lower | false | high | medium | applied |
-| high | same | false | high | high | applied |
-| high | higher | false | high | high (top) | applied |
-| medium | lower | false | medium | low | applied |
-| medium | same | false | medium | medium | applied |
-| medium | higher | false | medium | medium | clamped |
-| medium | higher | true | medium | high | applied |
-| low | lower | false | low | low | applied |
-| low | same | false | low | low | applied |
-| low | higher | false | low | low | clamped |
-| low | higher | true | low | medium | applied |
-| — | same | false | base=profile | базовый уровень | applied |
-| — | lower | false | base=profile | base-1 | applied |
-| — | higher | false | base=profile | базовый уровень | elevation-denied |
-| — | higher | true | base=profile | base+1 (или top) | applied |
-| off (нет в supported) | higher | false | floor=low | low | elevation-denied |
-| off (нет в supported) | same | false | floor=low | low | applied, baseClamped |
-| medium | любой | — | supported пуст | без level | no-supported-levels |
-| medium | `max` (неизвестный класс) | — | medium | medium | unknown-class |
-| medium + profile high | same | false | high | medium | clamped |
-| medium + profile high | lower | false | high | medium | applied |
-| low + profile high | lower | false | high | low | clamped |
-| medium + profile high | higher | true | high | high (top) | applied |
+| parent                | effort                    | flag  | anchor = parent | итог             | outcome              |
+| --------------------- | ------------------------- | ----- | --------------- | ---------------- | -------------------- |
+| high                  | lower                     | false | high            | medium           | applied              |
+| high                  | same                      | false | high            | high             | applied              |
+| high                  | higher                    | false | high            | high (top)       | applied              |
+| medium                | lower                     | false | medium          | low              | applied              |
+| medium                | same                      | false | medium          | medium           | applied              |
+| medium                | higher                    | false | medium          | medium           | clamped              |
+| medium                | higher                    | true  | medium          | high             | applied              |
+| low                   | lower                     | false | low             | low              | applied              |
+| low                   | same                      | false | low             | low              | applied              |
+| low                   | higher                    | false | low             | low              | clamped              |
+| low                   | higher                    | true  | low             | medium           | applied              |
+| —                     | same                      | false | base=profile    | базовый уровень  | applied              |
+| —                     | lower                     | false | base=profile    | base-1           | applied              |
+| —                     | higher                    | false | base=profile    | базовый уровень  | elevation-denied     |
+| —                     | higher                    | true  | base=profile    | base+1 (или top) | applied              |
+| off (нет в supported) | higher                    | false | floor=low       | low              | elevation-denied     |
+| off (нет в supported) | same                      | false | floor=low       | low              | applied, baseClamped |
+| medium                | любой                     | —     | supported пуст  | без level        | no-supported-levels  |
+| medium                | `max` (неизвестный класс) | —     | medium          | medium           | unknown-class        |
+| medium + profile high | same                      | false | high            | medium           | clamped              |
+| medium + profile high | lower                     | false | high            | medium           | applied              |
+| low + profile high    | lower                     | false | high            | low              | clamped              |
+| medium + profile high | higher                    | true  | high            | high (top)       | applied              |
 
 `applied` при верхнем/нижнем index clamp (например `higher` на последней ступени) остаётся
 `applied`: guard не срабатывал.
 
 ## Сценарии приёмки
 
-| ID | Сценарий | Ожидание |
-| --- | --- | --- |
-| SA-01 | parent high, supported low/medium/high, `effort: lower` | child medium; `SubagentSpawned.reasoningLevel=medium`; usage line `reasoning_effort: medium` |
-| SA-02 | parent high, `effort: same` | child high, без изменения selection |
-| SA-03 | parent high, `effort: higher` | child high (top), outcome applied |
-| SA-04 | parent medium, `effort: higher` без флага | child medium, outcome clamped; provider-visible level не выше родителя |
-| SA-05 | parent medium, `effort: higher`, `effort_above_parent: true` | child high |
-| SA-06 | parent low, `effort: higher` без флага; с флагом | low (clamped); medium с флагом |
-| SA-07 | parent level отсутствует у целевой модели (например `off`), `effort: higher` | low, outcome elevation-denied, без ошибки |
-| SA-08 | модель без `reasoningLevel.values` | child без level, без ошибки, resolver outcome no-supported-levels |
-| SA-09 | исторический/неизвестный `effort: "max"` | вызов не падает, selection не меняется, warning, повторного model request нет |
-| SA-10 | profile high, parent medium, `effort: same`; и тот же кейс без `effort` | medium (clamped) только при классе; без класса остаётся high |
-| SA-11 | profile high, parent medium, `effort: lower` | medium (clamped), не ниже родителя |
-| SA-12 | child system prompt при наличии level | строка модели содержит `(reasoning effort: <level>)`; без level — не содержит |
-| SA-13 | `AgentCompletedOutput` и `<usage>` | optional `reasoningLevel`/`reasoning_effort` присутствуют только при level |
-| SA-14 | UI-проекция `SubagentSpawned` | `SubagentRow.reasoningLevel` появляется в append и update, переживает hydration; родительский `config` не меняется |
-| SA-15 | resume через `SendMessage` | уровень ребёнка не пересчитывается, текущий profile остаётся авторитетом; класс из старого вызова не применяется |
-| SA-16 | provider-visible `Agent`/`Task` schema | содержит `effort` и `effort_above_parent`, не содержит `model`/`reasoningLevel`/`thoughtLevel`; `level` остаётся глубиной |
-| SA-17 | task_graph с разными `effort` на узлах | каждый узел получает свой уровень, родителем считается вызвавший граф агент |
-| SA-18 | `effort: lower` при parent level ниже или равном нижней ступени | child остаётся на нижней ступени, outcome applied |
+| ID    | Сценарий                                                                     | Ожидание                                                                                                                  |
+| ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| SA-01 | parent high, supported low/medium/high, `effort: lower`                      | child medium; `SubagentSpawned.reasoningLevel=medium`; usage line `reasoning_effort: medium`                              |
+| SA-02 | parent high, `effort: same`                                                  | child high, без изменения selection                                                                                       |
+| SA-03 | parent high, `effort: higher`                                                | child high (top), outcome applied                                                                                         |
+| SA-04 | parent medium, `effort: higher` без флага                                    | child medium, outcome clamped; provider-visible level не выше родителя                                                    |
+| SA-05 | parent medium, `effort: higher`, `effort_above_parent: true`                 | child high                                                                                                                |
+| SA-06 | parent low, `effort: higher` без флага; с флагом                             | low (clamped); medium с флагом                                                                                            |
+| SA-07 | parent level отсутствует у целевой модели (например `off`), `effort: higher` | low, outcome elevation-denied, без ошибки                                                                                 |
+| SA-08 | модель без `reasoningLevel.values`                                           | child без level, без ошибки, resolver outcome no-supported-levels                                                         |
+| SA-09 | исторический/неизвестный `effort: "max"`                                     | вызов не падает, selection не меняется, warning, повторного model request нет                                             |
+| SA-10 | profile high, parent medium, `effort: same`; и тот же кейс без `effort`      | medium (clamped) только при классе; без класса остаётся high                                                              |
+| SA-11 | profile high, parent medium, `effort: lower`                                 | medium (clamped), не ниже родителя                                                                                        |
+| SA-12 | child system prompt при наличии level                                        | строка модели содержит `(reasoning effort: <level>)`; без level — не содержит                                             |
+| SA-13 | `AgentCompletedOutput` и `<usage>`                                           | optional `reasoningLevel`/`reasoning_effort` присутствуют только при level                                                |
+| SA-14 | UI-проекция `SubagentSpawned`                                                | `SubagentRow.reasoningLevel` появляется в append и update, переживает hydration; родительский `config` не меняется        |
+| SA-15 | resume через `SendMessage`                                                   | уровень ребёнка не пересчитывается, текущий profile остаётся авторитетом; класс из старого вызова не применяется          |
+| SA-16 | provider-visible `Agent`/`Task` schema                                       | содержит `effort` и `effort_above_parent`, не содержит `model`/`reasoningLevel`/`thoughtLevel`; `level` остаётся глубиной |
+| SA-17 | task_graph с разными `effort` на узлах                                       | каждый узел получает свой уровень, родителем считается вызвавший граф агент                                               |
+| SA-18 | `effort: lower` при parent level ниже или равном нижней ступени              | child остаётся на нижней ступени, outcome applied                                                                         |
 
 ## Конфликт правил
 
