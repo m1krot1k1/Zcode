@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "createdAt": "2026-11-16T15:42:32.603Z",
-  "gitHead": "1d02e9537d777272e529af2e656f575efeeaec26",
+  "createdAt": "2026-11-16T16:00:46.441Z",
+  "gitHead": "1a0e7adf9c8634945a226a3ddeeac70bfc6d52dd",
   "layers": [
     {
       "id": "identity-stable",
@@ -30,8 +30,8 @@
     {
       "id": "deep-task-contract",
       "path": ".agents/skills/deep-task-contract/SKILL.md",
-      "chars": 1991,
-      "estimatedTokens": 498
+      "chars": 2301,
+      "estimatedTokens": 576
     },
     {
       "id": "prism-core",

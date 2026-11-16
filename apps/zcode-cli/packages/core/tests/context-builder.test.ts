@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createContextBuilder } from "../src/context/index.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
-import { buildMemorySection } from "../src/context/sections/memory.js";
+import { buildContextLedgerSection, buildMemorySection } from "../src/context/sections/memory.js";
 import {
   buildCliPrefixSection,
   buildEnvInfoSection,
@@ -1482,6 +1482,23 @@ describe("ContextBuilder meta user context", () => {
     expect(identitySection.content).not.toContain("You are ZCode, an interactive coding agent");
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("${");
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("an AI assistant");
+  });
+
+  it("builds a compact context ledger with goal, evidence, and open questions", () => {
+    const section = buildContextLedgerSection({
+      goal: "Ship the prompt eval lab",
+      decisions: ["Keep the user's model"],
+      facts: [{ claim: "Role prompts exceed budget", evidence: "built-in-profiles.ts" }],
+      openQuestions: ["Which holdout tasks are protected?"],
+      changedFiles: ["scripts/prompt-registry.mjs"],
+      nextActions: ["Run baseline/candidate comparison"],
+    });
+
+    expect(section?.content).toContain("Goal: Ship the prompt eval lab");
+    expect(section?.content).toContain("evidence: built-in-profiles.ts");
+    expect(section?.content).toContain("Which holdout tasks are protected?");
+    expect((section?.content.length ?? 0)).toBeLessThanOrEqual(2_500);
+    expect(buildContextLedgerSection({ goal: "   " })).toBeNull();
   });
 
   it("keeps the compact depth contract in the stable identity", () => {

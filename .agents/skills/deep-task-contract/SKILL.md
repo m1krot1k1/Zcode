@@ -26,3 +26,7 @@ Use this skill for substantial research, architecture, prompt-system, or debuggi
 ## Output
 
 Return a compact map: claim -> raw source -> method -> independent evidence -> confidence -> next decisive check. Then produce the requested artifact (plan, rewrite, code change) only when it follows from that map.
+
+## Context ledger
+
+For multi-step work, maintain `.zcode/context-ledger.json` with `goal`, `constraints`, `decisions`, `facts[{claim,evidence}]`, `openQuestions`, `changedFiles`, and `nextActions`. The runtime injects it as a compact system-context section; keep it current and do not use it as a transcript.

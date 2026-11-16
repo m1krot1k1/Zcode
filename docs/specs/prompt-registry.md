@@ -81,3 +81,9 @@ compaction, memory, tool descriptions, skills, workflow/expert prompts). Без 
 
 Реестр проверяет источники промптов, а не поведение модели. Eval lab проверяет записи
 прогонов, но не запускает модель сам. Он не заменяет живой A/B и независимого grader.
+
+## Static baseline
+
+`config/prompts/eval/static-*.jsonl` — реальные статические замеры prompt-стека до/после
+slim (`21655 → 21038` estimated tokens). Они помечены `synthetic: true`, потому что не
+содержат поведенческих прогонов; lab честно возвращает `inconclusive`, а не выдаёт их за A/B.

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -16,6 +17,7 @@ import type {
 } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
+import type { ContextLedgerSnapshot } from "../../context/sections/memory.js";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import {
   ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH,
@@ -132,6 +134,19 @@ export async function getSkillCatalog(
   };
 }
 
+function loadContextLedger(workspaceRoot: string): ContextLedgerSnapshot | undefined {
+  try {
+    const raw = readFileSync(join(workspaceRoot, ".zcode/context-ledger.json"), "utf8");
+    // Ledger — компактное состояние, а не второй transcript.
+    if (raw.length === 0 || raw.length > 20_000) return undefined;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    return parsed as ContextLedgerSnapshot;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createContextBuilderFromSnapshot(
   this: AgentRuntimeInternal,
   snapshot: ContextSourceSnapshot,
@@ -179,6 +194,7 @@ export function createContextBuilderFromSnapshot(
     projectContext: snapshot.projectContext,
     memoryIndexContent: options.memoryIndexContent,
     memoryRoot,
+    contextLedger: loadContextLedger(this.workspaceRoot),
     skills: this.skillLoadOutcome,
     agentProfiles: this.config.subagents?.profiles,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),

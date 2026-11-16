@@ -6,6 +6,74 @@ import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
 import type { ProjectMemoryRetrievalBranch } from "../../memory/project-memory-retrieval-branch.js";
 
+export interface ContextLedgerFact {
+  claim: string;
+  evidence?: string;
+}
+
+export interface ContextLedgerSnapshot {
+  goal?: string;
+  constraints?: string[];
+  decisions?: string[];
+  facts?: ContextLedgerFact[];
+  openQuestions?: string[];
+  changedFiles?: string[];
+  nextActions?: string[];
+}
+
+/**
+ * Компактный рабочий набор задачи. Живёт в `.zcode/context-ledger.json` и
+ * подмешивается в system context только при наличии файла; это не замена
+ * transcript, а сжатая память о цели, решениях, evidence и открытых вопросах.
+ */
+export function buildContextLedgerSection(
+  ledger: ContextLedgerSnapshot | undefined,
+): ContextSection | null {
+  if (!ledger) return null;
+  const lines = ["# Context Ledger"];
+  const pushList = (title: string, values: readonly string[] | undefined) => {
+    const filtered = (values ?? []).map((value) => value.trim()).filter(Boolean);
+    if (filtered.length === 0) return;
+    lines.push("", `## ${title}`, ...filtered.map((value) => `- ${truncateLedgerText(value, 240)}`));
+  };
+  if (ledger.goal?.trim()) lines.push("", `Goal: ${truncateLedgerText(ledger.goal.trim(), 400)}`);
+  pushList("Constraints", ledger.constraints);
+  pushList("Decisions", ledger.decisions);
+  const facts = (ledger.facts ?? [])
+    .map((fact) => ({
+      claim: fact.claim.trim(),
+      evidence: fact.evidence?.trim(),
+    }))
+    .filter((fact) => fact.claim.length > 0);
+  if (facts.length > 0) {
+    lines.push("", "## Facts");
+    for (const fact of facts) {
+      lines.push(
+        `- ${truncateLedgerText(fact.claim, 240)}${fact.evidence ? ` — evidence: ${truncateLedgerText(fact.evidence, 240)}` : ""}`,
+      );
+    }
+  }
+  pushList("Open Questions", ledger.openQuestions);
+  pushList("Changed Files", ledger.changedFiles);
+  pushList("Next Actions", ledger.nextActions);
+  const content = truncateLedgerText(lines.join("\n"), 2_500);
+  if (content === "# Context Ledger") return null;
+  return {
+    name: "Context Ledger",
+    source: "context_ledger",
+    injectionTarget: "system",
+    cacheHint: "dynamic",
+    chars: content.length,
+    tokens: estimateTokens(content),
+    content,
+    preview: content.slice(0, 100),
+  };
+}
+
+function truncateLedgerText(value: string, maxChars: number): string {
+  return value.length <= maxChars ? value : `${value.slice(0, maxChars - 1)}…`;
+}
+
 export function buildMemorySection(
   memoryRoot: string | undefined,
   retrievalBranch: ProjectMemoryRetrievalBranch,

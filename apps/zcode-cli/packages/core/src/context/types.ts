@@ -13,6 +13,7 @@ import type {
   SkillLoadOutcome,
   UserInstructionsOptions,
 } from "@zcode/contracts";
+import type { ContextLedgerSnapshot } from "./sections/memory.js";
 import type { AutoCompactPolicyConfig } from "../compact/index.js";
 import type { AgentProfile } from "../subagent/profile.js";
 
@@ -41,6 +42,7 @@ export type ContextSource =
   | "tools" // 工具定义
   | "request_user_context" // request-level user context provider-visible 组合块
   | "memory" // 长期 memory read path
+  | "context_ledger" // 当前任务的 compact working set
   | "current_date" // 当前日期
   | "custom_system_prompt" // 自定义 stable system body
   | "workflow_actor_identity" // 动态工作流子代理身份：契约 + persona 叠加
@@ -118,6 +120,8 @@ export interface ContextBuilderConfig {
   projectContext?: ProjectContext;
   memoryRoot?: string;
   memoryIndexContent?: string;
+  /** Компактный рабочий набор задачи из `.zcode/context-ledger.json`. */
+  contextLedger?: ContextLedgerSnapshot;
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;
