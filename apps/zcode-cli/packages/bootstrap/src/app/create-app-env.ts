@@ -25,7 +25,8 @@ import {
   openStartupSessionStore,
   readProjectPermissionMode,
 } from "./session-store.js";
-import { getCliStorageRoot, getModelIoDir, projectIdFromDirectory } from "./paths.js";
+import { getCliStorageRoot, getModelIoDir, getPluginStorageRoot, projectIdFromDirectory } from "./paths.js";
+import { createPluginRuntimeCatalog } from "./plugin-runtime-catalog.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import {
   readMcpProjectTrustRecords,
@@ -46,6 +47,7 @@ export interface AppEnvironment {
   cliStorageRoot: string;
   modelIoDir: string;
   pluginOutcome: PluginLoadOutcome;
+  pluginCatalog: ReturnType<typeof createPluginRuntimeCatalog>;
   pluginTemplates: PluginTemplates;
   bundledSkillRoots: ReturnType<typeof resolveBundledSkillRoots>;
   sessionStore: SessionStorePort;
@@ -97,6 +99,20 @@ export async function prepareAppEnvironment(
   });
   // 随 CLI 内置的技能包（dynamic-workflows 等）：不属于任何插件，用户无法停用或卸载。
   const bundledSkillRoots = resolveBundledSkillRoots({ cliStorageRoot, logger });
+  const pluginStorageRoot =
+    options.pluginStorageRoot ?? getPluginStorageRoot(cliStorageRoot);
+  const pluginCatalog = createPluginRuntimeCatalog({
+    initial: pluginOutcome,
+    env: options.env,
+    includeVisualize: options.includeVisualize,
+    logger,
+    officialPluginRoots: options.officialPluginRoots,
+    pluginStorageRoot,
+    ...(options.projectConfigPath ? { projectConfigPath: options.projectConfigPath } : {}),
+    ...(options.skipUserConfig === undefined ? { skipUserConfig: options.skipUserConfig } : {}),
+    ...(options.userConfigPath ? { userConfigPath: options.userConfigPath } : {}),
+    workingDirectory,
+  });
   const pluginTemplates = loadPluginAgentTemplates({ logger, plugins: pluginOutcome.plugins });
   const pluginSubagentProfiles =
     hostSubagentSnapshot?.kind === "built-in-fallback"
@@ -201,6 +217,7 @@ export async function prepareAppEnvironment(
     cliStorageRoot,
     modelIoDir,
     pluginOutcome,
+    pluginCatalog,
     pluginTemplates,
     bundledSkillRoots,
     sessionStore,

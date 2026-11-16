@@ -17,15 +17,26 @@ export type LoadAgentDefinitions = (input: {
 export function createTurnAgentDefinitions(
   getInitial: GetAgentDefinitions,
   load?: LoadAgentDefinitions,
+  reload?: LoadAgentDefinitions,
 ) {
   let snapshot: AgentDefinitionsSnapshot | undefined;
+  const apply = async (
+    loader: LoadAgentDefinitions | undefined,
+    input: Parameters<LoadAgentDefinitions>[0],
+  ): Promise<void> => {
+    if (!loader) return;
+    const next = await loader(input);
+    input.signal.throwIfAborted();
+    snapshot = structuredClone(next);
+  };
   return {
     get: (): AgentDefinitionsSnapshot => snapshot ?? getInitial(),
     async prepare(input: Parameters<LoadAgentDefinitions>[0]): Promise<void> {
-      if (!load) return;
-      const next = await load(input);
-      input.signal.throwIfAborted();
-      snapshot = structuredClone(next);
+      await apply(load, input);
+    },
+    /** Явный refresh после subagent-factory/plugin install, не привязанный к turn start. */
+    async reload(input: Parameters<LoadAgentDefinitions>[0]): Promise<void> {
+      await apply(reload, input);
     },
   };
 }

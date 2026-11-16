@@ -66,6 +66,10 @@ import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
+  reloadAgentDefinitions(input: {
+    signal: AbortSignal;
+    traceContext: TraceContext;
+  }): Promise<void>;
   sessionId: SessionId;
   turnNumber: number;
   config: AgentRuntimeConfig;

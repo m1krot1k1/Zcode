@@ -56,6 +56,13 @@ export interface NodeSkillAdapterOptions extends SkillRootResolutionOptions {
   // 被禁用的 SKILL.md 绝对路径集合（来自 config.json 的 skill.<path>.enable=false）。
   // 命中的 skill 在发现阶段直接剔除，使 discover/load/inspect 全链路保持一致。
   disabledPaths?: Iterable<string>;
+  /**
+   * Динамические plugin roots: live plugin install не пересоздаёт adapter,
+   * поэтому discover/load должны видеть текущий набор при каждом вызове.
+   */
+  getExtraResolvedRoots?: () =>
+    | readonly SkillRoot[]
+    | Promise<readonly SkillRoot[]>;
 }
 
 export class NodeSkillAdapter implements SkillPort {
@@ -81,7 +88,18 @@ export class NodeSkillAdapter implements SkillPort {
     throwIfAborted(options);
 
     const workingDirectory = resolve(request.workingDirectory);
-    const roots = request.roots ?? (await resolveDefaultSkillRoots(workingDirectory, this.options));
+    const dynamicRoots = request.roots
+      ? undefined
+      : await this.options.getExtraResolvedRoots?.();
+    const roots =
+      request.roots ??
+      (await resolveDefaultSkillRoots(workingDirectory, {
+        ...this.options,
+        extraResolvedRoots: [
+          ...(this.options.extraResolvedRoots ?? []),
+          ...(dynamicRoots ?? []),
+        ],
+      }));
     const diagnostics: SkillDiagnostic[] = [];
     const selected = new Map<string, SkillMetadata>();
     let totalDiscovered = 0;

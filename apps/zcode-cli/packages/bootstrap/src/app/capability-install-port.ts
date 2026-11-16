@@ -57,6 +57,12 @@ export interface CapabilityInstallPortOptions {
   logger?: Logger;
   mcpPort?: McpPort;
   officialPluginRoots?: string[];
+  /** Live plugin data-plane refresh в текущем runtime. */
+  onPluginInstalled?: () => Promise<{
+    connected: string[];
+    disconnected: string[];
+    failed: Array<{ name: string; error: string }>;
+  }>;
   pluginStorageRoot: string;
   workingDirectory: string;
 }
@@ -158,14 +164,62 @@ export function createCapabilityInstallPort(
         );
       }
       installed.add(key("plugin", match.id));
+      if (!options.onPluginInstalled) {
+        return {
+          kind: "plugin",
+          id: match.id,
+          status: "installed",
+          requiresReload: true,
+          evidence: `Plugin '${match.id}' installed; runtime activation is unavailable, reload required`,
+        };
+      }
+      let activation:
+        | {
+            connected: string[];
+            disconnected: string[];
+            failed: Array<{ name: string; error: string }>;
+          }
+        | undefined;
+      let activationError: string | undefined;
+      if (options.onPluginInstalled) {
+        try {
+          activation = await options.onPluginInstalled();
+        } catch (error) {
+          activationError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      const failed = activation?.failed ?? [];
+      if (activationError) {
+        return {
+          kind: "plugin",
+          id: match.id,
+          status: "installed",
+          requiresReload: true,
+          evidence: `Plugin '${match.id}' installed, but live activation failed: ${activationError}`,
+        };
+      }
+      if (failed.length > 0) {
+        return {
+          kind: "plugin",
+          id: match.id,
+          status: "installed",
+          requiresReload: true,
+          evidence: `Plugin '${match.id}' installed; live activation failed for ${failed
+            .map((entry) => `${entry.name}: ${entry.error}`)
+            .join("; ")}`,
+        };
+      }
+      const activatedMcp = activation?.connected.length
+        ? `connected MCP: ${activation.connected.join(", ")}; `
+        : "";
       return {
         kind: "plugin",
         id: match.id,
         status: "installed",
-        // Плагинные skills/agents/MCP входят в startup-набор runtime; их подхватывает
-        // следующая сессия/перезапуск приложения, а не текущий child.
-        requiresReload: true,
-        evidence: `Plugin '${match.id}' installed; reload the app to activate its components`,
+        // Data-plane (MCP/skills/agents) уже в живом runtime. Hooks/commands/UI
+        // по-прежнему применяются в следующей сессии, но для agent-работы reload не нужен.
+        requiresReload: false,
+        evidence: `Plugin '${match.id}' installed; ${activatedMcp}skills and agent profiles are active without reload`,
       };
     },
   };

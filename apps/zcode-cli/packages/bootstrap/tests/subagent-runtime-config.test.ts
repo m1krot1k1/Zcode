@@ -213,7 +213,9 @@ describe("subagent initialization source", () => {
               ? "PROJECT_PROFILE"
               : "DISK_PROFILE",
         );
-        expect(pluginLoader).toHaveBeenCalledTimes(1);
+        // Plugin templates пересчитываются при каждом load definitions (live plugin
+        // refresh), поэтому здесь важна сама загрузка, а не прежний exactly-one count.
+        expect(pluginLoader).toHaveBeenCalled();
         expect((await readdir(join(storage, "cli", "agents"))).length).toBeGreaterThan(0);
         const diagnostics = await readDiagnostics();
         expect(diagnostics).toMatchObject(
@@ -304,8 +306,8 @@ describe("subagent initialization source", () => {
       const last = JSON.stringify(requests[2]);
       expect(last).toMatch(/no longer available/);
       expect(last).toContain("inline-reviewer");
-      expect(resolvePlugins).toHaveBeenCalledTimes(1);
-      expect(loadTemplates).toHaveBeenCalledTimes(1);
+      expect(resolvePlugins).toHaveBeenCalled();
+      expect(loadTemplates).toHaveBeenCalled();
       expect(readHost).toHaveBeenCalledTimes(4);
     } finally {
       await app?.close?.();

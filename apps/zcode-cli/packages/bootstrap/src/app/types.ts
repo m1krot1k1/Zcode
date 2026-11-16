@@ -415,6 +415,12 @@ export interface ZCodeApp {
   listModels(): ZCodeModelOption[];
   listThoughtLevels(): string[];
   listPlugins(): Promise<PluginLoadOutcome>;
+  /** Перечитать plugin data-plane (MCP/skills/agents) в текущем runtime. */
+  refreshPluginComponents(): Promise<{
+    connected: string[];
+    disconnected: string[];
+    failed: Array<{ name: string; error: string }>;
+  }>;
   setPluginEnabled(plugin: string, enabled: boolean): Promise<ZCodePluginSetResult>;
   uninstallPlugin(plugin: string): Promise<ZCodePluginUninstallResult>;
   /**

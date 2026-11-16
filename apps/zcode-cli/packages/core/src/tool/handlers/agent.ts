@@ -676,6 +676,7 @@ const agentHandler: ToolHandler = async (input, context) => {
     callerCanReadOutputFile: canReadBackgroundOutputFile(context.providerVisibleToolNames),
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...(parsed.requires ? { requiredCapabilities: parsed.requires } : {}),
     trace: {
       traceId: context.traceId,
       spanId: context.spanId,

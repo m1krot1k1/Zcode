@@ -70,10 +70,7 @@ import {
   createSubagentOverrideModelFactory,
   modelSelectionFromActiveModel,
 } from "./model-factory.js";
-import {
-  resolveRuntimeDelegationToolNames,
-  resolveSubagentToolAllowlist,
-} from "./child-tool-policy.js";
+import { includeRequiredMcpTools, resolveRuntimeDelegationToolNames, resolveSubagentToolAllowlist } from "./child-tool-policy.js";
 import {
   isModelVisibleMcpToolName,
   resolveSubagentMcpAccess,
@@ -350,10 +347,11 @@ export function createDefaultSubagentPort(
         childSelection = effortApplied.childSelection;
         childModel = effortApplied.childModel;
         baseChildModelFactory = effortApplied.baseFactory;
+        const visibleMcpToolNames = childMcpAccess.snapshot?.tools.map(toMcpToolName) ?? [];
         const childToolAllowlist = resolveSubagentToolAllowlist.call(
           this,
-          request,
-          childMcpAccess.snapshot?.tools.map((descriptor) => toMcpToolName(descriptor)) ?? [],
+          includeRequiredMcpTools(request, visibleMcpToolNames),
+          visibleMcpToolNames,
           childModel,
         );
         const childMode = resolveSubagentPermissionMode(
@@ -723,6 +721,15 @@ export function createDefaultSubagentPort(
             inputPresentation: "coordinator_input",
             traceContext: request.traceContext,
           });
+          if (request.agentType === "subagent-factory") {
+            await this.reloadAgentDefinitions({
+              signal: options?.signal ?? new AbortController().signal,
+              traceContext: request.traceContext,
+            }).catch((error) => this.logger?.warn("Agent definitions refresh after factory failed", {
+              error: error instanceof Error ? error.message : String(error),
+              event: "subagent.factory.definitions_refresh_failed",
+            }));
+          }
           return {
             ...turnResult,
             ...(childModel.options.reasoningLevel

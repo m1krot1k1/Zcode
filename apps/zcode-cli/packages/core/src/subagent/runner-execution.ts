@@ -118,6 +118,9 @@ export async function runAgentToCompletion(
       ...(childMaxParallel === undefined ? {} : { maxParallel: childMaxParallel }),
       ...(taskSnapshot?.level === undefined ? {} : { level: taskSnapshot.level }),
       ...(request.effort === undefined ? {} : { effort: request.effort }),
+      ...(request.requiredCapabilities === undefined
+        ? {}
+        : { requiredCapabilities: request.requiredCapabilities }),
       ...(request.effortAboveParent === undefined
         ? {}
         : { effortAboveParent: request.effortAboveParent }),

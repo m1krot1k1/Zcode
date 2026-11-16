@@ -367,6 +367,8 @@ export interface AgentRuntimeDeps {
   getAgentDefinitions?: GetAgentDefinitions;
   /** 新父上下文读取一次；子执行不得继承此加载器。 */
   loadAgentDefinitions?: LoadAgentDefinitions;
+  /** Явный refresh definitions после factory/plugin; не выполняется на каждом turn. */
+  reloadAgentDefinitions?: LoadAgentDefinitions;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryCausation?: AgentTelemetryCausation;
   agentTelemetryCausationMode?: "child" | "linked_root";
