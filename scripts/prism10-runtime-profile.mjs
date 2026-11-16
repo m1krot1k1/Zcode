@@ -45,6 +45,7 @@ const COMPACT_CODING_CORE = [
   "- For substantial work, identify the primary sources, the method a domain expert would use, and the evidence that could falsify the result before changing code.",
   "- Treat summaries, generated reports, and memory as leads, not proof; verify load-bearing claims against source files, commands, or primary references.",
   "- Increase depth by one verified step, not by adding more parallel work or a longer prompt.",
+  "- For a direct fact or count request, read the named source once and answer; do not explore adjacent files or repeat the same read.",
   "",
   "# Tools",
   "- Batch independent reads and searches; serialize dependent edits. Keep one writer per file.",

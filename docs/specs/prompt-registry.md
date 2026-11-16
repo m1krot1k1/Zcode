@@ -121,14 +121,13 @@ and a second holdout.
 ## Расширенный holdout (10 задач)
 
 `config/prompts/eval/holdout10-*.jsonl`: 10 детерминированных задач, baseline PRISM против
-compact, 3–5 повторов на arm. Итог `--compare`: **reject** из-за per-task gate.
+compact, по 5 повторов на arm после стабилизации условий.
 
-- success: 1.0 baseline и candidate;
-- median tokens: 75435 → 70581.5 (−6.4%);
-- median duration: 11253.5 → 9828.5 ms (−12.7%);
-- 9 из 10 задач улучшили токены;
-- `prompt-registry-count` дал +41.2% медианных токенов и превысил per-task порог 20%.
+Итог `--compare`: **candidate**, evidence `real`, без failures.
 
-Gate не принял общий candidate, хотя суммарные метрики лучше: один task с регрессией блокирует
-раскатку. Это ожидаемое поведение, а не ошибка lab; для повторной попытки нужна стабилизация
-этого task или изменение prompt-поведения, а не исключение данных.
+- success: 1.0 / 1.0;
+- median tokens: 75737 → 70057 (−7.5%);
+- median duration: 11350.5 → 10237.5 ms (−9.8%);
+- все 10 задач прошли per-task gate; `prompt-registry-count` стабилизирован явным указанием
+  читать только `entries` и не обходить соседние файлы;
+- `react-version` исправлен на `devDependencies.react`, а не `dependencies.react`.

@@ -1,0 +1,65 @@
+# Kilo Code: исключаем из контекста и индексации тяжёлые/сгенерированные артефакты.
+# Синтаксис как в .gitignore. Файл можно расширять по мере необходимости.
+# Исходники (packages/**/src, apps/**/src, docs/, config/provider/*.json) намеренно НЕ игнорируются.
+
+# Зависимости
+node_modules/
+**/node_modules/
+
+# Артефакты сборки и кеши
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+coverage/
+**/coverage/
+.turbo/
+**/.turbo/
+.next/
+**/.next/
+.vite/
+**/.vite/
+*.tsbuildinfo
+.cache/
+**/.cache/
+
+# Лок-файлы (огромные, не нужны в контексте)
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+**/pnpm-lock.yaml
+**/package-lock.json
+
+# Крупные сгенерированные документы и графы
+THIRD-PARTY-NOTICES.md
+dependency-graph.mmd
+.architecture-baseline.json
+
+# Бинарные и медиа-файлы
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.icns
+*.pdf
+*.zip
+*.tar
+*.tar.gz
+*.mp4
+*.webm
+*.woff
+*.woff2
+*.ttf
+*.otf
+
+# Логи, дампы, временные файлы
+*.log
+*.dump
+tmp/
+**/tmp/
+.tmp/
+**/.tmp/
