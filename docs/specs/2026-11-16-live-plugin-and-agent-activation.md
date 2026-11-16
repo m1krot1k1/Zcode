@@ -32,7 +32,11 @@
    применяется со следующего turn; turn-freeze не отменяется.
 7. Hooks, plugin commands и plugin UI по-прежнему применяются в следующей сессии.
    Это security/renderer слой; live-refresh для них не входит в этот change.
-8. Refresh идемпотентен и сериализован: параллельные вызовы делят один refresh
+8. `requires: ["mcp:<server>"]` — это не только preflight. Required server входит в
+   scope child MCP snapshot и его tools добавляются в child allowlist, даже если
+   профиль не объявляет `mcpServers`. Иначе capability проходит gate, но child
+   остаётся без инструмента.
+9. Refresh идемпотентен и сериализован: параллельные вызовы делят один refresh
    promise; ошибка одного компонента не откатывает уже активированные остальные, но
    возвращается в evidence.
 
