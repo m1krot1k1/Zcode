@@ -142,7 +142,10 @@ export function resolveSubagentEffortLevel(
    - иначе если `parentLevel` отсутствует в `supportedLevels` (или его нет) и `delta > 0`
      и `effortAboveParent !== true` → `targetIndex = anchorIndex`, `outcome: "elevation-denied"`;
    - иначе `outcome: "applied"`.
-9. Результат: `supportedLevels[targetIndex]`.
+9. Если `targetIndex` указывает на `disabled/off/none`, заменить его ближайшим рабочим
+   уровнем (сначала вниз, затем вверх). Поэтому `lower` с `enabled` на шкале
+   `disabled/enabled` остаётся `enabled`, а не выключает thinking.
+10. Результат: `supportedLevels[targetIndex]`.
 
 `baseLevel` берётся из уже разрешённой child selection. Если level пришёл из явного profile
 override, он к этому моменту уже провалидирован `resolveSubagentSelection`/`resolveEffectiveModelSelection`

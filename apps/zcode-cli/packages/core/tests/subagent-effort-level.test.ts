@@ -16,6 +16,24 @@ function resolve(
 }
 
 describe("resolveSubagentEffortLevel", () => {
+  it("never lowers into a disabled level on a sparse enabled/disabled scale", () => {
+    const sparse = ["disabled", "enabled"] as const;
+    expect(
+      resolveSubagentEffortLevel({
+        effort: "lower",
+        supportedLevels: sparse,
+        baseLevel: "enabled",
+        parentLevel: "enabled",
+      }),
+    ).toEqual({ level: "enabled", outcome: "applied" });
+    expect(
+      resolveSubagentEffortLevel({
+        effort: "lowest",
+        supportedLevels: sparse,
+      }),
+    ).toEqual({ level: "enabled", outcome: "applied" });
+  });
+
   it("selects the lowest working level and skips disabled", () => {
     expect(
       resolve({
@@ -213,7 +231,7 @@ describe("resolveSubagentEffortLevel", () => {
 
   it("clamps at the bottom and top of the scale", () => {
     expect(resolve({ effort: "lower", baseLevel: "disabled", parentLevel: "max" })).toMatchObject({
-      level: "disabled",
+      level: "low",
       outcome: "applied",
     });
     expect(

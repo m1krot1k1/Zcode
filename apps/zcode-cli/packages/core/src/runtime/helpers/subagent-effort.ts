@@ -47,6 +47,24 @@ const EFFORT_DELTA: Readonly<Record<Exclude<SubagentEffortClass, "lowest">, numb
 
 const DISABLED_LEVEL = /^(?:disabled|off|none|no|false|nothink|no[-_]?think)$/iu;
 
+function isWorkingLevel(level: string | undefined): level is string {
+  return typeof level === "string" && level.trim().length > 0 && !DISABLED_LEVEL.test(level.trim());
+}
+
+/** Ближайший рабочий уровень: сначала вниз, затем вверх от целевого индекса. */
+function nearestWorkingIndex(
+  supportedLevels: readonly string[],
+  targetIndex: number,
+): number | undefined {
+  for (let index = targetIndex; index >= 0; index -= 1) {
+    if (isWorkingLevel(supportedLevels[index])) return index;
+  }
+  for (let index = targetIndex + 1; index < supportedLevels.length; index += 1) {
+    if (isWorkingLevel(supportedLevels[index])) return index;
+  }
+  return undefined;
+}
+
 function isSubagentEffortClass(value: string): value is SubagentEffortClass {
   return value === "lowest" || value === "lower" || value === "same" || value === "higher";
 }
@@ -84,9 +102,7 @@ export function resolveSubagentEffortLevel(
     // lowest нужен для разреженных шкал (disabled/low/high/max): lower с max
     // попадает только в high, а механическая ветка должна дойти до low.
     // disabled/off не являются рабочим уровнем и не выбираются.
-    const lowestWorkingLevel = supportedLevels.find(
-      (level) => level.trim().length > 0 && !DISABLED_LEVEL.test(level.trim()),
-    );
+    const lowestWorkingLevel = supportedLevels.find((level) => isWorkingLevel(level));
     return lowestWorkingLevel
       ? { level: lowestWorkingLevel, outcome: "applied" }
       : { outcome: "no-supported-levels" };
@@ -134,6 +150,14 @@ export function resolveSubagentEffortLevel(
       outcome = "clamped";
     }
   }
+
+  // lower с рабочего enabled на шкале disabled/enabled не должен выключать thinking.
+  // Любой нерабочий target заменяется ближайшим рабочим уровнем.
+  const workingIndex = nearestWorkingIndex(supportedLevels, targetIndex);
+  if (workingIndex === undefined) {
+    return { outcome: "no-supported-levels" };
+  }
+  targetIndex = workingIndex;
 
   return {
     level: supportedLevels[targetIndex],
