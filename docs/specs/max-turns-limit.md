@@ -69,6 +69,16 @@
   из профиля/`subagents.maxTurns`. Deadline роли (`subagentTaskTimeoutMinutes`) и `maxTurns`
   независимы; побеждает то ограничение, которое наступило первым, и оно пишет свой terminal-факт
   через существующий finalizer.
+- Встроенные роли задают `maxTurns` явно: start 12, orchestrator 60, researcher/debugger 40,
+  implementer/coder/frontend/backend/infra 50, reviewer/security/evaluator/self-improver 25,
+  test-engineer 30, knowledge-curator/subagent-factory 20. Это не token budget и не deadline,
+  а предсказуемая граница model steps; custom-профиль может переопределить значение.
+- За 5 шагов до лимита turn loop один раз добавляет provider-visible reminder
+  (`model_anomaly`): прекратить расширение scope, синтезировать собранное и вернуть partial
+  handoff с evidence и unresolved. Напоминание не меняет terminal-семантику `error_max_turns`.
+- Отдельно действует мягкий `modelAnomalyGuard.toolCallWarningThreshold = 60`: после 60 tool
+  calls turn получает reminder синтезировать результат, но не прерывается. Это ориентир, а не
+  жёсткий лимит и не замена `maxTurns`.
 - Если настройка задана некорректно (0, отрицательное, дробное, NaN), runtime не превращает её
   в лимит: такое значение отклоняется парсером фронтматтера/настроек, а runtime трактует
   невалидное значение как отсутствие лимита. Тихий fallback к фиксированному числу запрещён.
@@ -177,6 +187,8 @@
 | MAXTURN-09 | Пустой length-шаг на границе лимита: turn 1 success, turn 2 заканчивается пустым `finish: "length"` и maxTurns | Шаг turn 2 откатывается (нет assistant-сообщения), маркер получает технический якорь turn 2; assistant turn 1 остаётся без `metadata.turnResult`. Cold hydrate даёт `success` для turn 1 и `error_max_turns` для turn 2. |
 | MAXTURN-10 | Граница лимита после tool-only шагов                                                                           | Маркер пишется на последний assistant именно этого turn (turnId совпадает); assistant предыдущего turn не маркируется; cold hydrate сохраняет прежний результат предыдущего turn.                                        |
 | MAXTURN-11 | Телеметрия ограниченного turn                                                                                  | `upsertTurnUsage` получает `status: "error"` и `errorType: "error_max_turns"`; лог ограничения — `turn.max_turns.completed` со `status: "failed"`; `turn.completed`/`status: "completed"` для такого turn не пишутся.    |
+| MAXTURN-12 | Встроенный профиль без `maxTurns` в исходном объекте                                                           | Каталог отдаёт явный ролевой дефолт; `researcher=40`, `reviewer=25`, значения положительные у всех 16 ролей.                                                                                                             |
+| MAXTURN-13 | До лимита осталось 5 шагов                                                                                     | Ровно один reminder просит синтезировать результат и вернуть partial handoff; повторно reminder не добавляется, terminal остаётся прежним.                                                                               |
 
 ## Проверки
 

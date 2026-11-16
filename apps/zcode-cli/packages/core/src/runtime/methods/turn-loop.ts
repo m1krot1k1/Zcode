@@ -17,6 +17,7 @@ import {
   buildRuntimeProviderRequestMessages,
   prepareRuntimeProviderRequest,
   createCompactRapidRefillError,
+  resolveMaxTurnsWrapUpReminder,
   throwIfTurnAborted,
   shouldBuildTodoReminder,
 } from "../helpers/index.js";
@@ -219,6 +220,19 @@ export async function runRegularTurnLoop(
       commitTurnRequestEntries(this, state.turnRequestState, [
         systemReminderAttachmentEntry("runtime_mode", runtimeModeReminderBody),
       ]);
+    }
+    if (!outputTokenRecoveryActive) {
+      const wrapUpReminder = resolveMaxTurnsWrapUpReminder({
+        modelStepCount: state.modelStepCount,
+        maxTurns: maxTurnsLimit,
+        alreadyInjected: state.maxTurnsWrapUpReminderInjected,
+      });
+      if (wrapUpReminder) {
+        state.maxTurnsWrapUpReminderInjected = true;
+        commitTurnRequestEntries(this, state.turnRequestState, [
+          systemReminderAttachmentEntry("model_anomaly", wrapUpReminder),
+        ]);
+      }
     }
     if (
       !outputTokenRecoveryActive &&

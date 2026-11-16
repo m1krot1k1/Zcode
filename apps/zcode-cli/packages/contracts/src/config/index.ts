@@ -390,6 +390,9 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
   modelAnomalyGuard: {
     maxBudgetWarningsPerTurn: 3,
     repeatedToolCallWarningThreshold: 3,
+    // Мягкий ориентир для длинных веток: не останавливает turn, а напоминает
+    // синтезировать собранное вместо бесконечного расширения исследования.
+    toolCallWarningThreshold: 60,
   },
   hooks: {
     enabled: false,

@@ -9,6 +9,47 @@ import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
+import { resolveMaxTurnsWrapUpReminder } from "../src/runtime/helpers/model-anomaly.js";
+
+describe("maxTurns wrap-up reminder", () => {
+  it("appears only inside the final margin and only once", () => {
+    expect(
+      resolveMaxTurnsWrapUpReminder({
+        modelStepCount: 30,
+        maxTurns: 40,
+        alreadyInjected: false,
+      }),
+    ).toBeUndefined();
+
+    const reminder = resolveMaxTurnsWrapUpReminder({
+      modelStepCount: 35,
+      maxTurns: 40,
+      alreadyInjected: false,
+    });
+    expect(reminder).toContain("Only 5 model steps remain");
+    expect(reminder).toContain("partial");
+
+    expect(
+      resolveMaxTurnsWrapUpReminder({
+        modelStepCount: 36,
+        maxTurns: 40,
+        alreadyInjected: true,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("is inert without a valid explicit maxTurns", () => {
+    for (const maxTurns of [undefined, 0, -1, Number.NaN]) {
+      expect(
+        resolveMaxTurnsWrapUpReminder({
+          modelStepCount: 0,
+          maxTurns,
+          alreadyInjected: false,
+        }),
+      ).toBeUndefined();
+    }
+  });
+});
 
 describe("AgentRuntime model anomaly guards", () => {
   it("passes model capability through on main model requests", async () => {

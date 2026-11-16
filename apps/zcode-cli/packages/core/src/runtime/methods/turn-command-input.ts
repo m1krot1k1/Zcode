@@ -378,6 +378,7 @@ export function createTurnLoopState(
         }
       : {}),
     modelStepCount: 0,
+    maxTurnsWrapUpReminderInjected: false,
     historyRoundCount: 0,
     reactiveCompactAttemptedInCurrentModelStep: false,
     repeatedToolCallSignature: undefined,

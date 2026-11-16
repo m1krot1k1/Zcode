@@ -261,7 +261,7 @@ export function createSubagentFactorySystemPrompt(): string {
   ].join("\n");
 }
 
-export const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
+const baseBuiltInSwarmProfiles: readonly AgentProfile[] = [
   {
     name: "start",
     description:
@@ -690,6 +690,37 @@ export const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = [
     skills: ["*", "zcode-verification", "zcode-swarm", "anti-loop", "reference-first"],
   },
 ];
+
+// Дефолтные границы шагов для встроенных ролей. Это не token budget: maxTurns
+// считается по model steps и завершается предсказуемым error_max_turns. Значения
+// выбраны под длинные audit-ветки: исследование/кодирование получают запас, а
+// review/factory-роли не могут бесконечно расширять scope. Пользовательский профиль
+// в .zcode/agents может задать свой maxTurns и переопределить дефолт.
+const BUILT_IN_MAX_TURNS: Record<(typeof SWARM_AGENT_TYPES)[number], number> = {
+  start: 12,
+  orchestrator: 60,
+  researcher: 40,
+  debugger: 40,
+  implementer: 50,
+  coder: 50,
+  "frontend-coder": 50,
+  "backend-coder": 50,
+  "infra-coder": 50,
+  reviewer: 25,
+  "security-reviewer": 25,
+  "test-engineer": 30,
+  evaluator: 25,
+  "self-improver": 25,
+  "knowledge-curator": 20,
+  "subagent-factory": 20,
+};
+
+export const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = baseBuiltInSwarmProfiles.map(
+  (profile) => ({
+    ...profile,
+    maxTurns: profile.maxTurns ?? BUILT_IN_MAX_TURNS[profile.name as keyof typeof BUILT_IN_MAX_TURNS],
+  }),
+);
 
 // 修复依据：同名 custom-профиль подменял системный prompt/tools встроенной роли,
 // из-за чего каталог и Swarm-контракт зависели от пользовательского файла.

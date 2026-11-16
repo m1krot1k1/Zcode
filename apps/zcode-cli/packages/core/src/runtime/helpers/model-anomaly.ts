@@ -108,6 +108,35 @@ export function buildToolCallBudgetReminderBody(observedCount: number): string {
   ].join("\n");
 }
 
+/**
+ * Мягкое предупреждение перед жёстким maxTurns. Без него модель узнаёт о лимите
+ * только когда runtime уже прекращает turn, и не успевает собрать partial-handoff.
+ * Функция чистая: turn loop сам решает, когда и один ли раз инжектить reminder.
+ */
+export function resolveMaxTurnsWrapUpReminder(input: {
+  modelStepCount: number;
+  maxTurns: number | undefined;
+  alreadyInjected: boolean;
+  margin?: number;
+}): string | undefined {
+  if (input.alreadyInjected) return undefined;
+  if (
+    input.maxTurns === undefined ||
+    !Number.isSafeInteger(input.maxTurns) ||
+    input.maxTurns <= 0
+  ) {
+    return undefined;
+  }
+  const margin = Math.max(1, Math.floor(input.margin ?? 5));
+  const remaining = input.maxTurns - input.modelStepCount;
+  if (remaining <= 0 || remaining > margin) return undefined;
+  return [
+    `Only ${remaining} model step${remaining === 1 ? "" : "s"} remain before the hard turn limit (${input.maxTurns}).`,
+    "Stop expanding scope or starting new branches. Synthesize the evidence already gathered, finish the current verification, and return a concise handoff with completed work, evidence, unresolved items, and the next owner/action.",
+    "If the work is incomplete, return partial with the reason instead of spending the remaining steps on another broad exploration.",
+  ].join("\n");
+}
+
 function buildRepeatedToolCallSignature(toolName: string, input: unknown): string {
   return `${JSON.stringify(toolName)}:${stableJson(input)}`;
 }

@@ -156,6 +156,8 @@ export interface RegularTurnLoopState {
   /** Core Server 的前台 child Selection override；优先于 profile 与父模型继承。 */
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   modelStepCount: number;
+  /** Предупреждение о приближении maxTurns инжектится один раз за turn. */
+  maxTurnsWrapUpReminderInjected: boolean;
   /** 当前 query 已成功写入 provider 可见持久历史的 assistant/compact 产物数量。 */
   historyRoundCount: number;
   completedRealToolResultBatch: boolean;

@@ -20,6 +20,17 @@ import {
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
+  it("built-in roles have bounded maxTurns by default", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    for (const name of SWARM_AGENT_TYPES) {
+      const profile = profiles.find((candidate) => candidate.name === name);
+      expect(profile?.maxTurns, name).toBeTypeOf("number");
+      expect(profile?.maxTurns ?? 0, name).toBeGreaterThan(0);
+    }
+    expect(profiles.find((profile) => profile.name === "researcher")?.maxTurns).toBe(40);
+    expect(profiles.find((profile) => profile.name === "reviewer")?.maxTurns).toBe(25);
+  });
+
   it.each(['{"providerId":"wrong","modelId":"wrong"}', "null", '{"modelId":"broken"}'])(
     "中间字段不参与正式 Markdown 读取：%s",
     (value) => {
