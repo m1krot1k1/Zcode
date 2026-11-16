@@ -262,6 +262,23 @@ export function createSubagentFactorySystemPrompt(): string {
   ].join("\n");
 }
 
+const ROLE_EVIDENCE_LINES: Readonly<Record<string, string>> = {
+  researcher: "Evidence: cite path:line or command output for every fact; mark hypotheses and gaps explicitly.",
+  debugger: "Evidence: reproduce first; report the failing check, root cause, minimal fix, and regression proof.",
+  implementer: "Evidence: follow existing patterns; include the focused test or command that proves the change and residual risk.",
+  coder: "Evidence: preserve existing patterns; include the focused test or command that proves the production change.",
+  "frontend-coder": "Evidence: verify desktop and narrow layouts, theme, keyboard, and i18n; attach the actual check.",
+  "backend-coder": "Evidence: verify state ownership, idempotency, concurrency, and the targeted integration test.",
+  "infra-coder": "Evidence: verify the build/release path and cross-platform behavior; attach command output.",
+  reviewer: "Evidence: every finding needs path:line, impact, and a concrete failure scenario; omit style-only nits.",
+  "security-reviewer": "Evidence: prove the attack path or secret exposure; include severity, boundary, and remediation check.",
+  "test-engineer": "Evidence: show the failing test before the fix and green after; do not substitute broad suites for targeted proof.",
+  evaluator: "Evidence: compare baseline and candidate on identical checks; report regressions and confidence.",
+  "self-improver": "Evidence: state the hypothesis, reversible change, measured result, and rollback condition.",
+  "knowledge-curator": "Evidence: store only verified reusable lessons with a source; omit transient details.",
+  "subagent-factory": "Evidence: validate the new profile on a real task and its allowed tools/skills before recommending it.",
+};
+
 const baseBuiltInSwarmProfiles: readonly AgentProfile[] = [
   {
     name: "start",
@@ -716,10 +733,15 @@ const BUILT_IN_MAX_TURNS: Record<(typeof SWARM_AGENT_TYPES)[number], number> = {
 };
 
 export const BUILT_IN_SWARM_PROFILES: readonly AgentProfile[] = baseBuiltInSwarmProfiles.map(
-  (profile) => ({
-    ...profile,
-    maxTurns: profile.maxTurns ?? BUILT_IN_MAX_TURNS[profile.name as keyof typeof BUILT_IN_MAX_TURNS],
-  }),
+  (profile) => {
+    const evidenceLine = ROLE_EVIDENCE_LINES[profile.name];
+    return {
+      ...profile,
+      systemPrompt: evidenceLine ? `${profile.systemPrompt}\n${evidenceLine}` : profile.systemPrompt,
+      maxTurns:
+        profile.maxTurns ?? BUILT_IN_MAX_TURNS[profile.name as keyof typeof BUILT_IN_MAX_TURNS],
+    };
+  },
 );
 
 // 修复依据：同名 custom-профиль подменял системный prompt/tools встроенной роли,

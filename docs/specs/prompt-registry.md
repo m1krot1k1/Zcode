@@ -126,8 +126,10 @@ compact, по 5 повторов на arm после стабилизации у
 Итог `--compare`: **candidate**, evidence `real`, без failures.
 
 - success: 1.0 / 1.0;
-- median tokens: 75737 → 70057 (−7.5%);
-- median duration: 11350.5 → 10237.5 ms (−9.8%);
+- median tokens: 75737 → 70298 (−7.2%);
+- median duration: 11350.5 → 9896 ms (−12.8%);
 - все 10 задач прошли per-task gate; `prompt-registry-count` стабилизирован явным указанием
   читать только `entries` и не обходить соседние файлы;
 - `react-version` исправлен на `devDependencies.react`, а не `dependencies.react`.
+
+14 рабочих ролей получили роль-специфичный `Evidence:` контракт; start/orchestrator сохранили общий контракт и бюджеты.

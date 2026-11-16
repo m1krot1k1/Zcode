@@ -20,6 +20,16 @@ import {
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
+  it("gives every working role a role-specific evidence contract", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    const working = profiles.filter((profile) => profile.name !== "start" && profile.name !== "orchestrator");
+    expect(working).toHaveLength(14);
+    for (const profile of working) {
+      expect(profile.systemPrompt, profile.name).toContain("Evidence:");
+      expect(profile.systemPrompt.length, profile.name).toBeLessThanOrEqual(7_500);
+    }
+  });
+
   it("keeps role prompts within the slim budget", () => {
     const profiles = getSwarmAgentProfiles([]);
     for (const profile of profiles) {

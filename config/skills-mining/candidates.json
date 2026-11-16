@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-16T17:22:34.844Z",
+  "generatedAt": "2026-11-16T17:51:09.208Z",
   "source": "config/prompts/eval/holdout*.jsonl",
   "candidates": [
     {
@@ -14,92 +14,92 @@
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     },
     {
-      "taskId": "typecheck-command",
-      "baselineMedianTokens": 74891,
-      "candidateMedianTokens": 68403,
-      "tokenDeltaPct": -8.7,
-      "baselineMedianDurationMs": 11548,
-      "candidateMedianDurationMs": 10056,
-      "approval": "required",
-      "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
-    },
-    {
       "taskId": "completion-rule",
       "baselineMedianTokens": 75477,
-      "candidateMedianTokens": 69696,
-      "tokenDeltaPct": -7.7,
+      "candidateMedianTokens": 69419,
+      "tokenDeltaPct": -8,
       "baselineMedianDurationMs": 11837,
-      "candidateMedianDurationMs": 11360,
-      "approval": "required",
-      "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
-    },
-    {
-      "taskId": "node-version",
-      "baselineMedianTokens": 73276,
-      "candidateMedianTokens": 68426,
-      "tokenDeltaPct": -6.6,
-      "baselineMedianDurationMs": 10872,
-      "candidateMedianDurationMs": 10247,
-      "approval": "required",
-      "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
-    },
-    {
-      "taskId": "prompt-registry-count",
-      "baselineMedianTokens": 73559,
-      "candidateMedianTokens": 68841,
-      "tokenDeltaPct": -6.4,
-      "baselineMedianDurationMs": 12786,
-      "candidateMedianDurationMs": 10294,
+      "candidateMedianDurationMs": 10520,
       "approval": "required",
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     },
     {
       "taskId": "context-ledger-path",
       "baselineMedianTokens": 73500,
-      "candidateMedianTokens": 68838,
-      "tokenDeltaPct": -6.3,
+      "candidateMedianTokens": 68506,
+      "tokenDeltaPct": -6.8,
       "baselineMedianDurationMs": 13463,
-      "candidateMedianDurationMs": 11018,
+      "candidateMedianDurationMs": 8807,
       "approval": "required",
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     },
     {
-      "taskId": "license",
-      "baselineMedianTokens": 76054,
-      "candidateMedianTokens": 71313,
-      "tokenDeltaPct": -6.2,
-      "baselineMedianDurationMs": 10946,
-      "candidateMedianDurationMs": 9062,
+      "taskId": "node-version",
+      "baselineMedianTokens": 73276,
+      "candidateMedianTokens": 68484,
+      "tokenDeltaPct": -6.5,
+      "baselineMedianDurationMs": 10872,
+      "candidateMedianDurationMs": 9169,
+      "approval": "required",
+      "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
+    },
+    {
+      "taskId": "package-version",
+      "baselineMedianTokens": 76205,
+      "candidateMedianTokens": 71519,
+      "tokenDeltaPct": -6.1,
+      "baselineMedianDurationMs": 10257,
+      "candidateMedianDurationMs": 9924,
+      "approval": "required",
+      "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
+    },
+    {
+      "taskId": "prompt-registry-count",
+      "baselineMedianTokens": 73559,
+      "candidateMedianTokens": 69107,
+      "tokenDeltaPct": -6.1,
+      "baselineMedianDurationMs": 12786,
+      "candidateMedianDurationMs": 12543,
       "approval": "required",
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     },
     {
       "taskId": "typescript-version",
       "baselineMedianTokens": 76458,
-      "candidateMedianTokens": 71704,
-      "tokenDeltaPct": -6.2,
+      "candidateMedianTokens": 71760,
+      "tokenDeltaPct": -6.1,
       "baselineMedianDurationMs": 11153,
-      "candidateMedianDurationMs": 9960,
+      "candidateMedianDurationMs": 9868,
+      "approval": "required",
+      "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
+    },
+    {
+      "taskId": "license",
+      "baselineMedianTokens": 76054,
+      "candidateMedianTokens": 71507,
+      "tokenDeltaPct": -6,
+      "baselineMedianDurationMs": 10946,
+      "candidateMedianDurationMs": 9537,
       "approval": "required",
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     },
     {
       "taskId": "package-manager",
       "baselineMedianTokens": 75997,
-      "candidateMedianTokens": 71393,
-      "tokenDeltaPct": -6.1,
+      "candidateMedianTokens": 71441,
+      "tokenDeltaPct": -6,
       "baselineMedianDurationMs": 9341,
-      "candidateMedianDurationMs": 10228,
+      "candidateMedianDurationMs": 12206,
       "approval": "required",
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     },
     {
-      "taskId": "package-version",
-      "baselineMedianTokens": 76048,
-      "candidateMedianTokens": 71415,
-      "tokenDeltaPct": -6.1,
-      "baselineMedianDurationMs": 9416,
-      "candidateMedianDurationMs": 9504,
+      "taskId": "typecheck-command",
+      "baselineMedianTokens": 74891,
+      "candidateMedianTokens": 70656,
+      "tokenDeltaPct": -5.7,
+      "baselineMedianDurationMs": 11548,
+      "candidateMedianDurationMs": 9690,
       "approval": "required",
       "nextStep": "Distill the winning trajectory into a skill only after human review and a second holdout."
     }
