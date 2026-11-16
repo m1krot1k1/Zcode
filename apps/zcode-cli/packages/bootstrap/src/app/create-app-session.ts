@@ -2,6 +2,7 @@ import { createInMemorySessionEventStore } from "@zcode/adapters/storage";
 import { createNodeContextSourceAdapter } from "@zcode/adapters/context";
 import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   AgentRuntime,
   buildPluginReferenceCatalog,
@@ -378,8 +379,19 @@ export function prepareAppSession(
     pluginRefreshPromise = (async () => {
       const previous = pluginCatalog.current();
       const next = await pluginCatalog.refresh();
+      // Переподключаем только delta. Ранее уже failed plugin server (например,
+      // image-search без official trust registry) не должен превращать установку
+      // другого плагина в requiresReload.
+      const connectMcpServers = Object.fromEntries(
+        Object.entries(next.mcpServers).filter(
+          ([name, config]) =>
+            previous.mcpServers[name] === undefined ||
+            !isDeepStrictEqual(previous.mcpServers[name], config),
+        ),
+      );
       return await getRuntime().applyPluginRuntime({
         mcpServers: next.mcpServers,
+        connectMcpServers,
         previousPluginMcpServerNames: Object.keys(previous.mcpServers),
         preservedMcpServerNames: Object.keys(configResult.config.mcp?.servers ?? {}),
         pluginReferenceCatalog: buildPluginReferenceCatalog(next.plugins),
