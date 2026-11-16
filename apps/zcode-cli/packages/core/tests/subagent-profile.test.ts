@@ -20,6 +20,16 @@ import {
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
+  it("keeps role prompts within the slim budget", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    for (const profile of profiles) {
+      expect(profile.systemPrompt.length, profile.name).toBeLessThanOrEqual(7_500);
+    }
+    expect(profiles.find((profile) => profile.name === "start")?.systemPrompt.length).toBeLessThanOrEqual(
+      7_000,
+    );
+  });
+
   it("routes deep tasks through the deep-task-contract skill and structured handoff", () => {
     const profiles = getSwarmAgentProfiles([]);
     for (const name of ["start", "orchestrator"]) {
@@ -459,8 +469,8 @@ tools:
     const orchestratorPrompt =
       swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
     expect(orchestratorPrompt).toContain(
-      "Не создавай дублирующие или пересекающиеся по файлам ветки",
-    );    expect(orchestratorPrompt).toContain("сопоставь каждый запрос пользователя");
+      "не создавай пересекающиеся ветки",
+    );    expect(orchestratorPrompt).toContain("После join сопоставь запрос");
     expect(orchestratorPrompt).toContain("не предоставляет");
     expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
       "zcode-systematic-debugging",
@@ -744,12 +754,12 @@ Review carefully.`,
       const start = profiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
       const orchestrator = profiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
 
-      expect(start).toContain("ты не исполняешь её сам");
+      expect(start).toContain("не исполняешь её сам");
       expect(start).toContain("implementer");
       expect(start).toContain("orchestrator");
       expect(start).toContain("Если Task недоступен");
-      expect(orchestrator).toContain("Ты не исполнитель");
-      expect(orchestrator).toContain("не реализуй ветки сам");
+      expect(orchestrator).toContain("не исследуй и не исполняй сам");
+      expect(orchestrator).toContain("зафиксируй причину");
     });
 
     it("states the single available tool and the L1-L4 nesting chain in the system prompt", () => {
@@ -780,9 +790,9 @@ Review carefully.`,
       expect(prompt).not.toContain("Небольшой самостоятельный запрос обработай кратко");
       expect(prompt).toContain("Тривиальна только светская реплика без задачи");
       expect(prompt).toContain(
-        "Любая задача, требующая изменения файлов, запуска команд, тестов или сбора доказательств",
+        "Любая задача с файлами, командами, тестами или evidence",
       );
-      expect(prompt).toContain("ты не исполняешь её сам");
+      expect(prompt).toContain("не исполняешь её сам");
     });
   });
 });
@@ -946,8 +956,8 @@ describe("specialized worker roster", () => {
     const prompt = profile("start")?.systemPrompt ?? "";
 
     expect(prompt).toContain('Task(subagent_type: "orchestrator")');
-    expect(prompt).toContain("запускает orchestrator");
-    expect(prompt).toContain("не запускаешь worker-роли напрямую");
+    expect(prompt).toContain("Твой единственный маршрут");
+    expect(prompt).toContain("Task(subagent_type: \"orchestrator\")");
     expect(prompt).toContain("не передаёт task_graph");
     expect(prompt).toContain("следующий wave");
     expect(prompt).toContain("накопленным контекстом");
@@ -962,7 +972,7 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("не вызывай Task(orchestrator)");
     expect(prompt).toContain("Планируй для каждой ветки конечный проверяемый объём");
     expect(prompt).toContain("не задавай искусственный тайм-бюджет или deadline");
-    expect(prompt).toContain("Runtime ограничивает одновременно активные ветки доступной ёмкостью хоста и провайдера");
+    expect(prompt).toContain("Планируй волнами по доступной ёмкости хоста и провайдера");
     expect(prompt).not.toContain("15 минут своего hard deadline");
     expect(prompt).toContain("следующий wave");
     expect(prompt).toContain("накопленным контекстом");
@@ -974,13 +984,13 @@ describe("specialized worker roster", () => {
   it("plans useful fan-out without a total task-count budget", () => {
     const prompt = profile("orchestrator")?.systemPrompt ?? "";
 
-    expect(prompt).toContain("доступной ёмкостью хоста и провайдера, а не суммарным числом задач");
-    expect(prompt).toContain("выбирай debugger");
-    expect(prompt).toContain("с именами и описаниями установленных Skills из system-reminder");
-    expect(prompt).toContain("Планируй все полезные независимые ветки волнами");
-    expect(prompt).toContain("следующую волну после join");
+    expect(prompt).toContain("доступной ёмкости хоста и провайдера");
+    expect(prompt).toContain("debugger — дефект");
+    expect(prompt).toContain("Сопоставь имена/описания с задачей");
+    expect(prompt).toContain("Планируй волнами");
+    expect(prompt).toContain("После join");
     expect(prompt).toContain("subagent-factory");
-    expect(prompt).toContain("не дроби один deliverable на несколько агентов ради количества");
+    expect(prompt).toContain("Не дроби deliverable");
     expect(prompt).not.toContain("remaining_spawns");
     expect(prompt).not.toContain("5–8 действительно независимых областей");
   });
@@ -1203,7 +1213,7 @@ describe("built-in role capability matrix", () => {
       builtInProfiles().find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
 
     expect(prompt).toContain("Твой единственный инструмент — Task");
-    expect(prompt).toContain("Read, Glob, Grep, Skill, Write, Edit и Bash недоступны");
+    expect(prompt).toContain("Read/Glob/Grep/Skill/Write/Edit/Bash недоступны");
   });
 });
 

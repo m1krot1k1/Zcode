@@ -7,8 +7,10 @@
  *   node scripts/prompt-registry.mjs --check [--strict] [--json]
  *   node scripts/prompt-registry.mjs --report
  */
-import { readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -139,6 +141,151 @@ export async function checkRegistry(registry, root = REPO_ROOT) {
   };
 }
 
+export function parseEvalRecords(text) {
+  const records = [];
+  for (const [index, line] of text.split(/\r?\n/u).entries()) {
+    if (line.trim().length === 0) continue;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      fail(`eval line ${index + 1}: invalid JSON`);
+    }
+    if (typeof record.taskId !== "string" || record.taskId.trim().length === 0) {
+      fail(`eval line ${index + 1}: taskId must be a non-empty string`);
+    }
+    if (record.arm !== "baseline" && record.arm !== "candidate") {
+      fail(`eval line ${index + 1}: arm must be baseline or candidate`);
+    }
+    if (!Number.isInteger(record.run) || record.run < 1) {
+      fail(`eval line ${index + 1}: run must be a positive integer`);
+    }
+    if (typeof record.success !== "boolean")
+      fail(`eval line ${index + 1}: success must be boolean`);
+    for (const field of ["tokens", "cacheReadTokens", "durationMs"]) {
+      if (!Number.isFinite(record[field]) || record[field] < 0) {
+        fail(`eval line ${index + 1}: ${field} must be a non-negative number`);
+      }
+    }
+    if (
+      record.quality !== undefined &&
+      (!Number.isFinite(record.quality) || record.quality < 0 || record.quality > 1)
+    ) {
+      fail(`eval line ${index + 1}: quality must be between 0 and 1`);
+    }
+    if (
+      record.criticalRegressions !== undefined &&
+      (!Number.isInteger(record.criticalRegressions) || record.criticalRegressions < 0)
+    ) {
+      fail(`eval line ${index + 1}: criticalRegressions must be a non-negative integer`);
+    }
+    records.push({
+      ...record,
+      holdout: record.holdout === true,
+      synthetic: record.synthetic === true,
+    });
+  }
+  return records;
+}
+
+function median(values) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+export function compareEvalRecords(baselineText, candidateText) {
+  const all = [...parseEvalRecords(baselineText), ...parseEvalRecords(candidateText)];
+  const byTask = new Map();
+  for (const record of all) {
+    const task = byTask.get(record.taskId) ?? { baseline: [], candidate: [] };
+    task[record.arm].push(record);
+    byTask.set(record.taskId, task);
+  }
+  const failures = [];
+  const tasks = [];
+  for (const [taskId, arms] of byTask) {
+    if (arms.baseline.length === 0 || arms.candidate.length === 0) {
+      failures.push(`${taskId}: both baseline and candidate records are required`);
+      continue;
+    }
+    if (arms.baseline.length < 3 || arms.candidate.length < 3) {
+      failures.push(`${taskId}: at least 3 runs per arm are required`);
+    }
+    const summarize = (records) => ({
+      runs: records.length,
+      successRate: records.filter((record) => record.success).length / records.length,
+      medianTokens: median(records.map((record) => record.tokens)),
+      medianCacheReadTokens: median(records.map((record) => record.cacheReadTokens)),
+      medianDurationMs: median(records.map((record) => record.durationMs)),
+      meanQuality: records.every((record) => record.quality === undefined)
+        ? undefined
+        : records.reduce((sum, record) => sum + (record.quality ?? 0), 0) / records.length,
+      criticalRegressions: records.reduce(
+        (sum, record) => sum + (record.criticalRegressions ?? 0),
+        0,
+      ),
+      holdout: records.some((record) => record.holdout),
+      synthetic: records.every((record) => record.synthetic),
+    });
+    const baseline = summarize(arms.baseline);
+    const candidate = summarize(arms.candidate);
+    const reasons = [];
+    if (candidate.successRate < baseline.successRate) {
+      reasons.push("candidate success rate is lower");
+    }
+    if (candidate.criticalRegressions > baseline.criticalRegressions) {
+      reasons.push("candidate has more critical regressions");
+    }
+    if (candidate.medianDurationMs > baseline.medianDurationMs * 1.5) {
+      reasons.push("candidate median duration regressed by more than 50%");
+    }
+    if (
+      baseline.meanQuality !== undefined &&
+      candidate.meanQuality !== undefined &&
+      candidate.meanQuality < baseline.meanQuality - 0.05
+    ) {
+      reasons.push("candidate mean quality dropped by more than 0.05");
+    }
+    const improved =
+      candidate.medianTokens < baseline.medianTokens ||
+      candidate.medianDurationMs < baseline.medianDurationMs ||
+      (baseline.meanQuality !== undefined &&
+        candidate.meanQuality !== undefined &&
+        candidate.meanQuality > baseline.meanQuality + 0.01);
+    if (!improved) reasons.push("no efficiency or quality metric improved");
+    tasks.push({ taskId, baseline, candidate, reasons });
+    for (const reason of reasons) failures.push(`${taskId}: ${reason}`);
+  }
+  if ([...byTask.values()].every((arms) => !arms.baseline.some((record) => record.holdout))) {
+    failures.push("at least one protected holdout task is required");
+  }
+  const evidence = all.every((record) => record.synthetic) ? "synthetic" : "real";
+  const verdict =
+    failures.length > 0 ? "reject" : evidence === "synthetic" ? "inconclusive" : "candidate";
+  return { verdict, evidence, tasks, failures };
+}
+
+export async function writePromptSnapshot(result, file, root = REPO_ROOT) {
+  const head = await promisify(execFile)("git", ["rev-parse", "HEAD"], { cwd: root })
+    .then(({ stdout }) => stdout.trim())
+    .catch(() => "unknown");
+  const snapshot = {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    gitHead: head.trim(),
+    layers: result.entries.map(({ id, path: layerPath, chars, estimatedTokens }) => ({
+      id,
+      path: layerPath,
+      chars,
+      estimatedTokens,
+    })),
+  };
+  await writeFile(path.resolve(root, file), `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  return snapshot;
+}
+
 export function formatReport(result) {
   const rows = result.entries.map(
     (entry) =>
@@ -169,6 +316,9 @@ function parseArgs(argv) {
     strict: false,
     json: false,
     registry: DEFAULT_REGISTRY,
+    snapshot: undefined,
+    compare: undefined,
+    candidate: undefined,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -176,17 +326,46 @@ function parseArgs(argv) {
     else if (arg === "--report") options.report = true;
     else if (arg === "--strict") options.strict = true;
     else if (arg === "--json") options.json = true;
+    else if (arg === "--snapshot") options.snapshot = argv[++index] ?? "";
+    else if (arg === "--compare") options.compare = argv[++index] ?? "";
+    else if (arg === "--candidate") options.candidate = argv[++index] ?? "";
     else if (arg === "--registry") options.registry = path.resolve(argv[++index] ?? "");
     else if (arg.startsWith("--registry="))
       options.registry = path.resolve(arg.slice("--registry=".length));
     else fail(`unknown argument: ${arg}`);
   }
-  if (!options.check && !options.report) options.check = true;
+  if (!options.check && !options.report && !options.snapshot && !options.compare) {
+    options.check = true;
+  }
+  if (options.compare && !options.candidate) fail("--compare requires --candidate <file>");
   return options;
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.snapshot) {
+    const result = await checkRegistry(await loadRegistry(options.registry));
+    if (result.failures.length > 0) {
+      process.stderr.write(`${formatReport(result)}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const snapshot = await writePromptSnapshot(result, options.snapshot);
+    process.stdout.write(
+      `prompt snapshot: ${snapshot.layers.length} layers -> ${options.snapshot}\n`,
+    );
+    return;
+  }
+  if (options.compare) {
+    const [baselineText, candidateText] = await Promise.all([
+      readFile(path.resolve(options.compare), "utf8"),
+      readFile(path.resolve(options.candidate), "utf8"),
+    ]);
+    const comparison = compareEvalRecords(baselineText, candidateText);
+    process.stdout.write(`${JSON.stringify(comparison, null, 2)}\n`);
+    if (comparison.verdict === "reject") process.exitCode = 1;
+    return;
+  }
   const result = await checkRegistry(await loadRegistry(options.registry));
   const strictFailures = options.strict ? result.warnings : [];
   if (options.json) {

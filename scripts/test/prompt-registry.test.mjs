@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { checkRegistry, parseRegistry } from "../prompt-registry.mjs";
+import { checkRegistry, compareEvalRecords, parseRegistry } from "../prompt-registry.mjs";
 
 async function withRegistry(files, registry, run) {
   const root = await mkdtemp(path.join(tmpdir(), "prompt-registry-"));
@@ -83,4 +83,60 @@ test("rejects duplicate ids and invalid budgets", () => {
     () => parseRegistry({ version: 1, entries: [{ id: "a", path: "a.md", maxChars: 0 }] }),
     /maxChars/,
   );
+});
+
+function evalLines(arm, tokens, overrides = {}) {
+  return [1, 2, 3]
+    .map((run) =>
+      JSON.stringify({
+        taskId: "task-1",
+        arm,
+        run,
+        success: true,
+        tokens,
+        cacheReadTokens: tokens / 2,
+        durationMs: tokens * 2,
+        quality: 0.8,
+        criticalRegressions: 0,
+        holdout: true,
+        synthetic: false,
+        ...overrides,
+      }),
+    )
+    .join("\n");
+}
+
+test("accepts a faster candidate with equal success and a real holdout", () => {
+  const result = compareEvalRecords(evalLines("baseline", 1000), evalLines("candidate", 800));
+  assert.equal(result.verdict, "candidate");
+  assert.equal(result.evidence, "real");
+  assert.equal(result.tasks[0].baseline.medianTokens, 1000);
+  assert.equal(result.tasks[0].candidate.medianTokens, 800);
+});
+
+test("rejects a success regression and a non-holdout candidate", () => {
+  const result = compareEvalRecords(
+    evalLines("baseline", 1000),
+    evalLines("candidate", 800, { success: false }),
+  );
+  assert.equal(result.verdict, "reject");
+  assert.match(result.failures.join("\n"), /success rate is lower/);
+});
+
+test("rejects a comparison without a protected holdout", () => {
+  const result = compareEvalRecords(
+    evalLines("baseline", 1000, { holdout: false }),
+    evalLines("candidate", 800, { holdout: false }),
+  );
+  assert.equal(result.verdict, "reject");
+  assert.match(result.failures.join("\n"), /protected holdout/);
+});
+
+test("marks synthetic-only evidence as inconclusive", () => {
+  const result = compareEvalRecords(
+    evalLines("baseline", 1000, { synthetic: true }),
+    evalLines("candidate", 800, { synthetic: true }),
+  );
+  assert.equal(result.verdict, "inconclusive");
+  assert.equal(result.evidence, "synthetic");
 });

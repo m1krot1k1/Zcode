@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "createdAt": "2026-11-16T15:42:32.603Z",
+  "gitHead": "1d02e9537d777272e529af2e656f575efeeaec26",
+  "layers": [
+    {
+      "id": "identity-stable",
+      "path": "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
+      "chars": 15732,
+      "estimatedTokens": 3933
+    },
+    {
+      "id": "project-instructions",
+      "path": "AGENTS.md",
+      "chars": 4762,
+      "estimatedTokens": 1191
+    },
+    {
+      "id": "built-in-profiles",
+      "path": "apps/zcode-cli/packages/core/src/subagent/built-in-profiles.ts",
+      "chars": 44235,
+      "estimatedTokens": 11059
+    },
+    {
+      "id": "compaction-prompt",
+      "path": "apps/zcode-cli/packages/core/src/compact/prompt.ts",
+      "chars": 8304,
+      "estimatedTokens": 2076
+    },
+    {
+      "id": "deep-task-contract",
+      "path": ".agents/skills/deep-task-contract/SKILL.md",
+      "chars": 1991,
+      "estimatedTokens": 498
+    },
+    {
+      "id": "prism-core",
+      "path": "docs/vendor/prism10/PRISM_10.0_CORE_RU.md",
+      "chars": 5053,
+      "estimatedTokens": 1264
+    },
+    {
+      "id": "research-eval-skill",
+      "path": ".agents/skills/research-eval/SKILL.md",
+      "chars": 2276,
+      "estimatedTokens": 569
+    },
+    {
+      "id": "bash-tool-description",
+      "path": "apps/zcode-cli/packages/core/src/tool/handlers/bash-prompt.ts",
+      "chars": 1480,
+      "estimatedTokens": 370
+    }
+  ]
+}

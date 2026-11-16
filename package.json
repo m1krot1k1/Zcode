@@ -1,6 +1,6 @@
 {
   "name": "zcode",
-  "version": "3.17.116",
+  "version": "3.17.117",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -46,6 +46,7 @@
     "self-improve:evaluate": "node scripts/self-improve-evaluator.mjs",
     "test:docker:web-app-gateway": "node scripts/test-web-app-gateway-reset.mjs",
     "prompt:check": "node scripts/prompt-registry.mjs --check",
+    "prompt:snapshot": "node scripts/prompt-registry.mjs --snapshot config/prompts/baseline.json",
     "test:prompt-registry": "node --test scripts/test/prompt-registry.test.mjs",
     "test:delegation-routing-benchmark": "node --test scripts/test/delegation-routing-benchmark.test.mjs scripts/test/delegation-routing-benchmark-plan.test.mjs",
     "test:knip-baseline": "node --test scripts/test/knip-baseline.test.mjs",

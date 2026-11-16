@@ -48,8 +48,36 @@ compaction, memory, tool descriptions, skills, workflow/expert prompts). Без 
 - `pnpm prompt:check` — текущие бюджеты и маркеры.
 - Оба шага входят в `pnpm verify:pre-push`.
 
+## Prompt eval lab
+
+`pnpm prompt:snapshot` фиксирует текущие размеры слоёв в `config/prompts/baseline.json`
+(коммит, дата, chars, estimatedTokens). Это статический baseline, а не доказательство качества.
+
+Для поведенческого сравнения используется JSONL с записями:
+
+```json
+{
+  "taskId": "...",
+  "arm": "baseline|candidate",
+  "run": 1,
+  "success": true,
+  "tokens": 1234,
+  "cacheReadTokens": 900,
+  "durationMs": 5000,
+  "quality": 0.8,
+  "criticalRegressions": 0,
+  "holdout": true,
+  "synthetic": false
+}
+```
+
+`node scripts/prompt-registry.mjs --compare baseline.jsonl --candidate candidate.jsonl` проверяет:
+одинаковые задачи, минимум 3 прогона на arm, protected holdout, отсутствие падения success,
+критических регрессий и деградации качества >0.05, а также наличие хотя бы одного улучшения
+по токенам/времени/качеству. `synthetic: true` даёт verdict `inconclusive`, пока нет реальных
+записей.
+
 ## Границы
 
-Реестр проверяет источники промптов, а не поведение модели. Он не доказывает улучшение
-качества и не заменяет A/B на holdout. Следующий слой — prompt eval lab: baseline/candidate,
-3+ повтора, token/cache/latency, независимый grader.
+Реестр проверяет источники промптов, а не поведение модели. Eval lab проверяет записи
+прогонов, но не запускает модель сам. Он не заменяет живой A/B и независимого grader.
