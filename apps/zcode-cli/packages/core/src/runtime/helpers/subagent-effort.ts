@@ -7,7 +7,7 @@
  * конкретный уровень резолвится здесь в момент спавна по актуальной шкале модели.
  */
 
-export type SubagentEffortClass = "lower" | "same" | "higher";
+export type SubagentEffortClass = "lowest" | "lower" | "same" | "higher";
 
 export type SubagentEffortOutcome =
   | "applied"
@@ -39,14 +39,16 @@ export interface ResolveSubagentEffortLevelResult {
   baseClamped?: true;
 }
 
-const EFFORT_DELTA: Readonly<Record<SubagentEffortClass, number>> = {
+const EFFORT_DELTA: Readonly<Record<Exclude<SubagentEffortClass, "lowest">, number>> = {
   lower: -1,
   same: 0,
   higher: 1,
 };
 
+const DISABLED_LEVEL = /^(?:disabled|off|none|no|false|nothink|no[-_]?think)$/iu;
+
 function isSubagentEffortClass(value: string): value is SubagentEffortClass {
-  return value === "lower" || value === "same" || value === "higher";
+  return value === "lowest" || value === "lower" || value === "same" || value === "higher";
 }
 
 /**
@@ -76,6 +78,18 @@ export function resolveSubagentEffortLevel(
       outcome: "unknown-class",
       ...(baseLevel ? { level: baseLevel } : {}),
     };
+  }
+
+  if (effort === "lowest") {
+    // lowest нужен для разреженных шкал (disabled/low/high/max): lower с max
+    // попадает только в high, а механическая ветка должна дойти до low.
+    // disabled/off не являются рабочим уровнем и не выбираются.
+    const lowestWorkingLevel = supportedLevels.find(
+      (level) => level.trim().length > 0 && !DISABLED_LEVEL.test(level.trim()),
+    );
+    return lowestWorkingLevel
+      ? { level: lowestWorkingLevel, outcome: "applied" }
+      : { outcome: "no-supported-levels" };
   }
 
   const baseIndex = baseLevel ? supportedLevels.indexOf(baseLevel) : -1;

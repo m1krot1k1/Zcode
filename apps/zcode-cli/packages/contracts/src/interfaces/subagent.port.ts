@@ -146,7 +146,7 @@ export interface SubagentRunRequest {
   spawnBudget?: number;
   /** 模型声明的嵌套层级；仅记录，不用于深度熔断。 */
   level?: number;
-  /** Относительный класс effort (`lower`/`same`/`higher`); резолвится в момент спавна. */
+  /** Относительный класс effort (`lowest`/`lower`/`same`/`higher`); резолвится в момент спавна. */
   effort?: string;
   /** Явное разрешение поднять ребёнка выше уровня родителя. */
   effortAboveParent?: boolean;

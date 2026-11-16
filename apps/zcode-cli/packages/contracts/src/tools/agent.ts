@@ -213,13 +213,13 @@ const AgentInputObjectSchema = z.object({
     ),
   // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
   // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
-  // Reasoning effort 允许相对 класс (`lower`/`same`/`higher`), который резолвится
+  // Reasoning effort 允许 относительный класс (`lowest`/`lower`/`same`/`higher`), который резолвится
   // в уровень конкретной модели в момент спавна; абсолютный level не принимается.
   effort: z
     .string()
     .optional()
     .describe(
-      "Relative reasoning-effort class for this spawn: lower, same, or higher. Omit to inherit the resolved profile/parent level. Unknown values are ignored with a warning.",
+      "Relative reasoning-effort class for this spawn: lowest, lower, same, or higher. Omit to inherit the resolved profile/parent level. Unknown values are ignored with a warning.",
     ),
   effort_above_parent: z
     .boolean()

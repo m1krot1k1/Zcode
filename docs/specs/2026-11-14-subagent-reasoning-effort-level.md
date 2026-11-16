@@ -52,7 +52,7 @@ Effort никогда не переключает provider/model. `childSelectio
 `apps/zcode-cli/packages/contracts/src/tools/agent.ts:166-227`) добавляются два optional-поля:
 
 ```ts
-effort?: string;              // "lower" | "same" | "higher"; см. RF-7 про неизвестные значения
+effort?: string;              // "lowest" | "lower" | "same" | "higher"; см. RF-7 про неизвестные значения
 effort_above_parent?: boolean; // default false
 ```
 
@@ -84,7 +84,7 @@ SubagentRunOptions.modelOverride.selection  (Core Server / settings override)
 `runtime/helpers/subagent-selection.ts`).
 
 ```ts
-export type SubagentEffortClass = "lower" | "same" | "higher";
+export type SubagentEffortClass = "lowest" | "lower" | "same" | "higher";
 
 export interface ResolveSubagentEffortLevelInput {
   effort?: string; // как пришло из истории/tool input, без предварительного сужения
@@ -123,22 +123,26 @@ export function resolveSubagentEffortLevel(
 2. `policy === "highest"` (встроенный orchestrator) → `{ level: supportedLevels.at(-1), outcome: "applied" }`.
    Модель не меняется, elevation guard не применяется: оркестратор всегда получает верхнюю
    ступень шкалы выбранной модели. Это единственная роль с такой политикой.
-3. `effort` не входит в `"lower" | "same" | "higher"` → `{ outcome: "unknown-class", level: baseLevel }`.
+3. `effort` не входит в `"lowest" | "lower" | "same" | "higher"` → `{ outcome: "unknown-class", level: baseLevel }`.
    Selection не меняется, вызывающий пишет `logger.warn`, ретрая модели нет.
-4. Опорный индекс (`anchorIndex`), от низкого к высокому:
+4. `effort === "lowest"` → первый уровень `supportedLevels`, который не является
+   `disabled/off/none`; `outcome: "applied"`. Это нужно для разреженных шкал вроде
+   `disabled/low/high/max`, где `lower` с `max` даёт только `high`, а механическая ветка
+   должна дойти до `low`. `disabled` рабочим уровнем не считается.
+5. Опорный индекс (`anchorIndex`), от низкого к высокому:
    1. `baseLevel` есть в `supportedLevels` → его индекс;
    2. иначе `parentLevel` есть в `supportedLevels` → его индекс, `baseClamped: true`;
    3. иначе индекс `0` (низшая поддерживаемая ступень), `baseClamped: true`.
-5. Если и `baseLevel`, и `parentLevel` отсутствуют → `{ outcome: "no-anchor" }`, `level: undefined`.
-6. `delta`: `lower = -1`, `same = 0`, `higher = +1`;
+6. Если и `baseLevel`, и `parentLevel` отсутствуют → `{ outcome: "no-anchor" }`, `level: undefined`.
+7. `delta`: `lower = -1`, `same = 0`, `higher = +1`;
    `targetIndex = min(max(anchorIndex + delta, 0), supportedLevels.length - 1)`.
-7. Elevation guard:
+8. Elevation guard:
    - если `parentLevel` присутствует в `supportedLevels` и `targetIndex > parentIndex`
      и `effortAboveParent !== true` → `targetIndex = parentIndex`, `outcome: "clamped"`;
    - иначе если `parentLevel` отсутствует в `supportedLevels` (или его нет) и `delta > 0`
      и `effortAboveParent !== true` → `targetIndex = anchorIndex`, `outcome: "elevation-denied"`;
    - иначе `outcome: "applied"`.
-8. Результат: `supportedLevels[targetIndex]`.
+9. Результат: `supportedLevels[targetIndex]`.
 
 `baseLevel` берётся из уже разрешённой child selection. Если level пришёл из явного profile
 override, он к этому моменту уже провалидирован `resolveSubagentSelection`/`resolveEffectiveModelSelection`
@@ -161,6 +165,7 @@ Profile override — это осознанная настройка пользо
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `effort` отсутствует                      | уровень профиля сохраняется как есть (resolver не вызывается)                                       |
 | `effort: "same"`                          | `clamped` до уровня родителя, если профиль выше родителя                                            |
+| `effort: "lowest"`                        | первый рабочий уровень шкалы (`low` для `disabled/low/high/max`), не `disabled`                     |
 | `effort: "lower"`                         | `targetIndex = anchorIndex - 1`; если всё ещё выше родителя — `clamped` до родителя                 |
 | `effort: "higher"`                        | `clamped` до уровня родителя без флага; с `effort_above_parent: true` — `anchorIndex + 1` (или top) |
 | любой класс + `effort_above_parent: true` | guard не применяется, профиль сохраняет своё преимущество                                           |
@@ -224,8 +229,9 @@ You are powered by the model named <providerId>/<modelId> (reasoning effort: <le
 (`:277-314`), а также в `WORKER_PARALLEL_DELEGATION_CONTRACT` (`:85-88`) для worker-ролей, которые
 могут делегировать:
 
-> При спавне выбирай относительный класс effort по сложности подзадачи: `lower` — простая
-> механическая работа, `same` — обычная задача, `higher` — объективно сложная задача.
+> При спавне выбирай относительный класс effort по сложности подзадачи: `lowest` — массовое извлечение и
+> механическая рутина, `lower` — задача проще родительской, `same` — обычная задача, `higher` —
+> объективно сложная задача.
 > `higher` используй только с явным обоснованием в описании ветки; `effort_above_parent: true`
 > добавляй только если это осознанно разрешено конвертом. Отсутствие поля означает наследование
 > уровня родителя; абсолютный уровень не указывай.

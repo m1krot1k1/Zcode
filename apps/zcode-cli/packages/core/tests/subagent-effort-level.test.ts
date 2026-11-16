@@ -15,6 +15,26 @@ function resolve(
 }
 
 describe("resolveSubagentEffortLevel", () => {
+  it("selects the lowest working level and skips disabled", () => {
+    expect(
+      resolve({
+        effort: "lowest",
+        baseLevel: "max",
+        parentLevel: "max",
+      }),
+    ).toEqual({ level: "low", outcome: "applied" });
+    expect(
+      resolveSubagentEffortLevel({
+        effort: "lowest",
+        supportedLevels: ["disabled", "off"],
+      }),
+    ).toEqual({ outcome: "no-supported-levels" });
+    expect(resolve({ effort: "lower", baseLevel: "max", parentLevel: "max" })).toMatchObject({
+      level: "high",
+      outcome: "applied",
+    });
+  });
+
   it("forces the highest supported level for the orchestrator policy", () => {
     expect(
       resolveSubagentEffortLevel({
