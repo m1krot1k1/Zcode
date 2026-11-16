@@ -87,3 +87,19 @@ compaction, memory, tool descriptions, skills, workflow/expert prompts). Без 
 `config/prompts/eval/static-*.jsonl` — реальные статические замеры prompt-стека до/после
 slim (`21655 → 21038` estimated tokens). Они помечены `synthetic: true`, потому что не
 содержат поведенческих прогонов; lab честно возвращает `inconclusive`, а не выдаёт их за A/B.
+
+## Первый реальный holdout
+
+`config/prompts/eval/holdout-*.jsonl` — 3 behavioral-прогона на защищённом task
+`holdout-package-version`: baseline `ZCODE_SYSTEM_PROMPT_PROFILE=prism` против compact.
+
+| Метрика | Baseline | Candidate | Δ |
+| --- | ---: | ---: | ---: |
+| Success rate | 1.0 | 1.0 | 0 |
+| Quality | 1.0 | 1.0 | 0 |
+| Median tokens | 76053 | 68643 | −9.7% |
+| Median cache read | 36375 | 34047 | −6.4% |
+| Median duration | 10701 ms | 10241 ms | −4.3% |
+
+`--compare` вернул `verdict: candidate`, `evidence: real`, без failures. Это доказательство
+для одного небольшого task, а не универсальный вывод обо всей системе.
