@@ -4,14 +4,21 @@ import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import { dirname, join } from "node:path";
 import {
   AgentRuntime,
+  buildPluginReferenceCatalog,
   getProcessWorkLedger,
   normalizeAgentProfiles,
   writeWorkflowDraft,
+  type AgentRuntimeDeps,
 } from "@zcode/core";
 import { isRemoteWorkspaceIdentity } from "@zcode/shared";
+import type { PluginSubagentModelSelectionOverrides } from "@zcode/shared";
 import { subagentProfilesFromSnapshot } from "../runtime-subagents/index.js";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
-import { resolvePluginAgentProfiles } from "../subagents.js";
+import {
+  loadPluginAgentTemplates,
+  loadZCodeAgentProfiles,
+  resolvePluginAgentProfiles,
+} from "../subagents.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import { createDynamicWorkflowRunProgressSink } from "./dynamic-workflow-run-progress-sink.js";
 import {
@@ -43,12 +50,20 @@ import type { AppPorts } from "./create-app-ports.js";
 import { completeAppStartup, markRuntimeConstructed } from "./startup-marks.js";
 
 /** Рабочее ядро сессии: workflow-мосты, dwf-сервисы и AgentRuntime. */
+export interface PluginRuntimeActivationResult {
+  connected: string[];
+  disconnected: string[];
+  failed: Array<{ name: string; error: string }>;
+}
+
 export interface AppSession {
   runtime: AgentRuntime;
   scriptWorkflowFacade: ReturnType<typeof createScriptWorkflowBridge>;
   dynamicWorkflowRunPort: ReturnType<typeof createDynamicWorkflowRunService> | undefined;
   dynamicWorkflowSnippetPort: ReturnType<typeof createDynamicWorkflowSnippetService>;
   modelCatalogPort: ReturnType<typeof createModelCatalogPort>;
+  /** Перечитать plugin data-plane и definitions в живом runtime без reload. */
+  refreshPluginComponents(): Promise<PluginRuntimeActivationResult>;
 }
 
 export function prepareAppSession(
@@ -75,6 +90,7 @@ export function prepareAppSession(
   } = ports;
   const {
     pluginOutcome,
+    pluginCatalog,
     bundledSkillRoots,
     runtimeConfig,
     sessionStore,
@@ -283,44 +299,109 @@ export function prepareAppSession(
     registry: options.providerRegistry,
     currentSelection: () => getRuntime().getSessionModelSelection(),
   });
+  // Определения читаются на каждом turn и после factory/plugin refresh. В Host-режиме
+  // источник — snapshot Host; в обычном CLI — файлы .zcode/agents и текущий plugin catalog.
+  const loadCurrentAgentDefinitions: NonNullable<
+    AgentRuntimeDeps["reloadAgentDefinitions"]
+  > = async (input) => {
+    const pluginProfilesFor = (
+      reservedNames: readonly string[],
+      overrides: PluginSubagentModelSelectionOverrides,
+    ) => {
+      const plugins = pluginCatalog.current().plugins;
+      return resolvePluginAgentProfiles(
+        {
+          logger,
+          plugins,
+          reservedProfileNames: reservedNames,
+          modelSelectionOverrides: overrides,
+        },
+        loadPluginAgentTemplates({ logger, plugins }),
+      ).profiles;
+    };
+    if (options.readSubagentRuntimeConfig) {
+      const snapshot = await options.readSubagentRuntimeConfig(input);
+      const parsed = subagentProfilesFromSnapshot(snapshot);
+      const pluginProfiles =
+        snapshot.kind === "built-in-fallback"
+          ? []
+          : pluginProfilesFor(
+              parsed.profiles.map((profile) => profile.name),
+              parsed.pluginAgentModelSelectionOverrides,
+            );
+      return {
+        activeAgents: normalizeAgentProfiles(
+          [
+            ...(options.runtimeConfig?.subagents?.profiles ?? []),
+            ...parsed.profiles,
+            ...pluginProfiles,
+          ],
+          {
+            builtInModelSelectionOverrides: {
+              ...parsed.builtInModelSelectionOverrides,
+              ...options.runtimeConfig?.subagents?.builtInModelSelectionOverrides,
+            },
+          },
+        ),
+      };
+    }
+    const parsed = await loadZCodeAgentProfiles({
+      logger,
+      storageRoot: env.storageRoot,
+      workingDirectory,
+      additionalDirectories: options.additionalDirectories,
+    });
+    const pluginProfiles = pluginProfilesFor(
+      parsed.profiles.map((profile) => profile.name),
+      parsed.pluginAgentModelSelectionOverrides,
+    );
+    return {
+      activeAgents: normalizeAgentProfiles(
+        [
+          ...(options.runtimeConfig?.subagents?.profiles ?? []),
+          ...parsed.profiles,
+          ...pluginProfiles,
+        ],
+        {
+          builtInModelSelectionOverrides: {
+            ...parsed.builtInModelSelectionOverrides,
+            ...options.runtimeConfig?.subagents?.builtInModelSelectionOverrides,
+          },
+        },
+      ),
+    };
+  };
+
+  let pluginRefreshPromise: Promise<PluginRuntimeActivationResult> | undefined;
+  const refreshPluginComponents = (): Promise<PluginRuntimeActivationResult> => {
+    if (pluginRefreshPromise) return pluginRefreshPromise;
+    pluginRefreshPromise = (async () => {
+      const previous = pluginCatalog.current();
+      const next = await pluginCatalog.refresh();
+      return await getRuntime().applyPluginRuntime({
+        mcpServers: next.mcpServers,
+        previousPluginMcpServerNames: Object.keys(previous.mcpServers),
+        preservedMcpServerNames: Object.keys(configResult.config.mcp?.servers ?? {}),
+        pluginReferenceCatalog: buildPluginReferenceCatalog(next.plugins),
+        reloadAgentDefinitions: true,
+        signal: new AbortController().signal,
+        traceContext,
+      });
+    })().finally(() => {
+      pluginRefreshPromise = undefined;
+    });
+    return pluginRefreshPromise;
+  };
+
   const runtime = new AgentRuntime(sessionId, runtimeConfig, {
     // Один реестр работ на процесс CLI: journal общий, writer один.
     workLedger: getProcessWorkLedger(),
+    // Host по-прежнему обновляет определения на каждом turn. В обычном CLI
+    // per-turn reload не нужен; явный reload используется factory/plugin refresh.
     ...(options.readSubagentRuntimeConfig
-      ? {
-          loadAgentDefinitions: async (input) => {
-            const snapshot = await options.readSubagentRuntimeConfig!(input);
-            const parsed = subagentProfilesFromSnapshot(snapshot);
-            const pluginProfiles =
-              snapshot.kind === "built-in-fallback"
-                ? []
-                : resolvePluginAgentProfiles(
-                    {
-                      logger,
-                      plugins: pluginOutcome.plugins,
-                      reservedProfileNames: parsed.profiles.map((profile) => profile.name),
-                      modelSelectionOverrides: parsed.pluginAgentModelSelectionOverrides,
-                    },
-                    env.pluginTemplates,
-                  ).profiles;
-            return {
-              activeAgents: normalizeAgentProfiles(
-                [
-                  ...(options.runtimeConfig?.subagents?.profiles ?? []),
-                  ...parsed.profiles,
-                  ...pluginProfiles,
-                ],
-                {
-                  builtInModelSelectionOverrides: {
-                    ...parsed.builtInModelSelectionOverrides,
-                    ...options.runtimeConfig?.subagents?.builtInModelSelectionOverrides,
-                  },
-                },
-              ),
-            };
-          },
-        }
+      ? { loadAgentDefinitions: loadCurrentAgentDefinitions }
       : {}),
+    reloadAgentDefinitions: loadCurrentAgentDefinitions,
     agentTelemetry: modelTelemetry.agentExecution,
     // 主代理的模型请求过治理器的 observer：立即放行，但让治理器看见它的 429 / 成功。
     modelRequestAdmission: workflowConcurrencyGovernor.observer(),
@@ -351,7 +432,8 @@ export function prepareAppSession(
           createNodeSkillAdapter({
             additionalDirectories: options.additionalDirectories,
             extraRoots: configResult.config.skills.roots,
-            extraResolvedRoots: [...pluginOutcome.skillRoots, ...bundledSkillRoots],
+            extraResolvedRoots: bundledSkillRoots,
+            getExtraResolvedRoots: () => pluginCatalog.current().skillRoots,
             disabledPaths: [
               ...collectDisabledPaths(configResult.config.skillOverrides),
               // 动态工作流关闭时不提供 dynamic-workflows 技能：
@@ -368,6 +450,7 @@ export function prepareAppSession(
       logger,
       mcpPort,
       officialPluginRoots: options.officialPluginRoots,
+      onPluginInstalled: refreshPluginComponents,
       pluginStorageRoot: options.pluginStorageRoot ?? getPluginStorageRoot(env.cliStorageRoot),
       workingDirectory,
     }),
@@ -413,5 +496,6 @@ export function prepareAppSession(
     dynamicWorkflowRunPort,
     dynamicWorkflowSnippetPort,
     modelCatalogPort,
+    refreshPluginComponents,
   };
 }

@@ -171,6 +171,100 @@ describe("subagent turn snapshot", () => {
     expect(JSON.stringify(children[2]?.request)).toContain("PROFILE_new");
   });
 
+  it("reloads definitions after subagent-factory so a new profile is callable in the same turn", async () => {
+    let factoryFinished = false;
+    let parentCalls = 0;
+    let childCalls = 0;
+    const childRequests: ModelRequest[] = [];
+    const profile = (name: string, prompt: string) => ({
+      name,
+      description: name,
+      source: "user" as const,
+      tools: ["Read"],
+      systemPrompt: prompt,
+    });
+    const initial: AgentDefinitionsSnapshot = {
+      activeAgents: [profile("subagent-factory", "FACTORY_PROFILE")],
+    };
+    const expanded: AgentDefinitionsSnapshot = {
+      activeAgents: [
+        ...initial.activeAgents,
+        profile("new-agent", "NEW_PROFILE_AFTER_FACTORY"),
+      ],
+    };
+    const load = vi.fn(async () => (factoryFinished ? expanded : initial));
+    const runtime = createTestAgentRuntime(
+      createSessionId("subagent-factory-same-turn"),
+      { mode: "yolo", compact: { enabled: false }, titleGeneration: { enabled: false } },
+      {
+        eventStore: createTestSessionEventStore(),
+        loadAgentDefinitions: load,
+        reloadAgentDefinitions: load,
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            if (observation.invocationContext?.metadata?.querySource === "subagent") {
+              childCalls += 1;
+              if (childCalls === 1) {
+                factoryFinished = true;
+                return { finishReason: "stop", text: "factory wrote profile", usage };
+              }
+              childRequests.push(request);
+              return { finishReason: "stop", text: "new agent done", usage };
+            }
+            parentCalls += 1;
+            if (parentCalls === 1) {
+              return {
+                finishReason: "tool-calls",
+                text: "",
+                usage,
+                toolCalls: [
+                  {
+                    id: "factory_call",
+                    name: "Agent",
+                    input: {
+                      description: "Create profile",
+                      prompt: "Create a durable profile",
+                      subagent_type: "subagent-factory",
+                      write_paths: [],
+                    },
+                  },
+                ],
+              };
+            }
+            if (parentCalls === 2) {
+              return {
+                finishReason: "tool-calls",
+                text: "",
+                usage,
+                toolCalls: [
+                  {
+                    id: "new_agent_call",
+                    name: "Agent",
+                    input: {
+                      description: "Use new profile",
+                      prompt: "Use the created profile",
+                      subagent_type: "new-agent",
+                      write_paths: [],
+                    },
+                  },
+                ],
+              };
+            }
+            return { finishReason: "stop", text: "done", usage };
+          },
+        }),
+      },
+    );
+    try {
+      await runtime.executeTurn("Create and use the profile");
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(childRequests).toHaveLength(1);
+      expect(JSON.stringify(childRequests[0])).toContain("NEW_PROFILE_AFTER_FACTORY");
+    } finally {
+      runtime.beginShutdown();
+    }
+  });
+
   it("loads queued input only when it starts a new turn", async () => {
     let current = snapshot("old"),
       parentCalls = 0;

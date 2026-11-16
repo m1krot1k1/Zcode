@@ -34,9 +34,7 @@ export async function resolveSubagentMcpAccess(
     };
   }
 
-  const scopedServerNames = request.profile.mcpServers?.length
-    ? request.profile.mcpServers
-    : undefined;
+  const scopedServerNames = resolveScopedMcpServerNames(request);
   if (!this.mcpPort || this.config.mcp?.enabled === false) {
     if (scopedServerNames) {
       throw createSubagentMcpUnavailableError(request);
@@ -112,6 +110,7 @@ export async function resolveSubagentMcpAccess(
 }
 
 function shouldBorrowParentMcp(request: ExploreSubagentRuntimeRequest): boolean {
+  if (extractRequiredCapabilityMcpServers(request.requiredCapabilities).length > 0) return true;
   if ((request.profile.mcpServers?.length ?? 0) > 0) return true;
   if (request.allowedTools.length === 0 || request.allowedTools.includes("*")) return true;
   return request.allowedTools.some((toolName) => {
@@ -120,20 +119,49 @@ function shouldBorrowParentMcp(request: ExploreSubagentRuntimeRequest): boolean 
   });
 }
 
+function extractRequiredCapabilityMcpServers(
+  requiredCapabilities: readonly string[] | undefined,
+): string[] {
+  const names = new Set<string>();
+  for (const capability of requiredCapabilities ?? []) {
+    const trimmed = capability.trim();
+    if (!trimmed.startsWith("mcp:")) continue;
+    const serverName = trimmed.slice("mcp:".length).trim();
+    if (serverName.length > 0) names.add(serverName);
+  }
+  return [...names];
+}
+
+function resolveScopedMcpServerNames(
+  request: ExploreSubagentRuntimeRequest,
+): readonly string[] | undefined {
+  const names = new Set<string>(request.profile.mcpServers ?? []);
+  for (const serverName of extractRequiredCapabilityMcpServers(request.requiredCapabilities)) {
+    names.add(serverName);
+  }
+  return names.size > 0 ? [...names] : undefined;
+}
+
 export function validateSubagentMcpRequirements(
   request: ExploreSubagentRuntimeRequest,
   effectiveAllowedTools: readonly string[],
   access: ResolvedSubagentMcpAccess,
 ): void {
+  const requiredCapabilityServers = extractRequiredCapabilityMcpServers(
+    request.requiredCapabilities,
+  );
   const inheritsAvailableTools =
     request.allowedTools.length === 0 || request.allowedTools.includes("*");
-  if (inheritsAvailableTools) return;
+  if (inheritsAvailableTools && requiredCapabilityServers.length === 0) return;
 
   const normalizedAllowedTools = effectiveAllowedTools.map((toolName) => toolName.trim());
   const requiredToolNames = normalizedAllowedTools.filter(isConcreteMcpToolName);
-  const requiredServerNames = extractRequiredMcpServerNames(
-    normalizedAllowedTools.filter(isMcpServerSelector),
-  );
+  const requiredServerNames = [
+    ...new Set([
+      ...extractRequiredMcpServerNames(normalizedAllowedTools.filter(isMcpServerSelector)),
+      ...requiredCapabilityServers,
+    ]),
+  ];
   if (requiredToolNames.length === 0 && requiredServerNames.length === 0) return;
   if (!access.port || !access.snapshot) {
     throw createSubagentMcpUnavailableError(request, requiredToolNames);

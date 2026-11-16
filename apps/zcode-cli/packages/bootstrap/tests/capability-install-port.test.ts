@@ -214,6 +214,86 @@ describe("capability install port", () => {
     await expect(port.isInstalled("plugin", "documents@market")).resolves.toBe(true);
   });
 
+  it("activates plugin data-plane through the runtime callback without reload", async () => {
+    mocks.installZCodeMarketplacePlugin.mockResolvedValue({
+      dependencyClosure: [],
+      diagnostics: [],
+      installedPlugins: [
+        {
+          id: "android-emulator@market",
+          name: "android-emulator",
+          marketplace: "market",
+          enabled: true,
+        },
+      ],
+    });
+    const onPluginInstalled = vi.fn(async () => ({
+      connected: ["plugin:android-emulator:android-emulator"],
+      disconnected: [],
+      failed: [],
+    }));
+    const port = createCapabilityInstallPort({
+      configResult: {} as never,
+      onPluginInstalled,
+      pluginStorageRoot: "/storage/plugins",
+      workingDirectory: "/workspace",
+    });
+
+    await expect(
+      port.install({
+        kind: "plugin",
+        id: "android-emulator@market",
+        marketplace: "market",
+        pluginName: "android-emulator",
+      }),
+    ).resolves.toMatchObject({
+      kind: "plugin",
+      id: "android-emulator@market",
+      status: "installed",
+      requiresReload: false,
+      evidence: expect.stringContaining("plugin:android-emulator:android-emulator"),
+    });
+    expect(onPluginInstalled).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps requiresReload when live plugin activation reports a failed component", async () => {
+    mocks.installZCodeMarketplacePlugin.mockResolvedValue({
+      dependencyClosure: [],
+      diagnostics: [],
+      installedPlugins: [
+        {
+          id: "android-emulator@market",
+          name: "android-emulator",
+          marketplace: "market",
+          enabled: true,
+        },
+      ],
+    });
+    const port = createCapabilityInstallPort({
+      configResult: {} as never,
+      onPluginInstalled: async () => ({
+        connected: [],
+        disconnected: [],
+        failed: [{ name: "plugin:android-emulator:android-emulator", error: "boom" }],
+      }),
+      pluginStorageRoot: "/storage/plugins",
+      workingDirectory: "/workspace",
+    });
+
+    await expect(
+      port.install({
+        kind: "plugin",
+        id: "android-emulator@market",
+        marketplace: "market",
+        pluginName: "android-emulator",
+      }),
+    ).resolves.toMatchObject({
+      status: "installed",
+      requiresReload: true,
+      evidence: expect.stringContaining("boom"),
+    });
+  });
+
   it("fails when the marketplace installer reports no installed plugin", async () => {
     mocks.installZCodeMarketplacePlugin.mockResolvedValue({
       dependencyClosure: [],

@@ -137,6 +137,8 @@ export interface SubagentRunRequest {
   orchestrationRunId?: string;
   /** Explicit machine-checkable criteria; absent criteria must remain acceptance=unknown. */
   acceptanceCriteria?: readonly PrismTaskAcceptanceRequestCriterion[];
+  /** Explicit capability gate from Agent/Task; also grants named MCP access to the child. */
+  requiredCapabilities?: readonly string[];
   /**
    * @deprecated Legacy persisted spawn-count value; accepted for format compatibility and ignored
    * for admission. Worker-slot capacity is the only concurrency limit.

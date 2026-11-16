@@ -284,6 +284,7 @@ export function createAppSurface(input: CreateAppSurfaceInput): ZCodeApp {
     sessionId,
     traceId: traceContext.traceId,
     runtime,
+    refreshPluginComponents: session.refreshPluginComponents,
     respondWorkspaceHookReview: (input) =>
       ports.workspaceHookRuntimeSecurity?.respond(
         {

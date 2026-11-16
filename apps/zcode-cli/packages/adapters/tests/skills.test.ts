@@ -23,6 +23,44 @@ describe("NodeSkillAdapter", () => {
     }
   });
 
+  it("discovers skills from dynamic plugin roots without recreating the adapter", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-skills-live-plugin-"));
+    const pluginSkillDir = join(dir, "plugin-skills", "plugin-demo");
+    let dynamicRoots: Array<{
+      path: string;
+      scope: "project";
+      source: "zcode";
+      priority: number;
+    }> = [];
+
+    try {
+      await mkdir(pluginSkillDir, { recursive: true });
+      await writeSkill(pluginSkillDir, "plugin-demo", "Installed with a plugin");
+      const adapter = createNodeSkillAdapter({
+        homeDirectory: join(dir, "home"),
+        getExtraResolvedRoots: () => dynamicRoots,
+      });
+
+      await expect(adapter.discoverSkills({ workingDirectory: dir })).resolves.toMatchObject({
+        skills: [],
+      });
+
+      dynamicRoots = [
+        {
+          path: join(dir, "plugin-skills"),
+          scope: "project",
+          source: "zcode",
+          priority: 999,
+        },
+      ];
+
+      const outcome = await adapter.discoverSkills({ workingDirectory: dir });
+      expect(outcome.skills.map((skill) => skill.name)).toEqual(["plugin-demo"]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("discovers project skills from SKILL.md metadata", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-skills-"));
     const skillDir = join(dir, ".zcode", "skills", "demo-skill");

@@ -269,6 +269,9 @@ class NodeMcpAdapter implements McpPort {
       status,
       tools: [],
     });
+    // Удаление plugin server тоже меняет tool table; без bump root registry
+    // оставил бы удалённые mcp__* tools до перезапуска.
+    this.toolListRevisionCounter += 1;
     return status;
   }
 

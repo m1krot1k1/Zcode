@@ -31,6 +31,20 @@ export function resolveRuntimeDelegationToolNames(
   });
 }
 
+/** `requires: ["mcp:x"]` grants x's tools even if the profile tools list is explicit. */
+export function includeRequiredMcpTools(
+  request: ExploreSubagentRuntimeRequest,
+  visibleMcpToolNames: readonly string[],
+): ExploreSubagentRuntimeRequest {
+  if (!request.requiredCapabilities?.some((capability) => capability.trim().startsWith("mcp:"))) {
+    return request;
+  }
+  return {
+    ...request,
+    allowedTools: [...new Set([...request.allowedTools, ...visibleMcpToolNames])],
+  };
+}
+
 /** 导出仅供 core 单测验证 child 能力清单的 WebSearch 条件过滤。 */
 export function resolveSubagentToolAllowlist(
   this: AgentRuntimeInternal,

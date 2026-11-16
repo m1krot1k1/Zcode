@@ -2078,6 +2078,7 @@ exceptions:
   - rule: unmanaged-new-file
     paths:
       - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
+      - apps/zcode-cli/packages/core/src/subagent/definitions.ts
       - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
       # Child effort resolver for the relative effort class; path-exact for the
       # same unmanaged zcode-cli module.
@@ -2091,6 +2092,7 @@ exceptions:
       # Capability installer feature: four focused files, not a new module. Keep the
       # exception path-exact; do not widen it to the whole zcode-cli tree.
       - apps/zcode-cli/packages/bootstrap/src/app/capability-install-port.ts
+      - apps/zcode-cli/packages/bootstrap/src/app/plugin-runtime-catalog.ts
       - apps/zcode-cli/packages/contracts/src/interfaces/capability-install.port.ts
       - apps/zcode-cli/packages/contracts/src/tools/capability-install.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/capability-install.ts

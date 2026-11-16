@@ -54,6 +54,34 @@ import { resolveOfficialPluginHostMcpServerNames } from "../app/official-plugin-
 import { createConfig, resolvePath, type ConfigResult } from "@zcode/adapters/config";
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
+/**
+ * После mutation перечитывает plugin data-plane во всех живых session runtime
+ * этого workspace. Settings install/enable/disable не должен требовать reload.
+ */
+async function refreshPluginRuntimesForWorkspace(
+  context: ZCodeProtocolAgentServerContext,
+  workspacePath: string,
+): Promise<void> {
+  const sessions = context.sessions
+    ? [...context.sessions.values()].filter(
+        (session) => session.workspace.workspacePath === workspacePath,
+      )
+    : [];
+  const results = await Promise.allSettled(
+    sessions.map((session) => session.app.refreshPluginComponents()),
+  );
+  for (const [index, result] of results.entries()) {
+    if (result.status === "rejected") {
+      context.logger?.warn("Plugin runtime refresh failed", {
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        event: "plugins.runtime_refresh.failed",
+        module: "bootstrap.plugins",
+        sessionId: sessions[index]?.app.sessionId,
+      });
+    }
+  }
+}
+
 // 把 CLI 的 PluginMetadata 投影成协议可序列化的 ZCodePluginInfo (只保留 UI 需要的字段)。
 function toPluginInfo(plugin: PluginMetadata, configResult?: ConfigResult): ZCodePluginInfo {
   const hostMcpServerNames = resolveOfficialPluginHostMcpServerNames(plugin.id);
@@ -254,6 +282,7 @@ export async function setPluginEnabled(
   });
   // 启用配置写入当前不可回滚；若取消在 IO 期间到达，只阻断后续响应和 UI 写入。
   abortSignal?.throwIfAborted();
+  await refreshPluginRuntimesForWorkspace(context, params.workspace.workspacePath);
   return {
     plugin: {
       ...toPluginInfo(result.plugin),
@@ -365,6 +394,9 @@ export async function installPlugin(
       workingDirectory: params.workspace.workspacePath,
     }),
   );
+  if (params.dryRun !== true && result.installedPlugins.length > 0) {
+    await refreshPluginRuntimesForWorkspace(context, params.workspace.workspacePath);
+  }
   return {
     dependencyClosure: result.dependencyClosure,
     installedPlugins: result.installedPlugins.map(toInstalledPluginSummary),
@@ -385,6 +417,9 @@ export async function uninstallPlugin(
     removeCache: params.removeCache,
     workingDirectory: params.workspace.workspacePath,
   });
+  if (removed) {
+    await refreshPluginRuntimesForWorkspace(context, params.workspace.workspacePath);
+  }
   return {
     ...(removed ? { removedPlugin: toInstalledPluginSummary(removed) } : {}),
     diagnostics: [],
@@ -404,28 +439,31 @@ export async function updatePlugin(
   });
   // 与 uninstall 一样把整个重装循环串行化到同一 storageRoot 的 in-process 锁里，
   // 避免并发 update/install 交错读改写 installed_plugins.json / cache。
-  return withPluginStorageLock(pluginStorageRoot, async () => {
+  const result = await withPluginStorageLock(pluginStorageRoot, async () => {
     const installedPlugins: ZCodeInstalledPluginSummary[] = [];
     const dependencyClosure: string[] = [];
     // 聚合每条记录重装产生的诊断：installZCodeMarketplacePlugin 失败时不抛错，而是返回
-    // CLI 形态的 PluginDiagnostic（见其错误分支的 toMarketplaceInstallDiagnostic），
-    // 这里逐条经协议侧 toPluginDiagnostic 投影成 ZCodePluginDiagnostic 回传，
-    // 让失败的重装显式暴露，而不是静默"成功"。
+    // CLI 形态的 PluginDiagnostic（见其错误分支），这里逐条经协议侧 toPluginDiagnostic 投影成
+    // ZCodePluginDiagnostic 回传，让失败的重装显式暴露，而不是静默"成功"。
     const diagnostics: ZCodePluginDiagnostic[] = [];
     for (const record of installed) {
-      const result = await installZCodeMarketplacePlugin({
+      const installResult = await installZCodeMarketplacePlugin({
         logger: context.logger,
         marketplace: record.marketplace,
         pluginName: record.name,
         scope: record.scope,
         workingDirectory: params.workspace.workspacePath,
       });
-      installedPlugins.push(...result.installedPlugins.map(toInstalledPluginSummary));
-      dependencyClosure.push(...result.dependencyClosure);
-      diagnostics.push(...result.diagnostics.map(toPluginDiagnostic));
+      installedPlugins.push(...installResult.installedPlugins.map(toInstalledPluginSummary));
+      dependencyClosure.push(...installResult.dependencyClosure);
+      diagnostics.push(...installResult.diagnostics.map(toPluginDiagnostic));
     }
     return { dependencyClosure, installedPlugins, diagnostics };
   });
+  if (result.installedPlugins.length > 0) {
+    await refreshPluginRuntimesForWorkspace(context, params.workspace.workspacePath);
+  }
+  return result;
 }
 
 // 恢复一个被抑制（"卸载"）的内置插件：清除 suppressedBuiltins 标记并立即重新 seed。
@@ -440,6 +478,7 @@ export async function restoreBuiltinPlugin(
     pluginId: params.pluginId,
     workingDirectory: params.workspace.workspacePath,
   });
+  await refreshPluginRuntimesForWorkspace(context, params.workspace.workspacePath);
   return { pluginId: params.pluginId, diagnostics: [] };
 }
 

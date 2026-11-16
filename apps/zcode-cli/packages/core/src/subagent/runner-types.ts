@@ -40,6 +40,8 @@ export interface ExploreSubagentRuntimeRequest {
   systemPrompt?: string;
   /** Относительный класс effort, выбранный родителем для этого спавна. */
   effort?: string;
+  /** Explicit capability gate from Agent/Task; also grants named MCP access. */
+  requiredCapabilities?: readonly string[];
   /** Явное разрешение поднять ребёнка выше уровня родителя. */
   effortAboveParent?: boolean;
   /** Фактический параллелизм, рассчитанный по доступной ёмкости runtime. */

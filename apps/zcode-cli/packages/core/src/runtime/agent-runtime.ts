@@ -13,6 +13,7 @@ import {
   resolveExecutionState,
 } from "@zcode/shared";
 import type { BackgroundBashOutputResult } from "@zcode/shared";
+import type { McpServerConfig, PluginReferenceCatalog } from "@zcode/contracts";
 import {
   createDenyPermissionBroker,
   createRootTraceContext,
@@ -165,6 +166,103 @@ export class AgentRuntime {
     return this.capabilityInstallPort;
   }
 
+  /** Перечитать agent profiles после factory/plugin refresh, не дожидаясь нового turn. */
+  async reloadAgentDefinitions(input: {
+    signal: AbortSignal;
+    traceContext: TraceContext;
+  }): Promise<void> {
+    await this.reloadDefinitions(input);
+  }
+
+  /**
+   * Применить live plugin data-plane: подключить новые MCP server, отключить
+   * удалённые plugin-owned server и обновить plugin catalog. Hooks/commands/UI
+   * сюда не входят.
+   */
+  async applyPluginRuntime(input: {
+    mcpServers: Record<string, McpServerConfig>;
+    previousPluginMcpServerNames?: readonly string[];
+    preservedMcpServerNames?: readonly string[];
+    pluginReferenceCatalog?: PluginReferenceCatalog;
+    reloadAgentDefinitions?: boolean;
+    signal: AbortSignal;
+    traceContext: TraceContext;
+  }): Promise<{
+    connected: string[];
+    disconnected: string[];
+    failed: Array<{ name: string; error: string }>;
+  }> {
+    const previous = new Set(input.previousPluginMcpServerNames ?? []);
+    const preserved = new Set(input.preservedMcpServerNames ?? []);
+    const currentServers = this.config.mcp?.servers ?? {};
+    const nextNames = new Set(Object.keys(input.mcpServers));
+    const removed = [...previous].filter(
+      (name) => !nextNames.has(name) && !preserved.has(name),
+    );
+    const connected: string[] = [];
+    const disconnected: string[] = [];
+    const failed: Array<{ name: string; error: string }> = [];
+
+    if (this.mcpPort) {
+      const statuses = await this.mcpPort.status();
+      for (const [name, pluginConfig] of Object.entries(input.mcpServers)) {
+        if (preserved.has(name) || statuses[name]?.status === "connected") continue;
+        const config = currentServers[name] ?? pluginConfig;
+        try {
+          const status = await this.mcpPort.connectServer(name, config, {
+            signal: input.signal,
+            trace: input.traceContext,
+            workingDirectory: this.workingDirectory,
+            ...(this.config.workspaceIdentity
+              ? { workspaceIdentity: this.config.workspaceIdentity.toString() }
+              : {}),
+          });
+          if (status.status === "connected") {
+            connected.push(name);
+          } else {
+            failed.push({
+              name,
+              error: status.error ?? `status=${status.status}`,
+            });
+          }
+        } catch (error) {
+          failed.push({
+            name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      for (const name of removed) {
+        try {
+          await this.mcpPort.disconnectServer(name);
+          disconnected.push(name);
+        } catch (error) {
+          failed.push({
+            name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    const merged = { ...input.mcpServers, ...currentServers };
+    for (const name of removed) delete merged[name];
+    this.config.mcp = { ...this.config.mcp, enabled: true, servers: merged };
+    if (input.pluginReferenceCatalog) {
+      this.config.pluginReferenceCatalog = input.pluginReferenceCatalog;
+    }
+    if (connected.length > 0 || disconnected.length > 0) {
+      this.invalidateToolCache();
+    }
+    if (input.reloadAgentDefinitions) {
+      await this.prepareAgentDefinitions({
+        signal: input.signal,
+        traceContext: input.traceContext,
+      });
+    }
+    return { connected, disconnected, failed };
+  }
+
   controlOffPeakExecution(
     input: import("@zcode/shared").OffPeakControlParams,
   ): Promise<import("@zcode/shared").OffPeakControlResult> {
@@ -232,6 +330,9 @@ export class AgentRuntime {
   private readonly prepareAgentDefinitions: ReturnType<
     typeof createTurnAgentDefinitions
   >["prepare"];
+  private readonly reloadDefinitions: ReturnType<
+    typeof createTurnAgentDefinitions
+  >["reload"];
   private dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   private modelCatalogPort?: ModelCatalogPort;
   private runtimeTaskRegistry: RuntimeTaskRegistry;
@@ -320,12 +421,14 @@ export class AgentRuntime {
             this.config.subagents?.builtInModelSelectionOverrides,
         }),
       deps.loadAgentDefinitions,
+      deps.reloadAgentDefinitions,
     );
     // Host 每轮加载的快照会替代启动配置；在统一读取出口补齐 Memory 工具，
     // 避免子 Agent 有持久记忆提示却没有 Write/Edit，也不回写原始配置。
     this.getAgentDefinitions = () =>
       projectPersistentAgentMemoryTools(definitions.get(), this.config.memory);
     this.prepareAgentDefinitions = definitions.prepare;
+    this.reloadDefinitions = definitions.reload;
     this.agentTelemetry = new RuntimeTelemetryFacade({
       agentName: config.agentName,
       causation: deps.agentTelemetryCausation,
