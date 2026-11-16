@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "identity-stable",
+      "path": "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
+      "maxChars": 18000,
+      "required": ["# Depth", "primary sources", "system-controlled"]
+    },
+    {
+      "id": "project-instructions",
+      "path": "AGENTS.md",
+      "maxChars": 6500,
+      "required": ["命令与仓库结构", "目标必须做到最后"]
+    },
+    {
+      "id": "built-in-profiles",
+      "path": "apps/zcode-cli/packages/core/src/subagent/built-in-profiles.ts",
+      "maxChars": 56000,
+      "required": ["SUBAGENT_HANDOFF_CONTRACT", "deep-task-contract", "evidenceRefs"]
+    },
+    {
+      "id": "compaction-prompt",
+      "path": "apps/zcode-cli/packages/core/src/compact/prompt.ts",
+      "maxChars": 10000,
+      "required": ["Pending Tasks", "summary"]
+    },
+    {
+      "id": "deep-task-contract",
+      "path": ".agents/skills/deep-task-contract/SKILL.md",
+      "maxChars": 4000,
+      "required": ["raw sources", "independent evidence", "HYPOTHESIS"]
+    },
+    {
+      "id": "prism-core",
+      "path": "docs/vendor/prism10/PRISM_10.0_CORE_RU.md",
+      "maxChars": 6500,
+      "required": ["PRISM", "независимые свидетельства"]
+    },
+    {
+      "id": "research-eval-skill",
+      "path": ".agents/skills/research-eval/SKILL.md",
+      "maxChars": 4000,
+      "required": ["protected holdout", "baseline", "candidate"]
+    },
+    {
+      "id": "bash-tool-description",
+      "path": "apps/zcode-cli/packages/core/src/tool/handlers/bash-prompt.ts",
+      "maxChars": 3000,
+      "required": ["Avoid using this tool", "Working directory persists"]
+    }
+  ]
+}
