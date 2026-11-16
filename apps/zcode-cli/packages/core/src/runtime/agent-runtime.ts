@@ -181,6 +181,8 @@ export class AgentRuntime {
    */
   async applyPluginRuntime(input: {
     mcpServers: Record<string, McpServerConfig>;
+    /** Только новые/изменённые server; существующие failed servers не переподключаем. */
+    connectMcpServers?: Record<string, McpServerConfig>;
     previousPluginMcpServerNames?: readonly string[];
     preservedMcpServerNames?: readonly string[];
     pluginReferenceCatalog?: PluginReferenceCatalog;
@@ -199,13 +201,14 @@ export class AgentRuntime {
     const removed = [...previous].filter(
       (name) => !nextNames.has(name) && !preserved.has(name),
     );
+    const toConnect = input.connectMcpServers ?? input.mcpServers;
     const connected: string[] = [];
     const disconnected: string[] = [];
     const failed: Array<{ name: string; error: string }> = [];
 
     if (this.mcpPort) {
       const statuses = await this.mcpPort.status();
-      for (const [name, pluginConfig] of Object.entries(input.mcpServers)) {
+      for (const [name, pluginConfig] of Object.entries(toConnect)) {
         if (preserved.has(name) || statuses[name]?.status === "connected") continue;
         const config = currentServers[name] ?? pluginConfig;
         try {
