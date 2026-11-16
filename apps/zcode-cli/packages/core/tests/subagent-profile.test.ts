@@ -20,6 +20,16 @@ import {
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
+  it("routes deep tasks through the deep-task-contract skill and structured handoff", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    for (const name of ["start", "orchestrator"]) {
+      const profile = profiles.find((candidate) => candidate.name === name);
+      expect(profile?.skills, name).toContain("deep-task-contract");
+      expect(profile?.systemPrompt, name).toContain("evidenceRefs");
+      expect(profile?.systemPrompt, name).toContain("unknown");
+    }
+  });
+
   it("built-in roles have bounded maxTurns by default", () => {
     const profiles = getSwarmAgentProfiles([]);
     for (const name of SWARM_AGENT_TYPES) {

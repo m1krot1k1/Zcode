@@ -1484,8 +1484,21 @@ describe("ContextBuilder meta user context", () => {
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("an AI assistant");
   });
 
-  it("appends the compiled PRISM 10 profile after the harness block", () => {
+  it("keeps the compact depth contract in the stable identity", () => {
     const section = buildIdentitySection();
+
+    expect(section.content).toContain("# Depth");
+    expect(section.content).toContain("primary sources");
+    expect(section.content).toContain("could falsify the result");
+    expect(section.content).toContain("Treat summaries, generated reports, and memory as leads");
+  });
+
+  it("appends the compiled PRISM 10 profile after the harness block", () => {
+    const previousProfile = process.env.ZCODE_SYSTEM_PROMPT_PROFILE;
+    process.env.ZCODE_SYSTEM_PROMPT_PROFILE = "prism";
+    const section = buildIdentitySection();
+    if (previousProfile === undefined) delete process.env.ZCODE_SYSTEM_PROMPT_PROFILE;
+    else process.env.ZCODE_SYSTEM_PROMPT_PROFILE = previousProfile;
     const harness = section.content.indexOf("# Harness");
     const protocol = section.content.indexOf("# PRISM ∞ 10.0 — RECURSIVE RESEARCH EXECUTION CORE");
 

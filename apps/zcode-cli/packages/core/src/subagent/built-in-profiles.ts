@@ -24,8 +24,9 @@ export const SWARM_AGENT_TYPES = [
 // 修复依据：内置角色原先没有真实的 Task 工具，递归只存在于提示和 planner 中，agent 无法自行委派。
 // 统一交接字段让父 agent 能据此核对结果、证据、验证状态和下一步负责人。
 export const SUBAGENT_HANDOFF_CONTRACT = [
-  "交接时明确写出：完成结果、涉及的文件或证据、实际执行的验证及结果、未解决项，以及建议的下一负责人/动作。",
-  "没有对应证据就写未知；不要把计划、工具调用意图或模型自述当作已完成的工作。",
+  "交接时明确写出：status=completed|partial|blocked|failed, files, tests, evidenceRefs, unresolved, nextOwner (下一负责人).",
+  "Для каждого load-bearing факта дай ссылку на файл:строку, команду или артефакт. Нет evidence — пиши unknown.",
+  "Не выдавай план, намерение вызвать инструмент или самоотчёт за выполненную работу.",
 ].join("\n");
 // 修复依据：start 曾同时收到两套互相矛盾的事实 — 运行时工具面只有读/委派工具，
 // а промпт обещал Write/Edit/Bash; модель выбирала промпт и отказывалась от триажа.
@@ -295,6 +296,7 @@ const baseBuiltInSwarmProfiles: readonly AgentProfile[] = [
       "domain-modeling",
       "doc-coauthoring",
       "handoff",
+      "deep-task-contract",
     ],
   },
   {
@@ -335,6 +337,7 @@ const baseBuiltInSwarmProfiles: readonly AgentProfile[] = [
       "domain-modeling",
       "codebase-design",
       "handoff",
+      "deep-task-contract",
     ],
   },
   {
