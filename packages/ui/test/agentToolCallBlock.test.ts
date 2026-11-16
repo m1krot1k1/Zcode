@@ -1328,4 +1328,72 @@ describe("AgentToolCallBlock", () => {
     expect(html).not.toContain("All files are created and the project builds successfully.");
     expect(html).not.toContain("raw transcript");
   });
+
+  it("shows subtree usage and its breakdown for a parent agent", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(
+          ServiceProvider,
+          { services: mockServices },
+          createElement(
+            StoreProvider,
+            { broadcastService: mockBroadcastService },
+            createElement(AgentToolCallBlock, {
+              toolCallNode: {
+                toolCall: {
+                  toolId: "tool-agent-subtree-usage",
+                  kind: "Agent",
+                  title: "start",
+                  input: { prompt: "audit repository", subagent_type: "start" },
+                  output: [],
+                  status: "running",
+                  raw: { _meta: { zcode: { toolName: "Agent" } } },
+                },
+                childToolCalls: [],
+              },
+              workspacePath: "/workspace",
+              displayModel: {
+                inlinePreview: { type: "none" },
+                planResult: null,
+                viewerSource: null,
+                viewerLabelId: "codeViewer.viewCode",
+                showSummaryFileLink: false,
+                showInput: false,
+                showOutput: false,
+                showKind: false,
+              },
+              viewerSource: null,
+              rawFileSummaries: [],
+              isRunning: true,
+              statusLabel: "Running",
+              errorText: undefined,
+              childToolList: null,
+              showIcon: true,
+              forceOpen: false,
+              authoritativeAgentType: "start",
+              authoritativeSubagentUsage: {
+                totalTokens: 100,
+                subtreeTotalTokens: 1_000,
+                inputTokens: 80,
+                outputTokens: 20,
+                cacheReadTokens: 60,
+                subtreeInputTokens: 800,
+                subtreeOutputTokens: 100,
+                subtreeCacheReadTokens: 700,
+              },
+              onOpenCodeViewer: undefined,
+              onOpenBrowserUrl: undefined,
+            }),
+          ),
+        ),
+      ),
+    );
+
+    expect(html).toContain("100 tok / 1.0k tok");
+    expect(html).toContain("in 800");
+    expect(html).toContain("out 100");
+    expect(html).toContain("cache 700");
+  });
 });
