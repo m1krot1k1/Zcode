@@ -93,13 +93,42 @@ slim (`21655 → 21038` estimated tokens). Они помечены `synthetic: t
 `config/prompts/eval/holdout-*.jsonl` — 3 behavioral-прогона на защищённом task
 `holdout-package-version`: baseline `ZCODE_SYSTEM_PROMPT_PROFILE=prism` против compact.
 
-| Метрика | Baseline | Candidate | Δ |
-| --- | ---: | ---: | ---: |
-| Success rate | 1.0 | 1.0 | 0 |
-| Quality | 1.0 | 1.0 | 0 |
-| Median tokens | 76053 | 68643 | −9.7% |
-| Median cache read | 36375 | 34047 | −6.4% |
-| Median duration | 10701 ms | 10241 ms | −4.3% |
+| Метрика           | Baseline | Candidate |     Δ |
+| ----------------- | -------: | --------: | ----: |
+| Success rate      |      1.0 |       1.0 |     0 |
+| Quality           |      1.0 |       1.0 |     0 |
+| Median tokens     |    76053 |     68643 | −9.7% |
+| Median cache read |    36375 |     34047 | −6.4% |
+| Median duration   | 10701 ms |  10241 ms | −4.3% |
 
 `--compare` вернул `verdict: candidate`, `evidence: real`, без failures. Это доказательство
 для одного небольшого task, а не универсальный вывод обо всей системе.
+
+## Cache-aware layout
+
+Prompt registry entries may declare `cacheHint: "stable"`. Stable layers are rejected if they
+contain clock/random/cwd values, absolute home paths, ISO timestamps, or UUIDs. This keeps the
+provider cache prefix deterministic; dynamic task state belongs in Context Ledger and reminders.
+
+## Skills mining
+
+`pnpm skills:mine` reads `config/prompts/eval/holdout*.jsonl` and writes
+`config/skills-mining/candidates.json`: only tasks with 3+ successful runs in both arms and a
+measured token or latency improvement become candidates. `approval: "required"` means the script
+never creates a skill or changes profiles automatically; distillation still needs human review
+and a second holdout.
+
+## Расширенный holdout (10 задач)
+
+`config/prompts/eval/holdout10-*.jsonl`: 10 детерминированных задач, baseline PRISM против
+compact, 3–5 повторов на arm. Итог `--compare`: **reject** из-за per-task gate.
+
+- success: 1.0 baseline и candidate;
+- median tokens: 75435 → 70581.5 (−6.4%);
+- median duration: 11253.5 → 9828.5 ms (−12.7%);
+- 9 из 10 задач улучшили токены;
+- `prompt-registry-count` дал +41.2% медианных токенов и превысил per-task порог 20%.
+
+Gate не принял общий candidate, хотя суммарные метрики лучше: один task с регрессией блокирует
+раскатку. Это ожидаемое поведение, а не ошибка lab; для повторной попытки нужна стабилизация
+этого task или изменение prompt-поведения, а не исключение данных.

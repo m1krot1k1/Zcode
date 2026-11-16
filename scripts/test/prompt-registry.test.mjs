@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { checkRegistry, compareEvalRecords, parseRegistry } from "../prompt-registry.mjs";
+import {
+  checkRegistry,
+  checkStablePromptCacheLayout,
+  compareEvalRecords,
+  parseRegistry,
+} from "../prompt-registry.mjs";
 
 async function withRegistry(files, registry, run) {
   const root = await mkdtemp(path.join(tmpdir(), "prompt-registry-"));
@@ -139,4 +144,19 @@ test("marks synthetic-only evidence as inconclusive", () => {
   );
   assert.equal(result.verdict, "inconclusive");
   assert.equal(result.evidence, "synthetic");
+});
+
+test("rejects volatile tokens in a stable prompt cache prefix", () => {
+  assert.deepEqual(checkStablePromptCacheLayout("# Stable\nFollow the rules.\n"), []);
+  assert.deepEqual(
+    checkStablePromptCacheLayout("Generated at 2026-11-16T12:00:00Z at /home/user/project"),
+    ["absolute-home", "iso-timestamp"],
+  );
+  assert.deepEqual(checkStablePromptCacheLayout("const x = Date.now();"), ["clock"]);
+});
+
+test("rejects a large per-task token regression even with equal quality", () => {
+  const result = compareEvalRecords(evalLines("baseline", 1000), evalLines("candidate", 1300));
+  assert.equal(result.verdict, "reject");
+  assert.match(result.failures.join("\n"), /median tokens regressed by more than 20%/);
 });

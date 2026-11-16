@@ -63,6 +63,13 @@ export function parseRegistry(registry) {
       fail(`${entry.id}: maxChars must be a positive integer`);
     }
     if (
+      entry.cacheHint !== undefined &&
+      entry.cacheHint !== "stable" &&
+      entry.cacheHint !== "dynamic"
+    ) {
+      fail(`${entry.id}: cacheHint must be stable or dynamic`);
+    }
+    if (
       entry.required !== undefined &&
       (!Array.isArray(entry.required) || entry.required.some((item) => typeof item !== "string"))
     ) {
@@ -112,6 +119,8 @@ export async function checkRegistry(registry, root = REPO_ROOT) {
       overBudget: chars > entry.maxChars,
       missingRequired,
       required: entry.required ?? [],
+      cacheHint: entry.cacheHint,
+      cacheVolatile: entry.cacheHint === "stable" ? checkStablePromptCacheLayout(content) : [],
     });
   }
 
@@ -128,6 +137,9 @@ export async function checkRegistry(registry, root = REPO_ROOT) {
     }
     for (const marker of entry.missingRequired) {
       failures.push(`${entry.id}: missing required marker ${JSON.stringify(marker)}`);
+    }
+    for (const volatile of entry.cacheVolatile) {
+      failures.push(`${entry.id}: volatile ${volatile} token in stable cache prefix`);
     }
   }
 
@@ -242,6 +254,15 @@ export function compareEvalRecords(baselineText, candidateText) {
       reasons.push("candidate median duration regressed by more than 50%");
     }
     if (
+      candidate.medianTokens > baseline.medianTokens * 1.2 &&
+      candidate.successRate <= baseline.successRate &&
+      (baseline.meanQuality === undefined ||
+        candidate.meanQuality === undefined ||
+        candidate.meanQuality <= baseline.meanQuality + 0.01)
+    ) {
+      reasons.push("candidate median tokens regressed by more than 20%");
+    }
+    if (
       baseline.meanQuality !== undefined &&
       candidate.meanQuality !== undefined &&
       candidate.meanQuality < baseline.meanQuality - 0.05
@@ -284,6 +305,21 @@ export async function writePromptSnapshot(result, file, root = REPO_ROOT) {
   };
   await writeFile(path.resolve(root, file), `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
   return snapshot;
+}
+
+export function checkStablePromptCacheLayout(content) {
+  const volatilePatterns = [
+    { id: "clock", pattern: /\b(?:new Date\s*\(|Date\.now\s*\()/u },
+    { id: "random", pattern: /\bMath\.random\s*\(/u },
+    { id: "cwd", pattern: /\bprocess\.cwd\s*\(/u },
+    { id: "absolute-home", pattern: /(?:\/home\/|\/Users\/|[A-Z]:\\Users\\)/u },
+    { id: "iso-timestamp", pattern: /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u },
+    {
+      id: "uuid",
+      pattern: /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/iu,
+    },
+  ];
+  return volatilePatterns.filter(({ pattern }) => pattern.test(content)).map(({ id }) => id);
 }
 
 export function formatReport(result) {
