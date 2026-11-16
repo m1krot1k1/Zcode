@@ -118,7 +118,7 @@ export function handleTerminal(
   }
   for (const [childSessionId, child] of state.foregroundSubagentUsageByChildSession) {
     if (child.parentCommandId === lifecycle.sourceCommandId) {
-      state.onSubagentUsageChanged?.(childSessionId, null);
+      state.onSubagentUsageChanged?.(childSessionId, null, child.parentSessionId);
       state.foregroundSubagentUsageByChildSession.delete(childSessionId);
     }
   }

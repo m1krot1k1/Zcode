@@ -63,6 +63,7 @@ export interface BufferedFact {
 
 export interface ForegroundSubagentUsage {
   agentId: string;
+  parentSessionId: string;
   parentCommandId: string;
   parentToolCallId: string;
   requestIds: string[];
@@ -73,6 +74,18 @@ export interface ForegroundSubagentUsage {
   usage: ZCodeUsage | null;
   stopped: boolean;
   pendingFinalizedSteps: PendingFinalizedStep[];
+}
+
+/**
+ * Live-usage вложенного агента, чей spawn пришёл из child-сессии (`start` → `orchestrator`).
+ * У такой сессии нет PromptLifecycle в этом renderer, поэтому обычная foreground-регистрация
+ * не срабатывает; для дерева usage достаточно parent-связи и накопительного usage.
+ */
+export interface NestedSubagentUsage {
+  parentSessionId: string;
+  requestIds: string[];
+  requestCount: number;
+  usage: ZCodeUsage | null;
 }
 
 /**
@@ -150,8 +163,15 @@ export interface SupervisorOptions {
   workspaceScopeKey: string;
   workspaceTelemetryDetail?: ConversationTelemetryWorkspaceDetail;
   now?: () => number;
-  /** Live own-usage child session → UI; null снимает запись на terminal/cleanup. */
-  onSubagentUsageChanged?: (childSessionId: string, usage: ZCodeUsage | null) => void;
+  /**
+   * Live own-usage child session → UI; null завершает run, сохраняя usage в subtree-агрегате.
+   * parentSessionId позволяет собрать живое дерево `start → orchestrator → researcher`.
+   */
+  onSubagentUsageChanged?: (
+    childSessionId: string,
+    usage: ZCodeUsage | null,
+    parentSessionId?: string,
+  ) => void;
 }
 
 /**
@@ -178,6 +198,8 @@ export class SupervisorState {
   readonly commandIdByTurnKey = new Map<string, string>();
   readonly pendingFactsByCommandId = new Map<string, BufferedFact[]>();
   readonly foregroundSubagentUsageByChildSession = new Map<string, ForegroundSubagentUsage>();
+  /** Вложенные агенты без lifecycle родителя в этом renderer: только live usage дерева. */
+  readonly nestedSubagentUsageByChildSession = new Map<string, NestedSubagentUsage>();
   /** 每个在飞 run 已登记的子代理会话（run-settled 时逐个结算）。 */
   readonly workflowActorsByRun = new Map<string, Set<string>>();
   readonly backgroundSubagentTelemetryByChildSession = new Map<
@@ -248,6 +270,7 @@ export class SupervisorState {
     this.terminalKeys.clear();
     this.compactionKeys.clear();
     this.foregroundSubagentUsageByChildSession.clear();
+    this.nestedSubagentUsageByChildSession.clear();
     this.backgroundSubagentTelemetryByChildSession.clear();
     this.workflowActorsByRun.clear();
     this.deferredTerminalsByCommandId.clear();

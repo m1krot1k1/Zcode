@@ -1,8 +1,20 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  sumLiveSubtreeUsage,
   toLiveSubagentUsage,
   useSubagentUsageStore,
 } from "@/store/subagentsStore.js";
+
+function usage(totalTokens: number) {
+  return {
+    inputTokens: totalTokens,
+    outputTokens: 0,
+    totalTokens,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
+  };
+}
 
 describe("subagent live usage store", () => {
   beforeEach(() => {
@@ -54,5 +66,35 @@ describe("subagent live usage store", () => {
 
     useSubagentUsageStore.getState().clearUsage("sess_child_1");
     expect(useSubagentUsageStore.getState().byChildSessionId).toEqual({});
+  });
+
+  it("sums the whole subtree including completed children", () => {
+    const store = useSubagentUsageStore.getState();
+    store.setUsage("sess_start", usage(100));
+    store.setUsage("sess_orchestrator", usage(20), "sess_start");
+    store.setUsage("sess_researcher", usage(5), "sess_orchestrator");
+    store.setUsage("sess_grandchild", usage(2), "sess_researcher");
+    store.setUsage("sess_other", usage(900));
+
+    expect(sumLiveSubtreeUsage(useSubagentUsageStore.getState(), "sess_start")).toEqual(usage(127));
+
+    // Terminal ребёнка не должен уменьшать subtree родителя.
+    store.completeUsage("sess_researcher");
+    expect(sumLiveSubtreeUsage(useSubagentUsageStore.getState(), "sess_start")?.totalTokens).toBe(
+      127,
+    );
+  });
+
+  it("drops the completed snapshot when the same child runs again", () => {
+    const store = useSubagentUsageStore.getState();
+    store.setUsage("sess_child", usage(10), "sess_parent");
+    store.completeUsage("sess_child");
+    expect(useSubagentUsageStore.getState().completedByChildSessionId.sess_child?.totalTokens).toBe(
+      10,
+    );
+
+    store.setUsage("sess_child", usage(30), "sess_parent");
+    expect(useSubagentUsageStore.getState().completedByChildSessionId).toEqual({});
+    expect(useSubagentUsageStore.getState().byChildSessionId.sess_child?.totalTokens).toBe(30);
   });
 });

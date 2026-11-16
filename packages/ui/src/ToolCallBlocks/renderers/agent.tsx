@@ -363,25 +363,38 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
     subagentUsage?.subtreeTotalDurationMs,
     (value) => formatBackgroundTaskElapsedLabel(Math.max(0, value), intl.formatMessage),
   );
-  // Own breakdown рядом с суммой: видно, сколько ушло во вход, выход и кэш.
+  // Breakdown относится к той же сумме, что и tokenUsage: если показан subtree,
+  // вход/выход/кэш тоже берём по всему поддереву, а не только own.
+  const subtreeBreakdown =
+    subagentUsage?.subtreeTotalTokens !== undefined &&
+    subagentUsage.subtreeTotalTokens !== subagentUsage.totalTokens;
+  const breakdownInput = subtreeBreakdown
+    ? (subagentUsage?.subtreeInputTokens ?? subagentUsage?.inputTokens)
+    : subagentUsage?.inputTokens;
+  const breakdownOutput = subtreeBreakdown
+    ? (subagentUsage?.subtreeOutputTokens ?? subagentUsage?.outputTokens)
+    : subagentUsage?.outputTokens;
+  const breakdownCacheRead = subtreeBreakdown
+    ? (subagentUsage?.subtreeCacheReadTokens ?? subagentUsage?.cacheReadTokens)
+    : subagentUsage?.cacheReadTokens;
   const usageBreakdown = [
-    subagentUsage?.inputTokens === undefined
+    breakdownInput === undefined
       ? undefined
       : intl.formatMessage(
           { id: "chat.toolCall.agent.usage.input" },
-          { count: formatCompactTokenCount(subagentUsage.inputTokens) },
+          { count: formatCompactTokenCount(breakdownInput) },
         ),
-    subagentUsage?.outputTokens === undefined
+    breakdownOutput === undefined
       ? undefined
       : intl.formatMessage(
           { id: "chat.toolCall.agent.usage.output" },
-          { count: formatCompactTokenCount(subagentUsage.outputTokens) },
+          { count: formatCompactTokenCount(breakdownOutput) },
         ),
-    subagentUsage?.cacheReadTokens === undefined
+    breakdownCacheRead === undefined
       ? undefined
       : intl.formatMessage(
           { id: "chat.toolCall.agent.usage.cache" },
-          { count: formatCompactTokenCount(subagentUsage.cacheReadTokens) },
+          { count: formatCompactTokenCount(breakdownCacheRead) },
         ),
   ]
     .filter(Boolean)

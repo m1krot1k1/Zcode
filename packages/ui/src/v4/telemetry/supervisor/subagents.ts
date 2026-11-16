@@ -35,8 +35,23 @@ import type {
   BackgroundSubagentTelemetry,
   FinalizedAgentStep,
   ForegroundSubagentUsage,
+  NestedSubagentUsage,
   SupervisorState,
 } from "@/v4/telemetry/supervisor/state.js";
+
+function registerNestedSubagentUsage(
+  state: SupervisorState,
+  fact: Extract<ConversationTelemetryFact, { kind: "subagent.lifecycle" }>,
+): void {
+  if (state.nestedSubagentUsageByChildSession.has(fact.childSessionId)) return;
+  const child: NestedSubagentUsage = {
+    parentSessionId: fact.sessionId,
+    requestIds: [],
+    requestCount: 0,
+    usage: null,
+  };
+  state.nestedSubagentUsageByChildSession.set(fact.childSessionId, child);
+}
 
 export function handleSubagentLifecycle(
   state: SupervisorState,
@@ -79,13 +94,23 @@ export function handleSubagentLifecycle(
       });
       return;
     }
-    if (!fact.parentToolCallId) return;
+    if (!fact.parentToolCallId) {
+      registerNestedSubagentUsage(state, fact);
+      return;
+    }
     const parentCommandId = state.resolveCommandId(fact);
-    if (!parentCommandId) return;
+    if (!parentCommandId) {
+      registerNestedSubagentUsage(state, fact);
+      return;
+    }
     const lifecycle = state.lifecyclesByCommandId.get(parentCommandId);
-    if (!lifecycle?.active) return;
+    if (!lifecycle?.active) {
+      registerNestedSubagentUsage(state, fact);
+      return;
+    }
     const child: ForegroundSubagentUsage = {
       agentId: fact.agentId,
+      parentSessionId: fact.sessionId,
       parentCommandId,
       parentToolCallId: fact.parentToolCallId,
       requestIds: [],
@@ -99,6 +124,14 @@ export function handleSubagentLifecycle(
     };
     state.foregroundSubagentUsageByChildSession.set(fact.childSessionId, child);
     syncForegroundSubagentToolAttribution(state, child);
+    return;
+  }
+
+  const nestedChild = state.nestedSubagentUsageByChildSession.get(fact.childSessionId);
+  if (nestedChild) {
+    // Как и foreground-запись, оставляем её до dispose: поздние usage/terminal факты
+    // не должны уходить в общий buffer неизвестной child-сессии.
+    state.onSubagentUsageChanged?.(fact.childSessionId, null, nestedChild.parentSessionId);
     return;
   }
 
@@ -145,7 +178,7 @@ export function handleForegroundSubagentFact(
   child.usage = mergeUsage(child.usage, toUsage(fact));
   child.requestCount += 1;
   // Live breakdown для UI: usage.delta приходит на каждый model request ребёнка.
-  state.onSubagentUsageChanged?.(fact.sessionId, child.usage);
+  state.onSubagentUsageChanged?.(fact.sessionId, child.usage, child.parentSessionId);
   if (fact.requestId && !child.requestIds.includes(fact.requestId)) {
     child.requestIds.push(fact.requestId);
   }
@@ -200,7 +233,7 @@ export function handleBackgroundSubagentFact(
       if (fact.requestId) child.requestIds.push(fact.requestId);
       child.requestCount += 1;
       child.usage = mergeUsage(child.usage, toUsage(fact));
-      state.onSubagentUsageChanged?.(child.childSessionId, child.usage);
+      state.onSubagentUsageChanged?.(child.childSessionId, child.usage, child.parentSessionId);
       if (fact.providerId || fact.modelId) {
         child.modelName = runtimeTelemetryModelName(fact.providerId, fact.modelId);
         child.modelProvider = fact.providerId ?? child.modelProvider;
@@ -445,7 +478,7 @@ export function cleanupBackgroundSubagentTelemetry(
   child: BackgroundSubagentTelemetry,
 ): void {
   discardPromptTelemetry(child.taskKey);
-  state.onSubagentUsageChanged?.(child.childSessionId, null);
+  state.onSubagentUsageChanged?.(child.childSessionId, null, child.parentSessionId);
   state.backgroundSubagentTelemetryByChildSession.delete(child.childSessionId);
 }
 

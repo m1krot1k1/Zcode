@@ -12,6 +12,15 @@
 - `subagent_type` 采用三态展示：已解析出显式类型时立即显示；`raw.inputPreviewComplete !== true` 且尚未拿到权威类型时留空；仅当输入预览明确完整、仍省略类型时显示真实默认值 `general-purpose`
 - `primaryText` 会跳过 `Agent` / `Task` / `spawn_agent` 等实现名，优先展示 nickname、title、description 或 agent type
 - foreground/background 只影响 runtime 生命周期，不影响详情入口
+- usage 只由 telemetry supervisor 的 `usage.delta` 驱动：摘要行先显示 own，若子树已经产生额外
+  消耗则显示 `own / subtree`；输入、输出和缓存读的 breakdown 跟随当前展示的金额，子树存在时
+  也按整棵子树汇总
+- 子树包含所有后代（`start → orchestrator → researcher`），terminal 只把 child 的 live 快照
+  移入 completed 集合，不从父级汇总里删除；历史会话没有 live 数据时回退到 `subagentRow`
+  的 terminal 投影
+- 嵌套 child 的 spawn 可能来自另一个 child session，此时 renderer telemetry 没有对应
+  `PromptLifecycle`；仍按 `childSessionId → parentSessionId` 记录 live usage，保证深层代理
+  同样进入父级子树
 - child tool lifecycle 仍可用 `source: "subagent"` 镜像到父 runtime 供兼容消费者和诊断使用，但父 V4 ProductProjection 不得把这些 mirror 物化成 `ToolCallRow`；否则 child 的 Read/Bash 会被误画成 main 自己的工具调用。child session topic 继续物化完整工具历史，桌面 `desktop-continuous` 与手机 `web-remote-replayable` 使用同一隔离规则
 - 父会话只保留 Agent/Task 摘要、subagent 运行状态、background work 和带 `origin.kind: "subagent"` 的阻塞交互；等待 foreground child 仍属于 main turn 的真实运行态，不依赖 child tool row 续住
 - child 当前 `snapshot.control.lastError` 在只读详情展示，不新增父行 inline fallback、timeline row 或持久化字段

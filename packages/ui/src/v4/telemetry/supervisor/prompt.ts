@@ -29,6 +29,7 @@ import {
 import {
   backgroundSeedFromTurnStarted,
   isToolTimeout,
+  mergeUsage,
   runtimeTelemetryModelName,
   stepSourceDetailOf,
   toLegacyNetworkEvent,
@@ -86,6 +87,28 @@ export function handleFact(state: SupervisorState, fact: ConversationTelemetryFa
   const foregroundSubagent = state.foregroundSubagentUsageByChildSession.get(fact.sessionId);
   if (foregroundSubagent) {
     handleForegroundSubagentFact(state, foregroundSubagent, fact);
+    return;
+  }
+  // Вложенный агент (`start` → `orchestrator`): его spawn не привязан к lifecycle этого
+  // renderer, но usage.delta всё равно должен питать живое дерево токенов.
+  const nestedSubagent = state.nestedSubagentUsageByChildSession.get(fact.sessionId);
+  if (nestedSubagent) {
+    if (fact.kind === "usage.delta") {
+      nestedSubagent.requestCount += 1;
+      nestedSubagent.usage = mergeUsage(nestedSubagent.usage, toUsage(fact));
+      if (fact.requestId && !nestedSubagent.requestIds.includes(fact.requestId)) {
+        nestedSubagent.requestIds.push(fact.requestId);
+      }
+      state.onSubagentUsageChanged?.(
+        fact.sessionId,
+        nestedSubagent.usage,
+        nestedSubagent.parentSessionId,
+      );
+    } else if (fact.kind === "turn.terminal") {
+      // Запись сохраняется: поздние факты той же child-сессии не должны попасть
+      // в buffer неизвестной команды; dispose очистит её вместе с supervisor.
+      state.onSubagentUsageChanged?.(fact.sessionId, null, nestedSubagent.parentSessionId);
+    }
     return;
   }
   if (fact.kind === "compaction.terminal") {

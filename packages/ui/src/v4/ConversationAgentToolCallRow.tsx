@@ -6,7 +6,7 @@ import type { ConversationAssistantWorkRenderItem } from "@/v4/conversationAssis
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
-import { useLiveSubagentUsage } from "@/store/subagentsStore.js";
+import { useLiveSubagentUsage, useLiveSubtreeUsage } from "@/store/subagentsStore.js";
 
 export function openSubagentSessionFromSummary({
   backgrounded: _backgrounded = false,
@@ -50,6 +50,8 @@ export function ConversationAgentToolCallRow({
   // Live usage приходит из telemetry supervisor по childSessionId; projection-поля
   // остаются fallback для холодного восстановления/после terminal.
   const liveUsage = useLiveSubagentUsage(childSessionId);
+  // Строка `start`/`orchestrator` должна показывать расход всего поддерева, а не только own.
+  const liveSubtreeUsage = useLiveSubtreeUsage(childSessionId);
   // 与 Agent 摘要行复用同一 title resolver，保证右侧 tab 和用户点击的可见标题逐字一致。
   const title = getAgentPrimaryText(toolCallNode.toolCall, "");
   const canOpenChildSession = Boolean(
@@ -99,9 +101,14 @@ export function ConversationAgentToolCallRow({
         authoritativeSubagentUsage={{
           totalTokens: liveUsage?.totalTokens ?? item.subagentRow.totalTokens,
           totalDurationMs: item.subagentRow.totalDurationMs,
-          subtreeTotalTokens: item.subagentRow.subtreeTotalTokens,
+          subtreeTotalTokens: liveSubtreeUsage?.totalTokens ?? item.subagentRow.subtreeTotalTokens,
           subtreeTotalDurationMs: item.subagentRow.subtreeTotalDurationMs,
           subtreeToolUseCount: item.subagentRow.subtreeToolUseCount,
+          subtreeInputTokens: liveSubtreeUsage?.inputTokens,
+          subtreeOutputTokens: liveSubtreeUsage?.outputTokens,
+          subtreeCacheReadTokens: liveSubtreeUsage?.cacheReadTokens,
+          subtreeCacheWriteTokens: liveSubtreeUsage?.cacheWriteTokens,
+          subtreeReasoningTokens: liveSubtreeUsage?.reasoningTokens,
           inputTokens: liveUsage?.inputTokens ?? item.subagentRow.inputTokens,
           outputTokens: liveUsage?.outputTokens ?? item.subagentRow.outputTokens,
           cacheReadTokens: liveUsage?.cacheReadTokens ?? item.subagentRow.cacheReadTokens,
