@@ -60,6 +60,37 @@ export function mineSkillCandidates(records) {
   return candidates;
 }
 
+export function approveCandidate(candidates, taskId) {
+  const candidate = candidates.find((entry) => entry.taskId === taskId);
+  if (!candidate) throw new Error(`unknown skill candidate: ${taskId}`);
+  candidate.approval = "approved";
+  return candidate;
+}
+
+export function renderMinedSkill(candidate) {
+  const slug = `mined-${candidate.taskId.replace(/[^a-z0-9-]+/giu, "-").toLowerCase()}`;
+  return `---\nname: ${slug}\ndescription: Use when the task matches the approved holdout pattern ${candidate.taskId}.\n---\n\n# ${candidate.taskId}\n\nThis skill was generated from an approved holdout candidate. It is a scaffold, not a transcript.\n\n## Procedure\n\n1. Restate the requested fact or deliverable and the allowed scope.\n2. Read only the named primary source needed for that deliverable.\n3. Return the result with evidence (path:line or command output) and mark unresolved items.\n\n## Evidence\n\n- Baseline median tokens: ${candidate.baselineMedianTokens}\n- Candidate median tokens: ${candidate.candidateMedianTokens}\n- Token delta: ${candidate.tokenDeltaPct}%\n- Approval: ${candidate.approval}\n`;
+}
+
+export async function generateApprovedSkills(candidates, root = ROOT) {
+  const generated = [];
+  for (const candidate of candidates) {
+    if (candidate.approval !== "approved") continue;
+    const slug = `mined-${candidate.taskId.replace(/[^a-z0-9-]+/giu, "-").toLowerCase()}`;
+    const dir = path.join(root, ".agents/skills", slug);
+    await mkdir(dir, { recursive: true });
+    const file = path.join(dir, "SKILL.md");
+    try {
+      await writeFile(file, renderMinedSkill(candidate), { encoding: "utf8", flag: "wx" });
+      generated.push(path.relative(root, file));
+    } catch (error) {
+      if (error && error.code === "EEXIST") continue;
+      throw error;
+    }
+  }
+  return generated;
+}
+
 export async function loadEvalRecords(dir = EVAL_DIR) {
   const files = (await readdir(dir)).filter((file) => /^holdout.*\.jsonl$/u.test(file));
   const records = [];
@@ -78,8 +109,38 @@ export async function loadEvalRecords(dir = EVAL_DIR) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
   const records = await loadEvalRecords();
-  const candidates = mineSkillCandidates(records);
+  let candidates = mineSkillCandidates(records);
+  try {
+    const previous = JSON.parse(await readFile(OUTPUT, "utf8"));
+    const approvals = new Map(
+      (previous.candidates ?? []).map((candidate) => [candidate.taskId, candidate.approval]),
+    );
+    candidates = candidates.map((candidate) =>
+      approvals.get(candidate.taskId) === "approved"
+        ? { ...candidate, approval: "approved" }
+        : candidate,
+    );
+  } catch {
+    // No previous approval file: all candidates require review.
+  }
+  const approveIndex = args.indexOf("--approve");
+  if (approveIndex >= 0) {
+    const taskId = args[approveIndex + 1];
+    if (!taskId) throw new Error("--approve requires a taskId");
+    const candidate = approveCandidate(candidates, taskId);
+    const payload = { version: 1, generatedAt: new Date().toISOString(), candidates };
+    await mkdir(path.dirname(OUTPUT), { recursive: true });
+    await writeFile(OUTPUT, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    process.stdout.write(`approved: ${candidate.taskId}\n`);
+    return;
+  }
+  if (args.includes("--generate")) {
+    const generated = await generateApprovedSkills(candidates);
+    process.stdout.write(`generated skills: ${generated.length}\n${generated.join("\n")}\n`);
+    return;
+  }
   const payload = {
     version: 1,
     generatedAt: new Date().toISOString(),

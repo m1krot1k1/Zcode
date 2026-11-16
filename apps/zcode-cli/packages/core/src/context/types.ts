@@ -122,6 +122,8 @@ export interface ContextBuilderConfig {
   memoryIndexContent?: string;
   /** Компактный рабочий набор задачи из `.zcode/context-ledger.json`. */
   contextLedger?: ContextLedgerSnapshot;
+  /** Canary-selected prompt profile; explicit value wins over env. */
+  promptProfile?: string;
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;

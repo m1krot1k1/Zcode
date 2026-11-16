@@ -5,6 +5,7 @@ import { createContextBuilder } from "../src/context/index.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
 import { buildContextLedgerSection, buildMemorySection } from "../src/context/sections/memory.js";
+import { resolveCanaryPromptProfile } from "../src/context/sections/identity.js";
 import {
   buildCliPrefixSection,
   buildEnvInfoSection,
@@ -1482,6 +1483,15 @@ describe("ContextBuilder meta user context", () => {
     expect(identitySection.content).not.toContain("You are ZCode, an interactive coding agent");
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("${");
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("an AI assistant");
+  });
+
+  it("assigns canary profiles deterministically and respects 0/100", () => {
+    expect(resolveCanaryPromptProfile("session-a", 0)).toBe("prism");
+    expect(resolveCanaryPromptProfile("session-a", 100)).toBe("compact");
+    const first = resolveCanaryPromptProfile("session-a", 10);
+    expect(resolveCanaryPromptProfile("session-a", 10)).toBe(first);
+    expect(["prism", "compact"]).toContain(first);
+    expect(resolveCanaryPromptProfile("session-a", Number.NaN)).toBeUndefined();
   });
 
   it("builds a compact context ledger with goal, evidence, and open questions", () => {

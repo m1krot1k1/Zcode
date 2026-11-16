@@ -1,6 +1,6 @@
 {
   "name": "zcode",
-  "version": "3.17.121",
+  "version": "3.17.122",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -102,7 +102,9 @@
     "db:schema:check": "node --test scripts/test/sqlite-schema-contract.test.mjs && pnpm --dir apps/zcode-cli exec tsx ../../scripts/check-sqlite-schema.ts",
     "db:schema:update": "pnpm --dir apps/zcode-cli exec tsx ../../scripts/check-sqlite-schema.ts --update",
     "skills:mine": "node scripts/skills-mining.mjs",
-    "test:skills-mining": "node --test scripts/test/skills-mining.test.mjs"
+    "test:skills-mining": "node --test scripts/test/skills-mining.test.mjs",
+    "skills:approve": "node scripts/skills-mining.mjs --approve",
+    "skills:generate": "node scripts/skills-mining.mjs --generate"
   },
   "dependencies": {
     "d3-path": "^3.1.0",

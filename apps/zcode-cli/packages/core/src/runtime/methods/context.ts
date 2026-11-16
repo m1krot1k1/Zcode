@@ -18,6 +18,7 @@ import type {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
 import type { ContextLedgerSnapshot } from "../../context/sections/memory.js";
+import { resolveCanaryPromptProfile } from "../../context/sections/identity.js";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import {
   ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH,
@@ -134,6 +135,14 @@ export async function getSkillCatalog(
   };
 }
 
+function resolveRuntimePromptProfile(runtime: AgentRuntimeInternal): string | undefined {
+  const raw = process.env.ZCODE_PROMPT_CANARY_PERCENT;
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const percent = Number(raw);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return undefined;
+  return resolveCanaryPromptProfile(String(runtime.sessionId ?? ""), percent);
+}
+
 function loadContextLedger(workspaceRoot: string): ContextLedgerSnapshot | undefined {
   try {
     const raw = readFileSync(join(workspaceRoot, ".zcode/context-ledger.json"), "utf8");
@@ -195,6 +204,7 @@ export function createContextBuilderFromSnapshot(
     memoryIndexContent: options.memoryIndexContent,
     memoryRoot,
     contextLedger: loadContextLedger(this.workspaceRoot),
+    promptProfile: resolveRuntimePromptProfile(this),
     skills: this.skillLoadOutcome,
     agentProfiles: this.config.subagents?.profiles,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),

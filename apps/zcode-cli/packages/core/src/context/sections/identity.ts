@@ -3,6 +3,8 @@
 // ============================================================
 
 import type { ContextSection } from "../types.js";
+import { createHash } from "node:crypto";
+
 import type { OutputStylePromptConfig } from "../types.js";
 import { estimateTokens } from "../utils.js";
 // PRISM 10.0 coding profile: generated from the vendored, checksum-verified source.
@@ -41,7 +43,10 @@ export function buildHarnessBlock(): string {
   ].join("\n");
 }
 
-function buildIdentityPrompt(outputStyle?: OutputStylePromptConfig): string {
+function buildIdentityPrompt(
+  outputStyle?: OutputStylePromptConfig,
+  promptProfile?: string,
+): string {
   const intro = outputStyle
     ? "You respond to the user according to the active Output Style below while using ZCode's tools and instructions."
     : "You are an interactive ZCode agent that helps users with software engineering tasks.";
@@ -51,14 +56,30 @@ function buildIdentityPrompt(outputStyle?: OutputStylePromptConfig): string {
   // Default is the compact coding core. The full PRISM `coding` profile stays available
   // behind ZCODE_SYSTEM_PROMPT_PROFILE=prism for the A/B baseline; research/eval guidance
   // lives in the `research-eval` skill instead of the always-on prefix.
-  const profile = (process.env.ZCODE_SYSTEM_PROMPT_PROFILE ?? "compact").trim().toLowerCase();
+  const profile = (promptProfile ?? process.env.ZCODE_SYSTEM_PROMPT_PROFILE ?? "compact")
+    .trim()
+    .toLowerCase();
   const systemPrompt =
     profile === "prism" ? PRISM_OMEGA_SYSTEM_PROMPT : COMPACT_CODING_CORE_SYSTEM_PROMPT;
   return [identityLines, "", buildHarnessBlock(), "", systemPrompt].join("\n");
 }
 
-export function buildIdentitySection(outputStyle?: OutputStylePromptConfig): ContextSection {
-  const content = buildIdentityPrompt(outputStyle);
+export function resolveCanaryPromptProfile(
+  sessionId: string,
+  percent: number,
+): "prism" | "compact" | undefined {
+  if (!Number.isFinite(percent) || percent <= 0 || percent >= 100) {
+    return percent >= 100 ? "compact" : percent <= 0 ? "prism" : undefined;
+  }
+  const bucket = createHash("sha256").update(sessionId).digest()[0] % 100;
+  return bucket < percent ? "compact" : "prism";
+}
+
+export function buildIdentitySection(
+  outputStyle?: OutputStylePromptConfig,
+  promptProfile?: string,
+): ContextSection {
+  const content = buildIdentityPrompt(outputStyle, promptProfile);
 
   return {
     name: "Agent Identity",

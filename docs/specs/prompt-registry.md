@@ -126,10 +126,23 @@ compact, по 5 повторов на arm после стабилизации у
 Итог `--compare`: **candidate**, evidence `real`, без failures.
 
 - success: 1.0 / 1.0;
-- median tokens: 75737 → 70298 (−7.2%);
-- median duration: 11350.5 → 9896 ms (−12.8%);
+- median tokens: 75295 → 70313 (−6.6%);
+- median duration: 11350.5 → 11402.5 ms (+0.5%, within gate);
 - все 10 задач прошли per-task gate; `prompt-registry-count` стабилизирован явным указанием
   читать только `entries` и не обходить соседние файлы;
 - `react-version` исправлен на `devDependencies.react`, а не `dependencies.react`.
 
 14 рабочих ролей получили роль-специфичный `Evidence:` контракт; start/orchestrator сохранили общий контракт и бюджеты.
+
+## Canary
+
+`ZCODE_PROMPT_CANARY_PERCENT=10` включает canary-раскатку: bucket = SHA-256(sessionId)[0] % 100;
+bucket < percent получает compact, остальные — PRISM. 0 = весь baseline, 100 = весь candidate.
+Явный `ZCODE_SYSTEM_PROMPT_PROFILE` всегда сильнее canary. Выбор детерминирован по session id,
+поэтому повторный turn не переключает профиль.
+
+## Skills generation
+
+`pnpm skills:approve <taskId>` помечает кандидата approved; `pnpm skills:generate` создаёт
+`.agents/skills/mined-<taskId>/SKILL.md` только для approved-кандидатов, с `flag: wx` и без
+перезаписи существующих навыков. Сгенерированный skill — scaffold + evidence, а не транскрипт.
