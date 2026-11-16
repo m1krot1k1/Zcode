@@ -290,6 +290,7 @@ describe("output-token continuation with Compact", () => {
             compactableToolNames: ["MicroRead"],
             enabled: true,
             keepRecentToolResults: 1,
+            maskStyle: "clear",
             minTokenSavings: 1,
             thresholdTokens: 3_500,
           },

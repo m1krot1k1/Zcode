@@ -22,11 +22,134 @@ describe("local microcompact", () => {
     ).toBe(14);
   });
 
+  it("uses observation masking by default and keeps the tool target", () => {
+    const result = maybeLocalMicrocompactMessages({
+      config: {
+        keepRecentToolResults: 1,
+        minTokenSavings: 1,
+        thresholdTokens: 1,
+      },
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "read-old", name: "Read", input: { file_path: "/src/old.ts" } }],
+        },
+        {
+          role: "tool",
+          content: "old-read-token ".repeat(120),
+          toolCallId: "read-old",
+          toolName: "Read",
+        },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "read-latest", name: "Read", input: {} }],
+        },
+        {
+          role: "tool",
+          content: "latest-read-token ".repeat(40),
+          toolCallId: "read-latest",
+          toolName: "Read",
+        },
+      ],
+      resolveToolInput: (message) =>
+        message.toolCallId === "read-old" ? { file_path: "/src/old.ts" } : undefined,
+    });
+
+    const masked = String(result.messages[1]?.content);
+    expect(masked).toContain("[Old tool observation masked: Read path=/src/old.ts");
+    expect(masked).toContain("chars=");
+    expect(masked).not.toContain("old-read-token");
+    expect(result.payload?.tokensSaved).toBeGreaterThan(0);
+  });
+
+  it("does not mask an already masked observation twice", () => {
+    const base = [
+      {
+        role: "assistant" as const,
+        content: "",
+        toolCalls: [{ id: "read-old", name: "Read", input: {} }],
+      },
+      {
+        role: "tool" as const,
+        content: "old-read-token ".repeat(120),
+        toolCallId: "read-old",
+        toolName: "Read",
+      },
+      {
+        role: "assistant" as const,
+        content: "",
+        toolCalls: [{ id: "read-latest", name: "Read", input: {} }],
+      },
+      {
+        role: "tool" as const,
+        content: "latest-read-token ".repeat(120),
+        toolCallId: "read-latest",
+        toolName: "Read",
+      },
+    ];
+    const config = { keepRecentToolResults: 1, minTokenSavings: 1, thresholdTokens: 1 };
+    const once = maybeLocalMicrocompactMessages({ config, messages: base });
+    const masked = String(once.messages[1]?.content);
+    expect(masked).toContain("[Old tool observation masked: Read");
+    const twice = maybeLocalMicrocompactMessages({ config, messages: once.messages });
+    expect(String(twice.messages[1]?.content)).toBe(masked);
+  });
+
+  it("keeps small tool results and supports the explicit clear strategy", () => {
+    const messages = [
+      {
+        role: "assistant" as const,
+        content: "",
+        toolCalls: [{ id: "read-old", name: "Read", input: {} }],
+      },
+      {
+        role: "tool" as const,
+        content: "small result",
+        toolCallId: "read-old",
+        toolName: "Read",
+      },
+      {
+        role: "assistant" as const,
+        content: "",
+        toolCalls: [{ id: "read-latest", name: "Read", input: {} }],
+      },
+      {
+        role: "tool" as const,
+        content: "latest result",
+        toolCallId: "read-latest",
+        toolName: "Read",
+      },
+    ];
+
+    const small = maybeLocalMicrocompactMessages({
+      config: { keepRecentToolResults: 1, minTokenSavings: 1, thresholdTokens: 1 },
+      messages,
+    });
+    expect(small.payload).toBeUndefined();
+    expect(String(small.messages[1]?.content)).toBe("small result");
+
+    const cleared = maybeLocalMicrocompactMessages({
+      config: {
+        keepRecentToolResults: 1,
+        maskStyle: "clear",
+        minMaskChars: 0,
+        minTokenSavings: 0,
+        thresholdTokens: 1,
+      },
+      messages,
+    });
+    expect(String(cleared.messages[1]?.content)).toBe("[Old tool result content cleared]");
+  });
+
+
   it("uses reasoning pressure when deciding whether to clear old tool results", () => {
     const result = maybeLocalMicrocompactMessages({
       config: {
         enabled: true,
         keepRecentToolResults: 1,
+        minMaskChars: 0,
         minTokenSavings: 1,
         thresholdTokens: 500,
       },
@@ -101,7 +224,7 @@ describe("local microcompact", () => {
       keptToolCallIds: ["read-latest"],
       trigger: MicrocompactTrigger.TokenPressure,
     });
-    expect(String(result.messages[1]?.content)).toBe("[Old tool result content cleared]");
+    expect(String(result.messages[1]?.content)).toContain("[Old tool observation masked: Read");
     expect(String(result.messages[3]?.content)).toContain("latest-read-token");
   });
 
@@ -146,7 +269,7 @@ describe("local microcompact", () => {
       keptToolCallIds: ["read-latest"],
       trigger: MicrocompactTrigger.TimeBased,
     });
-    expect(String(result.messages[1]?.content)).toBe("[Old tool result content cleared]");
+    expect(String(result.messages[1]?.content)).toContain("[Old tool observation masked: Read");
     expect(String(result.messages[3]?.content)).toContain("latest-read-token");
   });
 
@@ -238,7 +361,7 @@ describe("local microcompact", () => {
       keptToolCallIds: ["read-latest-a", "read-latest-b"],
       trigger: MicrocompactTrigger.TokenPressure,
     });
-    expect(String(result.messages[1]?.content)).toBe("[Old tool result content cleared]");
+    expect(String(result.messages[1]?.content)).toContain("[Old tool observation masked: Read");
     expect(String(result.messages[3]?.content)).toContain("latest-a-token");
     expect(String(result.messages[4]?.content)).toContain("latest-b-token");
   });
@@ -417,7 +540,9 @@ describe("local microcompact", () => {
         toolName: "Read",
       },
     });
-    expect(String(result.entries[2]?.message.content)).toBe("[Old tool result content cleared]");
+    expect(String(result.entries[2]?.message.content)).toContain(
+      "[Old tool observation masked: Read",
+    );
     expect(entries).toEqual(originalEntries);
     expect(result.entries[0]).toBe(entries[0]);
     expect(result.entries[1]).toBe(entries[1]);

@@ -108,7 +108,9 @@ function resolveLocalMicrocompactConfig(
   const fullCompactThreshold = getAutoCompactThreshold(config);
   return {
     ...config.microcompact,
-    enabled: config.microcompact?.enabled === true,
+    // Observation masking — базовая гигиена контекста, а не опциональная роскошь:
+    // по умолчанию включена, но explicit false остаётся выключателем.
+    enabled: config.microcompact?.enabled !== false,
     thresholdTokens:
       config.microcompact?.thresholdTokens ??
       buildDefaultMicrocompactThreshold(fullCompactThreshold),

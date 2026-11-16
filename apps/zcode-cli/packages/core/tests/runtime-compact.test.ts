@@ -3963,6 +3963,7 @@ describe("AgentRuntime manual compact", () => {
             compactableToolNames: ["LargeRead"],
             enabled: true,
             keepRecentToolResults: 1,
+            maskStyle: "clear",
             minTokenSavings: 1,
             thresholdTokens: 1,
           },

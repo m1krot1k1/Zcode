@@ -182,6 +182,9 @@ function resolveRootAutoSelection(options: {
   const { runtime, selection, intent, prompt, modelExecution } = options;
   if (!selection || !prompt?.trim()) return undefined;
   if (runtime.config.autoReasoningLevel === false) return undefined;
+  // /compact — maintenance-команда: она не должна порождать model_selected
+  // из-за эвристики сложности промпта.
+  if (/^\/compact(?:\s|$)/iu.test(prompt.trim())) return undefined;
   // Auto — только для корневого turn. Child/worker получает уровень из profile,
   // override или относительного effort-класса; повторная эвристика на его prompt
   // перетирала explicit profile level (например high → low на коротком prompt).
@@ -202,7 +205,10 @@ function resolveRootAutoSelection(options: {
       selectionFallback: modelExecution?.selectionFallback,
     }),
   });
-  const supportedLevels = baseModel.optionSpecs.reasoningLevel.values;
+  const supportedLevels = baseModel.optionSpecs.reasoningLevel?.values ?? [];
+  // Модель без reasoning-шкалы не участвует в auto-effort: иначе maintenance
+  // команды и тестовые модели падают на несуществующем optionSpecs.
+  if (supportedLevels.length === 0) return undefined;
   const auto = resolveRootAutoEffort({
     prompt,
     planEnabled: intent?.planEnabled,
@@ -243,7 +249,7 @@ export async function applySubmissionExecutionState(
   const selection = auto?.selection ?? intent?.modelSelection;
   const previousSelection = auto?.previousSelection ?? publishedSelections.get(runtime);
   const supportedThoughtLevels =
-    auto?.supportedLevels ?? preparedModel?.optionSpecs.reasoningLevel.values;
+    auto?.supportedLevels ?? preparedModel?.optionSpecs.reasoningLevel?.values;
   let model = preparedModel;
 
   if (selection) {

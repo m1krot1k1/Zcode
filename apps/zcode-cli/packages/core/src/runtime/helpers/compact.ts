@@ -114,6 +114,13 @@ export function maybeLocalMicrocompactRuntimeEntries(input: {
     applyCacheControl: false,
     useMidConversationSystem: input.useMidConversationSystem,
   });
+  const toolInputById = new Map<string, unknown>();
+  for (const message of projection.messages) {
+    if (message.role !== "assistant" || !message.toolCalls) continue;
+    for (const toolCall of message.toolCalls) {
+      toolInputById.set(toolCall.id, toolCall.input);
+    }
+  }
   const result = maybeLocalMicrocompactMessages({
     config: input.config,
     lastAssistantCompletedAtMs: input.lastAssistantCompletedAtMs,
@@ -125,6 +132,8 @@ export function maybeLocalMicrocompactRuntimeEntries(input: {
         ? source.message.toolName
         : message.toolName;
     },
+    resolveToolInput: (message) =>
+      message.toolCallId ? toolInputById.get(message.toolCallId) : undefined,
     nowMs: input.nowMs,
   });
 
