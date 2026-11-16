@@ -51,4 +51,26 @@ describe("createInheritedSubagentModelFactory", () => {
     ).toBe(rebound);
     expect(fallback).toHaveBeenCalledTimes(1);
   });
+
+  it("не возвращает старый inherited model после forced effort selection", () => {
+    const inherited = createModel("low", 8_000);
+    const rebound = createModel("max", 8_000);
+    const fallback = vi.fn(() => rebound);
+    const factory = createInheritedSubagentModelFactory(
+      { providerId: "provider-a", modelId: "model-a", options: { reasoningLevel: "max" } },
+      inherited,
+      fallback,
+    );
+
+    expect(
+      factory({
+        selection: {
+          providerId: "provider-a",
+          modelId: "model-a",
+          options: { reasoningLevel: "max" },
+        },
+      }),
+    ).toBe(rebound);
+    expect(fallback).toHaveBeenCalledTimes(1);
+  });
 });

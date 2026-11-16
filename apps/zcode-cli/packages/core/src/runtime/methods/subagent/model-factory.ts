@@ -10,6 +10,18 @@ export function createInheritedSubagentModelFactory(
   fallbackFactory: AgentRuntimeDeps["modelFactory"],
 ): NonNullable<AgentRuntimeDeps["modelFactory"]> {
   return (target) => {
+    // После forced effort selection уровня может отличаться от inheritedModel:
+    // factory, пересобранная с max-selection, иначе вернула бы старый low-model,
+    // и orchestrator снова получил бы low. Спасаем только реальное совпадение.
+    const requestedLevel = target.selection.options?.reasoningLevel;
+    const inheritedModelLevel = inheritedModel.options.reasoningLevel;
+    if (
+      requestedLevel !== undefined &&
+      inheritedModelLevel !== undefined &&
+      requestedLevel !== inheritedModelLevel
+    ) {
+      return fallbackFactory(target);
+    }
     if (
       target.selection.providerId === inheritedSelection.providerId &&
       target.selection.modelId === inheritedSelection.modelId &&

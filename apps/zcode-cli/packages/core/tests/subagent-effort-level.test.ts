@@ -5,6 +5,7 @@ import {
   type ResolveSubagentEffortLevelInput,
 } from "../src/runtime/helpers/subagent-effort.js";
 import { applySubagentEffortSelection } from "../src/runtime/methods/subagent/effort-application.js";
+import { createInheritedSubagentModelFactory } from "../src/runtime/methods/subagent/model-factory.js";
 
 const LEVELS = ["disabled", "low", "medium", "high", "max"] as const;
 
@@ -82,6 +83,44 @@ describe("resolveSubagentEffortLevel", () => {
     expect(result.childSelection.providerId).toBe("opencode-go");
     expect(result.childSelection.modelId).toBe("deepseek-v4.1-flash");
     expect(result.childSelection.options?.reasoningLevel).toBe("max");
+  });
+
+  it("keeps orchestrator max through the inherited-model factory", () => {
+    const inheritedSelection = {
+      modelId: "deepseek-v4.1-flash",
+      options: { reasoningLevel: "low" },
+      providerId: "opencode-go",
+    };
+    const inheritedModel = {
+      optionSpecs: { reasoningLevel: { values: [...LEVELS] } },
+      options: { reasoningLevel: "low" },
+      providerId: "opencode-go",
+      modelId: "deepseek-v4.1-flash",
+    } as never;
+    const maxModel = {
+      optionSpecs: { reasoningLevel: { values: [...LEVELS] } },
+      options: { reasoningLevel: "max" },
+      providerId: "opencode-go",
+      modelId: "deepseek-v4.1-flash",
+    } as never;
+    const fallback = (() => maxModel) as never;
+    const buildFactory = (selection: typeof inheritedSelection) =>
+      createInheritedSubagentModelFactory(selection, inheritedModel, fallback);
+
+    const result = applySubagentEffortSelection({
+      agentType: "orchestrator",
+      childModel: inheritedModel,
+      childSelection: inheritedSelection,
+      parentSelection: inheritedSelection,
+      parentModel: inheritedModel,
+      baseFactory: buildFactory(inheritedSelection),
+      rebuildFactory: (selection) => buildFactory(selection as typeof inheritedSelection),
+    });
+
+    expect(result.childSelection.options?.reasoningLevel).toBe("max");
+    expect((result.childModel as { options?: { reasoningLevel?: string } }).options?.reasoningLevel).toBe(
+      "max",
+    );
   });
 
   it("is a no-op for models without reasoning levels", () => {

@@ -222,6 +222,14 @@ You are powered by the model named <providerId>/<modelId> (reasoning effort: <le
 «оркестратор всегда анализирует на максимуме своей шкалы», пока пользователь не выбрал модель
 без reasoning levels.
 
+### RF-8b. Пересборка inherited model
+
+После forced effort selection `rebuildFactory` не имеет права вернуть старый inherited model,
+если явно запрошенный `reasoningLevel` отличается от `inheritedModel.options.reasoningLevel`.
+Иначе orchestrator selection становится `max`, а фактический model/request остаётся `low`.
+Сравнение идёт только при наличии обоих explicit levels; sparse selection без level сохраняет
+прежнее поведение повторного использования.
+
 ### RF-9. Инструкции профилей
 
 В `apps/zcode-cli/packages/core/src/subagent/built-in-profiles.ts` добавляется общий контракт
