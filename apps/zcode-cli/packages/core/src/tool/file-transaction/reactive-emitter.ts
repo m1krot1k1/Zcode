@@ -109,8 +109,19 @@ export interface FileTransactionEventSink {
   readonly turnId?: string;
   readonly traceId: string;
   readonly deliveryKind: FileTransactionDeliveryKind;
-  readonly structuredPatches?: ReadonlyMap<string, readonly DiffHunk[]>;
-  readonly lineStats?: ReadonlyMap<string, { additions: number; deletions: number }>;
+  /**
+   * 修复原因（Этап 6.1c）：патчи и счётчики ± вычисляются лениво — дифф не нужен до
+   * реальной эмиссии, а набор файлов известен только из события. Раньше sink принимал
+   * готовые Map, и `createTransactionHooks` их просто не передавал: `desktop-continuous`
+   * получал файлы без `structuredPatch`/`additions`, поэтому панель показывала «+0 -0»
+   * и не могла открыть diff. Теперь sink сам решает, что строить.
+   */
+  readonly structuredPatches?: (
+    event: FileTransactionLifecycleEvent,
+  ) => ReadonlyMap<string, readonly DiffHunk[]> | undefined;
+  readonly lineStats?: (
+    event: FileTransactionLifecycleEvent,
+  ) => ReadonlyMap<string, { additions: number; deletions: number }> | undefined;
   readonly backgroundTasks?: () => readonly ZCodeFileTransactionBackgroundTask[];
 }
 
@@ -126,8 +137,8 @@ export function createFileTransactionEventEmitter(
     const payload = buildFileTransactionEventPayload({
       event,
       deliveryKind: sink.deliveryKind,
-      ...(sink.structuredPatches ? { structuredPatches: sink.structuredPatches } : {}),
-      ...(sink.lineStats ? { lineStats: sink.lineStats } : {}),
+      ...(sink.structuredPatches ? { structuredPatches: sink.structuredPatches(event) } : {}),
+      ...(sink.lineStats ? { lineStats: sink.lineStats(event) } : {}),
       ...(sink.backgroundTasks ? { backgroundTasks: sink.backgroundTasks() } : {}),
     });
     if (!payload) return;

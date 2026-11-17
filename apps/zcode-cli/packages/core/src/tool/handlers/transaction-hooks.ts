@@ -67,18 +67,78 @@ export function buildPatchProjections(files: readonly FileTransactionCommittedFi
 }
 
 /**
+ * Уведомляет локальный кодовый индекс о зафиксированных путях.
+ *
+ * Причина отдельного шага вместо ожидания watcher: коммит транзакции уже знает точные пути,
+ * а watcher отдаёт их с задержкой дебаунса. Сигнал идёт через `notifyFilesMutated`, то есть
+ * тем же инкрементальным путём, что и события файловой системы, — второй путь записи не
+ * создаётся. Ошибки не влияют на уже принятое решение о коммите.
+ */
+async function notifyCodeIndex(
+  context: ToolExecutionContext,
+  event: FileTransactionLifecycleEvent,
+): Promise<void> {
+  if (event.status !== "committed") return;
+  const port = context.codeIntelligencePort;
+  if (!port?.notifyFilesMutated) return;
+  const changed: string[] = [];
+  const removed: string[] = [];
+  for (const file of event.files) {
+    if (file.operation === "delete") removed.push(file.displayPath);
+    else changed.push(file.displayPath);
+    if (file.moveFromPath) removed.push(file.moveFromPath);
+  }
+  if (changed.length === 0 && removed.length === 0) return;
+  try {
+    await port.notifyFilesMutated({
+      workspacePath: event.workspacePath,
+      ...(event.workspaceIdentity ? { workspaceIdentity: event.workspaceIdentity } : {}),
+      changed,
+      removed,
+    });
+  } catch {
+    // Индекс — производный кеш: его отставание не должно ломать коммит файла.
+  }
+}
+
+/**
  * Создаёт `onTransactionEvent`-хук. Патчи вычисляются лениво — только когда
  * событие реально эмитится, чтобы не платить за дифф на каждом шаге коммита.
  */
 export function createTransactionHooks(
   context: ToolExecutionContext,
 ): ((event: FileTransactionLifecycleEvent) => Promise<void>) | undefined {
+  // 修复原因（Этап 6.1c）：这里接通了「已计算但从未传下去」的投影。
+  // `buildPatchProjections` существовал и экспортировался, но emitter вызывался без
+  // `structuredPatches`/`lineStats`, поэтому `fileTransaction.updated` уходил в UI
+  // без патча и без счётчиков ±: панель показывала «+0 -0» и не открывала diff.
+  // Один ленивый расчёт на событие — источники правды по-прежнему `beforeContent`/
+  // `afterContent` из коммита, второй путь вычисления не создаётся.
+  const projectionsByEvent = new WeakMap<
+    FileTransactionLifecycleEvent,
+    ReturnType<typeof buildPatchProjections>
+  >();
+  const readProjections = (event: FileTransactionLifecycleEvent) => {
+    const cached = projectionsByEvent.get(event);
+    if (cached) return cached;
+    const built = buildPatchProjections(event.files);
+    projectionsByEvent.set(event, built);
+    return built;
+  };
   const emitter = createFileTransactionEventEmitter({
     ...(context.emitEvent ? { emitEvent: context.emitEvent } : {}),
     sessionId: context.sessionId,
     ...(context.turnId ? { turnId: context.turnId } : {}),
     traceId: context.traceId,
     deliveryKind: resolveFileTransactionDeliveryKind(context),
+    structuredPatches: (event) => readProjections(event).patches,
+    lineStats: (event) => readProjections(event).stats,
   });
-  return context.emitEvent ? emitter : undefined;
+  // Хук нужен, даже если UI-события не эмитятся: индекс обновляется по факту коммита.
+  const indexEnabled = Boolean(context.codeIntelligencePort?.notifyFilesMutated);
+  if (!context.emitEvent && !indexEnabled) return undefined;
+  return async (event) => {
+    if (context.emitEvent) await emitter(event);
+    if (indexEnabled) await notifyCodeIndex(context, event);
+  };
 }
