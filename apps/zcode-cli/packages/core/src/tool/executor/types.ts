@@ -1,5 +1,6 @@
 import type { ToolSearchExecutionContext } from "@zcode/contracts";
 import type { IFileLockRegistry } from "../file-transaction/contract.js";
+import type { IFileTransactionTaskRegistry } from "../file-transaction/task-contract.js";
 import type {
   AgentExecutionTelemetryPort,
   AgentTelemetryActorKind,
@@ -101,6 +102,7 @@ export interface ToolExecutorOptions {
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
   fileLockRegistry?: IFileLockRegistry;
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
   enableToolCallSelfRepair?: boolean;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
@@ -230,6 +232,7 @@ export interface ToolExecutorDeps {
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
   fileLockRegistry?: IFileLockRegistry;
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
   enableToolCallSelfRepair: boolean;
   consecutiveSchemaFailuresByTool: Map<string, number>;
   httpClientPort?: HttpClientPort;

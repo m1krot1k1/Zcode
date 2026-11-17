@@ -31,6 +31,7 @@ import {
 import { mapSessionInfoLikePayload } from "./sessionInfo.js";
 import { mapModelStreaming } from "./toolStreaming.js";
 import { mapToolUpdated } from "./tools.js";
+import { mapFileTransactionUpdated } from "./fileTransactions.js";
 import {
   compactFailureToTimelineEvent,
   mapCompactTimelinePayload,
@@ -179,6 +180,8 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
   }
 
   switch (event.type) {
+    case "fileTransaction.updated":
+      return mapFileTransactionUpdated(taskId, event);
     case "tool.updated":
       return mapToolUpdated(
         taskId,

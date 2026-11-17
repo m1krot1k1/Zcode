@@ -45,6 +45,7 @@ import {
 import {
   generateTraceId,
   resolveWorkspaceKey,
+  zcodeFileTransactionEventPayloadSchema,
   zcodeSessionSettingsStateSchema,
 } from "@zcode/shared";
 import { errorAttributionSchema } from "@zcode/shared/zcode-protocol-v4";
@@ -209,6 +210,22 @@ export function mapSessionEvent(
   }
   if (apiRetryClearEvent) {
     return [apiRetryClearEvent];
+  }
+
+  if (event.type === "fileTransaction.updated") {
+    // Инкремент 4.2: владелец факта — CLI; сервис лишь зеркалит его в поток,
+    // сохраняя форму payload (полный patch либо компактная сводка).
+    const parsed = zcodeFileTransactionEventPayloadSchema.safeParse(event.payload);
+    if (!parsed.success) return [];
+    return [
+      {
+        type: "file_transaction_update",
+        taskId: params.taskId,
+        traceId: traceId ?? generateTraceId(params.taskId),
+        transaction: parsed.data,
+        ...(eventInputId ? { inputId: eventInputId } : {}),
+      },
+    ];
   }
 
   if (event.type === "tool.updated") {

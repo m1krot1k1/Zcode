@@ -41,6 +41,20 @@ export interface SingleEditRequest {
   readonly preserveLineEndings?: boolean;
 }
 
+/**
+ * Уточнённый legacy-лейбл стратегии для обратной совместимости `EditOutput.matchStrategy`.
+ * Канонический уровень остаётся одним из шести `DiffMatchTier`; лейбл лишь уточняет подтип.
+ */
+export type LegacyMatchStrategy =
+  | "exact"
+  | "quote_normalized"
+  | "line_number_prefix_stripped"
+  | "escape_normalized"
+  | "unicode_escape_normalized"
+  | "line_trimmed"
+  | "indentation_flexible"
+  | "block_anchor";
+
 export type SingleEditOutcome =
   | {
       readonly status: "matched";
@@ -52,6 +66,8 @@ export type SingleEditOutcome =
       readonly actualNewString: string;
       readonly startLine: number;
       readonly endLine: number;
+      /** Уточняющий подтип уровня; отсутствует — используйте `appliedTier`. */
+      readonly legacyMatchStrategy?: LegacyMatchStrategy;
     }
   | {
       readonly status: "ambiguous";

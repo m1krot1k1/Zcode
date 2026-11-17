@@ -119,6 +119,7 @@ import type {
 import type { AgentProfile } from "../subagent/profile.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
+import type { IFileTransactionTaskRegistry } from "../tool/file-transaction/task-contract.js";
 import type { IFileLockRegistry } from "../tool/file-transaction/contract.js";
 import type { PresentationSurface } from "../context/types.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
@@ -407,6 +408,8 @@ export interface AgentRuntimeDeps {
   fileSystemPort?: FileSystemPort;
   /** Единый межсубагентный реестр пофайловых RW-блокировок для родителя и всех детей Swarm (F-02). */
   fileLockRegistry?: IFileLockRegistry;
+  /** Реестр жизненных циклов фоновых файловых транзакций (Инкремент 4.2). */
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;

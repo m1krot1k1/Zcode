@@ -784,6 +784,24 @@ export interface ZCodeTaskWarning {
   detail?: string;
 }
 
+/**
+ * Реактивное событие транзакционного редактирования файлов (Инкремент 4.2).
+ *
+ * Один факт, две проекции:
+ *  - `compact: false` — полный structuredPatch (desktop-continuous, Electron);
+ *  - `compact: true` — сводка в пределах 2 КБ (web-remote-replayable, Web/Mobile).
+ *
+ * Владелец факта — CLI `FileTransactionManager`; UI не выводит состояние из дельт.
+ */
+export interface ZCodeFileTransactionUpdate {
+  type: "file_transaction_update";
+  taskId: string;
+  traceId: TraceId;
+  inputId?: InputId;
+  /** Уже спроецированный payload: форма зависит от контура доставки. */
+  transaction: import("./zcode-protocol/schema-file-transaction.js").ZCodeFileTransactionEventPayload;
+}
+
 /** Agent 每次模型请求完成后推送的 task 累计 token 增量。 */
 export interface ZCodeTaskTokenUsageDelta {
   type: "task_token_usage_delta";

@@ -42,6 +42,9 @@ const DIRECT_BRANCH_REFERENCE_SEARCH_DESCRIPTIONS = {
 
 const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "Agent",
+  // ApplyPatch/MultiEdit входят в стабильный отсортированный префикс: F-03 снимает
+  // модельный гейт и делает атомарные мультифайловые правки доступными всем моделям.
+  "ApplyPatch",
   "AskUserQuestion",
   "Bash",
   "Edit",
@@ -49,6 +52,7 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "ExitPlanMode",
   "Glob",
   "Grep",
+  "MultiEdit",
   "Read",
   "Skill",
   "TaskOutput",
@@ -66,6 +70,7 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   // Marketplace tools are local-only and therefore follow the shared provider partition.
   "SkillSearch",
   "SkillInstall",
+  "InstallCapability",
   "CreateWorkflow",
   // 修订入口紧随 CreateWorkflow 注册（docs/dynamic-workflow/launch.md「The `AmendWorkflow` tool」）。
   "AmendWorkflow",

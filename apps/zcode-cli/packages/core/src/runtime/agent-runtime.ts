@@ -102,7 +102,9 @@ import type {
 import { initializeRuntimeTooling } from "./helpers/runtime-tools.js";
 import {
   createFileLockRegistry,
+  createFileTransactionTaskRegistry,
   type IFileLockRegistry,
+  type IFileTransactionTaskRegistry,
 } from "../tool/file-transaction/index.js";
 import {
   resolveInitialDynamicWorkflowToolsActivated,
@@ -352,6 +354,7 @@ export class AgentRuntime {
   private executionPort?: ExecutionPort;
   private fileSystemPort?: FileSystemPort;
   private fileLockRegistry: IFileLockRegistry;
+  private fileTransactionTaskRegistry: IFileTransactionTaskRegistry;
   private codeIntelligencePort?: CodeIntelligencePort;
   private imageProcessorPort?: ImageProcessorPort;
   private pdfDocumentPort?: PdfDocumentPort;
@@ -517,6 +520,11 @@ export class AgentRuntime {
     this.executionPort = deps.executionPort;
     this.fileSystemPort = deps.fileSystemPort;
     this.fileLockRegistry = deps.fileLockRegistry ?? createFileLockRegistry();
+    // Инкремент 4.2: единый владелец жизненного цикла фоновых файловых транзакций.
+    // Реестр получает тот же FileLockRegistry, поэтому отмена задачи снимает её локи.
+    this.fileTransactionTaskRegistry =
+      deps.fileTransactionTaskRegistry ??
+      createFileTransactionTaskRegistry({ lockRegistry: this.fileLockRegistry });
     this.codeIntelligencePort = deps.codeIntelligencePort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;

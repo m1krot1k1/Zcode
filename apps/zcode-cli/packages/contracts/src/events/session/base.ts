@@ -75,6 +75,12 @@ export const SessionEventType = {
   BackgroundTaskStarted: "background_task_started",
   BackgroundTaskUpdated: "background_task_updated",
   BackgroundTaskCompleted: "background_task_completed",
+  /**
+   * Реактивное событие транзакционного редактирования файлов: `active_diff` /
+   * `committed` / `rolled_back` + затронутые пути. Владелец факта — CLI
+   * (`FileTransactionManager`), проекции (Electron renderer, Web UI) только читают.
+   */
+  FileTransactionUpdated: "file_transaction_updated",
   // workflow run 的实时进度：一条引擎 RunEvent 一条事件，追加到**父会话**（run 自己没有会话）。
   // v4 侧归约成 workflowRuns 状态键；v3 侧在 shouldExposeSessionEventToProtocol 剥离。
   // 命名刻意带 dynamic_：legacy `Workflow` 工具的 script run 事件（workflow_started /

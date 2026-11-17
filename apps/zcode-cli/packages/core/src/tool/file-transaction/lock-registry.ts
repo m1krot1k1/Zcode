@@ -162,7 +162,7 @@ export class FileLockRegistry implements IFileLockRegistry {
 
     // 1. Отменяем ожидающие запросы в очередях, принадлежащие holderId или его дочерним вызовам
     for (const [key, slot] of this.slots.entries()) {
-      for (const waiter of [...slot.queue]) {
+      for (const waiter of slot.queue) {
         if (
           !waiter.granted &&
           !waiter.cancelled &&
@@ -181,9 +181,9 @@ export class FileLockRegistry implements IFileLockRegistry {
     }
 
     // 2. Освобождаем уже выданные активные гранты
-    for (const [registeredHolder, grants] of [...this.activeGrantsByHolder.entries()]) {
+    for (const [registeredHolder, grants] of this.activeGrantsByHolder.entries()) {
       if (registeredHolder === holderId || registeredHolder.startsWith(prefix)) {
-        for (const releaseFn of [...grants]) {
+        for (const releaseFn of Array.from(grants)) {
           releaseFn();
           releasedCount += 1;
         }

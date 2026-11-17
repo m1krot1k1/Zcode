@@ -209,6 +209,8 @@ export const WORKER_SUBAGENT_TOOL_NAMES = [
   "Grep",
   "Write",
   "Edit",
+  "ApplyPatch",
+  "MultiEdit",
   "Bash",
   "WebFetch",
   "WebSearch",

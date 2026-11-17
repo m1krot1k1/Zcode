@@ -294,6 +294,23 @@ export {
   zcodeUserInputRequestedEventPayloadSchema,
   zcodeUserInputResolvedEventPayloadSchema,
 } from "./schema-events.js";
+export {
+  FILE_TRANSACTION_COMPACT_BUDGET_BYTES,
+  estimateFileTransactionPayloadBytes,
+  toCompactFileTransactionPayload,
+  zcodeFileTransactionBackgroundTaskSchema,
+  zcodeFileTransactionDiffFileSchema,
+  zcodeFileTransactionEventPayloadSchema,
+  zcodeFileTransactionFileSummarySchema,
+  zcodeFileTransactionOperationSchema,
+  zcodeFileTransactionStatusSchema,
+} from "./schema-file-transaction.js";
+export type {
+  ZCodeFileTransactionBackgroundTask,
+  ZCodeFileTransactionDiffFile,
+  ZCodeFileTransactionEventPayload,
+  ZCodeFileTransactionFileSummary,
+} from "./schema-file-transaction.js";
 export type {
   ZCodeComputerUseOperationEvent,
   ZCodeSessionEvent,

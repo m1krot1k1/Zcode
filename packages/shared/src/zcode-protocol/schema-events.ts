@@ -20,6 +20,7 @@ import {
   zcodeToolResultObjectSchema,
 } from "./schema-core.js";
 import { zcodePermissionOptionSchema, zcodeTurnInputSourceSchema } from "./schema-mcp.js";
+import { zcodeFileTransactionEventPayloadSchema } from "./schema-file-transaction.js";
 import {
   zcodeModelStreamingEventPayloadSchema,
   zcodeSessionStateSnapshotSchema,
@@ -121,6 +122,9 @@ export const zcodeSessionEventTypeSchema = z.enum([
   "checkpoint.created",
   "rewind.triggered",
   "streamRecovery.updated",
+  // Реактивная синхронизация транзакций ФС (Инкремент 4.2): один факт,
+  // полная и компактная проекции различаются полем `compact` в payload.
+  "fileTransaction.updated",
 ]);
 
 export type ZCodeSessionEventType = z.infer<typeof zcodeSessionEventTypeSchema>;
@@ -490,6 +494,7 @@ export const zcodeSessionEventSchema = z.discriminatedUnion("type", [
   zcodeSessionEventEnvelopeFor("checkpoint.created", jsonObjectSchema),
   zcodeSessionEventEnvelopeFor("rewind.triggered", jsonObjectSchema),
   zcodeSessionEventEnvelopeFor("streamRecovery.updated", jsonObjectSchema),
+  zcodeSessionEventEnvelopeFor("fileTransaction.updated", zcodeFileTransactionEventPayloadSchema),
 ]);
 
 export type ZCodeSessionEvent = z.infer<typeof zcodeSessionEventSchema>;

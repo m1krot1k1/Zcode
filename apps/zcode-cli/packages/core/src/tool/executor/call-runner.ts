@@ -475,6 +475,7 @@ async function executeToolCallImpl(
         browserDocumentationRoot: deps.browserDocumentationRoot,
         fileSystemPort: deps.fileSystemPort,
         fileLockRegistry: deps.fileLockRegistry,
+        fileTransactionTaskRegistry: deps.fileTransactionTaskRegistry,
         httpClientPort: deps.httpClientPort,
         imageProcessorPort: deps.imageProcessorPort,
         pdfDocumentPort: deps.pdfDocumentPort,

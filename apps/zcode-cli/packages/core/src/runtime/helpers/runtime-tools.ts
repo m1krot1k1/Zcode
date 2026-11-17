@@ -182,6 +182,7 @@ function createRuntimeToolExecutor(
       : undefined,
     fileSystemPort: deps.fileSystemPort,
     fileLockRegistry: runtime.fileLockRegistry,
+    fileTransactionTaskRegistry: runtime.fileTransactionTaskRegistry,
     enableToolCallSelfRepair: runtime.config.enableToolCallSelfRepair,
     httpClientPort: deps.httpClientPort,
     imageProcessorPort: deps.imageProcessorPort,

@@ -1,5 +1,9 @@
 import { extname } from "node:path";
-import type { ISyntaxValidator, SyntaxErrorLocation, SyntaxValidationDiagnostic } from "./contract.js";
+// 根因: балансный сканер не видит ошибок вида `export const a = ;` — они синтаксически
+// ломают парсер, но не нарушают баланс скобок. Используем настоящий парсер TypeScript
+// без создания Program/typecheck, чтобы проверка оставалась быстрой (<1 мс/файл).
+import ts from "typescript";
+import type { ISyntaxValidator, SyntaxValidationDiagnostic } from "./contract.js";
 
 interface ScanResult {
   readonly errors: Array<{ line: number; column: number; message: string }>;
@@ -37,6 +41,19 @@ export class SyntaxValidator implements ISyntaxValidator {
     const firstError = nextErrors[0];
     if (nextErrors.length === 0) {
       return { path: params.filePath, language, valid: true, preExistingErrors: 0, introducedErrors: 0 };
+    }
+
+    // Дельта-правило: если файл был сломан ДО транзакции, а число ошибок не выросло,
+    // правка не виновата — она не должна блокировать коммит.
+    const valid = introducedErrors === 0;
+    if (valid) {
+      return {
+        path: params.filePath,
+        language,
+        valid,
+        preExistingErrors: nextErrors.length,
+        introducedErrors: 0,
+      };
     }
 
     return {
@@ -109,6 +126,7 @@ function collectErrors(language: string, content: string): Array<{ line: number;
     case "tsx":
     case "javascript":
     case "jsx":
+      return validateTypeScript(language, content);
     case "go":
     case "rust":
     case "jvm":
@@ -122,6 +140,55 @@ function collectErrors(language: string, content: string): Array<{ line: number;
     default:
       return [];
   }
+}
+
+
+/**
+ * Быстрая проверка синтаксиса TS/TSX/JS/JSX парсером TypeScript:
+ * `createSourceFile` только парсит (без Program, резолвинга и typecheck),
+ * поэтому стоимость линейна по размеру буфера. Ошибки диагностируются
+ * с точной позицией; JSX включается через ScriptKind.
+ */
+function validateTypeScript(
+  language: string,
+  content: string,
+): Array<{ line: number; column: number; message: string }> {
+  const fileName = language === "tsx" ? "buffer.tsx" : language === "jsx" ? "buffer.jsx" : language === "javascript" ? "buffer.js" : "buffer.ts";
+  const scriptKind =
+    language === "tsx"
+      ? ts.ScriptKind.TSX
+      : language === "jsx"
+        ? ts.ScriptKind.JSX
+        : language === "javascript"
+          ? ts.ScriptKind.JS
+          : ts.ScriptKind.TS;
+
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    content,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ false,
+    scriptKind,
+  );
+
+  // `parseDiagnostics` есть в рантайме, но не в публичных типах SourceFile.
+  // Только парсер: никакого Program/typecheck, поэтому проверка остаётся O(размер буфера).
+  const diagnostics =
+    (sourceFile as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
+
+  const seen = new Set<string>();
+  const errors: Array<{ line: number; column: number; message: string }> = [];
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.category !== ts.DiagnosticCategory.Error) continue;
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, " ");
+    const start = diagnostic.start ?? 0;
+    const located = locateOffset(content, start);
+    const key = `${located.line}:${located.column}:${message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    errors.push({ line: located.line, column: located.column, message });
+  }
+  return errors;
 }
 
 function validateJson(content: string): Array<{ line: number; column: number; message: string }> {
@@ -360,7 +427,7 @@ function validatePythonIndentation(content: string): ScanResult["errors"] {
     const raw = lines[i]!;
     const trimmedRight = raw.replace(/\s+$/u, "");
     if (trimmedRight.trim().length === 0) continue;
-    if (/^#/u.test(trimmedRight.trim())) continue;
+    if (trimmedRight.trim().startsWith("#")) continue;
 
     const indentMatch = /^[ \t]*/u.exec(trimmedRight);
     const indent = indentMatch ? indentMatch[0] : "";

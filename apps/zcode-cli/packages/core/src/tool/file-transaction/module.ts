@@ -4,7 +4,7 @@
  */
 export const cliFileTransactionModule = {
   id: "cli-file-transaction",
-  requires: ["cli-diff-engine", "zcode-cli"],
+  requires: ["cli-diff-engine", "shared", "zcode-cli"],
   provides: ["cli-file-transaction"],
   publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

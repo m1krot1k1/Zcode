@@ -2107,10 +2107,13 @@ modules:
       - apps/zcode-cli/packages/core/src/tool/file-transaction
     managed: true
     requires:
+      - cli-diff-engine
+      - shared
       - zcode-cli
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/tool/file-transaction/index.ts
       - apps/zcode-cli/packages/core/src/tool/file-transaction/contract.ts
+      - apps/zcode-cli/packages/core/src/tool/file-transaction/task-contract.ts
     layers:
       adapters: .
     owner: agent
@@ -2151,6 +2154,18 @@ exceptions:
       - apps/zcode-cli/packages/contracts/src/interfaces/capability-install.port.ts
       - apps/zcode-cli/packages/contracts/src/tools/capability-install.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/capability-install.ts
+      # Increment 4.2: MultiEdit tool contract/handler and the shared transaction
+      # event hook live inside the unmanaged zcode-cli module by design (they are
+      # tool components, not a separate module). Keep path-exact.
+      - apps/zcode-cli/packages/contracts/src/tools/multi-edit.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/multi-edit.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/transaction-hooks.ts
+      # Increment 4.2: file-transaction event schema extends the shared protocol
+      # surface; the shared module is managed at package level only.
+      - packages/shared/src/zcode-protocol/schema-file-transaction.ts
+      # Increment 4.2: one projection file next to session events; the ui module
+      # is unmanaged, so keep the exception path-exact.
+      - packages/ui/src/lib/zcodeSessionProjection/fileTransactions.ts
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

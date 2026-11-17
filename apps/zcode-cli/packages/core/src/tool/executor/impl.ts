@@ -49,6 +49,7 @@ export class ToolExecutorImpl implements ToolExecutor {
       browserDocumentationRoot: options.browserDocumentationRoot,
       fileSystemPort: options.fileSystemPort,
       fileLockRegistry: options.fileLockRegistry,
+      fileTransactionTaskRegistry: options.fileTransactionTaskRegistry,
       enableToolCallSelfRepair: options.enableToolCallSelfRepair !== false,
       consecutiveSchemaFailuresByTool: new Map(),
       httpClientPort: options.httpClientPort,

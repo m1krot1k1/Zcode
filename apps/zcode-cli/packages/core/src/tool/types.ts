@@ -1,5 +1,6 @@
 import type { ToolSearchExecutionContext, ModelCallWrapper, PersistedToolFailureDiagnostics, PersistedToolRepairAttemptRecord } from "@zcode/contracts";
 import type { McpToolUiDescriptor } from "@zcode/shared/mcp-apps";
+import type { IFileTransactionTaskRegistry } from "./file-transaction/task-contract.js";
 import type { IFileLockRegistry } from "./file-transaction/contract.js";
 // ============================================================
 // Tool Types - Core tool types for registry and executor
@@ -176,6 +177,12 @@ export interface ToolExecutionContext {
   fileSystemPort?: FileSystemPort;
   /** Единый межсубагентный реестр канонических RW-блокировок файлов (F-02). */
   fileLockRegistry?: IFileLockRegistry;
+  /**
+   * Реестр жизненных циклов фоновых файловых транзакций (Инкремент 4.2).
+   * Владелец статуса `queued/running/completed/failed/cancelled`; инструменты
+   * только регистрируют задачу и передают её id в транзакцию.
+   */
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;

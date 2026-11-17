@@ -27,13 +27,9 @@ import {
   type TraceContext,
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
+import { createMultiTierDiffEngine, type IMultiTierDiffEngine } from "../diff-engine/index.js";
 import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
-import {
-  findEditMatch,
-  normalizeLineEndings,
-  normalizeReplacementForMatch,
-  preserveQuoteStyle,
-} from "../edit-matchers.js";
+import { normalizeLineEndings } from "../edit-matchers.js";
 import {
   assertPathWithinWriteScope,
   resolveWorkspacePath,
@@ -59,6 +55,7 @@ const EDIT_PROVIDER_DESCRIPTION = [
   "- `old_string` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the Read line prefix (line number + tab) before matching.",
   "- `replace_all: true` replaces every occurrence instead.",
 ].join("\n");
+const diffEngine: IMultiTierDiffEngine = createMultiTierDiffEngine();
 const NON_UNIQUE_OLD_STRING_MESSAGE =
   "old_string is not unique in the file. Provide more surrounding context or set replace_all to true.";
 const MAX_EDIT_FILE_SIZE_BYTES = 1024 * 1024 * 1024;
@@ -211,50 +208,41 @@ export const editHandler: ToolHandler = async (input, context) => {
     const readStateFailure = getEditableReadStateFailure(filePath, read, context.readFileState);
     if (readStateFailure) return readStateFailure;
 
+    // Причина (F-03): плоский каскад findEditMatch не пересчитывал отступы new_string
+    // и не давал модели диагностическое окно при промахе. Единый MultiTierDiffEngine
+    // (6 уровней + BestMatchDiagnostic + reindent) используется всеми файловыми инструментами.
     const patchMatchStartedAt = Date.now();
-    const match = findEditMatch({
-      content,
-      search: oldString,
+    const match = diffEngine.applyEdit(content, {
+      oldString,
+      newString: requestedNewString,
       replaceAll: replace_all,
     });
     const patchMatchMs = elapsedMsSince(patchMatchStartedAt);
     if (match.status === "not_found") {
       return editFailure(
         EditErrorCode.OLD_STRING_NOT_FOUND,
-        `String to replace not found in file.\nString: ${old_string}`,
+        `String to replace not found in file.\nString: ${old_string}\n\n${match.diagnostic.formatted}`,
       );
     }
     if (match.status === "ambiguous") {
       return editFailure(
         EditErrorCode.AMBIGUOUS_REPLACE,
-        createAmbiguousEditMessage(match.candidateCount, old_string),
+        `${createAmbiguousEditMessage(match.candidateCount, old_string)}\n\n${match.diagnostic.formatted}`,
       );
     }
-
-    const actualOldString = match.actualString;
-    const matchCount = countOccurrences(content, actualOldString);
-    if (!replace_all && matchCount > 1) {
-      return editFailure(
-        EditErrorCode.AMBIGUOUS_REPLACE,
-        createAmbiguousEditMessage(matchCount, old_string),
-      );
-    }
-
-    const normalizedNewString = normalizeReplacementForMatch(match.strategy, requestedNewString);
-    const actualNewString = preserveQuoteStyle(oldString, actualOldString, normalizedNewString);
-    const newContent = applyEditToContent(content, actualOldString, actualNewString, replace_all);
 
     return writeEditResult({
       context,
       filePath,
       inputFilePath: file_path,
       originalFile: content,
-      actualOldString,
-      actualNewString,
-      newContent,
+      actualOldString: match.actualOldString,
+      actualNewString: match.actualNewString,
+      // Переводы строк уже восстановлены движком под оригинал файла.
+      newContent: match.content,
       read,
       replaceAll: replace_all,
-      matchStrategy: match.strategy,
+      matchStrategy: match.legacyMatchStrategy ?? match.appliedTier,
       matchCandidateCount: match.candidateCount,
       fsReadMs,
       patchMatchMs,
@@ -345,18 +333,6 @@ function editFailure(errorCode: number, message: string): ToolHandlerFailure {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function countOccurrences(content: string, needle: string): number {
-  let count = 0;
-  let position = 0;
-  while (position < content.length) {
-    const index = content.indexOf(needle, position);
-    if (index === -1) break;
-    count += 1;
-    position = index + needle.length;
-  }
-  return count;
 }
 
 function createEditTrace(context: ToolExecutionContext): TraceContext {
@@ -634,35 +610,6 @@ function recordReadFileStateMetadata(
     toolName: "Edit",
   });
   if (metadata) context.recordReadFileStateMetadata(metadata);
-}
-
-function applyEditToContent(
-  content: string,
-  oldString: string,
-  newString: string,
-  replaceAll: boolean,
-): string {
-  const replacement = newString;
-  if (replacement !== "") {
-    return replaceLiteral(content, oldString, replacement, replaceAll);
-  }
-
-  const search =
-    !oldString.endsWith("\n") && content.includes(`${oldString}\n`) ? `${oldString}\n` : oldString;
-
-  return replaceLiteral(content, search, replacement, replaceAll);
-}
-
-function replaceLiteral(
-  content: string,
-  search: string,
-  replacement: string,
-  replaceAll: boolean,
-): string {
-  // String.replace 的字符串 replacement 会把 $$/$& 当特殊 token；
-  return replaceAll
-    ? content.replaceAll(search, () => replacement)
-    : content.replace(search, () => replacement);
 }
 
 function createAmbiguousEditMessage(matchCount: number, oldString: string): string {

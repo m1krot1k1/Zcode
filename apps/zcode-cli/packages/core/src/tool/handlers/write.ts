@@ -10,13 +10,18 @@ import {
   WriteOutputJsonSchema,
   WriteOutputSchema,
   createCoreError,
-  isFileSystemPortError,
   type FileSystemReadTextResult,
-  type FileSystemTextEncoding,
   type WriteInput,
   type TraceContext,
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
+import { createTransactionHooks } from "./transaction-hooks.js";
+import {
+  createFileTransactionManager,
+  type FileStagedSnapshot,
+  type IFileLockRegistry,
+  type TransactionReadStateEntryLike,
+} from "../file-transaction/index.js";
 import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
 import {
   assertPathWithinWriteScope,
@@ -49,6 +54,16 @@ const WRITE_USER_MODIFIED_NOTE = " The user modified your proposed content befor
 const WRITE_NOT_READ_MESSAGE = "File has not been read yet. Read it first before writing to it.";
 const WRITE_STALE_MESSAGE =
   "File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.";
+
+/** Fallback для unit-тестов без runtime-реестра; в проде всегда приходит единый FileLockRegistry. */
+const NOOP_LOCK_REGISTRY: IFileLockRegistry = {
+  resolveCanonicalLockKey: async (_identity, _root, target) => target,
+  acquire: async () => ({ canonicalKeys: [], release() {} }),
+  acquireBatch: async () => ({ canonicalKeys: [], release() {} }),
+  withLocks: async (_entries, _options, fn) => fn(),
+  releaseByHolder: () => 0,
+  getActiveLockSnapshot: () => [],
+};
 
 function formatWriteModelContent(output: unknown): string {
   if (!isRecord(output)) {
@@ -99,94 +114,118 @@ export const writeHandler: ToolHandler = async (input, context) => {
     writeScope: context.writeScope,
   });
 
-  const executeWriteUnderLock = async () => {
-    let originalFile: string | null = null;
-    let originalEncoding: FileSystemTextEncoding | undefined;
-    let originalLineEndings: "LF" | "CRLF" | undefined;
-    let originalRevision: FileSystemReadTextResult["revision"] | undefined;
-    const readStartedAt = Date.now();
-    let fsReadMs = 0;
-    try {
-      const read = await fileSystemPort.readTextFile(
-        {
-          path: filePath,
-          trace: createWriteTrace(context),
-        },
-        { signal: context.abortSignal },
-      );
-      assertWritableExistingFileIsFresh(filePath, read, context.readFileState);
-      originalFile = read.content;
-      originalEncoding = read.encoding;
-      originalLineEndings = read.lineEndings;
-      originalRevision = read.revision;
-      fsReadMs = elapsedMsSince(readStartedAt);
-    } catch (error) {
-      fsReadMs = elapsedMsSince(readStartedAt);
-      if (!isFileSystemPortError(error) || error.code !== "not_found") {
-        throw error;
-      }
-    }
+  // 原因 (F-07): Write раньше писал буфер на диск без AST/синтаксической проверки.
+  // Теперь файл проходит через общий FileTransactionManager: staging -> SyntaxValidator ->
+  // атомарный commit с 100% откатом; readFileState обновляется только после успешного commit.
+  const contentToWrite = stampMemoryOriginSessionId({
+    content,
+    filePath,
+    memoryRoot: context.memoryRoot,
+    sessionId: context.sessionId,
+  });
+  let stagedBefore: string | null = null;
+  let stagedRevision: FileSystemReadTextResult["revision"];
 
-    const contentToWrite = stampMemoryOriginSessionId({
-      content,
+  // Freshness-проверка выполняется по уже снятому в памяти staged-снимку,
+  // поэтому файл читается ровно один раз (staging транзакции) и нет TOCTOU-окна между read и commit.
+  const onStagedFiles = (files: readonly FileStagedSnapshot[]): void => {
+    const staged = files[0];
+    if (!staged) return;
+    stagedBefore = staged.beforeContent;
+    stagedRevision = staged.revision;
+    if (staged.beforeContent === null) return;
+    assertWritableExistingFileIsFresh(
       filePath,
-      memoryRoot: context.memoryRoot,
-      sessionId: context.sessionId,
-    });
-    const writeStartedAt = Date.now();
-    const writeResult = await fileSystemPort.writeTextFile(
       {
         path: filePath,
-        content: contentToWrite,
-        encoding: originalEncoding,
-        lineEndings: originalLineEndings,
-        createParents: true,
-        atomic: true,
-        expectedRevision: originalRevision,
-        trace: createWriteTrace(context),
+        content: staged.beforeContent,
+        encoding: staged.encoding ?? "utf8",
+        lineEndings: staged.lineEndings,
+        bytesRead: Buffer.byteLength(staged.beforeContent, "utf8"),
+        sizeBytes: staged.revision?.sizeBytes ?? Buffer.byteLength(staged.beforeContent, "utf8"),
+        truncated: false,
+        revision: staged.revision,
       },
-      { signal: context.abortSignal },
-    );
-    const fsWriteMs = elapsedMsSince(writeStartedAt);
-
-    const readFileStateEntry = updateReadFileStateAfterWrite(
       context.readFileState,
-      filePath,
-      contentToWrite,
-      writeResult.revision,
     );
-    recordReadFileStateMetadata(context, readFileStateEntry);
+  };
 
-    if (originalFile) {
-      return attachToolExecutionTelemetry(
-        {
-          type: "update",
-          filePath: file_path,
-          content: contentToWrite,
-          structuredPatch: createStructuredPatch({
-            filePath: file_path,
-            oldContent: originalFile,
-            newContent: contentToWrite,
-          }),
-          originalFile,
-          userModified: false,
+  const manager = createFileTransactionManager({
+    lockRegistry: context.fileLockRegistry ?? NOOP_LOCK_REGISTRY,
+  });
+  const writeStartedAt = Date.now();
+  const result = await manager.executeTransaction({
+    workspaceIdentity: context.workspaceIdentity,
+    workspacePath: context.workspaceRoot,
+    sessionId: context.sessionId,
+    turnId: context.turnId,
+    toolCallId: context.toolCallId,
+    toolName: "Write",
+    operations: [
+      {
+        kind: "create",
+        path: filePath,
+        displayPath: file_path,
+        content: contentToWrite,
+        overwrite: true,
+      },
+    ],
+    fileSystemPort,
+    readFileState: context.readFileState as unknown as Map<
+      string,
+      TransactionReadStateEntryLike
+    > | undefined,
+    enforceStaleReadGuard: false,
+    strictSyntaxValidation: true,
+    abortSignal: context.abortSignal,
+    trace: createWriteTrace(context),
+    onStagedFiles,
+    // Реактивная синхронизация: полный патч для Electron, сводка для Web/Mobile.
+    onTransactionEvent: createTransactionHooks(context),
+  });
+  const fsWriteMs = elapsedMsSince(writeStartedAt);
+  const fsReadMs = result.readMs;
+
+  if (result.status !== "committed") {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      result.errorDetails ?? `Write transaction ended with status ${result.status}.`,
+      {
+        context: {
+          code: result.status === "rejected_syntax" ? "write_syntax_validation_failed" : "write_failed",
+          filePath,
+          toolCallId: context.toolCallId,
+          toolName: "Write",
+          transactionStatus: result.status,
         },
-        createWritePerformanceTelemetry({
-          content: contentToWrite,
-          fsReadMs,
-          fsWriteMs,
-          context,
-        }),
-      );
-    }
+        recoverable: true,
+      },
+    );
+  }
 
+  // Pipeline сам обновляет readFileState; revision берём из результата транзакции.
+  const committed = result.files[0];
+  const readFileStateEntry = updateReadFileStateAfterWrite(
+    context.readFileState,
+    filePath,
+    contentToWrite,
+    committed?.revision ?? stagedRevision,
+  );
+  recordReadFileStateMetadata(context, readFileStateEntry);
+
+  const originalFile = stagedBefore;
+  if (originalFile !== null) {
     return attachToolExecutionTelemetry(
       {
-        type: "create",
+        type: "update",
         filePath: file_path,
         content: contentToWrite,
-        structuredPatch: [],
-        originalFile: null,
+        structuredPatch: createStructuredPatch({
+          filePath: file_path,
+          oldContent: originalFile,
+          newContent: contentToWrite,
+        }),
+        originalFile,
         userModified: false,
       },
       createWritePerformanceTelemetry({
@@ -196,21 +235,23 @@ export const writeHandler: ToolHandler = async (input, context) => {
         context,
       }),
     );
-  };
-
-  if (!context.fileLockRegistry) {
-    return executeWriteUnderLock();
   }
 
-  return context.fileLockRegistry.withLocks(
-    [{ path: filePath, mode: "exclusive-write" }],
+  return attachToolExecutionTelemetry(
     {
-      holderId: `${context.sessionId}:${context.toolCallId}`,
-      signal: context.abortSignal,
-      workspaceIdentity: context.workspaceIdentity,
-      workspaceRoot: context.workspaceRoot,
+      type: "create",
+      filePath: file_path,
+      content: contentToWrite,
+      structuredPatch: [],
+      originalFile: null,
+      userModified: false,
     },
-    executeWriteUnderLock,
+    createWritePerformanceTelemetry({
+      content: contentToWrite,
+      fsReadMs,
+      fsWriteMs,
+      context,
+    }),
   );
 };
 

@@ -1,35 +1,35 @@
-import type { ToolHandler } from "../types.js";
+import type { ToolEntry, ToolHandler } from "../types.js";
 import {
   ApplyPatchErrorCode,
+  ApplyPatchInputJsonSchema,
   ApplyPatchInputSchema,
+  ApplyPatchOutputJsonSchema,
+  ApplyPatchOutputSchema,
   CoreErrorType,
   createCoreError,
-  isFileSystemPortError,
   type ApplyPatchFileChange,
   type ApplyPatchInput,
   type ApplyPatchOutput,
-  type FileSystemTextEncoding,
   type TraceContext,
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
-import { derivePatchedContent } from "../patch-apply.js";
+import { createMultiTierDiffEngine, type IMultiTierDiffEngine } from "../diff-engine/index.js";
+import {
+  createFileTransactionManager,
+  type FileMutationOp,
+  type FileTransactionCommittedFile,
+  type IFileTransactionManager,
+  type TransactionReadStateEntryLike,
+} from "../file-transaction/index.js";
 import { parseStructuredPatch, type ParsedPatch } from "../patch-parser.js";
+import { createTransactionHooks } from "./transaction-hooks.js";
 import {
   assertPathWithinWriteScope,
   resolveWorkspacePath,
   workspaceBoundaryOptions,
 } from "../path-policy.js";
 
-interface VerifiedPatchChange {
-  filePath: string;
-  type: ApplyPatchFileChange["type"];
-  movePath?: string;
-  oldContent: string;
-  newContent: string;
-  encoding?: FileSystemTextEncoding;
-  lineEndings?: "LF" | "CRLF";
-  revision?: { id: string; mtimeMs?: number; sizeBytes?: number; hash?: string };
-}
+const diffEngine: IMultiTierDiffEngine = createMultiTierDiffEngine();
 
 export const applyPatchHandler: ToolHandler = async (input, context) => {
   const { patch_text } = ApplyPatchInputSchema.parse(input) as ApplyPatchInput;
@@ -56,214 +56,228 @@ export const applyPatchHandler: ToolHandler = async (input, context) => {
     });
   }
 
-  const lockEntries = sections.flatMap((section) => {
-    const entries = [{ path: resolvePatchPath(section.path, context), mode: "exclusive-write" as const }];
-    if (section.type === "update" && section.movePath) {
-      entries.push({
-        path: resolvePatchPath(section.movePath, context),
-        mode: "exclusive-write" as const,
-      });
-    }
-    return entries;
+  const operations = buildTransactionOperations(sections, context);
+  const manager: IFileTransactionManager = createFileTransactionManager({
+    lockRegistry: context.fileLockRegistry ?? {
+      resolveCanonicalLockKey: async (_identity, _root, target) => target,
+      acquire: async () => ({ canonicalKeys: [], release() {} }),
+      acquireBatch: async () => ({ canonicalKeys: [], release() {} }),
+      withLocks: async (_entries, _options, fn) => fn(),
+      releaseByHolder: () => 0,
+      getActiveLockSnapshot: () => [],
+    },
   });
 
-  const executePatchUnderLocks = async () => {
-    const trace = traceFor(context);
-    const changes: VerifiedPatchChange[] = [];
-    for (const section of sections) {
-      changes.push(await verifySection(section, context, trace));
-    }
+  // 两个阶段的事务：内存 staging + AST 预验证 -> 原子提交 + 100% 回滚（F-03/F-07）。
+  const result = await manager.executeTransaction({
+    workspaceIdentity: context.workspaceIdentity,
+    workspacePath: context.workspaceRoot,
+    sessionId: context.sessionId,
+    turnId: context.turnId,
+    agentId: context.callerAgentType,
+    toolCallId: context.toolCallId,
+    toolName: "ApplyPatch",
+    operations,
+    fileSystemPort,
+    readFileState: context.readFileState as unknown as Map<
+      string,
+      TransactionReadStateEntryLike
+    > | undefined,
+    enforceStaleReadGuard: false,
+    strictSyntaxValidation: true,
+    abortSignal: context.abortSignal,
+    trace: traceFor(context),
+    onTransactionEvent: createTransactionHooks(context),
+  });
 
-    for (const change of changes) {
-      if (change.type === "delete") {
-        await fileSystemPort.removeFile(
-          { path: change.filePath, trace },
-          { signal: context.abortSignal },
-        );
-        continue;
-      }
-
-      const targetPath = change.movePath ?? change.filePath;
-      await fileSystemPort.writeTextFile(
-        {
-          path: targetPath,
-          content: change.newContent,
-          encoding: change.encoding,
-          lineEndings: change.lineEndings,
-          createParents: true,
-          atomic: true,
-          expectedRevision: change.type === "update" ? change.revision : undefined,
-          trace,
-        },
-        { signal: context.abortSignal },
-      );
-
-      if (change.type === "move") {
-        await fileSystemPort.removeFile(
-          { path: change.filePath, trace },
-          { signal: context.abortSignal },
-        );
-      }
-    }
-
-    const files = changes.map(toOutputFileChange);
-    return {
-      files,
-      structuredPatch: files.flatMap((file) => file.structuredPatch),
-      summary: files.map(formatSummaryLine).join("\n"),
-    } satisfies ApplyPatchOutput;
-  };
-
-  if (!context.fileLockRegistry) {
-    return executePatchUnderLocks();
+  if (result.status !== "committed") {
+    throw createPatchError(
+      result.errorDetails ?? `ApplyPatch transaction ended with status ${result.status}.`,
+      result.status === "rejected_syntax"
+        ? ApplyPatchErrorCode.INVALID_PATCH
+        : result.status === "rejected_conflict"
+          ? ApplyPatchErrorCode.FILE_EXISTS
+          : ApplyPatchErrorCode.IO_ERROR,
+      {
+        toolCallId: context.toolCallId,
+        transactionId: result.transactionId,
+        transactionStatus: result.status,
+        rolledBackSteps: result.rolledBackSteps,
+      },
+    );
   }
 
-  return context.fileLockRegistry.withLocks(
-    lockEntries,
-    {
-      holderId: `${context.sessionId}:${context.toolCallId}`,
-      signal: context.abortSignal,
-      workspaceIdentity: context.workspaceIdentity,
-      workspaceRoot: context.workspaceRoot,
-    },
-    executePatchUnderLocks,
-  );
+  const files = result.files.map(toOutputFileChangeFromCommitted);
+  return {
+    files,
+    structuredPatch: files.flatMap((file) => file.structuredPatch),
+    summary: files.map(formatSummaryLine).join("\n"),
+  } satisfies ApplyPatchOutput;
 };
 
-async function verifySection(
-  section: ParsedPatch,
+function buildTransactionOperations(
+  sections: readonly ParsedPatch[],
   context: Parameters<typeof applyPatchHandler>[1],
-  trace: TraceContext,
-): Promise<VerifiedPatchChange> {
-  switch (section.type) {
-    case "add":
-      return verifyAdd(section, context, trace);
-    case "delete":
-      return verifyDelete(section, context, trace);
-    case "update":
-      return verifyUpdate(section, context, trace);
-  }
-}
-
-async function verifyAdd(
-  section: Extract<ParsedPatch, { type: "add" }>,
-  context: Parameters<typeof applyPatchHandler>[1],
-  trace: TraceContext,
-): Promise<VerifiedPatchChange> {
-  const filePath = resolvePatchPath(section.path, context);
-  try {
-    await context.fileSystemPort!.stat({ path: filePath, trace }, { signal: context.abortSignal });
-    throw createPatchError(`File already exists: ${filePath}`, ApplyPatchErrorCode.FILE_EXISTS, {
-      filePath,
-      toolCallId: context.toolCallId,
-    });
-  } catch (error) {
-    if (!isFileSystemPortError(error) || error.code !== "not_found") throw error;
-  }
-  return {
-    filePath,
-    type: "add",
-    oldContent: "",
-    newContent: section.contents,
-  };
-}
-
-async function verifyDelete(
-  section: Extract<ParsedPatch, { type: "delete" }>,
-  context: Parameters<typeof applyPatchHandler>[1],
-  trace: TraceContext,
-): Promise<VerifiedPatchChange> {
-  const filePath = resolvePatchPath(section.path, context);
-  const read = await readExisting(filePath, context, trace);
-  return {
-    filePath,
-    type: "delete",
-    oldContent: read.content,
-    newContent: "",
-    encoding: read.encoding,
-    lineEndings: read.lineEndings,
-    revision: read.revision,
-  };
-}
-
-async function verifyUpdate(
-  section: Extract<ParsedPatch, { type: "update" }>,
-  context: Parameters<typeof applyPatchHandler>[1],
-  trace: TraceContext,
-): Promise<VerifiedPatchChange> {
-  if (section.chunks.length === 0) {
-    throw createPatchError("Update file section has no hunks", ApplyPatchErrorCode.INVALID_PATCH, {
-      filePath: section.path,
-      toolCallId: context.toolCallId,
-    });
-  }
-
-  const filePath = resolvePatchPath(section.path, context);
-  const read = await readExisting(filePath, context, trace);
-  let patched: string;
-  try {
-    patched = derivePatchedContent(read.content, section.chunks).content;
-  } catch (error) {
-    throw createPatchError(
-      error instanceof Error ? error.message : String(error),
-      ApplyPatchErrorCode.HUNK_NOT_FOUND,
-      {
-        filePath,
-        toolCallId: context.toolCallId,
-      },
-      error,
-    );
-  }
-
-  const movePath = section.movePath ? resolvePatchPath(section.movePath, context) : undefined;
-  return {
-    filePath,
-    type: movePath ? "move" : "update",
-    movePath,
-    oldContent: read.content,
-    newContent: patched,
-    encoding: read.encoding,
-    lineEndings: read.lineEndings,
-    revision: read.revision,
-  };
-}
-
-async function readExisting(
-  filePath: string,
-  context: Parameters<typeof applyPatchHandler>[1],
-  trace: TraceContext,
-) {
-  try {
-    return await context.fileSystemPort!.readTextFile(
-      { path: filePath, trace },
-      { signal: context.abortSignal },
-    );
-  } catch (error) {
-    if (isFileSystemPortError(error) && error.code === "not_found") {
-      throw createPatchError(`File not found: ${filePath}`, ApplyPatchErrorCode.FILE_NOT_EXIST, {
-        filePath,
+): FileMutationOp[] {
+  return sections.map((section): FileMutationOp => {
+    const filePath = resolvePatchPath(section.path, context);
+    if (section.type === "add") {
+      return { kind: "create", path: filePath, displayPath: section.path, content: section.contents };
+    }
+    if (section.type === "delete") {
+      return { kind: "delete", path: filePath, displayPath: section.path };
+    }
+    if (section.chunks.length === 0) {
+      throw createPatchError("Update file section has no hunks", ApplyPatchErrorCode.INVALID_PATCH, {
+        filePath: section.path,
         toolCallId: context.toolCallId,
       });
     }
-    throw error;
-  }
+    const movePath = section.movePath ? resolvePatchPath(section.movePath, context) : undefined;
+    const applyChunks = (current: string) => {
+      const outcome = diffEngine.applyStructuredPatchHunks(
+        current,
+        section.chunks.map((chunk) => ({
+          changeContext: chunk.changeContext,
+          oldLines: chunk.oldLines,
+          newLines: chunk.newLines,
+          endOfFile: chunk.endOfFile,
+        })),
+      );
+      if (outcome.status !== "applied") {
+        throw createPatchError(
+          outcome.status === "conflict"
+            ? outcome.conflict.message
+            : outcome.status === "ambiguous"
+              ? outcome.diagnostic.formatted
+              : `Failed to find expected lines:\n${section.chunks.map((chunk) => chunk.oldLines.join("\n")).join("\n---\n")}`,
+          ApplyPatchErrorCode.HUNK_NOT_FOUND,
+          { filePath: section.path, toolCallId: context.toolCallId },
+        );
+      }
+      return { content: outcome.content, appliedTier: outcome.appliedTier };
+    };
+    return movePath
+      ? {
+          kind: "move",
+          fromPath: filePath,
+          toPath: movePath,
+          displayPath: section.path,
+          computeNext: (current) => applyChunks(current),
+        }
+      : {
+          kind: "update",
+          path: filePath,
+          displayPath: section.path,
+          computeNext: (current) => applyChunks(current),
+        };
+  });
 }
 
-function toOutputFileChange(change: VerifiedPatchChange): ApplyPatchFileChange {
+function toOutputFileChangeFromCommitted(
+  file: FileTransactionCommittedFile,
+): ApplyPatchFileChange {
+  const displayPath = resolveDisplayForCommitted(file);
   const structuredPatch = createStructuredPatch({
-    filePath: change.movePath ?? change.filePath,
-    oldContent: change.oldContent,
-    newContent: change.newContent,
+    filePath: displayPath,
+    oldContent: file.beforeContent ?? "",
+    newContent: file.afterContent,
   });
   const { additions, deletions } = countPatchLines(structuredPatch);
+  const type: ApplyPatchFileChange["type"] =
+    file.operation === "create"
+      ? "add"
+      : file.operation === "delete"
+        ? "delete"
+        : file.operation === "move"
+          ? "move"
+          : "update";
   return {
-    filePath: change.filePath,
-    type: change.type,
-    movePath: change.movePath,
+    filePath: displayPath,
+    type,
+    ...(file.moveFromPath ? { movePath: file.path } : {}),
     structuredPatch,
     additions,
     deletions,
   };
+}
+
+function resolveDisplayForCommitted(file: FileTransactionCommittedFile): string {
+  return file.displayPath || file.path;
+}
+
+export const applyPatchToolEntry: ToolEntry = {
+  capability: "Apply structured multi-file patches atomically",
+  metadata: {
+    name: "ApplyPatch",
+    description: [
+      "Applies structured file patches atomically across one or more files.",
+      "",
+      "Patch format (OpenAI Codex apply_patch grammar):",
+      "*** Begin Patch",
+      "*** Add File: path/to/new.ts",
+      "+content line",
+      "*** Update File: path/to/existing.ts",
+      "@@ context",
+      "-old line",
+      "+new line",
+      "*** Delete File: path/to/old.ts",
+      "*** End Patch",
+      "",
+      "All files are staged in memory, syntax-validated, and committed atomically:",
+      "if any file fails, every file is restored to its exact original content.",
+      "Prefer this over Write for surgical changes to existing files; do not switch to Python or shell to edit files.",
+      "For legacy GB2312/GBK encoded files, the original encoding is preserved automatically.",
+    ].join("\n"),
+    readOnly: false,
+    destructive: false,
+    concurrentSafe: false,
+    timeoutMs: 120000,
+    maxOutputBytes: 1_000_000,
+    sideEffectScope: "workspace",
+    riskLevel: "medium",
+    needsApproval: true,
+  },
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = ApplyPatchInputSchema.safeParse(input);
+    if (!parsed.success) return [];
+    return [{ path: "__apply_patch__", operation: "write" as const }];
+  },
+  handler: applyPatchHandler,
+  formatModelContent: formatApplyPatchModelContent,
+  inputSchema: ApplyPatchInputJsonSchema,
+  outputSchema: ApplyPatchOutputJsonSchema,
+  runtimeInputSchema: ApplyPatchInputSchema,
+  runtimeOutputSchema: ApplyPatchOutputSchema,
+  permission: {
+    permission: "edit",
+    reason: "ApplyPatch mutates workspace files through a structured patch",
+    riskLevel: "medium",
+    sideEffectScope: "workspace",
+    needsApproval: true,
+    patternSources: ["toolName", "input"],
+    alwaysAllowPatternSources: ["toolName"],
+    denyPriority: "beforeAsk",
+  },
+  resultBudget: {
+    maxInlineBytes: 1_000_000,
+    maxModelBytes: 100_000,
+    strategy: "truncate",
+    preview: { maxBytes: 100_000, direction: "head" },
+  },
+  timeout: { defaultMs: 120000, maxMs: 120000, allowCallOverride: false },
+  cancellation: {
+    supported: true,
+    cleanup: "bestEffort",
+    userVisibleMessage: "ApplyPatch was cancelled and all files were restored",
+  },
+  trace: { required: true, propagateToAdapters: true, recordInput: "summary", recordOutput: "summary" },
+};
+
+function formatApplyPatchModelContent(output: unknown): string {
+  const parsed = ApplyPatchOutputSchema.safeParse(output);
+  if (!parsed.success) return "Patch applied successfully.";
+  return parsed.data.summary;
 }
 
 function countPatchLines(hunks: ApplyPatchFileChange["structuredPatch"]) {

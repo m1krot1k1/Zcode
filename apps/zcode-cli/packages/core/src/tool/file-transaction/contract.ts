@@ -182,9 +182,35 @@ export interface FileTransactionExecuteParams {
   readonly strictSyntaxValidation?: boolean;
   readonly allowSyntaxDraft?: boolean;
   readonly abortSignal?: AbortSignal;
+  /**
+   * Идентификатор фоновой задачи в `IFileTransactionTaskRegistry`. Когда задан вместе
+   * с `taskRegistry`, менеджер сам публикует `running`/`progress`/терминальный статус
+   * и берёт сигнал отмены из реестра (каскадная отмена субагентной сессии).
+   */
+  readonly taskId?: string;
+  readonly taskRegistry?: import("./task-contract.js").IFileTransactionTaskRegistry;
   readonly trace?: TraceContext;
   readonly onTransactionEvent?: (event: FileTransactionLifecycleEvent) => Promise<void> | void;
   readonly onBeforeCommitStep?: (step: FileTransactionCommitHookStep) => Promise<void> | void;
+  /**
+   * Вызывается один раз после чтения всех целевых файлов в память и до валидации/записи.
+   * Бросание исключения переводит транзакцию в `rejected_stale` без единой записи на диск.
+   * Позволяет инструментам проверять freshness, не делая повторный Read.
+   */
+  readonly onStagedFiles?: (
+    files: readonly FileStagedSnapshot[],
+  ) => Promise<void> | void;
+}
+
+export interface FileStagedSnapshot {
+  readonly path: string;
+  readonly displayPath: string;
+  readonly operation: "create" | "update" | "move" | "delete";
+  readonly beforeContent: string | null;
+  readonly afterContent: string;
+  readonly revision?: FileSystemRevision;
+  readonly encoding?: FileSystemTextEncoding;
+  readonly lineEndings?: "LF" | "CRLF";
 }
 
 export interface FileTransactionCommitResult {
