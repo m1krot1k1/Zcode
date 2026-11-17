@@ -510,3 +510,139 @@ baseline=0 new=49`, то есть блокирующее состояние по
 специально свёл baseline к нулю.
 git ls-remote --tags origin | grep v3.17.123 || echo "тега в origin нет"
 ```
+
+## 11. Этап 6.5 — устранение долга `knip`
+
+- Коммит: `09ee32cd` — «chore(knip): устранить неиспользуемые экспорты и объявить
+  динамические зависимости (этап 6.5)»
+- Baseline **не изменялся**: `scripts/knip-baseline.json` остаётся пустым.
+- Результат: `knip baseline: current=0 baseline=0 new=0 resolved=0`.
+
+### 11.1. Полный разбор 49 замечаний
+
+Проверка каждого кандидата выполнялась через `grep` по монорепозиторию и `pnpm
+dep:refs`; удалялось только то, что не входит в публичные entrypoints по
+[`architecture-policy.yaml`](architecture-policy.yaml:1).
+
+| # | Категория | Файл / символ | Вердикт | Действие |
+| --- | --- | --- | --- | --- |
+| 1 | dependencies | `packages/services/package.json` → `tree-sitter-wasms` | ложное срабатывание | `ignoreDependencies`: путь `.wasm` резолвится через `requireFromHere.resolve("tree-sitter-wasms/package.json")` в [`parserPool.ts`](packages/services/src/code-intelligence/ast/parserPool.ts:79) |
+| 2 | dependencies | `packages/services/package.json` → `web-tree-sitter` | ложное срабатывание | `ignoreDependencies`: ленивый `requireFromHere("web-tree-sitter")` в [`parserPool.ts`](packages/services/src/code-intelligence/ast/parserPool.ts:90) |
+| 3 | duplicates | `chunkContent.ts` → `textOf` / `chunkTextOf` | мёртвый алиас | `chunkTextOf` удалён, `textOf` остаётся |
+| 4 | duplicates | `storeSchema.ts` → `SCHEMA_V3_SQL` / `SCHEMA_SQL` | мёртвый алиас | `SCHEMA_SQL` удалён |
+| 5 | exports | `execution-sandbox.ts` → `resolveCwdCaptureRoot` | мёртвый код | удалён (импорт `dirname` тоже) |
+| 6 | exports | `microcompact.ts` → `DEFAULT_MASKING_STEP_QUANTUM_TOKENS` | мёртвый (не читался никем) | удалён вместе с реэкспортами в `compact/index.ts` и `runtime/deps.ts` |
+| 7 | exports | `diff-engine/reindent.ts` → `removeCommonIndent` | мёртвый | удалён вместе с реэкспортом |
+| 8 | exports | `edit-matchers.ts` → `findEditMatch` | мёртвый каскад | удалён вместе со всеми стратегиями |
+| 9 | exports | `edit-matchers.ts` → `normalizeReplacementForMatch` | мёртвый каскад | удалён |
+| 10 | exports | `edit-matchers.ts` → `preserveQuoteStyle` | мёртвый каскад | удалён |
+| 11 | exports | `file-transaction/reactive-emitter.ts` → `fileTransactionPayloadBytes` | мёртвый | удалён вместе с реэкспортом |
+| 12 | exports | `ast/astChunker.ts` → `MIN_CHUNK_CHARS` | мёртвый (был реэкспорт) | удалён; константа не читалась |
+| 13 | exports | `ast/languageRegistry.ts` → `languageNameOf` | мёртвый | удалён |
+| 14 | exports | `ast/languageRules.ts` → `SYMBOL_KIND_NAME` | мёртвый | удалён |
+| 15 | exports | `ast/languageRules.ts` → `TRIVIAL_NODE_TYPES` | мёртвый | удалён |
+| 16 | exports | `ast/parserPool.ts` → `parseWith` | мёртвый | удалён (разбор идёт через `parseUsing`) |
+| 17 | exports | `ast/tokenizer.ts` → `pathTokensOf` | мёртвый | удалён |
+| 18 | exports | `ast/tokenizer.ts` → `wordsOf` | мёртвый | удалён; `rawWordsOf` остаётся приватным |
+| 19 | exports | `embeddingSettings.ts` → `setEmbeddingSettingsBackend` | мёртвый тестовый seam | удалён вместе с `backendOverride` |
+| 20 | exports | `graph/symbolGraphReads.ts` → `chunkExcerpt` | мёртвый | удалён (`excerptOf` остаётся) |
+| 21 | exports | `ranking/localSketch.ts` → `SKETCH_Q4_BYTES` | мёртвый | удалён |
+| 22 | exports | `ranking/localSketch.ts` → `providerCosine` | мёртвый | удалён |
+| 23 | exports | `ranking/localSketch.ts` → `quantizeProviderVector` | мёртвый | удалён |
+| 24 | exports | `ranking/localSketch.ts` → `sketchCosineQ4Pair` | мёртвый | удалён |
+| 25 | exports | `ranking/tokenBudgetPacker.ts` → `enforceByteLimit` | **реальный дефект проводки** | не удалён, а **подключён** в `hybridSearch` с новым `MAX_RESULT_JSON_BYTES = 24_000` |
+| 26 | exports | `worker/chunkContent.ts` → `chunkTextOf` | мёртвый алиас | удалён |
+| 27 | exports | `worker/store.ts` → `compactDatabase` | **реальный дефект проводки** | не удалён, а **подключён** в `indexEngine` после массовых удалений (полный и частичный проход) |
+| 28 | exports | `worker/storeSchema.ts` → `SCHEMA_SQL` | мёртвый алиас | удалён |
+| 29 | exports | `worker/stringInterner.ts` → `createInterner` | мёртвый | удалён (используется класс `StringInterner`) |
+| 30 | exports | `worker/stringInterner.ts` → `lookupStringId` | мёртвый | удалён |
+| 31 | exports | `worker/workerClient.ts` → `isTsRuntimeError` | мёртвый seam | удалён |
+| 32 | exports | `worker/workerProtocol.ts` → `parseWorkerRequest` | используется воркером | **оставлен**, закрыт entry `indexWorker.ts` |
+| 33 | exports | `cua-linux-host/linux-screen-capture.ts` → `fileSizeOrNull` | мёртвый | удалён (импорт `stat` тоже) |
+| 34 | exports | `lexical-ghost-autocomplete` → `$acceptGhostText` | мёртвый | удалён |
+| 35 | exports | `lexical-ghost-autocomplete` → `$removeGhostText` | мёртвый | удалён (импорты `$createTextNode`, `$isTextNode` тоже) |
+| 36 | exports | `lib/fileTransactionProjection.ts` → `fileTransactionWorkspaceKey` | мёртвый дубль | удалён (`shouldMirrorFileTransaction` — единственный путь) |
+| 37 | exports | `lib/fileTransactionProjection.ts` → `isFileTransactionTerminal` | мёртвый | удалён |
+| 38 | exports | `lib/fileTransactionWorkspaceScope.ts` → `resolveFileTransactionWorkspaceKey` | мёртвый дубль | удалён |
+| 39 | files | `core/src/tool/patch-apply.ts` | мёртвый файл целиком | удалён |
+| 40 | files | `services/bench/code-intelligence-bench.mjs` | не мёртвый, запускается вручную | `entry` в `knip.json` |
+| 41 | files | `worker/indexWorker.ts` | не мёртвый: путь воркера в `worker_threads` | `entry` в `knip.json` |
+| 42 | files | `ui/src/lexical-ghost-autocomplete/index.ts` | публичный entrypoint по политике | `entry` в `knip.json` |
+| 43 | files | `ui/src/prompt-enhancer-ui/SystemPromptEnhanceAction.tsx` | **реальный дефект проводки** | не удалён, а **подключён** в `SubagentForm` |
+| 44 | files | `ui/src/prompt-enhancer-ui/enhancePromptButton.test.tsx` | тест в `src`, не виделся `entry` | `entry` (`src/**/*.test.tsx`) |
+| 45 | files | `ui/src/prompt-enhancer-ui/index.ts` | публичный entrypoint по политике | `entry` в `knip.json` |
+| 46 | files | `ui/src/settings-stage4/index.ts` | публичный entrypoint по политике | `entry` в `knip.json` |
+| 47 | types | `zcode-protocol` → `ZCodeCodeIndexNotifyMutatedParams` | часть публичного протокола | **добавлен в публичный экспорт** `zcode-protocol/index.ts`, а не удалён |
+| 48 | types | `fileTransactionProjection.ts` → `FileTransactionStreamPayload` | мёртвый тип | удалён |
+| 49 | unlisted | `cua-linux-host/x11-koffi-input.ts` → `koffi` | реальный импорт без объявления | `ignoreDependencies` в workspace `packages/services`; версия `2.15.6` зафиксирована в `apps/zcode-cli/packages/adapters/package.json`, дублировать объявление в `packages/services` не потребовалось |
+
+### 11.2. Что именно изменено в `knip.json`
+
+Только обоснованные записи, ни одного «глушащего» правила:
+
+| Запись | Обоснование |
+| --- | --- |
+| `workspaces.packages.ui.entry += src/**/*.test.ts(x)` | тесты компонентов лежат в `src`; без этого они считались мёртвыми |
+| `workspaces.packages.ui.entry += {lexical-ghost-autocomplete,prompt-enhancer-ui,settings-stage4}/index.ts` | это `publicEntrypoints` модулей в [`architecture-policy.yaml`](architecture-policy.yaml:2236); по политике они обязаны существовать |
+| `workspaces.packages.services.entry` (`src/index.ts`, `src/node.ts`, worker `indexWorker.ts`, `bench/code-intelligence-bench.mjs`) | воркер запускается по пути в `worker_threads`, bench — ручной скрипт; статически не достижимы |
+| `workspaces.packages.services.ignoreDependencies = [koffi, tree-sitter-wasms, web-tree-sitter]` | динамическая загрузка (`requireFromHere`) и `.wasm`-пути; см. строки 1, 2, 49 |
+| root `ignore += packages/services/bench/code-intelligence-bench.mjs` | bench вне `project`-глобов пакета |
+
+### 11.3. Проверки этапа 6.5
+
+| Проверка | Результат |
+| --- | --- |
+| `pnpm knip` | `current=0 baseline=0 new=0 resolved=0` |
+| `pnpm typecheck` | 0 ошибок |
+| `pnpm lint` | 0 ошибок (348 предупреждений — предсуществующие) |
+| `pnpm architecture:check --changed` | `violations: 0`, `new: 0` |
+| Vitest (`packages/services/test/code-intelligence`, `packages/ui/test`, `packages/ui/src/{lexical-ghost-autocomplete,prompt-enhancer-ui}`) | 13 файлов / **99 тестов** — зелёные |
+| Vitest (`apps/zcode-cli/packages/core`: edit, diff-engine, microcompact) | 4 файла / **71 тест** — зелёные |
+| `pnpm verify:pre-push` | **exit 0**, все шаги пройдены |
+
+### 11.4. Публикация
+
+| Шаг | Результат |
+| --- | --- |
+| `git push origin dev` | `64df2977..09ee32cd  dev -> dev` — **выполнено** |
+| `git rev-parse origin/dev` | `09ee32cd4f5fb93254a92704d23cb60be5dfbc79` |
+| `git log --oneline origin/dev -3` | `09ee32cd` (knip), `89a87e8c` (этап 6.4), `a4d93ec8` (PRISM) |
+| `git push origin v3.17.123` | **заблокировано хуком**, см. 11.5 |
+| `git ls-remote --tags origin \| grep v3.17.123` | тега в `origin` нет |
+
+### 11.5. Блокер публикации тега: доказательство
+
+```text
+$ git rev-parse v3.17.123^{commit}
+1f91b9607bc101e7c728f09fd2e81200b0ea2d03
+$ git rev-parse HEAD
+09ee32cd4f5fb93254a92704d23cb60be5dfbc79
+$ git rev-list --count 1f91b960..HEAD
+8
+$ git push origin v3.17.123
+[affected] 推送目标不是当前 HEAD
+husky - pre-push script failed (code 2)
+error: failed to push some refs to 'https://github.com/m1krot1k1/Zcode.git'
+```
+
+Механизм: [`scripts/affected-unit-tests/scope.mjs`](scripts/affected-unit-tests/scope.mjs:63)
+требует, чтобы любой не-удаляемый ref совпадал с текущим `HEAD`:
+
+```js
+if ((await commit(root, entry[1])) !== head) throw new Error("推送目标不是当前 HEAD");
+```
+
+Коммит `1f91b960` — это «Релиз v3.17.123» (только `CHANGELOG.md`, `package.json`,
+`package-lock.json`), а после него в `dev` вошли 8 коммитов, включая исправления
+privacy-гейта (`ce0e8db0`), PRISM-профиля (`a4d93ec8`) и этапа 6.5 (`09ee32cd`).
+То есть тег описывает более раннее состояние, чем фактически опубликованный
+`dev`, и не может быть отправлен без пересоздания на вершине ветки.
+
+Причина в постановке этапа, а не в коде: релизный тег создавался до исправлений
+6.3–6.5, хотя те же исправления входят в публикуемую ветку. `--no-verify`,
+`--force` и правка baseline не применялись.
+
+Штатное разрешение (требует решения владельца, так как меняет уже созданный
+annotated-тег): пересоздать `v3.17.123` на текущем `HEAD` и запушить тег
+отдельной командой после `dev`. Проверка допускает это: тег ещё не в `origin`,
+поэтому пересоздание не переписывает опубликованную историю.
