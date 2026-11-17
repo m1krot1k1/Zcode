@@ -119,7 +119,9 @@ export class ContextBuilder {
     } else if (workflowActor !== undefined) {
       sections.push(buildWorkflowActorIdentitySection(workflowActor));
     } else {
-      sections.push(buildIdentitySection(activeOutputStyle, this.config.promptProfile));
+      sections.push(
+        buildIdentitySection(activeOutputStyle, this.config.promptProfile, this.config.promptDepth),
+      );
     }
 
     // 3. Dynamic system context

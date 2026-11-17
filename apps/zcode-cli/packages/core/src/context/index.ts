@@ -5,6 +5,7 @@
 export * from "./types.js";
 export * from "./builder.js";
 export * from "./utils.js";
+export * from "./cognitive-protocols.js";
 
 // Section builders (for testing)
 export { buildCliPrefixSection } from "./sections/cli-prefix.js";

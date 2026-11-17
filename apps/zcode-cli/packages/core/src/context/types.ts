@@ -16,6 +16,7 @@ import type {
 import type { ContextLedgerSnapshot } from "./sections/memory.js";
 import type { AutoCompactPolicyConfig } from "../compact/index.js";
 import type { AgentProfile } from "../subagent/profile.js";
+import type { PromptDepthProfile } from "./cognitive-protocols.js";
 
 export type {
   EnvInfo,
@@ -124,6 +125,11 @@ export interface ContextBuilderConfig {
   contextLedger?: ContextLedgerSnapshot;
   /** Canary-selected prompt profile; explicit value wins over env. */
   promptProfile?: string;
+  /**
+   * Профиль глубины рассуждений (инкремент 4.4). Владелец — настройки сессии;
+   * влияет на стабильный блок когнитивных протоколов и на параметры thinking/maxOutputTokens.
+   */
+  promptDepth?: PromptDepthProfile;
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;

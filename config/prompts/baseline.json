@@ -1,13 +1,20 @@
 {
-  "version": 1,
-  "createdAt": "2026-11-16T16:00:46.441Z",
-  "gitHead": "1a0e7adf9c8634945a226a3ddeeac70bfc6d52dd",
+  "version": 2,
+  "createdAt": "2026-11-17T13:33:40.000Z",
+  "gitHead": "dev-worktree-increment-4.4",
+  "note": "Increment 4.4: identity section restructured into cacheable core + cognitive protocols module; chars are source-file sizes as measured by scripts/prompt-registry.mjs --report.",
   "layers": [
     {
       "id": "identity-stable",
       "path": "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
-      "chars": 15732,
-      "estimatedTokens": 3933
+      "chars": 16077,
+      "estimatedTokens": 4020
+    },
+    {
+      "id": "cognitive-protocols",
+      "path": "apps/zcode-cli/packages/core/src/context/cognitive-protocols.ts",
+      "chars": 11602,
+      "estimatedTokens": 2901
     },
     {
       "id": "project-instructions",
