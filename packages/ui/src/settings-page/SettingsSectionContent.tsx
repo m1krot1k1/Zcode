@@ -27,6 +27,7 @@ import { SourceServerManagementPanel } from "@/settings/SourceServerManagementPa
 import { SubagentsSection } from "@/settings/SubagentsSection.js";
 import { UsageStatsSection } from "@/settings/UsageStatsSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
+import { SettingsStage4Section } from "@/settings-stage4/SettingsStage4Section.js";
 import type { SettingsFormState } from "./useSettingsFormState.js";
 import type { SettingsPageShellState } from "./useSettingsPageShell.js";
 import type { SettingsPageWorkspaceState } from "./useSettingsPageWorkspace.js";
@@ -552,6 +553,18 @@ export function SettingsSectionContent({
           onEmbeddedBrowserAllowInsecureCertificatesChange={
             preferenceHandlers.handleEmbeddedBrowserAllowInsecureCertificatesChange
           }
+        />
+      ) : activeSection === "stage4" ? (
+        <SettingsStage4Section
+          settings={sharedSettings}
+          onUpdateSettings={async (patch) => {
+            await updateSharedSettings(patch);
+          }}
+          isMacDesktop={Boolean(isMacDesktop)}
+          isWindowsDesktop={Boolean(isWindowsDesktop)}
+          isLinuxDesktop={shell.isLinuxDesktop}
+          workspacePath={activeWorkspacePath}
+          {...(activeWorkspaceIdentity ? { workspaceIdentity: activeWorkspaceIdentity } : {})}
         />
       ) : activeSection === "computerUse" ? (
         <ComputerUseSection

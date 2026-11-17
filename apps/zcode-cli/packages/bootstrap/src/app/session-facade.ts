@@ -117,6 +117,8 @@ interface CreateSessionFacadeDeps {
    */
   closeDynamicWorkflowRuns?: () => Promise<void>;
   closeNodeReplBrowserBroker?: () => Promise<void> | undefined;
+  /** Освобождение PTY-сессий, принадлежащих этому app (только если app их создал). */
+  closePtySessions?: () => Promise<void>;
   configResult: ConfigResult;
   configuredMcpServers: Record<string, McpServerConfig>;
   configuredDefaultModelSelection?: ModelSelection;
@@ -328,6 +330,7 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
               : undefined,
           closeMcp: deps.ownsMcpPort && deps.mcpPort ? () => deps.mcpPort?.close() : undefined,
           closeNodeReplBrowserBroker: deps.closeNodeReplBrowserBroker,
+          closePtySessions: deps.closePtySessions,
           closeSessionStore: closableSessionStore ? () => closableSessionStore.close() : undefined,
           logger: deps.logger,
         });

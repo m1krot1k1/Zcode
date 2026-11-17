@@ -8,6 +8,11 @@
 // 服务上下文
 export { ServiceProvider, useServices } from "./useServices.js";
 export {useWorkspaceServices} from "./useWorkspaceServices.js";
+export {
+  usePromptEnhancer,
+  type PromptEnhanceState,
+  type UsePromptEnhancerOptions,
+} from "./usePromptEnhancer.js";
 
 // 平台操作上下文
 export {

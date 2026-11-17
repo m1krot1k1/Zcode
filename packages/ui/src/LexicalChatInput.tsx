@@ -18,7 +18,7 @@
  */
 import { PromptClipboardPlugin } from "@/mentions/PromptClipboardPlugin.js";
 import { resolveMobileInputTextSizeClassName } from "@/lib/mobileTextInput.js";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -39,6 +39,8 @@ import {
   E2ELexicalInputBridgePlugin,
 } from "@/lexical-chat-input/editorPlugins.js";
 import { useLexicalChatInputReadyLog } from "@/lexical-chat-input/useLexicalChatInputReadyLog.js";
+import { ChatGhostAutocomplete } from "@/lexical-ghost-autocomplete/ChatGhostAutocomplete.js";
+import { GhostTextNode } from "@/lexical-ghost-autocomplete/GhostTextNode.js";
 import type { LexicalChatInputProps } from "@/lexical-chat-input/types.js";
 
 const EDITOR_THEME = {
@@ -131,11 +133,16 @@ export function LexicalChatInput({
     />
   );
 
+  // Ghost-подсказка должна уступать Tab открытой панели `/` или `@`.
+  // Флаг держим в ref, чтобы не пересоздавать команды плагина на каждом ре-рендере.
+  const triggerPanelOpenRef = useRef(false);
+  const isTriggerPanelOpen = useCallback(() => triggerPanelOpenRef.current, []);
+
   const initialConfig = useMemo(
     () => ({
       namespace: "ChatInput",
       theme: EDITOR_THEME,
-      nodes: [PromptMentionNode],
+      nodes: [PromptMentionNode, GhostTextNode],
       // LexicalComposer initialConfig 每次 render 新建会让输入区子树被记录为 props 变化；
       // 配置内容本身是静态的，固定引用能避免无关状态更新触发 composer 子树冒泡。
       onError: (error: Error) => {
@@ -167,6 +174,13 @@ export function LexicalChatInput({
           <EditorApiPlugin editorApiRef={editorApiRef} />
           <LeadingChineseSlashAliasPlugin disabled={disabled} />
           <PasteCapturePlugin disabled={disabled} onPaste={onPaste} />
+          <ChatGhostAutocomplete
+            workspacePath={workspacePath}
+            workspaceIdentity={workspaceIdentity}
+            sessionId={skillCatalogSessionId ?? taskId}
+            isTriggerPanelOpen={isTriggerPanelOpen}
+            disabled={disabled}
+          />
         </div>
         <SlashCommandPlugin
           workspacePath={workspacePath}
@@ -177,6 +191,9 @@ export function LexicalChatInput({
           disabled={disabled}
           excludedCommandNames={excludedSlashCommandNames}
           appCommands={appSlashCommands}
+          onPanelOpenChange={(open) => {
+            triggerPanelOpenRef.current = open;
+          }}
         />
         {enableMentionPanel ? (
           <MentionPlugin

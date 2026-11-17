@@ -227,6 +227,21 @@ export async function createRecord(
       toolSearch: { mode: startupPreferences.toolSearchMode },
       workspaceBoundary: startupPreferences.workspaceBoundary,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
+      // Этап 4.6: настройки новых подсистем из Host preferences. Передаём только
+      // присутствующие значения, чтобы старый Host не сбрасывал дефолты рантайма.
+      ...(startupPreferences.promptDepth ? { promptDepth: startupPreferences.promptDepth } : {}),
+      ...(startupPreferences.workingContextCeilingTokens !== undefined
+        ? { workingContextCeilingTokens: startupPreferences.workingContextCeilingTokens }
+        : {}),
+      ...(startupPreferences.autoRepairLoopEnabled !== undefined
+        ? { enableAutoRepairLoop: startupPreferences.autoRepairLoopEnabled }
+        : {}),
+      ...(startupPreferences.autoRepairLoopLimits
+        ? { autoRepairLoopLimits: startupPreferences.autoRepairLoopLimits }
+        : {}),
+      ...(startupPreferences.subagentMaxParallel !== undefined
+        ? { subagentMaxParallel: startupPreferences.subagentMaxParallel }
+        : {}),
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
       // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
       ...(startupPreferences.memoryEnabled ? {} : { memory: { enabled: false } }),
@@ -313,6 +328,16 @@ export async function createRecord(
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: startupPreferences.toolSearchMode,
     workspaceBoundary: startupPreferences.workspaceBoundary,
+    ...(startupPreferences.promptDepth ? { promptDepth: startupPreferences.promptDepth } : {}),
+    ...(startupPreferences.workingContextCeilingTokens !== undefined
+      ? { workingContextCeilingTokens: startupPreferences.workingContextCeilingTokens }
+      : {}),
+    ...(startupPreferences.autoRepairLoopEnabled !== undefined
+      ? { autoRepairLoopEnabled: startupPreferences.autoRepairLoopEnabled }
+      : {}),
+    ...(startupPreferences.autoRepairLoopLimits
+      ? { autoRepairLoopLimits: startupPreferences.autoRepairLoopLimits }
+      : {}),
     ...(parentSessionId ? { parentSessionId } : {}),
     persistence: "persistence" in params ? (params.persistence ?? "immediate") : "immediate",
     protocolEventSequences: new Map(),

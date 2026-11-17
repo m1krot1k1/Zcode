@@ -23,6 +23,7 @@ import type {
   CommandCenterCustomCommandContent,
   CommandCenterCustomCommandListOutcome,
 } from "../command-center-custom.js";
+import type { EnhanceCommandOutcome } from "../enhance-command.js";
 
 export type TuiSubmitOptions = Parameters<TuiSubmitPrompt>[1];
 export type TuiSendInputOptions = Parameters<TuiSendInput>[1];
@@ -301,6 +302,18 @@ export type CommandCenterApp = {
 export type CommandCenterDeps = {
   forkApp?: (targetCheckpointId?: string) => Promise<CommandCenterForkResult>;
   getApp(): Promise<CommandCenterApp>;
+  /** Workspace path for commands that call services directly (currently `/enhance`). */
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  /**
+   * Порт `/enhance`. Владелец App собирает его поверх `AgentRuntime.generateWorkspaceText`,
+   * поэтому command center не зависит от конкретного runtime и одинаково работает в TUI и headless.
+   * `null` означает отмену пользователем.
+   */
+  enhancePrompt?: (
+    draftText: string,
+    options?: { abortSignal?: AbortSignal },
+  ) => Promise<EnhanceCommandOutcome | null>;
   getLocale?: () => TuiSubmitPromptResult["locale"];
   getMode?: () => CommandCenterMode;
   hasSelectableModels?: () => Promise<boolean> | boolean;

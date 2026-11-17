@@ -187,6 +187,11 @@ export interface ZCodeAppOptions {
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
+  /**
+   * Порт интерактивных PTY-сессий. Присутствие включает инструмент `PtySession`.
+   * Обычный CLI создаёт менеджер сам; хост (Desktop/Remote) может инжектировать свой.
+   */
+  ptySessionPort?: import("@zcode/core").PtySessionPort;
   artifactStore?: ToolArtifactStorePort;
   contextSourcePort?: ContextSourcePort;
   /** 仅协议宿主注入；普通 CLI 不加载内置 visualize 技能。 */

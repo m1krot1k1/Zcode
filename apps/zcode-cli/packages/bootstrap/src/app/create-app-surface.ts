@@ -114,6 +114,7 @@ export function createAppSurface(input: CreateAppSurfaceInput): ZCodeApp {
     permissionService,
     ownsExecutionPort,
     ownsMcpPort,
+    closePtySessions,
   } = ports;
   const { modelAdapter, modelFactory } = models;
   const { prepareUserExecutionBoundary } = boundary;
@@ -228,6 +229,7 @@ export function createAppSurface(input: CreateAppSurfaceInput): ZCodeApp {
     closeNodeReplBrowserBroker: async () => {
       await state.ownedNodeReplBrowserBroker?.close();
     },
+    ...(closePtySessions ? { closePtySessions } : {}),
     ownsSessionStore: env.ownsSessionStore,
     prepareUserExecutionBoundary,
     prepareResume: boundary.prepareResume,

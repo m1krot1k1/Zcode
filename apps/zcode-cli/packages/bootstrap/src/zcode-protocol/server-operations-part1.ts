@@ -76,6 +76,24 @@ export interface SessionStartupPreferences {
   toolSearchMode: AppToolSearchMode;
   /** Workspace boundary для file-tools; читается из Host preferences, не из env. */
   workspaceBoundary: "strict" | "ask" | "allow";
+  /**
+   * Этап 4.6: настройки новых подсистем. Опциональны, чтобы старый Host
+   * и inherit-ветка не ломались: отсутствие поля = дефолт runtime'а.
+   */
+  promptDepth?: "standard" | "deep" | "max_reasoning";
+  workingContextCeilingTokens?: number;
+  autoRepairLoopEnabled?: boolean;
+  autoRepairLoopLimits?: { maxIterations: number; maxElapsedMs: number };
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  sandboxAllowNetwork?: boolean;
+  sandboxCommandTimeoutMs?: number;
+  subagentMaxParallel?: number;
+  codeIndexAutoStart?: boolean;
+  codeIndexVectorChannel?: boolean;
+  codeIndexTokenBudget?: number;
+  backgroundFileTasks?: boolean;
+  chatAutocompleteEnabled?: boolean;
+  promptEnhancerEnabled?: boolean;
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
 }
 

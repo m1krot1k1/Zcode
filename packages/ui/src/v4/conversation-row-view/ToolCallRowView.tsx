@@ -17,6 +17,7 @@ import { resolveWorkflowRunOpenToolCallId } from "@/v4/workflowRunCardJoin.js";
 import { type ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 import { RowShell } from "@/v4/conversation-row-view/RowShell.js";
+import { ToolFileTransactionSummary } from "@/v4/ToolFileTransactionSummary.js";
 
 export const ToolCallRowView = memo(function ToolCallRowView({
   row,
@@ -159,6 +160,23 @@ export const ToolCallRowView = memo(function ToolCallRowView({
   // ConversationAssistantWorkItems 的 gap-4 组容器统一给。
   return (
     <RowShell rowId={row.rowId} className="py-0">
+      {/* Этап 6.1c: сводка транзакции под самим tool-блоком. Данные приходят из
+          потока `fileTransaction.updated` (store), поэтому панель появляется сразу
+          по коммиту/откату и не требует локального состояния компонента. */}
+      {context.sessionId ? (
+        <ToolFileTransactionSummary
+          workspacePath={context.workspacePath}
+          {...(context.workspaceIdentity ? { workspaceIdentity: context.workspaceIdentity } : {})}
+          {...(context.workspaceRemoteSessionId
+            ? { workspaceRemoteSessionId: context.workspaceRemoteSessionId }
+            : {})}
+          sessionId={context.sessionId}
+          toolCallId={row.toolCallId}
+          {...(row.turnId ? { turnId: row.turnId } : {})}
+          compactForRemoteControl={context.compactForRemoteControl === true}
+          {...(context.onOpenCodeViewer ? { onOpenCodeViewer: context.onOpenCodeViewer } : {})}
+        />
+      ) : null}
       <div data-conversation-selectable="true">
         <ToolCallBlock
           toolCallNode={toolCallNode}

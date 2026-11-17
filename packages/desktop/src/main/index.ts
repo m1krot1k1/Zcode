@@ -1,3 +1,7 @@
+// 必须排在所有其它 import 之前：electron-updater 在模块求值阶段就会读取 app.getVersion()，
+// 未打包运行时该值是 "0.0"，会让 main bundle 直接抛 ERR_UPDATER_INVALID_VERSION，连窗口都建不出来。
+// 见 desktopAppVersionBootstrap.ts 的说明。
+import "./desktopEarlyAppVersionBootstrap.js";
 import "./desktopEarlyDataBaseDirBootstrap.js";
 import "./desktopEarlyChromiumHardwareAccelerationBootstrap.js";
 import { app, BrowserWindow, powerSaveBlocker, session } from "electron";

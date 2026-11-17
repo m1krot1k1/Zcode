@@ -14,10 +14,14 @@
       - 'wasm-unsafe-eval' 只放行 WebAssembly 编译（office 预览 / shiki oniguruma / pdf.js），
         不放行 eval 或 new Function 的任意 JS。
       - file: 覆盖生产 file:// 文档与同目录资源；ws://…:5174 仅覆盖 Vite HMR。
+      - IPv6-литерал `ws://[::1]:5174` из connect-src убран: Chromium считает такой
+        host-source невалидным и игнорирует его ("contains an invalid source"), засоряя
+        консоль renderer. Vite HMR в dev подключается по `localhost`/`127.0.0.1`
+        (scripts/dev.mjs выбирает URL из этих же адресов), поэтому они и оставлены.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: blob: zcode-media: http: https: file:; media-src 'self' data: blob: zcode-media: http: https: file:; font-src 'self' data: file:; connect-src 'self' http: https: file: blob: ws://localhost:5174 ws://127.0.0.1:5174 ws://[::1]:5174; worker-src 'self' blob: file:; object-src 'none'; base-uri 'none'; form-action 'self'"
+      content="script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: blob: zcode-media: http: https: file:; media-src 'self' data: blob: zcode-media: http: https: file:; font-src 'self' data: file:; connect-src 'self' http: https: file: blob: ws://localhost:5174 ws://127.0.0.1:5174; worker-src 'self' blob: file:; object-src 'none'; base-uri 'none'; form-action 'self'"
     />
     <title>ZCode</title>
     <style>

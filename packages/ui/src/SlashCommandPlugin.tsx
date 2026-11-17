@@ -66,7 +66,12 @@ export function SlashCommandPlugin({
   disabled = false,
   excludedCommandNames,
   appCommands,
-}: SlashCommandPluginProps & { provider: ZCodeProvider }) {
+  onPanelOpenChange,
+}: SlashCommandPluginProps & {
+  provider: ZCodeProvider;
+  /** Сообщает композеру об открытой панели: ghost-автодополнение уступает Tab. */
+  onPanelOpenChange?: (open: boolean) => void;
+}) {
   const [editor] = useLexicalComposerContext();
   const { intl, locale } = useZCodeIntl();
   const [activeTrigger, setActiveTrigger] = useState<ActivePromptInputTrigger | null>(null);
@@ -138,6 +143,11 @@ export function SlashCommandPlugin({
     [activeTrigger],
   );
   const isOpen = !disabled && activeTrigger !== null;
+
+  // Ghost-автодополнение уступает Tab открытой панели: композер получает точный флаг.
+  useEffect(() => {
+    onPanelOpenChange?.(isOpen);
+  }, [isOpen, onPanelOpenChange]);
 
   useEffect(() => {
     activeSignatureRef.current = activeSignature;

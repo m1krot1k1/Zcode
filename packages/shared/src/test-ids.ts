@@ -347,6 +347,15 @@ export const TID_CHAT_MESSAGE_FORK_BUTTON = "chat-message-fork-button";
 /** 聊天变更摘要撤销/重新应用按钮（动态后缀为 messageId） */
 export const TID_CHAT_CHANGE_SUMMARY_TOGGLE_FILES_BUTTON =
   "chat-change-summary-toggle-files-button";
+/**
+ * 聊天事务性文件变更面板（Этап 6.1c；动态后缀为 messageId）。
+ *
+ * Отдельный id от `chat-change-summary-*`: это панель по реактивным событиям
+ * `fileTransaction.updated`, а не агрегат по turn header.
+ */
+export const TID_CHAT_FILE_TRANSACTION_PANEL = "chat-file-transaction-panel";
+/** 聊天事务性文件变更面板里的后台任务指示器（动态后缀为 transactionId） */
+export const TID_CHAT_FILE_TRANSACTION_BACKGROUND_TASK = "chat-file-transaction-background-task";
 /** 聊天输入框前缀提示面板 */
 export const TID_PROMPT_SUGGESTION_PANEL = "prompt-suggestion-panel";
 /** 聊天输入框前缀提示分组（动态后缀为分组 id） */

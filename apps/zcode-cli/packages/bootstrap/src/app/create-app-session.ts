@@ -88,6 +88,7 @@ export function prepareAppSession(
     executionPort,
     sessionMailboxPort,
     workspaceHookRuntimeSecurity,
+    ptySessionPort,
   } = ports;
   const {
     pluginOutcome,
@@ -422,6 +423,9 @@ export function prepareAppSession(
     sessionMailboxPort,
     logger,
     executionPort,
+    // Причина: без этого порта инструмент PtySession исключается из реестра
+    // (`includePtySession`), и модель не видит его в списке инструментов хода.
+    ptySessionPort,
     workspaceHookAdmission: workspaceHookRuntimeSecurity?.admission,
     workspaceHookSnapshot: workspaceHookRuntimeSecurity?.snapshot,
     browserControlPort,

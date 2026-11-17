@@ -167,6 +167,10 @@ export const ServiceChannels = {
   Subagents: "subagents",
   /** 本地代码索引、符号图与代码搜索服务 */
   CodeIntelligence: "code-intelligence",
+  /** Нативное улучшение пользовательских и системных промптов (`Enhance Prompt`). */
+  PromptEnhancer: "prompt-enhancer",
+  /** Предиктивное Tab-автодополнение в композере (ghost-text). */
+  ChatAutocomplete: "chat-autocomplete",
   /** 当前 workspace 的进程所属 Host 承载的显式 OpenCode ACP delegated agent */
   OpenCodeAcp: "open-code-acp",
   /** Commands 管理服务 */

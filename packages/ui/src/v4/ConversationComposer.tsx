@@ -33,6 +33,11 @@ import {
 } from "@/ChatErrorBanner.js";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import {
+  ComposerEnhancePrompt,
+  type ComposerEnhancePromptHandle,
+} from "@/prompt-enhancer-ui/ComposerEnhancePrompt.js";
+import type { AppSlashCommand } from "@/slashCommandHelpers.js";
 import { advanceComposerDraftRevision } from "@/v4/composer/composerDraftRevision.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
@@ -622,6 +627,52 @@ function ConversationComposerImpl(props: ConversationComposerProps) {
       }),
     [onSelectModel],
   );
+  // `Enhance Prompt`: один владелец запроса на композер — кнопка и `/enhance`
+  // вызывают его через ref, поэтому не может быть двух параллельных улучшений.
+  const enhancePromptRef = useRef<ComposerEnhancePromptHandle | null>(null);
+  const enhancePromptNode = useMemo(
+    () => (
+      <ComposerEnhancePrompt
+        ref={enhancePromptRef}
+        workspacePath={workspacePath}
+        {...(workspaceIdentity ? { workspaceIdentity } : {})}
+        sessionId={sessionId ?? null}
+        draftText={text}
+        disabled={disabled || runtimeBlocked || pending}
+        inputApiRef={inputApiRef}
+        updateText={updateText}
+        scheduleDraftPersist={scheduleDraftPersist}
+      />
+    ),
+    [
+      disabled,
+      inputApiRef,
+      pending,
+      runtimeBlocked,
+      scheduleDraftPersist,
+      sessionId,
+      text,
+      updateText,
+      workspaceIdentity,
+      workspacePath,
+    ],
+  );
+  // `/enhance` живёт рядом с кнопкой и дергает тот же владелец запроса.
+  // CLI catalog остаётся авторитетом: команда добавляется только если CLI её не объявил.
+  const appSlashCommandsWithEnhance = useMemo<readonly AppSlashCommand[]>(() => {
+    const base = props.appSlashCommands ?? [];
+    if (base.some((command) => command.value === "enhance")) return base;
+    return [
+      ...base,
+      {
+        value: "enhance",
+        label: intl.formatMessage({ id: "chat.slash.app.enhance.label" }),
+        description: intl.formatMessage({ id: "chat.slash.app.enhance.description" }),
+        keywords: ["enhance", "improve", "улучшить", "промпт", "优化", "提示词"],
+        run: () => enhancePromptRef.current?.trigger(),
+      },
+    ];
+  }, [intl, props.appSlashCommands]);
   const submitControlNode = useMemo(
     () =>
       buildSubmitControl({
@@ -653,6 +704,7 @@ function ConversationComposerImpl(props: ConversationComposerProps) {
         setSendTooltipOpen,
         canSend,
         handleSendButtonClick,
+        enhancePromptNode,
       }),
     [
       canSend,
@@ -664,6 +716,7 @@ function ConversationComposerImpl(props: ConversationComposerProps) {
       runtimeBlocked,
       draftConfig,
       draftMode,
+      enhancePromptNode,
       handleStopClick,
       handleSendButtonClick,
       handleConfigPickerOpenChange,
@@ -763,6 +816,7 @@ function ConversationComposerImpl(props: ConversationComposerProps) {
     attachmentAction,
     leadingActionsNode,
     submitControlNode,
+    appSlashCommandsOverride: appSlashCommandsWithEnhance,
     composerMediaPreviewItems,
     attachmentPreviewIndex,
     attachmentPreviewOpen,

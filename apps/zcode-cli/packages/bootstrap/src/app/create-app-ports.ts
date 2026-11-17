@@ -1,6 +1,9 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNodeExecutionAdapter } from "@zcode/adapters/exec";
+// PTY-порт должен создавать хост: без него инструмент PtySession не регистрируется вовсе,
+// и модель физически не может запустить интерактивную сессию (REPL, визард, dev-сервер).
+import { createAgentPtySessionPortWithManager } from "@zcode/adapters/exec/pty";
 import { createNodeFileSystemAdapter } from "@zcode/adapters/fs";
 import { createNodeWebFetchHttpClientAdapter } from "@zcode/adapters/http";
 import { createJimpImageProcessorAdapter } from "@zcode/adapters/image";
@@ -40,6 +43,10 @@ export interface AppPorts {
   fileSystemPort: NonNullable<ZCodeAppOptions["fileSystemPort"]>;
   httpClientPort: NonNullable<ZCodeAppOptions["httpClientPort"]>;
   providerEndpointRoutingPort: ZCodeAppOptions["providerEndpointRoutingPort"];
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort: NonNullable<ZCodeAppOptions["ptySessionPort"]>;
+  /** Освобождение PTY-сессий, которыми владеет именно этот app. */
+  closePtySessions?: () => Promise<void>;
 }
 
 export function prepareAppPorts(
@@ -172,6 +179,15 @@ export function prepareAppPorts(
       caCertFile: configResult.config.network.caCertFile,
     });
   const providerEndpointRoutingPort = options.providerEndpointRoutingPort;
+  // Причина дефекта: PtySession был реализован в core/adapters, но ни один хост не передавал
+  // порт, поэтому инструмент никогда не регистрировался и был недоступен модели в рантайме.
+  // Инжектированный хостом порт имеет приоритет; иначе CLI сам владеет менеджером сессий.
+  const injectedPtySessionPort = options.ptySessionPort;
+  const ownedPtySession = injectedPtySessionPort
+    ? undefined
+    : createAgentPtySessionPortWithManager();
+  const ptySessionPort: NonNullable<ZCodeAppOptions["ptySessionPort"]> =
+    injectedPtySessionPort ?? ownedPtySession!.port;
   markMcpAdapterInitialized({
     configuredMcpServers,
     hasInjectedMcpPort: options.mcpPort !== undefined,
@@ -199,5 +215,7 @@ export function prepareAppPorts(
     fileSystemPort,
     httpClientPort,
     providerEndpointRoutingPort,
+    ptySessionPort,
+    ...(ownedPtySession ? { closePtySessions: ownedPtySession.dispose } : {}),
   };
 }

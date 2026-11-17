@@ -4,8 +4,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL, type AppSettings } from "@zcode/shared";
 import type { IServiceAccessor, ISettingService } from "@zcode/services";
-import { useServices } from "./useServices.js";
-import { usePlatform } from "./usePlatform.js";
+import { useOptionalServices } from "./useServices.js";
+import { useOptionalPlatform } from "./usePlatform.js";
 
 type SettingsSnapshot = {
   settings: AppSettings | null;
@@ -104,20 +104,30 @@ export async function updateSettingsAndRefreshSnapshot(params: {
 
 /** 获取和更新应用设置 */
 export function useSettings(options: { cacheKey?: string; services?: IServiceAccessor } = {}) {
-  const contextualServices = useServices();
+  // Причина: композер Этапа 4 (`useComposerPromptEnhance`) рендерится и без
+  // `ServiceProvider` — например, в юнит-тестах `ConversationComposer` и в превью.
+  // Обязательный `useServices()` бросал исключение до того, как использовался
+  // переданный `services`. Теперь отсутствие провайдера и accessor'а — валидное
+  // состояние: настройки просто недоступны, а не падает весь композер.
+  const contextualServices = useOptionalServices();
+  const settingsServices = options.services ?? contextualServices;
+  const unavailable = settingsServices === null || settingsServices === undefined;
+
   // Bug 原因：SettingsPage 可在远端 workspace 的 ServiceProvider 下渲染；若继续隐式取当前
   // context，“记住 Source 选择”会写入远端 setting，Controller 本地快照随后把选择重置为本机。
-  const settingsServices = options.services ?? contextualServices;
-  const { botsService, broadcastService, settingService, zcodeAgentService } = settingsServices;
-  const platform = usePlatform();
+  const { botsService, broadcastService, settingService, zcodeAgentService } =
+    settingsServices ?? ({} as IServiceAccessor);
+  const platform = useOptionalPlatform();
   const cacheKey = resolveSettingsCacheKey(options.cacheKey, settingService);
   const [snapshot, setSnapshot] = useState<SettingsSnapshot>(() => getSettingsSnapshot(cacheKey));
 
   const refresh = useCallback(async () => {
+    if (!settingService) return;
     await refreshSharedSettings(cacheKey, () => settingService.get());
   }, [cacheKey, settingService]);
 
   useEffect(() => {
+    if (unavailable) return;
     const listener = (nextSnapshot: SettingsSnapshot) => {
       setSnapshot(nextSnapshot);
     };
@@ -132,21 +142,25 @@ export function useSettings(options: { cacheKey?: string; services?: IServiceAcc
       listeners.delete(listener);
       if (listeners.size === 0) listenersByKey.delete(cacheKey);
     };
-  }, [cacheKey, refresh]);
+  }, [cacheKey, refresh, unavailable]);
 
   useEffect(() => {
+    if (unavailable) return;
     return (
-      platform.onSettingsChanged?.(() => {
+      platform?.onSettingsChanged?.(() => {
         void refresh();
       }) ?? (() => {})
     );
-  }, [platform, refresh]);
+  }, [platform, refresh, unavailable]);
 
   const update = useCallback(
     async (
       patch: Partial<AppSettings>,
       expectedAccountSettings?: Parameters<ISettingService["update"]>[1],
     ) => {
+      if (!settingService) {
+        throw new Error("useSettings.update 需要 ServiceProvider 或显式 services");
+      }
       try {
         if (expectedAccountSettings) await settingService.update(patch, expectedAccountSettings);
         else await settingService.update(patch);
@@ -155,11 +169,14 @@ export function useSettings(options: { cacheKey?: string; services?: IServiceAcc
         if (expectedAccountSettings) await refresh();
         throw error;
       }
-      platform.syncAppSettings?.(patch);
+      platform?.syncAppSettings?.(patch);
       await refresh();
       if (
-        typeof patch.askUserQuestionAutoResolutionEnabled === "boolean" ||
-        typeof patch.modelIoFullRetentionEnabled === "boolean"
+        (typeof patch.askUserQuestionAutoResolutionEnabled === "boolean" ||
+          typeof patch.modelIoFullRetentionEnabled === "boolean") &&
+        zcodeAgentService &&
+        botsService &&
+        broadcastService
       ) {
         const currentSettings = getSettingsSnapshot(cacheKey).settings;
         const preferences = {

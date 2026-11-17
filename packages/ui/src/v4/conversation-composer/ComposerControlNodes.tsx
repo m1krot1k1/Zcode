@@ -68,6 +68,11 @@ export interface SubmitControlInput {
   setSendTooltipOpen: (open: boolean) => void;
   canSend: boolean;
   handleSendButtonClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  /**
+   * Узел «Улучшить промпт». Состояние запроса принадлежит композеру, поэтому
+   * сюда передаётся готовый элемент, а не набор пропсов.
+   */
+  enhancePromptNode?: ReactNode;
 }
 
 export interface LeadingActionsInput {
@@ -110,6 +115,7 @@ export function buildSubmitControl(input: SubmitControlInput): ReactNode {
     setSendTooltipOpen,
     canSend,
     handleSendButtonClick,
+    enhancePromptNode,
   } = input;
   const {
     draftConfig,
@@ -191,6 +197,7 @@ export function buildSubmitControl(input: SubmitControlInput): ReactNode {
         <BotIcon className="size-4" />
         <span>{intl.formatMessage({ id: "chat.composer.swarm" })}</span>
       </Button>
+      {enhancePromptNode}
       {showStopControl ? (
         <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
           <Button

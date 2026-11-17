@@ -5,6 +5,7 @@ import { useComposerClientNamespace, useServices } from "@/hooks/useServices.js"
 import { useSlashCommands } from "@/hooks/useSlashCommands.js";
 import { useWorkspaceHomePath } from "@/hooks/useWorkspaceHomePath.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { useFileTransactionStream } from "@/hooks/useFileTransactionStream.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { readPendingTaskDraft, resolveComposerScope } from "@/v4/composer/composerDraftStore.js";
@@ -159,6 +160,14 @@ export function useSessionPaneBootstrap(params: UseSessionPaneBootstrapParams) {
     );
   }, [conversationTelemetry, conversationTelemetryForegroundEnabled, sessionId, telemetryVisible]);
   const [lease, setLease] = useSessionPaneLease(sessionId, layer);
+  // Этап 6.1c: единственная подписка pane на транзакционные изменения файлов.
+  // Пишет только в useFileTransactionStore; панели читают срез по workspaceKey+sessionId.
+  useFileTransactionStream({
+    workspacePath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+    ...(remoteSessionId ? { workspaceRemoteSessionId: remoteSessionId } : {}),
+    sessionId,
+  });
   const state = useConversationProjection(lease);
   const snapshot = state.snapshot;
   const runtimeReady =

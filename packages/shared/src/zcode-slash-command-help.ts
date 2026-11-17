@@ -42,6 +42,16 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
     },
     {
       details: [
+        "Rewrites the given text into a stricter, structured prompt using the current session model.",
+        "Prints the improved prompt with added clarifications and assumptions; it does not send a turn.",
+        "Works the same in the interactive TUI and in headless `-p` mode.",
+      ],
+      name: "enhance",
+      summary: "Improve a draft prompt before sending it.",
+      usage: "/enhance <draft prompt>",
+    },
+    {
+      details: [
         "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",
         "Existing AGENTS.md files should be edited rather than overwritten.",
         "This command targets the workspace root, not the user default ~/.zcode/AGENTS.md.",

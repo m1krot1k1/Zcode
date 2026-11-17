@@ -703,7 +703,87 @@ export function mapSessionEventType(type: SessionEvent["type"]): ZCodeSessionEve
     case SessionEventType.StreamRecoveryTailDiscarded:
     case SessionEventType.StreamRecoveryBlocked:
       return "streamRecovery.updated";
+    // 修复原因（Этап 6.1c）：`file_transaction_updated` 没有分支时落到 default，
+    // 协议层把它伪装成 `session.updated`，于是 renderer 投影
+    // (`lib/zcodeSessionProjection/sessionEvents.ts`) 里 `case "fileTransaction.updated"`
+    // 永远不触发 —— 实时 diff 面板因此完全收不到事件，尽管文件已经被写入磁盘。
+    case SessionEventType.FileTransactionUpdated:
+      return "fileTransaction.updated";
     default:
       return "session.updated";
   }
+}
+
+/**
+ * 原因: `zcodeSessionEventSchema` — discriminated union по `type`. Пока событие
+ * собиралось одним литералом с `type: mapSessionEventType(event.type)`,
+ * дискриминант имел тип объединения всех литералов, и TS не мог отнести результат
+ * ни к одному члену union — TS2322 в `mapSessionEvent` при каждой новой ветке
+ * (последняя добавлена вместе с `fileTransaction.updated`).
+ *
+ * 修复: тело события и дискриминант присваиваются раздельно. Этот switch сужает
+ * `type` до одного литерала, поэтому `{ ...base, type }` проверяется ровно против
+ * одного члена union. Без `as any` / `@ts-ignore` и без ослабления schema: если
+ * появится новый тип события, финальный `never` не даст скомпилировать.
+ */
+export function finalizeSessionEvent(
+  base: Omit<ZCodeSessionEvent, "type">,
+  type: ZCodeSessionEvent["type"],
+): ZCodeSessionEvent {
+  switch (type) {
+    case "session.created":
+      return { ...base, type };
+    case "session.resumed":
+      return { ...base, type };
+    case "session.updated":
+      return { ...base, type };
+    case "session.titleUpdated":
+      return { ...base, type };
+    case "session.closed":
+      return { ...base, type };
+    case "turn.started":
+      return { ...base, type };
+    case "turn.steerQueued":
+      return { ...base, type };
+    case "turn.steerDrained":
+      return { ...base, type };
+    case "turn.completed":
+      return { ...base, type };
+    case "turn.failed":
+      return { ...base, type };
+    case "message.upserted":
+      return { ...base, type };
+    case "message.removed":
+      return { ...base, type };
+    case "part.started":
+      return { ...base, type };
+    case "part.delta":
+      return { ...base, type };
+    case "part.upserted":
+      return { ...base, type };
+    case "part.removed":
+      return { ...base, type };
+    case "model.streaming":
+      return { ...base, type };
+    case "tool.updated":
+      return { ...base, type };
+    case "permission.requested":
+      return { ...base, type };
+    case "permission.resolved":
+      return { ...base, type };
+    case "userInput.requested":
+      return { ...base, type };
+    case "userInput.resolved":
+      return { ...base, type };
+    case "checkpoint.created":
+      return { ...base, type };
+    case "rewind.triggered":
+      return { ...base, type };
+    case "streamRecovery.updated":
+      return { ...base, type };
+    case "fileTransaction.updated":
+      return { ...base, type };
+  }
+  const unhandledType: never = type;
+  return unhandledType;
 }

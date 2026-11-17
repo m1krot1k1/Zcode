@@ -623,6 +623,45 @@ export async function resolveSessionStartupPreferences(
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: runtimePreferences.toolSearchMode,
     workspaceBoundary: runtimePreferences.workspaceBoundary,
+    // Этап 4.6: пробрасываем ровно то, что Host прислал; отсутствие поля — дефолт рантайма.
+    ...(runtimePreferences.promptDepth ? { promptDepth: runtimePreferences.promptDepth } : {}),
+    ...(runtimePreferences.workingContextCeilingTokens
+      ? { workingContextCeilingTokens: runtimePreferences.workingContextCeilingTokens }
+      : {}),
+    ...(runtimePreferences.autoRepairLoopEnabled !== undefined
+      ? { autoRepairLoopEnabled: runtimePreferences.autoRepairLoopEnabled }
+      : {}),
+    ...(runtimePreferences.autoRepairLoopLimits
+      ? { autoRepairLoopLimits: runtimePreferences.autoRepairLoopLimits }
+      : {}),
+    ...(runtimePreferences.sandboxMode ? { sandboxMode: runtimePreferences.sandboxMode } : {}),
+    ...(runtimePreferences.sandboxAllowNetwork !== undefined
+      ? { sandboxAllowNetwork: runtimePreferences.sandboxAllowNetwork }
+      : {}),
+    ...(runtimePreferences.sandboxCommandTimeoutMs
+      ? { sandboxCommandTimeoutMs: runtimePreferences.sandboxCommandTimeoutMs }
+      : {}),
+    ...(runtimePreferences.subagentMaxParallel !== undefined
+      ? { subagentMaxParallel: runtimePreferences.subagentMaxParallel }
+      : {}),
+    ...(runtimePreferences.codeIndexAutoStart !== undefined
+      ? { codeIndexAutoStart: runtimePreferences.codeIndexAutoStart }
+      : {}),
+    ...(runtimePreferences.codeIndexVectorChannel !== undefined
+      ? { codeIndexVectorChannel: runtimePreferences.codeIndexVectorChannel }
+      : {}),
+    ...(runtimePreferences.codeIndexTokenBudget
+      ? { codeIndexTokenBudget: runtimePreferences.codeIndexTokenBudget }
+      : {}),
+    ...(runtimePreferences.backgroundFileTasks !== undefined
+      ? { backgroundFileTasks: runtimePreferences.backgroundFileTasks }
+      : {}),
+    ...(runtimePreferences.chatAutocompleteEnabled !== undefined
+      ? { chatAutocompleteEnabled: runtimePreferences.chatAutocompleteEnabled }
+      : {}),
+    ...(runtimePreferences.promptEnhancerEnabled !== undefined
+      ? { promptEnhancerEnabled: runtimePreferences.promptEnhancerEnabled }
+      : {}),
     resolveInitialBashShellSelection: async () => {
       const executionPreferences = await requestSessionRuntimePreferences(
         context,

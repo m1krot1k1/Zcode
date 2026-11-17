@@ -32,6 +32,7 @@ import { useRemoteProjectReconnect } from "@/hooks/RemoteProjectPresentationCont
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
+import type { AppSlashCommand } from "@/slashCommandHelpers.js";
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
 import type { useComposerAttachments } from "@/v4/composer/useComposerAttachments.js";
@@ -84,6 +85,11 @@ export interface ComposerRootInput {
   leadingActionsNode: ReactNode;
   submitControlNode: ReactNode;
   composerMediaPreviewItems: MediaPreviewItems;
+  /**
+   * App-команды с добавленным `/enhance`. Каталог CLI остаётся авторитетом,
+   * поэтому список передаётся отдельно, а не мутируется в props.
+   */
+  appSlashCommandsOverride?: readonly AppSlashCommand[];
   attachmentPreviewIndex: number;
   attachmentPreviewOpen: boolean;
   setAttachmentPreviewOpen: (open: boolean) => void;
@@ -177,6 +183,7 @@ export function buildComposerRoot(input: ComposerRootInput): ReactNode {
     remoteKind,
     reconnectProject,
     remoteController,
+    appSlashCommandsOverride,
   } = input;
   const {
     appSlashCommands,
@@ -360,7 +367,9 @@ export function buildComposerRoot(input: ComposerRootInput): ReactNode {
           // Bugfix 原因：命令目录必须完整来自 CLI workspace slash catalog；UI 只在
           // secondary pane 按产品能力隐藏 goal，不再追加任何内建命令或别名。
           excludedSlashCommandNames={suppressGoalCommands ? ["goal"] : undefined}
-          appSlashCommands={runtimeBlocked ? [] : appSlashCommands}
+          appSlashCommands={
+            runtimeBlocked ? [] : (appSlashCommandsOverride ?? appSlashCommands)
+          }
           enableMentionPanel
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}

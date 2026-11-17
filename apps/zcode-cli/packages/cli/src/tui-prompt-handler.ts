@@ -8,6 +8,7 @@ import type { GlobalOptions } from "@zcode/shared-types";
 import type { DynamicWorkflowMode } from "@zcode/shared";
 import { createCommandCenter, parseSlashCommand } from "./command-center.js";
 import type { CommandCenterApp } from "./command-center.js";
+import { runEnhanceCommand } from "./enhance-command.js";
 import { resolveDisplayLocale } from "./locale.js";
 import { createCliHeadlessBrowserRuntime } from "./headless-browser.js";
 // 复用防御式 runtime 读取：subscribeEvents 不在 app 的静态类型面上，
@@ -269,6 +270,18 @@ export function createTuiSubmitPrompt(
     },
     getApp,
     getMode: () => currentCliMode(modeState),
+    workspacePath: (deps.cwd ?? process.cwd)(),
+    enhancePrompt: async (draftText, enhanceOptions) => {
+      // createApp() возвращает полный App с runtime; CommandCenterApp — урезанный
+      // интерфейс для команд, которые runtime не трогают.
+      const fullApp = app ?? (await createApp(resumeRequest));
+      return await runEnhanceCommand(draftText, {
+        runtime: fullApp.runtime,
+        workspacePath: (deps.cwd ?? process.cwd)(),
+        sessionId: fullApp.sessionId,
+        ...(enhanceOptions?.abortSignal ? { abortSignal: enhanceOptions.abortSignal } : {}),
+      });
+    },
     getLocale: () =>
       app?.getLocale?.() ?? resolveDisplayLocale(activeUiLocale, uiDetectedLocale) ?? startupLocale,
     hasSelectableModels: createTuiModelAvailabilityChecker(getApp),

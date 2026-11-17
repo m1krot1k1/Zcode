@@ -5,7 +5,16 @@ import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
 import { wslUserSchema } from "./wslUserValidation.js";
 import { ZCODE_ENABLED_AGENT_PROVIDERS } from "./zcode-agent-policy.js";
 import { DYNAMIC_WORKFLOW_MODES } from "./dynamic-workflow-feature.js";
+import {
+  DEFAULT_PROMPT_DEPTH_PROFILE,
+  PROMPT_DEPTH_PROFILES,
+  promptDepthSchema,
+} from "./prompt-depth.js";
 import { normalizeZCodeEndpointOrigin } from "./zcodeEndpoint.js";
+import {
+  stage4SettingsObjectSchema,
+  stage4SettingsPatchSchema,
+} from "./stage4-settings/settings.js";
 import {
   DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
   embeddedBrowserViewportPreferenceSchema,
@@ -500,6 +509,9 @@ function migrateLegacyWorkspaceSession(value: unknown): unknown {
 }
 
 const appSettingsObjectSchema = z.object({
+  // Настройки подсистем Этапа 4 (4.1–4.6): единая схема с дефолтами на каждой секции,
+  // поэтому старые `setting.json` читаются без ошибок и получают значения по умолчанию.
+  ...stage4SettingsObjectSchema.shape,
   recentProjects: z.array(z.string()).default([]),
   locale: localeSchema.default("zh-CN"),
   // 快捷键用户覆盖（语义校验在 ui/src/shortcuts 生效表阶段容错，schema 只管形状）
@@ -557,6 +569,10 @@ const appSettingsObjectSchema = z.object({
   providerFamilyDomainMigrated: z.boolean().default(false),
   nativeSearchEnhancementsEnabled: z.boolean().default(true),
   toolSearchMode: appToolSearchModeSchema.default("off"),
+  // Инкремент 4.4: профиль глубины рассуждений. Владелец — настройки; рантайм читает его
+  // при сборке системного промпта и при выборе thinking/maxOutputTokens. UI-переключатель
+  // появится в 4.6, но схема и рантайм-поддержка готовы здесь.
+  promptDepth: promptDepthSchema.default(DEFAULT_PROMPT_DEPTH_PROFILE),
   onboardingOccupation: appSettingsOccupationSchema.nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().default(false),
@@ -611,6 +627,7 @@ export const appSettingsSchema = z.preprocess(
 );
 
 export const appSettingsPatchSchema = z.object({
+  ...stage4SettingsPatchSchema.shape,
   recentProjects: z.array(z.string()).optional(),
   locale: localeSchema.optional(),
   shortcutBindings: z.record(z.string(), z.array(z.string())).optional(),
@@ -660,6 +677,7 @@ export const appSettingsPatchSchema = z.object({
   providerFamilyDomainMigrated: z.boolean().optional(),
   nativeSearchEnhancementsEnabled: z.boolean().optional(),
   toolSearchMode: appToolSearchModeSchema.optional(),
+  promptDepth: promptDepthSchema.optional(),
   onboardingOccupation: z
     .enum([
       "office",

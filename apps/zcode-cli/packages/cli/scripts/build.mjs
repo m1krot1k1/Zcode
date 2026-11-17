@@ -12,7 +12,9 @@ const executableFileMode = 0o755;
 const packageJsonFile = "package.json";
 const rootPackageVersionError = "Root package.json must define a non-empty string version.";
 const desktopAgentBuildFlag = "--desktop-agent";
-export const resolveBuildExternal = () => ["@zcode/tui", "playwright-core", "koffi"];
+// node-pty — нативный аддон (`pty.node` + `spawn-helper`), который обязан грузиться
+// из пакета в рантайме: инлайнинг ломает `require` нативного бинарника так же, как у koffi.
+export const resolveBuildExternal = () => ["@zcode/tui", "playwright-core", "koffi", "node-pty"];
 
 export const readZodBuildVersion = async () => {
   const sharedPackage = JSON.parse(

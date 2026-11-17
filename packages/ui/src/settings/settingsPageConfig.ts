@@ -21,6 +21,7 @@ import {
   Keyboard,
   FileSearch,
   Workflow,
+  Sparkles,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -160,6 +161,15 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: FileSearch,
     titleId: "settings.workspaceFileSearch.title",
     groupId: "basics",
+  },
+  // Единая панель настроек подсистем Этапа 4 (4.1–4.6): рассуждения,
+  // улучшение промптов, ghost-автодополнение, параллельные задачи,
+  // код-индексация, песочница/CUA и браузер.
+  {
+    id: "stage4",
+    icon: Sparkles,
+    titleId: "settings.stage4.title",
+    groupId: "agentCapabilities",
   },
   {
     id: "usage",

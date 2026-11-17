@@ -25,6 +25,7 @@ import {
   buildGoalStats,
   buildTodoGroups,
   mapSessionEventType,
+  finalizeSessionEvent,
 } from "./session-mapper-projection.js";
 
 const SNAPSHOT_INLINE_IMAGE_DATA_URL_MAX_BYTES = 20 * 1024 * 1024;
@@ -294,17 +295,19 @@ export function mapSessionEvent(
   deliveryKind?: ZCodeDeliveryKind,
   options: { seq?: number } = {},
 ): ZCodeSessionEvent {
-  return {
-    deliveryKind,
-    eventId: String(event.id),
-    payload: mapSessionEventPayload(event),
-    seq: options.seq ?? event.sequenceNumber,
-    sessionId: String(event.sessionId),
-    timestamp: event.timestamp.getTime(),
-    traceId: String(event.traceId),
-    turnId: event.turnId ? String(event.turnId) : undefined,
-    type: mapSessionEventType(event.type),
-  };
+  return finalizeSessionEvent(
+    {
+      deliveryKind,
+      eventId: String(event.id),
+      payload: mapSessionEventPayload(event),
+      seq: options.seq ?? event.sequenceNumber,
+      sessionId: String(event.sessionId),
+      timestamp: event.timestamp.getTime(),
+      traceId: String(event.traceId),
+      turnId: event.turnId ? String(event.turnId) : undefined,
+    },
+    mapSessionEventType(event.type),
+  );
 }
 
 export function mapSessionEventForProtocol(
