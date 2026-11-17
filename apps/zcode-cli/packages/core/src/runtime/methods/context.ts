@@ -205,6 +205,7 @@ export function createContextBuilderFromSnapshot(
     memoryRoot,
     contextLedger: loadContextLedger(this.workspaceRoot),
     promptProfile: resolveRuntimePromptProfile(this),
+    promptDepth: this.config.promptDepth,
     skills: this.skillLoadOutcome,
     agentProfiles: this.config.subagents?.profiles,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),
@@ -344,7 +345,7 @@ export function createConfigOnlyContextSnapshot(
       nodeVersion: "unknown",
     },
     currentDate: this.config.currentDate,
-    // Причина: вложенный агент без C�оженный агент без ContextSourcePort создаёт config-only snapshot;
+    // Причина: вложенный агент без Cоженный агент без ContextSourcePort создаёт config-only snapshot;
     // без копии принятого снимка его потомки теряли AGENTS.md после первого уровня.
     // Исправление: держать тот же снимок в runtime-owned контексте для следующей делегации.
     userInstructions: this.config.subagentContext?.userInstructions,

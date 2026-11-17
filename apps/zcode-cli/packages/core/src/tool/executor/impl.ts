@@ -45,6 +45,7 @@ export class ToolExecutorImpl implements ToolExecutor {
       logger: options.logger,
       backgroundTaskControlPort: options.backgroundTaskControlPort,
       executionPort: options.executionPort,
+      ptySessionPort: options.ptySessionPort,
       browserControlPort: options.browserControlPort,
       browserDocumentationRoot: options.browserDocumentationRoot,
       fileSystemPort: options.fileSystemPort,

@@ -20,6 +20,7 @@ const SORTED_PROVIDER_TOOL_NAMES = new Set([
   "LSP",
   "MultiEdit",
   "NotebookEdit",
+  "PtySession",
   "Read",
   "ScheduleWakeup",
   "Skill",

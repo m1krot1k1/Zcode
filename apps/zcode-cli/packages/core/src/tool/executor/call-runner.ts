@@ -471,6 +471,7 @@ async function executeToolCallImpl(
         backgroundTaskControlPort: deps.backgroundTaskControlPort,
         emitEvent,
         executionPort: deps.executionPort,
+        ptySessionPort: deps.ptySessionPort,
         browserControlPort: deps.browserControlPort,
         browserDocumentationRoot: deps.browserDocumentationRoot,
         fileSystemPort: deps.fileSystemPort,

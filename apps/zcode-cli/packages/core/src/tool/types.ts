@@ -219,6 +219,14 @@ export interface ToolExecutionContext {
   /** 记录 Skill resolved metadata；仅用于 telemetry，不改变模型可见结果。 */
   recordSkillTelemetryMetadata?: (metadata: SkillTelemetryMetadata) => void;
   bashShellSelection?: ExecutionShellSelection;
+  /** Порт интерактивных PTY-сессий; отсутствие снимает инструмент с регистрации. */
+  ptySessionPort?: import("./handlers/pty-session.js").PtySessionPort;
+  /**
+   * Политика сети для Bash-песочницы. `deny` включает `--unshare-net` в bwrap;
+   * отсутствие поля означает `allow`. Runtime выставляет его из конфигурации
+   * workspace, а не модель через аргументы инструмента.
+   */
+  bashSandboxNetwork?: "allow" | "deny";
   embeddedSearch?: ToolEmbeddedSearchContext;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   workingDirectory: string;

@@ -32,6 +32,7 @@ import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type { ReadFileStateMap } from "../tool/types.js";
+import type { PromptDepthProfile } from "../context/cognitive-protocols.js";
 import type {
   CompactPhase,
   CompactReason,
@@ -148,6 +149,20 @@ export interface AgentRuntimeConfig {
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
   /** Включение детерминированного самовосстановления JSON/Zod аргументов инструментов (по умолчанию true). */
   enableToolCallSelfRepair?: boolean;
+  /**
+   * Включение замкнутого цикла самовосстановления `cli-auto-repair-loop` (4.5b).
+   * По умолчанию `false`: поведение 4.1 не меняется, цикл подключается осознанно.
+   * При `true` агенту доступен верификационный гейт (typecheck/lint/тесты/браузер/PTY/файлы)
+   * с жёсткими лимитами и защитой от осцилляции.
+   */
+  enableAutoRepairLoop?: boolean;
+  /** Лимиты цикла; применяются только при `enableAutoRepairLoop: true`. */
+  autoRepairLoopLimits?: {
+    maxIterations?: number;
+    maxElapsedMs?: number;
+    repeatThreshold?: number;
+    maxSignalsPerIteration?: number;
+  };
   /** Минимальный резерв выходных токенов под аргументы инструментов при активном thinking (по умолчанию 16384). */
   reasoningReserveOutputTokens?: number;
   /** Эффективный рабочий потолок контекста до квантованного Observation Masking (по умолчанию 120000). */
@@ -273,6 +288,13 @@ export interface AgentRuntimeConfig {
 
   // Context Builder config
   systemPrompt?: string;
+  /**
+   * Профиль глубины рассуждений (инкремент 4.4). Владелец — настройки/сессия; runtime читает
+   * его при сборке системного промпта и при выборе thinking/maxOutputTokens. Смена профиля
+   * внутри сессии осознанно инвалидирует кэшируемый префикс: это выбор пользователя,
+   * а не реакция на динамический контекст.
+   */
+  promptDepth?: PromptDepthProfile;
   /**
    * 动态工作流子代理的身份输入：在场即让
    * context builder 走「基座 + 工作流子代理契约 + persona 叠加」路径，而不是把 persona 当
@@ -403,6 +425,8 @@ export interface AgentRuntimeDeps {
   workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
   workspaceHookSnapshot?: WorkspaceHookBundleSnapshot;
   executionPort?: ExecutionPort;
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort?: import("../tool/handlers/pty-session.js").PtySessionPort;
   /** browser-use 控制端口；透传到 ToolExecutionContext.browserControlPort 供 node_repl 使用。 */
   browserControlPort?: BrowserControlPort;
   fileSystemPort?: FileSystemPort;

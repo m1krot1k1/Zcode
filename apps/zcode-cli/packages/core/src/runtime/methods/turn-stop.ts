@@ -11,7 +11,11 @@ import {
   commitAssistantToTurnRequest,
   commitTurnRequestEntries,
 } from "./turn-output-token-continuation.js";
-import { createRuntimeAssistantEntry } from "../../agent/message-history.js";
+import {
+  createRuntimeAssistantEntry,
+  systemReminderAttachmentEntry,
+} from "../../agent/message-history.js";
+import { runAgentAutoRepairGate } from "../auto-repair-loop/index.js";
 
 interface AssistantPersistenceAnchor {
   latestAssistantMessageId: AgentRuntimeInternal["latestAssistantMessageId"];
@@ -207,6 +211,31 @@ export async function finishModelStepWithoutToolCalls(
       state.turnMachine.complete(state.modelResponse, "success"),
     );
     return "break";
+  }
+  // Этап 4.5b: `enableAutoRepairLoop` — единственная точка, где решение «ход
+  // завершён» ещё можно отменить. Проверки идут после персиста assistant, но до
+  // завершения автомата, поэтому блокирующий сигнал продолжает тот же turn.
+  // При выключенном флаге гейт выходит сразу и ничего не запускает.
+  const repairGate = await runAgentAutoRepairGate({
+    enabled: this.config.enableAutoRepairLoop === true,
+    executionPort: this.executionPort,
+    workingDirectory: this.config.workingDirectory,
+    maxIterations: this.config.autoRepairLoopLimits?.maxIterations,
+    runsSoFar: state.autoRepairGateRuns ?? 0,
+    logger: this.logger
+      ? {
+          info: (message, payload) => this.logger?.info(message, payload),
+          warn: (message, payload) => this.logger?.warn(message, payload),
+        }
+      : undefined,
+  });
+  state.autoRepairGateRuns = repairGate.runsUsed;
+  if (repairGate.kind === "repair") {
+    commitTurnRequestEntries(this, state.turnRequestState, [
+      systemReminderAttachmentEntry("diagnostics", repairGate.report),
+    ]);
+    state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
+    return "continue";
   }
   if (await drainInlineGuideForNextRequest(this, state)) {
     // 正常 text-only 是可续跑边界：assistant 已持久化，guide 以 user role 进入历史，

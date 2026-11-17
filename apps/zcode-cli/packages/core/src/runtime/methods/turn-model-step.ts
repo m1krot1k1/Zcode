@@ -1,17 +1,16 @@
 import type {
-  PersistedFinishReasonKind,
   ToolSearchExecutionContext,
 } from "@zcode/contracts";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 
 import { beginLocalTurnPreparation } from "@zcode/contracts";
-import { CoreErrorType, SessionEventType, createChildTraceContext, createCoreError, createMessageId, createPartId, getModelUsageTotalTokens, traceContextToLogContext, TurnMachineImpl } from "../deps.js";
+import { SessionEventType, createChildTraceContext, createMessageId, createPartId, getModelUsageTotalTokens, traceContextToLogContext, TurnMachineImpl } from "../deps.js";
 import type { MessageId, ModelNetworkStatusEvent, ModelToolContract } from "../deps.js";
 import {
   createRuntimeAssistantEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
-import { createModelContextExceededFinishError, objectKeys, projectExecutionErrorPayload, finalizeSuspiciousEmptyModelResult, isContextExceededFinishReason, isSuspiciousEmptyModelResult, readRawFinishReason, throwIfTurnAborted, isModelContextExceededError, isTurnCancellationError, buildTurnFileChangeSummary } from "../helpers/index.js";
+import { createModelContextExceededFinishError, projectExecutionErrorPayload, finalizeSuspiciousEmptyModelResult, isContextExceededFinishReason, isSuspiciousEmptyModelResult, readRawFinishReason, throwIfTurnAborted, isModelContextExceededError, isTurnCancellationError, buildTurnFileChangeSummary } from "../helpers/index.js";
 import type {
   DrainedPendingInputDiagnostics,
   RunModelTextRequestOptions,
@@ -23,8 +22,6 @@ import { executeToolCallsForModelStep } from "./turn-tools.js";
 import {
   captureAssistantPersistenceAnchor,
   finishModelStepWithoutToolCalls,
-  persistCompletedAssistantStep,
-  persistOutputTokenLimitErrorCarrier,
 } from "./turn-stop.js";
 import { createStreamingToolCoordinator } from "./streaming-tool-coordinator.js";
 import { persistCancelledStreamSnapshot } from "./cancelled-stream-persistence.js";
@@ -45,23 +42,29 @@ import {
 } from "./turn-model-step-usage.js";
 import { estimateCurrentModelInputTokens } from "./compact.js";
 import { resolveReasoningAwareMaxOutputTokens } from "./model-token-limits.js";
+import { resolvePromptDepthRuntimeTuning } from "../../context/cognitive-protocols.js";
 import {
   applyExecutionSelectionFallback,
   matchExecutionSelectionFallback,
 } from "./turn-execution-fallback.js";
 import {
-  appendOutputTokenContinuation,
   classifyOutputTokenContinuation,
   commitAssistantToTurnRequest,
   commitTurnRequestEntries,
   completeOutputTokenRecovery,
   hasAssistantReasoningContent,
-  OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
   recordTruncatedToolCallRecovery,
 } from "./turn-output-token-continuation.js";
 import { synthesizeTruncatedToolCallSettlements } from "../../tool/self-repair/index.js";
-
-type ModelStepResult = "continue" | "output_continuation" | "break";
+import { recoverModelStepAfterContextExceeded } from "./turn-model-step-compact-recovery.js";
+import { handleOutputTokenLimitOutcome } from "./turn-model-step-output-limit.js";
+import {
+  buildAutomationCreateLimitFallback,
+  buildStepDiagnostics,
+  logModelRequestCompleted,
+  logModelResponseDiagnostics,
+  type ModelStepResult,
+} from "./turn-model-step-diagnostics.js";
 
 export async function runModelBackedTurnStep(
   this: AgentRuntimeInternal,
@@ -209,15 +212,22 @@ async function runModelBackedTurnStepImpl(
   };
 
   let result: RuntimeModelTextResult;
+  // Инкремент 4.4: явный профиль глубины повышает бюджет рассуждения и минимальный выходной
+  // бюджет. Пока профиль не задан, рантайм сохраняет поведение 4.1 — новый параметр не меняет
+  // рассуждения существующих сессий молча (условие обратной совместимости).
+  const depthTuning =
+    this.config.promptDepth === undefined
+      ? undefined
+      : resolvePromptDepthRuntimeTuning(this.config.promptDepth);
   const outputBudget = resolveReasoningAwareMaxOutputTokens({
     modelHardMaxOutputTokens: executionMaxOutputTokens,
-    configuredMaxOutputTokens: undefined,
+    configuredMaxOutputTokens: depthTuning?.minMaxOutputTokens,
     contextWindow: executionContextWindow,
     estimatedInputTokens: estimateCurrentModelInputTokens(
       options.messages,
       options.sourceEntries,
     ),
-    reasoningEffort: model.options?.reasoningLevel,
+    reasoningEffort: depthTuning?.reasoningEffort ?? model.options?.reasoningLevel,
     minToolPayloadReserveTokens: this.config.reasoningReserveOutputTokens,
   });
   try {
@@ -525,23 +535,14 @@ async function runModelBackedTurnStepImpl(
         rawFinishReason,
         toolCallCount: providerToolCallCount,
       });
-  this.logger?.info("Model response diagnostics", {
-    ...traceContextToLogContext(modelTraceContext),
-    event: "model.response.diagnostics",
-    finishReason: result.finishReason,
-    module: "core.runtime",
-    providerMetadataKeys: objectKeys(result.providerMetadata),
+  logModelResponseDiagnostics({
+    logger: this.logger,
+    modelTraceContext,
+    result,
     rawFinishReason,
-    responseEmpty: responseLength === 0,
     responseLength,
-    status: "completed",
     toolCallCount: toolCalls.length,
-    usageCacheReadTokens: usage.cacheReadTokens,
-    usageCacheWriteTokens: usage.cacheWriteTokens,
-    usageInputTokens: usage.inputTokens,
-    usageOutputTokens: usage.outputTokens,
-    usageReasoningTokens: usage.reasoningTokens,
-    usageTotalTokens: usage.totalTokens,
+    usage,
   });
   if (
     !localTerminalResponse &&
@@ -607,18 +608,13 @@ async function runModelBackedTurnStepImpl(
     (usage.inputTokens ?? 0) > 0
       ? Math.min(1, Math.max(0, (usage.cacheReadTokens ?? 0) / usage.inputTokens!))
       : undefined;
-  state.lastStepDiagnostics = {
-    finishReason: normalizePersistedFinishReason(result.finishReason),
-    ...(rawFinishReason ? { rawFinishReason: rawFinishReason.slice(0, 128) } : {}),
-    ...(outputBudget.effectiveMaxOutputTokens > 0
-      ? { effectiveMaxOutputTokens: outputBudget.effectiveMaxOutputTokens }
-      : {}),
-    ...(outputBudget.thinkingBudgetTokens > 0
-      ? { thinkingBudgetTokens: outputBudget.thinkingBudgetTokens }
-      : {}),
-    ...(cacheHitRatio !== undefined ? { cacheHitRatio } : {}),
-    stateTransitions: [...(state.turnMachine.state.stateTransitions ?? [])],
-  };
+  state.lastStepDiagnostics = buildStepDiagnostics({
+    finishReason: result.finishReason,
+    rawFinishReason,
+    outputBudget,
+    cacheHitRatio,
+    stateTransitions: state.turnMachine.state.stateTransitions ?? [],
+  });
   for (const reasoning of result.reasoning ?? []) {
     if (!hasAssistantReasoningContent(reasoning)) continue;
     await this.persistPart(
@@ -704,16 +700,12 @@ async function runModelBackedTurnStepImpl(
   );
   throwIfTurnAborted(state.turnAbortSignal);
 
-  this.logger?.info("Model request completed", {
-    ...traceContextToLogContext(modelTraceContext),
-    // 原因: по одному trace нельзя разложить /start по переходам.
-    // agentType + sessionId делают каждый hop отдельной записью, пригодной для агрегации.
+  logModelRequestCompleted({
+    logger: this.logger,
+    modelTraceContext,
     agentType: this.config.agentType ?? "root",
     durationMs: Date.now() - modelStartedAt,
-    event: "model.request.completed",
-    module: "core.runtime",
     sessionId: this.sessionId,
-    status: "completed",
     totalTokens: state.tokenCount,
     toolCallCount: toolCalls.length,
   });
@@ -776,64 +768,16 @@ async function runModelBackedTurnStepImpl(
     outputTokenContinuation !== "none" &&
     outputTokenContinuation !== "recover_truncated_tool_calls"
   ) {
-    // 首次命中 output-limit 时，当前 request 可能带有一次性的 project-memory attachment；
-    // query-local 状态必须从实际请求数组推进，不能退回请求前的数组。
-    state.turnRequestState.entries = options.requestEntries;
-    const assistantCommitted = await persistCompletedAssistantStep(this, state, {
+    return await handleOutputTokenLimitOutcome(this, state, {
       assistantPersistenceAnchor,
       assistantCreatedAt,
       assistantMessageId,
-      includeEmptyAssistant: false,
-      modelTraceContext,
-      result,
-    });
-    if (assistantCommitted) recordModelHistoryRound(state);
-    if (outputTokenContinuation === "continue") {
-      appendOutputTokenContinuation(state.turnRequestState);
-      state.reactiveCompactAttemptedInCurrentModelStep = false;
-      state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
-      return "output_continuation";
-    }
-
-    const exhaustedError = createCoreError(
-      CoreErrorType.ModelError,
-      OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
-      {
-        context: {
-          providerCode: "model_output_limit_exceeded",
-          reason: "model_output_limit_exceeded",
-          source: "provider",
-        },
-        recoverable: true,
-      },
-    );
-    const exhaustedErrorProjection = projectExecutionErrorPayload(
-      exhaustedError,
-      OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
-    );
-    completeOutputTokenRecovery(state.turnRequestState);
-    await persistOutputTokenLimitErrorCarrier(this, state, {
-      error: {
-        name: exhaustedErrorProjection.code ?? exhaustedError.type,
-        data: {
-          ...(exhaustedErrorProjection.code ? { code: exhaustedErrorProjection.code } : {}),
-          message: exhaustedErrorProjection.message,
-          // 既有 cold hydration 用 retryable 恢复 UI recoverable；这里复用该字段，
-          // 不为单一错误扩展 transcript/hydration schema。
-          retryable: exhaustedError.recoverable,
-          ...(exhaustedErrorProjection.attribution
-            ? { attribution: exhaustedErrorProjection.attribution }
-            : {}),
-        },
-      },
-      finishReason: result.finishReason,
       model,
       modelTraceContext,
+      outputTokenContinuation,
+      requestEntries: options.requestEntries,
+      result,
     });
-    if (state.activeTurn) state.activeTurn.steerable = false;
-    // 上游 query loop 会把 max_output_tokens API-error assistant 交给外层；这里复用
-    // 既有 ModelError -> TurnError 收口表达同一实时错误，同时只结束当前 Turn command。
-    throw exhaustedError;
   }
   completeOutputTokenRecovery(state.turnRequestState);
   if (executableToolCalls.length === 0) {
@@ -863,25 +807,3 @@ async function runModelBackedTurnStepImpl(
   });
   return toolStepResult;
 }
-
-function buildAutomationCreateLimitFallback(input: string): string {
-  if (/\p{Script=Han}/u.test(input)) {
-    return "定时任务已达到 20 个上限，本次未创建。请前往“自动化”手动删除一个已有任务后重试。";
-  }
-  return "The limit of 20 scheduled tasks has been reached, so no task was created. Manually delete an existing task on the Automations page, then try again.";
-}
-
-function normalizePersistedFinishReason(reason: string | undefined): PersistedFinishReasonKind {
-  switch (reason) {
-    case "stop":
-    case "length":
-    case "tool-calls":
-    case "content-filter":
-    case "error":
-    case "other":
-      return reason;
-    default:
-      return "unknown";
-  }
-}
-import { recoverModelStepAfterContextExceeded } from "./turn-model-step-compact-recovery.js";

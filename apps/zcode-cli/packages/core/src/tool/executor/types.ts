@@ -1,4 +1,5 @@
 import type { ToolSearchExecutionContext } from "@zcode/contracts";
+import type { PtySessionPort } from "../handlers/pty-session.js";
 import type { IFileLockRegistry } from "../file-transaction/contract.js";
 import type { IFileTransactionTaskRegistry } from "../file-transaction/task-contract.js";
 import type {
@@ -98,6 +99,8 @@ export interface ToolExecutorOptions {
   logger?: Logger;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   executionPort?: ExecutionPort;
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort?: PtySessionPort;
   browserControlPort?: BrowserControlPort;
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
@@ -228,6 +231,8 @@ export interface ToolExecutorDeps {
   logger?: Logger;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   executionPort?: ExecutionPort;
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort?: PtySessionPort;
   browserControlPort?: BrowserControlPort;
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;

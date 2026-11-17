@@ -132,6 +132,11 @@ export interface RegularTurnLoopState {
   /** CronCreate 命中全局上限后，本用户 turn 永久切为纯文本回复，禁止模型自行恢复。 */
   automationCreateLimitReached?: boolean;
   anomalyWarningsInjected: number;
+  /**
+   * Сколько раз за turn уже запускался гейт самовосстановления.
+   * Владелец счётчика — turn loop: без него `enableAutoRepairLoop` не ограничен.
+   */
+  autoRepairGateRuns?: number;
   /** 本轮是否已消费来源为 subagent 的后台结果通知。 */
   backgroundSubagentResultConsumed: boolean;
   /** 本轮是否已消费来源为 workflow（dynamic-workflow run）的后台通知。 */

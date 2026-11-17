@@ -1511,13 +1511,16 @@ describe("ContextBuilder meta user context", () => {
     expect(buildContextLedgerSection({ goal: "   " })).toBeNull();
   });
 
-  it("keeps the compact depth contract in the stable identity", () => {
+  it("keeps the cognitive protocols in the stable identity", () => {
     const section = buildIdentitySection();
 
-    expect(section.content).toContain("# Depth");
+    // Инкремент 4.4: секция `# Depth` заменена пятью протоколами; проверяем их наличие
+    // и перенос прежних смысловых требований в явные формулировки протоколов.
+    expect(section.content).toContain("# Cognitive protocols");
+    expect(section.content).toContain("Protocol 3 — Evidence-Grounded Verification");
     expect(section.content).toContain("primary sources");
-    expect(section.content).toContain("could falsify the result");
-    expect(section.content).toContain("Treat summaries, generated reports, and memory as leads");
+    expect(section.content).toContain("Summaries, memory, TODO notes, and agent reports are leads, not proof");
+    expect(section.content).toContain("Protocol 5 — Zero-Stub and Surgical Edit Mandate");
   });
 
   it("appends the compiled PRISM 10 profile after the harness block", () => {

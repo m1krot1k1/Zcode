@@ -80,6 +80,8 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     // 修复原因：browserControlPort 只是宿主能力，不应隐式暴露高权限 node_repl。
     // node_repl/browser-use 由 ZCode 官方 browser-use 插件启停推导出的 runtimeFeatures 控制。
     includeNodeRepl: nodeReplEnabled,
+    // PTY-инструмент включается только когда хост передал порт: иначе он бесполезен.
+    includePtySession: Boolean(deps.ptySessionPort),
     includeBrowserUse: browserUseEnabled,
     includeCodeIndex: Boolean(deps.codeIntelligencePort),
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
@@ -176,6 +178,7 @@ function createRuntimeToolExecutor(
       stopBackgroundTask: runtime.stopBackgroundTask.bind(runtime),
     },
     executionPort: deps.executionPort,
+    ptySessionPort: deps.ptySessionPort,
     browserControlPort: browserUseEnabled ? deps.browserControlPort : undefined,
     browserDocumentationRoot: browserUseEnabled
       ? runtime.config.runtimeFeatures?.browserDocumentationRoot
