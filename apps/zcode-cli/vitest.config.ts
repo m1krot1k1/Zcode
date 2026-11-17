@@ -6,7 +6,8 @@ import { configDefaults, defineConfig } from "vitest/config";
 // 结果却以失败文件计入，制造假红并吞掉真实覆盖。这里让 Vitest 不再收集它们。
 // 例外：packages/cli/tests/mode-menu.test.ts 用的是 vitest API，必须继续收集。
 const nodeTestRunnerFiles = [
-  "packages/cli/tests/**/!(mode-menu).test.ts",
+  // `enhance-command.test.ts` also uses the Vitest API (mocked AgentRuntime), like mode-menu.
+  "packages/cli/tests/**/!(mode-menu|enhance-command).test.ts",
   "packages/tui/tests/**/*.test.ts",
 ];
 
@@ -27,6 +28,12 @@ export default defineConfig({
       "packages/core/src/tool/handlers/__tests__/bash-sandbox-honesty.test.ts",
       "packages/core/src/tool/self-repair/contract.test.ts",
       "packages/core/src/tool/file-transaction/contract.test.ts",
+      // 4.5b: цикл самовосстановления — managed-модуль рядом с исходниками.
+      "packages/core/src/runtime/auto-repair-loop/contract.test.ts",
+      "packages/core/src/runtime/auto-repair-loop/loop.test.ts",
+      "packages/core/src/runtime/auto-repair-loop/runtime-factory.test.ts",
+      // 4.5b: stateful Playwright-телеметрия — managed-модуль рядом с исходниками.
+      "packages/adapters/src/browser/telemetry/contract.test.ts",
     ],
     // Bugfix: 排除由 Node 原生 test runner 覆盖的文件，保留 Vitest 默认忽略项。
     exclude: [...configDefaults.exclude, ...nodeTestRunnerFiles],
