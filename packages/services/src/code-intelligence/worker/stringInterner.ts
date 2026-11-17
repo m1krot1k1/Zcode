@@ -66,15 +66,3 @@ export class StringInterner {
   }
 }
 
-export function createInterner(db: IndexDatabase): StringInterner {
-  return new StringInterner(db);
-}
-
-/** Возвращает id значения без вставки: чтения не должны создавать строки в таблице. */
-export function lookupStringId(db: IndexDatabase, value: string): number {
-  if (!value) return 0;
-  const row = db.prepare("SELECT string_id FROM strings WHERE value = ?").get(value) as
-    | { string_id?: number }
-    | undefined;
-  return Number(row?.string_id ?? 0);
-}

@@ -26,6 +26,7 @@ import { useStartPlanRecommendation } from "@/hooks/useStartPlanRecommendation.j
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
 import { PluginScopeMenu } from "@/settings/PluginScopeMenu.js";
+import { SystemPromptEnhanceAction } from "@/prompt-enhancer-ui/SystemPromptEnhanceAction.js";
 import { SettingsFormActions } from "@/settings/SettingsFormActions.js";
 import { SettingsFormTextarea } from "@/settings/SettingsFormTextarea.js";
 import { SubagentReasoningField } from "@/settings/SubagentReasoningField.js";
@@ -68,6 +69,8 @@ export function SubagentForm({
   scopeKey,
   workspaceTabs,
   onScopeKeyChange,
+  systemPromptWorkspacePath,
+  workspaceIdentity,
 }: {
   initial?: AgentSummary;
   modelSelectionView?: ModelSelectionView | null;
@@ -85,6 +88,9 @@ export function SubagentForm({
   scopeKey: string;
   workspaceTabs: ConfigWorkspaceTarget[];
   onScopeKeyChange: (scopeKey: string) => void;
+  /** Workspace для действия «Улучшить системный промпт»; без него действие скрыто. */
+  systemPromptWorkspacePath?: string | null;
+  workspaceIdentity?: string;
 }) {
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView, "subagent");
   const { intl } = useZCodeIntl();
@@ -584,6 +590,17 @@ export function SubagentForm({
             id: "settings.subagents.form.systemPrompt.placeholder",
           })}
         />
+        {/* Причина: действие «Улучшить системный промпт» было реализовано, но не подключено
+            ни к одной поверхности, поэтому модель улучшения системных инструкций была
+            недоступна из UI. Правка применяется только после подтверждения в диалоге. */}
+        {systemPromptWorkspacePath ? (
+          <SystemPromptEnhanceAction
+            workspacePath={systemPromptWorkspacePath}
+            {...(workspaceIdentity ? { workspaceIdentity } : {})}
+            draftText={systemPrompt}
+            onApply={setSystemPrompt}
+          />
+        ) : null}
         {promptError ? <p className="text-ui-base text-destructive">{promptError}</p> : null}
       </div>
 

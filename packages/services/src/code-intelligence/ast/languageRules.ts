@@ -27,17 +27,6 @@ export const SYMBOL_KIND = {
   module: 8,
 } as const;
 
-export const SYMBOL_KIND_NAME: Record<number, string> = {
-  1: "class",
-  2: "interface",
-  3: "type",
-  4: "function",
-  5: "method",
-  6: "variable",
-  7: "enum",
-  8: "module",
-};
-
 export const EDGE_RELATION = {
   defines: 1,
   references: 2,
@@ -569,15 +558,4 @@ export function rulesForLanguage(languageName: string): LanguageRule | undefined
   return RULES[languageName];
 }
 
-/** Узлы, которые не несут смысла для чанкинга и пропускаются при обходе. */
-export const TRIVIAL_NODE_TYPES = new Set([
-  "comment",
-  "line_comment",
-  "block_comment",
-  "string",
-  "string_literal",
-  "template_string",
-  "regex",
-  "jsx_text",
-  "text",
-]);
+

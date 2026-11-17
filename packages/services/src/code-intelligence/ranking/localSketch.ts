@@ -135,8 +135,6 @@ export function signedInt8Of(values: Float64Array): number[] {
  * по размеру БД без изменения состава кандидатов: постинги в `sketch_postings`
  * строятся по тем же 8 наибольшим измерениям, и после квантования они сохраняются.
  */
-export const SKETCH_Q4_BYTES = Math.ceil(LOCAL_SKETCH_DIM / 2);
-
 export function quantizeSketchQ4(values: Float64Array): { bytes: Uint8Array; scale: number } {
   let maxAbs = 0;
   for (const value of values) {
@@ -183,46 +181,6 @@ export function sketchCosineQ4(query: Uint8Array, packed: Uint8Array, scale: num
   return dot;
 }
 
-/** Симметричный косинус двух q4-скетчей (сравнение векторов провайдера между собой). */
-export function sketchCosineQ4Pair(
-  left: Uint8Array,
-  leftScale: number,
-  right: Uint8Array,
-  rightScale: number,
-): number {
-  if (left.length !== right.length || left.length === 0) return 0;
-  let dot = 0;
-  // Обход по измерениям, а не по байтам: каждый полубайт имеет собственный знак,
-  // поэтому нулевой и первый полубайты одного байта декодируются независимо.
-  for (let dimension = 0; dimension < left.length * 2; dimension += 1) {
-    const leftByte = left[dimension >> 1] ?? 0;
-    const rightByte = right[dimension >> 1] ?? 0;
-    dot +=
-      dequantizeQ4(leftByte, dimension % 2 === 1, leftScale) *
-      dequantizeQ4(rightByte, dimension % 2 === 1, rightScale);
-  }
-  return dot;
-}
-
-/**
- * Скалярное квантование вектора провайдера в Int8.
- * Возвращает байты и масштаб, чтобы восстановление было однозначным.
- */
-export function quantizeProviderVector(values: readonly number[]): {
-  bytes: Uint8Array;
-  scale: number;
-} {
-  let maxAbs = 0;
-  for (const value of values) maxAbs = Math.max(maxAbs, Math.abs(value));
-  const scale = maxAbs > 0 ? maxAbs / 127 : 1;
-  const bytes = new Uint8Array(values.length);
-  for (let index = 0; index < values.length; index += 1) {
-    const quantized = Math.round((values[index] ?? 0) / scale);
-    bytes[index] = quantized < 0 ? quantized + 256 : quantized;
-  }
-  return { bytes, scale };
-}
-
 /**
  * Детерминированная проекция вектора провайдера `D → LOCAL_SKETCH_DIM`.
  *
@@ -251,23 +209,3 @@ export function quantizeProjectedVector(projected: Float64Array): Uint8Array {
   return quantizeSketch(projected);
 }
 
-export function providerCosine(
-  left: Uint8Array,
-  leftScale: number,
-  right: Uint8Array,
-  rightScale: number,
-): number {
-  if (left.length !== right.length || left.length === 0) return 0;
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    const a = (left[index]! > 127 ? left[index]! - 256 : left[index]!) * leftScale;
-    const b = (right[index]! > 127 ? right[index]! - 256 : right[index]!) * rightScale;
-    dot += a * b;
-    leftNorm += a * a;
-    rightNorm += b * b;
-  }
-  if (leftNorm === 0 || rightNorm === 0) return 0;
-  return dot / Math.sqrt(leftNorm * rightNorm);
-}

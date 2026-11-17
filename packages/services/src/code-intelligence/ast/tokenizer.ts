@@ -27,17 +27,11 @@ export function splitCodeIdentifiers(value: string): string[] {
   return parts.map((part) => part.toLowerCase()).filter((part) => part.length > 0);
 }
 
-/** Слова естественного текста и кода без разбиения по camelCase. */
-export function wordsOf(value: string): string[] {
-  const matched = value.toLowerCase().match(WORD);
-  return matched ? matched : [];
-}
-
 /**
  * Слова с сохранением исходного регистра — обязательный вход для `splitCodeIdentifiers`.
- * Причина: `wordsOf` приводит строку к нижнему регистру, после чего `hybridSearch`
- * уже неразделим на `hybrid`/`search`. Из-за этого запрос из двух слов не находил
- * документ, индексированный как слитный идентификатор.
+ * Причина: без сохранения регистра `hybridSearch` уже неразделим на `hybrid`/`search`.
+ * Из-за этого запрос из двух слов не находил документ, индексированный как слитный
+ * идентификатор.
  */
 function rawWordsOf(value: string): string[] {
   const matched = value.match(WORD);
@@ -58,18 +52,6 @@ export function searchTokensOf(value: string): string[] {
       if (part.length >= 2) tokens.add(part);
     }
   }
-  return [...tokens];
-}
-
-/** Токены пути: сегменты, имена файлов без расширения и под-слова каждого сегмента. */
-export function pathTokensOf(relPath: string): string[] {
-  const tokens = new Set<string>();
-  const withoutExtension = relPath.replace(/\.[\p{L}\p{N}]+$/u, "");
-  for (const segment of relPath.split("/")) {
-    if (!segment) continue;
-    for (const token of searchTokensOf(segment)) tokens.add(token);
-  }
-  for (const token of searchTokensOf(withoutExtension)) tokens.add(token);
   return [...tokens];
 }
 

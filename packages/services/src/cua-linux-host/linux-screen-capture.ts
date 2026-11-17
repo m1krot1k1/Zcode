@@ -15,7 +15,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -434,15 +434,6 @@ export function toLinuxCuaFrame(
     captureDurationMs: Date.now() - options.capturedAt,
     truncated: true,
   };
-}
-
-/** Проверка размера файла без чтения содержимого — для диагностики. */
-export async function fileSizeOrNull(path: string): Promise<number | null> {
-  try {
-    return (await stat(path)).size;
-  } catch {
-    return null;
-  }
 }
 
 function messageOf(error: unknown): string {

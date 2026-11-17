@@ -16,7 +16,6 @@ import type {
   ZCodeFileTransactionEventPayload,
 } from "@zcode/shared";
 import {
-  estimateFileTransactionPayloadBytes,
   toCompactFileTransactionPayload,
   zcodeFileTransactionEventPayloadSchema,
 } from "@zcode/shared";
@@ -99,10 +98,6 @@ export function buildFileTransactionEventPayload(
 }
 
 /** Байты payload — для телеметрии и контроля бюджета. */
-export function fileTransactionPayloadBytes(payload: ZCodeFileTransactionEventPayload): number {
-  return estimateFileTransactionPayloadBytes(payload);
-}
-
 export interface FileTransactionEventSink {
   readonly emitEvent?: (event: SessionEvent) => Promise<void>;
   readonly sessionId: string;

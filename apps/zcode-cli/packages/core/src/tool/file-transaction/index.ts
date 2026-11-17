@@ -49,7 +49,6 @@ export {
 export {
   buildFileTransactionEventPayload,
   createFileTransactionEventEmitter,
-  fileTransactionPayloadBytes,
   type FileTransactionDeliveryKind,
   type FileTransactionEventProjectionInput,
   type FileTransactionEventSink,

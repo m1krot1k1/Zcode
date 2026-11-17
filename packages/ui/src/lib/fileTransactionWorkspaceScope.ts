@@ -7,14 +7,6 @@
 // (например, несколько pane в одном окне), поэтому сравнение выполняется
 // до записи в store, а не только в селекторе.
 
-/** Возвращает ключ идентичности workspace. */
-export function resolveFileTransactionWorkspaceKey(params: {
-  workspacePath: string;
-  workspaceIdentity?: string;
-}): string {
-  return params.workspaceIdentity?.trim() || params.workspacePath;
-}
-
 /**
  * Проверяет, относится ли кадр к ожидаемому workspace.
  *

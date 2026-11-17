@@ -1,7 +1,5 @@
 import {
   $applyNodeReplacement,
-  $createTextNode,
-  $isTextNode,
   type EditorConfig,
   type LexicalNode,
   type NodeKey,
@@ -157,24 +155,3 @@ export function $isGhostTextNode(node: LexicalNode | null | undefined): node is 
   return node instanceof GhostTextNode;
 }
 
-/**
- * Заменяет ghost-ноду обычным текстом: единственная точка «принятия» подсказки.
- * Возвращает созданный `TextNode` (или `null`, если ghost-ноды нет).
- */
-export function $acceptGhostText(node: GhostTextNode): TextNode | null {
-  const text = node.getGhostText();
-  if (!text) {
-    node.remove();
-    return null;
-  }
-  const accepted = $createTextNode(text);
-  node.replace(accepted);
-  return accepted;
-}
-
-/** Удаляет ghost-ноду, не затрагивая введённый пользователем текст. */
-export function $removeGhostText(node: GhostTextNode | null): void {
-  if (!node) return;
-  if (!$isTextNode(node)) return;
-  node.remove();
-}

@@ -90,19 +90,11 @@ function createFileBackend(settingsFile: string): SettingsBackend {
   };
 }
 
-let backendOverride: SettingsBackend | undefined;
-
-/** Тестовый seam: подмена файлового хранилища настроек. */
-export function setEmbeddingSettingsBackend(next: SettingsBackend | undefined): void {
-  backendOverride = next;
-}
-
 function settingsKey(workspaceKey: string, name: string): string {
   return `embedding:${workspaceKey}:${name}`;
 }
 
 function resolveBackend(indexRootDir: string): SettingsBackend {
-  if (backendOverride) return backendOverride;
   const root =
     indexRootDir || process.env.ZCODE_CODE_INDEX_ROOT || join(process.cwd(), ".zcode-code-index");
   return createFileBackend(join(root, "embedding-settings.json"));

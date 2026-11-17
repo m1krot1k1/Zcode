@@ -21,6 +21,7 @@ import {
   type ProviderChunkVector,
 } from "./providerVectors.js";
 import {
+  compactDatabase,
   countOf,
   firstRow,
   readMeta,
@@ -287,6 +288,10 @@ export async function runFullIndex(options: IndexRunOptions): Promise<IndexRunRe
       db.exec("ROLLBACK");
       throw error;
     }
+    // Причина: `deleteFileFacts` освобождает страницы, но файл БД не уменьшается без
+    // `incremental_vacuum`. Вызов стоит вне транзакции удаления, потому что PRAGMA
+    // не работает внутри открытой транзакции.
+    compactDatabase(db);
   }
 
   options.onProgress({
@@ -558,6 +563,9 @@ export async function runPartialIndex(options: PartialIndexOptions): Promise<Ind
     db.exec("ROLLBACK");
     throw error;
   }
+  // Причина: частичный проход удаляет строки из FTS/векторов, но без `incremental_vacuum`
+  // освобождённые страницы остаются в файле. PRAGMA выполняется вне транзакции.
+  if (removed.length > 0) compactDatabase(db);
 
   let indexedFiles = 0;
   let textFallbackFiles = 0;

@@ -135,14 +135,6 @@ export async function acquireParser(wasmFileName: string): Promise<TsParser | nu
   return parser;
 }
 
-export function parseWith(parser: TsParser, source: string): TsTree | null {
-  try {
-    return parser.parse(source);
-  } catch {
-    return null;
-  }
-}
-
 /** Освобождение wasm-ресурсов; вызывается при остановке воркера. */
 export function disposeTreeSitter(): void {
   for (const parser of parserCache.values()) {

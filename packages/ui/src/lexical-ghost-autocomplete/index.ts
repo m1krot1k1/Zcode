@@ -6,13 +6,7 @@ export {
   type GhostAutocompletePromptState,
   type GhostAutocompleteSkipReason,
 } from "./contract.js";
-export {
-  $acceptGhostText,
-  $createGhostTextNode,
-  $isGhostTextNode,
-  $removeGhostText,
-  GhostTextNode,
-} from "./GhostTextNode.js";
+export { $createGhostTextNode, $isGhostTextNode, GhostTextNode } from "./GhostTextNode.js";
 export {
   GhostTextAutocompletePlugin,
   type GhostTextAutocompletePluginProps,

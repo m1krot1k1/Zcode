@@ -195,9 +195,6 @@ CREATE INDEX IF NOT EXISTS idx_postings_bucket ON sketch_postings(kind, bucket, 
 CREATE INDEX IF NOT EXISTS idx_postings_chunk ON sketch_postings(chunk_id);
 `;
 
-/** Обратная совместимость: имя DDL для схемы, которую создаёт `openStore` для новой БД. */
-export const SCHEMA_SQL = SCHEMA_V3_SQL;
-
 /**
  * Колонки, которые обязаны существовать в актуальной схеме. База, созданная промежуточной
  * сборкой без них, помечается как «требующая пересоздания»: это кеш, а не пользовательские данные.

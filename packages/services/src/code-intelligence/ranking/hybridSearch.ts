@@ -14,7 +14,13 @@ import {
   rerankCandidates,
   type MergedSpan,
 } from "./rrfReranker.js";
-import { packSpans, DEFAULT_MAX_TOKENS, type PackResult } from "./tokenBudgetPacker.js";
+import {
+  DEFAULT_MAX_TOKENS,
+  enforceByteLimit,
+  MAX_RESULT_JSON_BYTES,
+  packSpans,
+  type PackResult,
+} from "./tokenBudgetPacker.js";
 import { embedQuery, providerPlanOf } from "../worker/providerVectors.js";
 
 /**
@@ -150,7 +156,10 @@ export async function hybridSearch(
     limitedSpanCount !== undefined && spans.length > limitedSpanCount * 3
       ? spans.slice(0, limitedSpanCount * 3)
       : spans;
-  const packed = packSpans(packInput, maxTokens, limitedSpanCount ?? 50);
+  const packed = enforceByteLimit(
+    packSpans(packInput, maxTokens, limitedSpanCount ?? 50),
+    MAX_RESULT_JSON_BYTES,
+  );
   const spansOut =
     limitedSpanCount !== undefined && packed.spans.length > limitedSpanCount
       ? packed.spans.slice(0, limitedSpanCount)
@@ -161,7 +170,7 @@ export async function hybridSearch(
     spans: spansOut,
     budgetTokens: Math.max(1, maxTokens),
     truncated: packed.truncated || spansOut.length < packed.spans.length,
-    dropped: packed.dropped + (packed.spans.length - spansOut.length),
+    dropped: packed.dropped + (packed.spans.length - spansOut.length) + packed.byteDropped,
     channels: {
       fts: fts.length > 0,
       exact: exactChunks.length > 0,

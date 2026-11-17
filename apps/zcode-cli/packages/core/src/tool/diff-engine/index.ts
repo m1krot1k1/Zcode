@@ -22,7 +22,6 @@ export {
   measureIndentColumns,
   reindentReplacementLines,
   reindentReplacementText,
-  removeCommonIndent,
   type IndentProfile,
 } from "./reindent.js";
 export {

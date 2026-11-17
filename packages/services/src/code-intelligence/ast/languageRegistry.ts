@@ -138,13 +138,6 @@ export function descriptorForName(name: string): LanguageDescriptor | undefined 
   return (DESCRIPTORS as Record<string, LanguageDescriptor | undefined>)[name];
 }
 
-/** Имя языка для отчётов/статуса без раскрытия путей. */
-export function languageNameOf(langId: number): LanguageName {
-  for (const descriptor of Object.values(DESCRIPTORS)) {
-    if (descriptor.id === langId) return descriptor.name;
-  }
-  return "unknown";
-}
 
 export type PathTier = 0 | 1 | 2 | 3;
 

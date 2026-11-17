@@ -88,9 +88,6 @@ export function textOf(value: unknown): string {
   }
 }
 
-/** Обратная совместимость: имя, которое использовали чтения чанков в схеме v2. */
-export const chunkTextOf = textOf;
-
 /**
  * Упаковывает содержимое чанков файла в один deflate-поток от JSON-массива.
  *

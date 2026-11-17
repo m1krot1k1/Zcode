@@ -63,11 +63,6 @@ function resolveWorkerEntry(): URL | null {
   return existsSync(filePath) ? pathToFileURL(filePath) : null;
 }
 
-function isTsRuntimeError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND";
-}
-
 export class IndexWorkerClient {
   private worker: Worker | undefined;
   private inProcessService: CodeIndexService | undefined;
@@ -311,6 +306,3 @@ export class IndexWorkerClient {
     this.rejectAll(new Error("The code index worker was disposed."));
   }
 }
-
-/** Проверка доступности `.ts`-исполнения нужна только тестам; экспорт держит seam явным. */
-export { isTsRuntimeError };

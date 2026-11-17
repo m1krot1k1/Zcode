@@ -580,6 +580,8 @@ export function SubagentsSection({
               scopeKey={selectedScopeKey}
               workspaceTabs={workspaceTabs}
               onScopeKeyChange={setSelectedScopeKey}
+              systemPromptWorkspacePath={workspacePath}
+              {...(workspaceIdentity ? { workspaceIdentity } : {})}
             />
           </div>
         </div>

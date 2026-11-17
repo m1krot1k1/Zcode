@@ -325,6 +325,9 @@ export {
   zcodeBrowserAmbientContextSchema,
   zcodeCodeIndexQueryParamsSchema,
   zcodeCodeIndexNotifyMutatedParamsSchema,
+  // Тип выводится из публичной схемы и нужен потребителям протокола (Host и клиенты),
+  // поэтому экспортируется рядом с ней, а не остаётся приватным внутри файла схем.
+  type ZCodeCodeIndexNotifyMutatedParams,
   zcodeCodeIndexQueryResultSchema,
   zcodeCodeIndexQueryTimeoutMs,
   zcodeDynamicWorkflowModeSchema,

@@ -52,18 +52,9 @@ export interface FileTransactionView {
   readonly revisionKey: string;
 }
 
-export interface FileTransactionStreamPayload {
-  readonly transaction: ZCodeFileTransactionEventPayload;
-}
-
 /** Статусы, при которых пользователь ещё видит «идёт изменение». */
 export function isFileTransactionInFlight(status: FileTransactionUiStatus): boolean {
   return status !== "committed" && status !== "rolled_back";
-}
-
-/** Терминальные статусы закрывают транзакцию: повторный кадр её не «оживит». */
-export function isFileTransactionTerminal(status: FileTransactionUiStatus): boolean {
-  return status === "committed" || status === "rolled_back";
 }
 
 interface StructuredPatchHunk {
@@ -176,10 +167,3 @@ export function toFileTransactionView(
   };
 }
 
-/** Ключ изоляции — единственный допустимый способ сравнить workspace. */
-export function fileTransactionWorkspaceKey(params: {
-  workspacePath: string;
-  workspaceIdentity?: string;
-}): string {
-  return params.workspaceIdentity?.trim() || params.workspacePath;
-}

@@ -17,10 +17,6 @@ function excerptOf(value: string): { excerpt: string; excerptTruncated: boolean 
   return { excerpt: cleaned.slice(0, EXCERPT_CHARS), excerptTruncated: true };
 }
 
-export function chunkExcerpt(value: string): { excerpt: string; excerptTruncated: boolean } {
-  return excerptOf(value);
-}
-
 /** Содержимое, покрывающее диапазон строк: минимальный чанк файла, который его содержит. */
 export function readCoveringChunkContent(
   db: IndexDatabase,

@@ -66,10 +66,6 @@ export function computeIndentProfile(lines: readonly string[], tabWidth = DEFAUL
   };
 }
 
-export function removeCommonIndent(lines: readonly string[]): string {
-  return computeIndentProfile(lines).strippedLines.join("\n");
-}
-
 /**
  * Пересчитывает отступы строк замены при совпадении блока со сдвигом базового отступа.
  * Сохраняет все внутренние сдвиги вложенных блоков (if / for / def / class),

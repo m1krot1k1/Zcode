@@ -12,7 +12,7 @@
  * В результате инструмент всегда получает честный `sandboxMode` и причину.
  */
 import { existsSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 import {
   SANDBOX_ENV_WHITELIST,
@@ -225,12 +225,6 @@ export function createExecutionSandbox(
   options: ExecutionSandboxOptions = {},
 ): ExecutionSandbox {
   return new ExecutionSandbox(options);
-}
-
-/** Каталог захвата cwd должен существовать до монтирования; создаётся вызывающим. */
-export function resolveCwdCaptureRoot(cwdCaptureDir: string | undefined): string | undefined {
-  if (!cwdCaptureDir) return undefined;
-  return dirname(cwdCaptureDir);
 }
 
 export { killProcessTree, isProcessGroupAlive, isProcessAlive } from "./process-group-killer.js";

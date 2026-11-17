@@ -6,7 +6,12 @@
   "workspaces": {
     "packages/ui": {
       "entry": [
-        "test/**/*.test.tsx"
+        "test/**/*.test.tsx",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/lexical-ghost-autocomplete/index.ts",
+        "src/prompt-enhancer-ui/index.ts",
+        "src/settings-stage4/index.ts"
       ],
       "ignoreDependencies": [
         "@radix-ui/react-radio-group",
@@ -99,6 +104,19 @@
         "turbo"
       ]
     },
+    "packages/services": {
+      "entry": [
+        "src/index.ts",
+        "src/node.ts",
+        "src/code-intelligence/worker/indexWorker.ts",
+        "bench/code-intelligence-bench.mjs"
+      ],
+      "ignoreDependencies": [
+        "koffi",
+        "tree-sitter-wasms",
+        "web-tree-sitter"
+      ]
+    },
     "packages/server": {
       "entry": [
         "src/entry-stdio.ts"
@@ -160,6 +178,7 @@
     "packages/desktop/src/scheduler/schedulerProtocol.ts",
     "packages/rpc/examples/**",
     "packages/services/src/subagents/contract.ts",
+    "packages/services/bench/code-intelligence-bench.mjs",
     "packages/ui/src/components/**",
     "packages/ui/test/browser/**",
     "packages/ui/test/fixtures/**"

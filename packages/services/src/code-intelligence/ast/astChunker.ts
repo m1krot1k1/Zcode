@@ -20,7 +20,6 @@ import {
 } from "./types.js";
 
 const MAX_CHUNK_CHARS = 1400;
-const MIN_CHUNK_CHARS = 60;
 const TAIL_MERGE_CHARS = 200;
 const MAX_SYMBOLS_PER_FILE = 4000;
 const MAX_CALLS_PER_FILE = 3000;
@@ -696,4 +695,3 @@ function dedupeUnits(units: ChunkUnit[]): ChunkUnit[] {
 
 /** Публичный тип связи для сборки рёбер из AST-фактов. */
 export const AST_EDGE = EDGE_RELATION;
-export { MIN_CHUNK_CHARS };
