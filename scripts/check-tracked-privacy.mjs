@@ -18,6 +18,10 @@
 //   - 少量已评审的误报走 ALLOWLISTED_FINDINGS：每条都绑定具体文件、
 //     完整命中值和可选的整行标记/整行精确匹配，不关闭任何类别；同一文件里
 //     出现其它邮箱、用户名或密钥仍然照报，闸门对真实泄漏的敏感度不变；
+//   - 已修复但残留在历史 blob 里的旧命中走 scripts/privacy-sanitized-history.json：
+//     每条绑定「路径 + 完整 blob SHA + 命中类型」，只对 push 范围内的历史 blob
+//     生效，索引与 HEAD 永不放行。sanitizedInCommit 必须是 HEAD 的祖先，且该
+//     提交的树里这个路径上不能再出现同类命中，否则配置判为无效并阻止 push；
 //   - 闸门的测试夹具与普通文件一样受检，样本必须在运行时拼装，不能把 home 路径、
 //     邮箱或令牌写成字面量；
 //   - 只输出 文件:行号:类型，绝不回显命中的值，防止日志二次泄漏；
@@ -30,6 +34,14 @@ import { execFileSync, spawn } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  findStaleBaseline,
+  indexSanitizedEntries,
+  loadSanitizedHistory,
+  summarizeSuppressed,
+  validateSanitizedHistory,
+} from "./privacy-sanitized-history.mjs";
+
 const EXCLUDED_BASENAMES = new Set([
   "package-lock.json",
   "pnpm-lock.yaml",
@@ -37,7 +49,12 @@ const EXCLUDED_BASENAMES = new Set([
 ]);
 // 第三方语料（licenses/upstream/inventory）与上游文档镜像：其中的路径、作者邮箱
 // 属于被收录的第三方内容，不是本仓库的泄漏。
-const EXCLUDED_PREFIXES = ["assets/", "third-party/", "docs/electron/", "docs/webdriverio/"];
+const EXCLUDED_PREFIXES = [
+  "assets/",
+  "third-party/",
+  "docs/electron/",
+  "docs/webdriverio/",
+];
 
 /** home 目录：macOS /Users/<name>、Linux /home/<name>、Windows C:\Users\<name>。 */
 const HOME_PATH_RES = [
@@ -116,7 +133,8 @@ const TOKEN_RES = [
   /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/,
 ];
 
-const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}/g;
+const EMAIL_RE =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}/g;
 
 /** URL 里的 user:pass@host 是凭据语法，不是邮箱；扫描前整段抹掉。 */
 const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
@@ -211,7 +229,11 @@ const PRISMA_DOC_FILES = [
 const PEM_BEGIN = "-----BEGIN " + "PRIVATE KEY-----";
 const PEM_END = "-----END " + "PRIVATE KEY-----";
 const YANDEX_SYNTHETIC_PEM_LINE =
-  '  "private_key": "' + PEM_BEGIN + "\\nTEST-NOT-A-REAL-KEY\\n" + PEM_END + '\\n"';
+  '  "private_key": "' +
+  PEM_BEGIN +
+  "\\nTEST-NOT-A-REAL-KEY\\n" +
+  PEM_END +
+  '\\n"';
 
 const ALLOWLISTED_FINDINGS = [
   {
@@ -233,7 +255,11 @@ const ALLOWLISTED_FINDINGS = [
     // 只放行这一完整值；同文件里出现真实密钥仍然报出。
     path: "packages/services/test/code-intelligence/codeIntelligenceService.test.ts",
     type: "token",
-    values: [["sk-example-embedding-token", "should-not-be-stored-in-sqlite"].join("-")],
+    values: [
+      ["sk-example-embedding-token", "should-not-be-stored-in-sqlite"].join(
+        "-",
+      ),
+    ],
   },
   {
     // work-ledger 路径解析的单字母占位用户名 x（文档注释与测试夹具）。
@@ -283,7 +309,9 @@ export function isAllowlistedFinding(file, line, type, values) {
   // 邮箱大小写不敏感；home 用户名在 analyzeLine 已转小写；令牌按原样精确比较，
   // 避免大小写不敏感放大放行范围。
   const normalize = (value) => (type === "email" ? value.toLowerCase() : value);
-  const allowed = new Set(entries.flatMap((entry) => entry.values).map(normalize));
+  const allowed = new Set(
+    entries.flatMap((entry) => entry.values).map(normalize),
+  );
   return values.every((value) => allowed.has(normalize(value)));
 }
 
@@ -358,7 +386,8 @@ function analyzeLine(line) {
         // `/Users/...`、`C:\Users\…` 是描述路径形状的写法，不是真实用户名。
         if (/^\.+$/.test(name) || name === "…") continue;
         // `/Users/foo.test.ts` 这类命中是文件名，不是 home 目录。
-        if (/\.(?:[cm]?[jt]sx?|json|mdx?|txt|png|jpe?g|svg)$/.test(name)) continue;
+        if (/\.(?:[cm]?[jt]sx?|json|mdx?|txt|png|jpe?g|svg)$/.test(name))
+          continue;
         if (SYNTHETIC_USERS.has(name)) continue;
         homeValues.push(name);
       }
@@ -384,7 +413,9 @@ function analyzeLine(line) {
 
   const tokenValues = [];
   for (const pattern of TOKEN_RES) {
-    const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+    const flags = pattern.flags.includes("g")
+      ? pattern.flags
+      : `${pattern.flags}g`;
     for (const match of line.matchAll(new RegExp(pattern.source, flags))) {
       tokenValues.push(match[0]);
     }
@@ -472,7 +503,89 @@ function parsePrePushRefs(text) {
       const [localRef, localSha, remoteRef, remoteSha] = line.split(/\s+/u);
       return { localRef, localSha, remoteRef, remoteSha };
     })
-    .filter((entry) => entry.localRef && entry.localSha && entry.remoteRef && entry.remoteSha);
+    .filter(
+      (entry) =>
+        entry.localRef && entry.localSha && entry.remoteRef && entry.remoteSha,
+    );
+}
+
+/**
+ * git 的 C 风格路径转义还原（`"a\tb"`、八进制 \NNN）。
+ *
+ * 修复依据：`rev-list --objects` 不支持 `-z`，输出只能是逐行的
+ * `<sha> <path>`；带 core.quotepath=false 时非 ASCII 路径原样输出，但含换行、
+ * 制表符或引号的路径仍会被 C 转义包裹，这里按 git 的 quoting 规则还原。
+ */
+function unquoteGitPath(path) {
+  if (!path.startsWith('"') || !path.endsWith('"') || path.length < 2)
+    return path;
+  const body = path.slice(1, -1);
+  let result = "";
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char !== "\\") {
+      result += char;
+      continue;
+    }
+    const next = body[index + 1];
+    if (next === undefined) return path;
+    switch (next) {
+      case "n":
+        result += "\n";
+        index += 1;
+        break;
+      case "t":
+        result += "\t";
+        index += 1;
+        break;
+      case "r":
+        result += "\r";
+        index += 1;
+        break;
+      case "\\":
+        result += "\\";
+        index += 1;
+        break;
+      case '"':
+        result += '"';
+        index += 1;
+        break;
+      default: {
+        // 八进制 \NNN：用作 UTF-8 字节序列，最终由 Buffer 还原。
+        const octal = body.slice(index + 1, index + 4);
+        if (/^[0-7]{3}$/u.test(octal)) {
+          result += String.fromCharCode(Number.parseInt(octal, 8));
+          index += 3;
+          break;
+        }
+        return path;
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * 解析 `git rev-list --objects <range>` 的逐行输出：`<sha> <path>`。
+ *
+ * 修复依据（阶段 6.3 已证实的缺陷）：旧实现调用 `rev-list --objects -z` 并按
+ * NUL 切分，期待 `path=<path>` 字段。但 `rev-list` 不支持 `-z`（该参数被忽略），
+ * 输出整段只有一个元素，`added` 恒为 0，range 扫描**实质没有执行**，push 未被
+ * 检查却报「没有文件变化」并返回 0。这里改为按首个空格切分：前半是对象 SHA，
+ * 其余整段（含空格）是路径；没有路径的行是 commit/tree 对象，直接跳过。
+ */
+export function parseRevListObjects(stdout) {
+  const entries = [];
+  for (const line of String(stdout ?? "").split(/\r?\n/u)) {
+    if (!line) continue;
+    const space = line.indexOf(" ");
+    if (space <= 0) continue;
+    const sha = line.slice(0, space);
+    const file = unquoteGitPath(line.slice(space + 1));
+    if (!sha || !file) continue;
+    entries.push({ sha, file });
+  }
+  return entries;
 }
 
 /**
@@ -495,28 +608,27 @@ function listPushRangeEntries(root) {
     }
     let stdout;
     try {
-      // -z: 每条记录以 NUL 分隔，blob 的路径是 `path=<path>` 字段；
-      // 这样含空格或换行的路径不会被截断。
-      stdout = gitStdout(root, ["rev-list", "--objects", "-z", `${remoteSha}..${localSha}`]);
+      stdout = gitStdout(root, [
+        "rev-list",
+        "--objects",
+        `${remoteSha}..${localSha}`,
+      ]);
     } catch {
-      warnings.push(`无法读取 ${localRef} 的 push 范围（${remoteRef}），已跳过`);
+      warnings.push(
+        `无法读取 ${localRef} 的 push 范围（${remoteRef}），已跳过`,
+      );
       continue;
     }
-    let added = 0;
-    let pendingSha = null;
-    for (const field of stdout.split("\0")) {
-      if (!field) continue;
-      if (field.startsWith("path=")) {
-        const file = field.slice("path=".length);
-        if (!pendingSha || !file) continue;
-        entries.push({ file, sha: pendingSha });
-        added += 1;
-        pendingSha = null;
-        continue;
-      }
-      pendingSha = field;
+    const parsed = parseRevListObjects(stdout);
+    for (const { sha, file } of parsed) entries.push({ file, sha });
+    // 空范围（remoteSha === localSha 或只有提交没有文件）是正常情况，不告警。
+    // 但「有输出却解析不出任何 sha+path」是格式回归的信号（阶段 6.3 正是这样
+    // 静默跳过了整个范围），必须显式告警，避免再次把未扫描当成无泄漏。
+    if (parsed.length === 0 && stdout.trim() !== "") {
+      warnings.push(
+        `push 范围 ${localRef} 的 rev-list 输出无法解析，请检查闸门实现`,
+      );
     }
-    if (added === 0) warnings.push(`push 范围 ${localRef} 没有文件变化`);
     if (entries.length > maxBlobs) {
       warnings.push(`push 范围超过 ${maxBlobs} 个 blob，已跳过范围扫描`);
       return { entries: [], warnings };
@@ -530,13 +642,29 @@ function isBinary(buffer) {
   return buffer.subarray(0, 8192).includes(0);
 }
 
-/** 扫描一段 blob 内容；callback 对每个未放行命中调用一次。 */
-function scanContent(file, content, onFinding) {
+/**
+ * 扫描一段 blob 内容；callback 对每个未放行命中调用一次。
+ *
+ * sanitized 抑制只在该 blob 仅来自历史（origins = {"history"}）且路径、完整
+ * blob SHA、命中类型三者同时匹配时生效；索引与 HEAD 里的内容永远不会被抑制。
+ */
+function scanContent(file, content, onFinding, suppressed) {
   const lines = content.toString("utf8").split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     for (const finding of analyzeLine(line)) {
-      if (isAllowlistedFinding(file, line, finding.type, finding.values)) continue;
+      const entry = suppressed?.get(`${file}\0${finding.type}`);
+      if (entry) {
+        onFinding({
+          file,
+          line: index + 1,
+          type: finding.type,
+          suppressedBy: entry,
+        });
+        continue;
+      }
+      if (isAllowlistedFinding(file, line, finding.type, finding.values))
+        continue;
       onFinding({ file, line: index + 1, type: finding.type });
     }
   }
@@ -544,9 +672,9 @@ function scanContent(file, content, onFinding) {
 
 /**
  * 用一次 git cat-file --batch 读取所有目标 blob。
- * targets 按 sha 分组，每个 sha 对应一个或多个路径（索引与 HEAD 可能路径不同）。
+ * targets 按 sha 分组，每个 sha 对应一个或多个路径记录（索引与 HEAD 可能路径不同）。
  */
-async function scanBlobTargets(root, groups, onFinding) {
+async function scanBlobTargets(root, groups, onFinding, sanitized) {
   const shas = [...groups.keys()];
   if (shas.length === 0) return;
   const child = spawn("git", ["cat-file", "--batch"], {
@@ -566,12 +694,25 @@ async function scanBlobTargets(root, groups, onFinding) {
 
   let buffered = Buffer.alloc(0);
   let remaining = 0;
-  let currentPaths = null;
+  let currentRecords = null;
+  let currentSha = null;
   let headerPending = true;
 
   const processContent = (content) => {
-    if (!isBinary(content)) {
-      for (const file of currentPaths) scanContent(file, content, onFinding);
+    if (isBinary(content)) return;
+    for (const record of currentRecords) {
+      // 只有「仅出现在历史」的 blob 才允许被净化基线抑制。
+      const historyOnly =
+        record.origins.size === 1 && record.origins.has("history");
+      const suppressed = historyOnly ? new Map() : null;
+      if (suppressed) {
+        for (const [key, entry] of sanitized) {
+          const [path, type] = key.split("\0");
+          if (path === record.file && entry.blobSha === currentSha)
+            suppressed.set(key, entry);
+        }
+      }
+      scanContent(record.file, content, onFinding, suppressed);
     }
   };
 
@@ -589,7 +730,8 @@ async function scanBlobTargets(root, groups, onFinding) {
         }
         const size = Number(sizeText);
         // 非 blob 对象也会带正文；统一按 size 消费，避免后续 header 错位。
-        currentPaths = type === "blob" ? (groups.get(sha) ?? []) : [];
+        currentSha = sha;
+        currentRecords = type === "blob" ? (groups.get(sha) ?? []) : [];
         remaining = Number.isFinite(size) ? size : 0;
         headerPending = false;
         continue;
@@ -598,7 +740,8 @@ async function scanBlobTargets(root, groups, onFinding) {
       const content = buffered.subarray(0, remaining);
       buffered = buffered.subarray(remaining + 1);
       processContent(content);
-      currentPaths = null;
+      currentRecords = null;
+      currentSha = null;
       remaining = 0;
       headerPending = true;
     }
@@ -606,28 +749,76 @@ async function scanBlobTargets(root, groups, onFinding) {
 
   const exitCode = await closed;
   if (exitCode !== 0) {
-    throw new Error(`git cat-file --batch 失败（exit ${exitCode}）：${stderr.trim()}`);
+    throw new Error(
+      `git cat-file --batch 失败（exit ${exitCode}）：${stderr.trim()}`,
+    );
   }
-  if (!headerPending || currentPaths !== null) {
+  if (!headerPending || currentRecords !== null) {
     throw new Error("git cat-file --batch 输出不完整");
   }
 }
 
-/** 目标去重：同一路径+内容只扫一次；索引和 HEAD 不同内容都会保留。 */
+/**
+ * 目标去重：同一路径+内容只扫一次；索引和 HEAD 不同内容都会保留。
+ *
+ * 每个 blob 记录同时保留来源：`tracked` 表示它来自索引或 HEAD，`history` 表示
+ * 它只出现在 push 范围的历史里。sanitized-history 抑制只对「仅历史」的 blob
+ * 生效，同一路径在索引/HEAD 里再次出现泄漏时永远照报。
+ */
 function buildBlobGroups(entries) {
   const groups = new Map();
-  const seen = new Set();
+  const seen = new Map();
   const files = new Set();
-  for (const { file, sha } of entries) {
+  for (const { file, sha, origin = "tracked" } of entries) {
     if (isExcluded(file)) continue;
     files.add(file);
     const key = `${sha}\0${file}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (!groups.has(sha)) groups.set(sha, []);
-    groups.get(sha).push(file);
+    let record = seen.get(key);
+    if (!record) {
+      record = { file, origins: new Set() };
+      seen.set(key, record);
+      if (!groups.has(sha)) groups.set(sha, []);
+      groups.get(sha).push(record);
+    }
+    record.origins.add(origin);
   }
   return { groups, count: files.size };
+}
+
+/** `git merge-base --is-ancestor <commit> HEAD`；unborn HEAD 或不存在一律视为否。 */
+function isAncestorOfHead(root, commit) {
+  try {
+    gitStdout(root, ["merge-base", "--is-ancestor", commit, "HEAD"], {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 读取某提交树里某个路径的内容；不存在返回 null。 */
+function readBlobAtCommit(root, commit, path) {
+  try {
+    return gitStdout(root, ["cat-file", "-p", `${commit}:${path}`], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 净化基线：读取、严格校验、索引与报告辅助集中在 privacy-sanitized-history.mjs，
+ * 这里只负责把它接到 git 上下文（祖先检查、提交树读取、逐行分析）上。
+ */
+function loadValidatedSanitizedHistory(root) {
+  const entries = validateSanitizedHistory(loadSanitizedHistory(root), {
+    isAncestorOfHead: (commit) => isAncestorOfHead(root, commit),
+    readBlobAtCommit: (commit, path) => readBlobAtCommit(root, commit, path),
+    analyzeLine,
+  });
+  return { entries, index: indexSanitizedEntries(entries) };
 }
 
 async function main() {
@@ -640,47 +831,114 @@ async function main() {
     console.error(`[tracked-privacy] 注意：${warning}`);
   }
 
+  // 净化基线先校验再使用：任何一条不合法都抛错并阻止 push。
+  const { entries: sanitizedEntries, index: sanitized } =
+    loadValidatedSanitizedHistory(root);
+
   // 同一 blob+路径只扫一次；索引与 HEAD 内容不同时两边都扫，避免索引被
-  // 改成干净内容后掩盖 HEAD 里的历史泄漏。
+  // 改成干净内容后掩盖 HEAD 里的历史泄漏。来源分开标记，抑制只对纯历史生效。
   const { groups, count: scannedFiles } = buildBlobGroups([
-    ...indexEntries,
-    ...headEntries,
-    ...pushRange.entries,
+    ...indexEntries.map((entry) => ({ ...entry, origin: "tracked" })),
+    ...headEntries.map((entry) => ({ ...entry, origin: "tracked" })),
+    ...pushRange.entries.map((entry) => ({ ...entry, origin: "history" })),
   ]);
 
   const findings = [];
+  const suppressedHits = new Map();
   const reported = new Set();
-  await scanBlobTargets(root, groups, (finding) => {
-    const key = `${finding.file}:${finding.line}:${finding.type}`;
-    if (reported.has(key)) return;
-    reported.add(key);
-    findings.push(finding);
-  });
+  await scanBlobTargets(
+    root,
+    groups,
+    (finding) => {
+      if (finding.suppressedBy) {
+        const key = `${finding.file}\0${finding.suppressedBy.blobSha}\0${finding.type}`;
+        const bucket = suppressedHits.get(key) ?? {
+          path: finding.file,
+          type: finding.type,
+          blobSha: finding.suppressedBy.blobSha,
+          commit: finding.suppressedBy.commit,
+          lines: new Set(),
+        };
+        bucket.lines.add(finding.line);
+        suppressedHits.set(key, bucket);
+        return;
+      }
+      const key = `${finding.file}:${finding.line}:${finding.type}`;
+      if (reported.has(key)) return;
+      reported.add(key);
+      findings.push(finding);
+    },
+    sanitized,
+  );
+
+  // 每条抑制都要在 CI 日志里可见，避免「静默放行」。
+  const suppressedSummary = summarizeSuppressed(
+    suppressedHits,
+    sanitizedEntries,
+  );
+  for (const line of suppressedSummary.lines) console.log(line);
+  for (const mismatch of suppressedSummary.mismatches) {
+    console.error(
+      `[tracked-privacy] 注意：${mismatch.path} @ ${mismatch.blobSha.slice(0, 12)} 登记 ${mismatch.expected} 处，实测 ${mismatch.actual} 处，请更新 count`,
+    );
+  }
+
+  // 只检查「本次范围真的扫到了对应历史 blob」的条目：没有 pre-push refs 时
+  // 根本没扫历史，不能把条目误判成失效。若 blob 在范围内却没有命中，说明基线
+  // 已过期（历史被改写或记录错误），让闸门失败，避免 suppressor 变成永久豁免。
+  const staleBaseline = findStaleBaseline(
+    sanitizedEntries,
+    pushRange.entries,
+    suppressedHits,
+  );
 
   for (const item of findings) {
     console.error(`${item.file}:${item.line}:${item.type}`);
   }
 
-  if (findings.length > 0) {
+  if (staleBaseline.length > 0) {
+    for (const key of staleBaseline) {
+      const [path, blobSha] = key.split("\0");
+      console.error(
+        `[tracked-privacy] 基线失效：${path} @ ${blobSha.slice(0, 12)} 在当前范围内已无该类命中，请删除这条 privacy-sanitized-history 条目`,
+      );
+    }
+  }
+
+  if (findings.length > 0 || staleBaseline.length > 0) {
     const counts = new Map();
     for (const item of findings) {
       counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
     }
-    const summary = [...counts].map(([type, count]) => `${type}=${count}`).join(", ");
-    console.error(
-      `[tracked-privacy] 发现 ${findings.length} 处（${summary}），具体值已省略；扫描 ${scannedFiles} 个文件（索引 + HEAD + push 范围）`,
-    );
+    const summary = [...counts]
+      .map(([type, count]) => `${type}=${count}`)
+      .join(", ");
+    if (findings.length > 0) {
+      console.error(
+        `[tracked-privacy] 发现 ${findings.length} 处（${summary}），具体值已省略；扫描 ${scannedFiles} 个文件（索引 + HEAD + push 范围）`,
+      );
+    }
+    if (staleBaseline.length > 0) {
+      console.error(
+        `[tracked-privacy] 另有 ${staleBaseline.length} 条已失效的净化历史基线，清理后重试`,
+      );
+    }
     process.exitCode = 1;
     return;
   }
 
+  const suppressedNote =
+    suppressedSummary.recordCount > 0
+      ? `；已净化历史 ${suppressedSummary.recordCount} 条记录（见上方日志）`
+      : "";
   console.log(
-    `[tracked-privacy] OK：${scannedFiles} 个文件（索引 + HEAD + push 范围）未发现 home 路径、邮箱或令牌特征`,
+    `[tracked-privacy] OK：${scannedFiles} 个文件（索引 + HEAD + push 范围）未发现 home 路径、邮箱或令牌特征${suppressedNote}`,
   );
 }
 
 const invokedDirectly =
-  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   try {
     await main();

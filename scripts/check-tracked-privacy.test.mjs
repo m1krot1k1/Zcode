@@ -14,14 +14,22 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isExcluded, scanLine } from "./check-tracked-privacy.mjs";
+import {
+  isExcluded,
+  parseRevListObjects,
+  scanLine,
+} from "./check-tracked-privacy.mjs";
 
-const SCRIPT = fileURLToPath(new URL("./check-tracked-privacy.mjs", import.meta.url));
+const SCRIPT = fileURLToPath(
+  new URL("./check-tracked-privacy.mjs", import.meta.url),
+);
 
 function makeRepo(files) {
   const root = mkdtempSync(join(tmpdir(), "tracked-privacy-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
-  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  execFileSync("git", ["config", "user.email", "test@example.com"], {
+    cwd: root,
+  });
   execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
   for (const [path, content] of Object.entries(files)) {
     const absolute = join(root, path);
@@ -49,6 +57,18 @@ function runGate(root, env = {}) {
     encoding: "utf8",
     env: { ...baseEnv, ...env },
   });
+}
+
+/** 写入临时仓库的净化历史基线（scripts/privacy-sanitized-history.json）。 */
+function writeSanitizedHistory(root, entries) {
+  const file = join(root, "scripts", "privacy-sanitized-history.json");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ version: 1, entries }, null, 2));
+}
+
+/** 把某路径在某提交里的 blob SHA 取出来，供基线断言使用。 */
+function blobAt(root, commit, path) {
+  return git(root, ["rev-parse", `${commit}:${path}`]);
 }
 
 /** 拼一个长度为 length 的占位令牌主体，避免在测试文件里写出真实形态的密钥。 */
@@ -79,12 +99,17 @@ const prismaDocDir = ".agents/skills/prisma-client-api/";
 const prismaDocFile = `${prismaDocDir}SKILL.md`;
 const prismaUnlistedFile = `${prismaDocDir}references/constructor.md`;
 const prismaExampleEmail = ["alice", "prisma.io"].join("@");
-const yandexFixturePath = ".agents/skills/yandex-wordstat/scripts/tests/test_iam_tmpdir_cleanup.sh";
+const yandexFixturePath =
+  ".agents/skills/yandex-wordstat/scripts/tests/test_iam_tmpdir_cleanup.sh";
 // 与 allowlist 条目完全一致的 PEM 头/尾（非 RSA），用于验证整行精确匹配。
 const pemBegin = "-----BEGIN " + "PRIVATE KEY-----";
 const pemEnd = "-----END " + "PRIVATE KEY-----";
 const syntheticPemLine =
-  '  "private_key": "' + pemBegin + "\\nTEST-NOT-A-REAL-KEY\\n" + pemEnd + '\\n"';
+  '  "private_key": "' +
+  pemBegin +
+  "\\nTEST-NOT-A-REAL-KEY\\n" +
+  pemEnd +
+  '\\n"';
 // 任意 base64 正文：只用于证明「有标记不等于可放行」。
 const arbitraryPemBody = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC";
 // vendored Superpowers 插件清单的上游作者邮箱；目录不再整体豁免，只放行这一值。
@@ -94,9 +119,13 @@ const superpowersPluginDir = "apps/zcode-cli/packages/superpowers-plugin/";
 const superpowersPluginEmail = ["jesse", "fsck.com"].join("@");
 
 test("home 路径：三种平台都识别，合成用户名不报", () => {
-  assert.deepEqual(scanLine(`cwd=${posixHome(REAL_USER)}/projects/zcode`), ["home-path"]);
+  assert.deepEqual(scanLine(`cwd=${posixHome(REAL_USER)}/projects/zcode`), [
+    "home-path",
+  ]);
   assert.deepEqual(scanLine(`cwd=${linuxHome(REAL_USER)}/work`), ["home-path"]);
-  assert.deepEqual(scanLine(`path=${windowsHome(REAL_USER)}\\work`), ["home-path"]);
+  assert.deepEqual(scanLine(`path=${windowsHome(REAL_USER)}\\work`), [
+    "home-path",
+  ]);
   assert.deepEqual(scanLine("示例 /Users/alice/project 与 /home/dev/app"), []);
 });
 
@@ -105,7 +134,10 @@ test("邮箱：allowlist 放行，真实个人邮箱报出", () => {
   assert.deepEqual(scanLine("示例 mailto:someone@example.com"), []);
   assert.deepEqual(scanLine(`作者 ${REAL_EMAIL} 提交`), ["email"]);
   // URL 里的 user:pass@host 是凭据语法，不是邮箱。
-  assert.deepEqual(scanLine("clone https://user:secret@github.com/o/r.git"), []);
+  assert.deepEqual(
+    scanLine("clone https://user:secret@github.com/o/r.git"),
+    [],
+  );
 });
 
 test("令牌前缀：达到真实长度才报，截断的 fixture 不报", () => {
@@ -311,7 +343,10 @@ test("allowlist：插件目录里的其它邮箱仍然报出", () => {
 
   const result = runGate(root);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /superpowers-plugin\/skills\/example\/SKILL\.md:1:email/);
+  assert.match(
+    result.stderr,
+    /superpowers-plugin\/skills\/example\/SKILL\.md:1:email/,
+  );
   assert.doesNotMatch(result.stderr, new RegExp(REAL_EMAIL));
 });
 
@@ -324,4 +359,299 @@ test("allowlist：插件清单里不带 email 字段的行不放行", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /plugin\.json:2:email/);
   assert.doesNotMatch(result.stderr, new RegExp(superpowersPluginEmail));
+});
+
+// 回归：`rev-list --objects` 不支持 -z，旧解析器期待 `path=` 字段，导致
+// push 范围实际没有被扫描（added 恒为 0）却报 0。以下覆盖解析器与真实范围行为。
+
+test("rev-list 解析：按首个空格切分，保留含空格的路径", () => {
+  const sha = "a".repeat(40);
+  const other = "b".repeat(40);
+  const parsed = parseRevListObjects(
+    [
+      `${sha}`,
+      `${sha} docs/some file with spaces.md`,
+      `${other} src/index.ts`,
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual(parsed, [
+    { sha, file: "docs/some file with spaces.md" },
+    { sha: other, file: "src/index.ts" },
+  ]);
+});
+
+test("rev-list 解析：空输出与纯提交对象不产生条目", () => {
+  assert.deepEqual(parseRevListObjects(""), []);
+  assert.deepEqual(
+    parseRevListObjects(`${"c".repeat(40)}\n${"d".repeat(40)}\n`),
+    [],
+  );
+});
+
+test("端到端：push 范围内路径含空格的泄漏也被拦下", () => {
+  const secret = body("ghp_", 36);
+  const leaked = "docs/with space/notes.md";
+  const root = makeRepo({ "a.md": "init\n" });
+  const base = commit(root, "init");
+  mkdirSync(dirname(join(root, leaked)), { recursive: true });
+  writeFileSync(join(root, leaked), `token ${secret}\n`);
+  git(root, ["add", leaked]);
+  commit(root, "add leak in spaced path");
+  git(root, ["rm", "-q", leaked]);
+  const head = commit(root, "remove leak");
+
+  const withRange = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(withRange.status, 1);
+  assert.match(withRange.stderr, /with space\/notes\.md:1:token/);
+  assert.doesNotMatch(withRange.stderr, new RegExp(secret));
+});
+
+test("端到端：范围含多个提交时任一历史 blob 的泄漏都被拦下", () => {
+  const first = body("ghp_", 36);
+  const second = body("sk-", 40);
+  const root = makeRepo({ "a.md": "init\n" });
+  const base = commit(root, "init");
+  writeFileSync(join(root, "one.md"), `token ${first}\n`);
+  git(root, ["add", "one.md"]);
+  commit(root, "leak one");
+  git(root, ["rm", "-q", "one.md"]);
+  writeFileSync(join(root, "two.md"), `key ${second}\n`);
+  git(root, ["add", "two.md"]);
+  commit(root, "leak two");
+  git(root, ["rm", "-q", "two.md"]);
+  const head = commit(root, "remove both");
+
+  const withRange = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(withRange.status, 1);
+  assert.match(withRange.stderr, /one\.md:1:token/);
+  assert.match(withRange.stderr, /two\.md:1:token/);
+});
+
+test("端到端：范围内没有变化时不误报，也不打印「没有文件变化」", () => {
+  const root = makeRepo({ "a.md": "init\n" });
+  const head = commit(root, "init");
+
+  const same = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${head}`,
+  });
+  assert.equal(same.status, 0, same.stderr);
+  assert.match(same.stdout, /OK/);
+  assert.doesNotMatch(same.stderr, /没有文件变化/);
+});
+
+// 净化历史基线：只抑制「已修好在 HEAD 的历史 blob」，且必须三键同时匹配。
+
+/** 造一个仓库：旧提交里泄漏、HEAD 里已修好，返回 base/oldHead/head 与 blob。 */
+function makeSanitizedRepo() {
+  const secret = body("ghp_", 36);
+  const root = makeRepo({ "docs/report.md": "clean\n" });
+  const base = commit(root, "init");
+  writeFileSync(join(root, "docs/report.md"), `token ${secret}\n`);
+  git(root, ["add", "docs/report.md"]);
+  const leakedCommit = commit(root, "add leak");
+  const leakedBlob = blobAt(root, leakedCommit, "docs/report.md");
+  writeFileSync(join(root, "docs/report.md"), "clean\n");
+  git(root, ["add", "docs/report.md"]);
+  const fixedCommit = commit(root, "sanitize");
+  return { root, base, leakedCommit, leakedBlob, fixedCommit, secret };
+}
+
+test("baseline：精确命中历史 blob 时抑制并打印说明", () => {
+  const { root, base, leakedBlob, fixedCommit } = makeSanitizedRepo();
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["token"],
+      count: 1,
+      sanitizedInCommit: fixedCommit,
+      reason: "тест",
+    },
+  ]);
+
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const result = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /已净化历史：docs\/report\.md @ [0-9a-f]{12}/);
+  assert.match(result.stdout, /修复于/);
+});
+
+test("baseline：blobSha 不匹配（同路径不同 blob）时仍然阻止", () => {
+  const { root, base, fixedCommit } = makeSanitizedRepo();
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: "f".repeat(40),
+      findingTypes: ["token"],
+      count: 1,
+      sanitizedInCommit: fixedCommit,
+      reason: "тест",
+    },
+  ]);
+
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const result = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /docs\/report\.md:1:token/);
+});
+
+test("baseline：findingTypes 不含该类型时不抑制", () => {
+  const { root, base, leakedBlob, fixedCommit } = makeSanitizedRepo();
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["home-path"],
+      count: 1,
+      sanitizedInCommit: fixedCommit,
+      reason: "тест",
+    },
+  ]);
+
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const result = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /docs\/report\.md:1:token/);
+});
+
+test("baseline：索引与 HEAD 的同类命中永不被抑制", () => {
+  // 关键场景：HEAD 里再次出现同类泄漏，且内容 blob 与历史登记的一致。
+  // 抑制只对「仅历史」的 blob 生效，HEAD/索引里的同一 blob 必须照报。
+  const secret = body("ghp_", 36);
+  const root = makeRepo({ "docs/report.md": "clean\n" });
+  const base = commit(root, "init");
+  writeFileSync(join(root, "docs/report.md"), `token ${secret}\n`);
+  git(root, ["add", "docs/report.md"]);
+  const leakedCommit = commit(root, "leak");
+  const leakedBlob = blobAt(root, leakedCommit, "docs/report.md");
+  writeFileSync(join(root, "docs/report.md"), "clean\n");
+  git(root, ["add", "docs/report.md"]);
+  const fixedCommit = commit(root, "sanitize");
+  // 再次引入同一内容：blob 与历史登记值完全相同，位于 HEAD 与索引里。
+  writeFileSync(join(root, "docs/report.md"), `token ${secret}\n`);
+  git(root, ["add", "docs/report.md"]);
+  const headCommit = commit(root, "re-leak");
+
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["token"],
+      count: 1,
+      sanitizedInCommit: fixedCommit,
+      reason: "тест",
+    },
+  ]);
+
+  const withRange = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${headCommit} refs/heads/dev ${base}`,
+  });
+  assert.equal(withRange.status, 1);
+  assert.match(withRange.stderr, /docs\/report\.md:1:token/);
+  // 同一个 blob 也出现在 HEAD/索引里，因此不应出现任何抑制行。
+  assert.doesNotMatch(withRange.stdout, /已净化历史/);
+  assert.doesNotMatch(withRange.stderr, new RegExp(secret));
+});
+
+test("baseline：sanitizedInCommit 为空时配置无效并阻止 push", () => {
+  const { root, base, leakedBlob } = makeSanitizedRepo();
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["token"],
+      count: 1,
+      reason: "нет commit",
+    },
+  ]);
+
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const result = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /配合无效|配置无效/);
+  assert.match(result.stderr, /sanitizedInCommit/);
+});
+
+test("baseline：修复提交里仍有同类命中时配置无效（防漏网）", () => {
+  const { root, base, leakedCommit, leakedBlob } = makeSanitizedRepo();
+  // 声称已在泄漏提交里修好 —— 该提交的树里当然还有命中。
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["token"],
+      count: 1,
+      sanitizedInCommit: leakedCommit,
+      reason: "ложное утверждение",
+    },
+  ]);
+
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const result = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /配置无效/);
+  assert.match(result.stderr, /仍有 token 命中/);
+});
+
+test("baseline：sanitizedInCommit 不是 HEAD 祖先时配置无效", () => {
+  const { root, base, leakedBlob } = makeSanitizedRepo();
+  // 造一个不在当前分支上的提交。
+  git(root, ["checkout", "-q", "-b", "side"]);
+  writeFileSync(join(root, "docs/other.md"), "clean\n");
+  git(root, ["add", "docs/other.md"]);
+  const sideCommit = commit(root, "side commit");
+  git(root, ["checkout", "-q", "master"]);
+
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["token"],
+      count: 1,
+      sanitizedInCommit: sideCommit,
+      reason: "чужой коммит",
+    },
+  ]);
+
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const result = runGate(root, {
+    ZCODE_PRE_PUSH_STDIN: `refs/heads/dev ${head} refs/heads/dev ${base}`,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /配置无效/);
+  assert.match(result.stderr, /不是 HEAD 的祖先/);
+});
+
+test("baseline：归还历史后（未推送）不误判失效，只是不抑制", () => {
+  const { root, leakedBlob, fixedCommit } = makeSanitizedRepo();
+  writeSanitizedHistory(root, [
+    {
+      path: "docs/report.md",
+      blobSha: leakedBlob,
+      findingTypes: ["token"],
+      count: 1,
+      sanitizedInCommit: fixedCommit,
+      reason: "тест",
+    },
+  ]);
+
+  // 没有 pre-push refs：不扫历史，登记条目不应被当成失效。
+  const result = runGate(root);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /基线失效/);
 });
