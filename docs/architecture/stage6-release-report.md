@@ -80,6 +80,8 @@ EXIT=0
 
 Блоб из коммита `46e96d8b` в истории **всё ещё содержит** исходный домашний путь вида `<home>/...`. Он исправлен следующим коммитом `f14af289`, поэтому текущее состояние и HEAD чисты, но в истории git значение сохраняется. Устранение требует переписывания истории (`filter-repo` / `rebase -i` с принудительным push) — **запрещено ограничениями задачи**. Зафиксировано как известный риск.
 
+> **Уточнение этапа 6.3.** Полная проверка push-диапазона `origin/dev..HEAD` показала, что историческая находка **не одна**: в диапазоне находится **11 строк `home-path` в 4 файлах, 1 личный email и 1 синтетический токен-фикстур**. Прежняя формулировка «блоб `46e96d8b` содержит путь» описывает только первый из них. Полный перечень и разбор — в [разделе 9](#9-этап-63--разблокирование-push-диагноз-и-шаги-для-владельца).
+
 ## 4. Коммиты (14 штук, `origin/dev..HEAD`)
 
 | Hash | Сообщение | Состав |
@@ -180,15 +182,26 @@ node packages/desktop/scripts/bundle.mjs --os mac --arch arm64 --skip-build
 | Аннотированный тег | OK | `v3.17.123` («Релиз v3.17.123») |
 | npm publish | Отключён штатно | `.release-it.mjs`: `npm.publish: false` |
 | GitHub/GitLab release | Отключён штатно | `github.release: false`, `gitlab.release: false` |
-| Push в `origin/dev` | **Не выполнен** | Осознанно: `--no-git.push`. См. ниже |
+| Push в `origin/dev` | **Не выполнен** | См. §6.1 и §9 |
+| Push тега `v3.17.123` | **Не выполнен** | В `origin` тега нет: `git ls-remote --tags origin` не даёт совпадений |
 
-### Почему push не выполнен
+### 6.1. Почему push не выполнен (уточнено на этапе 6.3)
 
-Требование «не делать force-push, не переписывать историю» соблюдено. Обычный push заблокирован честно и по существу: в push-диапазоне `origin/dev..HEAD` присутствует коммит `46e96d8b`, чей блоб [`docs/architecture/stage1-forensic-audit-and-baseline.md`](docs/architecture/stage1-forensic-audit-and-baseline.md) содержит реальный домашний путь (исправлен позже в `f14af289`). Pre-push гейт `check-tracked-privacy` сканирует именно push-диапазон, поэтому такой push он не пропустит — и это правильно.
+Ранее предполагалось, что обычный push **блокируется** pre-push гейтом `check-tracked-privacy`. Проверка на этапе 6.3 этого **не подтвердила**:
 
-Убрать значение из истории без переписывания невозможно. Так как переписывание запрещено, push оставлен на решение владельца репозитория. Локально релиз завершён полностью: коммит, тег и артефакты на месте.
+```text
+$ ZCODE_PRE_PUSH_STDIN="refs/heads/dev 75f9e03d refs/heads/dev 64df2977" \
+    node scripts/check-tracked-privacy.mjs
+[tracked-privacy] 注意：push 范围 refs/heads/dev 没有文件变化
+[tracked-privacy] OK：20172 个文件（索引 + HEAD + push 范围）未发现 home 路径、邮箱或令牌特征
+EXIT=0
+```
 
-Итоговый статус: **частично — полный локальный релиз (версия, CHANGELOG, коммит, тег, артефакты), публикация в `origin/dev` требует отдельного решения по истории.**
+При 15 коммитах и 795 blob в диапазоне гейт сообщает «нет изменений файлов» и возвращает `0`. Причина — дефект парсера push-диапазона, разобранный в §9.1: сканирование диапазона **фактически не выполняется**.
+
+Следовательно, push сейчас **не блокируется, а пропускается по ошибке**. Выполнить его означало бы опубликовать реальные утечки, опираясь на дефект гейта — это эквивалент обхода privacy-гейта, прямо запрещённого постановкой задачи (`--no-verify` и ослабление проверок запрещены). Поэтому push **сознательно не выполнен**.
+
+Итоговый статус: **частично — полный локальный релиз (версия, CHANGELOG, коммит, аннотированный тег, Linux-артефакты). Публикация в `origin/dev` и тега `v3.17.123` не выполнена и требует решения владельца по истории и по дефекту гейта.**
 
 ## 7. Что не сделано и что нужно для полноценного релиза macOS
 
@@ -213,5 +226,177 @@ node packages/desktop/scripts/bundle.mjs --os mac --arch arm64 --skip-build
 | Проверка отсутствия build-артефактов в индексе (`dist/`, `out/`, `node_modules/`, `.turbo/`, `.zcode-code-index/`) | Чисто |
 | `audit-bundle-size` (внутри `bundle.mjs`) | OK, 221.0 MiB < 500 MiB |
 | `git status --porcelain` после релиза | Пусто |
+| `ZCODE_PRE_PUSH_STDIN=… node scripts/check-tracked-privacy.mjs` (6.3) | `EXIT=0`, но с предупреждением `push 范围 … 没有文件变化` при 15 коммитах — признак дефекта, см. §9.1 |
+| `node --test scripts/check-tracked-privacy.test.mjs` (6.3) | **FAIL** — 18/19 pass; падает `端到端：push 范围内加过又删掉的秘密会被拦下` (`0 !== 1`) |
+| `git ls-remote origin dev` (6.3) | `64df2977…` — новых коммитов не опубликовано |
+| `git ls-remote --tags origin` / поиск `v3.17.123` (6.3) | 0 совпадений; последний опубликованный тег — `v3.17.122` → `64df2977…` |
 
 `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test:unit` (20922 passed) и `pnpm architecture:check --changed` подтверждены как выполненные ранее (этапы 1–6.1c) и в рамках 6.2 заново не перезапускались: содержимое проверяемого кода не менялось, а полный прогон даёт нагрузку на все ядра, которую правила репозитория требуют не запускать без явной необходимости. Новый код в этом этапе не добавлялся — только коммиты, релизная версия и отчёт.
+
+## 9. Этап 6.3 — разблокирование push: диагноз и шаги для владельца
+
+### 9.1. Что показала проверка: push сейчас не блокируется, а ошибочно пропускается
+
+Постановка этапа 6.3 исходила из того, что gate блокирует push, потому что в диапазоне есть исторический блоб с домашним путём. Замеры этого не подтверждают.
+
+**Доказательство 1 — gate возвращает 0 на реальном диапазоне `origin/dev..HEAD`:**
+
+```text
+$ ZCODE_PRE_PUSH_STDIN="refs/heads/dev 75f9e03d refs/heads/dev 64df2977" \
+    node scripts/check-tracked-privacy.mjs
+[tracked-privacy] 注意：push 范围 refs/heads/dev 没有文件变化
+[tracked-privacy] OK：20172 个文件（索引 + HEAD + push 范围）未发现 home 路径、邮箱或令牌特征
+EXIT=0
+```
+
+В диапазоне фактически 15 коммитов и 795 blob. Сообщение «нет изменений файлов» означает, что ветка `listPushRangeEntries` не добавила ни одной записи.
+
+**Доказательство 2 — формат вывода git не совпадает с парсером.** [`scripts/check-tracked-privacy.mjs:500`](scripts/check-tracked-privacy.mjs:500) вызывает:
+
+```js
+stdout = gitStdout(root, ["rev-list", "--objects", "-z", `${remoteSha}..${localSha}`]);
+```
+
+и затем на [`scripts/check-tracked-privacy.mjs:507`](scripts/check-tracked-privacy.mjs:507) разбирает результат по NUL, ожидая поля вида `path=<путь>`:
+
+```js
+for (const field of stdout.split("\0")) {
+  if (field.startsWith("path=")) { ... }
+```
+
+Фактическое поведение `git rev-list` (2.43.0) иное:
+
+```text
+$ git rev-list --objects -z 64df2977..HEAD | tr -d -c '\0' | wc -c
+0
+$ git rev-list --objects -z 64df2977..HEAD | tr -d -c '\n' | wc -c
+825
+$ git rev-list --objects -z 64df2977..HEAD | tr -d '\0' | grep -c '^path='
+0
+```
+
+`rev-list` не поддерживает `-z` (флаг молча игнорируется, exit 0), разделитель — `\n`, префикса `path=` нет. Поэтому `stdout.split("\0")` даёт один элемент, условие `startsWith("path=")` не выполняется ни разу, `added` остаётся `0`, и gate печатает «push 范围 … 没有文件变化».
+
+**Доказательство 3 — собственный тест gate это подтверждает.** [`scripts/check-tracked-privacy.test.mjs:197`](scripts/check-tracked-privacy.test.mjs:197) (`端到端：push 范围内加过又删掉的秘密会被拦下`) **падает**:
+
+```text
+not ok 10 - 端到端：push 范围内加过又删掉的秘密会被拦下
+  error: 'Expected values to be strictly equal: 0 !== 1'
+# tests 19 / pass 18 / fail 1
+```
+
+То есть защита, описанная в [`docs/testing/pre-push-hook.md`](docs/testing/pre-push-hook.md:35) как рабочая («pre-push через `ZCODE_PRE_PUSH_STDIN` дополнительно扫描 push 范围内可达的 blob»), на этой платформе не работает.
+
+Итог: единственной реальной защитой остаются проверки **индекса и HEAD**, а они чисты. Диапазон не проверяется.
+
+### 9.2. Что именно находится в диапазоне (полная картина)
+
+Скан `origin/dev..HEAD` с правилами gate (795 blob, 792 файла после `isExcluded`) даёт **12 находок в 4 файлах**:
+
+| Файл | Строки | Тип | Блоб | Коммит, внёсший значение |
+| --- | --- | --- | --- | --- |
+| `docs/architecture/stage1-forensic-audit-and-baseline.md` | 4, 94, 100, 110, 111 | `home-path` | `01385b96` | `46e96d8b`, исправлено в `f14af289` |
+| `docs/architecture/stage2-comparative-oss-research.md` | 4, 5, 24 | `home-path` | `c83ee913` | `46e96d8b`, исправлено в `f14af289` |
+| `docs/architecture/stage3-target-architecture-and-specs.md` | 4, 1204 | `home-path` | `51ceae34` | `46e96d8b`, исправлено в `f14af289` |
+| `docs/architecture/stage6-release-report.md` | 18 | `email` | `5975b2dc` | `3482a18a`, исправлено в `77fe4f65` |
+| `docs/architecture/stage6-release-report.md` | 80 | `home-path` | `5975b2dc` | `3482a18a`, исправлено в `77fe4f65` |
+
+Про синтетический OpenAI-подобный ключ из фикстуры в `packages/services/test/code-intelligence/codeIntelligenceService.test.ts:352` (полное значение здесь намеренно не приводится, чтобы отчёт сам не стал образцом для гейта): значение **уже покрыто** `ALLOWLISTED_FINDINGS` ([`scripts/check-tracked-privacy.mjs:231`](scripts/check-tracked-privacy.mjs:231)), проверено вызовом `isAllowlistedFinding(...) === true`. То есть это не находка, а корректно обработанный фикстур.
+
+**HEAD чист во всех случаях** — проверено пофайлово:
+
+```text
+docs/architecture/stage1-forensic-audit-and-baseline.md   -> home-path строк в HEAD: 0
+docs/architecture/stage2-comparative-oss-research.md       -> home-path строк в HEAD: 0
+docs/architecture/stage3-target-architecture-and-specs.md  -> home-path строк в HEAD: 0
+docs/architecture/stage6-release-report.md                 -> home-path строк в HEAD: 0
+```
+
+Важное уточнение исходной посылки задачи: **находок в истории не одна, а пять строк в четырёх файлах** (включая отчёт этапа 6.2 в коммитах `3482a18a`/`77fe4f65`). Все они — реальные данные, а не ложные срабатывания:
+
+- `home-path` — настоящий домашний путь автора (`/home/<user>/Desktop/git/Zcode`, `/home/<user>/.zcode/cli/log/...`, `/home/<user>/Desktop/test-zcode/new`). Это приватный локальный путь, не секрет и не токен, но он идентифицирует пользователя.
+- `email` — личный адрес автора в таблице `git config user.email` (`m1***@icloud.com`).
+
+### 9.3. Есть ли штатный механизм для «известных» находок
+
+**Для настроенного, документированного механизма принятия исторических находок — нет.** Проверено:
+
+- `grep -nEi "baseline|allowlist|process.env|argv|ZCODE_PRE_PUSH" scripts/check-tracked-privacy.mjs` даёт только: `ALLOWLISTED_FINDINGS` (строка 216), `ZCODE_PRE_PUSH_STDIN` (строка 486) и `process.argv[1]` (строка 683, детект прямого запуска). Нет ни `--baseline`, ни `--allow`, ни файла `.privacy-baseline.json`, ни переменной вида `ZCODE_PRIVACY_ALLOW`.
+- `grep -rln "check-tracked-privacy"` по репозиторию: только `package.json`, `docs/testing/pre-push-hook.md`, `docs/architecture/*`, `scripts/*`. В `.github/` упоминаний гейта нет (CI-воркфлоу его не запускает).
+- Тест [`scripts/check-tracked-privacy.test.mjs:197`](scripts/check-tracked-privacy.test.mjs:197) прямо фиксирует **обязательность** блокировки «добавил и удалил» — то есть исторические находки по проектной задумке должны блокировать push, а не приниматься.
+
+**Что есть:** `ALLOWLISTED_FINDINGS` ([`scripts/check-tracked-privacy.mjs:216`](scripts/check-tracked-privacy.mjs:216)) — но он по конструкции **не подходит** для этой ситуации:
+
+```js
+const ALLOWLISTED_FINDINGS = [ { paths: [...], type: "email", values: [...] }, ... ];
+```
+
+- ключ — `путь + тип + полное значение`, **не хэш блоба**;
+- значения намеренно собираются в рантайме (`["alice", "prisma.io"].join("@")`), «чтобы闸門源文件本身 не стал样本»;
+- политика задокументирована в [`docs/testing/pre-push-hook.md:68`](docs/testing/pre-push-hook.md:68): запись допускается **только** для «третьей стороны/дока/фикстуры», и прямо запрещено «использовать предел, чтобы пропустить реальное удостоверение» («不能用它放行真实身份»).
+
+Добавление реального домашнего пути и реального email автора в `ALLOWLISTED_FINDINGS` — это ровно то, что политика запрещает, и именно ослабление гейта, запрещённое постановкой задачи. Поэтому **Случай A неприменим**.
+
+### 9.4. Что сделано в этом подэтапе
+
+- Push **не выполнен**; тег `v3.17.123` **не отправлен**. `origin/dev` остаётся на `64df2977` (= `v3.17.122`).
+- Гейт **не изменён**: ни проверки, ни область сканирования, ни регулярные выражения, ни allowlist не тронуты.
+- `ALLOWLISTED_FINDINGS` **не расширен** реальными значениями.
+- Обновлён только этот отчёт (документация).
+
+Локальное состояние релиза: коммит `1f91b960`, аннотированный тег `v3.17.123` (tag-объект `d8918200` → коммит `1f91b960`), Linux-артефакты на месте. **Это локальный результат, а не опубликованный релиз.**
+
+### 9.5. Готовые шаги для владельца репозитория
+
+Ниже — три варианта. Решение за владельцем; ни один не применён.
+
+**Вариант 1 (рекомендуемый): починить range-скан, затем обработать исторические находки.**
+
+Шаг 1. Исправить парсер диапазона — заменить `-z`/`path=` на корректный для `rev-list` формат. Минимальный патч к [`scripts/check-tracked-privacy.mjs:496`](scripts/check-tracked-privacy.mjs:496):
+
+```js
+// было: rev-list --objects -z + split("\0") + "path="
+// станет: rev-list --objects -z --no-object-names не поддерживается,
+// поэтому берём построчный формат "<sha> <path>" и явно обрабатываем пути с пробелами
+const stdout = gitStdout(root, ["rev-list", "--objects", `${remoteSha}..${localSha}`]);
+for (const line of stdout.split("\n")) {
+  if (!line) continue;
+  const space = line.indexOf(" ");
+  if (space < 0) continue; // commit/tree без пути
+  entries.push({ file: line.slice(space + 1), sha: line.slice(0, space) });
+  added += 1;
+}
+```
+
+Шаг 2. Убедиться, что тест [`scripts/check-tracked-privacy.test.mjs:197`](scripts/check-tracked-privacy.test.mjs:197) проходит: `node --test scripts/check-tracked-privacy.test.mjs` → 19/19.
+
+Шаг 3. После исправления gate начнёт **честно блокировать** push. Дальше — один из двух путей:
+
+- **3a. Переписать историю** (вне этого окружения, с согласованием всех потребителей ветки): `git filter-repo --path-glob 'docs/architecture/stage*.md' --replace-text`, затем force-push. Владелец может это разрешить, постановка этапа 6.3 — нет.
+- **3b. Легализовать allowlist для исторических блобов** как **новую штатную возможность**: добавить в gate поддержку файла `.privacy-baseline.json` с **хэшами блобов** (не путями) и явным обоснованием по каждой записи, плюс тест, подтверждающий, что другие находки в тех же файлах по-прежнему блокируются. Это меняет контракт гейта и потому требует решения владельца, а не молчаливого добавления записи.
+
+**Вариант 2: переписать историю и не менять гейт.** Требует force-push в `origin/dev` и координации всех, у кого есть клон. Само по себе решает проблему полностью, но в текущем окружении запрещено.
+
+**Вариант 3: принять текущий дефект гейта и опубликовать как есть.** Технически push пройдёт (`EXIT=0`), но это публикация реального домашнего пути и личного email в публичный репозиторий. Это осознанная утечка; фиксируется здесь как отвергнутый вариант.
+
+### 9.6. Как воспроизвести замеры
+
+```bash
+# 1. Показать, что диапазон не сканируется
+ZCODE_PRE_PUSH_STDIN="refs/heads/dev $(git rev-parse HEAD) refs/heads/dev $(git rev-parse origin/dev)" \
+  node scripts/check-tracked-privacy.mjs
+
+# 2. Показать, что тест range-скана падает
+node --test scripts/check-tracked-privacy.test.mjs
+
+# 3. Показать, что rev-list не поддерживает -z
+git rev-list --objects -z "$(git rev-parse origin/dev)..HEAD" | tr -d -c '\0' | wc -c   # 0
+
+# 4. Показать, что HEAD чист
+git cat-file -p HEAD:docs/architecture/stage1-forensic-audit-and-baseline.md \
+  | grep -cE '/(home|Users)/[A-Za-z0-9._-]+'   # 0
+
+# 5. Состояние remote
+git ls-remote origin dev
+git ls-remote --tags origin | grep v3.17.123 || echo "тега в origin нет"
+```
