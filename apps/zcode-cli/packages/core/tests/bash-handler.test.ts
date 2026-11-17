@@ -329,8 +329,9 @@ describe("bashHandler", () => {
     // R04 вариант B: единственный внутренний trace фиксирует отсутствие
     // OS-изоляции; sandbox-запрос из входа больше не пересылается.
     expect(capturedRequest?.sandbox).toMatchObject({
-      enabled: false,
-      metadata: { enforcement: "not_implemented" },
+      enabled: true,
+      profile: "workspace-write",
+      wrap: { profile: "workspace-write", networkAccess: "allow" },
     });
     expect(capturedRequest?.sandbox).not.toHaveProperty("dangerouslyDisableSandbox");
     expect(capturedRequest?.sandbox).not.toHaveProperty("protectedResources");
@@ -454,11 +455,12 @@ describe("bashHandler", () => {
     );
 
     expect(capturedRequest?.timeoutMs).toBe(123);
-    // R04 вариант B: sandbox-поля во входе нет, trace всегда честный.
-    expect(capturedRequest?.sandbox).toEqual({
-      enabled: false,
-      metadata: { enforcement: "not_implemented" },
-    });
+    // Инкремент 4.5a: внутренний trace больше не «not_implemented» —
+    // он несёт реальную политику, а adapter сообщает фактический режим.
+    expect(capturedRequest?.sandbox?.enabled).toBe(true);
+    expect(capturedRequest?.sandbox?.profile).toBe("workspace-write");
+    expect(capturedRequest?.sandbox?.wrap?.workspacePath).toBeTruthy();
+    expect(capturedRequest?.sandbox?.wrap?.networkAccess).toBe("allow");
   });
 
   it("rejects a legacy sandbox argument before execution", async () => {

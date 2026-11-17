@@ -248,6 +248,7 @@ export class NodeExecutionAdapterResults extends NodeExecutionAdapterBase {
     signal?: string;
     error?: ExecutionFailure;
     resolvedCwd?: string;
+    sandbox?: ExecutionResult["sandbox"];
   }): ExecutionResult {
     return {
       status: args.status,
@@ -263,6 +264,7 @@ export class NodeExecutionAdapterResults extends NodeExecutionAdapterBase {
       pid: args.pid,
       error: args.error,
       resolvedCwd: args.resolvedCwd,
+      ...(args.sandbox ? { sandbox: args.sandbox } : {}),
     };
   }
 

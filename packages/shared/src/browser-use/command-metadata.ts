@@ -143,6 +143,8 @@ export type BrowserCommandContext = z.infer<typeof browserCommandContextSchema>;
 /** 结构化错误码：不静默兜底，明确失败原因给模型。 */
 export const browserErrorCodeSchema = z.enum([
   "backend_unavailable",
+  // Браузер физически не установлен. Отдельный код несёт точную инструкцию установки.
+  "browser_not_installed",
   "capability_unsupported",
   "duplicate_request_id",
   "ref_not_found",

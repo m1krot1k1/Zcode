@@ -99,6 +99,17 @@ export async function toBashOutput(
       stdoutPersistedOutputSize,
       stderrPersistedOutputSize,
       ...(ghRateLimitHint ? { ghRateLimitHint } : {}),
+      // Фактический режим изоляции: модель видит, была ли песочница применена.
+      ...(result.sandbox
+        ? {
+            sandbox: {
+              mode: result.sandbox.mode,
+              ...(result.sandbox.reason ? { reason: result.sandbox.reason } : {}),
+              filesystemIsolated: result.sandbox.filesystemIsolated,
+              networkIsolated: result.sandbox.networkIsolated,
+            },
+          }
+        : {}),
     },
     createBashPerformanceTelemetry(input, result, options.progressTiming),
   );

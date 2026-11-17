@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { BrowserContext, Dialog, Page, ViewportSize } from "playwright-core";
 import type { BrowserTabSummary } from "@zcode/contracts";
+import {
+  createBrowserTelemetryController,
+  type BrowserTelemetryController,
+  type BrowserTelemetryOptions,
+} from "./telemetry/index.js";
+import { releaseManagedPlaywrightResources } from "./playwright-command.js";
 
 interface ManagedCdpTab {
   id: string;
@@ -14,7 +20,18 @@ export class ManagedCdpSession {
   readonly #tabs = new Map<string, ManagedCdpTab>();
   #activeTabId: string | undefined;
 
-  constructor(readonly context: BrowserContext) {
+  /**
+   * Телеметрия живёт вместе с BrowserContext: подписки на console/pageerror/response
+   * устанавливаются один раз и переживают отдельные вызовы инструмента. Именно это
+   * устраняет «слепоту» между действиями, которая была при повторном импорте SDK.
+   */
+  readonly telemetry: BrowserTelemetryController;
+
+  constructor(
+    readonly context: BrowserContext,
+    telemetryOptions?: BrowserTelemetryOptions,
+  ) {
+    this.telemetry = createBrowserTelemetryController(telemetryOptions);
     for (const page of context.pages()) this.registerPage(page);
     context.on("page", (page) => this.registerPage(page));
   }
@@ -96,8 +113,14 @@ export class ManagedCdpSession {
   async close(): Promise<void> {
     this.#dialogs.clear();
     this.#tabs.clear();
+    // Телеметрия освобождается до закрытия контекста: иначе слушатели остаются
+    // на уже закрытых страницах и таймеры диалогов продолжают жить.
+    this.telemetry.dispose();
+    // Кэш скачиваний/chooser'ов держит временные файлы и дескрипторы — снимаем его.
+    releaseManagedPlaywrightResources();
     if (!this.context.browser()?.isConnected()) return;
     await this.context.close().catch(() => undefined);
+    releaseManagedPlaywrightResources();
   }
 
   private registerPage(page: Page): ManagedCdpTab {
@@ -106,10 +129,12 @@ export class ManagedCdpSession {
     const tab = { id: `tab:${randomUUID()}`, page };
     this.#tabs.set(tab.id, tab);
     this.#activeTabId ??= tab.id;
+    this.telemetry.attach(page);
     page.on("dialog", (dialog) => this.#dialogs.set(tab.id, dialog));
     page.on("close", () => {
       this.#tabs.delete(tab.id);
       this.#dialogs.delete(tab.id);
+      this.telemetry.detach(page);
       if (this.#activeTabId === tab.id) this.#activeTabId = [...this.#tabs.keys()].at(-1);
     });
     return tab;

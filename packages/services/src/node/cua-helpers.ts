@@ -57,12 +57,14 @@ export function shouldEnableDefaultCuaProductHelper(
     env?: NodeJS.ProcessEnv;
   } = {},
 ): boolean {
-  // CUA 已随正式版默认开启（isZCodeCuaInternalFeatureEnabled 默认 ON，仅显式 0/false/off 关闭；2026-08 注释更正——旧注释称默认关闭已过期）。显式开启后 macOS 使用既有产品 Helper，Windows 使用安装包内 runtime；
-  // 两端都保持按需启动。关闭时不创建 host、不探测资源、不产生子进程或权限提示。
+  // CUA 已随正式版默认开启（isZCodeCuaInternalFeatureEnabled 默认 ON，仅显式 0/false/off 关闭）。
+  // 4.5b: Linux добавлен в гейт — нативный хост `services-cua-linux-host` реально проверяет
+  // X11/XWayland (koffi FFI + XTest) и Wayland (RemoteDesktop portal) через probe().
+  // Headless/CI без графического хоста получают `cua_unavailable` из probe, а не тихое отключение.
   const env = options.env ?? process.env;
   if (!isZCodeCuaInternalFeatureEnabled(env)) return false;
   const platform = options.platform ?? process.platform;
-  return platform === "darwin" || platform === "win32";
+  return platform === "darwin" || platform === "win32" || platform === "linux";
 }
 
 /**
@@ -91,7 +93,9 @@ export function shouldUseCuaPermissionService(opts: {
   cuaEnabled: boolean;
 }): boolean {
   const platform = opts.platform ?? process.platform;
-  return (platform === "darwin" || platform === "win32") && opts.cuaEnabled;
+  // Linux включён: гранулярные политики (screenshot/pointer/keyboard/clipboard) исполняет
+  // `services-cua-linux-host`; на headless-машине хост вернёт точную причину недоступности.
+  return (platform === "darwin" || platform === "win32" || platform === "linux") && opts.cuaEnabled;
 }
 
 export function shouldRetainDefaultCuaProductHelper(): boolean {

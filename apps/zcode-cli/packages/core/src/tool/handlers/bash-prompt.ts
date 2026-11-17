@@ -19,5 +19,10 @@ export function createBashProviderDescription(input: {
     "- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.",
     "- Use the `gh` CLI for GitHub operations (PRs, issues, API).",
     "- Commit or push only when the user asks. If on the default branch, branch first.",
+    "",
+    "# Sandbox",
+    "- Commands run in an OS sandbox: the workspace is writable, the rest of the filesystem is read-only, and the result reports `sandbox.mode`.",
+    "- `bwrap` (Linux) or `seatbelt` (macOS) means writes outside the workspace are blocked by the kernel. `degraded` means the mechanism is unavailable: the workspace is still enforced, but filesystem writes outside it are not blocked — check `sandbox.reason`.",
+    "- Do not try to escape the sandbox. If a command legitimately needs a path outside the workspace, ask the user instead of disabling isolation.",
   ].join("\n");
 }

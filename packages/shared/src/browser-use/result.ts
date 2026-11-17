@@ -2,6 +2,7 @@ import { z } from "zod";
 import { browserErrorCodeSchema, browserPageStateSchema } from "./commands.js";
 import { browserViewportSizeSchema } from "./command-metadata.js";
 import { browserBackendTypeSchema } from "./backend.js";
+import { browserActionObservationSchema } from "./observation.js";
 import { browserSnapshotSchema, browserSnapshotElementSchema } from "./snapshot.js";
 
 /**
@@ -115,6 +116,12 @@ export const browserCommandResultSchema = z
     dialog: browserDialogSchema.nullable().optional(),
     /** WebView 异步录制任务；main 临时 path 会在 Host materialize 后改写为 workspace path。 */
     recording: browserRecordingJobSchema.optional(),
+    /**
+     * Телеметрия действия: консоль, pageerror, сетевые сбои, HTTP >= 400, ARIA/DOM и кадр.
+     * Присутствует для всех команд, которые реально взаимодействуют со страницей, чтобы
+     * модель видела фактическое состояние, а не только `ok`.
+     */
+    observation: browserActionObservationSchema.optional(),
     error: z
       .object({
         code: browserErrorCodeSchema,
@@ -128,3 +135,5 @@ export const browserCommandResultSchema = z
   })
   .strict();
 export type BrowserCommandResult = z.infer<typeof browserCommandResultSchema>;
+
+export type { BrowserActionObservation } from "./observation.js";

@@ -228,6 +228,17 @@ export interface BashOutput {
    * gh 命令触发 GitHub API rate limit 时，追加给模型的 system-reminder。
    */
   ghRateLimitHint?: string;
+  /**
+   * Фактический режим песочницы этого запуска. `bwrap`/`seatbelt` означает
+   * реальную изоляцию ФС (и сети при `networkIsolated`), `degraded` — что
+   * механизм недоступен и защита слабее; `reason` объясняет, почему.
+   */
+  sandbox?: {
+    mode: "bwrap" | "seatbelt" | "degraded" | "none";
+    reason?: string;
+    filesystemIsolated: boolean;
+    networkIsolated: boolean;
+  };
 }
 
 export const BashOutputSchema = z
@@ -263,6 +274,14 @@ export const BashOutputSchema = z
     stderrPersistedOutputSize: z.number().int().nonnegative().optional(),
     staleReadFileStateHint: z.string().optional(),
     ghRateLimitHint: z.string().optional(),
+    sandbox: z
+      .object({
+        mode: z.enum(["bwrap", "seatbelt", "degraded", "none"]),
+        reason: z.string().optional(),
+        filesystemIsolated: z.boolean(),
+        networkIsolated: z.boolean(),
+      })
+      .optional(),
     perf: ToolExecutionTelemetrySchema.optional(),
   })
   .strict();

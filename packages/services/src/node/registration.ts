@@ -17,6 +17,17 @@ import { createClientConfigService } from "../client-config/clientConfigService.
 import { IClientScenesService } from "../client-scenes/clientScenes.js";
 import { createClientScenesService } from "../client-scenes/clientScenesService.js";
 import { ICodeIntelligenceService } from "../code-intelligence/contract.js";
+import { createPromptEnhancerService, IPromptEnhancerService } from "../prompt-enhancer/index.js";
+import {
+  createPromptEnhancerContextPorts,
+  createPromptEnhancerPaths,
+} from "./prompt-enhancer-ports.js";
+import {
+  createChatAutocompleteContextPorts,
+  createChatAutocompletePaths,
+  createChatAutocompleteService,
+  IChatAutocompleteService,
+} from "../chat-autocomplete/index.js";
 import { ICodingPlanSubscriptionService } from "../coding-plan-subscription/codingPlanSubscription.js";
 import { ServiceCollection } from "../collection.js";
 import { ICommandsService } from "../commands/commands.js";
@@ -470,6 +481,29 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
     )
     .register(ISubagentsService, subagentsService)
     .register(ICodeIntelligenceService, codeIntelligenceService)
+    .register(
+      IPromptEnhancerService,
+      createPromptEnhancerService({
+        ...createPromptEnhancerPaths({ zcodeAgentService, providerRuntime }),
+        contextPorts: createPromptEnhancerContextPorts({
+          codeIntelligenceService,
+          gitService,
+          fileService,
+          zcodeSessionService,
+        }),
+      }),
+    )
+    .register(
+      IChatAutocompleteService,
+      createChatAutocompleteService({
+        ...createChatAutocompletePaths({ zcodeAgentService, providerRuntime }),
+        contextPorts: createChatAutocompleteContextPorts({
+          codeIntelligenceService,
+          gitService,
+          zcodeSessionService,
+        }),
+      }),
+    )
     .register(ICommandsService, createCommandsService({ isDesktopRuntime: true }))
     .register(
       IHooksService,

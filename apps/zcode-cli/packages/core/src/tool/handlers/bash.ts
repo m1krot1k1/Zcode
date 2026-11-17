@@ -84,43 +84,23 @@ const BASH_PROVIDER_DESCRIPTION = createBashProviderDescription({
   maxTimeoutMs: DEFAULT_BASH_TIMEOUT_POLICY.maxTimeoutMs,
 });
 
-// R04 вариант B: ZCode не реализует OS-sandbox для Bash, поэтому единая
-// `BashInputSchema` не объявляет sandbox-поле. Runtime admission (`.strict()`)
-// отклоняет legacy-аргумент до handler-а; отдельная provider-проекция входа
-// больше не нужна, потому что скрывать нечего.
+// R04 вариант B был отменён: OS-песочница реализована в cli-exec-sandbox.
+// `dangerouslyDisableSandbox` по-прежнему не объявляется модели: отключение
+// изоляции — решение runtime, а не аргумент произвольного вызова.
 const BASH_SANDBOX_FIELD_NAME = "dangerouslyDisableSandbox";
-const BASH_SANDBOX_ENFORCEMENT = "not_implemented";
+// Изоляция исполнения: политика запрашивается у runtime, фактический режим
+// возвращается adapter-ом в `result.sandbox` и попадает в наш output.
+const BASH_SANDBOX_PROFILE = "workspace-write";
 
 /**
- * Provider-visible output: у Bash нет статуса sandbox, поэтому поле не
- * описывается. Runtime-output schema контракта сохраняет optional-поле для
- * чтения старых persisted-результатов.
+ * Provider-visible output: статус песочницы теперь реальный (`result.sandbox`),
+ * поэтому поле описывается моделью-fulfillment схемой и не вырезается.
  */
 function createBashProviderOutputSchema(): JsonSchema {
-  const properties = readSchemaRecord(BashOutputJsonSchema.properties);
-  if (!properties || !(BASH_SANDBOX_FIELD_NAME in properties)) return BashOutputJsonSchema;
-  const providerProperties = { ...properties };
-  delete providerProperties[BASH_SANDBOX_FIELD_NAME];
-  return { ...BashOutputJsonSchema, properties: providerProperties };
-}
-
-function readSchemaRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  return BashOutputJsonSchema;
 }
 
 const BASH_PROVIDER_OUTPUT_SCHEMA = createBashProviderOutputSchema();
-
-/** Внутренний trace: фактическое отсутствие OS-sandbox, не запрос модели. */
-function createBashSandboxTrace(): ExecutionSandboxPolicy {
-  return {
-    enabled: false,
-    // Честный маркер для внутренней диагностики: политика не применяется,
-    // потому что enforcement отсутствует. Adapter поле не читает.
-    metadata: { enforcement: BASH_SANDBOX_ENFORCEMENT },
-  };
-}
 
 function _getBashPrompt(
   timeoutPolicy: BashTimeoutPolicy = DEFAULT_BASH_TIMEOUT_POLICY,
@@ -508,10 +488,9 @@ function createExecutionRequest(
       maxPersistedBytes: MAX_RUNTIME_PERSISTED_OUTPUT_BYTES,
       persistOutput: input.run_in_background ? "always" : "on_truncate",
     },
-    // R04: sandbox-политика — только внутренний trace. Adapter не читает
-    // request.sandbox (см. adapters/src/exec/node-execution-adapter-run.ts:399-400),
-    // поэтому enabled всегда false: OS-изоляции нет, и это не запрос модели.
-    sandbox: createBashSandboxTrace(),
+    // R04 заменён: adapter применяет изоляцию и возвращает фактический режим
+    // в result.sandbox; здесь передаётся только политика.
+    sandbox: createBashSandboxPolicy(context, context.workingDirectory),
     trace: {
       traceId: context.traceId,
       spanId: context.spanId,
@@ -657,3 +636,33 @@ function createBashInputJsonSchema(timeoutPolicy: BashTimeoutPolicy): Record<str
     },
   };
 }
+
+/**
+ * Реальная политика изоляции для Bash.
+ *
+ * `workspacePath` — корень записи; всё остальное монтируется read-only внутри
+ * `bwrap`, а на `degraded` cwd принудительно остаётся внутри workspace.
+ * `networkAccess` берётся из окружения runtime: `deny` включается, когда
+ * workspace помечен как офлайн.
+ */
+function createBashSandboxPolicy(
+  context: ToolExecutionContext,
+  workingDirectory: string | undefined,
+): ExecutionSandboxPolicy {
+  const workspacePath = context.workspaceRoot || workingDirectory || process.cwd();
+  return {
+    enabled: true,
+    profile: BASH_SANDBOX_PROFILE,
+    wrap: {
+      profile: BASH_SANDBOX_PROFILE,
+      workspacePath,
+      networkAccess: context.bashSandboxNetwork === "deny" ? "deny" : "allow",
+      limits: BASH_SANDBOX_LIMITS,
+    },
+  };
+}
+
+/** Лимиты по умолчанию: защита от runaway-команд без ломки обычной работы. */
+const BASH_SANDBOX_LIMITS = {
+  maxFileSizeBytes: 5 * 1024 * 1024 * 1024,
+} as const;

@@ -8,6 +8,7 @@ import type {
   BackgroundExecutionStartResult,
   ExecutionResult,
   ExecutionRunOptions,
+  ExecutionSandboxReport,
   ExecutionShellDialect,
 } from "@zcode/contracts";
 
@@ -72,6 +73,8 @@ export interface PreparedChildSpawn {
   cwdDialect: ExecutionShellDialect;
   cwdFilePath?: string;
   spawnOptions: SpawnOptions;
+  /** Факт применения песочницы; прокидывается в ExecutionResult. */
+  sandboxReport?: ExecutionSandboxReport;
 }
 
 export interface ActiveExecutionRecord {

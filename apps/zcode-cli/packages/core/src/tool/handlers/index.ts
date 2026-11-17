@@ -28,6 +28,7 @@ import { editToolEntry } from "./edit.js";
 import { applyPatchToolEntry } from "./apply-patch.js";
 import { multiEditToolEntry } from "./multi-edit.js";
 import { bashToolEntry, createBashToolEntry } from "./bash.js";
+import { ptySessionToolEntry } from "./pty-session.js";
 import type { BashTimeoutPolicy } from "../bash-timeout-policy.js";
 import { createJsToolEntry, jsToolEntry } from "./node-repl.js";
 import { globToolEntry } from "./glob.js";
@@ -93,6 +94,9 @@ export const builtInTools: ToolEntry[] = [
   applyPatchToolEntry,
   multiEditToolEntry,
   bashToolEntry,
+  // Интерактивные PTY-сессии: визарды, REPL, dev-серверы. Регистрируется только
+  // когда runtime предоставил ptySessionPort (иначе инструмент бесполезен).
+  ptySessionToolEntry,
   globToolEntry,
   grepToolEntry,
   webFetchToolEntry,
@@ -214,6 +218,11 @@ interface RegisterBuiltInToolsOptions {
   includeDynamicWorkflow?: boolean;
   /** node_repl（js）默认关闭，由官方 browser-use 插件启用。 */
   includeNodeRepl?: boolean;
+  /**
+   * Интерактивные PTY-сессии. Включается только когда runtime передал
+   * ptySessionPort: без порта инструмент вернул бы configuration error.
+   */
+  includePtySession?: boolean;
   /** browser-use 说明和 agent.browsers 注入由官方 browser-use 插件 + 宿主 browser bridge 共同启用。 */
   includeBrowserUse?: boolean;
   /** Host-provided, read-only local code graph/search capability. */
@@ -299,6 +308,9 @@ export function registerBuiltInTools(
       continue;
     }
     if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
+      continue;
+    }
+    if (entry.metadata.name === "PtySession" && options.includePtySession !== true) {
       continue;
     }
     if (entry.metadata.name === "CodeIndex" && options.includeCodeIndex !== true) {

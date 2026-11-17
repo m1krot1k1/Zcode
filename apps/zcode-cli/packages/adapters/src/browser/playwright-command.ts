@@ -3,14 +3,50 @@ import type {
   BrowserPlaywrightAction,
   BrowserPlaywrightModifier,
 } from "@zcode/contracts";
-import type { Locator, Page } from "playwright-core";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import type { Download, FileChooser, Locator, Page } from "playwright-core";
 
 const DEFAULT_TIMEOUT_MS = 3_000;
 type PartialResult = Omit<BrowserCommandResult, "elapsedMs">;
 
+/**
+ * Контекст выполнения Playwright-действий.
+ *
+ * `workspacePath` обязателен для файловых операций: и загрузка, и скачивание должны
+ * оставаться внутри workspace. Без него файловые операции отклоняются, а не «делают
+ * что-нибудь» — молчаливый выход за пределы рабочей директории недопустим.
+ */
+export interface ManagedPlaywrightContext {
+  workspacePath?: string;
+}
+
+const downloads = new Map<string, Download>();
+const fileChoosers = new Map<string, FileChooser>();
+
 function timeoutMs(value?: number): number {
   if (value === undefined) return DEFAULT_TIMEOUT_MS;
+  if (!Number.isFinite(value)) return DEFAULT_TIMEOUT_MS;
   return Math.min(DEFAULT_TIMEOUT_MS, Math.max(1, Math.floor(value)));
+}
+
+/**
+ * Проверяет, что путь лежит внутри workspace.
+ *
+ * Сравнение идёт по нормализованным абсолютным путям, поэтому `..` и симлинк-подобные
+ * обходы в аргументе не проходят: `relative()` вернёт путь с `..`, и проверка падает.
+ */
+export function assertPathInsideWorkspace(targetPath: string, workspacePath: string): string {
+  const root = resolve(workspacePath);
+  const target = resolve(root, targetPath);
+  const relativePath = relative(root, target);
+  const outside =
+    relativePath === "" ? false : relativePath.startsWith("..") || isAbsolute(relativePath);
+  if (outside) {
+    throw new Error(
+      `Файловая операция вне workspace запрещена: ${targetPath} (workspace: ${root})`,
+    );
+  }
+  return target;
 }
 
 function locatorFor(page: Page, selector: string): Locator {
@@ -129,6 +165,7 @@ async function runLocatorAction(
 export async function executeManagedPlaywrightAction(
   page: Page,
   action: BrowserPlaywrightAction,
+  context: ManagedPlaywrightContext = {},
 ): Promise<PartialResult> {
   switch (action.name) {
     case "domSnapshot":
@@ -251,9 +288,72 @@ export async function executeManagedPlaywrightAction(
       const value = await runLocatorAction(page, action);
       return value === undefined ? { ok: true } : { ok: true, value };
     }
-    case "waitForEvent":
-    case "downloadPath":
-    case "fileChooserSetFiles":
-      throw new Error(`Playwright action '${action.name}' is unavailable`);
+    /**
+     * `waitForEvent` реально ждёт download/filechooser и кэширует полученный объект.
+     * Кэш нужен, потому что `downloadPath`/`fileChooserSetFiles` вызываются отдельной
+     * командой уже после события; без него объект был бы потерян.
+     */
+    case "waitForEvent": {
+      const timeout = timeoutMs(action.timeoutMs);
+      if (action.event === "download") {
+        const download = await page.waitForEvent("download", { timeout });
+        downloads.set(download.url() || `download:${downloads.size + 1}`, download);
+        return {
+          ok: true,
+          value: {
+            suggestedFilename: download.suggestedFilename(),
+            url: download.url(),
+          },
+        };
+      }
+      const chooser = await page.waitForEvent("filechooser", { timeout });
+      const chooserId = `filechooser:${fileChoosers.size + 1}`;
+      fileChoosers.set(chooserId, chooser);
+      return { ok: true, value: { fileChooserId: chooserId, multiple: chooser.isMultiple() } };
+    }
+    case "downloadPath": {
+      const download = downloads.get(action.downloadId);
+      if (!download) {
+        throw new Error(
+          `Download '${action.downloadId}' неизвестен. Сначала вызовите waitForEvent({ event: "download" }) и передайте полученный downloadId.`,
+        );
+      }
+      // Скачивание за пределы workspace запрещено: путь валидируется до записи файла.
+      const workspacePath = context.workspacePath;
+      if (!workspacePath) {
+        throw new Error(
+          "Скачивание требует workspacePath: сохранять файлы вне workspace небезопасно.",
+        );
+      }
+      const target = assertPathInsideWorkspace(download.suggestedFilename(), workspacePath);
+      await download.saveAs(target);
+      const failure = await download.failure();
+      if (failure) throw new Error(`Скачивание не удалось: ${failure}`);
+      return { ok: true, value: { path: target } };
+    }
+    case "fileChooserSetFiles": {
+      const chooser = fileChoosers.get(action.fileChooserId);
+      if (!chooser) {
+        throw new Error(
+          `FileChooser '${action.fileChooserId}' неизвестен. Сначала вызовите waitForEvent({ event: "filechooser" }).`,
+        );
+      }
+      const workspacePath = context.workspacePath;
+      if (!workspacePath) {
+        throw new Error(
+          "Загрузка файлов требует workspacePath: читать файлы вне workspace небезопасно.",
+        );
+      }
+      // Каждый путь валидируется отдельно: один внешний файл не должен протащить остальные.
+      const files = action.files.map((file) => assertPathInsideWorkspace(file, workspacePath));
+      await chooser.setFiles(files, { timeout: timeoutMs(action.timeoutMs) });
+      return { ok: true, value: { count: files.length } };
+    }
   }
+}
+
+/** Снимает кэш скачиваний/chooser'ов. Вызывается при закрытии сессии/контекста. */
+export function releaseManagedPlaywrightResources(): void {
+  downloads.clear();
+  fileChoosers.clear();
 }

@@ -386,10 +386,17 @@ export function createCuaServices(args: BuildContext & CoreServices) {
       workspaceIdentity?: string,
       restartOptions?: CuaPermissionRestartOptions,
     ): Promise<CuaPermissionRestartResult> {
+      // macOS перезапускает Helper-процесс (TCC привязан к процессу). Windows/Linux
+      // Helper-процесса в этом смысле не имеют: Linux-хост перепроверяет окружение
+      // через probe(refresh) при следующем действии, поэтому «перезапуск» здесь —
+      // честный no-op с явным статусом, а не имитация.
       if (process.platform !== "darwin") {
         return {
-          ok: false,
-          reason: "CUA permissions are only available on macOS.",
+          ok: process.platform === "win32" || process.platform === "linux",
+          reason:
+            process.platform === "linux"
+              ? "Linux CUA host не имеет Helper-процесса: проверка окружения выполняется при следующем действии."
+              : "CUA Helper restart is only required on macOS.",
         };
       }
       const context = workspacePath ? { workspacePath, workspaceIdentity } : undefined;

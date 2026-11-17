@@ -48,6 +48,15 @@ export function hasSideEffects(command: BrowserCommand): boolean {
 export function classifyError(error: unknown): BrowserErrorCode {
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
   if (error instanceof Error && error.name === "TimeoutError") return "timeout";
+  // Явная классификация недоступного браузера: агент получает код и точную инструкцию
+  // установки вместо невнятного execution_error.
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "browser_not_installed"
+  ) {
+    return "browser_not_installed";
+  }
   if (error instanceof Error && /unavailable|closed|disconnected/iu.test(error.message)) {
     return "backend_unavailable";
   }
