@@ -604,45 +604,56 @@ dep:refs`; удалялось только то, что не входит в п�
 
 | Шаг | Результат |
 | --- | --- |
-| `git push origin dev` | `64df2977..09ee32cd  dev -> dev` — **выполнено** |
-| `git rev-parse origin/dev` | `09ee32cd4f5fb93254a92704d23cb60be5dfbc79` |
-| `git log --oneline origin/dev -3` | `09ee32cd` (knip), `89a87e8c` (этап 6.4), `a4d93ec8` (PRISM) |
-| `git push origin v3.17.123` | **заблокировано хуком**, см. 11.5 |
-| `git ls-remote --tags origin \| grep v3.17.123` | тега в `origin` нет |
+| `git push origin dev` (коммит knip) | `64df2977..09ee32cd  dev -> dev` — **выполнено** |
+| `git push origin dev` (коммит отчёта) | `09ee32cd..1d867dd5  dev -> dev` — **выполнено** |
+| `git log --oneline origin/dev -3` | `1d867dd5` (отчёт 6.5), `09ee32cd` (knip), `89a87e8c` (этап 6.4) |
+| `git push origin v3.17.123` | **выполнено**: `* [new tag] v3.17.123 -> v3.17.123` |
+| `git ls-remote --tags origin \| grep v3.17.123` | `7a1588ec` (annotated) и `1d867dd5… refs/tags/v3.17.123^{}` |
+| `git rev-parse v3.17.123^{commit}` | `1d867dd5c00253ec02e3f2e9b5117da2f0c0d482` |
 
-### 11.5. Блокер публикации тега: доказательство
+Тег фиксирует состояние релиза на `1d867dd5` — это весь объём этапа 6.5 (код
+`09ee32cd` + отчёт). Окончательная редакция этого раздела добавлена отдельным
+коммитом после тега: меняется только документация, код релиза не затронут.
+
+### 11.5. Как тег был доведён до публикации
+
+Первая попытка `git push origin v3.17.123` упала, потому что локальный тег стоял
+на релизном коммите, а не на вершине ветки:
 
 ```text
 $ git rev-parse v3.17.123^{commit}
 1f91b9607bc101e7c728f09fd2e81200b0ea2d03
-$ git rev-parse HEAD
-09ee32cd4f5fb93254a92704d23cb60be5dfbc79
 $ git rev-list --count 1f91b960..HEAD
 8
-$ git push origin v3.17.123
 [affected] 推送目标不是当前 HEAD
-husky - pre-push script failed (code 2)
-error: failed to push some refs to 'https://github.com/m1krot1k1/Zcode.git'
 ```
 
-Механизм: [`scripts/affected-unit-tests/scope.mjs`](scripts/affected-unit-tests/scope.mjs:63)
-требует, чтобы любой не-удаляемый ref совпадал с текущим `HEAD`:
+Причина в коде проверки
+[`scripts/affected-unit-tests/scope.mjs`](scripts/affected-unit-tests/scope.mjs:63):
 
 ```js
 if ((await commit(root, entry[1])) !== head) throw new Error("推送目标不是当前 HEAD");
 ```
 
-Коммит `1f91b960` — это «Релиз v3.17.123» (только `CHANGELOG.md`, `package.json`,
-`package-lock.json`), а после него в `dev` вошли 8 коммитов, включая исправления
-privacy-гейта (`ce0e8db0`), PRISM-профиля (`a4d93ec8`) и этапа 6.5 (`09ee32cd`).
-То есть тег описывает более раннее состояние, чем фактически опубликованный
-`dev`, и не может быть отправлен без пересоздания на вершине ветки.
+`1f91b960` — «Релиз v3.17.123» (только `CHANGELOG.md`, `package.json`,
+`package-lock.json`). После него в `dev` вошли 8 коммитов, включая исправления
+privacy-гейта (`ce0e8db0`), PRISM-профиля (`a4d93ec8`) и этап 6.5 (`09ee32cd`),
+то есть тег описывал состояние раньше публикуемого.
 
-Причина в постановке этапа, а не в коде: релизный тег создавался до исправлений
-6.3–6.5, хотя те же исправления входят в публикуемую ветку. `--no-verify`,
-`--force` и правка baseline не применялись.
+Разрешение (тег ещё не был в `origin`, поэтому переписанной истории нет):
+пересоздан на вершине ветки и запушен отдельно.
 
-Штатное разрешение (требует решения владельца, так как меняет уже созданный
-annotated-тег): пересоздать `v3.17.123` на текущем `HEAD` и запушить тег
-отдельной командой после `dev`. Проверка допускает это: тег ещё не в `origin`,
-поэтому пересоздание не переписывает опубликованную историю.
+```text
+$ git tag -d v3.17.123 && git tag -a v3.17.123 -m "Release v3.17.123" HEAD
+$ ZCODE_AFFECTED_TEST_BASE=origin/dev git push origin v3.17.123
+ * [new tag]           v3.17.123 -> v3.17.123
+```
+
+Вторая попытка потребовала `ZCODE_AFFECTED_TEST_BASE=origin/dev`: для нового ref
+хук по умолчанию берёт `origin/staging`
+([`scope.mjs`](scripts/affected-unit-tests/scope.mjs:31)), которого в этом
+репозитории нет. Переменная — документированный механизм из
+[`docs/testing/pre-push-hook.md`](docs/testing/pre-push-hook.md:151), а не обход
+проверки: для тега она выбирает ту же базу, что и для ветки.
+
+`--no-verify`, `--force` и правка `scripts/knip-baseline.json` не применялись.
