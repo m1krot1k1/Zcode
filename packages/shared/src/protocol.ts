@@ -7,6 +7,8 @@ import type { WorkspacePurpose } from "./workspacePurpose.js";
 import type { DynamicWorkflowMode } from "./dynamic-workflow-feature.js";
 import type { EmbeddedBrowserViewportPreference } from "./browser-use/command-metadata.js";
 import type { AppToolSearchMode } from "./app-runtime-preferences.js";
+import type { Stage4Settings } from "./stage4-settings/settings.js";
+import type { PromptDepthProfile } from "./prompt-depth.js";
 
 // ── Domain types ──
 
@@ -464,4 +466,20 @@ export interface AppSettings {
   };
   /** 设置页里的临时 endpoint override；正式/测试默认 base url 由 ZCODE_BASE_URL env 管理。 */
   zcodeEndpointOrigin?: string;
+  /**
+   * Настройки подсистем Этапа 4 (4.1–4.6). Единственный владелец — `settingService`;
+   * схемы и дефолты живут в `shared-stage4-settings`, runtime-проекция — в его `host-runtime`.
+   */
+  agentCoreAdvanced?: Stage4Settings["agentCoreAdvanced"];
+  promptEnhancerSettings?: Stage4Settings["promptEnhancerSettings"];
+  chatAutocompleteSettings?: Stage4Settings["chatAutocompleteSettings"];
+  parallelJobsSettings?: Stage4Settings["parallelJobsSettings"];
+  codeIndexSettings?: Stage4Settings["codeIndexSettings"];
+  sandboxSettings?: Stage4Settings["sandboxSettings"];
+  browserAssistantSettings?: Stage4Settings["browserAssistantSettings"];
+  /**
+   * Глубина рассуждений (4.4): читается рантаймом промпта и экраном настроек 4.6.
+   * Тип берётся из `prompt-depth`, чтобы UI и рантайм не расходились в значениях.
+   */
+  promptDepth?: PromptDepthProfile;
 }

@@ -34,6 +34,9 @@ import {
 import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
   OFFICIAL_MCP_DEV_TRUSTED_ORIGINS_ENV,
+  projectStage4SettingsToSessionPreferences,
+  resolvePromptDepthProfile,
+  resolveStage4Settings,
   ZCODE_CUA_PLUGIN_AUTHORITY_ENV_KEY,
   channelReplyHostRequestSchema,
   channelReplyResultSchema,
@@ -298,9 +301,27 @@ export function createAgentServices(
             // 预算已统一，不能把可选远端配置作为本地/手机 shared-host 建会话的前置条件。
             const settings = await settingService.get();
             const modelContextBudgetStrategy = DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY;
+            // Этап 4.6: единственная проекция настроек UI → рантайм. `resolveStage4Settings`
+            // подставляет дефолты для старых `setting.json`, поэтому Host не хранит свою копию.
+            const stage4 = resolveStage4Settings(settings);
+            const stage4Runtime = projectStage4SettingsToSessionPreferences(stage4);
             return {
               askUserQuestionAutoResolutionEnabled:
                 settings.askUserQuestionAutoResolutionEnabled !== false,
+              promptDepth: resolvePromptDepthProfile(settings.promptDepth),
+              workingContextCeilingTokens: stage4Runtime.workingContextCeilingTokens,
+              autoRepairLoopEnabled: stage4Runtime.enableAutoRepairLoop,
+              autoRepairLoopLimits: stage4Runtime.autoRepairLoopLimits,
+              sandboxMode: stage4.sandboxSettings.mode,
+              sandboxAllowNetwork: stage4.sandboxSettings.allowBashNetwork,
+              sandboxCommandTimeoutMs: stage4.sandboxSettings.commandTimeoutMs,
+              subagentMaxParallel: stage4Runtime.subagentMaxParallel,
+              codeIndexAutoStart: stage4.codeIndexSettings.autoStartOnWorkspaceOpen,
+              codeIndexVectorChannel: stage4.codeIndexSettings.enableVectorChannel,
+              codeIndexTokenBudget: stage4.codeIndexSettings.searchResultTokenBudget,
+              backgroundFileTasks: stage4.parallelJobsSettings.backgroundFileTasks,
+              chatAutocompleteEnabled: stage4.chatAutocompleteSettings.enabled,
+              promptEnhancerEnabled: stage4.promptEnhancerSettings.enabled,
               nativeSearchEnhancementsEnabled: settings.nativeSearchEnhancementsEnabled !== false,
               toolSearchMode: settings.toolSearchMode ?? "off",
               workspaceBoundary: settings.workspaceBoundary ?? "allow",

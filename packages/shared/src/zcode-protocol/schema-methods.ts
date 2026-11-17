@@ -35,6 +35,7 @@ import {
 } from "./schema-mcp.js";
 import {
   zcodeCodeIndexQueryParamsSchema,
+  zcodeCodeIndexNotifyMutatedParamsSchema,
   zcodeCodeIndexQueryResultSchema,
 } from "./schema-session-commands.js";
 import {
@@ -62,6 +63,7 @@ export const zcodeProtocolMethods = {
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   subagentsReadRuntimeConfig: "subagents/readRuntimeConfig",
   codeIndexQuery: "code-index/query",
+  codeIndexNotifyMutated: "code-index/notify-mutated",
   sessionRead: "session/read",
   sessionMessages: "session/messages",
   sessionEvents: "session/events",
@@ -202,6 +204,10 @@ export const zcodeProtocolSessionMethodContracts = {
   [zcodeProtocolMethods.codeIndexQuery]: {
     params: zcodeCodeIndexQueryParamsSchema,
     result: zcodeCodeIndexQueryResultSchema,
+  },
+  [zcodeProtocolMethods.codeIndexNotifyMutated]: {
+    params: zcodeCodeIndexNotifyMutatedParamsSchema,
+    result: zcodeProtocolEmptyResultSchema,
   },
   [zcodeProtocolMethods.interactionRequestOpenCodeAgentRun]: {
     params: zcodeOpenCodeAgentRunRequestSchema,

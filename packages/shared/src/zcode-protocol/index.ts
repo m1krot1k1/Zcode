@@ -324,6 +324,7 @@ export {
   zcodeBackgroundTaskInfoSchema,
   zcodeBrowserAmbientContextSchema,
   zcodeCodeIndexQueryParamsSchema,
+  zcodeCodeIndexNotifyMutatedParamsSchema,
   zcodeCodeIndexQueryResultSchema,
   zcodeCodeIndexQueryTimeoutMs,
   zcodeDynamicWorkflowModeSchema,

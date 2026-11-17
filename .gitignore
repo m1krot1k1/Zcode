@@ -79,4 +79,7 @@ packages/desktop/resources/macos-window-bounds/
 __pycache__/
 *.pyc
 .zcode-runtime
+# Локальный SQLite-индекс кодовой базы (`code-intelligence`): генерируется рантаймом
+# при индексации workspace и не должен попадать в коммит.
+.zcode-code-index/
 .plan/

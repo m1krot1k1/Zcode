@@ -2129,12 +2129,211 @@ modules:
     layers:
       domain: .
     owner: agent
+  # cli-exec-sandbox：由 architecture:adopt 登记
+  - id: cli-exec-sandbox
+    roots:
+      - apps/zcode-cli/packages/adapters/src/exec/sandbox
+      - apps/zcode-cli/packages/adapters/tests/exec-sandbox
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/exec/sandbox/index.ts
+      - apps/zcode-cli/packages/adapters/src/exec/sandbox/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-exec-pty：由 architecture:adopt 登记
+  - id: cli-exec-pty
+    roots:
+      - apps/zcode-cli/packages/adapters/src/exec/pty
+      - apps/zcode-cli/packages/adapters/tests/exec-pty
+    managed: true
+    requires:
+      - cli-exec-sandbox
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/exec/pty/index.ts
+      - apps/zcode-cli/packages/adapters/src/exec/pty/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+
+  # cli-browser-telemetry：stateful Playwright-телеметрия действия (console/pageerror/4xx-5xx/ARIA/DOM/кадр).
+  # Владелец подписок на живую Page; consumer — browser-контроллер адаптера.
+  - id: cli-browser-telemetry
+    roots:
+      - apps/zcode-cli/packages/adapters/src/browser/telemetry
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/browser/telemetry/index.ts
+      - apps/zcode-cli/packages/adapters/src/browser/telemetry/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+
+  # services-cua-linux-host：нативный Linux Computer Use (koffi FFI libX11/libXtst,
+  # XDG RemoteDesktop/Screenshot portal, каскад утилит захвата, DPI-нормализация).
+  # Владелец Display*/портал-сессии и кэша probe(); потребитель — cua-helpers/CUA broker.
+  - id: services-cua-linux-host
+    roots:
+      - packages/services/src/cua-linux-host
+      - packages/services/test/cua-linux-host
+    managed: true
+    requires:
+      # Единственная внешняя зависимость — общий сервисный логгер (createServiceLogger).
+      # Он живёт в unmanaged-корне services и не является рантайм-логикой CUA.
+      - services
+    publicEntrypoints:
+      - packages/services/src/cua-linux-host/index.ts
+      - packages/services/src/cua-linux-host/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+
+  # cli-auto-repair-loop：детерминированный замкнутый цикл Action → Telemetry → Invariant
+  # Gate → Diagnosis → Repair → Re-verify. Владелец лимитов/бюджета/истории сигнатур;
+  # порты (typecheck/lint/тесты/браузер/PTY/файлы) внедряются вызывающим.
+  - id: cli-auto-repair-loop
+    roots:
+      - apps/zcode-cli/packages/core/src/runtime/auto-repair-loop
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/runtime/auto-repair-loop/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/auto-repair-loop/contract.ts
+    layers:
+      app: .
+    owner: agent
+  # shared-chat-autocomplete：由 architecture:adopt 登记
+  - id: shared-chat-autocomplete
+    roots:
+      - packages/shared/src/chat-autocomplete
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/chat-autocomplete/index.ts
+      - packages/shared/src/chat-autocomplete/contract.ts
+      - packages/shared/src/chat-autocomplete/postprocess.ts
+    layers:
+      contract: .
+    owner: conversation
+  # services-chat-autocomplete：由 architecture:adopt 登记
+  - id: services-chat-autocomplete
+    roots:
+      - packages/services/src/chat-autocomplete
+    managed: true
+    requires:
+      - code-intelligence
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/chat-autocomplete/index.ts
+      - packages/services/src/chat-autocomplete/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-lexical-ghost-autocomplete：由 architecture:adopt 登记
+  - id: ui-lexical-ghost-autocomplete
+    roots:
+      - packages/ui/src/lexical-ghost-autocomplete
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lexical-ghost-autocomplete/index.ts
+      - packages/ui/src/lexical-ghost-autocomplete/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-prompt-enhancer：кнопка Enhance Prompt и действие для системных промптов.
+  - id: ui-prompt-enhancer
+    roots:
+      - packages/ui/src/prompt-enhancer-ui
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/prompt-enhancer-ui/index.ts
+      - packages/ui/src/prompt-enhancer-ui/contract.ts
+      - packages/ui/src/prompt-enhancer-ui/ComposerEnhancePrompt.tsx
+    layers:
+      ui: .
+    owner: conversation
+  # ui-settings-stage4：единая панель настроек подсистем Этапа 4 (4.1–4.6).
+  - id: ui-settings-stage4
+    roots:
+      - packages/ui/src/settings-stage4
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings-stage4/index.ts
+      - packages/ui/src/settings-stage4/contract.ts
+      - packages/ui/src/settings-stage4/SettingsStage4Section.tsx
+    layers:
+      ui: .
+    owner: conversation
+  # shared-stage4-settings：由 architecture:adopt 登记
+  - id: shared-stage4-settings
+    roots:
+      - packages/shared/src/stage4-settings
+    managed: true
+    requires:
+      - shared
+      - shared-chat-autocomplete
+    publicEntrypoints:
+      - packages/shared/src/stage4-settings/index.ts
+      - packages/shared/src/stage4-settings/settings.ts
+      - packages/shared/src/stage4-settings/host-runtime.ts
+    layers:
+      contract: .
+    owner: conversation
+  # shared-prompt-enhancer：由 architecture:adopt 登记
+  - id: shared-prompt-enhancer
+    roots:
+      - packages/shared/src/prompt-enhancer
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/prompt-enhancer/index.ts
+      - packages/shared/src/prompt-enhancer/contract.ts
+    layers:
+      contract: .
+    owner: conversation
+  # prompt-enhancer：由 architecture:adopt 登记
+  - id: prompt-enhancer
+    roots:
+      - packages/services/src/prompt-enhancer
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/prompt-enhancer/index.ts
+      - packages/services/src/prompt-enhancer/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
 
 exceptions:
   # Two focused helpers added with the root-auto and crash-resume specs. Keep the
   # exception path-exact; do not widen it to the whole zcode-cli tree.
   - rule: unmanaged-new-file
     paths:
+      # Этап 6.1b: версия приложения для не-упакованного Electron.
+      # electron-updater читает app.getVersion() при импорте main-бандла и падает на "0.0";
+      # bootstrap обязан выполниться ДО остальных import'ов, поэтому живёт одним файлом
+      # в unmanaged-корне packages/desktop/src/main рядом с другими desktopEarly*.
+      # Исключение path-exact: модуль из двух файлов вокруг двух строк был бы накладным.
+      - packages/desktop/src/main/desktopAppVersionBootstrap.ts
+      - packages/desktop/src/main/desktopEarlyAppVersionBootstrap.ts
       - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
       - apps/zcode-cli/packages/core/src/subagent/definitions.ts
       - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
@@ -2166,6 +2365,60 @@ exceptions:
       # Increment 4.2: one projection file next to session events; the ui module
       # is unmanaged, so keep the exception path-exact.
       - packages/ui/src/lib/zcodeSessionProjection/fileTransactions.ts
+      # Этап 6.1c: проводка реактивных диффов в таймлайн. Модуль `ui` unmanaged на уровне
+      # пакета, поэтому держим path-exact на шесть файлов одной фичи: модель проекции
+      # события, изоляция по workspaceKey, store, подписка, панель и обёртка tool-блока.
+      # Регистрировать отдельный managed-модуль из шести файлов было бы накладным и
+      # разорвало бы соседство с остальными v4-компонентами.
+      - packages/ui/src/lib/fileTransactionProjection.ts
+      - packages/ui/src/lib/fileTransactionWorkspaceScope.ts
+      - packages/ui/src/store/fileTransactionStore.ts
+      - packages/ui/src/hooks/useFileTransactionStream.ts
+      - packages/ui/src/v4/FileTransactionSummaryPanel.tsx
+      - packages/ui/src/v4/ToolFileTransactionSummary.tsx
+      # Increment 4.5a: instrument PtySession — это tool-компонент внутри
+      # unmanaged zcode-cli, как MultiEdit/Bash. Держим исключение path-exact;
+      # сама песочница и PTY-менеджер живут в managed-модулях adapters.
+      - apps/zcode-cli/packages/contracts/src/tools/pty-session.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/pty-session.ts
+      # Increment 4.5b: схема BrowserActionObservation — общий контракт телеметрии для
+      # адаптера и потребителей. Модуль shared unmanaged на уровне пакета; исключение path-exact.
+      - packages/shared/src/browser-use/observation.ts
+      # Increment 4.6: проводка существующих Host-сервисов к PromptEnhancerService.
+      # Это не модуль, а один файл рядом с остальными `src/node/*` сервисными проводами
+      # в unmanaged-корне services; логика улучшения живёт в managed `prompt-enhancer`.
+      - packages/services/src/node/prompt-enhancer-ports.ts
+      # Increment 4.4: профили глубины промпта — один enum, который читают настройки,
+      # рантайм промпта и UI композера. Модуль shared unmanaged на уровне пакета,
+      # отдельный модуль из одного файла был бы накладным; исключение path-exact.
+      - packages/shared/src/prompt-depth.ts
+      # Increment 4.6: React-хук доступа к PromptEnhancerService. Хук — это слой доступа
+      # ui к сервису, а не самостоятельный модуль; ui unmanaged на уровне пакета.
+      - packages/ui/src/hooks/usePromptEnhancer.ts
+      # Increment 4.3: воспроизводимый бенчмарк кодового индекса. Это dev-скрипт
+      # (запускается вручную, не попадает в сборку пакета), поэтому регистрировать его
+      # как модуль не имеет смысла; держим исключение path-exact на один файл,
+      # не расширяя его на весь packages/services/bench.
+      - packages/services/bench/code-intelligence-bench.mjs
+      # Increment 4.4/4.6: команда `/enhance` и её формат результата. Это tool-компоненты
+      # внутри unmanaged zcode-cli, как MultiEdit/Bash/PtySession — модуля не образуют.
+      - apps/zcode-cli/packages/cli/src/enhance-command.ts
+      - apps/zcode-cli/packages/cli/src/command-center/handlers/enhance.ts
+      # Increment 4.4: когнитивные протоколы — секция системного контекста внутри
+      # unmanaged zcode-cli core; живёт рядом с остальными `context/sections/*`.
+      - apps/zcode-cli/packages/core/src/context/cognitive-protocols.ts
+      # Increment 4.6: жизненный цикл protocol-канала Host'а для enhance-запросов;
+      # один файл рядом с остальной проводкой CLI в unmanaged zcode-cli.
+      - apps/zcode-cli/packages/cli/src/protocol-lifecycle.ts
+      # Этап 5: разбиение `agent-runtime.ts` (858 → 508 значимых строк) под лимит
+      # `max-lines`. Публичная поверхность вынесена в отдельный файл declaration merging;
+      # это не модуль, а часть того же unmanaged zcode-cli core.
+      - apps/zcode-cli/packages/core/src/runtime/agent-runtime-surface.ts
+      # Этап 5: разбиение `turn-model-step.ts` (830 → под 800) под лимит `max-lines`.
+      # Диагностика шага и ветка output-token-limit вынесены в соседние helpers
+      # того же unmanaged zcode-cli core; поведение и порядок событий не менялись.
+      - apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-diagnostics.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-output-limit.ts
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

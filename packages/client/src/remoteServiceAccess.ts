@@ -2,6 +2,8 @@ import { IGenUiService } from "@zcode/services";
 import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
 import {
   ICodeIntelligenceService,
+  IPromptEnhancerService,
+  IChatAutocompleteService,
   IFileService,
   IMediaPreviewService,
   IGitService,
@@ -61,6 +63,8 @@ import {
   type WindowProjectDirectoryServices,
   type CodeIntelligenceService,
   type IServiceAccessor,
+  type PromptEnhancerService,
+  type ChatAutocompleteService,
 } from "@zcode/services";
 
 /**
@@ -122,6 +126,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly subagentsService: ISubagentsService;
   /** Optional local Host code index; never exposed by Web/remote transports by default. */
   readonly codeIntelligenceService?: CodeIntelligenceService;
+  /** Нативное улучшение промптов; доступно на любом Host, где зарегистрирован канал. */
+  readonly promptEnhancerService: PromptEnhancerService;
+  readonly chatAutocompleteService: ChatAutocompleteService;
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
@@ -334,6 +341,16 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),
+    );
+    // Enhancer не зависит от локального индекса: он работает и на удалённом Host,
+    // поэтому проксируется безусловно, как git или file.
+    this.promptEnhancerService = ProxyChannel.toService<PromptEnhancerService>(
+      channelClient.getChannel(IPromptEnhancerService.channelName),
+    );
+    // Ghost-подсказка не зависит от локального индекса: она работает и на удалённом
+    // Host, поэтому канал проксируется безусловно, как enhancer или git.
+    this.chatAutocompleteService = ProxyChannel.toService<ChatAutocompleteService>(
+      channelClient.getChannel(IChatAutocompleteService.channelName),
     );
   }
 }

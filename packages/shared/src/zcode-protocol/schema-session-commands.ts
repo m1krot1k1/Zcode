@@ -423,6 +423,25 @@ export const zcodeCodeIndexQueryParamsSchema = z.discriminatedUnion("action", [
     .strict(),
 ]);
 
+/**
+ * Сигнал о зафиксированных путях.
+ *
+ * Отдельный метод вместо расширения `query`: это команда изменения состояния кеша, а не
+ * чтение. Host проверяет границы workspace и дебаунсит батч так же, как события watcher.
+ */
+export const zcodeCodeIndexNotifyMutatedParamsSchema = z
+  .object({
+    sessionId: nonEmptyString,
+    workspacePath: nonEmptyString,
+    changed: z.array(z.string().min(1).max(4096)).max(4000).default([]),
+    removed: z.array(z.string().min(1).max(4096)).max(4000).default([]),
+  })
+  .strict();
+
+export type ZCodeCodeIndexNotifyMutatedParams = z.infer<
+  typeof zcodeCodeIndexNotifyMutatedParamsSchema
+>;
+
 export const zcodeCodeIndexQueryResultSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status"), status: codeIndexStatusSchema }).strict(),
   z
@@ -481,6 +500,28 @@ export const zcodeSessionRuntimePreferencesResultSchema = z
     modelContextBudgetStrategy: zcodeModelContextBudgetStrategySchema.default(
       DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     ),
+    // Этап 4.6: настройки новых подсистем доезжают до runtimeConfig сессии.
+    // Все поля опциональны: старый Host без них продолжает работать на дефолтах.
+    promptDepth: z.enum(["standard", "deep", "max_reasoning"]).optional(),
+    workingContextCeilingTokens: z.number().int().positive().optional(),
+    autoRepairLoopEnabled: z.boolean().optional(),
+    autoRepairLoopLimits: z
+      .object({
+        maxIterations: z.number().int().positive(),
+        maxElapsedMs: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
+    sandboxMode: z.enum(["auto", "bwrap", "seatbelt", "off"]).optional(),
+    sandboxAllowNetwork: z.boolean().optional(),
+    sandboxCommandTimeoutMs: z.number().int().positive().optional(),
+    subagentMaxParallel: z.number().int().nonnegative().optional(),
+    codeIndexAutoStart: z.boolean().optional(),
+    codeIndexVectorChannel: z.boolean().optional(),
+    codeIndexTokenBudget: z.number().int().positive().optional(),
+    backgroundFileTasks: z.boolean().optional(),
+    chatAutocompleteEnabled: z.boolean().optional(),
+    promptEnhancerEnabled: z.boolean().optional(),
   })
   .strict();
 

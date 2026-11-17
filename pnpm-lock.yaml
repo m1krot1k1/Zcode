@@ -265,6 +265,9 @@ importers:
       koffi:
         specifier: 2.15.6
         version: 2.15.6
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
       playwright-core:
         specifier: 1.59.1
         version: 1.59.1
@@ -1368,12 +1371,18 @@ importers:
       smol-toml:
         specifier: ^1.6.1
         version: 1.6.1
+      tree-sitter-wasms:
+        specifier: 0.1.13
+        version: 0.1.13
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
       undici:
         specifier: ^6.23.0
         version: 6.24.1
+      web-tree-sitter:
+        specifier: 0.25.10
+        version: 0.25.10
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -11251,6 +11260,9 @@ packages:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
 
+  tree-sitter-wasms@0.1.13:
+    resolution: {integrity: sha512-wT+cR6DwaIz80/vho3AvSF0N4txuNx/5bcRKoXouOfClpxh/qqrF4URNLQXbbt8MaAxeksZcZd1j8gcGjc+QxQ==}
+
   trim-lines@3.0.1:
     resolution: {integrity: sha512-kRj8B+YHZCc9kQYdWfJB2/oUl9rA99qbowYYBtr4ui4mZyAQ2JpvVBd/6U2YloATfqBhBTSMhTpgBHtU0Mf3Rg==}
 
@@ -16239,7 +16251,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.0.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@24.12.2)(typescript@5.9.3))(vite@8.0.8(@types/node@24.12.2)(esbuild@0.25.12)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@24.12.2)(typescript@6.0.2))(vite@8.0.8(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/expect@4.1.4':
     dependencies:
@@ -23034,6 +23046,8 @@ snapshots:
       which-typed-array: 1.1.24
 
   tree-kill@1.2.2: {}
+
+  tree-sitter-wasms@0.1.13: {}
 
   trim-lines@3.0.1: {}
 

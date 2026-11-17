@@ -11,6 +11,7 @@ import {
   type SubagentRuntimeConfig,
   type ZCodeCodeIndexResult,
   type ZCodeProtocolRequest,
+  zcodeCodeIndexNotifyMutatedParamsSchema,
   zcodeCodeIndexQueryParamsSchema,
   zcodeCodeIndexQueryResultSchema,
   zcodeOpenCodeAgentRunRequestSchema,
@@ -440,6 +441,53 @@ export function createRequestHandlersA(
     return;
   }
 
+  /**
+   * Обрабатывает сигнал о зафиксированных путях.
+   *
+   * Границы workspace проверяет владелец индекса (`CodeIntelligenceService`), поэтому Host
+   * только валидирует форму сообщения и передаёт пути в тот же инкрементальный проход.
+   */
+  function handleCodeIndexNotifyMutatedRequest(
+    client: ZCodeProtocolClient,
+    workspace: ZCodeAgentWorkspaceTarget,
+    request: ZCodeProtocolRequest,
+  ): void {
+    void (async () => {
+      const parsed = zcodeCodeIndexNotifyMutatedParamsSchema.safeParse(request.params);
+      if (!parsed.success) {
+        await client.respondError(request.id, {
+          code: -32602,
+          message: "Invalid code index mutation notification",
+        });
+        return;
+      }
+      const service = options?.codeIntelligenceService;
+      if (!service) {
+        await client.respondError(request.id, {
+          code: -32603,
+          message: "Local code index is unavailable on this Host",
+        });
+        return;
+      }
+      try {
+        await service.notifyFilesMutated({
+          workspacePath: workspace.workspacePath,
+          ...(workspace.workspaceIdentity
+            ? { workspaceIdentity: workspace.workspaceIdentity }
+            : {}),
+          changed: parsed.data.changed,
+          removed: parsed.data.removed,
+        });
+        await client.respond(request.id, {});
+      } catch (error) {
+        await client.respondError(request.id, {
+          code: -32603,
+          message: error instanceof Error ? error.message : "Code index update failed",
+        });
+      }
+    })();
+  }
+
   function handleCodeIndexQueryRequest(
     client: ZCodeProtocolClient,
     workspace: ZCodeAgentWorkspaceTarget,
@@ -619,6 +667,7 @@ export function createRequestHandlersA(
 
   return {
     handleInteractionRequestOpenCodeAgentRunRequest,
+    handleCodeIndexNotifyMutatedRequest,
     handleCodeIndexQueryRequest,
     handleSubagentsReadRuntimeConfigRequest,
     handleChannelReplyRequest,

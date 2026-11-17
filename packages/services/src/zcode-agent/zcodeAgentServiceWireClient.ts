@@ -64,6 +64,7 @@ export function createWireClientHelpers(
     handleAutomationListRequest,
     handleAutomationUpdateRequest,
     handleChannelReplyRequest,
+    handleCodeIndexNotifyMutatedRequest,
     handleCodeIndexQueryRequest,
     handleInteractionBrowserExecuteRequest,
     handleInteractionBrowserListRequest,
@@ -409,6 +410,10 @@ export function createWireClientHelpers(
         }
         if (request.method === zcodeProtocolMethods.codeIndexQuery) {
           handleCodeIndexQueryRequest(client, workspace, request);
+          return;
+        }
+        if (request.method === zcodeProtocolMethods.codeIndexNotifyMutated) {
+          handleCodeIndexNotifyMutatedRequest(client, workspace, request);
           return;
         }
         if (request.method === zcodeProtocolMethods.subagentsReadRuntimeConfig) {
