@@ -1,0 +1,14 @@
+{
+  "url": "http://localhost:5273/",
+  "steps": {
+    "initialTitle": "ZCode",
+    "bodyTextSample": "!\nUnexpected error\nWeb Remote Control Failed\n\nAn unexpected error occurred while opening Web remote control.\n\nNext steps\n1\nRefresh this page once.\n2\nIf it still fails, generate a new QR code on desktop.\nError detail\nWebSocket connection failed: ws://localhost:5273/ws\nRetry"
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "WebSocket connection to 'ws://localhost:5273/ws' failed: Connection closed before receiving a handshake response",
+    "WebSocket connection to 'ws://localhost:5273/ws' failed: Connection closed before receiving a handshake response",
+    "WebSocket connection to 'ws://localhost:5273/ws' failed: Connection closed before receiving a handshake response"
+  ],
+  "pageErrors": []
+}

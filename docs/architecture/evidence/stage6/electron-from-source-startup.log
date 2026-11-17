@@ -1,0 +1,29 @@
+App threw an error during load
+Error: App version is not a valid semver version: "0.0"
+    at newError (<home>/Desktop/git/Zcode/node_modules/builder-util-runtime/out/error.js:5:19)
+    at new AppUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/AppUpdater.js:215:55)
+    at new BaseUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/BaseUpdater.js:8:9)
+    at new AppImageUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/AppImageUpdater.js:15:9)
+    at doLoadAutoUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/main.js:51:24)
+    at Object.get [as autoUpdater] (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/main.js:81:32)
+    at file://<home>/Desktop/git/Zcode/packages/desktop/out/main/index.js:3:902
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async loadApplicationPackage (file://<home>/Desktop/git/Zcode/node_modules/electron/dist/resources/default_app.asar/main.js:125:9)
+[1m[47m[31mA JavaScript error occurred in the main process
+[30mUncaught Exception:
+Error: App version is not a valid semver version: "0.0"
+    at newError (<home>/Desktop/git/Zcode/node_modules/builder-util-runtime/out/error.js:5:19)
+    at new AppUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/AppUpdater.js:215:55)
+    at new BaseUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/BaseUpdater.js:8:9)
+    at new AppImageUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/AppImageUpdater.js:15:9)
+    at doLoadAutoUpdater (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/main.js:51:24)
+    at Object.get [as autoUpdater] (<home>/Desktop/git/Zcode/node_modules/electron-updater/out/main.js:81:32)
+    at file://<home>/Desktop/git/Zcode/packages/desktop/out/main/index.js:3:902
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async loadApplicationPackage (file://<home>/Desktop/git/Zcode/node_modules/electron/dist/resources/default_app.asar/main.js:125:9)
+[0m(node:2317446) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `electron --trace-warnings ...` to show where the warning was created)
+
+DevTools listening on ws://127.0.0.1:9223/devtools/browser/0a6af184-979a-435f-847a-3dde514aad95

@@ -1,0 +1,108 @@
+{
+  "artifactsRoot": "/tmp/zcode-e2e-verify/fin2",
+  "caseCount": 9,
+  "cases": [
+    {
+      "assertions": {
+        "deterministicTruncationCode": true,
+        "decomposedRecovery": true,
+        "noJsonParseError": true,
+        "noPartialFileOnDisk": true
+      },
+      "case": "truncated-tool-args",
+      "durationMs": 1591,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "cancellationAborts": true,
+        "emptyInputRejected": true,
+        "modelUnavailableReported": true,
+        "mentionsPreserved": true,
+        "realModelCallReturnedPrompt": true
+      },
+      "case": "enhance-command",
+      "durationMs": 163,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "applyPatchAppliedOnDisk": true,
+        "applyPatchVisibleForNonGptProvider": true,
+        "cacheablePrefixByteStable": true
+      },
+      "case": "prompt-cache-apply-patch",
+      "durationMs": 279,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "autoStartBuiltIndexInBackground": true,
+        "codeIndexToolVisibleToModel": true,
+        "incrementalUpdateApplied": true,
+        "searchSnippetMatched": true
+      },
+      "case": "code-index",
+      "durationMs": 601,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "blockingSignalReturnedToModel": true,
+        "fileRepairedWithoutUser": true,
+        "gateRanRealTypecheckProcess": true
+      },
+      "case": "auto-repair-loop",
+      "durationMs": 440,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "editIndentTolerant": true,
+        "rejectedTransactionLeftNoTrace": true,
+        "rejectedTransactionStatusRejectedSyntax": true,
+        "successfulTransactionCommittedAtomically": true
+      },
+      "case": "multiedit-transaction",
+      "durationMs": 367,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "exitCodeReported": true,
+        "incrementalRead": true,
+        "killTerminates": true,
+        "ptyToolExposed": true
+      },
+      "case": "pty-session",
+      "durationMs": 343,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "escapeBlocked": true,
+        "sandboxModeReported": true,
+        "sandboxReasonWhenDegraded": true
+      },
+      "case": "bash-sandbox",
+      "durationMs": 329,
+      "status": "passed"
+    },
+    {
+      "assertions": {
+        "claimSerialized": true,
+        "childEventsAreSessionScoped": true,
+        "overlappingClaimRejected": true,
+        "rejectedSpawnsWroteNothing": true,
+        "singleWriterOwnsPath": true
+      },
+      "case": "swarm-file-locks",
+      "durationMs": 356,
+      "status": "passed"
+    }
+  ],
+  "failedCaseCount": 0,
+  "generatedAt": "2026-11-17T19:43:13.791Z",
+  "status": "passed",
+  "suite": "session-forensic-replay"
+}

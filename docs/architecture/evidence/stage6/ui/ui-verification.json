@@ -1,0 +1,32 @@
+{
+  "port": "9229",
+  "results": [
+    {
+      "id": "file-transaction-panel-appears",
+      "status": "VERIFIED",
+      "detail": "панель=true, status=committed, compact=false, transactions=1; текст: Изменено файлов: 2+2 -0",
+      "evidence": "<home>/Desktop/git/Zcode/docs/architecture/evidence/stage6/ui/16-file-transaction-panel.png"
+    },
+    {
+      "id": "file-transaction-panel-live-only",
+      "status": "VERIFIED",
+      "detail": "после полного reload панели нет (live-поток не персистируется): подтверждает контракт desktop-continuous",
+      "evidence": "<home>/Desktop/git/Zcode/docs/architecture/evidence/stage6/ui/18-file-transaction-after-reload.png"
+    },
+    {
+      "id": "renderer-console-clean",
+      "status": "VERIFIED",
+      "detail": "ошибок консоли без внешнего CORS: 0; внешний CORS/сеть к zcode.z.ai: 0"
+    }
+  ],
+  "consoleLogs": [
+    {
+      "type": "warning",
+      "text": "MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 zcode:settings-changed listeners added. Use emitter.setMaxListeners() to increase limit\n    at _addListener (node:electron/js2c/sandbox_bundle:2:43268)\n    at IpcRenderer.addListener (node:electron/js2c/sandbox_bundle:2:46156)\n    at Object.onSettingsChanged (<anonymous>:35080:36)"
+    },
+    {
+      "type": "warning",
+      "text": "Tooltip is changing from controlled to uncontrolled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component."
+    }
+  ]
+}

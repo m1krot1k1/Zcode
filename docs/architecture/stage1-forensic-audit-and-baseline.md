@@ -1,7 +1,7 @@
 # Этап 1: Инструментальный аудит архитектуры Zcode, криминалистическая диагностика и базовые метрики
 
 **Дата аудита:** `2026-11-16`  
-**Репозиторий:** `/home/ndppd/Desktop/git/Zcode` (ветка `main`, базовый коммит `48870824fb`, последний релизный тег `v2.68.1`)  
+**Репозиторий:** `<home>/Desktop/git/Zcode` (ветка `main`, базовый коммит `48870824fb`, последний релизный тег `v2.68.1`)  
 **Статус исходного кода:** Не модифицирован (строгое соблюдение режима read-only для `apps/**`, `packages/**`, `config/**`; все локальные изменения пользователя в рабочем дереве сохранены нетронутыми).
 
 ---
@@ -91,13 +91,13 @@
 ### 3.1. Паспорт инцидента и первичные артефакты
 
 Сопоставлены три независимых первичных источника:
-1. Сырой журнал рантайма CLI: `/home/ndppd/.zcode/cli/log/zcode-2026-11-16.jsonl` (включая события потоков `turn`, `model`, `tool`, `subagent`, `compact`).
+1. Сырой журнал рантайма CLI: `<home>/.zcode/cli/log/zcode-2026-11-16.jsonl` (включая события потоков `turn`, `model`, `tool`, `subagent`, `compact`).
 2. Сериализованный снимок сессии: [`session_dee7732e677519c63e3dd10d5eeeaaff.zcode-session`](session_dee7732e677519c63e3dd10d5eeeaaff.zcode-session) (JSON-экспорт дерева сообщений, `parts`, `usage` и метаданных).
 3. Исходный код `apps/zcode-cli` и `packages/services`.
 
 **Точные параметры сессии:**
 - **Session ID:** `session_dee7732e677519c63e3dd10d5eeeaaff`
-- **Рабочая директория (`workspacePath`):** `/home/ndppd/Desktop/test-zcode/new` (fullstack-проект Python FastAPI + React/TypeScript Vite).
+- **Рабочая директория (`workspacePath`):** `<home>/Desktop/test-zcode/new` (fullstack-проект Python FastAPI + React/TypeScript Vite).
 - **Временное окно:** `2026-11-16T16:07:21.751Z` — `2026-11-16T16:33:13.681Z` (**25 мин 51.9 сек**).
 - **Провайдер и модель:** кастомный OpenAI-совместимый провайдер `custom-openai-compatible-mnu97l6p-chat` → OpenRouter API → модель **`qwen/qwen3.6-plus`** (`contextWindow = 1_000_000`, потолок генерации **`maxOutputTokens = 16_384`**).
 - **Режим оркестрации:** `swarm` / Coordinator (`collaborationMode = "coordinator"`) с порождением параллельных дочерних субагентов `general-purpose` (в частности `agent-a44c3399`, `agent-ae31523f`, `agent-a90b79d4`) в **общей рабочей директории** без git-worktree изоляции.
@@ -107,8 +107,8 @@
 
 | Время (UTC) | Агент / Поток | Действие / Вызов инструмента | Фактический исход в JSONL и `.zcode-session` | Корневой механизм в коде |
 | --- | --- | --- | --- | --- |
-| `16:07:21.751Z` | Main (`dee7732e...`) | Старт сессии, приём промпта пользователя на разработку fullstack-системы в `/home/ndppd/Desktop/test-zcode/new`. | Инициализация `AgentRuntime`; `buildCodeIndexTurnHint` возвращает `null`, так как индекс для `/home/ndppd/Desktop/test-zcode/new` не создан (`ENOENT` → `unindexed`), да и для `.py` индекс не работает. | [`codeIntelligenceService.ts`](packages/services/src/code-intelligence/codeIntelligenceService.ts:183), [`runtime-reminders.ts`](apps/zcode-cli/packages/core/src/runtime/helpers/runtime-reminders.ts:340) |
-| `16:07:23Z` – `16:09:10Z` | Main Coordinator | Первичная разведка (`Glob`, `Read`, `Bash`), декомпозиция задачи и запуск волны из **3 параллельных субагентов** через `Agent`. | Все 3 субагента получают `workingDirectory = /home/ndppd/Desktop/test-zcode/new` и начинают одновременно писать и менять смежные файлы backend/frontend. | [`subagent/port.ts`](apps/zcode-cli/packages/core/src/runtime/methods/subagent/port.ts:555) |
+| `16:07:21.751Z` | Main (`dee7732e...`) | Старт сессии, приём промпта пользователя на разработку fullstack-системы в `<home>/Desktop/test-zcode/new`. | Инициализация `AgentRuntime`; `buildCodeIndexTurnHint` возвращает `null`, так как индекс для `<home>/Desktop/test-zcode/new` не создан (`ENOENT` → `unindexed`), да и для `.py` индекс не работает. | [`codeIntelligenceService.ts`](packages/services/src/code-intelligence/codeIntelligenceService.ts:183), [`runtime-reminders.ts`](apps/zcode-cli/packages/core/src/runtime/helpers/runtime-reminders.ts:340) |
+| `16:07:23Z` – `16:09:10Z` | Main Coordinator | Первичная разведка (`Glob`, `Read`, `Bash`), декомпозиция задачи и запуск волны из **3 параллельных субагентов** через `Agent`. | Все 3 субагента получают `workingDirectory = <home>/Desktop/test-zcode/new` и начинают одновременно писать и менять смежные файлы backend/frontend. | [`subagent/port.ts`](apps/zcode-cli/packages/core/src/runtime/methods/subagent/port.ts:555) |
 | `16:10:42Z` – `16:14:18Z` | Субагенты `a44c3399` / `ae31523f` | Генерация крупных монолитных файлов UI/API через `Write` (`content` > 45–55 КБ вместе с reasoning-блоком). | Генерация обрывается ровно на лимите **`outputTokens = 16_384` (`finishReason = "length"`)**. Стриминг-парсер пытается выполнить `JSON.parse` незакрытой JSON-строки аргументов `Write` и падает с `SyntaxError: Unexpected end of JSON input` (`tool_input_invalid_json`). | Потолок `maxOutputTokens = 16384` + отсутствие перехвата `finishReason === "length"` до валидации JSON аргументов tool call. |
 | `16:14:20Z` – `16:18:55Z` | Субагент после `invalid_json` | Повторная попытка записать тот же огромный файл целиком через `Write`, потому что сообщение об ошибке говорит лишь про невалидный JSON, **не сообщая модели, что сработал лимит `max_tokens`**. | Повторный удар в `16_384` выходных токенов, потеря ещё ~1.5–2 минут генерации и десятков тысяч токенов до тех пор, пока модель случайно не сокращает файл или не разбивает запись на `Write` + `Edit`. | Отсутствие специализированной диагностики `tool_call_truncated_by_max_tokens` в `call-runner.ts` / адаптере модели. |
 | `16:16:05Z` – `16:22:40Z` | Параллельные субагенты `a44c3399`, `ae31523f`, `a90b79d4` | Одновременная запись и правка общих файлов (`backend/app/main.py`, `models.py`, `frontend/src/...`) инструментами `Write` и `Edit`. | **Гонка данных ФС:** субагент B перезаписывает через `Write` файл, созданный субагентом A секундой ранее, либо субагент A получает отказ `Edit`: `File has been modified since read, either by the user or by a linter`. | Отсутствие межсубагентного `FileLockRegistry` и git-worktree изоляции; `Write` не блокирует перезапись файла, не прочитанного в текущем `readFileState`, если он появился параллельно. |

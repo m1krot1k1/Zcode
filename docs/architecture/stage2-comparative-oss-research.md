@@ -1,8 +1,8 @@
 # Этап 2: Глубокое сравнительное исследование `kilocode-legacy-main` и открытых SOTA агентных систем — матрица архитектурного отбора
 
 **Дата исследования:** `2026-11-16`  
-**Целевой монорепозиторий:** `/home/ndppd/Desktop/git/Zcode` (лицензия [Apache-2.0](../../LICENSE), среда `Node.js 24.14.0`, `pnpm 10.33.2`, `Electron 41.0.3`)  
-**Локальный референсный репозиторий:** `/home/ndppd/Desktop/git/kilocode-legacy-main` (`v5.16.2`, лицензия `Apache-2.0`, аккумулирующий кодовую базу Kilo Code, Roo Code, Cline и встроенное ядро Continue Dev)  
+**Целевой монорепозиторий:** `<home>/Desktop/git/Zcode` (лицензия [Apache-2.0](../../LICENSE), среда `Node.js 24.14.0`, `pnpm 10.33.2`, `Electron 41.0.3`)  
+**Локальный референсный репозиторий:** `<home>/Desktop/git/kilocode-legacy-main` (`v5.16.2`, лицензия `Apache-2.0`, аккумулирующий кодовую базу Kilo Code, Roo Code, Cline и встроенное ядро Continue Dev)  
 **Базовый контекст:** [Отчёт Этапа 1 (криминалистический аудит и базовые метрики)](stage1-forensic-audit-and-baseline.md)  
 **Статус исходного кода Zcode:** Не модифицирован (режим read-only для всех исходных пакетов).
 
@@ -21,7 +21,7 @@
 
 ---
 
-## 1. Глубокий инженерный разбор исходного кода `/home/ndppd/Desktop/git/kilocode-legacy-main`
+## 1. Глубокий инженерный разбор исходного кода `<home>/Desktop/git/kilocode-legacy-main`
 
 ### 1.1. Diff-движок, мультифайловое редактирование, чекпоинты и Worktree-изоляция
 
