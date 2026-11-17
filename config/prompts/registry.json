@@ -5,7 +5,7 @@
       "id": "identity-stable",
       "path": "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
       "maxChars": 18000,
-      "required": ["# Repository policy", "system-controlled", "buildCognitiveProtocolsBlock"],
+      "required": ["# Priorities", "system-controlled", "buildCognitiveProtocolsBlock"],
       "cacheHint": "stable"
     },
     {
