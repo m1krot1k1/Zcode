@@ -4,7 +4,7 @@ import {
   embeddingFailureFromError,
   requestEmbeddings,
   validateEmbeddingConfig,
-} from "./database.js";
+} from "./embeddings.js";
 import type { EmbeddingCredentialStore } from "./embeddingSettings.js";
 
 export async function probeEmbeddingProvider(

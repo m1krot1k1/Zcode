@@ -10,9 +10,25 @@ export async function indexAndSearch(
     workspacePath,
     query: "workspace identity",
     limit: 8,
+    // Бюджет задаётся в токенах: ответ упаковывается до сериализации и никогда не режется
+    // побайтово, поэтому JSON остаётся валидным при любом лимите.
+    maxTokens: 1500,
   });
   // Results contain workspace-relative paths; the UI resolves them through the file service.
   return result.results;
+}
+
+/**
+ * Reconcile exact paths after an editor save or a committed file transaction.
+ * The service updates only these paths; a watcher batch uses the same entry point.
+ */
+export async function reconcileEditedFiles(
+  service: CodeIntelligenceService,
+  workspacePath: string,
+  changed: string[],
+  removed: string[] = [],
+): Promise<void> {
+  await service.notifyFilesMutated({ workspacePath, changed, removed });
 }
 
 /** Read a bounded graph overview or focus a workspace-relative search hit. */

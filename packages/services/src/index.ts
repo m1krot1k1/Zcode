@@ -305,6 +305,20 @@ export {
   type EmbeddingPhase,
   type EmbeddingTestResult,
 } from "./code-intelligence/contract.js";
+export { IPromptEnhancerService, type PromptEnhancerService } from "./prompt-enhancer/contract.js";
+// Bug 原因: баррель реэкспортировал значения/типы через `./chat-autocomplete/index.js`,
+// а тот реэкспортирует `user-lexicon-store.ts` → `../paths.js` → `node:fs`. Renderer
+// (Vite) подхватывал весь модуль и падал на "node:fs externalized for browser
+// compatibility". Контрактный вход чистый: дескриптор канала + типы, без Node IO.
+export {
+  IChatAutocompleteService,
+  type ChatAutocompleteService,
+} from "./chat-autocomplete/contract.js";
+export type {
+  ChatAutocompleteTextGenerator,
+  ChatAutocompleteModelResolver,
+  ChatAutocompleteContextPorts,
+} from "./chat-autocomplete/service.js";
 export { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/index.js";
 export type {
   OpenCodeAcpConfigOption,

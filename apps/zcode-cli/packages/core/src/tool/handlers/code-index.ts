@@ -53,6 +53,7 @@ export const codeIndexToolEntry: ToolEntry = {
       "For a code task, call status, then a targeted search, and use context/impact/trace for relationships. Answer from the excerpt and path:startLine-endLine when the fact is already in the excerpt. Read only to edit, open a test, or when the excerpt is truncated, endLine is missing, or the needed text is absent. Issue those Reads in one parallel batch with offset = startLine and a limit covering the range — not the whole file and not every caller.",
       "Paths for impact must be workspace-relative. This tool never reads or writes outside the current workspace and never changes files.",
       "If the index is unavailable, empty, or stale, report that and use ordinary file search. A partial index does not prove the code is absent.",
+      "Results are packed to a token budget: when the budget is tight you receive fewer excerpts, each flagged with signatureOnly rather than a truncated JSON body. A truncated budget is not the same as an incomplete index.",
     ].join("\n"),
     readOnly: true,
     destructive: false,
@@ -84,10 +85,13 @@ export const codeIndexToolEntry: ToolEntry = {
     alwaysAllowPatternSources: [],
     denyPriority: "beforeAsk",
   },
+  // `inline`: сервис сам упаковывает выдачу под токен-бюджет и отдаёт валидный JSON.
+  // Стратегия `truncate` резала сериализованный ответ побайтово и ломала JSON
+  // (в baseline: 45 716 символов, обрезанных посередине строки на 24 000 байт).
   resultBudget: {
     maxInlineBytes: 24_000,
     maxModelBytes: 24_000,
-    strategy: "truncate",
+    strategy: "inline",
   },
   timeout: {
     kind: "timed",

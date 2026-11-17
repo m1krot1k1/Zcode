@@ -42,6 +42,8 @@ import type { IPluginsService } from "./plugins/plugins.js";
 import type { IPluginManagementService } from "./plugins/pluginManagement.js";
 import type { ISubagentsService } from "./subagents/subagents.js";
 import type { CodeIntelligenceService } from "./code-intelligence/contract.js";
+import type { ChatAutocompleteService } from "./chat-autocomplete/contract.js";
+import type { PromptEnhancerService } from "./prompt-enhancer/contract.js";
 import type { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/contract.js";
 import type { ICommandsService } from "./commands/commands.js";
 import type { IHooksService } from "./hooks/hooks.js";
@@ -118,6 +120,10 @@ export interface IServiceAccessor {
   readonly subagentsService: ISubagentsService;
   /** Optional on hosts without local workspace filesystem access. */
   readonly codeIntelligenceService?: CodeIntelligenceService;
+  /** Ghost-text автодополнение; проксируется и на удалённый Host. */
+  readonly chatAutocompleteService?: ChatAutocompleteService;
+  /** Нативное улучшение промптов; отсутствует на Host без соответствующего канала. */
+  readonly promptEnhancerService?: PromptEnhancerService;
   /** Available only on the explicitly opted-in window-scoped local Desktop Host. */
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;

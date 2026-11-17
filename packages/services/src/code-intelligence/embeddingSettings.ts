@@ -1,11 +1,15 @@
-import type { CodeIndexStatus, CodeWorkspaceRef } from "./contract.js";
-import {
-  getEmbeddingConfig,
-  statusFromDb,
-  validateEmbeddingConfig,
-  writeText,
-  type CodeIndexDatabase,
-} from "./database.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import type { EmbeddingProvider } from "./contract.js";
+import { validateEmbeddingConfig, type EmbeddingConfig } from "./embeddings.js";
+
+/**
+ * Настройки провайдера эмбеддингов.
+ *
+ * Секрет (API-ключ) живёт только в `ICredentialService` под ключом, производным от
+ * identity-workspace; в индексе и статусе остаётся лишь флаг `apiKeyConfigured`.
+ * Это правило сохранено из v1: провайдерские секреты не должны попадать в индексные данные.
+ */
 
 export interface EmbeddingCredentialStore {
   load(key: string): Promise<string | null>;
@@ -13,8 +17,15 @@ export interface EmbeddingCredentialStore {
   delete(key: string): Promise<void>;
 }
 
-type SetEmbeddingConfigParams = CodeWorkspaceRef & {
-  provider?: "ollama" | "openai-compatible" | null;
+export interface StoredEmbeddingSettings {
+  provider?: EmbeddingProvider;
+  endpoint?: string;
+  model?: string;
+  apiKeyConfigured?: boolean;
+}
+
+type SetEmbeddingConfigParams = {
+  provider?: EmbeddingProvider | null;
   endpoint?: string | null;
   model?: string | null;
   apiKey?: string | null;
@@ -24,118 +35,164 @@ export function embeddingCredentialKey(workspaceKey: string): string {
   return `code-intelligence:${workspaceKey}:embedding-api-key`;
 }
 
-export async function updateEmbeddingConfig(
-  db: CodeIndexDatabase,
-  params: SetEmbeddingConfigParams,
-  credentialKey: string,
-  credentialService?: EmbeddingCredentialStore,
-): Promise<CodeIndexStatus> {
-  const hasExplicitClear =
-    params.provider === null || params.endpoint === null || params.model === null;
-  const previousConfig = getEmbeddingConfig(db);
-  const nextEndpoint = hasExplicitClear
-    ? undefined
-    : params.endpoint === undefined
-      ? previousConfig.endpoint
-      : params.endpoint;
-  const nextModel = hasExplicitClear
-    ? undefined
-    : params.model === undefined
-      ? previousConfig.model
-      : params.model;
-  const nextProvider = hasExplicitClear
-    ? undefined
-    : params.provider === undefined
-      ? (previousConfig.provider ?? "ollama")
-      : params.provider;
-  const keyOnlyClear =
-    !hasExplicitClear &&
-    params.endpoint === undefined &&
-    params.model === undefined &&
-    params.provider === undefined &&
-    params.apiKey === null &&
-    !previousConfig.endpoint &&
-    !previousConfig.model;
-  if (!hasExplicitClear && !keyOnlyClear && (!nextEndpoint?.trim() || !nextModel?.trim())) {
-    throw new Error(
-      "Both embedding endpoint and model are required. Use null to clear the configuration.",
-    );
-  }
-  const config =
-    hasExplicitClear || keyOnlyClear
-      ? {}
-      : validateEmbeddingConfig(nextProvider, nextEndpoint, nextModel);
+interface SettingsBackend {
+  read(key: string): Promise<string | undefined>;
+  write(key: string, value: string): Promise<void>;
+  remove(keys: readonly string[]): Promise<void>;
+}
 
-  let nextApiKey: string | null | undefined;
+async function readJsonFile(filePath: string): Promise<Record<string, string>> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string") result[key] = value;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+async function writeJsonFile(filePath: string, values: Record<string, string>): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(values, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Файловое хранилище настроек рядом с индексом.
+ * Крошечный JSON без секретов: контракт запрещает держать настройки внутри индекса.
+ */
+function createFileBackend(settingsFile: string): SettingsBackend {
+  return {
+    async read(key) {
+      const values = await readJsonFile(settingsFile);
+      return values[key];
+    },
+    async write(key, value) {
+      const values = await readJsonFile(settingsFile);
+      values[key] = value;
+      await writeJsonFile(settingsFile, values);
+    },
+    async remove(keys) {
+      const values = await readJsonFile(settingsFile);
+      let changed = false;
+      for (const key of keys) {
+        if (key in values) {
+          delete values[key];
+          changed = true;
+        }
+      }
+      if (changed) await writeJsonFile(settingsFile, values);
+    },
+  };
+}
+
+let backendOverride: SettingsBackend | undefined;
+
+/** Тестовый seam: подмена файлового хранилища настроек. */
+export function setEmbeddingSettingsBackend(next: SettingsBackend | undefined): void {
+  backendOverride = next;
+}
+
+function settingsKey(workspaceKey: string, name: string): string {
+  return `embedding:${workspaceKey}:${name}`;
+}
+
+function resolveBackend(indexRootDir: string): SettingsBackend {
+  if (backendOverride) return backendOverride;
+  const root =
+    indexRootDir || process.env.ZCODE_CODE_INDEX_ROOT || join(process.cwd(), ".zcode-code-index");
+  return createFileBackend(join(root, "embedding-settings.json"));
+}
+
+export async function readEmbeddingSettings(
+  credentialService: EmbeddingCredentialStore | undefined,
+  workspaceKey: string,
+  indexRootDir = "",
+): Promise<StoredEmbeddingSettings> {
+  const store = resolveBackend(indexRootDir);
+  const [provider, endpoint, model, apiKeyFlag] = await Promise.all([
+    store.read(settingsKey(workspaceKey, "provider")),
+    store.read(settingsKey(workspaceKey, "endpoint")),
+    store.read(settingsKey(workspaceKey, "model")),
+    store.read(settingsKey(workspaceKey, "apiKeyConfigured")),
+  ]);
+  const storedCredential = await credentialService?.load(embeddingCredentialKey(workspaceKey));
+  return {
+    ...(provider === "ollama" || provider === "openai-compatible" ? { provider } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    ...(model ? { model } : {}),
+    // Флаг присутствует всегда: `undefined` неотличим от «неизвестно» и скрывал факт
+    // снятия ключа, из-за чего UI продолжал показывать сохранённый токен.
+    apiKeyConfigured: apiKeyFlag === "true" || Boolean(storedCredential),
+  };
+}
+
+export async function writeEmbeddingSettings(
+  credentialService: EmbeddingCredentialStore | undefined,
+  workspaceKey: string,
+  params: SetEmbeddingConfigParams,
+  indexRootDir = "",
+): Promise<StoredEmbeddingSettings> {
+  const store = resolveBackend(indexRootDir);
+  const previous = await readEmbeddingSettings(credentialService, workspaceKey, indexRootDir);
+  const cleared = params.provider === null || params.endpoint === null || params.model === null;
+
+  let apiKey: string | null | undefined;
   if (typeof params.apiKey === "string") {
     const trimmed = params.apiKey.trim();
-    if (
-      trimmed &&
-      (trimmed.length > 4096 ||
-        trimmed.includes("\r") ||
-        trimmed.includes("\n") ||
-        trimmed.includes("\0"))
-    )
+    if (trimmed && (trimmed.length > 4096 || trimmed.includes("\r") || trimmed.includes("\n"))) {
       throw new Error("Embedding API key has an invalid format.");
-    nextApiKey = trimmed || undefined;
-  } else if (params.apiKey === null || hasExplicitClear) {
-    nextApiKey = null;
+    }
+    apiKey = trimmed || undefined;
+  } else if (params.apiKey === null) {
+    apiKey = null;
   }
-  if (typeof nextApiKey === "string" && !credentialService)
+  if (typeof apiKey === "string" && !credentialService)
     throw new Error("Secure credential storage is unavailable.");
 
-  const previousApiKey = await credentialService?.load(credentialKey);
-  const keyConfigured =
-    nextApiKey === null
-      ? false
-      : typeof nextApiKey === "string"
-        ? true
-        : (previousConfig.apiKeyConfigured ?? Boolean(previousApiKey));
-  let credentialChanged = false;
-  if (nextApiKey === null && previousApiKey && credentialService) {
-    await credentialService.delete(credentialKey);
-    credentialChanged = true;
-  } else if (typeof nextApiKey === "string" && previousApiKey !== nextApiKey) {
-    await credentialService!.save(credentialKey, nextApiKey);
-    credentialChanged = true;
+  const nextEndpoint = cleared
+    ? undefined
+    : params.endpoint === undefined
+      ? previous.endpoint
+      : params.endpoint;
+  const nextModel = cleared
+    ? undefined
+    : params.model === undefined
+      ? previous.model
+      : params.model;
+  const nextProvider = cleared
+    ? undefined
+    : params.provider === undefined
+      ? (previous.provider ?? "ollama")
+      : params.provider;
+
+  if (cleared) {
+    await store.remove([
+      settingsKey(workspaceKey, "provider"),
+      settingsKey(workspaceKey, "endpoint"),
+      settingsKey(workspaceKey, "model"),
+      settingsKey(workspaceKey, "apiKeyConfigured"),
+    ]);
+  } else if (nextEndpoint && nextModel) {
+    const config: EmbeddingConfig = validateEmbeddingConfig(nextProvider, nextEndpoint, nextModel);
+    if (config.provider && config.endpoint && config.model) {
+      await store.write(settingsKey(workspaceKey, "provider"), config.provider);
+      await store.write(settingsKey(workspaceKey, "endpoint"), config.endpoint);
+      await store.write(settingsKey(workspaceKey, "model"), config.model);
+    }
   }
 
-  let transactionOpen = false;
-  try {
-    db.exec("BEGIN IMMEDIATE");
-    transactionOpen = true;
-    if (config.endpoint && config.model && config.provider) {
-      writeText(db, "embedding_provider", config.provider);
-      writeText(db, "embedding_endpoint", config.endpoint);
-      writeText(db, "embedding_model", config.model);
-      writeText(db, "embedding_api_key_configured", String(keyConfigured));
-    } else {
-      db.prepare(
-        "DELETE FROM index_meta WHERE key IN ('embedding_provider','embedding_endpoint','embedding_model','vectors_model','embedding_api_key_configured','embedding_phase','embedding_error_code','embedding_http_status')",
-      ).run();
-      db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
-    }
-    if (config.identity && previousConfig.identity !== config.identity) {
-      db.prepare("UPDATE chunks SET embedding = NULL, embedding_model = NULL").run();
-      writeText(db, "vectors_model", "");
-      writeText(db, "embedding_phase", "pending");
-      db.prepare(
-        "DELETE FROM index_meta WHERE key IN ('embedding_error_code','embedding_http_status')",
-      ).run();
-    }
-    db.exec("COMMIT");
-    transactionOpen = false;
-  } catch (error) {
-    if (transactionOpen) db.exec("ROLLBACK");
-    if (credentialChanged && credentialService) {
-      try {
-        if (previousApiKey) await credentialService.save(credentialKey, previousApiKey);
-        else await credentialService.delete(credentialKey);
-      } catch {
-        // Preserve the original DB error and keep credential contents out of diagnostics.
-      }
-    }
-    throw error;
+  if (apiKey === null) {
+    await credentialService?.delete(embeddingCredentialKey(workspaceKey));
+    await store.write(settingsKey(workspaceKey, "apiKeyConfigured"), "false");
+  } else if (typeof apiKey === "string") {
+    await credentialService!.save(embeddingCredentialKey(workspaceKey), apiKey);
+    await store.write(settingsKey(workspaceKey, "apiKeyConfigured"), "true");
   }
-  return statusFromDb(db);
+
+  return readEmbeddingSettings(credentialService, workspaceKey, indexRootDir);
 }

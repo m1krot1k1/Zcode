@@ -41,6 +41,18 @@ export interface CodeIndexStatus {
     lastError?: { code: EmbeddingErrorCode; httpStatus?: number };
   };
   diagnostics: string[];
+  /** Размер локальной БД на диске (включая WAL); `undefined` до первого успешного открытия. */
+  databaseBytes?: number;
+  /** Версия схемы SQLite (`2` для целочисленной схемы с FTS5). */
+  schemaVersion?: number;
+  /** `true`, если при открытии была выполнена миграция со схемы v1. */
+  migratedFromV1?: boolean;
+  /** Размер старой БД v1 на момент миграции — для проверяемого отчёта, а не для UI. */
+  legacySizeBytes?: number;
+  /** Файлы, разобранные структурным текстовым чанкером (грамматика недоступна). */
+  textFallbackFiles?: number;
+  /** Распределение файлов по языкам: `{ typescript: 120, python: 14 }`. */
+  languages?: Record<string, number>;
 }
 
 export interface CodeIndexSpanNode {
@@ -127,19 +139,50 @@ export interface CodeIntelligenceService {
   /** Read the committed index state and any in-process progress for this workspace. */
   getStatus(params: CodeWorkspaceRef): Promise<CodeIndexStatus>;
 
-  /** Arm a Host-owned filesystem watcher and reconcile changes since the last activation. */
-  watchWorkspace(params: CodeWorkspaceRef): Promise<void>;
+  /**
+   * Arm a Host-owned watcher and reconcile changes since the last activation.
+   * With `autoIndexOnOpen` (default) an absent index is built in the background instead of
+   * staying `unindexed` forever.
+   */
+  watchWorkspace(params: CodeWorkspaceRef & { autoIndexOnOpen?: boolean }): Promise<void>;
 
   /** Scan and atomically publish a complete generation; preserves the prior one on failure. */
   indexWorkspace(params: CodeWorkspaceRef & { force?: boolean }): Promise<CodeIndexStatus>;
 
+  /**
+   * Incrementally reconcile exact paths (create/modify/delete) without a full rescan.
+   * Fed by watcher batches and by committed file transactions (Increment 4.2).
+   */
+  notifyFilesMutated(
+    params: CodeWorkspaceRef & { changed?: string[]; removed?: string[] },
+  ): Promise<CodeIndexStatus>;
+
   /** Search indexed code; lexical search works offline, semantic ranking is optional. */
   search(
-    params: CodeWorkspaceRef & { query: string; limit?: number; lexicalOnly?: boolean },
+    params: CodeWorkspaceRef & {
+      query: string;
+      limit?: number;
+      lexicalOnly?: boolean;
+      /** Token budget for the packed result; the response is never byte-truncated. */
+      maxTokens?: number;
+      /** Files open in the editor or relevant to the current turn (proximity boost). */
+      activeFiles?: string[];
+      /** Files from the current diff (proximity boost). */
+      changedFiles?: string[];
+    },
   ): Promise<{
     results: CodeSearchResult[];
     semantic: boolean;
     partial: boolean;
+    /** Packer telemetry: always present, so consumers can report truncation honestly. */
+    budget?: {
+      usedTokens: number;
+      budgetTokens: number;
+      dropped: number;
+      collapsed: number;
+      candidateCount: number;
+      truncated: boolean;
+    };
   }>;
 
   /** Resolve one symbol and its locally known callers/dependencies. */

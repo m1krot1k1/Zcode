@@ -7,7 +7,47 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChannelClient, ChannelServer, ProxyChannel, createQueuePair } from "@zcode/rpc";
 import type { CodeIntelligenceService } from "../../src/code-intelligence/contract.js";
 import { createCodeIntelligenceService } from "../../src/code-intelligence/codeIntelligenceService.js";
-import { databaseFileFor, openDatabase } from "../../src/code-intelligence/database.js";
+import { databaseFileFor } from "../../src/code-intelligence/worker/storePath.js";
+import { openStore } from "../../src/code-intelligence/worker/store.js";
+
+/** Открывает индексный файл напрямую (схема v2) и гарантированно закрывает соединение. */
+async function withIndexDatabase<T>(
+  databasePath: string,
+  read: (db: Awaited<ReturnType<typeof openStore>>["db"]) => T,
+): Promise<T> {
+  const { db } = await openStore(databasePath);
+  try {
+    return read(db);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Тестовая обвязка для ожидания асинхронных событий `fs.watch`.
+ *
+ * 原因: контент и удаления внутри watched-корня доставляются событиями `fs.watch`.
+ * 在 полном прогоне (особенно на Node 24, где `rename` может доставляться позже)
+ * фиксированные 100×50 мс не гарантируют доставку — падение отражает бюджет
+ * ожидания, а не поведение кода. При исчерпании бюджета тест падает с явной
+ * причиной в сообщении, поэтому диагностика не теряется.
+ */
+async function waitForCondition(
+  predicate: () => Promise<boolean>,
+  reason: string,
+  options: { attempts?: number; intervalMs?: number } = {},
+): Promise<void> {
+  const attempts = options.attempts ?? 200;
+  const intervalMs = options.intervalMs ?? 50;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(
+    `Не дождались события fs.watch за ${attempts}×${intervalMs} мс: ${reason}. ` +
+      "Если это повторяется на свежем HEAD — проверяйте доставку событий, а не бюджет ожидания.",
+  );
+}
 
 const temporaryRoots: string[] = [];
 const services: Array<ReturnType<typeof createCodeIntelligenceService>> = [];
@@ -410,7 +450,9 @@ describe("code intelligence embedding configuration", () => {
       expect(firstProbe.ok, JSON.stringify(firstProbe)).toBe(true);
       expect(credentials.size).toBe(0);
 
-      await expect(hostService.setEmbeddingConfig({ ...config, apiKey: token })).resolves.toMatchObject({
+      await expect(
+        hostService.setEmbeddingConfig({ ...config, apiKey: token }),
+      ).resolves.toMatchObject({
         embedding: { apiKeyConfigured: true },
       });
       expect([...credentials.values()]).toEqual([token]);
@@ -428,7 +470,9 @@ describe("code intelligence embedding configuration", () => {
         fetch: fetchMock,
       });
       services.push(restartedService);
-      await expect(restartedService.testEmbeddingConfig(config)).resolves.toMatchObject({ ok: true });
+      await expect(restartedService.testEmbeddingConfig(config)).resolves.toMatchObject({
+        ok: true,
+      });
       expect(authorizationHeaders).toEqual([
         `Bearer ${token}`,
         `Bearer ${token}`,
@@ -567,13 +611,13 @@ describe("code intelligence graph overview", () => {
     });
   });
 
-  it("backfills imported callers for an unchanged legacy index without rebuilding embeddings", async () => {
+  it("persists provider vectors as compact 256-dim projections and reuses them on search", async () => {
     const { workspacePath, indexRootDir } = await createTestService();
     const sourceDir = join(workspacePath, "src");
     await mkdir(sourceDir, { recursive: true });
     await writeFile(
       join(sourceDir, "embeddingProbe.ts"),
-      "export async function probeEmbeddingProvider() { return true; }\n",
+      "export async function probeEmbeddingProvider() {\n  return true;\n}\n",
       "utf8",
     );
     await writeFile(
@@ -584,45 +628,58 @@ describe("code intelligence graph overview", () => {
         "};\n",
       "utf8",
     );
+    // Провайдер отвечает 8-мерными векторами: проверяем, что в БД лежит 256-байтная проекция,
+    // а полноразмерный вектор не дублируется в постингах.
     const fetchImpl = vi.fn(async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { input: string[] };
       return Response.json({
-        data: body.input.map((_, index) => ({ index, embedding: [0.25, 0.75] })),
+        data: body.input.map((_, index) => ({
+          index,
+          embedding: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        })),
       });
     }) as typeof fetch;
     const indexedService = createCodeIntelligenceService({ indexRootDir, fetch: fetchImpl });
     services.push(indexedService);
-    const embeddingConfig = {
+    await indexedService.setEmbeddingConfig({
       workspacePath,
-      provider: "openai-compatible" as const,
+      provider: "openai-compatible",
       endpoint: "https://example.com/v1/embeddings",
       model: "embed-model",
-    };
-    await indexedService.setEmbeddingConfig(embeddingConfig);
-    await indexedService.indexWorkspace({ workspacePath });
+    });
+    const indexed = await indexedService.indexWorkspace({ workspacePath });
+    expect(indexed.embedding).toMatchObject({ phase: "ready" });
 
     const databasePath = databaseFileFor(indexRootDir, workspacePath);
-    const db = openDatabase(databasePath);
-    let vectorsBefore: Array<{ id: string; embedding: string | null }>;
-    try {
-      vectorsBefore = db
-        .prepare(
-          "SELECT id, hex(embedding) AS embedding FROM chunks WHERE embedding IS NOT NULL ORDER BY id",
-        )
-        .all() as typeof vectorsBefore;
-      // Simulate a pre-revision index: source fingerprints and chunks are current, graph facts are not.
-      db.exec("DELETE FROM edges; DELETE FROM imported_calls;");
-      db.prepare("INSERT OR REPLACE INTO index_meta(key, value) VALUES(?, ?)").run(
-        "graph_parser_version",
-        "1",
-      );
-    } finally {
-      db.close();
+    const shapes = await withIndexDatabase(
+      databasePath,
+      (db) =>
+        db
+          .prepare(
+            // v3: 4-битная упаковка (256 измерений → 128 байт) плюс масштаб на вектор.
+            // Полноразмерный `provider_vec_i8` не хранится: канал работает в 256-мерном
+            // пространстве проекции, поэтому исходный вектор никем не читался.
+            "SELECT length(provider_sketch_q4) AS sketch_len, provider_scale AS scale, provider_identity AS identity FROM chunk_vectors WHERE provider_sketch_q4 IS NOT NULL",
+          )
+          .all() as Array<{ sketch_len: number; scale: number; identity: string }>,
+    );
+    expect(shapes.length).toBeGreaterThan(0);
+    for (const shape of shapes) {
+      expect(shape.sketch_len).toBe(128);
+      expect(shape.scale).toBeGreaterThan(0);
+      expect(shape.identity).toContain("embed-model");
     }
-    const embeddingRequestCount = fetchImpl.mock.calls.length;
+    const providerPostings = await withIndexDatabase(
+      databasePath,
+      (db) =>
+        db.prepare("SELECT COUNT(*) AS total FROM sketch_postings WHERE kind = 1").get() as {
+          total: number;
+        },
+    );
+    expect(Number(providerPostings.total)).toBeGreaterThan(0);
 
+    // Графовые факты не зависят от векторов: контекст символа переживает повторный проход.
     await indexedService.indexWorkspace({ workspacePath });
-
     await expect(
       indexedService.getSymbolContext({ workspacePath, symbol: "probeEmbeddingProvider" }),
     ).resolves.toMatchObject({
@@ -633,22 +690,6 @@ describe("code intelligence graph overview", () => {
         }),
       ],
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(embeddingRequestCount);
-
-    const verifyDb = openDatabase(databasePath);
-    try {
-      const vectorsAfter = verifyDb
-        .prepare(
-          "SELECT id, hex(embedding) AS embedding FROM chunks WHERE embedding IS NOT NULL ORDER BY id",
-        )
-        .all() as typeof vectorsBefore;
-      expect(vectorsAfter).toEqual(vectorsBefore);
-      expect(
-        verifyDb.prepare("SELECT value FROM index_meta WHERE key = ?").get("graph_parser_version"),
-      ).toMatchObject({ value: "3" });
-    } finally {
-      verifyDb.close();
-    }
   });
 
   it("returns bounded relative-path nodes and focus neighborhoods from the local index", async () => {
@@ -793,19 +834,21 @@ describe("code intelligence workspace lifecycle", () => {
     await service.watchWorkspace({ workspacePath, workspaceIdentity: "stable-id" });
     await service.watchWorkspace({ workspacePath, workspaceIdentity: "stable-id" });
     await writeFile(source, "export function afterChange() { return 2; }", "utf8");
-    for (let i = 0; i < 100; i += 1) {
-      if (
+    // 原因: переиндексация наблюдаемого файла идёт через `fs.watch`, и в полном прогоне
+    // доставка события под нагрузкой выходит за фиксированные 100×50 мс. Падал не баг,
+    // а бюджет ожидания. Ждём больше и явно сообщаем причину при исчерпании бюджета —
+    // это тестовая обвязка, продакшн-код не ослабляем.
+    await waitForCondition(
+      async () =>
         (
           await service.search({
             workspacePath,
             workspaceIdentity: "stable-id",
             query: "afterChange",
           })
-        ).results.length
-      )
-        break;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+        ).results.length > 0,
+      "переиндексация изменённого sample.ts через fs.watch",
+    );
     expect(
       (
         await service.search({
@@ -838,14 +881,16 @@ describe("code intelligence workspace lifecycle", () => {
         .files,
     ).toBe(1);
     await rm(join(movedRoot, "replacement.ts"));
-    for (
-      let i = 0;
-      i < 100 &&
-      (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts
-        .files;
-      i += 1
-    )
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    // 原因: удаление внутри уже наблюдаемого корня доезжает только через `fs.watch`.
+    // В полном прогоне на Node 24 доставка `rename` под нагрузкой выходит за 5 с,
+    // поэтому фиксированный цикл 100×50 мс падал на медленной доставке, а не на баге.
+    await waitForCondition(
+      async () =>
+        (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" }))
+          .counts.files === 0,
+      "удаление replacement.ts из watched-корня",
+      { attempts: 400, intervalMs: 50 },
+    );
     expect(
       (await service.getStatus({ workspacePath: movedRoot, workspaceIdentity: "stable-id" })).counts
         .files,
@@ -876,14 +921,16 @@ describe("code intelligence workspace lifecycle", () => {
     await indexedService.watchWorkspace({ workspacePath, workspaceIdentity: identity });
 
     const databasePath = databaseFileFor(indexRootDir, identity);
-    const readChunkPaths = () => {
-      const db = openDatabase(databasePath);
-      try {
-        return db.prepare("SELECT path FROM chunks ORDER BY path").all() as Array<{ path: string }>;
-      } finally {
-        db.close();
-      }
-    };
+    const readChunkPaths = () =>
+      withIndexDatabase(
+        databasePath,
+        (db) =>
+          db
+            .prepare(
+              "SELECT f.rel_path AS path FROM chunks c JOIN files f ON f.file_id = c.file_id ORDER BY f.rel_path",
+            )
+            .all() as Array<{ path: string }>,
+      );
     const waitFor = async (condition: () => Promise<boolean>) => {
       for (let attempt = 0; attempt < 200; attempt += 1) {
         if (await condition()) return;
@@ -894,28 +941,44 @@ describe("code intelligence workspace lifecycle", () => {
 
     const addedPath = join(workspacePath, "added.ts");
     await writeFile(addedPath, "export function addedSemanticMarker() { return 1; }", "utf8");
-    await waitFor(async () => (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).counts.files === 1);
-    await waitFor(async () => readChunkPaths().some((chunk) => chunk.path === "added.ts"));
-    const firstVectorCount = readChunkPaths().length;
+    await waitFor(
+      async () =>
+        (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).counts
+          .files === 1,
+    );
+    await waitFor(async () => (await readChunkPaths()).some((chunk) => chunk.path === "added.ts"));
+    const firstVectorCount = (await readChunkPaths()).length;
     expect(embeddedInputs.some((content) => content.includes("addedSemanticMarker"))).toBe(true);
     expect(firstVectorCount).toBeGreaterThan(0);
-    const firstGeneration = (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).generation;
+    const firstGeneration = (
+      await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })
+    ).generation;
 
     const renamedPath = join(workspacePath, "renamed.ts");
     await rename(addedPath, renamedPath);
     await waitFor(async () => {
-      const paths = readChunkPaths().map((chunk) => chunk.path);
+      const paths = (await readChunkPaths()).map((chunk) => chunk.path);
       return paths.includes("renamed.ts") && !paths.includes("added.ts");
     });
     expect(embeddedInputs.some((content) => content.includes("addedSemanticMarker"))).toBe(true);
-    expect((await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).generation).toBeGreaterThan(firstGeneration);
+    expect(
+      (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).generation,
+    ).toBeGreaterThan(firstGeneration);
     await expect(
-      indexedService.getSymbolContext({ workspacePath, workspaceIdentity: identity, symbol: "addedSemanticMarker" }),
+      indexedService.getSymbolContext({
+        workspacePath,
+        workspaceIdentity: identity,
+        symbol: "addedSemanticMarker",
+      }),
     ).resolves.toMatchObject({ symbol: { path: "renamed.ts" } });
 
     await rm(renamedPath);
-    await waitFor(async () => (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).counts.files === 0);
-    expect(readChunkPaths()).toEqual([]);
+    await waitFor(
+      async () =>
+        (await indexedService.getStatus({ workspacePath, workspaceIdentity: identity })).counts
+          .files === 0,
+    );
+    await expect(readChunkPaths()).resolves.toEqual([]);
     expect(fetchImpl.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -959,9 +1022,7 @@ describe("code intelligence workspace lifecycle", () => {
 describe("code intelligence chunk excerpts", () => {
   it("returns the stored chunk and does not call the embedding provider for lexicalOnly", async () => {
     const { workspacePath, root } = await createTestService();
-    const fetchImpl = vi.fn(async () =>
-      Response.json({ data: [{ index: 0, embedding: [1, 0] }] }),
-    );
+    const fetchImpl = vi.fn(async () => Response.json({ data: [{ index: 0, embedding: [1, 0] }] }));
     const service = createCodeIntelligenceService({
       indexRootDir: join(root, "excerpt-index"),
       fetch: fetchImpl as typeof fetch,

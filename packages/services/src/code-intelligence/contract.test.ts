@@ -4,6 +4,7 @@ import {
   configureOpenAiCompatibleEmbeddings,
   indexAndSearch,
   inspectCodeGraph,
+  reconcileEditedFiles,
 } from "./contract.example.js";
 import { codeIntelligenceModule } from "./module.js";
 import type { CodeIntelligenceService, CodeIndexStatus } from "./contract.js";
@@ -20,6 +21,7 @@ describe("code-intelligence contract", () => {
       "getStatus",
       "watchWorkspace",
       "indexWorkspace",
+      "notifyFilesMutated",
       "search",
       "getSymbolContext",
       "getGraphOverview",
@@ -36,7 +38,7 @@ describe("code-intelligence contract", () => {
       embedding: { configured: false, available: false, phase: "not-configured" },
       diagnostics: [],
     };
-    expect(operations).toHaveLength(11);
+    expect(operations).toHaveLength(12);
     expect(status.counts.files).toBe(0);
   });
 
@@ -58,12 +60,51 @@ describe("code-intelligence contract", () => {
   });
 
   it("demonstrates index-then-search using the Host contract", async () => {
+    const search = vi.fn(async () => ({ results: [], semantic: false, partial: false }));
     const service = {
       indexWorkspace: async () => undefined,
-      search: async () => ({ results: [], semantic: false, partial: false }),
+      search,
     } as unknown as CodeIntelligenceService;
 
     await expect(indexAndSearch(service, "/workspace")).resolves.toEqual([]);
+    // Поиск обязан получать токен-бюджет: без него потребитель не может гарантировать
+    // валидность ответа при ограничении контекста модели.
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 1500 }));
+  });
+
+  it("reconciles exact paths through the same incremental entry point", async () => {
+    const notifyFilesMutated = vi.fn(async () => ({
+      state: "ready" as const,
+      generation: 2,
+      counts: { files: 1, chunks: 1, symbols: 1, edges: 0 },
+      embedding: { configured: false, available: true, phase: "not-configured" as const },
+      diagnostics: [],
+    }));
+    const service = { notifyFilesMutated } as unknown as CodeIntelligenceService;
+
+    await reconcileEditedFiles(service, "/workspace", ["src/a.ts"], ["src/b.ts"]);
+
+    expect(notifyFilesMutated).toHaveBeenCalledWith({
+      workspacePath: "/workspace",
+      changed: ["src/a.ts"],
+      removed: ["src/b.ts"],
+    });
+  });
+
+  it("reports budget truncation separately from index partiality", () => {
+    const status: CodeIndexStatus = {
+      state: "ready",
+      generation: 3,
+      counts: { files: 2, chunks: 4, symbols: 3, edges: 1 },
+      embedding: { configured: false, available: true, phase: "not-configured" },
+      diagnostics: [],
+      databaseBytes: 1024,
+      schemaVersion: 2,
+      migratedFromV1: false,
+    };
+    // `partial` — про полноту индекса, `budget.truncated` — про урезание выдачи.
+    expect(status.partial).toBeUndefined();
+    expect(status.schemaVersion).toBe(2);
   });
 
   it("reads the bounded code graph through the Host contract", async () => {

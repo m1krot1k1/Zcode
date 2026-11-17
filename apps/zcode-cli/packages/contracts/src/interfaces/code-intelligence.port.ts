@@ -7,4 +7,19 @@ export interface CodeIntelligencePort {
     request: ZCodeCodeIndexQuery,
     context: { signal: AbortSignal; trace?: TraceContext },
   ): Promise<ZCodeCodeIndexResult>;
+
+  /**
+   * Signals exact workspace-relative paths that changed or disappeared.
+   *
+   * Optional so existing hosts keep working. When present, the Host routes the paths into the
+   * same incremental pass the watcher uses (no duplicate indexing path), which closes the gap
+   * between a committed file transaction and the debounced filesystem event.
+   */
+  notifyFilesMutated?(request: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    changed?: string[];
+    removed?: string[];
+    signal?: AbortSignal;
+  }): Promise<void>;
 }

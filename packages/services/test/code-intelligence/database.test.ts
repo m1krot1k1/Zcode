@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   requestEmbeddings,
   validateEmbeddingConfig,
-} from "../../src/code-intelligence/database.js";
+} from "../../src/code-intelligence/embeddings.js";
 
 describe("embedding providers", () => {
   it("allows Ollama only on a loopback HTTP endpoint", () => {
