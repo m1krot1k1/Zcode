@@ -398,5 +398,115 @@ git cat-file -p HEAD:docs/architecture/stage1-forensic-audit-and-baseline.md \
 
 # 5. Состояние remote
 git ls-remote origin dev
+```
+
+## 10. Этап 6.4 — исправление range-скана и легализация исторических находок
+
+### 10.1. Что исправлено в гейте
+
+Дефект из §9.1 устранён: разбор `git rev-list --objects` переведён с несуществующего
+`-z`/`path=`-формата на построчный `<sha> <path>` с корректной обработкой путей с
+пробелами и C-экранирования git. Парсер вынесен в экспортируемую
+[`parseRevListObjects()`](scripts/check-tracked-privacy.mjs:1) и покрыт тестами.
+
+Дополнительно: «есть вывод, но не разобрано ни одной пары sha+path» теперь даёт
+явное предупреждение, а не тихое `EXIT=0` — это прямой страж от повторения дефекта.
+
+Факт блокировки после исправления (без baseline, диапазон `origin/dev..HEAD`):
+
+```text
+$ ZCODE_PRE_PUSH_STDIN="refs/heads/dev <HEAD> refs/heads/dev 64df2977" \
+    node scripts/check-tracked-privacy.mjs
+… 12 строк 文件:行号:类型 …
+[tracked-privacy] 发现 12 处（email=1, home-path=11），具体值已省略；扫描 20297 个文件
+EXIT=1
+```
+
+### 10.2. Штатный механизм `sanitized-history-baseline`
+
+Добавлен [`scripts/privacy-sanitized-history.json`](scripts/privacy-sanitized-history.json:1)
+и реализация в [`scripts/privacy-sanitized-history.mjs`](scripts/privacy-sanitized-history.mjs:1).
+Механизм описан в [`docs/testing/pre-push-hook.md`](docs/testing/pre-push-hook.md:1).
+
+Три строгих правила матчинга (должны выполняться одновременно):
+
+1. `path` — точное равенство, без префиксов и шаблонов.
+2. `blobSha` — полный SHA; другой блоб по тому же пути не подавляется никогда.
+3. `findingTypes` содержит тип находки; незарегистрированный тип в том же блобе照报.
+
+Жёсткие ограничения:
+
+- подавление действует **только** для blob, пришедших исключительно из push-диапазона;
+  индекс и `HEAD` не подавляются даже при совпадении `blobSha`;
+- запись невалидна (и блокирует push), если нет `sanitizedInCommit`, он не предок
+  `HEAD`, или в его дереве по этому пути ещё есть同类命中;
+- каждая подавленная находка печатается в лог.
+
+Заполнено ровно 4 записи (значения подтверждены сканом исторических блобов):
+
+| Путь | `blobSha` | Типы | Кол-во | `sanitizedInCommit` |
+| --- | --- | --- | --- | --- |
+| `docs/architecture/stage1-forensic-audit-and-baseline.md` | `01385b967167…` | home-path | 5 | `f14af289` |
+| `docs/architecture/stage2-comparative-oss-research.md` | `c83ee9135a0e…` | home-path | 3 | `f14af289` |
+| `docs/architecture/stage3-target-architecture-and-specs.md` | `51ceae34f808…` | home-path | 2 | `f14af289` |
+| `docs/architecture/stage6-release-report.md` | `5975b2dc8778…` | home-path, email | 2 | `77fe4f65` |
+
+Результат на реальном диапазоне:
+
+```text
+[tracked-privacy] 已净化历史：…stage6-release-report.md @ 5975b2dc8778 (email ×1, home-path ×1, 修复于 77fe4f65)
+[tracked-privacy] 已净化历史：…stage1-forensic-audit-and-baseline.md @ 01385b967167 (home-path ×5, 修复于 f14af289)
+[tracked-privacy] 已净化历史：…stage2-comparative-oss-research.md @ c83ee9135a0e (home-path ×3, 修复于 f14af289)
+[tracked-privacy] 已净化历史：…stage3-target-architecture-and-specs.md @ 51ceae34f808 (home-path ×2, 修复于 f14af289)
+[tracked-privacy] OK：20297 个文件（索引 + HEAD + push 范围）未发现 home 路径、邮箱或令牌特征；已净化历史 4 条记录
+EXIT=0
+```
+
+### 10.3. Проверки этапа 6.4
+
+| Проверка | Результат |
+| --- | --- |
+| `node --test scripts/check-tracked-privacy.test.mjs` | **32/32 pass** (было 18/19) |
+| `pnpm typecheck` | OK |
+| `pnpm lint` | 0 ошибок (347 предупреждений, все — существующие) |
+| `pnpm architecture:check --changed` | `violations: 0`, `new: 0` |
+| `pnpm verify:pre-push` (локальный прогон) | все шаги до `pnpm knip` — OK, включая privacy-гейт (`OK, 20174 файла`) |
+| `pnpm knip` | **FAIL** — `new=49`, `baseline=0`; долг существовал до правок этапа (проверено на `cb880424`: те же 49) |
+
+### 10.4. Состояние публикации
+
+Push **не выполнен**. Причина — не privacy-гейт и не код этапа 6.4, а
+предсуществующий долг `knip`, который проверяется последним шагом
+`verify:pre-push`:
+
+```text
+$ pnpm knip
+knip baseline: current=49 baseline=0 new=49 resolved=0
+New knip issues (49):
+  dependencies packages/services/package.json tree-sitter-wasms
+  dependencies packages/services/package.json web-tree-sitter
+  … 34 exports, 8 files, 2 types, 1 unlisted …
+ELIFECYCLE Command failed with exit code 1.
+```
+
+Проверка на базе `cb880424` (коммит до начала этапа 6.4) даёт те же `current=49
+baseline=0 new=49`, то есть блокирующее состояние появилось раньше.
+
+Попутно устранены два предсуществующих блокера того же конвейера, оказавшиеся
+взаимоисключающими:
+
+- `prism10:check` требовал регенерации `identity.ts` (коммит `b5d7b91f` переписал
+  compact-промпт, но не перегенерировал профиль);
+- `prompt:check` требовал маркер `# Repository policy`, которого в актуальном
+  тексте уже нет.
+
+Оба исправлены согласованно (регенерация профиля + актуализация обязательного
+маркера в `config/prompts/registry.json`), после чего соответствующие шаги проходят.
+
+Не выполнено и требует решения владельца: закрыть 49 позиций knip (удалить
+мёртвые экспорты, вынести `koffi` в объявленные зависимости или явно исключить)
+либо санкционировать обновление baseline. Обновление baseline без исправлений
+сознательно **не** сделано: это рост долга, а предыдущий коммит `408c509a`
+специально свёл baseline к нулю.
 git ls-remote --tags origin | grep v3.17.123 || echo "тега в origin нет"
 ```
