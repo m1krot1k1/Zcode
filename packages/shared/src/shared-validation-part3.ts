@@ -54,6 +54,7 @@ import {
   zcodeMcpTelemetryEventSchema,
   zcodeProcessResourceSampleSchema,
   zcodeToolExecResourceSchema,
+  zcodeTurnStateTransitionRecordSchema,
 } from "./zcode-protocol/index.js";
 import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
 import { hostAgentRunningTaskCountChangedResponseSchema, hostApplicationLocaleChangedMessageSchema, hostBindRemoteWorkspaceContextMessageSchema, hostBroadcastClaimResultMessageSchema, hostBrowserExecuteResultMessageSchema, hostCancelRemoteWorkspaceBindMessageSchema, hostCancelRemoteWorkspaceConnectMessageSchema, hostCronRunMessageSchema, hostCuaPipFocusChangedMessageSchema, hostDetachServicePortMessageSchema, hostDisposeMessageSchema, hostDisposeRemoteWorkspaceSessionMessageSchema, hostFeedbackLogArchiveResultMessageSchema, hostLocalMediaPreviewPathAuthorizeResultMessageSchema, hostLogResponseSchema, hostMcpTelemetryResponseSchema, hostOffPeakRunMessageSchema, hostOffPeakSchedulerWakeRequestResponseSchema, hostPluginSandboxRegisterResultMessageSchema, hostProviderProvisioningExecuteMessageSchema, hostProviderProvisioningSourceChangedResponseSchema, hostSessionCreateTelemetryResponseSchema, hostTaskOwnerCommandDeliverMessageSchema, hostTaskOwnerCommandRequestResponseSchema, hostTaskOwnerCommandResultMessageSchema, hostTaskOwnerCommandResultResponseSchema, hostTaskRealtimeDeliverMessageSchema, hostTaskRealtimePublishResponseSchema, hostTaskRunLeaseAcquireResponseSchema, hostTaskRunLeaseReleaseResponseSchema, hostTaskRunLeaseResultMessageSchema, hostTaskStreamOpPublishResponseSchema, hostToolExecResourceResponseSchema, nonEmptyStringSchema, remoteAssetDirsSchema, webRemoteControlFailureReasonSchema, webRemoteControlMobileDeviceInfoSchema, webRemoteControlMobileTaskViewSchema, webRemoteControlMobileViewStateSchema, webRemoteControlPlatformMethodSchema, webRemoteControlTransportIdSchema, zcodeTaskMigrationSourceSchema, zcodeTaskPersistStatusSchema } from "./shared-validation-part1.js";
@@ -189,7 +190,31 @@ export const zcodeSessionFileSchema = z.object({
   messages: z.array(zcodePersistedMessageSchema),
   fileChanges: z.array(zcodePersistedFileChangeSchema).optional(),
   turnCheckpoints: z.array(zcodePersistedTurnCheckpointSchema).optional(),
+  stateTransitions: z.array(zcodeTurnStateTransitionRecordSchema).optional(),
 });
+
+/**
+ * Сериализация `.zcode-session` с валидацией диагностических полей (F-06):
+ * `finishReason`, `rawTruncatedInputPreview`, `repairAttempts`, `stateTransitions`.
+ */
+export function serializeZcodeSessionFile(
+  session: z.input<typeof zcodeSessionFileSchema>,
+): string {
+  const validated = zcodeSessionFileSchema.parse(session);
+  return JSON.stringify(validated, null, 2);
+}
+
+/**
+ * Десериализация `.zcode-session` с полной обратной совместимостью для старых файлов
+ * без новых диагностических полей (`finishReason`, `rawTruncatedInputPreview`,
+ * `repairAttempts`, `stateTransitions`).
+ */
+export function deserializeZcodeSessionFile(
+  raw: string | unknown,
+): z.output<typeof zcodeSessionFileSchema> {
+  const parsed = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+  return zcodeSessionFileSchema.parse(parsed);
+}
 
 export const webRemoteControlAppPayloadSchemas = [
   z

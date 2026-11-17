@@ -1021,6 +1021,7 @@ modules:
       - apps/zcode-cli/packages/adapters/src/model/model-execution
     managed: true
     requires:
+      - cli-model-cache-control
       - provider
       - shared
       - zcode-cli
@@ -1597,6 +1598,7 @@ modules:
       - apps/zcode-cli/packages/core/src/runtime/methods/subagent
     managed: true
     requires:
+      - cli-file-transaction
       - zcode-cli
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/runtime/methods/subagent/index.ts
@@ -1831,6 +1833,8 @@ modules:
       - apps/zcode-cli/packages/core/src/tool/executor
     managed: true
     requires:
+      - cli-file-transaction
+      - cli-tool-self-repair
       - mcp-apps-protocol
       - shared
       - zcode-cli
@@ -2071,6 +2075,57 @@ modules:
     layers:
       adapters: .
     owner: debug
+  # cli-tool-self-repair：由 architecture:adopt 登记
+  - id: cli-tool-self-repair
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/self-repair
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/self-repair/index.ts
+      - apps/zcode-cli/packages/core/src/tool/self-repair/contract.ts
+    layers:
+      app: .
+    owner: agent
+  # cli-model-cache-control：由 architecture:adopt 登记
+  - id: cli-model-cache-control
+    roots:
+      - apps/zcode-cli/packages/adapters/src/model/cache-control
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/model/cache-control/index.ts
+      - apps/zcode-cli/packages/adapters/src/model/cache-control/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-file-transaction：由 architecture:adopt 登记
+  - id: cli-file-transaction
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/file-transaction
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/file-transaction/index.ts
+      - apps/zcode-cli/packages/core/src/tool/file-transaction/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-diff-engine：由 architecture:adopt 登记
+  - id: cli-diff-engine
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/diff-engine
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/diff-engine/index.ts
+      - apps/zcode-cli/packages/core/src/tool/diff-engine/contract.ts
+    layers:
+      domain: .
+    owner: agent
 
 exceptions:
   # Two focused helpers added with the root-auto and crash-resume specs. Keep the

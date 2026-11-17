@@ -1,5 +1,6 @@
-import type { ToolSearchExecutionContext, ModelCallWrapper } from "@zcode/contracts";
+import type { ToolSearchExecutionContext, ModelCallWrapper, PersistedToolFailureDiagnostics, PersistedToolRepairAttemptRecord } from "@zcode/contracts";
 import type { McpToolUiDescriptor } from "@zcode/shared/mcp-apps";
+import type { IFileLockRegistry } from "./file-transaction/contract.js";
 // ============================================================
 // Tool Types - Core tool types for registry and executor
 // ============================================================
@@ -173,6 +174,8 @@ export interface ToolExecutionContext {
   /** 官方 browser-use plugin docs 资产目录；只在 browser-use 启用时用于 agent.browsers.documentation()。 */
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
+  /** Единый межсубагентный реестр канонических RW-блокировок файлов (F-02). */
+  fileLockRegistry?: IFileLockRegistry;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
@@ -498,6 +501,10 @@ export interface ToolExecutionResult {
   serialization?: ToolResultSerialization;
   /** Executor 汇总后的内部性能事实；不进入模型可见 Tool Output。 */
   performance?: ToolExecutionTelemetry;
+  /** Журнал попыток самовосстановления JSON/Zod (F-01, F-06). */
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
+  /** Структурированная диагностика сбоя/усечения вызова инструмента (F-06). */
+  failureDiagnostics?: PersistedToolFailureDiagnostics;
   error?: {
     code?: string;
     detail?: string;

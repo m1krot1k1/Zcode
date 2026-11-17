@@ -8,8 +8,11 @@ import {
   type Logger,
   type SessionEvent,
   type SessionId,
+  type SubagentExecutionBudget,
+  type SubagentIsolationMode,
   type SubagentPort,
   type SubagentRunOptions,
+  type SwarmNodeResult,
   type TraceContext,
 } from "@zcode/contracts";
 import type { AgentProfile } from "./profile.js";
@@ -50,8 +53,14 @@ export interface ExploreSubagentRuntimeRequest {
   level?: number;
   workingDirectory: string;
   workspaceRoot: string;
+  /** Опциональные пути чтения, декларированные родителем/DAG-узлом. */
+  readPaths?: readonly string[];
   /** Явно объявленный родителем write-scope; наследуется child runtime. */
   writePaths?: readonly string[];
+  /** Режим изоляции файловых правок: общий workspace с FileLockRegistry или отдельный git worktree. */
+  isolationMode?: SubagentIsolationMode;
+  /** Жёсткий бюджет выполнения субагента (шаги, входные токены, wall-time). */
+  budget?: SubagentExecutionBudget;
   traceContext: TraceContext;
 }
 
@@ -138,6 +147,8 @@ export interface SubagentDagNodeResult {
   output?: AgentCompletedOutput;
   outputTruncated?: boolean;
   error?: string;
+  waveIndex?: number;
+  structuredResult?: SwarmNodeResult;
 }
 
 export interface SettledSubagentDagNode {

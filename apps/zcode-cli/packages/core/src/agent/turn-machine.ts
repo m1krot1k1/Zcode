@@ -42,8 +42,10 @@ export interface TurnMachine {
   state: TurnState;
   start(): TurnState;
   startModelRequest(model: string, messages: ModelRequestState["messages"]): TurnState;
-  receiveModelResponse(content: string): TurnState;
+  receiveModelResponse(content: string, reason?: string): TurnState;
   addStreamingContent(content: string): TurnState;
+  enterTruncatedToolRecovery(reason?: string): TurnState;
+  enterToolInputValidation(reason?: string): TurnState;
   scheduleTools(toolCalls: ToolCall[], schedule: ToolScheduleState): TurnState;
   startToolExecution(): TurnState;
   completeTool(
@@ -89,7 +91,7 @@ export class TurnMachineImpl implements TurnMachine {
     return new TurnMachineImpl(state);
   }
 
-  private transition(phase: TurnPhase): TurnState {
+  private transition(phase: TurnPhase, reason?: string): TurnState {
     if (!canTransitionTo(this.state.phase, phase)) {
       throw createCoreError(
         CoreErrorType.InvalidTurnPhase,
@@ -100,21 +102,35 @@ export class TurnMachineImpl implements TurnMachine {
         },
       );
     }
-    return { ...this.state, phase };
+    const previousTransitions = this.state.stateTransitions ?? [];
+    const stateTransitions =
+      this.state.phase === phase
+        ? previousTransitions
+        : [
+            ...previousTransitions,
+            {
+              from: this.state.phase,
+              to: phase,
+              ...(reason ? { reason } : {}),
+              atMs: Date.now(),
+            },
+          ];
+    return { ...this.state, phase, stateTransitions };
   }
 
   start(): TurnState {
-    return this.transition(Phase.ProcessingInput);
+    return this.transition(Phase.ProcessingInput, "turn_admitted");
   }
 
   startModelRequest(model: string, messages: ModelRequestState["messages"]): TurnState {
     if (
       this.state.phase !== Phase.ProcessingInput &&
-      this.state.phase !== Phase.AggregatingResults
+      this.state.phase !== Phase.AggregatingResults &&
+      this.state.phase !== Phase.TruncatedToolRecovery
     ) {
       throw createCoreError(
         CoreErrorType.InvalidTurnPhase,
-        "Must be in ProcessingInput or AggregatingResults phase",
+        "Must be in ProcessingInput, AggregatingResults, or TruncatedToolRecovery phase",
         {
           context: { current: this.state.phase },
           recoverable: true,
@@ -122,7 +138,7 @@ export class TurnMachineImpl implements TurnMachine {
       );
     }
 
-    const state = this.transition(Phase.AwaitingModelResponse);
+    const state = this.transition(Phase.AwaitingModelResponse, `model:${model}`);
     return {
       ...state,
       modelRequest: {
@@ -132,8 +148,8 @@ export class TurnMachineImpl implements TurnMachine {
     };
   }
 
-  receiveModelResponse(content: string): TurnState {
-    const state = this.transition(Phase.Streaming);
+  receiveModelResponse(content: string, reason?: string): TurnState {
+    const state = this.transition(Phase.Streaming, reason);
     return {
       ...state,
       streamingContent: state.streamingContent + content,
@@ -148,8 +164,16 @@ export class TurnMachineImpl implements TurnMachine {
     };
   }
 
+  enterTruncatedToolRecovery(reason = "finish_reason_length"): TurnState {
+    return this.transition(Phase.TruncatedToolRecovery, reason);
+  }
+
+  enterToolInputValidation(reason = "validate_tool_inputs"): TurnState {
+    return this.transition(Phase.ValidatingToolInputs, reason);
+  }
+
   scheduleTools(toolCalls: ToolCall[], schedule: ToolScheduleState): TurnState {
-    const state = this.transition(Phase.SchedulingTools);
+    const state = this.transition(Phase.SchedulingTools, `tools:${toolCalls.length}`);
     return {
       ...state,
       toolCalls: toolCalls.map((tc) => ({
@@ -283,11 +307,11 @@ export class TurnMachineImpl implements TurnMachine {
   }
 
   aggregateResults(): TurnState {
-    return this.transition(Phase.AggregatingResults);
+    return this.transition(Phase.AggregatingResults, "settle_step");
   }
 
   complete(response: string, resultType: TurnResultType = "success"): TurnState {
-    const state = this.transition(Phase.Completing);
+    const state = this.transition(Phase.Completing, resultType);
     return {
       ...state,
       finalResponse: response,
@@ -297,9 +321,30 @@ export class TurnMachineImpl implements TurnMachine {
   }
 
   fail(error: TurnErrorState): TurnState {
+    if (this.state.phase === Phase.Error) {
+      return {
+        ...this.state,
+        error,
+        completedAt: this.state.completedAt ?? new Date(),
+      };
+    }
+    const state = isTerminalPhase(this.state.phase)
+      ? {
+          ...this.state,
+          phase: Phase.Error,
+          stateTransitions: [
+            ...(this.state.stateTransitions ?? []),
+            {
+              from: this.state.phase,
+              to: Phase.Error,
+              reason: error.type,
+              atMs: Date.now(),
+            },
+          ],
+        }
+      : this.transition(Phase.Error, error.type);
     return {
-      ...this.state,
-      phase: Phase.Error,
+      ...state,
       error,
       completedAt: new Date(),
     };

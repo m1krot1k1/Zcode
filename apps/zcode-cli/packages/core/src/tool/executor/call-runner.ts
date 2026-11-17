@@ -13,10 +13,7 @@ import {
   OFFICIAL_CUA_FRAME_MODEL_CONTENT_PROTECTION,
   attestOfficialCuaFrameContent,
 } from "@zcode/zcode-cua/frame-contract";
-import {
-  normalizeToolExecutionInput,
-  prepareInitialToolExecutionInput,
-} from "../input-normalization.js";
+import { normalizeToolExecutionInput } from "../input-normalization.js";
 import type { SkillTelemetryMetadata } from "@zcode/contracts";
 import type { ToolExecutionContext, ToolExecutionResult } from "../types.js";
 import type { ToolEntry } from "../types.js";
@@ -59,20 +56,17 @@ import {
 } from "./turn-control.js";
 import { mergeToolExecutionTelemetry, readToolExecutionTelemetry } from "../handlers/tool-perf.js";
 import type { ToolExecuteOptions, ToolExecutorDeps } from "./types.js";
-import { validateInitialModelToolInput, validateInput, validateOutput } from "./validation.js";
+import { validateInput, validateOutput } from "./validation.js";
 import type { ExecutableToolCall } from "../types.js";
 import { resolveEmbeddedSearchBranchCapability } from "../../embedded-search/capability.js";
 import { resolveToolEntryModelContract } from "../model-contract.js";
 import {
+  admitAndPrepareToolCallInput,
   appendPreToolAdditionalContextsToErrorResult,
   errorCategoryForToolError,
   isEmptyToolName,
   resolveModelOutputEntry,
 } from "./call-runner-support.js";
-
-const UNDISCOVERED_TOOL_SCHEMA_EXPLANATION =
-  "\n\nThis tool's schema was not sent to the API — it was not in the discovered-tool set derived from message history. " +
-  "Without the schema in your prompt, typed parameters (arrays, numbers, booleans) get emitted as strings and the client-side parser rejects them. ";
 
 export async function executeToolCall(
   deps: ToolExecutorDeps,
@@ -232,51 +226,21 @@ async function executeToolCallImpl(
       return result;
     }
 
-    const preparedInitialInput = prepareInitialToolExecutionInput({
+    const inputAdmission = await admitAndPrepareToolCallInput({
+      canonicalToolCall,
+      deps,
       entry,
-      input: canonicalToolCall.input,
-      logger: deps.logger,
+      options,
+      pluginId,
+      telemetry,
+      traceContext,
+      turnId,
     });
-    let executionInput = preparedInitialInput.input;
-    const initialInputValidation = validateInitialModelToolInput(
-      executionInput,
-      entry,
-      preparedInitialInput.runtimeValidationIssues,
-    );
-    if (initialInputValidation) {
-      const result = createErrorResult(canonicalToolCall, initialInputValidation);
-      const search = options?.toolSearch;
-      // 延迟 schema 未加载只提供纠错提示，不增加工具执行拒绝条件。
-      if (
-        search?.enabled &&
-        !search.discovered.has(canonicalToolCall.name) &&
-        search.catalog.some((tool) => tool.name === canonicalToolCall.name && tool.deferred)
-      ) {
-        // 原提示省略了类型退化原因；完整解释与 schema 一并提供，避免只引导盲目重试。
-        result.modelContent =
-          (result.modelContent ?? initialInputValidation.message) +
-          UNDISCOVERED_TOOL_SCHEMA_EXPLANATION +
-          `Load the tool first: call ToolSearch with query "select:${canonicalToolCall.name}", then retry this call. ` +
-          `For reference, this tool's input schema is: ${JSON.stringify(entry.inputSchema)}` +
-          (search.mode === "local"
-            ? `\nCall DeferredToolCall with {name: "${canonicalToolCall.name}", input: {...}}.`
-            : "");
-      }
-      // schema 失败与 registry miss 同属 handler/ToolCallStarted 之前的早退；旧代码
-      // 只把失败回灌模型，没有发布 ToolCallError，V4 tool row 因而在整个 turn 里停在
-      // inputStreaming（CreateWorkflow 卡持续显示「正在编写工作流」），模型重试后又叠一张。
-      await emitToolCallError(
-        deps,
-        canonicalToolCall.id,
-        traceContext,
-        turnId,
-        result.error,
-        undefined,
-        pluginId,
-      );
-      telemetry?.finishFailed("validation", "parse", result.error);
-      return result;
+    if (!inputAdmission.ok) {
+      return inputAdmission.errorResult;
     }
+    let executionInput = inputAdmission.executionInput;
+    const repairAttempts = inputAdmission.repairAttempts;
 
     const toolInputValidation = entry.validateInput?.(executionInput, {
       runtimeTaskRegistry: deps.runtimeTaskRegistry,
@@ -510,6 +474,7 @@ async function executeToolCallImpl(
         browserControlPort: deps.browserControlPort,
         browserDocumentationRoot: deps.browserDocumentationRoot,
         fileSystemPort: deps.fileSystemPort,
+        fileLockRegistry: deps.fileLockRegistry,
         httpClientPort: deps.httpClientPort,
         imageProcessorPort: deps.imageProcessorPort,
         pdfDocumentPort: deps.pdfDocumentPort,
@@ -660,6 +625,7 @@ async function executeToolCallImpl(
           display,
           modelContent: finalModelContent,
           ...(readFileStateMetadata ? { readFileStateMetadata } : {}),
+          ...(repairAttempts ? { repairAttempts } : {}),
           performance: perf,
           serialization,
           durationMs,
@@ -738,6 +704,9 @@ async function executeToolCallImpl(
         error,
         toolName: canonicalToolCall.name,
       });
+      if (repairAttempts) {
+        result.repairAttempts = repairAttempts;
+      }
 
       // Skill 已解析成功后，serialize/post_hook 仍可能失败；错误事件也要保留
       // resolved metadata，否则失败的 Skill agent_step 无法归因到具体 skill。

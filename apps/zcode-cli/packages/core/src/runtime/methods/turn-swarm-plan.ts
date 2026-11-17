@@ -230,7 +230,8 @@ export function buildSwarmPlannerPrompt(
   return [
     "Decide whether this task needs independent parallel work. Return only JSON in one of these shapes:",
     '{"decision":"leaf","reason":"..."}',
-    `{"decision":"split","graph":{"nodes":[{"id":"short-id","description":"...","prompt":"...","depends_on":["prior-id"],"subagent_type":${JSON.stringify(exampleProfileId)}}],"max_parallel":${exampleParallelism}}}`,
+    `{"decision":"split","graph":{"nodes":[{"id":"short-id","description":"...","prompt":"...","depends_on":["prior-id"],"write_paths":["src/example.ts"],"subagent_type":${JSON.stringify(exampleProfileId)}}],"max_parallel":${exampleParallelism}}}`,
+    'Every write-capable node MUST declare write_paths (exact workspace-relative files/directories it will modify, or [] for read-only nodes). Optional node fields: read_paths (string[]), isolation_mode ("shared-locked" | "git-worktree"), budget ({"max_turns":25,"max_input_tokens":400000,"max_wall_time_ms":300000}). Overlapping write_paths in shared-locked mode are automatically serialized across waves by the DAG scheduler.',
     'If and only if a node has a safe, reproducible host check, its acceptance_criteria must use this exact object shape: {"id":"check-id","description":"what the check proves","check":{"kind":"bash_exit_code","command":"a concrete safe command","expectedExitCode":0}}. acceptance_criteria is an array of these objects, never strings. Omit acceptance_criteria when no such command is justified; never invent a command to fill it.',
     `Use only these exact active agent type IDs: ${JSON.stringify(availableProfileIds)}. Never invent or normalize an ID.`,
     "Each node must select one exact role ID. Never omit subagent_type and never use a generic/default role.",

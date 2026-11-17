@@ -238,6 +238,36 @@ export const zcodeUserMessageInfoSchema = z
     metadata: jsonObjectSchema.optional(),
   })
   .strict();
+export const zcodeToolRepairStageSchema = z.enum([
+  "strip_markdown_fences",
+  "fix_trailing_commas",
+  "escape_unescaped_control_chars",
+  "unwrap_nested_arguments_key",
+  "coerce_scalar_types_by_schema",
+  "trim_parameter_keys",
+  "alias_known_field_names",
+]);
+export type ZCodeToolRepairStage = z.infer<typeof zcodeToolRepairStageSchema>;
+export const zcodeToolRepairAttemptRecordSchema = z
+  .object({
+    attemptIndex: z.number().int().nonnegative(),
+    appliedStages: z.array(zcodeToolRepairStageSchema),
+    repairedSuccessfully: z.boolean(),
+    originalRawByteLength: z.number().int().nonnegative(),
+    remainingValidationErrors: z.array(z.string()).optional(),
+    durationMs: z.number().nonnegative(),
+  })
+  .strict();
+export type ZCodeToolRepairAttemptRecord = z.infer<typeof zcodeToolRepairAttemptRecordSchema>;
+export const zcodeTurnStateTransitionRecordSchema = z
+  .object({
+    from: nonEmptyString,
+    to: nonEmptyString,
+    reason: z.string().optional(),
+    atMs: timestampMsSchema,
+  })
+  .strict();
+export type ZCodeTurnStateTransitionRecord = z.infer<typeof zcodeTurnStateTransitionRecordSchema>;
 export const zcodeAssistantMessageInfoSchema = z
   .object({
     messageId: nonEmptyString,
@@ -256,6 +286,11 @@ export const zcodeAssistantMessageInfoSchema = z
     cost: z.number().nonnegative().optional(),
     tokens: zcodeTokenUsageSchema,
     finish: z.string().optional(),
+    finishReason: z.string().optional(),
+    rawFinishReason: z.string().optional(),
+    rawTruncatedInputPreview: z.string().optional(),
+    repairAttempts: z.array(zcodeToolRepairAttemptRecordSchema).optional(),
+    stateTransitions: z.array(zcodeTurnStateTransitionRecordSchema).optional(),
     error: jsonObjectSchema.optional(),
     semantics: zcodeMessageSemanticsSchema.optional(),
     structured: z.unknown().optional(),
@@ -295,6 +330,7 @@ export const zcodeToolStateSchema = z.discriminatedUnion("status", [
       output: z.string(),
       title: z.string(),
       metadata: jsonObjectSchema,
+      repairAttempts: z.array(zcodeToolRepairAttemptRecordSchema).optional(),
       startedAt: timestampMsSchema,
       completedAt: timestampMsSchema,
     })
@@ -305,6 +341,8 @@ export const zcodeToolStateSchema = z.discriminatedUnion("status", [
       input: jsonObjectSchema,
       error: z.string(),
       metadata: jsonObjectSchema.optional(),
+      rawTruncatedInputPreview: z.string().optional(),
+      repairAttempts: z.array(zcodeToolRepairAttemptRecordSchema).optional(),
       startedAt: timestampMsSchema,
       completedAt: timestampMsSchema,
     })

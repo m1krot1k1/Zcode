@@ -77,6 +77,66 @@ export interface TokenUsageInfo {
   };
 }
 
+export type PersistedFinishReasonKind =
+  | "stop"
+  | "length"
+  | "tool-calls"
+  | "content-filter"
+  | "error"
+  | "other"
+  | "unknown";
+
+export interface PersistedStateTransition {
+  from: string;
+  to: string;
+  reason?: string;
+  atMs: number;
+}
+
+export interface PersistedStepDiagnostics {
+  finishReason: PersistedFinishReasonKind;
+  rawFinishReason?: string;
+  rawTruncatedInputPreview?: string;
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
+  effectiveMaxOutputTokens?: number;
+  thinkingBudgetTokens?: number;
+  cacheHitRatio?: number;
+  stateTransitions: PersistedStateTransition[];
+}
+
+export type PersistedToolRepairStage =
+  | "strip_markdown_fences"
+  | "fix_trailing_commas"
+  | "escape_unescaped_control_chars"
+  | "unwrap_nested_arguments_key"
+  | "coerce_scalar_types_by_schema"
+  | "trim_parameter_keys"
+  | "alias_known_field_names";
+
+export interface PersistedToolRepairAttemptRecord {
+  attemptIndex: number;
+  appliedStages: PersistedToolRepairStage[];
+  repairedSuccessfully: boolean;
+  originalRawByteLength: number;
+  remainingValidationErrors?: string[];
+  durationMs: number;
+}
+
+export type PersistedToolFailureKind =
+  | "truncated_by_max_tokens"
+  | "invalid_json"
+  | "schema_validation_failed"
+  | "lock_timeout"
+  | "syntax_validation_failed"
+  | "execution_error";
+
+export interface PersistedToolFailureDiagnostics {
+  failureKind: PersistedToolFailureKind;
+  rawTruncatedInputPreview?: string;
+  rawTruncatedInputTotalBytes?: number;
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
+}
+
 export interface AssistantMessageInfo {
   id: MessageId;
   sessionID: SessionId;
@@ -105,6 +165,18 @@ export interface AssistantMessageInfo {
   structured?: unknown;
   reasoningLevel?: string;
   finish?: string;
+  /** Нормализованная причина завершения шага LLM (F-06). */
+  finishReason?: PersistedFinishReasonKind | string;
+  /** Сырая причина завершения от провайдера (например max_tokens / max_output_tokens). */
+  rawFinishReason?: string;
+  /** Превью усечённого аргумента tool call при finishReason === "length" (F-01 / F-06). */
+  rawTruncatedInputPreview?: string;
+  /** История попыток самовосстановления аргументов инструментов на этом шаге (F-01 / F-06). */
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
+  /** Детерминированная трасса переходов конечного автомата хода (F-06). */
+  stateTransitions?: PersistedStateTransition[];
+  /** Полный диагностический снимок шага и переходов автомата хода (F-06). */
+  stepDiagnostics?: PersistedStepDiagnostics;
   semantics?: MessageSemantics;
   anchor?: MessageProjectionAnchor;
   /** 附加领域语义（fork copy 的 forkOrigin provenance 等）。 */
@@ -381,10 +453,12 @@ export interface StepFinishPart {
   messageID: MessageId;
   type: "step-finish";
   reason: string;
+  rawReason?: string;
   snapshot?: string;
   /** 未知价格时省略；0 只表示真实零成本。 */
   cost?: number;
   tokens: TokenUsageInfo;
+  stepDiagnostics?: PersistedStepDiagnostics;
 }
 
 export interface SnapshotPart {
@@ -432,6 +506,7 @@ export interface ToolStateCompleted {
     compacted?: number;
   };
   attachments?: FilePart[];
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
 }
 
 export interface ToolStateError {
@@ -443,6 +518,8 @@ export interface ToolStateError {
     start: number;
     end: number;
   };
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
+  failureDiagnostics?: PersistedToolFailureDiagnostics;
 }
 
 export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError;

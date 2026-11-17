@@ -161,7 +161,7 @@ export type {
   WorkResultDerivationInput,
   WorkResultNodeInput,
 } from "./runner-work-result.js";
-export { executeSubagentTaskDag } from "./runner-dag.js";
+export { executeSubagentTaskDag, planSubagentDagWaves } from "./runner-dag.js";
 export { restorePreviousTerminalTaskAfterResumeFailure } from "./runner-messages.js";
 export {
   isAgentProfileWriteCapable,

@@ -21,6 +21,9 @@ export interface AiSdkToolTransformOptions {
 
   /** 本次请求的模型 id，仅用于首方 strict 资格判定；缺席即不启用 strict。 */
   modelId?: string;
+
+  /** 在 Anthropic 预算允许时为最后一个客户端工具声明添加 ephemeral cache_control 断点。 */
+  cacheLastTool?: boolean;
 }
 
 export function toAiSdkTools(
@@ -31,7 +34,15 @@ export function toAiSdkTools(
     return undefined;
   }
 
-  const entries = tools.flatMap((contract): [string, ToolSet[string]][] => {
+  let lastClientToolIndex = -1;
+  for (let i = tools.length - 1; i >= 0; i -= 1) {
+    if (!tools[i]?.providerNative) {
+      lastClientToolIndex = i;
+      break;
+    }
+  }
+
+  const entries = tools.flatMap((contract, index): [string, ToolSet[string]][] => {
     if (contract.providerNative) {
       const providerTool = toAiSdkProviderNativeTool(contract, options);
       return providerTool ? [[contract.name, providerTool]] : [];
@@ -49,7 +60,11 @@ export function toAiSdkTools(
       ),
       ...(strictSchema === undefined ? {} : { strict: true }),
       needsApproval: contract.needsApproval,
-      ...providerOptionsForClientTool(options, contract),
+      ...providerOptionsForClientTool(
+        options,
+        contract,
+        options.cacheLastTool === true && index === lastClientToolIndex,
+      ),
     };
 
     if (!contract.execute) {
@@ -307,8 +322,9 @@ function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
 function providerOptionsForClientTool(
   options: AiSdkToolTransformOptions,
   contract: ModelToolContract,
+  cacheBreakpoint = false,
 ): {
-  providerOptions?: Record<string, Record<string, boolean>>;
+  providerOptions?: NonNullable<ToolSet[string]["providerOptions"]>;
 } {
   if (options.providerKind !== "anthropic") {
     return {};
@@ -323,6 +339,7 @@ function providerOptionsForClientTool(
       anthropic: {
         eagerInputStreaming: false,
         ...(options.toolSearchEnabled && contract.deferLoading ? { deferLoading: true } : {}),
+        ...(cacheBreakpoint ? { cacheControl: { type: "ephemeral" } } : {}),
       },
     },
   };

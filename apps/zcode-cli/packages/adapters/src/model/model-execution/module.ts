@@ -4,7 +4,7 @@
  */
 export const cliModelExecutionModule = {
   id: "cli-model-execution",
-  requires: ["provider", "shared", "zcode-cli"],
+  requires: ["cli-model-cache-control", "provider", "shared", "zcode-cli"],
   provides: ["cli-model-execution"],
   publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

@@ -43,6 +43,11 @@ export function admitWorkClaim(
   const ledger = state.workLedger;
   const workspacePath = task.workspacePath?.trim();
   if (!ledger || !workspacePath) return { accepted: true, claimed: false };
+  // Причина (F-02): ветка в режиме git-worktree модифицирует собственную изолированную
+  // рабочую копию, а финальное слияние в общий workspace сериализуется через FileLockRegistry.
+  if (task.isolationMode === "git-worktree") {
+    return { accepted: true, claimed: false };
+  }
   // 根因: write-capable роль без write_paths получала claim из эвристики prompt'а,
   // но child runtime не получал writeScope и мог писать вне заявленной области.
   // Исправление: без явного write_paths (включая []) write-роль не допускается.

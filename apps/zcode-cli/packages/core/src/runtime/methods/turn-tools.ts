@@ -123,6 +123,11 @@ export async function executeToolCallsForModelStep(
   // assistant tool_use 已经进入 history 后，Stop 不能在 tool result
   // 创建前直接抛出。继续把 aborted signal 交给 executor，由现有取消路径为
   // 每个 tool call 生成 ToolCancelled result，再由 turn loop 感知 abort。
+  if (options.result.finishReason !== "length") {
+    state.turnMachine = new TurnMachineImpl(
+      state.turnMachine.enterToolInputValidation(`finish:${options.result.finishReason}`),
+    );
+  }
   const schedule = await this.scheduleTools(coreToolCalls);
   state.turnMachine = new TurnMachineImpl(
     state.turnMachine.scheduleTools(coreToolCalls, this.toScheduleState(schedule)),
@@ -166,6 +171,8 @@ export async function executeToolCallsForModelStep(
       subagentModelOverride: state.subagentModelOverride,
       model: state.model,
       toolSearch: options.toolSearch,
+      finishReason: options.result.finishReason,
+      consecutiveSchemaFailuresByTool: (state.consecutiveSchemaFailuresByTool ??= new Map()),
       onBatchStart: async (toolCallIds) => {
         // 已取消的 batch 仍由 executor 返回 cancelled results，但不能把从未进入
         // handler 的 tool parts 误标记为 running。

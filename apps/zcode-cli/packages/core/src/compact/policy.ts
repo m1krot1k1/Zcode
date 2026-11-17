@@ -4,6 +4,11 @@ import { estimateMessageTokens, hasEnoughMessagesToCompact } from "./manual.js";
 import type { LocalMicrocompactPolicyConfig } from "./microcompact.js";
 
 export const DEFAULT_COMPACT_CONTEXT_WINDOW = 200_000;
+/**
+ * Эффективный рабочий потолок контекста для сверхдлинных моделей (> 200K, например 1M окон):
+ * предотвращает разбухание истории до 400K+ токенов и квадратичный перерасход входного бюджета.
+ */
+export const DEFAULT_WORKING_CONTEXT_CEILING_TOKENS = 140_000;
 // 正常请求默认输出已收敛到 32K，auto compact 必须预留同一目标；
 // 否则请求预算和压缩窗口会继续按两套常量计算。
 export const DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 32_000;
@@ -16,6 +21,8 @@ export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;
 export interface AutoCompactPolicyConfig {
   enabled?: boolean;
   contextWindow?: number;
+  /** Настраиваемый рабочий потолок входного контекста (по умолчанию 140 000 для окон > 200K). */
+  workingContextCeilingTokens?: number;
   maxOutputTokens?: number;
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
   summaryReserveTokens?: number;
@@ -82,9 +89,18 @@ export function getAutoCompactOutputReserveTokens(config: AutoCompactPolicyConfi
 }
 
 export function getAutoCompactThreshold(config: AutoCompactPolicyConfig = {}): number {
+  const contextWindow = positiveInt(config.contextWindow) ?? DEFAULT_COMPACT_CONTEXT_WINDOW;
   const effectiveContextWindow = getEffectiveContextWindowSize(config);
   const buffer = positiveInt(config.bufferTokens) ?? AUTOCOMPACT_BUFFER_TOKENS;
-  return Math.max(0, effectiveContextWindow - buffer);
+  const rawThreshold = Math.max(0, effectiveContextWindow - buffer);
+  const explicitCeiling = positiveInt(config.workingContextCeilingTokens);
+  if (explicitCeiling !== undefined && explicitCeiling > 0) {
+    return Math.min(rawThreshold, explicitCeiling);
+  }
+  if (contextWindow > DEFAULT_COMPACT_CONTEXT_WINDOW) {
+    return Math.min(rawThreshold, DEFAULT_WORKING_CONTEXT_CEILING_TOKENS);
+  }
+  return rawThreshold;
 }
 
 export function shouldAutoCompact(input: {

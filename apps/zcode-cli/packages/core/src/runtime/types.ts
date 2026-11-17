@@ -119,6 +119,7 @@ import type {
 import type { AgentProfile } from "../subagent/profile.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
+import type { IFileLockRegistry } from "../tool/file-transaction/contract.js";
 import type { PresentationSurface } from "../context/types.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
@@ -144,6 +145,12 @@ export interface AgentRuntimeConfig {
   streamingToolExecution?: "off" | "readOnly";
   /** Session 创建时固定；缺省使用共享的模型上下文预算默认策略。 */
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
+  /** Включение детерминированного самовосстановления JSON/Zod аргументов инструментов (по умолчанию true). */
+  enableToolCallSelfRepair?: boolean;
+  /** Минимальный резерв выходных токенов под аргументы инструментов при активном thinking (по умолчанию 16384). */
+  reasoningReserveOutputTokens?: number;
+  /** Эффективный рабочий потолок контекста до квантованного Observation Masking (по умолчанию 120000). */
+  workingContextSoftCapTokens?: number;
   maxTurns?: number;
   /** 每个 root run 的并行偏好上限；0/未设置按机器可用 CPU 与 Host capacity 计算。 */
   subagentMaxParallel?: number;
@@ -398,6 +405,8 @@ export interface AgentRuntimeDeps {
   /** browser-use 控制端口；透传到 ToolExecutionContext.browserControlPort 供 node_repl 使用。 */
   browserControlPort?: BrowserControlPort;
   fileSystemPort?: FileSystemPort;
+  /** Единый межсубагентный реестр пофайловых RW-блокировок для родителя и всех детей Swarm (F-02). */
+  fileLockRegistry?: IFileLockRegistry;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
@@ -851,6 +860,8 @@ export interface ExecuteToolsOptions {
   /** 仅透传给当前 turn 同步等待的 Agent child。 */
   subagentModelOverride?: import("@zcode/contracts").SubagentRunOptions["modelOverride"];
   model?: Model;
+  finishReason?: string;
+  consecutiveSchemaFailuresByTool?: Map<string, number>;
   onBatchStart?: (toolCallIds: string[]) => Promise<void>;
 }
 

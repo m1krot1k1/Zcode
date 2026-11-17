@@ -1,4 +1,5 @@
 import type { ToolSearchExecutionContext } from "@zcode/contracts";
+import type { IFileLockRegistry } from "../file-transaction/contract.js";
 import type {
   AgentExecutionTelemetryPort,
   AgentTelemetryActorKind,
@@ -99,6 +100,8 @@ export interface ToolExecutorOptions {
   browserControlPort?: BrowserControlPort;
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
+  fileLockRegistry?: IFileLockRegistry;
+  enableToolCallSelfRepair?: boolean;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
@@ -196,6 +199,8 @@ export interface ToolExecuteOptions {
   traceContext?: TraceContext;
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   model?: Model;
+  finishReason?: string;
+  consecutiveSchemaFailuresByTool?: Map<string, number>;
 }
 
 export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
@@ -224,6 +229,9 @@ export interface ToolExecutorDeps {
   browserControlPort?: BrowserControlPort;
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
+  fileLockRegistry?: IFileLockRegistry;
+  enableToolCallSelfRepair: boolean;
+  consecutiveSchemaFailuresByTool: Map<string, number>;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;

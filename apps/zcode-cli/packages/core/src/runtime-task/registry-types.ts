@@ -114,6 +114,8 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
    * cross-branch conflicts.
    */
   writePaths?: readonly string[];
+  /** Режим изоляции файловых правок субагента (shared-locked | git-worktree). */
+  isolationMode?: import("@zcode/contracts").SubagentIsolationMode;
 }
 
 export const MAX_RETAINED_TERMINAL_SUBAGENT_SNAPSHOTS = 512;

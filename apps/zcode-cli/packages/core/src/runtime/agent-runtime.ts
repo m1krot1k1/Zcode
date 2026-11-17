@@ -101,6 +101,10 @@ import type {
 } from "./methods/background.js";
 import { initializeRuntimeTooling } from "./helpers/runtime-tools.js";
 import {
+  createFileLockRegistry,
+  type IFileLockRegistry,
+} from "../tool/file-transaction/index.js";
+import {
   resolveInitialDynamicWorkflowToolsActivated,
   type DynamicWorkflowActivationSource,
 } from "./methods/dynamic-workflow-activation.js";
@@ -347,6 +351,7 @@ export class AgentRuntime {
   private artifactStore?: ToolArtifactStorePort;
   private executionPort?: ExecutionPort;
   private fileSystemPort?: FileSystemPort;
+  private fileLockRegistry: IFileLockRegistry;
   private codeIntelligencePort?: CodeIntelligencePort;
   private imageProcessorPort?: ImageProcessorPort;
   private pdfDocumentPort?: PdfDocumentPort;
@@ -511,6 +516,7 @@ export class AgentRuntime {
     this.artifactStore = deps.artifactStore;
     this.executionPort = deps.executionPort;
     this.fileSystemPort = deps.fileSystemPort;
+    this.fileLockRegistry = deps.fileLockRegistry ?? createFileLockRegistry();
     this.codeIntelligencePort = deps.codeIntelligencePort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;

@@ -1,9 +1,28 @@
 import type { Logger } from "@zcode/contracts";
 
+const RAW_MALFORMED_TOOL_INPUT_SYMBOL = Symbol.for("zcode.model.rawMalformedToolInput");
+const utf8Encoder = new TextEncoder();
+
 interface NormalizeModelToolInputOptions {
   logger?: Logger;
   source: "generateText" | "streamText";
   toolName?: string;
+}
+
+export function attachRawMalformedInputEnvelope(
+  target: Record<string, unknown>,
+  rawText: string,
+): Record<string, unknown> {
+  Object.defineProperty(target, RAW_MALFORMED_TOOL_INPUT_SYMBOL, {
+    value: {
+      rawText,
+      byteLength: utf8Encoder.encode(rawText).byteLength,
+    },
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  });
+  return target;
 }
 
 export function normalizeModelToolInput(
@@ -42,8 +61,12 @@ export function normalizeModelToolInput(
     });
     // AI SDK 已提供 final tool-call；此处抛 invalid_model_response
     // 会把参数错误错误地升级为整个模型请求失败。严格解析失败后只降级为
-    // 空对象，由普通工具 schema 决定返回 error result 还是继续执行。
-    return {};
+    // 空对象，并通过非枚举 Symbol 附带原始串字节信息，供 Core 区分 length 截断与自修复。
+    const fallback: Record<string, unknown> = {};
+    if (!(error instanceof TypeError)) {
+      attachRawMalformedInputEnvelope(fallback, input);
+    }
+    return fallback;
   }
 }
 

@@ -4,7 +4,7 @@
  */
 export const cliCoreExecutorModule = {
   id: "cli-core-executor",
-  requires: ["mcp-apps-protocol", "shared", "zcode-cli"],
+  requires: ["cli-file-transaction", "cli-tool-self-repair", "mcp-apps-protocol", "shared", "zcode-cli"],
   provides: ["cli-core-executor"],
   publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

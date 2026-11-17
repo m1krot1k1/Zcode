@@ -181,6 +181,8 @@ function createRuntimeToolExecutor(
       ? runtime.config.runtimeFeatures?.browserDocumentationRoot
       : undefined,
     fileSystemPort: deps.fileSystemPort,
+    fileLockRegistry: runtime.fileLockRegistry,
+    enableToolCallSelfRepair: runtime.config.enableToolCallSelfRepair,
     httpClientPort: deps.httpClientPort,
     imageProcessorPort: deps.imageProcessorPort,
     // 合并删除旧模型连接时曾漏掉此端口；Read 分页渲染与整份 PDF 页数检查仍依赖宿主注入。

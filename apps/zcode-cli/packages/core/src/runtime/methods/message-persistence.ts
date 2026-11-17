@@ -295,6 +295,9 @@ export async function persistAssistantMessage(
         completed?: number;
         error?: { name: string; data?: Record<string, unknown> };
         finish?: string;
+        finishReason?: string;
+        rawFinishReason?: string;
+        stepDiagnostics?: import("@zcode/contracts").PersistedStepDiagnostics;
         tokens?: ReturnType<typeof toTokenUsageInfo>;
       }
     | undefined,
@@ -341,6 +344,22 @@ export async function persistAssistantMessage(
       cost,
       tokens,
       finish: update?.finish,
+      ...(update?.finishReason ?? update?.finish
+        ? { finishReason: update?.finishReason ?? update?.finish }
+        : {}),
+      ...(update?.rawFinishReason ? { rawFinishReason: update.rawFinishReason } : {}),
+      ...(update?.stepDiagnostics?.rawTruncatedInputPreview
+        ? { rawTruncatedInputPreview: update.stepDiagnostics.rawTruncatedInputPreview }
+        : {}),
+      ...(update?.stepDiagnostics?.repairAttempts &&
+      update.stepDiagnostics.repairAttempts.length > 0
+        ? { repairAttempts: update.stepDiagnostics.repairAttempts }
+        : {}),
+      ...(update?.stepDiagnostics?.stateTransitions &&
+      update.stepDiagnostics.stateTransitions.length > 0
+        ? { stateTransitions: update.stepDiagnostics.stateTransitions }
+        : {}),
+      ...(update?.stepDiagnostics ? { stepDiagnostics: update.stepDiagnostics } : {}),
       semantics: {
         origin: "agent_runtime",
         kind: "assistant_response",

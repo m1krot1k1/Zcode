@@ -78,6 +78,12 @@ export async function persistCompletedAssistantStep(
   }
   const persistedTokens = toTokenUsageInfo(options.result.usage);
   const cost = calculateRuntimeModelCost(model.modelId, persistedTokens);
+  const stepDiagnostics = state.lastStepDiagnostics
+    ? {
+        ...state.lastStepDiagnostics,
+        stateTransitions: [...(state.turnMachine.state.stateTransitions ?? [])],
+      }
+    : undefined;
   await runtime.persistPart(
     {
       id: createPartId(),
@@ -85,8 +91,10 @@ export async function persistCompletedAssistantStep(
       messageID: options.assistantMessageId,
       type: "step-finish",
       reason: options.result.finishReason,
+      ...(stepDiagnostics?.rawFinishReason ? { rawReason: stepDiagnostics.rawFinishReason } : {}),
       ...(cost !== undefined ? { cost } : {}),
       tokens: persistedTokens,
+      ...(stepDiagnostics ? { stepDiagnostics } : {}),
     },
     options.modelTraceContext,
   );
@@ -97,6 +105,11 @@ export async function persistCompletedAssistantStep(
     {
       completed: Date.now(),
       finish: options.result.finishReason,
+      finishReason: options.result.finishReason,
+      ...(stepDiagnostics?.rawFinishReason
+        ? { rawFinishReason: stepDiagnostics.rawFinishReason }
+        : {}),
+      ...(stepDiagnostics ? { stepDiagnostics } : {}),
       tokens: persistedTokens,
     },
     options.modelTraceContext,

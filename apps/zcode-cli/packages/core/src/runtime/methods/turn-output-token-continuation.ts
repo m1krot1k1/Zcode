@@ -22,7 +22,11 @@ const OUTPUT_LIMIT_RAW_REASONS = new Set([
   "model_context_window_exceeded",
 ]);
 
-type OutputTokenContinuationDecision = "continue" | "exhausted" | "none";
+export type OutputTokenContinuationDecision =
+  | "continue"
+  | "recover_truncated_tool_calls"
+  | "exhausted"
+  | "none";
 
 export function classifyOutputTokenContinuation(input: {
   finishReason: string | undefined;
@@ -30,11 +34,15 @@ export function classifyOutputTokenContinuation(input: {
   toolCallCount: number;
   continuationCount: number;
 }): OutputTokenContinuationDecision {
-  if (input.toolCallCount > 0) return "none";
+  // Причина фикса F-01: раньше `if (input.toolCallCount > 0) return "none"` маскировал
+  // усечение JSON-аргументов по maxOutputTokens под обычную ошибку парсинга JSON.
   if (!isOutputTokenLimitFinishReason(input.finishReason, input.rawFinishReason)) {
     return "none";
   }
-  return input.continuationCount < MAX_OUTPUT_TOKEN_CONTINUATIONS ? "continue" : "exhausted";
+  if (input.continuationCount >= MAX_OUTPUT_TOKEN_CONTINUATIONS) {
+    return "exhausted";
+  }
+  return input.toolCallCount > 0 ? "recover_truncated_tool_calls" : "continue";
 }
 
 export function isOutputTokenLimitFinishReason(
@@ -138,6 +146,10 @@ export function hasAssistantReasoningContent(
 
 export function appendOutputTokenContinuation(state: TurnRequestState): void {
   appendTurnRequestEntries(state, [createOutputTokenContinuationEntry()]);
+  state.outputTokenContinuationCount += 1;
+}
+
+export function recordTruncatedToolCallRecovery(state: TurnRequestState): void {
   state.outputTokenContinuationCount += 1;
 }
 

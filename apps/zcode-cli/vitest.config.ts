@@ -22,8 +22,11 @@ export default defineConfig({
       // и раньше не собирались ни этим конфигом, ни корневым (он не покрывает apps/).
       // Перечисляем точные пути, чтобы не подключать чужие src-тесты оптом.
       "packages/adapters/src/model/__tests__/provider-finish-business-error.redaction.test.ts",
+      "packages/adapters/src/model/cache-control/contract.test.ts",
       "packages/core/src/runtime/helpers/__tests__/turn-errors.redaction.test.ts",
       "packages/core/src/tool/handlers/__tests__/bash-sandbox-honesty.test.ts",
+      "packages/core/src/tool/self-repair/contract.test.ts",
+      "packages/core/src/tool/file-transaction/contract.test.ts",
     ],
     // Bugfix: 排除由 Node 原生 test runner 覆盖的文件，保留 Vitest 默认忽略项。
     exclude: [...configDefaults.exclude, ...nodeTestRunnerFiles],

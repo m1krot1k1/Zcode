@@ -48,6 +48,7 @@ import {
 } from "./task-realtime-core.js";
 import { wslUserSchema } from "./wslUserValidation.js";
 import { legacyZCodeProviderSchema } from "./zcode-agent-policy.js";
+import { zcodeToolRepairAttemptRecordSchema } from "./zcode-protocol-legacy-types.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
 import {
   zcodeMcpResourceSamplesSchema,
@@ -347,6 +348,8 @@ export const zcodePersistedToolCallSchema = z.object({
   output: z.unknown().optional(),
   error: z.string().optional(),
   raw: z.unknown().optional(),
+  rawTruncatedInputPreview: z.string().optional(),
+  repairAttempts: z.array(zcodeToolRepairAttemptRecordSchema).optional(),
   snapshotRefs: z
     .array(
       z.object({

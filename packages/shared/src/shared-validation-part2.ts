@@ -54,6 +54,8 @@ import {
   zcodeMcpTelemetryEventSchema,
   zcodeProcessResourceSampleSchema,
   zcodeToolExecResourceSchema,
+  zcodeToolRepairAttemptRecordSchema,
+  zcodeTurnStateTransitionRecordSchema,
 } from "./zcode-protocol/index.js";
 import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
 import {
@@ -714,6 +716,10 @@ export const zcodePersistedMessageSchema = z.object({
   // 导致新消息结束后 UI 仍然只能看到“Worked”。这里补上字段以保留持久化值。
   durationMs: z.number().int().nonnegative().optional(),
   interrupted: z.boolean().optional(),
+  finishReason: z.string().optional(),
+  rawTruncatedInputPreview: z.string().optional(),
+  repairAttempts: z.array(zcodeToolRepairAttemptRecordSchema).optional(),
+  stateTransitions: z.array(zcodeTurnStateTransitionRecordSchema).optional(),
   feedback: z.enum(["like", "dislike"]).optional(),
   attachments: z.array(zcodePromptAttachmentSchema).optional(),
   tools: z.array(zcodePersistedToolCallSchema).optional(),

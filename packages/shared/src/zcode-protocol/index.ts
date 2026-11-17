@@ -228,6 +228,12 @@ export type {
   ZCodeSessionImportMessage,
 } from "./schema-model.js";
 export {
+  zcodeToolRepairAttemptRecordSchema,
+  zcodeToolRepairStageSchema,
+  zcodeTurnStateTransitionRecordSchema,
+  type ZCodeToolRepairAttemptRecord,
+  type ZCodeToolRepairStage,
+  type ZCodeTurnStateTransitionRecord,
   zcodeActiveToolCallSchema,
   zcodeModelStreamingEventPayloadSchema,
   zcodeModelStreamingKindSchema,

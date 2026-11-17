@@ -38,6 +38,14 @@ const AgentAcceptanceCriterionSchema = z
 
 export const AGENT_TASK_GRAPH_MAX_BYTES = 120_000;
 
+const AgentTaskGraphNodeBudgetSchema = z
+  .object({
+    max_turns: z.number().int().min(1).max(60).optional(),
+    max_input_tokens: z.number().int().positive().optional(),
+    max_wall_time_ms: z.number().int().positive().optional(),
+  })
+  .strict();
+
 const AgentTaskGraphNodeSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -50,8 +58,14 @@ const AgentTaskGraphNodeSchema = z
     effort: z.string().optional(),
     /** Explicit permission for this node to exceed the parent reasoning level. */
     effort_above_parent: z.boolean().optional(),
+    /** Optional read-scope hint for context & DAG scheduling. */
+    read_paths: z.array(z.string().min(1).max(260)).max(64).optional(),
     /** Exact write scope for the work ledger; absent keeps legacy text extraction. */
     write_paths: z.array(z.string().min(1).max(260)).max(50).optional(),
+    /** Optional execution isolation mode: shared workspace with FileLockRegistry or dedicated git worktree. */
+    isolation_mode: z.enum(["shared-locked", "git-worktree"]).optional(),
+    /** Optional per-node execution budget (turns, input tokens, wall clock ms). */
+    budget: AgentTaskGraphNodeBudgetSchema.optional(),
     acceptance_criteria: z.array(AgentAcceptanceCriterionSchema).max(16).optional(),
   })
   .strict()
@@ -166,6 +180,51 @@ export const AgentTaskGraphSchema = z
   });
 
 export type AgentTaskGraph = z.infer<typeof AgentTaskGraphSchema>;
+
+export const SwarmNodeContractSchema = z.object({
+  nodeId: z.string().regex(/^[a-z0-9_-]{1,48}$/i),
+  title: z.string().min(1).max(200),
+  agentType: z.string().min(1),
+  dependsOn: z.array(z.string()).max(16).default([]),
+  readPaths: z.array(z.string()).max(64).default([]),
+  writePaths: z.array(z.string()).max(32),
+  isolationMode: z.enum(["shared-locked", "git-worktree"]).default("shared-locked"),
+  budget: z
+    .object({
+      maxTurns: z.number().int().min(1).max(60).default(25),
+      maxInputTokens: z.number().int().positive().default(400_000),
+      maxWallTimeMs: z.number().int().positive().default(300_000),
+    })
+    .default({}),
+  acceptanceChecks: z.array(z.string()).max(8).default([]),
+});
+
+export type SwarmNodeContract = z.infer<typeof SwarmNodeContractSchema>;
+
+export const SwarmNodeResultSchema = z.object({
+  nodeId: z.string(),
+  status: z.enum(["completed", "failed", "cancelled", "budget_exhausted", "blocked"]),
+  modifiedFiles: z
+    .array(
+      z.object({
+        path: z.string(),
+        operation: z.enum(["added", "modified", "deleted", "moved"]),
+        postCommitSha256: z.string().optional(),
+        syntaxValid: z.boolean(),
+      }),
+    )
+    .default([]),
+  summary: z.string().max(8_000),
+  unresolvedRisks: z.array(z.string()).default([]),
+  usage: z.object({
+    turns: z.number().int().nonnegative(),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    cacheReadTokens: z.number().int().nonnegative(),
+  }),
+});
+
+export type SwarmNodeResult = z.infer<typeof SwarmNodeResultSchema>;
 
 const AgentInputObjectSchema = z.object({
   description: z.string().describe("A short (3-5 word) description of the task"),

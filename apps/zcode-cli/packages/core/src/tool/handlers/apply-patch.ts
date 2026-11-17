@@ -56,50 +56,78 @@ export const applyPatchHandler: ToolHandler = async (input, context) => {
     });
   }
 
-  const trace = traceFor(context);
-  const changes: VerifiedPatchChange[] = [];
-  for (const section of sections) {
-    changes.push(await verifySection(section, context, trace));
-  }
+  const lockEntries = sections.flatMap((section) => {
+    const entries = [{ path: resolvePatchPath(section.path, context), mode: "exclusive-write" as const }];
+    if (section.type === "update" && section.movePath) {
+      entries.push({
+        path: resolvePatchPath(section.movePath, context),
+        mode: "exclusive-write" as const,
+      });
+    }
+    return entries;
+  });
 
-  for (const change of changes) {
-    if (change.type === "delete") {
-      await fileSystemPort.removeFile(
-        { path: change.filePath, trace },
-        { signal: context.abortSignal },
-      );
-      continue;
+  const executePatchUnderLocks = async () => {
+    const trace = traceFor(context);
+    const changes: VerifiedPatchChange[] = [];
+    for (const section of sections) {
+      changes.push(await verifySection(section, context, trace));
     }
 
-    const targetPath = change.movePath ?? change.filePath;
-    await fileSystemPort.writeTextFile(
-      {
-        path: targetPath,
-        content: change.newContent,
-        encoding: change.encoding,
-        lineEndings: change.lineEndings,
-        createParents: true,
-        atomic: true,
-        expectedRevision: change.type === "update" ? change.revision : undefined,
-        trace,
-      },
-      { signal: context.abortSignal },
-    );
+    for (const change of changes) {
+      if (change.type === "delete") {
+        await fileSystemPort.removeFile(
+          { path: change.filePath, trace },
+          { signal: context.abortSignal },
+        );
+        continue;
+      }
 
-    if (change.type === "move") {
-      await fileSystemPort.removeFile(
-        { path: change.filePath, trace },
+      const targetPath = change.movePath ?? change.filePath;
+      await fileSystemPort.writeTextFile(
+        {
+          path: targetPath,
+          content: change.newContent,
+          encoding: change.encoding,
+          lineEndings: change.lineEndings,
+          createParents: true,
+          atomic: true,
+          expectedRevision: change.type === "update" ? change.revision : undefined,
+          trace,
+        },
         { signal: context.abortSignal },
       );
+
+      if (change.type === "move") {
+        await fileSystemPort.removeFile(
+          { path: change.filePath, trace },
+          { signal: context.abortSignal },
+        );
+      }
     }
+
+    const files = changes.map(toOutputFileChange);
+    return {
+      files,
+      structuredPatch: files.flatMap((file) => file.structuredPatch),
+      summary: files.map(formatSummaryLine).join("\n"),
+    } satisfies ApplyPatchOutput;
+  };
+
+  if (!context.fileLockRegistry) {
+    return executePatchUnderLocks();
   }
 
-  const files = changes.map(toOutputFileChange);
-  return {
-    files,
-    structuredPatch: files.flatMap((file) => file.structuredPatch),
-    summary: files.map(formatSummaryLine).join("\n"),
-  } satisfies ApplyPatchOutput;
+  return context.fileLockRegistry.withLocks(
+    lockEntries,
+    {
+      holderId: `${context.sessionId}:${context.toolCallId}`,
+      signal: context.abortSignal,
+      workspaceIdentity: context.workspaceIdentity,
+      workspaceRoot: context.workspaceRoot,
+    },
+    executePatchUnderLocks,
+  );
 };
 
 async function verifySection(

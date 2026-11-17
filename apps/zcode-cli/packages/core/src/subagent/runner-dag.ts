@@ -4,8 +4,10 @@ import {
   AgentTaskGraphSchema,
   type AgentCompletedOutput,
   type AgentOutput,
+  type SubagentExecutionBudget,
   type SubagentRunOptions,
   type SubagentTaskDagRequest,
+  type SwarmNodeResult,
   type PrismTaskAcceptanceDecision,
   type WorkResult,
   type WorkResultTestEntry,
@@ -13,6 +15,7 @@ import {
 import { createHash } from "node:crypto";
 import { selectExecutionErrorMessage } from "../errors/error-payload.js";
 import { resolveSubagentMaxParallel } from "../runtime-task/registry.js";
+import { normalizeWorkspacePath, pathsOverlap } from "../runtime-task/work-ledger.js";
 import type {
   ExploreRunnerContext,
   ExploreSubagentPort,
@@ -41,6 +44,143 @@ const SUBAGENT_DAG_NODE_OUTPUT_MAX_BYTES = 2 * 1024;
 const SUBAGENT_DAG_DEPENDENCY_CONTEXT_MAX_BYTES = 24 * 1024;
 const SUBAGENT_DAG_DEPENDENCY_OUTPUT_MAX_BYTES = 4 * 1024;
 
+function normalizeNodeWritePaths(
+  node: SubagentTaskDagRequest["nodes"][number],
+  workspacePath: string,
+): string[] {
+  if (!node.write_paths || node.write_paths.length === 0) return [];
+  const normalized: string[] = [];
+  for (const raw of node.write_paths) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    try {
+      normalized.push(normalizeWorkspacePath(trimmed, workspacePath));
+    } catch {
+      normalized.push(trimmed);
+    }
+  }
+  return [...new Set(normalized)];
+}
+
+function doSharedLockedNodesOverlap(
+  left: SubagentTaskDagRequest["nodes"][number],
+  right: SubagentTaskDagRequest["nodes"][number],
+  normalizedWritePathsById: ReadonlyMap<string, readonly string[]>,
+): boolean {
+  if (left.isolation_mode === "git-worktree" || right.isolation_mode === "git-worktree") {
+    return false;
+  }
+  const leftPaths = normalizedWritePathsById.get(left.id) ?? [];
+  const rightPaths = normalizedWritePathsById.get(right.id) ?? [];
+  if (leftPaths.length === 0 || rightPaths.length === 0) return false;
+  for (const a of leftPaths) {
+    for (const b of rightPaths) {
+      if (pathsOverlap(a, b)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Детерминированно распределяет узлы DAG по волнам с учётом:
+ * 1) явных рёбер `depends_on` (потомок строго в волне >= max(dep) + 1);
+ * 2) автоматического разнесения по волнам при пересечении декларируемых `write_paths`
+ *    у узлов в режиме `shared-locked` (узлы с `isolation_mode: "git-worktree"` не блокируют друг друга).
+ */
+export function planSubagentDagWaves(
+  nodes: SubagentTaskDagRequest["nodes"],
+  workspacePath: string,
+): Map<string, number> {
+  const normalizedWritePathsById = new Map<string, readonly string[]>(
+    nodes.map((node) => [node.id, normalizeNodeWritePaths(node, workspacePath)]),
+  );
+  const waveByNodeId = new Map<string, number>();
+  const nodesByWave = new Map<number, SubagentTaskDagRequest["nodes"][number][]>();
+  const remaining = [...nodes];
+
+  while (remaining.length > 0) {
+    let progressed = false;
+    for (let i = 0; i < remaining.length; i += 1) {
+      const node = remaining[i]!;
+      const dependencies = node.depends_on ?? [];
+      if (!dependencies.every((depId) => waveByNodeId.has(depId))) {
+        continue;
+      }
+      let candidateWave = 0;
+      for (const depId of dependencies) {
+        candidateWave = Math.max(candidateWave, (waveByNodeId.get(depId) ?? 0) + 1);
+      }
+      while (
+        (nodesByWave.get(candidateWave) ?? []).some((placed) =>
+          doSharedLockedNodesOverlap(node, placed, normalizedWritePathsById),
+        )
+      ) {
+        candidateWave += 1;
+      }
+      waveByNodeId.set(node.id, candidateWave);
+      const waveBucket = nodesByWave.get(candidateWave) ?? [];
+      waveBucket.push(node);
+      nodesByWave.set(candidateWave, waveBucket);
+      remaining.splice(i, 1);
+      i -= 1;
+      progressed = true;
+    }
+    if (!progressed) {
+      // На случай мутированного после валидации графа назначаем волну 0 оставшимся узлам.
+      for (const orphan of remaining) {
+        waveByNodeId.set(orphan.id, 0);
+      }
+      break;
+    }
+  }
+
+  return waveByNodeId;
+}
+
+function buildStructuredSwarmNodeResult(
+  nodeId: string,
+  status: SubagentDagNodeStatus,
+  output?: AgentCompletedOutput,
+  error?: string,
+): SwarmNodeResult {
+  const workResult = output ? deriveWorkResultFromOutput(output) : undefined;
+  const isBudgetExhausted = Boolean(
+    (error && /BUDGET_EXHAUSTED/u.test(error)) ||
+      workResult?.unresolved.some((item) => /BUDGET_EXHAUSTED/u.test(item)),
+  );
+  const mappedStatus: SwarmNodeResult["status"] = isBudgetExhausted
+    ? "budget_exhausted"
+    : status === "completed"
+      ? "completed"
+      : status === "cancelled"
+        ? "cancelled"
+        : status === "blocked"
+          ? "blocked"
+          : "failed";
+  return {
+    nodeId,
+    status: mappedStatus,
+    modifiedFiles: (workResult?.files ?? []).map((path) => ({
+      path,
+      operation: "modified" as const,
+      syntaxValid: true,
+    })),
+    summary: (workResult?.summary ?? error ?? status).slice(0, 8_000),
+    unresolvedRisks:
+      workResult && workResult.unresolved.length > 0
+        ? [...workResult.unresolved]
+        : error
+          ? [error]
+          : [],
+    usage: {
+      turns: output?.totalToolUseCount ?? 0,
+      inputTokens: output?.usage?.inputTokens ?? 0,
+      outputTokens: output?.usage?.outputTokens ?? 0,
+      cacheReadTokens: output?.usage?.cacheReadTokens ?? 0,
+    },
+  };
+}
+
 export async function executeSubagentTaskDag(
   request: SubagentTaskDagRequest,
   runNode: (
@@ -50,6 +190,12 @@ export async function executeSubagentTaskDag(
   options?: InternalDagRunOptions,
 ): Promise<AgentCompletedOutput> {
   const startedAt = Date.now();
+  const workspaceBase = request.workspaceRoot || request.workingDirectory;
+  const normalizedWritePathsById = new Map<string, readonly string[]>(
+    request.nodes.map((node) => [node.id, normalizeNodeWritePaths(node, workspaceBase)]),
+  );
+  const waveByNodeId = planSubagentDagWaves(request.nodes, workspaceBase);
+  const nodeById = new Map(request.nodes.map((node) => [node.id, node]));
   const maxParallel = resolveActualMaxParallel({
     nodeCount: request.nodes.length,
     ...(request.maxParallel === undefined ? {} : { requestedMaxParallel: request.maxParallel }),
@@ -59,7 +205,10 @@ export async function executeSubagentTaskDag(
     ...(options?.internalActiveCap === undefined ? {} : { activeCap: options.internalActiveCap }),
   });
   const states = new Map<string, SubagentDagNodeResult>(
-    request.nodes.map((node) => [node.id, { status: "pending" }]),
+    request.nodes.map((node) => [
+      node.id,
+      { status: "pending", waveIndex: waveByNodeId.get(node.id) ?? 0 },
+    ]),
   );
   const active = new Map<string, Promise<SettledSubagentDagNode>>();
 
@@ -67,7 +216,13 @@ export async function executeSubagentTaskDag(
     if (options?.signal?.aborted) {
       // Root tool 已取消；先封住尚未 admission 的节点，避免依赖项结算时产生孤儿 child。
       for (const [nodeId, state] of states) {
-        if (state.status === "pending") states.set(nodeId, { status: "cancelled" });
+        if (state.status === "pending") {
+          states.set(nodeId, {
+            status: "cancelled",
+            waveIndex: state.waveIndex,
+            structuredResult: buildStructuredSwarmNodeResult(nodeId, "cancelled"),
+          });
+        }
       }
     }
 
@@ -86,20 +241,54 @@ export async function executeSubagentTaskDag(
           );
         })
       ) {
-        states.set(node.id, { status: "blocked" });
+        states.set(node.id, {
+          status: "blocked",
+          waveIndex: state.waveIndex,
+          structuredResult: buildStructuredSwarmNodeResult(
+            node.id,
+            "blocked",
+            undefined,
+            "Prerequisite DAG node did not complete.",
+          ),
+        });
       }
     }
 
     for (const node of request.nodes) {
       if (active.size >= maxParallel || options?.signal?.aborted) break;
-      if (states.get(node.id)?.status !== "pending") continue;
+      const nodeState = states.get(node.id);
+      if (nodeState?.status !== "pending") continue;
       const dependencies = node.depends_on ?? [];
       if (!dependencies.every((dependencyId) => states.get(dependencyId)?.status === "completed")) {
         continue;
       }
+      const nodeWave = waveByNodeId.get(node.id) ?? 0;
+      // Причина (F-02): узлы с пересекающимися write_paths в режиме shared-locked
+      // автоматически ждут завершения более ранней конфликтной волны и любых активных
+      // держателей тех же путей, исключая гонки перезаписи и ложные write_claim_conflict.
+      const hasUnfinishedPriorWaveOverlap = request.nodes.some((other) => {
+        if (other.id === node.id) return false;
+        const otherWave = waveByNodeId.get(other.id) ?? 0;
+        if (otherWave >= nodeWave) return false;
+        const otherStatus = states.get(other.id)?.status;
+        if (otherStatus !== "pending" && otherStatus !== "running") return false;
+        return doSharedLockedNodesOverlap(node, other, normalizedWritePathsById);
+      });
+      if (hasUnfinishedPriorWaveOverlap) {
+        continue;
+      }
+      const hasActiveWriteOverlap = [...active.keys()].some((activeId) => {
+        const activeNode = nodeById.get(activeId);
+        return activeNode
+          ? doSharedLockedNodesOverlap(node, activeNode, normalizedWritePathsById)
+          : false;
+      });
+      if (hasActiveWriteOverlap) {
+        continue;
+      }
 
       const prompt = buildSubagentDagNodePrompt(request, node, states);
-      states.set(node.id, { status: "running" });
+      states.set(node.id, { status: "running", waveIndex: nodeWave });
       const task = Promise.resolve()
         .then(() => runNode(node, prompt))
         .then(
@@ -119,32 +308,45 @@ export async function executeSubagentTaskDag(
 
     const settled = await Promise.race(active.values());
     active.delete(settled.nodeId);
+    const settledWave = waveByNodeId.get(settled.nodeId) ?? 0;
     if (settled.error !== undefined) {
       // Writer-конфликт в DAG не должен валить весь swarm: помечаем только конфликтную
       // ветку blocked, независимые ветки продолжают работу, а зависимые от неё узлы
       // блокирует обычный dependency gate.
       const admissionReason = readSubagentAdmissionReason(settled.error);
       if (options?.signal?.aborted) {
+        const errText = selectExecutionErrorMessage(settled.error);
         states.set(settled.nodeId, {
           status: "cancelled",
-          error: selectExecutionErrorMessage(settled.error),
+          waveIndex: settledWave,
+          error: errText,
+          structuredResult: buildStructuredSwarmNodeResult(settled.nodeId, "cancelled", undefined, errText),
         });
       } else if (admissionReason === "write_claim_conflict") {
+        const errText =
+          "Work claim conflict: another agent holds an overlapping write path. This branch is blocked; independent branches continue.";
         states.set(settled.nodeId, {
           status: "blocked",
-          error:
-            "Work claim conflict: another agent holds an overlapping write path. This branch is blocked; independent branches continue.",
+          waveIndex: settledWave,
+          error: errText,
+          structuredResult: buildStructuredSwarmNodeResult(settled.nodeId, "blocked", undefined, errText),
         });
       } else if (admissionReason === "write_scope_required") {
+        const errText =
+          "Write scope required: this DAG node uses a write-capable profile but did not declare write_paths. Add the exact files/directories to write_paths (or [] for read-only). This branch is blocked; independent branches continue.";
         states.set(settled.nodeId, {
           status: "blocked",
-          error:
-            "Write scope required: this DAG node uses a write-capable profile but did not declare write_paths. Add the exact files/directories to write_paths (or [] for read-only). This branch is blocked; independent branches continue.",
+          waveIndex: settledWave,
+          error: errText,
+          structuredResult: buildStructuredSwarmNodeResult(settled.nodeId, "blocked", undefined, errText),
         });
       } else {
+        const errText = selectExecutionErrorMessage(settled.error);
         states.set(settled.nodeId, {
           status: "failed",
-          error: selectExecutionErrorMessage(settled.error),
+          waveIndex: settledWave,
+          error: errText,
+          structuredResult: buildStructuredSwarmNodeResult(settled.nodeId, "failed", undefined, errText),
         });
       }
       continue;
@@ -152,9 +354,12 @@ export async function executeSubagentTaskDag(
 
     const output = settled.output;
     if (!output || output.status !== "completed") {
+      const errText = "A task DAG node returned without a foreground completion result.";
       states.set(settled.nodeId, {
         status: "failed",
-        error: "A task DAG node returned without a foreground completion result.",
+        waveIndex: settledWave,
+        error: errText,
+        structuredResult: buildStructuredSwarmNodeResult(settled.nodeId, "failed", undefined, errText),
       });
       continue;
     }
@@ -180,9 +385,16 @@ export async function executeSubagentTaskDag(
           : undefined;
     states.set(settled.nodeId, {
       status: nodeStatus,
+      waveIndex: settledWave,
       output: boundedOutput.output,
       ...(boundedOutput.truncated ? { outputTruncated: true } : {}),
       ...(nodeError ? { error: nodeError } : {}),
+      structuredResult: buildStructuredSwarmNodeResult(
+        settled.nodeId,
+        nodeStatus,
+        boundedOutput.output,
+        nodeError,
+      ),
     });
   }
 
@@ -293,6 +505,7 @@ function buildSubagentDagSummary(
     const result = states.get(node.id) ?? { status: "failed" as const };
     const fields = [
       `[${result.status}] ${formatSubagentDagNodeId(node.id)}`,
+      `wave=${result.waveIndex ?? 0}`,
       `description=${truncateUtf8(node.description, 72)}`,
       `work_result=${result.output ? deriveWorkResultFromOutput(result.output).status : "unknown"}`,
       `host_acceptance=${result.output?.acceptance?.status ?? "unknown"}`,
@@ -518,7 +731,10 @@ export async function runSubagentTaskDag(
           ...(node.effort_above_parent === undefined
             ? {}
             : { effortAboveParent: node.effort_above_parent }),
+          ...(node.read_paths === undefined ? {} : { readPaths: node.read_paths }),
           ...(node.write_paths === undefined ? {} : { writePaths: node.write_paths }),
+          ...(node.isolation_mode === undefined ? {} : { isolationMode: node.isolation_mode }),
+          ...(node.budget === undefined ? {} : { budget: toSubagentExecutionBudget(node.budget) }),
           callerCanReadOutputFile: rawRequest.callerCanReadOutputFile,
           workingDirectory: rawRequest.workingDirectory,
           workspaceRoot: rawRequest.workspaceRoot,
@@ -538,4 +754,15 @@ export async function runSubagentTaskDag(
       ),
     dagRunOptions,
   );
+}
+
+function toSubagentExecutionBudget(
+  budget: SubagentTaskDagRequest["nodes"][number]["budget"],
+): SubagentExecutionBudget | undefined {
+  if (!budget) return undefined;
+  return {
+    ...(budget.max_turns === undefined ? {} : { maxTurns: budget.max_turns }),
+    ...(budget.max_input_tokens === undefined ? {} : { maxInputTokens: budget.max_input_tokens }),
+    ...(budget.max_wall_time_ms === undefined ? {} : { maxWallTimeMs: budget.max_wall_time_ms }),
+  };
 }

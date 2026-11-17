@@ -425,6 +425,9 @@ export interface AgentRuntimeTurnMethods {
           completed?: number;
           error?: { name: string; data?: Record<string, unknown> };
           finish?: string;
+          finishReason?: string;
+          rawFinishReason?: string;
+          stepDiagnostics?: import("@zcode/contracts").PersistedStepDiagnostics;
           tokens?: unknown;
         }
       | undefined,

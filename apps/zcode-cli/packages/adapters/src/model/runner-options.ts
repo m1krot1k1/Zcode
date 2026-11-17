@@ -4,6 +4,7 @@ import type { EnvRecord } from "./model-execution.js";
 import { toolSearchHeaders } from "./tool-search.js";
 import { toAiSdkMessages } from "./transform.js";
 import { toAiSdkTools } from "./tool-transform.js";
+import { DEFAULT_MAX_CACHE_BREAKPOINTS } from "./cache-control/index.js";
 import type {
   AiSdkGenerateTextOptions,
   AiSdkModelTextRequest,
@@ -58,6 +59,10 @@ export function createGenerateTextOptions(input: {
     responseJsonSchema: input.request.responseJsonSchema,
     resolved: input.resolved,
   });
+  const cacheLastTool = shouldCacheLastAnthropicTool(
+    input.resolved.providerKind,
+    input.request.messages,
+  );
   return removeUndefined({
     model: input.resolved.model,
     messages: toAiSdkMessages(input.request.messages, {
@@ -68,6 +73,7 @@ export function createGenerateTextOptions(input: {
       inputFormat: input.resolved.properties?.inputFormat,
     }),
     tools: toAiSdkTools(input.request.tools, {
+      cacheLastTool,
       toolSearchEnabled: input.request.toolSearchEnabled,
       providerKind: input.resolved.providerKind,
       modelId: input.resolved.modelId,
@@ -121,6 +127,10 @@ export function createStreamTextOptions(input: {
     providerKind: input.resolved.providerKind,
     providerOptions,
   });
+  const cacheLastTool = shouldCacheLastAnthropicTool(
+    input.resolved.providerKind,
+    input.request.messages,
+  );
   return removeUndefined({
     model: input.resolved.model,
     messages: toAiSdkMessages(input.request.messages, {
@@ -131,6 +141,7 @@ export function createStreamTextOptions(input: {
       inputFormat: input.resolved.properties?.inputFormat,
     }),
     tools: toAiSdkTools(input.request.tools, {
+      cacheLastTool,
       toolSearchEnabled: input.request.toolSearchEnabled,
       providerKind: input.resolved.providerKind,
       modelId: input.resolved.modelId,
@@ -246,6 +257,20 @@ function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
 function resolveProviderApiFormat(providerOptions?: Record<string, unknown>): string | undefined {
   const apiFormat = providerOptions?.apiFormat;
   return typeof apiFormat === "string" ? apiFormat : undefined;
+}
+
+function shouldCacheLastAnthropicTool(
+  providerKind: ResolvedAiSdkModel["providerKind"],
+  messages: AiSdkModelTextRequest["messages"],
+): boolean {
+  if (providerKind !== "anthropic") {
+    return false;
+  }
+  const messageBreakpointCount = messages.reduce(
+    (count, message) => (message.cacheControl ? count + 1 : count),
+    0,
+  );
+  return messageBreakpointCount < DEFAULT_MAX_CACHE_BREAKPOINTS;
 }
 
 function removeUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {

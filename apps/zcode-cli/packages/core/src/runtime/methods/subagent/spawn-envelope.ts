@@ -1,4 +1,7 @@
 /** Конверт spawn и opt-in deadline задачи дочернего агента. */
+import { inheritPermissionMode } from "@zcode/contracts";
+import type { ExploreSubagentRuntimeRequest } from "../../deps.js";
+import type { AgentRuntimeInternal } from "../../internal.js";
 import { normalizeAgentTypeForMatch } from "../../../subagent/profile.js";
 
 interface SpawnEnvelopeInput {
@@ -55,4 +58,35 @@ export function resolveSubagentTaskTimeoutMs(
     return workerDeadline + SUBAGENT_ROUTER_HANDOFF_MS * 2;
   }
   return workerDeadline;
+}
+
+export function resolveSubagentPermissionMode(
+  parentMode: AgentRuntimeInternal["config"]["mode"],
+  permissionMode: ExploreSubagentRuntimeRequest["permissionMode"],
+  builtInExplore: boolean,
+): AgentRuntimeInternal["config"]["mode"] {
+  switch (permissionMode) {
+    case "bypassPermissions":
+    case "dontAsk":
+      return inheritPermissionMode(parentMode, "yolo");
+    case "acceptEdits":
+      return "edit";
+    case "auto":
+      return "auto";
+    case "plan":
+      return "plan";
+    case "default":
+    case undefined:
+      return inheritPermissionMode(parentMode, builtInExplore ? "yolo" : parentMode);
+    default:
+      return parentMode;
+  }
+}
+
+export function traceStringAttribute(
+  traceContext: { attributes?: Record<string, string | number | boolean> },
+  key: string,
+): string | undefined {
+  const value = traceContext.attributes?.[key];
+  return typeof value === "string" ? value : undefined;
 }

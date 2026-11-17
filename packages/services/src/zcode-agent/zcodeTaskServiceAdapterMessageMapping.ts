@@ -115,6 +115,18 @@ export function mapMessage(
     ...(message.info.role === "assistant"
       ? {
           ...(goalIteration ? { goalIteration } : {}),
+          ...(message.info.finishReason ?? message.info.finish
+            ? { finishReason: message.info.finishReason ?? message.info.finish }
+            : {}),
+          ...(message.info.rawTruncatedInputPreview
+            ? { rawTruncatedInputPreview: message.info.rawTruncatedInputPreview }
+            : {}),
+          ...(message.info.repairAttempts?.length
+            ? { repairAttempts: message.info.repairAttempts }
+            : {}),
+          ...(message.info.stateTransitions?.length
+            ? { stateTransitions: message.info.stateTransitions }
+            : {}),
           durationMs: message.info.time.completed
             ? message.info.time.completed - message.info.time.created
             : undefined,
@@ -323,6 +335,7 @@ export function mapToolPart(
       input: state.input,
       output: state.output,
       ...(notificationFailed && taskNotification?.error ? { error: taskNotification.error } : {}),
+      ...(state.repairAttempts?.length ? { repairAttempts: state.repairAttempts } : {}),
       raw,
     };
   }
@@ -334,6 +347,10 @@ export function mapToolPart(
       status: "failed",
       input: state.input,
       error: state.error,
+      ...(state.rawTruncatedInputPreview
+        ? { rawTruncatedInputPreview: state.rawTruncatedInputPreview }
+        : {}),
+      ...(state.repairAttempts?.length ? { repairAttempts: state.repairAttempts } : {}),
       raw,
     };
   }

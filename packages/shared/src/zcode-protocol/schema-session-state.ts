@@ -13,7 +13,13 @@ import {
   zcodeSessionModeSchema,
   zcodeSessionRuntimeStateSchema,
   zcodeSessionStatusSchema,
+  zcodeToolRepairAttemptRecordSchema,
+  zcodeToolRepairStageSchema,
   zcodeToolStateSchema,
+  zcodeTurnStateTransitionRecordSchema,
+  type ZCodeToolRepairAttemptRecord,
+  type ZCodeToolRepairStage,
+  type ZCodeTurnStateTransitionRecord,
 } from "../zcode-protocol-legacy-types.js";
 import { errorAttributionSchema } from "../zcode-protocol-v4/snapshot.js";
 import {
@@ -166,6 +172,14 @@ export const zcodeSessionProjectionSchema = z
 export type ZCodeSessionProjection = z.infer<typeof zcodeSessionProjectionSchema>;
 
 export type ZCodeToolState = z.infer<typeof zcodeToolStateSchema>;
+export {
+  zcodeToolRepairAttemptRecordSchema,
+  zcodeToolRepairStageSchema,
+  zcodeTurnStateTransitionRecordSchema,
+  type ZCodeToolRepairAttemptRecord,
+  type ZCodeToolRepairStage,
+  type ZCodeTurnStateTransitionRecord,
+};
 
 export const zcodeSlashCommandSchema = z
   .object({

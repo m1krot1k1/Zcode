@@ -99,75 +99,94 @@ export const writeHandler: ToolHandler = async (input, context) => {
     writeScope: context.writeScope,
   });
 
-  let originalFile: string | null = null;
-  let originalEncoding: FileSystemTextEncoding | undefined;
-  let originalLineEndings: "LF" | "CRLF" | undefined;
-  let originalRevision: FileSystemReadTextResult["revision"] | undefined;
-  const readStartedAt = Date.now();
-  let fsReadMs = 0;
-  try {
-    const read = await fileSystemPort.readTextFile(
+  const executeWriteUnderLock = async () => {
+    let originalFile: string | null = null;
+    let originalEncoding: FileSystemTextEncoding | undefined;
+    let originalLineEndings: "LF" | "CRLF" | undefined;
+    let originalRevision: FileSystemReadTextResult["revision"] | undefined;
+    const readStartedAt = Date.now();
+    let fsReadMs = 0;
+    try {
+      const read = await fileSystemPort.readTextFile(
+        {
+          path: filePath,
+          trace: createWriteTrace(context),
+        },
+        { signal: context.abortSignal },
+      );
+      assertWritableExistingFileIsFresh(filePath, read, context.readFileState);
+      originalFile = read.content;
+      originalEncoding = read.encoding;
+      originalLineEndings = read.lineEndings;
+      originalRevision = read.revision;
+      fsReadMs = elapsedMsSince(readStartedAt);
+    } catch (error) {
+      fsReadMs = elapsedMsSince(readStartedAt);
+      if (!isFileSystemPortError(error) || error.code !== "not_found") {
+        throw error;
+      }
+    }
+
+    const contentToWrite = stampMemoryOriginSessionId({
+      content,
+      filePath,
+      memoryRoot: context.memoryRoot,
+      sessionId: context.sessionId,
+    });
+    const writeStartedAt = Date.now();
+    const writeResult = await fileSystemPort.writeTextFile(
       {
         path: filePath,
+        content: contentToWrite,
+        encoding: originalEncoding,
+        lineEndings: originalLineEndings,
+        createParents: true,
+        atomic: true,
+        expectedRevision: originalRevision,
         trace: createWriteTrace(context),
       },
       { signal: context.abortSignal },
     );
-    assertWritableExistingFileIsFresh(filePath, read, context.readFileState);
-    originalFile = read.content;
-    originalEncoding = read.encoding;
-    originalLineEndings = read.lineEndings;
-    originalRevision = read.revision;
-    fsReadMs = elapsedMsSince(readStartedAt);
-  } catch (error) {
-    fsReadMs = elapsedMsSince(readStartedAt);
-    if (!isFileSystemPortError(error) || error.code !== "not_found") {
-      throw error;
+    const fsWriteMs = elapsedMsSince(writeStartedAt);
+
+    const readFileStateEntry = updateReadFileStateAfterWrite(
+      context.readFileState,
+      filePath,
+      contentToWrite,
+      writeResult.revision,
+    );
+    recordReadFileStateMetadata(context, readFileStateEntry);
+
+    if (originalFile) {
+      return attachToolExecutionTelemetry(
+        {
+          type: "update",
+          filePath: file_path,
+          content: contentToWrite,
+          structuredPatch: createStructuredPatch({
+            filePath: file_path,
+            oldContent: originalFile,
+            newContent: contentToWrite,
+          }),
+          originalFile,
+          userModified: false,
+        },
+        createWritePerformanceTelemetry({
+          content: contentToWrite,
+          fsReadMs,
+          fsWriteMs,
+          context,
+        }),
+      );
     }
-  }
 
-  const contentToWrite = stampMemoryOriginSessionId({
-    content,
-    filePath,
-    memoryRoot: context.memoryRoot,
-    sessionId: context.sessionId,
-  });
-  const writeStartedAt = Date.now();
-  const writeResult = await fileSystemPort.writeTextFile(
-    {
-      path: filePath,
-      content: contentToWrite,
-      encoding: originalEncoding,
-      lineEndings: originalLineEndings,
-      createParents: true,
-      atomic: true,
-      expectedRevision: originalRevision,
-      trace: createWriteTrace(context),
-    },
-    { signal: context.abortSignal },
-  );
-  const fsWriteMs = elapsedMsSince(writeStartedAt);
-
-  const readFileStateEntry = updateReadFileStateAfterWrite(
-    context.readFileState,
-    filePath,
-    contentToWrite,
-    writeResult.revision,
-  );
-  recordReadFileStateMetadata(context, readFileStateEntry);
-
-  if (originalFile) {
     return attachToolExecutionTelemetry(
       {
-        type: "update",
+        type: "create",
         filePath: file_path,
         content: contentToWrite,
-        structuredPatch: createStructuredPatch({
-          filePath: file_path,
-          oldContent: originalFile,
-          newContent: contentToWrite,
-        }),
-        originalFile,
+        structuredPatch: [],
+        originalFile: null,
         userModified: false,
       },
       createWritePerformanceTelemetry({
@@ -177,23 +196,21 @@ export const writeHandler: ToolHandler = async (input, context) => {
         context,
       }),
     );
+  };
+
+  if (!context.fileLockRegistry) {
+    return executeWriteUnderLock();
   }
 
-  return attachToolExecutionTelemetry(
+  return context.fileLockRegistry.withLocks(
+    [{ path: filePath, mode: "exclusive-write" }],
     {
-      type: "create",
-      filePath: file_path,
-      content: contentToWrite,
-      structuredPatch: [],
-      originalFile: null,
-      userModified: false,
+      holderId: `${context.sessionId}:${context.toolCallId}`,
+      signal: context.abortSignal,
+      workspaceIdentity: context.workspaceIdentity,
+      workspaceRoot: context.workspaceRoot,
     },
-    createWritePerformanceTelemetry({
-      content: contentToWrite,
-      fsReadMs,
-      fsWriteMs,
-      context,
-    }),
+    executeWriteUnderLock,
   );
 };
 

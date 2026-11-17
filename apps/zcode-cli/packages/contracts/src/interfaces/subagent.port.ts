@@ -116,6 +116,14 @@ export interface PrismTaskAcceptanceDecision {
   missingCriterionIds: string[];
 }
 
+export interface SubagentExecutionBudget {
+  maxTurns?: number;
+  maxInputTokens?: number;
+  maxWallTimeMs?: number;
+}
+
+export type SubagentIsolationMode = "shared-locked" | "git-worktree";
+
 export interface SubagentRunRequest {
   sessionId: SessionId;
   turnId?: TurnId;
@@ -123,12 +131,18 @@ export interface SubagentRunRequest {
   agentType: string;
   description: string;
   prompt: string;
+  /** Опциональные пути чтения для планирования контекста и DAG-волн. */
+  readPaths?: readonly string[];
   /**
    * Exact write scope, propagated to the child runtime as writeScope. Required for
    * write-capable profiles; admission rejects an absent value, while [] means the
    * branch may not modify files.
    */
   writePaths?: readonly string[];
+  /** Режим изоляции файловых правок узла (по умолчанию shared-locked через общий FileLockRegistry). */
+  isolationMode?: SubagentIsolationMode;
+  /** Жёсткий бюджет шагов, входных токенов и wall-time на выполнение субагента. */
+  budget?: SubagentExecutionBudget;
   callerCanReadOutputFile?: boolean;
   workingDirectory: string;
   workspaceRoot: string;

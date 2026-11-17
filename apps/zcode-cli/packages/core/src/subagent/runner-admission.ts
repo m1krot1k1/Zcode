@@ -492,6 +492,9 @@ export function createRuntimeTaskSnapshot(input: {
     // а не из текста prompt: read-only роли не создают claim'ы на упомянутые для чтения пути.
     writeCapable: isEffectiveWriteCapable(input.lifecycle.profile, input.parentToolNames),
     ...(input.request.writePaths === undefined ? {} : { writePaths: input.request.writePaths }),
+    ...(input.request.isolationMode === undefined
+      ? {}
+      : { isolationMode: input.request.isolationMode }),
     ...(input.level === undefined ? {} : { level: input.level }),
   };
 }

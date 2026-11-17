@@ -1,4 +1,7 @@
-import type { ToolSearchExecutionContext } from "@zcode/contracts";
+import type {
+  PersistedFinishReasonKind,
+  ToolSearchExecutionContext,
+} from "@zcode/contracts";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 
 import { beginLocalTurnPreparation } from "@zcode/contracts";
@@ -41,10 +44,7 @@ import {
   recordMainTurnModelUsage,
 } from "./turn-model-step-usage.js";
 import { estimateCurrentModelInputTokens } from "./compact.js";
-import {
-  resolveModelStepMaxOutputTokens,
-  resolveNormalRequestMaxOutputTokens,
-} from "./model-token-limits.js";
+import { resolveReasoningAwareMaxOutputTokens } from "./model-token-limits.js";
 import {
   applyExecutionSelectionFallback,
   matchExecutionSelectionFallback,
@@ -57,7 +57,9 @@ import {
   completeOutputTokenRecovery,
   hasAssistantReasoningContent,
   OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
+  recordTruncatedToolCallRecovery,
 } from "./turn-output-token-continuation.js";
+import { synthesizeTruncatedToolCallSettlements } from "../../tool/self-repair/index.js";
 
 type ModelStepResult = "continue" | "output_continuation" | "break";
 
@@ -207,23 +209,23 @@ async function runModelBackedTurnStepImpl(
   };
 
   let result: RuntimeModelTextResult;
+  const outputBudget = resolveReasoningAwareMaxOutputTokens({
+    modelHardMaxOutputTokens: executionMaxOutputTokens,
+    configuredMaxOutputTokens: undefined,
+    contextWindow: executionContextWindow,
+    estimatedInputTokens: estimateCurrentModelInputTokens(
+      options.messages,
+      options.sourceEntries,
+    ),
+    reasoningEffort: model.options?.reasoningLevel,
+    minToolPayloadReserveTokens: this.config.reasoningReserveOutputTokens,
+  });
   try {
-    const baselineMaxOutputTokens = resolveNormalRequestMaxOutputTokens({
-      modelMaxOutputTokens: executionMaxOutputTokens,
-    });
     result = await this.runModelTextRequest({
       abortSignal: state.turnAbortSignal,
       assistantMessageId,
       events: state.events,
-      maxOutputTokens: resolveModelStepMaxOutputTokens({
-        baselineMaxOutputTokens,
-        contextWindow: executionContextWindow,
-        estimatedCurrentUsage: estimateCurrentModelInputTokens(
-          options.messages,
-          options.sourceEntries,
-        ),
-        modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
-      }),
+      maxOutputTokens: outputBudget.effectiveMaxOutputTokens,
       latestRealUserMessageIndex: options.latestRealUserMessageIndex,
       messages: options.messages,
       sourceEntries: options.sourceEntries,
@@ -601,6 +603,22 @@ async function runModelBackedTurnStepImpl(
   // AI SDK 可能把非标准 output-limit 归一化为 other；Runtime 已确认恢复语义后，
   // live 事件与持久化必须统一使用 length，同时由上方 diagnostics 保留 provider 原始事实。
   if (outputTokenContinuation !== "none") result.finishReason = "length";
+  const cacheHitRatio =
+    (usage.inputTokens ?? 0) > 0
+      ? Math.min(1, Math.max(0, (usage.cacheReadTokens ?? 0) / usage.inputTokens!))
+      : undefined;
+  state.lastStepDiagnostics = {
+    finishReason: normalizePersistedFinishReason(result.finishReason),
+    ...(rawFinishReason ? { rawFinishReason: rawFinishReason.slice(0, 128) } : {}),
+    ...(outputBudget.effectiveMaxOutputTokens > 0
+      ? { effectiveMaxOutputTokens: outputBudget.effectiveMaxOutputTokens }
+      : {}),
+    ...(outputBudget.thinkingBudgetTokens > 0
+      ? { thinkingBudgetTokens: outputBudget.thinkingBudgetTokens }
+      : {}),
+    ...(cacheHitRatio !== undefined ? { cacheHitRatio } : {}),
+    stateTransitions: [...(state.turnMachine.state.stateTransitions ?? [])],
+  };
   for (const reasoning of result.reasoning ?? []) {
     if (!hasAssistantReasoningContent(reasoning)) continue;
     await this.persistPart(
@@ -704,7 +722,60 @@ async function runModelBackedTurnStepImpl(
     .filter((toolCall) => !toolCall.providerExecuted)
     .map((toolCall) => streamingToolCoordinator.admit(toolCall));
   const streamedToolResults = await streamingToolCoordinator.drain(executableToolCalls);
-  if (outputTokenContinuation !== "none") {
+  if (outputTokenContinuation === "recover_truncated_tool_calls") {
+    const truncatedSettlements = synthesizeTruncatedToolCallSettlements({
+      toolCalls: executableToolCalls,
+      existingStreamedIds: new Set(streamedToolResults.map((entry) => entry.toolCallId)),
+      resolveEntry: (name) => this.registry.get(name),
+      maxOutputTokens: outputBudget.effectiveMaxOutputTokens,
+      reasoningTokens: usage.reasoningTokens,
+      outputTokens: usage.outputTokens,
+    });
+    if (truncatedSettlements.length > 0) {
+      state.turnRequestState.entries = options.requestEntries;
+      recordTruncatedToolCallRecovery(state.turnRequestState);
+      state.reactiveCompactAttemptedInCurrentModelStep = false;
+      state.turnMachine = new TurnMachineImpl(
+        state.turnMachine.enterTruncatedToolRecovery("finish_reason_length"),
+      );
+      const firstTruncatedPreview = truncatedSettlements.find(
+        (entry) => entry.result.failureDiagnostics?.rawTruncatedInputPreview,
+      )?.result.failureDiagnostics?.rawTruncatedInputPreview;
+      if (firstTruncatedPreview && state.lastStepDiagnostics) {
+        state.lastStepDiagnostics = {
+          ...state.lastStepDiagnostics,
+          rawTruncatedInputPreview: firstTruncatedPreview,
+        };
+      }
+      const truncatedIds = new Set(truncatedSettlements.map((entry) => entry.toolCallId));
+      const sanitizedToolCalls = executableToolCalls.map((tc) =>
+        truncatedIds.has(tc.id as never) &&
+        (typeof tc.input !== "object" || tc.input === null || Array.isArray(tc.input))
+          ? { ...tc, input: {} }
+          : tc,
+      );
+      state.toolCallCount += sanitizedToolCalls.length;
+      if (commitAssistantToTurnRequest(this, state, result, sanitizedToolCalls)) {
+        recordModelHistoryRound(state);
+      }
+      return await executeToolCallsForModelStep.call(this, state, {
+        toolSearch: options.toolSearch,
+        assistantCreatedAt,
+        assistantMessageId,
+        modelTraceContext,
+        result,
+        toolCalls: sanitizedToolCalls,
+        streamedToolResults: [
+          ...streamedToolResults.filter((entry) => !truncatedIds.has(entry.toolCallId)),
+          ...truncatedSettlements,
+        ],
+      });
+    }
+  }
+  if (
+    outputTokenContinuation !== "none" &&
+    outputTokenContinuation !== "recover_truncated_tool_calls"
+  ) {
     // 首次命中 output-limit 时，当前 request 可能带有一次性的 project-memory attachment；
     // query-local 状态必须从实际请求数组推进，不能退回请求前的数组。
     state.turnRequestState.entries = options.requestEntries;
@@ -798,5 +869,19 @@ function buildAutomationCreateLimitFallback(input: string): string {
     return "定时任务已达到 20 个上限，本次未创建。请前往“自动化”手动删除一个已有任务后重试。";
   }
   return "The limit of 20 scheduled tasks has been reached, so no task was created. Manually delete an existing task on the Automations page, then try again.";
+}
+
+function normalizePersistedFinishReason(reason: string | undefined): PersistedFinishReasonKind {
+  switch (reason) {
+    case "stop":
+    case "length":
+    case "tool-calls":
+    case "content-filter":
+    case "error":
+    case "other":
+      return reason;
+    default:
+      return "unknown";
+  }
 }
 import { recoverModelStepAfterContextExceeded } from "./turn-model-step-compact-recovery.js";

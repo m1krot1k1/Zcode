@@ -62,6 +62,7 @@ import type { ProjectMemoryRecallPrefetch } from "./helpers/project-memory-recal
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { ProjectMemoryUpdate } from "./helpers/project-memory-dream.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
+import type { IFileLockRegistry } from "../tool/file-transaction/contract.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
 export interface AgentRuntimeInternal
@@ -148,6 +149,7 @@ export interface AgentRuntimeInternal
   artifactStore?: ToolArtifactStorePort;
   executionPort?: ExecutionPort;
   fileSystemPort?: FileSystemPort;
+  fileLockRegistry: IFileLockRegistry;
   codeIntelligencePort?: CodeIntelligencePort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;

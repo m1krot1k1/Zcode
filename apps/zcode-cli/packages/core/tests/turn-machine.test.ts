@@ -100,6 +100,37 @@ describe("TurnMachine", () => {
       const machine = TurnMachineImpl.create("sess_123" as any, 1, "Hello");
       expect(() => machine.complete("test")).toThrow();
     });
+
+    it("records deterministic stateTransitions across truncated-tool recovery and tool input validation", () => {
+      const waiting = modelWaitingMachine();
+      const streaming = new TurnMachineImpl(
+        waiting.receiveModelResponse("partial", "finish_length"),
+      );
+      const recovering = new TurnMachineImpl(
+        streaming.enterTruncatedToolRecovery("TOOL_CALL_TRUNCATED_BY_MAX_TOKENS"),
+      );
+      expect(recovering.state.phase).toBe(TurnPhase.TruncatedToolRecovery);
+
+      const retried = new TurnMachineImpl(recovering.startModelRequest("claude", []));
+      const nextStreaming = new TurnMachineImpl(retried.receiveModelResponse(""));
+      const validating = new TurnMachineImpl(
+        nextStreaming.enterToolInputValidation("self_repair_check"),
+      );
+      expect(validating.state.phase).toBe(TurnPhase.ValidatingToolInputs);
+
+      // Нельзя перейти напрямую из ValidatingToolInputs в Completing, минуя исполнение/агрегацию.
+      expect(() => validating.complete("illegal")).toThrow();
+
+      expect(validating.state.stateTransitions.map((item) => `${item.from}->${item.to}`)).toEqual([
+        `${TurnPhase.Idle}->${TurnPhase.ProcessingInput}`,
+        `${TurnPhase.ProcessingInput}->${TurnPhase.AwaitingModelResponse}`,
+        `${TurnPhase.AwaitingModelResponse}->${TurnPhase.Streaming}`,
+        `${TurnPhase.Streaming}->${TurnPhase.TruncatedToolRecovery}`,
+        `${TurnPhase.TruncatedToolRecovery}->${TurnPhase.AwaitingModelResponse}`,
+        `${TurnPhase.AwaitingModelResponse}->${TurnPhase.Streaming}`,
+        `${TurnPhase.Streaming}->${TurnPhase.ValidatingToolInputs}`,
+      ]);
+    });
   });
 });
 

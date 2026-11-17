@@ -32,6 +32,7 @@ import {
   createModelOptionMapFetch,
   type RawRequestBodyCapture,
 } from "../model-option-map-fetch.js";
+import { createOpenAiCompatibleCacheControlFetch } from "../cache-control/index.js";
 import { createProviderEndpointRoutingFetch } from "../provider-endpoint-routing-fetch.js";
 import {
   mergeModelRequestHeaders,
@@ -397,7 +398,14 @@ export class AiSdkModelExecution {
           name: providerConfig.name ?? providerId,
           baseURL: providerConfig.baseURL,
           apiKey,
-          fetch: optionFetch,
+          // Причина: @ai-sdk/openai-compatible теряет providerOptions.anthropic.cacheControl при сериализации;
+          // инжектируем до 4 квантованных точек cache_control на уровне wire JSON для OpenRouter/DashScope семейств.
+          fetch: createOpenAiCompatibleCacheControlFetch({
+            baseURL: providerConfig.baseURL,
+            capture: rawRequestBodyCapture,
+            fetch: optionFetch,
+            providerId,
+          }),
           headers,
           // OpenAI Compatible 流式 usage 需要显式请求，Usage 是执行结果的一部分。
           includeUsage: true,

@@ -131,134 +131,151 @@ export const editHandler: ToolHandler = async (input, context) => {
     writeScope: context.writeScope,
   });
 
-  const stat = await statEditableFile(filePath, context);
-  if (!stat) {
+  const executeEditUnderLock = async () => {
+    const stat = await statEditableFile(filePath, context);
+    if (!stat) {
+      if (old_string === "") {
+        return writeEditResult({
+          context,
+          filePath,
+          inputFilePath: file_path,
+          originalFile: "",
+          actualOldString: "",
+          actualNewString: new_string,
+          newContent: new_string,
+          replaceAll: replace_all,
+          fsReadMs: 0,
+          patchMatchMs: 0,
+          matchAttempts: 0,
+        });
+      }
+
+      return editFailure(
+        EditErrorCode.FILE_NOT_EXIST,
+        await createMissingEditFileMessage(filePath, context),
+      );
+    }
+
+    if (stat.sizeBytes > MAX_EDIT_FILE_SIZE_BYTES) {
+      return editFailure(
+        EditErrorCode.FILE_TOO_LARGE,
+        "File is too large to edit (1GB). Maximum editable file size is 1GB.",
+      );
+    }
+
+    const readStartedAt = Date.now();
+    const read = await fileSystemPort.readTextFile(
+      {
+        path: filePath,
+        trace: createEditTrace(context),
+      },
+      { signal: context.abortSignal },
+    );
+    const fsReadMs = elapsedMsSince(readStartedAt);
+    const content = normalizeLineEndings(read.content);
+    const oldString = normalizeLineEndings(old_string);
+    const requestedNewString = normalizeLineEndings(new_string);
+
     if (old_string === "") {
+      if (content.trim() !== "") {
+        return editFailure(
+          EditErrorCode.FILE_EXISTS_NO_OLD_STRING,
+          "Cannot create new file - file already exists.",
+        );
+      }
+      const readStateFailure = getEditableReadStateFailure(filePath, read, context.readFileState);
+      if (readStateFailure) return readStateFailure;
       return writeEditResult({
         context,
         filePath,
         inputFilePath: file_path,
-        originalFile: "",
+        originalFile: content,
         actualOldString: "",
-        actualNewString: new_string,
-        newContent: new_string,
+        actualNewString: requestedNewString,
+        newContent: requestedNewString,
+        read,
         replaceAll: replace_all,
-        fsReadMs: 0,
+        fsReadMs,
         patchMatchMs: 0,
         matchAttempts: 0,
       });
     }
 
-    return editFailure(
-      EditErrorCode.FILE_NOT_EXIST,
-      await createMissingEditFileMessage(filePath, context),
-    );
-  }
-
-  if (stat.sizeBytes > MAX_EDIT_FILE_SIZE_BYTES) {
-    return editFailure(
-      EditErrorCode.FILE_TOO_LARGE,
-      "File is too large to edit (1GB). Maximum editable file size is 1GB.",
-    );
-  }
-
-  const readStartedAt = Date.now();
-  const read = await fileSystemPort.readTextFile(
-    {
-      path: filePath,
-      trace: createEditTrace(context),
-    },
-    { signal: context.abortSignal },
-  );
-  const fsReadMs = elapsedMsSince(readStartedAt);
-  const content = normalizeLineEndings(read.content);
-  const oldString = normalizeLineEndings(old_string);
-  const requestedNewString = normalizeLineEndings(new_string);
-
-  if (old_string === "") {
-    if (content.trim() !== "") {
+    if (filePath.endsWith(".ipynb")) {
       return editFailure(
-        EditErrorCode.FILE_EXISTS_NO_OLD_STRING,
-        "Cannot create new file - file already exists.",
+        EditErrorCode.NOTEBOOK_FILE,
+        "File is a Jupyter Notebook. Use the NotebookEdit to edit this file.",
       );
     }
+
     const readStateFailure = getEditableReadStateFailure(filePath, read, context.readFileState);
     if (readStateFailure) return readStateFailure;
+
+    const patchMatchStartedAt = Date.now();
+    const match = findEditMatch({
+      content,
+      search: oldString,
+      replaceAll: replace_all,
+    });
+    const patchMatchMs = elapsedMsSince(patchMatchStartedAt);
+    if (match.status === "not_found") {
+      return editFailure(
+        EditErrorCode.OLD_STRING_NOT_FOUND,
+        `String to replace not found in file.\nString: ${old_string}`,
+      );
+    }
+    if (match.status === "ambiguous") {
+      return editFailure(
+        EditErrorCode.AMBIGUOUS_REPLACE,
+        createAmbiguousEditMessage(match.candidateCount, old_string),
+      );
+    }
+
+    const actualOldString = match.actualString;
+    const matchCount = countOccurrences(content, actualOldString);
+    if (!replace_all && matchCount > 1) {
+      return editFailure(
+        EditErrorCode.AMBIGUOUS_REPLACE,
+        createAmbiguousEditMessage(matchCount, old_string),
+      );
+    }
+
+    const normalizedNewString = normalizeReplacementForMatch(match.strategy, requestedNewString);
+    const actualNewString = preserveQuoteStyle(oldString, actualOldString, normalizedNewString);
+    const newContent = applyEditToContent(content, actualOldString, actualNewString, replace_all);
+
     return writeEditResult({
       context,
       filePath,
       inputFilePath: file_path,
       originalFile: content,
-      actualOldString: "",
-      actualNewString: requestedNewString,
-      newContent: requestedNewString,
+      actualOldString,
+      actualNewString,
+      newContent,
       read,
       replaceAll: replace_all,
+      matchStrategy: match.strategy,
+      matchCandidateCount: match.candidateCount,
       fsReadMs,
-      patchMatchMs: 0,
-      matchAttempts: 0,
+      patchMatchMs,
+      matchAttempts: 1,
     });
+  };
+
+  if (!context.fileLockRegistry) {
+    return executeEditUnderLock();
   }
 
-  if (filePath.endsWith(".ipynb")) {
-    return editFailure(
-      EditErrorCode.NOTEBOOK_FILE,
-      "File is a Jupyter Notebook. Use the NotebookEdit to edit this file.",
-    );
-  }
-
-  const readStateFailure = getEditableReadStateFailure(filePath, read, context.readFileState);
-  if (readStateFailure) return readStateFailure;
-
-  const patchMatchStartedAt = Date.now();
-  const match = findEditMatch({
-    content,
-    search: oldString,
-    replaceAll: replace_all,
-  });
-  const patchMatchMs = elapsedMsSince(patchMatchStartedAt);
-  if (match.status === "not_found") {
-    return editFailure(
-      EditErrorCode.OLD_STRING_NOT_FOUND,
-      `String to replace not found in file.\nString: ${old_string}`,
-    );
-  }
-  if (match.status === "ambiguous") {
-    return editFailure(
-      EditErrorCode.AMBIGUOUS_REPLACE,
-      createAmbiguousEditMessage(match.candidateCount, old_string),
-    );
-  }
-
-  const actualOldString = match.actualString;
-  const matchCount = countOccurrences(content, actualOldString);
-  if (!replace_all && matchCount > 1) {
-    return editFailure(
-      EditErrorCode.AMBIGUOUS_REPLACE,
-      createAmbiguousEditMessage(matchCount, old_string),
-    );
-  }
-
-  const normalizedNewString = normalizeReplacementForMatch(match.strategy, requestedNewString);
-  const actualNewString = preserveQuoteStyle(oldString, actualOldString, normalizedNewString);
-  const newContent = applyEditToContent(content, actualOldString, actualNewString, replace_all);
-
-  return writeEditResult({
-    context,
-    filePath,
-    inputFilePath: file_path,
-    originalFile: content,
-    actualOldString,
-    actualNewString,
-    newContent,
-    read,
-    replaceAll: replace_all,
-    matchStrategy: match.strategy,
-    matchCandidateCount: match.candidateCount,
-    fsReadMs,
-    patchMatchMs,
-    matchAttempts: 1,
-  });
+  return context.fileLockRegistry.withLocks(
+    [{ path: filePath, mode: "exclusive-write" }],
+    {
+      holderId: `${context.sessionId}:${context.toolCallId}`,
+      signal: context.abortSignal,
+      workspaceIdentity: context.workspaceIdentity,
+      workspaceRoot: context.workspaceRoot,
+    },
+    executeEditUnderLock,
+  );
 };
 
 export const editToolEntry: ToolEntry = {

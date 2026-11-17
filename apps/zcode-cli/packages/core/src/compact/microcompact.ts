@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   MicrocompactStrategy,
   MicrocompactTrigger,
@@ -12,17 +13,21 @@ import { estimateMessageTokens } from "./manual.js";
 export const MICROCOMPACT_CLEARED_TOOL_RESULT_PREFIX = "[Old tool result content cleared]";
 export const MICROCOMPACT_CLEARED_TOOL_RESULT_MESSAGE = "[Old tool result content cleared]";
 export const OBSERVATION_MASK_PREFIX = "[Old tool observation masked";
-export const DEFAULT_MICROCOMPACT_KEEP_RECENT_TOOL_RESULTS = 5;
+export const DEFAULT_MICROCOMPACT_KEEP_RECENT_TOOL_RESULTS = 6;
 export const DEFAULT_OBSERVATION_MASK_MIN_CHARS = 1_000;
 const DEFAULT_MICROCOMPACT_IDLE_THRESHOLD_MINUTES = 60;
 export const DEFAULT_MICROCOMPACT_MIN_TOKEN_SAVINGS = 256;
 export const DEFAULT_MICROCOMPACT_THRESHOLD_RATIO = 0.9;
 export const DEFAULT_MICROCOMPACT_THRESHOLD_BUFFER_TOKENS = 2_000;
+export const DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS = 120_000;
+export const DEFAULT_MASKING_STEP_QUANTUM_TOKENS = 20_000;
+export const DEFAULT_MICROCOMPACT_GROUP_QUANTUM = 4;
 export const DEFAULT_MICROCOMPACT_COMPACTABLE_TOOLS = [
   "Read",
   "Bash",
   "Grep",
   "Glob",
+  "CodeIndex",
   "WebFetch",
   "WebSearch",
   "Edit",
@@ -33,6 +38,12 @@ export const DEFAULT_MICROCOMPACT_COMPACTABLE_TOOLS = [
 export interface LocalMicrocompactPolicyConfig {
   enabled?: boolean;
   thresholdTokens?: number;
+  /** Эффективный мягкий потолок рабочего контекста (по умолчанию 120 000 токенов даже для 1M-моделей). */
+  workingContextSoftCapTokens?: number;
+  /** Шаг квантования токенного порога маскирования, исключающий перестройку префикса на каждом ходу. */
+  maskingStepQuantumTokens?: number;
+  /** Квантование числа очищаемых групп инструментов для сохранения стабильности кэш-префикса. */
+  groupQuantum?: number;
   idleThresholdMinutes?: number;
   keepRecentToolResults?: number;
   compactableToolNames?: readonly string[];
@@ -82,10 +93,15 @@ interface ToolResultCandidate {
   toolName: string;
 }
 
-export function buildDefaultMicrocompactThreshold(autoCompactThreshold: number): number {
+export function buildDefaultMicrocompactThreshold(
+  autoCompactThreshold: number,
+  workingContextSoftCapTokens = DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS,
+): number {
   const ratioThreshold = Math.floor(autoCompactThreshold * DEFAULT_MICROCOMPACT_THRESHOLD_RATIO);
   const bufferThreshold = autoCompactThreshold - DEFAULT_MICROCOMPACT_THRESHOLD_BUFFER_TOKENS;
-  return Math.max(0, Math.min(ratioThreshold, bufferThreshold));
+  const softCap =
+    positiveInt(workingContextSoftCapTokens) ?? DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS;
+  return Math.max(0, Math.min(ratioThreshold, bufferThreshold, softCap));
 }
 
 export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessage>(input: {
@@ -100,7 +116,10 @@ export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessag
   const config = input.config ?? {};
   const messages = input.messages.map(cloneLocalMicrocompactMessage);
   const estimatedTokenCount = estimateMessageTokens(messages);
-  const thresholdTokens = positiveInt(config.thresholdTokens);
+  const baseThresholdTokens = positiveInt(config.thresholdTokens);
+  const quantumTokens = positiveInt(config.maskingStepQuantumTokens) ?? 0;
+  const thresholdTokens =
+    baseThresholdTokens !== undefined ? baseThresholdTokens + quantumTokens : undefined;
 
   if (config.enabled === false) {
     return {
@@ -138,7 +157,12 @@ export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessag
   const keepCount =
     positiveInt(config.keepRecentToolResults) ?? DEFAULT_MICROCOMPACT_KEEP_RECENT_TOOL_RESULTS;
   const boundedKeepCount = Math.max(1, keepCount);
-  const clearGroupCount = Math.max(0, candidateGroups.length - boundedKeepCount);
+  const rawClearGroupCount = Math.max(0, candidateGroups.length - boundedKeepCount);
+  const groupQuantum = Math.max(1, positiveInt(config.groupQuantum) ?? 1);
+  const clearGroupCount =
+    groupQuantum > 1 && rawClearGroupCount >= groupQuantum
+      ? Math.floor(rawClearGroupCount / groupQuantum) * groupQuantum
+      : rawClearGroupCount;
   if (clearGroupCount === 0) {
     return {
       decision: { estimatedTokenCount, reason: "nothing_to_clear", thresholdTokens, trigger },
@@ -159,6 +183,7 @@ export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessag
   for (const candidate of toClear) {
     const message = messages[candidate.index];
     if (!message) continue;
+    const fallbackToolInput = resolveToolCallInputFromHistory(messages, candidate.toolCallId);
     messages[candidate.index] = {
       ...message,
       content:
@@ -167,7 +192,8 @@ export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessag
           : buildObservationMaskContent({
               content: message.content,
               isError: message.isError === true,
-              toolInput: input.resolveToolInput?.(message, candidate.index),
+              toolInput:
+                input.resolveToolInput?.(message, candidate.index) ?? fallbackToolInput,
               toolName: candidate.toolName,
             }),
     };
@@ -292,9 +318,38 @@ function buildObservationMaskContent(input: {
   toolInput?: unknown;
   toolName: string;
 }): ModelMessageContent {
+  const rawText = modelMessageContentToText(input.content);
   const target = summarizeObservationTarget(input.toolName, input.toolInput);
-  const charCount = modelMessageContentToText(input.content).length;
-  return `${OBSERVATION_MASK_PREFIX}: ${input.toolName}${target ? ` ${target}` : ""}${input.isError ? " status=error" : ""} chars=${charCount}; re-run the tool if the full output is needed]`;
+  const charCount = rawText.length;
+  const lineCount = countContentLines(rawText);
+  const sha256Short = createHash("sha256").update(rawText).digest("hex").slice(0, 12);
+  const compactMask = `${OBSERVATION_MASK_PREFIX}: ${input.toolName}${target ? ` ${target}` : ""}${input.isError ? " status=error" : ""} lines=${lineCount} chars=${charCount} sha256=${sha256Short}]`;
+  const fullMask = `${OBSERVATION_MASK_PREFIX}: ${input.toolName}${target ? ` ${target}` : ""}${input.isError ? " status=error" : ""} lines=${lineCount} chars=${charCount} sha256=${sha256Short}; re-run the tool with offset/limit if the full output is needed]`;
+  return charCount > fullMask.length + 16 ? fullMask : compactMask;
+}
+
+function countContentLines(text: string): number {
+  if (text.length === 0) return 0;
+  let lines = 1;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) === 10) lines += 1;
+  }
+  return lines;
+}
+
+function resolveToolCallInputFromHistory<T extends LocalMicrocompactMessage>(
+  messages: readonly T[],
+  toolCallId: string,
+): unknown {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const toolCalls = messages[i]?.toolCalls;
+    if (!toolCalls) continue;
+    const found = toolCalls.find((call) => call.id === toolCallId);
+    if (found && found.input !== undefined) {
+      return found.input;
+    }
+  }
+  return undefined;
 }
 
 function summarizeObservationTarget(toolName: string, toolInput: unknown): string {
@@ -307,15 +362,31 @@ function summarizeObservationTarget(toolName: string, toolInput: unknown): strin
     }
     return undefined;
   };
+  const numberField = (...keys: string[]): number | undefined => {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+    }
+    return undefined;
+  };
   switch (toolName) {
     case "Read":
     case "Edit":
     case "Write":
     case "ApplyPatch": {
       const path = stringField("file_path", "path");
-      return path ? `path=${truncateMaskValue(path, 160)}` : "";
+      const offset = numberField("offset");
+      const limit = numberField("limit");
+      return [
+        path ? `path=${truncateMaskValue(path, 160)}` : "",
+        offset !== undefined ? `offset=${offset}` : "",
+        limit !== undefined ? `limit=${limit}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
     }
-    case "Grep": {
+    case "Grep":
+    case "CodeIndex": {
       const pattern = stringField("pattern", "query");
       const path = stringField("path");
       return [

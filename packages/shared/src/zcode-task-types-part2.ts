@@ -11,6 +11,8 @@ import type {
   ZCodeInteractionRequestOrigin,
   ZCodePermissionResponse,
   ZCodeSessionActiveTurnKind,
+  ZCodeToolRepairAttemptRecord,
+  ZCodeTurnStateTransitionRecord,
 } from "./zcode-protocol-legacy-types.js";
 import type { ErrorAttribution } from "./zcode-protocol-v4/snapshot.js";
 import type { InputId, QueryId, TaskRealtimeReason, TaskStreamWatermark, TraceId, ZCodeAgentThoughtChunk, ZCodeApiRetryStatus, ZCodeAssistantCheckpointReason, ZCodeAssistantCheckpointState, ZCodeAssistantMessageFeedback, ZCodeConfigOption, ZCodeContextCacheUsage, ZCodeContextCompactionTimelineMeta, ZCodeElicitationOption, ZCodeElicitationQuestion, ZCodeElicitationResponse, ZCodeGlmAgentModelStateUpdatePayload, ZCodeGoalIterationStarted, ZCodeGoalVerification, ZCodeGoalVerificationTimelineMeta, ZCodePermissionRequest, ZCodePersistedMessagePart, ZCodePersistedTurnCheckpoint, ZCodePlan, ZCodePlanStep, ZCodePromptAttachment, ZCodeProvider, ZCodeSessionForkTimelineMeta, ZCodeSlashCommand, ZCodeTaskChangeSummary, ZCodeTaskComplete, ZCodeTaskError, ZCodeTaskGoal, ZCodeTaskGoalStats, ZCodeTaskLastError, ZCodeTaskMigrationSource, ZCodeTaskMode, ZCodeTaskModeInfo, ZCodeTaskNetworkDebugStatusType, ZCodeTaskPendingInteraction, ZCodeTaskPermissionResponse, ZCodeTaskPersistStatus, ZCodeTaskRepairState, ZCodeTaskRunStarted, ZCodeTaskRuntimeCommandStatus, ZCodeTaskSnapshotBodyField, ZCodeTaskSnapshotFileContentField, ZCodeTaskSnapshotHistory, ZCodeTaskSnapshotToolField, ZCodeTaskSnapshotToolSlice, ZCodeTaskTargetChangedAction, ZCodeTaskTargetChangedSource, ZCodeTaskTokenUsageDelta, ZCodeTaskWarning, ZCodeTodoGroup, ZCodeToolCall, ZCodeToolCallUpdate, ZCodeTurnFileState, ZCodeTurnSteerQueued, ZCodeTurnSteerStatus } from "./zcode-task-types-part1.js";
@@ -330,6 +332,10 @@ export interface ZCodePersistedToolCall {
   output?: unknown;
   error?: string;
   raw?: unknown;
+  /** Превью оборванного аргумента инструмента при усечении maxOutputTokens (F-01 / F-06). */
+  rawTruncatedInputPreview?: string;
+  /** Записи попыток самовосстановления аргументов инструмента (F-01 / F-06). */
+  repairAttempts?: ZCodeToolRepairAttemptRecord[];
   /** 仅用于响应态快照：表示工具大字段已被首屏预算裁剪，可按 ref 拉取完整内容。 */
   snapshotRefs?: ZCodeTaskSnapshotToolFieldRef[];
 }
@@ -405,6 +411,14 @@ export interface ZCodePersistedMessage {
   durationMs?: number;
   /** assistant 是否以用户主动停止或异常中断结束；用于抑制 latest 回复区的提升。 */
   interrupted?: boolean;
+  /** Причина завершения генерации шага модели (например stop / length / tool-calls) (F-06). */
+  finishReason?: string;
+  /** Превью оборванного ввода инструмента при finishReason === "length" (F-06). */
+  rawTruncatedInputPreview?: string;
+  /** Попытки самовосстановления вызовов инструментов в рамках сообщения/хода (F-06). */
+  repairAttempts?: ZCodeToolRepairAttemptRecord[];
+  /** Детерминированная история переходов конечного автомата хода (F-06). */
+  stateTransitions?: ZCodeTurnStateTransitionRecord[];
   /** 用户对 assistant 回复的本地反馈；仅用于 ZCode 展示/统计，不注入 Agent 上下文。 */
   feedback?: ZCodeAssistantMessageFeedback;
   attachments?: ZCodePromptAttachment[];
@@ -462,6 +476,8 @@ export interface ZCodeSessionFile {
   fileChanges?: ZCodePersistedFileChange[];
   /** Git checkpoint 元信息，按轮次存储，仅用于撤销编排 */
   turnCheckpoints?: ZCodePersistedTurnCheckpoint[];
+  /** Сводная трасса переходов состояний сессии/ходов для диагностики .zcode-session (F-06). */
+  stateTransitions?: ZCodeTurnStateTransitionRecord[];
 }
 
 export interface ZCodeSessionRuntimeSnapshot {

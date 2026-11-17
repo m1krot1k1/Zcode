@@ -78,7 +78,29 @@ export type {
 } from "../context/index.js";
 export { createContextBuilder, estimateTokens } from "../context/index.js";
 export type { EnvInfo, ProjectContext, UserInstructionsOptions } from "../context/index.js";
-export {COMPACT_PROMPT_TOO_LONG_RETRY_MARKER, COMPACT_PROMPT_TOO_LONG_USER_MESSAGE, DEFAULT_COMPACT_CONTEXT_WINDOW, MAX_COMPACT_PROMPT_TOO_LONG_RETRIES, MAX_OUTPUT_TOKENS_FOR_SUMMARY, buildCompactPrompt, buildCompactSummaryMessage, buildManualCompactBoundary, createCompactBoundaryId, estimateMessageTokens, formatCompactSummary, getAutoCompactThreshold, getUsageTotalTokens, hasEnoughMessagesToCompact, maybeLocalMicrocompactMessages, shouldAutoCompact, buildDefaultMicrocompactThreshold} from "../compact/index.js";
+export {
+  COMPACT_PROMPT_TOO_LONG_RETRY_MARKER,
+  COMPACT_PROMPT_TOO_LONG_USER_MESSAGE,
+  DEFAULT_COMPACT_CONTEXT_WINDOW,
+  DEFAULT_MASKING_STEP_QUANTUM_TOKENS,
+  DEFAULT_MICROCOMPACT_GROUP_QUANTUM,
+  DEFAULT_WORKING_CONTEXT_CEILING_TOKENS,
+  DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS,
+  MAX_COMPACT_PROMPT_TOO_LONG_RETRIES,
+  MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+  buildCompactPrompt,
+  buildCompactSummaryMessage,
+  buildDefaultMicrocompactThreshold,
+  buildManualCompactBoundary,
+  createCompactBoundaryId,
+  estimateMessageTokens,
+  formatCompactSummary,
+  getAutoCompactThreshold,
+  getUsageTotalTokens,
+  hasEnoughMessagesToCompact,
+  maybeLocalMicrocompactMessages,
+  shouldAutoCompact,
+} from "../compact/index.js";
 export type { AutoCompactPolicyConfig } from "../compact/index.js";
 export type { AutoCompactTokenOverride } from "../compact/index.js";
 export type { LocalMicrocompactPolicyConfig } from "../compact/index.js";
