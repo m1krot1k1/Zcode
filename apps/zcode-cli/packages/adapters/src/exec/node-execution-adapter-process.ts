@@ -181,7 +181,7 @@ export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
     | undefined
   > {
     const wrap = request.sandbox?.wrap;
-    if (!wrap || this.platform === "win32") return undefined;
+    if (request.sandbox?.enabled === false || !wrap || this.platform === "win32") return undefined;
 
     const captureDir = capturePlan.cwdFilePath
       ? dirname(capturePlan.cwdFilePath)

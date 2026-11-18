@@ -103,6 +103,9 @@ export interface ZCodeProtocolSessionRecord {
   toolSearchMode: AppToolSearchMode;
   /** Снимок workspace boundary на момент создания; дочерние сессии наследуют его. */
   workspaceBoundary: "strict" | "ask" | "allow";
+  /** Снимок sandbox-настроек на момент создания; дочерние сессии наследуют его. */
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  sandboxAllowNetwork?: boolean;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   createdAt: number;
   deliveryKind?: ZCodeDeliveryKind;

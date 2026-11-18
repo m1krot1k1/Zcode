@@ -518,6 +518,13 @@ async function executeToolCallImpl(
           skillTelemetryMetadata = metadata;
         },
         bashShellSelection,
+        bashSandboxMode: deps.sandboxMode,
+        bashSandboxNetwork:
+          deps.sandboxAllowNetwork === undefined
+            ? undefined
+            : deps.sandboxAllowNetwork
+              ? "allow"
+              : "deny",
         setWorkingDirectory: deps.setWorkingDirectory,
         workingDirectory: guardedWorkingDirectory ?? deps.getWorkingDirectory(),
         workspaceRoot: deps.getWorkspaceRoot(),

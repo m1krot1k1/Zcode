@@ -222,6 +222,11 @@ export interface ToolExecutionContext {
   /** Порт интерактивных PTY-сессий; отсутствие снимает инструмент с регистрации. */
   ptySessionPort?: import("./handlers/pty-session.js").PtySessionPort;
   /**
+   * Host sandbox mode for Bash/PTY. `off` disables OS isolation; undefined keeps
+   * the legacy workspace-write default.
+   */
+  bashSandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  /**
    * Политика сети для Bash-песочницы. `deny` включает `--unshare-net` в bwrap;
    * отсутствие поля означает `allow`. Runtime выставляет его из конфигурации
    * workspace, а не модель через аргументы инструмента.

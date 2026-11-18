@@ -1,5 +1,9 @@
 # Bash sandbox honesty (вариант B: удаление provider-visible surface)
 
+> **Актуальный контракт:** [`2026-11-18-sandbox-off-propagation.md`](./2026-11-18-sandbox-off-propagation.md).
+> Документ ниже сохранён как история; утверждение «OS-sandbox отсутствует»
+> устарело — bwrap/seatbelt выполняются, а `mode=off` отключает их.
+
 > Статус: код и тесты обновлены; runtime-проверки **не выполнены** в этой
 > сессии (shell недоступен, см. §6). Контекст: R04 и QW1 из
 > [`docs/research/2026-11-11-zcode-wide-competitive-research.md`](../research/2026-11-11-zcode-wide-competitive-research.md)

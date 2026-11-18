@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.17.126](https://github.com/m1krot1k1/Zcode/compare/v3.17.125...v3.17.126) (2026-11-18)
+
+### Bug Fixes
+
+* **exec:** действительно выключать OS-песочницу при `sandboxSettings.mode=off`
+  * `sandboxMode`/`sandboxAllowNetwork` доходят от Host preferences через `AgentRuntimeConfig` до `ToolExecutionContext` Bash и PTY
+  * при `off` команда не оборачивается в bwrap/seatbelt, результат сообщает `sandbox.mode=none`, а окружение процесса передаётся полностью (`GH_CONFIG_DIR`, `SSH_AUTH_SOCK`, `XDG_CONFIG_HOME`)
+  * дочерние и fork-сессии наследуют снимок sandbox-настроек родителя
+* **remote:** исправить предзаполнение SSH-ключа в форме нового подключения
+  * ключ применяется после `resetDraft()` на шаге `settings`, поэтому больше не затирается при нажатии «新建 SSH 连接»
+
 ## [3.17.125](https://github.com/m1krot1k1/Zcode/compare/v3.17.124...v3.17.125) (2026-11-18)
 
 ### Bug Fixes
@@ -9,7 +20,7 @@
   * `usePromptEnhancer` принимает обе формы подписки и безопасно освобождает её при размонтировании
 * **sandbox:** по умолчанию выключить bwrap/seatbelt
   * `sandboxSettings.mode` по умолчанию `off`; сохранённый legacy `auto` трактуется как `off`
-  * `gh`, `ssh` и сетевые команды снова видят пользовательский `HOME` и окружение
+  * фактический проброс `off` в Bash/PTY и полное окружение исправлены в 3.17.126
 * **remote:** не использовать CDN и не подставлять z.ai endpoints
   * Source Server резолвится только из bundled/mock release; при отсутствии архива сборка падает с явной ошибкой
   * Desktop больше не инжектит `ZCODE_BASE_URL`/`ZAI_*` по умолчанию

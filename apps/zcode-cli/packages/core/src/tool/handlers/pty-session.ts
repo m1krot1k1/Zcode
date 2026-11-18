@@ -166,8 +166,11 @@ async function executePtySession(
           ...(parsed.cols !== undefined ? { cols: parsed.cols } : {}),
           ...(parsed.rows !== undefined ? { rows: parsed.rows } : {}),
           sandbox: {
-            profile: parsed.sandboxProfile ?? "workspace-write",
-            networkAccess: parsed.networkAccess ?? "allow",
+            profile:
+              parsed.sandboxProfile ??
+              (context.bashSandboxMode === "off" ? "off" : "workspace-write"),
+            networkAccess:
+              parsed.networkAccess ?? (context.bashSandboxNetwork === "deny" ? "deny" : "allow"),
           },
         });
         return PtySessionOutputSchema.parse({

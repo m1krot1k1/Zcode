@@ -337,6 +337,33 @@ describe("bashHandler", () => {
     expect(capturedRequest?.sandbox).not.toHaveProperty("protectedResources");
   });
 
+  it("passes the host sandbox off policy and network denial to ExecutionPort", async () => {
+    let capturedRequest: ExecutionRequest | undefined;
+    const executionPort: ExecutionPort = {
+      async run(request) {
+        capturedRequest = request;
+        return executionResult({
+          status: "completed",
+          exitCode: 0,
+        });
+      },
+    };
+
+    await bashHandler(
+      { command: "gh auth status" },
+      contextWith(executionPort, {
+        bashSandboxMode: "off",
+        bashSandboxNetwork: "deny",
+      }),
+    );
+
+    expect(capturedRequest?.sandbox).toMatchObject({
+      enabled: true,
+      profile: "off",
+      wrap: { profile: "off" },
+    });
+  });
+
   it("keeps the filesystem output-loss diagnostic in provider-visible stdout", async () => {
     const diagnostic =
       "Command output was lost: the temp filesystem at /tmp/tasks is full (9MB free). The child process's stdout/stderr writes failed with ENOSPC. Free up space on this filesystem.";
@@ -2636,6 +2663,8 @@ function contextWith(
   options: {
     abortSignal?: AbortSignal;
     bashShellSelection?: ToolExecutionContext["bashShellSelection"];
+    bashSandboxMode?: ToolExecutionContext["bashSandboxMode"];
+    bashSandboxNetwork?: ToolExecutionContext["bashSandboxNetwork"];
     embeddedSearch?: ToolExecutionContext["embeddedSearch"];
     emitEvent?: ToolExecutionContext["emitEvent"];
     fileSystemPort?: FileSystemPort;
@@ -2655,6 +2684,8 @@ function contextWith(
     spanId: "span_test",
     abortSignal: options.abortSignal ?? new AbortController().signal,
     bashShellSelection: options.bashShellSelection,
+    bashSandboxMode: options.bashSandboxMode,
+    bashSandboxNetwork: options.bashSandboxNetwork,
     embeddedSearch: options.embeddedSearch,
     emitEvent: options.emitEvent,
     executionPort,

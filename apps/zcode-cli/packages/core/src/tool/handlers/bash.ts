@@ -650,11 +650,14 @@ function createBashSandboxPolicy(
   workingDirectory: string | undefined,
 ): ExecutionSandboxPolicy {
   const workspacePath = context.workspaceRoot || workingDirectory || process.cwd();
+  // Host 明确关闭沙箱时把 off 传下去：adapter 不再包 bwrap/seatbelt，
+  // 并保留完整环境变量；仍保留 wrap 是为了让结果如实报告 sandbox.mode=none。
+  const profile = context.bashSandboxMode === "off" ? "off" : BASH_SANDBOX_PROFILE;
   return {
     enabled: true,
-    profile: BASH_SANDBOX_PROFILE,
+    profile,
     wrap: {
-      profile: BASH_SANDBOX_PROFILE,
+      profile,
       workspacePath,
       networkAccess: context.bashSandboxNetwork === "deny" ? "deny" : "allow",
       limits: BASH_SANDBOX_LIMITS,

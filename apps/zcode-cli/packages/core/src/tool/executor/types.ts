@@ -141,6 +141,10 @@ export interface ToolExecutorOptions {
   subagentBackgroundBashMaxMs?: number;
   bashShellSelection?: ExecutionShellSelection;
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
+  /** Host sandbox mode for Bash/PTY; `off` disables OS isolation. */
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  /** Host network preference for sandboxed Bash/PTY. */
+  sandboxAllowNetwork?: boolean;
   workingDirectory?: string;
   workspaceRoot?: string;
   /** Workspace 边界模式；缺省 = 兼容默认 `allow`。由 runtime config 投影。 */
@@ -273,6 +277,8 @@ export interface ToolExecutorDeps {
   subagentBackgroundBashMaxMs?: number;
   bashShellSelection?: ExecutionShellSelection;
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  sandboxAllowNetwork?: boolean;
   getWorkingDirectory: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot: () => string;

@@ -234,6 +234,8 @@ function createRuntimeToolExecutor(
       runtime.config.taskType === "subagent_child"
         ? normalizeSubagentBackgroundBashMaxMs(runtime.config.subagents?.backgroundBashMaxMs)
         : undefined,
+    sandboxMode: runtime.config.sandboxMode,
+    sandboxAllowNetwork: runtime.config.sandboxAllowNetwork,
     getBashShellSelection: () => getSessionShellSelectionFromConfig(runtime.config),
     hookRunner,
     getWorkingDirectory: () => runtime.workingDirectory,

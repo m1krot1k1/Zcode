@@ -163,7 +163,7 @@ export const PtySessionOutputJsonSchema = toToolJsonSchema(PtySessionOutputSchem
 export const PTY_SESSION_DESCRIPTION = [
   "Manage interactive terminal sessions (PTY) for wizards, REPLs, dev servers and DB clients.",
   "",
-  "- `start` launches a shell inside the OS sandbox and returns `sessionId`, `pid` and `sandboxMode`.",
+  "- `start` launches a shell using the session sandbox policy (which the user may disable) and returns `sessionId`, `pid` and `sandboxMode`.",
   "- `write` sends text or control bytes to stdin (`\\r` for Enter, `\\u0003` for Ctrl+C, `\\u0004` for Ctrl+D).",
   "- `read` returns only output newer than `sinceSeq`, with a monotonic `seq` per chunk; ANSI escapes are stripped and reported separately.",
   "- `wait` blocks until a regex matches, output goes idle, a specific exit code appears, or the timeout expires.",

@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { cliExecSandboxModule } from "./module.js";
 import type { SandboxCapability } from "./contract.js";
-import { ExecutionSandbox, buildSandboxEnv, isPathInside } from "./execution-sandbox.js";
+import {
+  ExecutionSandbox,
+  buildSandboxEnv,
+  buildUnsandboxedEnv,
+  isPathInside,
+} from "./execution-sandbox.js";
 import { buildBwrapCommand, buildLimitCommand } from "./linux-bwrap.js";
 import { buildSeatbeltCommand, buildSeatbeltProfile } from "./macos-seatbelt.js";
 
@@ -113,6 +118,34 @@ describe("cli-exec-sandbox contract", () => {
       { ...WRAP_POLICY, envIsolated: true },
     );
     expect(env).toEqual({ CI: "1" });
+  });
+
+  it("inherits user environment variables when the sandbox profile is off", async () => {
+    const source = {
+      PATH: "/usr/bin",
+      HOME: "/home/dev",
+      GH_CONFIG_DIR: "/home/dev/.config/gh",
+      SSH_AUTH_SOCK: "/run/user/1000/ssh-agent.sock",
+      SECRET_TOKEN: "s3cret",
+    };
+
+    expect(buildUnsandboxedEnv(source, { ...WRAP_POLICY, profile: "off" })).toEqual({
+      ...source,
+      CI: "1",
+    });
+
+    const sandbox = new ExecutionSandbox({
+      platform: "linux",
+      processEnv: source,
+      probe: async () => availableBwrap,
+      exists: () => true,
+    });
+    const wrapped = await sandbox.wrap(
+      { file: "/bin/sh", args: ["-c", "true"] },
+      { ...WRAP_POLICY, profile: "off" },
+    );
+    expect(wrapped.sandboxMode).toBe("none");
+    expect(wrapped.env).toEqual({ ...source, CI: "1" });
   });
 
   it("reports sandboxMode none on win32 without changing the command", async () => {

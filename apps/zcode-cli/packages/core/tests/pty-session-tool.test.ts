@@ -19,6 +19,10 @@ import type { ToolExecutionContext } from "../src/tool/types.js";
 
 let workspace: string;
 
+type PtyCreateOptions = Parameters<
+  NonNullable<ToolExecutionContext["ptySessionPort"]>["create"]
+>[0];
+
 beforeAll(async () => {
   workspace = await mkdtemp(join(tmpdir(), "zcode-pty-tool-"));
 });
@@ -28,7 +32,9 @@ afterAll(async () => {
 });
 
 /** Минимальный порт: реальный shell через `sh -c`, без node-pty в core-тестах. */
-function createShellPort(): NonNullable<ToolExecutionContext["ptySessionPort"]> {
+function createShellPort(
+  onCreate?: (options: PtyCreateOptions) => void,
+): NonNullable<ToolExecutionContext["ptySessionPort"]> {
   const sessions = new Map<
     string,
     {
@@ -58,7 +64,8 @@ function createShellPort(): NonNullable<ToolExecutionContext["ptySessionPort"]> 
   });
 
   return {
-    async create() {
+    async create(options) {
+      onCreate?.(options);
       const { spawn } = await import("node:child_process");
       const child = spawn("/bin/sh", [], { cwd: workspace, stdio: ["pipe", "pipe", "pipe"] });
       const sessionId = `pty_${crypto.randomUUID()}`;
@@ -181,6 +188,31 @@ describe("PtySession tool", () => {
       data: "rm -rf /",
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("uses the session sandbox mode and network policy when the input omits them", async () => {
+    let captured: PtyCreateOptions | undefined;
+    const port = createShellPort((options) => {
+      captured = options;
+    });
+
+    const context = {
+      ...contextWith(port),
+      bashSandboxMode: "off" as const,
+      bashSandboxNetwork: "deny" as const,
+    };
+    const started = await ptySessionHandler({ action: "start" }, context);
+
+    expect(captured?.sandbox).toEqual({
+      profile: "off",
+      networkAccess: "deny",
+    });
+    if (started.session) {
+      await ptySessionHandler(
+        { action: "kill", sessionId: started.session.sessionId, graceMs: 100 },
+        context,
+      );
+    }
   });
 
   it("runs a full cycle: start → write → read → wait → kill", async () => {

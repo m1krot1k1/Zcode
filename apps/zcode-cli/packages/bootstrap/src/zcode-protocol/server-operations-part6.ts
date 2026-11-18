@@ -226,6 +226,8 @@ export async function createRecord(
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       toolSearch: { mode: startupPreferences.toolSearchMode },
       workspaceBoundary: startupPreferences.workspaceBoundary,
+      sandboxMode: startupPreferences.sandboxMode,
+      sandboxAllowNetwork: startupPreferences.sandboxAllowNetwork,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
       // Этап 4.6: настройки новых подсистем из Host preferences. Передаём только
       // присутствующие значения, чтобы старый Host не сбрасывал дефолты рантайма.
@@ -328,6 +330,10 @@ export async function createRecord(
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: startupPreferences.toolSearchMode,
     workspaceBoundary: startupPreferences.workspaceBoundary,
+    ...(startupPreferences.sandboxMode ? { sandboxMode: startupPreferences.sandboxMode } : {}),
+    ...(startupPreferences.sandboxAllowNetwork !== undefined
+      ? { sandboxAllowNetwork: startupPreferences.sandboxAllowNetwork }
+      : {}),
     ...(startupPreferences.promptDepth ? { promptDepth: startupPreferences.promptDepth } : {}),
     ...(startupPreferences.workingContextCeilingTokens !== undefined
       ? { workingContextCeilingTokens: startupPreferences.workingContextCeilingTokens }

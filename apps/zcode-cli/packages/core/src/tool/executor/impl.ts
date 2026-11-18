@@ -83,6 +83,8 @@ export class ToolExecutorImpl implements ToolExecutor {
       subagentBackgroundBashMaxMs: options.subagentBackgroundBashMaxMs,
       bashShellSelection: options.bashShellSelection,
       getBashShellSelection: options.getBashShellSelection,
+      sandboxMode: options.sandboxMode,
+      sandboxAllowNetwork: options.sandboxAllowNetwork,
       getWorkingDirectory: options.getWorkingDirectory ?? (() => options.workingDirectory ?? "."),
       setWorkingDirectory: options.setWorkingDirectory,
       getWorkspaceRoot:

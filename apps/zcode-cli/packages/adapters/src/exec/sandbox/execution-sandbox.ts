@@ -63,6 +63,25 @@ export function buildSandboxEnv(
   return env;
 }
 
+/**
+ * Полное окружение для вызова без песочницы: профиль `off` не должен терять
+ * GH_CONFIG_DIR, SSH_AUTH_SOCK и другие переменные пользователя. Явные значения
+ * policy.env по-прежнему перекрывают унаследованные.
+ */
+export function buildUnsandboxedEnv(
+  sourceEnv: NodeJS.ProcessEnv,
+  policy: SandboxPolicy,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(sourceEnv)) {
+    if (value !== undefined && value !== "") env[key] = value;
+  }
+  for (const [key, value] of Object.entries(policy.env ?? {})) {
+    env[key] = value;
+  }
+  return env;
+}
+
 /** `true`, если путь лежит внутри корня (учитывая равенство). */
 export function isPathInside(candidate: string, root: string): boolean {
   const rel = relative(resolve(root), resolve(candidate));
@@ -127,18 +146,21 @@ export class ExecutionSandbox implements ExecutionSandboxContract {
 
   async wrap(command: SandboxCommand, policy: SandboxPolicy): Promise<SandboxedCommand> {
     const resolvedPolicy = this.normalizePolicy(policy);
-    const env = buildSandboxEnv(this.processEnv, resolvedPolicy);
     const profile = resolvedPolicy.profile ?? "workspace-write";
+    const sandboxDisabled = profile === "off" || this.platform === "win32";
+    const env = sandboxDisabled
+      ? buildUnsandboxedEnv(this.processEnv, resolvedPolicy)
+      : buildSandboxEnv(this.processEnv, resolvedPolicy);
 
-    if (profile === "off" || this.platform === "win32") {
-      // Windows: существующий путь исполнения сохраняется; явно сообщаем, что
-      // ОС-песочницы нет, вместо тихой подмены семантики.
+    if (sandboxDisabled) {
+      // Windows и явный profile off: ОС-песочницы нет. off — решение
+      // пользователя, а не деградация, поэтому сообщаем none.
       return {
         file: command.file,
         args: [...command.args],
         env,
         cwd: resolvedPolicy.cwd,
-        sandboxMode: this.platform === "win32" ? "none" : "degraded",
+        sandboxMode: "none",
         sandboxReason:
           profile === "off"
             ? "sandbox profile is off"

@@ -21,8 +21,9 @@ export function createBashProviderDescription(input: {
     "- Commit or push only when the user asks. If on the default branch, branch first.",
     "",
     "# Sandbox",
-    "- Commands run in an OS sandbox: the workspace is writable, the rest of the filesystem is read-only, and the result reports `sandbox.mode`.",
-    "- `bwrap` (Linux) or `seatbelt` (macOS) means writes outside the workspace are blocked by the kernel. `degraded` means the mechanism is unavailable: the workspace is still enforced, but filesystem writes outside it are not blocked — check `sandbox.reason`.",
-    "- Do not try to escape the sandbox. If a command legitimately needs a path outside the workspace, ask the user instead of disabling isolation.",
+    "- The result reports the actual `sandbox.mode` and whether filesystem/network isolation was applied. The user configures the session policy; do not assume isolation is always active.",
+    "- `bwrap` (Linux) or `seatbelt` (macOS) means the workspace is writable and other paths are read-only. `degraded` means the mechanism is unavailable: the workspace is still enforced, but filesystem writes outside it are not blocked — check `sandbox.reason`.",
+    "- `none` means the user disabled the sandbox: commands run with normal user permissions, and `GH_CONFIG_DIR`, `SSH_AUTH_SOCK` and other environment variables are inherited.",
+    "- When a sandbox is active, do not try to escape it. If a command legitimately needs a path outside the workspace under an active sandbox, ask the user.",
   ].join("\n");
 }

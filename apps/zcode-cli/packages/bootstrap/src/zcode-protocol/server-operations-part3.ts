@@ -601,6 +601,10 @@ export async function resolveSessionStartupPreferences(
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
       toolSearchMode: source.parent.toolSearchMode,
       workspaceBoundary: source.parent.workspaceBoundary ?? "allow",
+      ...(source.parent.sandboxMode ? { sandboxMode: source.parent.sandboxMode } : {}),
+      ...(source.parent.sandboxAllowNetwork !== undefined
+        ? { sandboxAllowNetwork: source.parent.sandboxAllowNetwork }
+        : {}),
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
     };
   }

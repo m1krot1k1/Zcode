@@ -136,6 +136,14 @@ export interface AgentRuntimeConfig {
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   remoteSessionId?: string;
   bashTimeoutPolicy?: BashTimeoutPolicy;
+  /**
+   * Host sandbox preference for Bash/PTY. `off` disables OS isolation; `auto`,
+   * `bwrap` and `seatbelt` request the platform sandbox. Undefined keeps the
+   * legacy workspace-write default for standalone CLI runs without a Host.
+   */
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  /** `false` maps to networkAccess=deny for sandboxed Bash/PTY commands. */
+  sandboxAllowNetwork?: boolean;
   presentationSurface?: PresentationSurface;
   /** Execution Host's output root, independent of the working repository. */
   genUiOutputRoot?: string;

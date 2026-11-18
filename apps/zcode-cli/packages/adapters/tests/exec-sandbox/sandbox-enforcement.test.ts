@@ -87,6 +87,36 @@ describe("sandbox capability probe", () => {
 });
 
 describe("workspace-write enforcement", () => {
+  it("inherits the user environment without isolation when the profile is off", async () => {
+    const unsandboxed = new ExecutionSandbox({
+      processEnv: {
+        ...process.env,
+        GH_CONFIG_DIR: "/home/dev/.config/gh",
+        SSH_AUTH_SOCK: "/run/user/1000/ssh-agent.sock",
+        ZCODE_SANDBOX_ENV_PROBE: "visible",
+      },
+    });
+    const wrapped = await unsandboxed.wrap(
+      { file: "/bin/sh", args: ["-c", "printf %s \"$ZCODE_SANDBOX_ENV_PROBE\""] },
+      {
+        profile: "off",
+        cwd: workspace,
+        workspacePath: workspace,
+        networkAccess: "deny",
+      },
+    );
+
+    expect(wrapped.sandboxMode).toBe("none");
+    expect(wrapped.filesystemIsolated).toBe(false);
+    expect(wrapped.networkIsolated).toBe(false);
+    expect(wrapped.env.GH_CONFIG_DIR).toBe("/home/dev/.config/gh");
+    expect(wrapped.env.SSH_AUTH_SOCK).toBe("/run/user/1000/ssh-agent.sock");
+
+    const result = await runWrapped(wrapped);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("visible");
+  });
+
   it("writes inside the workspace and reads the file back", async () => {
     const wrapped = await sandbox.wrap(
       { file: "/bin/sh", args: ["-c", "echo inside-ok > ./inside.txt && cat ./inside.txt"] },

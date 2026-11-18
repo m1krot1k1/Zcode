@@ -232,6 +232,14 @@ export function useRemoteConnectionFlowState(options: RemoteConnectionFlowOption
       appliedRecentSshKeyRef.current = false;
       return;
     }
+    // 只在 SSH 配置表单可见时预填：选择页的“新建连接”会先 resetDraft，
+    // 提前写入私钥会被清空，导致表单从未显示最近使用的路径。
+    if (currentStep !== "settings" || kind !== "ssh") {
+      if (kind !== "ssh") {
+        appliedRecentSshKeyRef.current = false;
+      }
+      return;
+    }
     if (appliedRecentSshKeyRef.current) {
       return;
     }
@@ -254,6 +262,8 @@ export function useRemoteConnectionFlowState(options: RemoteConnectionFlowOption
     }
   }, [
     open,
+    currentStep,
+    kind,
     preferredProfileId,
     selectedSshConfigAlias,
     privateKeyPath,
