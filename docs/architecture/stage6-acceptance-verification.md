@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 1 | `MultiEdit` / `Edit` / `Write` / `ApplyPatch` — транзакционное редактирование | Реальный runtime: успешный пакет из 3 файлов; отклонение при синтаксической ошибке; `Edit` с расхождением отступов; проверка отсутствия частично записанных файлов | **VERIFIED** | `apps/zcode-cli/e2e/session-forensic-replay/case-multiedit-transaction.mjs` → `assertions: {atomicCommit, rejectedSyntaxRolledBack, tolerantIndentEdit, noPartialFiles}`. Артефакты: `docs/architecture/evidence/stage6/forensic-replay-run*.json` |
 | 2 | `ApplyPatch` на не-GPT модели | Скриптованный OpenAI-совместимый провайдер (не GPT): инструмент присутствует в списке и патч применяется на диске | **VERIFIED** | `case-prompt-cache-apply-patch.mjs` → `assertions: {applyPatchVisibleForNonGptProvider: true, applyPatchAppliedOnDisk: true}` |
-| 3 | `PtySession` — интерактивная сессия | Реальный `bash` под PTY: старт, запись команды, инкрементальное чтение, `exitCode`, kill с деревом процессов | **VERIFIED** | `case-pty-session.mjs` → `assertions: {started, incrementalRead, exitCodeObserved, killTreeTerminated}` |
+| 3 | `PtySession` — интерактивная сессия | Реальный `bash` под PTY: старт, запись команды, инкрементальное чтение, `exitCode`, kill с деревом процессов | **SUPERSEDED (3.17.129)** | Историческая проверка — `case-pty-session.mjs` (удалён). С 3.17.129 handler остаётся внутренним и покрыт `packages/core/tests/pty-session-tool.test.ts`; provider-visible набор проверяет `case-tool-contract.mjs` по спеке [`docs/specs/2026-11-18-provider-tool-contract.md`](../specs/2026-11-18-provider-tool-contract.md) |
 | 4 | Песочница `bash` (`sandbox.mode` в результате) | Реальный `bwrap`: `sandbox.mode` доходит до модели в тексте результата; запись вне workspace (`$HOME`, ro-bind) блокируется | **VERIFIED** | `case-bash-sandbox.mjs` → строка `[sandbox: mode=bwrap, filesystemIsolated=true, networkIsolated=false]` в перехваченном запросе; попытка записи в `$HOME` → `EACCES/EROFS` |
 | 5 | Код-индекс (`CodeIndex`) | Автостарт индексации в фоне для тестовой папки; реальный поиск релевантного фрагмента; инкрементальное обновление после правки; инструмент виден модели | **VERIFIED** | `case-code-index.mjs` → `assertions: {autoStartBuiltIndexInBackground, searchSnippetMatched, incrementalUpdateApplied, codeIndexToolVisibleToModel}`; реальный SQLite + AST-чанкер `@zcode/services` |
 | 6 | Обрыв по `finishReason === "length"` | Провайдер отдаёт обрезанные аргументы инструмента при `finish_reason: "length"`: детерминированный `TOOL_CALL_TRUNCATED_BY_MAX_TOKENS`, декомпозиция повторной генерации, отсутствие `Unexpected end of JSON input` | **VERIFIED** | `case-truncated-tool-args.mjs` → `assertions: {deterministicTruncationCode, decomposedRecovery, noJsonParseError, noPartialFileOnDisk}` |
@@ -44,7 +44,7 @@
 | `case-multiedit-transaction.mjs` | `F-04`/`F-06` (атомарность файловых операций, `Edit` по отступам) | 100 % откат при синтаксической ошибке, tolerant-совпадение отступов |
 | `case-code-index.mjs` | `F-05` (индекс не строится автоматически) | Автостарт индексации + инкрементальное обновление |
 | `case-bash-sandbox.mjs` | `F-07` (`BASH_SANDBOX_ENFORCEMENT = "not_implemented"`) | Реальный `bwrap`, блокировка записи вне workspace |
-| `case-pty-session.mjs` | 4.5a (интерактивный PTY) | Старт/чтение/exit/kill дерева |
+| `case-tool-contract.mjs` | 3.17.129 (публичный контракт инструментов) | `PtySession` скрыт от модели, `Read`/`Bash` видны, диагностика — один вызов `Bash` |
 | `case-enhance.mjs` | 4.4 (`/enhance`) | Реальный вызов модели, отмена, ошибки |
 | `case-auto-repair-loop.mjs` | 4.5b (замкнутый цикл) | Исполнение реальных проверок внутри хода агента |
 
@@ -90,6 +90,8 @@ pnpm --filter zcode-cli exec tsx \
 - `apps/zcode-cli/packages/cli/scripts/build.mjs` — `node-pty` вынесен во external.
 
 Проверка: в запросе стало **34 инструмента**, `PtySession: true`; `case-pty-session.mjs` проходит.
+
+> В 3.17.129 это решение отменено на уровне публичного контракта: `PtySession` больше не регистрируется в provider-visible наборе (порт остаётся внутренним). См. [`docs/specs/2026-11-18-provider-tool-contract.md`](../specs/2026-11-18-provider-tool-contract.md).
 
 ### 3.2. Фактический `sandbox.mode` не доходил до модели (`FAILED → исправлено`)
 
@@ -188,8 +190,9 @@ E2E: `case-auto-repair-loop.mjs` — реальный процесс `tsc` вн�
 
 ### 6.3. Видимость инструментов модели
 
-По перехваченному телу запроса в `case-pty-session` / `case-code-index`:
-- `PtySession` — присутствует (после 3.1), 34 инструмента;
+По перехваченному телу запроса в `case-tool-contract` / `case-code-index`:
+- `PtySession` — отсутствует в provider-visible наборе с 3.17.129; порт остаётся внутренним для терминала;
+- `Read`/`Bash` — присутствуют и выполняют диагностику без PTY-цепочки;
 - `CodeIndex` — присутствует при инжектированном `codeIntelligencePort`;
 - `MultiEdit` — присутствует в наборе file-tools;
 - `ApplyPatch` — присутствует у не-GPT провайдера (см. кейс 2).
@@ -205,7 +208,7 @@ E2E: `case-auto-repair-loop.mjs` — реальный процесс `tsc` вн�
 | Атомарность файловых операций | частичные записи | 100 % откат, `noPartialFiles` | `case-multiedit-transaction` |
 | `ApplyPatch` на не-GPT | недоступен | доступен и применяется | `case-prompt-cache-apply-patch` |
 | Автоиндексация кода | индекс не строился | автостарт + инкрементальное обновление | `case-code-index` |
-| Интерактивный PTY | отсутствовал в наборе инструментов | виден модели, работает | `case-pty-session` |
+| Интерактивный PTY | отсутствовал в наборе инструментов | handler работает, но с 3.17.129 скрыт от модели | `pty-session-tool.test.ts` + `case-tool-contract` |
 | Замкнутый цикл самовосстановления | не подключён к рантайму | работает в ходе агента, лимит соблюдён | `case-auto-repair-loop` + 10 UT |
 | Гонки субагентов | не детектировались | детерминированный `write_claim_conflict` | `case-swarm-file-locks` |
 | Стабильность e2e | — | 3 прогона × 9 кейсов = 27/27 | §2.1 |

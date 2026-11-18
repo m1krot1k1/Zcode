@@ -119,6 +119,9 @@ const requiredRuntimeModules = [
   // Code Intelligence использует TypeScript compiler API как runtime-зависимость main/host.
   // Его CommonJS dynamic require нельзя встраивать в ESM bundle.
   "typescript",
+  // 代码索引 worker 的 createRequire 动态加载链：漏包会导致 refs/edges 为 0。
+  "web-tree-sitter",
+  "tree-sitter-wasms",
   // Bugfix: 飞书 SDK 为了避开 Electron ESM 动态 require 崩溃会作为外部依赖保留，
   // 生产包必须显式校验 app.asar 中存在该 scoped 包。
   "@larksuiteoapi/node-sdk",

@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.17.129](https://github.com/m1krot1k1/Zcode/compare/v3.17.128...v3.17.129) (2026-11-18)
+
+### Bug Fixes
+
+* **agent:** вернуть публичный контракт инструментов к чтению и выполнению команд
+  * `PtySession` больше не регистрируется в runtime-наборе и не виден модели; `Read` и `Bash` остаются без изменений
+  * обычная диагностическая команда снова выполняется одним вызовом `Bash`, без трёх последовательных `start` → `write` → `read`
+  * PTY-порт и handler сохранены как внутренняя инфраструктура и покрыты unit-тестами
+* **code-index:** упаковать tree-sitter runtime в app.asar
+  * `web-tree-sitter` и `tree-sitter-wasms` добавлены в injection и финальную проверку bundle; без них packaged-версия молча уходила в text fallback и давала 0 связей
+  * `SCHEMA_VERSION` 4 перестраивает прежний text-fallback индекс при первом открытии
+
+### Tests
+
+* **agent:** проверить отсутствие `PtySession` в наборе по умолчанию, наличие `Read`/`Bash` и одноразовый вызов `Bash` в forensic-replay E2E
+* **code-index:** проверить оба списка упаковки tree-sitter runtime
+
 ## [3.17.128](https://github.com/m1krot1k1/Zcode/compare/v3.17.127...v3.17.128) (2026-11-18)
 
 ### Bug Fixes

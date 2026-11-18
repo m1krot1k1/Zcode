@@ -8,7 +8,7 @@
  *
  * Использование:
  *   node apps/zcode-cli/e2e/session-forensic-replay/run.mjs
- *   node .../run.mjs --case=truncated-tool-args,pty-session
+ *   node .../run.mjs --case=truncated-tool-args,tool-contract
  *   node .../run.mjs --artifacts-dir=/tmp/replay --keep-tmp
  */
 import { mkdir, rm } from "node:fs/promises";
@@ -22,7 +22,7 @@ import { promptCacheApplyPatchCase } from "./case-prompt-cache-apply-patch.mjs";
 import { codeIndexCase } from "./case-code-index.mjs";
 import { autoRepairLoopCase } from "./case-auto-repair-loop.mjs";
 import { multiEditTransactionCase } from "./case-multiedit-transaction.mjs";
-import { ptySessionCase } from "./case-pty-session.mjs";
+import { toolContractCase } from "./case-tool-contract.mjs";
 import { swarmFileLocksCase } from "./case-swarm-file-locks.mjs";
 import { truncatedToolArgsCase } from "./case-truncated-tool-args.mjs";
 
@@ -33,7 +33,7 @@ const ALL_CASES = [
   codeIndexCase,
   autoRepairLoopCase,
   multiEditTransactionCase,
-  ptySessionCase,
+  toolContractCase,
   bashSandboxCase,
   swarmFileLocksCase,
 ];

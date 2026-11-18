@@ -15,7 +15,7 @@ tool registry → executor → adapters), подменяя только моде
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
 | `truncated-tool-args`    | Обрыв tool call по `finishReason === "length"` даёт детерминированный `TOOL_CALL_TRUNCATED_BY_MAX_TOKENS` + инструкцию декомпозиции; `Unexpected end of JSON input` не появляется; на диск не попадает ни байта обрезанного файла | F-01 |
 | `multiedit-transaction`  | Атомарная мультифайловая транзакция: успешный `create+edit+delete` применяется целиком; транзакция с синтаксической ошибкой отклоняется с `No files were modified`; `Edit` со сдвинутым отступом сопоставляется tolerant-стратегией | F-02, F-03, F-07 |
-| `pty-session`            | `PtySession` виден модели (порт инжектируется хостом), реально стартует shell, отдаёт инкрементальный вывод, `exitCode`, терминальное состояние при `kill` | — |
+| `tool-contract`          | Модель видит `Read`/`Bash`, но не `PtySession`: вызов скрытого инструмента получает `Tool not found`, а диагностическая команда выполняется одним вызовом `Bash` без цепочки `start` → `write` → `read` | — |
 | `bash-sandbox`           | Модель видит фактический `sandbox.mode` в тексте результата; запись за пределами workspace (в `$HOME`) блокируется реальной `bwrap`-песочницей | F-03 |
 | `swarm-file-locks`       | Три параллельных субагента с пересекающимся `write_paths`: реестр владения сериализует доступ — ровно один получает владение, остальные детерминированно отклоняются (`write_claim_conflict`), общий файл не затирается | F-02 |
 | `enhance-command`        | Реальный `runEnhanceCommand` → `generateWorkspaceText`: успешный возврат промпта, сохранение `@path`-упоминаний, отмена через `AbortSignal`, отказ на пустом вводе, `model_unavailable` | 4.4 |
@@ -51,7 +51,7 @@ pnpm --filter zcode-cli exec tsx ../../apps/zcode-cli/e2e/session-forensic-repla
 
 ```bash
 node apps/zcode-cli/e2e/session-forensic-replay/run.mjs \
-  --case=truncated-tool-args,pty-session \
+  --case=truncated-tool-args,tool-contract \
   --artifacts-dir=/tmp/replay-artifacts
 ```
 
@@ -74,7 +74,7 @@ node apps/zcode-cli/e2e/session-forensic-replay/run.mjs \
 
 ## Требования окружения
 
-- POSIX-шелл (`/bin/sh`) для `pty-session` и `bash-sandbox`.
+- POSIX-шелл (`/bin/sh`) для `tool-contract` и `bash-sandbox`.
 - `bubblewrap` для реальной изоляции на Linux. Если `bwrap` недоступен,
   `bash-sandbox` требует честный `degraded` с причиной в тексте результата —
   кейс не притворяется, что изоляция есть.

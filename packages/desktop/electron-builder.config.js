@@ -75,6 +75,10 @@ const REQUIRED_ASAR_RUNTIME_MODULES = [
   // Code Intelligence 使用 TypeScript compiler API。其 CommonJS 动态 require 不能内联到 ESM；
   // 必须随安装包提供，并在 bundle 阶段校验，避免 main/host 启动失败。
   "typescript",
+  // 代码索引的 AST 解析在 worker 中通过 createRequire 动态加载；静态扫描看不到这两个包。
+  // 没有它们时打包版会静默退回文本分块，symbols 有值但 refs/edges 恒为 0。
+  "web-tree-sitter",
+  "tree-sitter-wasms",
   // Bugfix: 飞书 SDK 被 desktop main/host 外置后，安装包运行时必须能从 app.asar 解析到它。
   // 这里显式注入 scoped 包，避免开发态正常、生产包启动时才报 Cannot find module。
   "@larksuiteoapi/node-sdk",

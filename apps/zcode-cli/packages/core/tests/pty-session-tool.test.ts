@@ -15,6 +15,8 @@ import {
   PTY_SESSION_TOOL_NAME,
 } from "@zcode/contracts";
 import { ptySessionHandler, ptySessionToolEntry } from "../src/tool/handlers/pty-session.js";
+import { registerBuiltInTools } from "../src/tool/handlers/index.js";
+import { createToolRegistry } from "../src/tool/registry.js";
 import type { ToolExecutionContext } from "../src/tool/types.js";
 
 let workspace: string;
@@ -288,5 +290,14 @@ describe("PtySession tool", () => {
         sessionId: "sess_pty" as never,
       }),
     ).rejects.toThrow(/PTY session port/);
+  });
+
+  it("is absent from the default provider-visible tool set", () => {
+    const registry = createToolRegistry();
+    registerBuiltInTools(registry);
+
+    const names = registry.list();
+    expect(names).not.toContain(PTY_SESSION_TOOL_NAME);
+    expect(names).toEqual(expect.arrayContaining(["Read", "Bash"]));
   });
 });

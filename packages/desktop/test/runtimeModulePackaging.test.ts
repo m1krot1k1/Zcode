@@ -49,6 +49,19 @@ describe("desktop runtime module packaging", () => {
     expect(verifiedModules).toContain("typescript");
   });
 
+  it("packages the tree-sitter runtime used by the code index", () => {
+    const injectedModules = readModuleList(
+      "electron-builder.config.js",
+      "const REQUIRED_ASAR_RUNTIME_MODULES =",
+    );
+    const verifiedModules = readModuleList("scripts/bundle.mjs", "const requiredRuntimeModules =");
+
+    for (const moduleName of ["web-tree-sitter", "tree-sitter-wasms"]) {
+      expect(injectedModules).toContain(moduleName);
+      expect(verifiedModules).toContain(moduleName);
+    }
+  });
+
   it("finds package roots imported by external main and host bundles", () => {
     expect(
       collectExternalRuntimeModuleNames([

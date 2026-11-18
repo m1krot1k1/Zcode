@@ -49,9 +49,11 @@
  * 9. Добавлен `idx_chunks_symbol` по `chunks(primary_symbol_id)`. Это прямой фикс выбросов
  *    латентности до 75.6 мс в `searchGraphNeighbors` и 24.0 мс в `chunksForSymbols`: без
  *    индекса соединение `edges.dst_symbol_id = chunks.primary_symbol_id` шло полным сканом.
+ * 10. Версия 4: tree-sitter runtime снова входит в app.asar; прежние text-fallback записи
+ *    без refs/edges должны быть перестроены, иначе граф остаётся пустым.
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Пределы токенов, попадающих в FTS по чанку. Замер: значения выше не меняют recall на
