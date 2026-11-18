@@ -268,9 +268,10 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
   for (const source of bundleSources) {
     for (const name of collectBareModuleSpecifiers(source)) referencedPackages.add(name);
   }
-  // 代码索引的动态加载链：parserPool 通过 createRequire 按路径解析 wasm-грамматики,
-  // а не как bare-спецификатор, поэтому сканер bundle их не видит. Без tree-sitter-wasms
-  // серверный индекс молча уходит в text fallback и отдаёт 0 refs/edges.
+  // Динамическая загрузка для индекса кода: parserPool резолвит wasm-грамматики
+  // через createRequire по пути, а не как bare-спецификатор, поэтому сканер bundle
+  // их не видит. Без tree-sitter-wasms серверный индекс молча уходит в text fallback
+  // и отдаёт 0 refs/edges.
   referencedPackages.add("web-tree-sitter");
   referencedPackages.add("tree-sitter-wasms");
   const rawClosure = await resolveProductionPackageClosure(
