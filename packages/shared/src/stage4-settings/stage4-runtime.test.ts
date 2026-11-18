@@ -25,6 +25,9 @@ describe("stage4 settings runtime projection", () => {
     expect(resolved.chatAutocompleteSettings.enabled).toBe(false);
     expect(resolved.sandboxSettings.mode).toBe("off");
     expect(resolved.browserAssistantSettings.ariaSnapshotMaxNodes).toBe(4_000);
+    // Новый setting.json должен сразу сохранять off, а не только нормализоваться
+    // в рантайме: иначе UI увидит legacy auto и снова покажет несуществующий режим.
+    expect(stage4SettingsObjectSchema.parse({}).sandboxSettings.mode).toBe("off");
   });
 
   it("трактует сохранённый старый режим auto как off", () => {

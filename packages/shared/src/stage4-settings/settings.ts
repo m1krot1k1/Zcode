@@ -126,7 +126,7 @@ export const stage4SettingsObjectSchema = z.object({
     excludedDirectories: [],
   }),
   sandboxSettings: sandboxSettingsSchema.default({
-    mode: "auto",
+    mode: "off",
     allowBashNetwork: true,
     commandTimeoutMs: 180_000,
     cuaPermissions: { screenshot: true, pointer: false, keyboard: false, clipboard: false },
