@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.17.125](https://github.com/m1krot1k1/Zcode/compare/v3.17.124...v3.17.125) (2026-11-18)
+
+### Bug Fixes
+
+* **desktop:** убрать падение composer/palette из-за несовпадения формы подписки `onStreamDelta`
+  * RPC `bufferEvent` нормализует функцию-отписку в `IDisposable`; Host больше не падает на `dispose is not a function`
+  * `usePromptEnhancer` принимает обе формы подписки и безопасно освобождает её при размонтировании
+* **sandbox:** по умолчанию выключить bwrap/seatbelt
+  * `sandboxSettings.mode` по умолчанию `off`; сохранённый legacy `auto` трактуется как `off`
+  * `gh`, `ssh` и сетевые команды снова видят пользовательский `HOME` и окружение
+* **remote:** не использовать CDN и не подставлять z.ai endpoints
+  * Source Server резолвится только из bundled/mock release; при отсутствии архива сборка падает с явной ошибкой
+  * Desktop больше не инжектит `ZCODE_BASE_URL`/`ZAI_*` по умолчанию
+  * встроенный provider catalog больше не обновляется с CDN z.ai — читается только bundled config
+  * рекомендованные промпты используют локальные иконки вместо `cdn-zcode.z.ai`
+* **remote:** подставлять последний использованный SSH private key в форме нового сервера
+
 ## [3.17.124](https://github.com/m1krot1k1/Zcode/compare/v3.17.123...v3.17.124) (2026-11-18)
 
 ### Bug Fixes

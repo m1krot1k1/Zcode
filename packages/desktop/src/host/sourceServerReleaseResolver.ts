@@ -1,34 +1,18 @@
 import { normalizeRemoteConnectionError } from "@zcode/shared";
-import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { access, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import {
   SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME,
   ZCODE_VERSION,
-  normalizeRemoteAssetInstallMode,
   sourceServerReleaseDescriptorSchema,
   type RemoteTarget,
   type SourceServerReleaseArchive,
   type SourceServerReleaseDescriptor,
 } from "@zcode/shared";
-import {
-  buildReleaseAssetUrlCandidates,
-  buildReleaseBaseCandidates,
-} from "@zcode/server/remote/remoteAssetCdn.js";
-import {
-  resolveRemoteAssetFetch,
-  type RemoteAssetNetworkPort,
-} from "@zcode/server/remote/remoteAssetNetwork.js";
 import type { ServerReleaseAsset, SourceServerProbeResult } from "@zcode/server/source-server";
 import type { WindowRemoteAssetDirs } from "./windowRemoteConnectionRegistry.js";
-
-interface ResolvedDescriptor {
-  descriptor: SourceServerReleaseDescriptor;
-  releaseBases: string[];
-}
 
 async function pathExists(path: string): Promise<boolean> {
   return await access(path).then(
@@ -68,25 +52,6 @@ function findArchive(
   return archive;
 }
 
-function resolveArchiveUrls(releaseBases: string[], archive: SourceServerReleaseArchive): string[] {
-  const absolute = archive.urls.filter((url) => /^https?:\/\//u.test(url));
-  const relative = archive.urls.filter((url) => !/^https?:\/\//u.test(url));
-  return Array.from(
-    new Set([...absolute, ...buildReleaseAssetUrlCandidates(releaseBases, relative)]),
-  );
-}
-
-async function writeTextAtomic(path: string, text: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, text, { encoding: "utf8", mode: 0o600 });
-    await rename(temporary, path);
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined);
-  }
-}
-
 async function resolveLocalDescriptor(
   releaseDir: string,
   target: string,
@@ -100,91 +65,6 @@ async function resolveLocalDescriptor(
     throw new Error(`Source Server local archive failed descriptor verification: ${archivePath}`);
   }
   return { archive, archivePath };
-}
-
-async function resolveRemoteDescriptor(
-  remoteAssets: WindowRemoteAssetDirs,
-  cacheRoot: string | null,
-  remoteAssetNetwork?: RemoteAssetNetworkPort,
-): Promise<ResolvedDescriptor> {
-  const releaseBases = buildReleaseBaseCandidates(
-    remoteAssets.remoteCdnBaseUrls ??
-      (remoteAssets.remoteCdnBaseUrl ? [remoteAssets.remoteCdnBaseUrl] : []),
-    ZCODE_VERSION,
-  );
-  const descriptorUrls = buildReleaseAssetUrlCandidates(releaseBases, [
-    SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME,
-  ]);
-  const cachedDescriptorPath = cacheRoot
-    ? join(cacheRoot, SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME)
-    : null;
-  let lastError: unknown;
-  const fetchImpl = resolveRemoteAssetFetch(remoteAssetNetwork);
-  for (const url of descriptorUrls) {
-    try {
-      const response = await fetchImpl(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const text = await response.text();
-      const descriptor = readDescriptor(text);
-      if (cachedDescriptorPath) await writeTextAtomic(cachedDescriptorPath, text);
-      return { descriptor, releaseBases };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  if (cachedDescriptorPath && (await pathExists(cachedDescriptorPath))) {
-    return {
-      descriptor: readDescriptor(await readFile(cachedDescriptorPath, "utf8")),
-      releaseBases,
-    };
-  }
-  // Диагностика: без URL и статуса пользователь видел только «Unable to resolve …»
-  // и не мог отличить недоступный CDN от сетевой блокировки. Последняя ошибка содержит
-  // фактический ответ (например `HTTP 404`) для конкретного кандидата.
-  const attempted = descriptorUrls.join(", ");
-  const reason = lastError instanceof Error ? `: ${lastError.message}` : "";
-  throw new Error(
-    `Unable to resolve Source Server release descriptor for ${ZCODE_VERSION}${reason}. Tried: ${attempted}. ` +
-      "This build reads the descriptor from the remote asset CDN; if the CDN does not publish this version, " +
-      "installing the Source Server on the remote host is unavailable.",
-    { cause: lastError },
-  );
-}
-
-async function downloadArchive(
-  archive: SourceServerReleaseArchive,
-  urls: string[],
-  cacheRoot: string,
-  remoteAssetNetwork?: RemoteAssetNetworkPort,
-): Promise<string> {
-  await mkdir(cacheRoot, { recursive: true });
-  const cached = join(cacheRoot, archive.fileName);
-  if (await verifyArchive(cached, archive)) return cached;
-  await rm(cached, { force: true });
-  let lastError: unknown;
-  const fetchImpl = resolveRemoteAssetFetch(remoteAssetNetwork);
-  for (const url of urls) {
-    const temporary = `${cached}.${process.pid}.${randomUUID()}.tmp`;
-    try {
-      const response = await fetchImpl(url);
-      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-      await pipeline(
-        Readable.fromWeb(response.body as never),
-        createWriteStream(temporary, { mode: 0o600 }),
-      );
-      if (!(await verifyArchive(temporary, archive))) {
-        throw new Error(`Source Server archive checksum mismatch: ${archive.fileName}`);
-      }
-      await rename(temporary, cached);
-      return cached;
-    } catch (error) {
-      lastError = error;
-      await rm(temporary, { force: true }).catch(() => undefined);
-    }
-  }
-  throw new Error(`Unable to download Source Server release ${archive.fileName}`, {
-    cause: lastError,
-  });
 }
 
 export async function resolveSourceServerReleaseAsset(
@@ -202,8 +82,6 @@ async function resolveReleaseAsset(
   probe: SourceServerProbeResult,
   remoteAssets: WindowRemoteAssetDirs,
   remoteTarget: Exclude<RemoteTarget, { kind: "server" }>,
-  remoteAssetNetwork?: RemoteAssetNetworkPort,
-  options: { metadataOnly?: boolean } = {},
 ): Promise<ServerReleaseAsset> {
   if (
     (probe.platform !== "linux" && probe.platform !== "darwin") ||
@@ -212,13 +90,6 @@ async function resolveReleaseAsset(
     throw new Error(`Unsupported Source Server release target: ${probe.platform}-${probe.arch}`);
   }
   const target = `${probe.platform}-${probe.arch}`;
-  const installMode =
-    remoteTarget.kind === "ssh"
-      ? normalizeRemoteAssetInstallMode(remoteTarget.assetInstallMode)
-      : "local-download-upload";
-  const cacheRoot = remoteAssets.remoteCacheDir
-    ? join(remoteAssets.remoteCacheDir, "source-server", ZCODE_VERSION)
-    : null;
 
   if (
     remoteTarget.kind === "ssh" &&
@@ -255,9 +126,7 @@ async function resolveReleaseAsset(
     ...(remoteAssets.bundledReleaseDir
       ? [join(remoteAssets.bundledReleaseDir, "releases", ZCODE_VERSION)]
       : []),
-    ...(remoteAssets.mockCdnDir
-      ? [join(remoteAssets.mockCdnDir, "releases", ZCODE_VERSION)]
-      : []),
+    ...(remoteAssets.mockCdnDir ? [join(remoteAssets.mockCdnDir, "releases", ZCODE_VERSION)] : []),
   ];
   for (const releaseDir of localReleaseDirs) {
     // Ошибка верификации bundled archive остаётся фатальной: молчаливая
@@ -274,30 +143,11 @@ async function resolveReleaseAsset(
     };
   }
 
-  const resolvedDescriptor = await resolveRemoteDescriptor(
-    remoteAssets,
-    cacheRoot,
-    remoteAssetNetwork,
+  // Bug 原因: desktop больше не имеет права тянуть Source Server с CDN
+  // (в том числе z.ai). Если приложение собрано без bundled release — это
+  // ошибка сборки, а не повод уходить в сеть за несовпадающей версией.
+  throw new Error(
+    `Source Server release ${ZCODE_VERSION} for ${target} is not bundled with this app. ` +
+      "Rebuild the application with the Source Server archive included; remote CDN fallback is disabled.",
   );
-  const archive = findArchive(resolvedDescriptor.descriptor, target);
-  const urls = resolveArchiveUrls(resolvedDescriptor.releaseBases, archive);
-  if (installMode === "remote-download" || options.metadataOnly) {
-    return {
-      target,
-      version: ZCODE_VERSION,
-      sha256: archive.sha256,
-      sizeBytes: archive.sizeBytes,
-      urls,
-    };
-  }
-  if (!cacheRoot)
-    throw new Error(`Source Server release cache is unavailable: ${archive.fileName}`);
-  return {
-    localArchivePath: await downloadArchive(archive, urls, cacheRoot, remoteAssetNetwork),
-    target,
-    version: ZCODE_VERSION,
-    sha256: archive.sha256,
-    sizeBytes: archive.sizeBytes,
-    urls,
-  };
 }

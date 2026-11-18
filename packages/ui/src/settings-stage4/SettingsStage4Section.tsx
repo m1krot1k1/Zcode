@@ -469,7 +469,6 @@ export function SettingsStage4Section({
             value={sandbox.mode}
             testId="settings-stage4-sandbox-mode"
             options={[
-              { value: "auto", label: t("settings.stage4.sandbox.mode.auto") },
               { value: "bwrap", label: t("settings.stage4.sandbox.mode.bwrap") },
               { value: "seatbelt", label: t("settings.stage4.sandbox.mode.seatbelt") },
               { value: "off", label: t("settings.stage4.sandbox.mode.off") },

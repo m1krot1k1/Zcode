@@ -25,6 +25,7 @@ import {
   type RemoteConnectionFlowOptions,
 } from "@/remote-connection-flow/contract.js";
 import type { RemoteConnectionCompletionIntent } from "@/remote-connection-flow/types.js";
+import { buildSshConnectionHistorySuggestions } from "@/remote-connection/sshHistorySuggestions.js";
 
 export type RemoteConnectionFlowState = ReturnType<typeof useRemoteConnectionFlowState>;
 
@@ -225,6 +226,43 @@ export function useRemoteConnectionFlowState(options: RemoteConnectionFlowOption
     preserveDraftOnOpen: true,
     discoverAll: !addingDevice,
   });
+  const appliedRecentSshKeyRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      appliedRecentSshKeyRef.current = false;
+      return;
+    }
+    if (appliedRecentSshKeyRef.current) {
+      return;
+    }
+    // 新建连接时把最近一次使用过的私钥路径预填进表单；已有 profile/alias
+    // 或用户已经填写私钥时保持原值，避免覆盖明确选择。
+    if (preferredProfileId || selectedSshConfigAlias || privateKeyPath.trim()) {
+      return;
+    }
+    const recentPrivateKeyPath =
+      buildSshConnectionHistorySuggestions(remoteWorkspaceSessions).privateKeyPaths[0];
+    if (!recentPrivateKeyPath) {
+      return;
+    }
+
+    appliedRecentSshKeyRef.current = true;
+    setPrivateKeyPath(recentPrivateKeyPath);
+    // 只有用户还没输入密码时才切换到私钥认证；密码已填写说明用户明确选了密码。
+    if (sshAuthMethod === "password" && !password.trim()) {
+      setSshAuthMethod("privateKey");
+    }
+  }, [
+    open,
+    preferredProfileId,
+    selectedSshConfigAlias,
+    privateKeyPath,
+    password,
+    sshAuthMethod,
+    remoteWorkspaceSessions,
+    setPrivateKeyPath,
+    setSshAuthMethod,
+  ]);
   const directoryBrowserServices = useRemoteWorkspaceSessionStore((state) =>
     connectedSessionId ? (state.sessionsById[connectedSessionId]?.services ?? null) : null,
   );

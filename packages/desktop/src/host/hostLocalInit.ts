@@ -382,17 +382,7 @@ export async function initializeLocalHost(
       const resolveSourceServerRelease = async (
         probe: Parameters<typeof resolveSourceServerReleaseAsset>[0],
         target: Parameters<typeof resolveSourceServerReleaseAsset>[2],
-        options?: { metadataOnly?: boolean },
-      ) =>
-        await resolveSourceServerReleaseAsset(
-          probe,
-          msg.remoteAssets ?? {},
-          target,
-          {
-            fetch: hostApiNetworkTransport.fetch,
-          },
-          options,
-        );
+      ) => await resolveSourceServerReleaseAsset(probe, msg.remoteAssets ?? {}, target);
       hostState.sourceServerConnectionManager = new SourceServerConnectionManager({
         directory: hostState.sourceServerDirectory,
         admitConnection: createRemoteProjectConnectionAdmission(

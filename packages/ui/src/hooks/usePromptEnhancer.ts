@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PromptEnhancerService } from "@zcode/services";
+import type { IDisposable } from "@zcode/rpc";
 import {
   type PromptEnhanceRequest,
   type PromptEnhanceResult,
@@ -40,6 +41,21 @@ export interface PromptEnhanceState {
 
 const INITIAL_STATE: PromptEnhanceState = { status: "idle", streamingText: "" };
 
+type PromptEnhancerStreamSubscription = IDisposable | (() => void);
+
+function releaseStreamSubscription(
+  subscription: PromptEnhancerStreamSubscription | undefined,
+): void {
+  if (!subscription) {
+    return;
+  }
+  if (typeof subscription === "function") {
+    subscription();
+    return;
+  }
+  subscription.dispose();
+}
+
 let requestCounter = 0;
 function nextRequestId(): string {
   requestCounter += 1;
@@ -65,7 +81,10 @@ export function usePromptEnhancer(options: UsePromptEnhancerOptions) {
   }, [options.promptEnhancerService]);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
+    // Bug 原因：本地服务返回函数式取消订阅，而经过 ProxyChannel 的远程服务
+    // 按 Event 合同返回 IDisposable；两种形态都必须能安全释放，否则卸载时
+    // 调用对象会抛 “t is not a function” 并被错误边界捕获。
+    let unsubscribe: PromptEnhancerStreamSubscription | undefined;
     try {
       unsubscribe = options.promptEnhancerService.onStreamDelta((event) => {
         if (event.requestId !== activeRequestId.current || !mounted.current) return;
@@ -76,7 +95,7 @@ export function usePromptEnhancer(options: UsePromptEnhancerOptions) {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    return () => unsubscribe?.();
+    return () => releaseStreamSubscription(unsubscribe);
   }, [options.promptEnhancerService]);
 
   const enhance = useCallback(

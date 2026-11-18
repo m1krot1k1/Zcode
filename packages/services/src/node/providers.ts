@@ -18,20 +18,13 @@ import {
 } from "../model-provider/providerProvisioningSource.js";
 import { createProviderRuntimeFromConfigRuntime } from "../model-provider/providerRuntime.js";
 import { createProviderSettingsConnectivityTester } from "../model-provider/providerSettingsConnectivity.js";
-import { fetchZCodeBuiltinRemoteRelease } from "../model-provider/zcodeBuiltinRemoteConfig.js";
 import { createOAuthProviderLogoutHandler } from "../oauth/oauthProviderLogout.js";
-import { resolveClientConfigPlatform } from "../runtime-tools/clientPlatform.js";
 import { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import {
   NodeModelSelectionConfigRepository,
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
 } from "@zcode/provider-node";
-import {
-  BIGMODEL_PROVIDER_ID,
-  ZAI_PROVIDER_ID,
-  ZCODE_VERSION,
-  isStartPlanModelProviderId,
-} from "@zcode/shared";
+import { BIGMODEL_PROVIDER_ID, ZAI_PROVIDER_ID, isStartPlanModelProviderId } from "@zcode/shared";
 import { join } from "node:path";
 import { getAppConfigDir as resolveAppConfigDir } from "../paths.js";
 
@@ -39,7 +32,6 @@ export function createProviderServices(args: BuildContext & CoreServices) {
   const {
     options,
     settingService,
-    resolveCurrentZCodeEndpointOrigin,
     oauthLogout,
     openCodeCliProviderCatalogSource,
     apiClient,
@@ -86,33 +78,11 @@ export function createProviderServices(args: BuildContext & CoreServices) {
     }),
   );
   const providerConfigLog = createServiceLogger("provider-config");
-  const clientConfigPlatform = resolveClientConfigPlatform();
+  // Bug 原因：zcodeBuiltinEnvironment 会把 provider catalog 指向 z.ai
+  // 服务端下发的 CDN release，并在启动时刷新。Fork 不再依赖该链路，
+  // 只读取随应用打包的 built-in config。
   const providerConfigRuntime = createProviderConfigRuntime({
     zcodeBuiltinFilePath: options.zcodeBuiltinProviderConfigFilePath,
-    zcodeBuiltinEnvironment: {
-      environmentConfigRoot: resolveAppConfigDir(),
-      platform: clientConfigPlatform,
-      appVersion: ZCODE_VERSION,
-      resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
-      onRefreshResult: (event) => {
-        if (event.result === "updated")
-          providerConfigLog.info(undefined, "ZCode Built-in CDN 配置已更新", event);
-        else providerConfigLog.debug(undefined, "ZCode Built-in 刷新检查", event);
-      },
-      fetchRelease: (endpointOrigin, signal) =>
-        fetchZCodeBuiltinRemoteRelease({
-          apiClient,
-          endpointOrigin,
-          signal,
-          appVersion: ZCODE_VERSION,
-          platform: clientConfigPlatform,
-        }),
-    },
-    onZCodeBuiltinRefreshError: (error) => {
-      providerConfigLog.warn(undefined, "ZCode Built-in Config 远端刷新失败", {
-        error,
-      });
-    },
     onPersonalConfigRecovery: (event) => {
       providerConfigLog.warn(
         undefined,

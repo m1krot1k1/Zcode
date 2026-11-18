@@ -48,7 +48,10 @@ export type CodeIndexSettings = z.infer<typeof codeIndexSettingsSchema>;
 /** Песочница и Computer Use (4.5a/4.5b). */
 export const sandboxSettingsSchema = z
   .object({
-    mode: z.enum(["auto", "bwrap", "seatbelt", "off"]).default("auto"),
+    // Bug 原因：`auto` 在 Linux/macOS 上默认启用 bwrap/seatbelt，隔离了 HOME
+    // 与用户凭据（gh、ssh），并与产品要求“默认不启用沙箱”冲突。默认改为 off，
+    // bwrap/seatbelt 仅保留为显式选择。
+    mode: z.enum(["auto", "bwrap", "seatbelt", "off"]).default("off"),
     /** Сетевой доступ для bash внутри песочницы. */
     allowBashNetwork: z.boolean().default(true),
     commandTimeoutMs: z.number().int().min(1_000).max(1_800_000).default(180_000),
@@ -69,7 +72,12 @@ export type SandboxSettings = z.infer<typeof sandboxSettingsSchema>;
 export const browserAssistantSettingsSchema = z
   .object({
     telemetryEnabled: z.boolean().default(false),
-    screenshotBudgetBytes: z.number().int().min(64 * 1024).max(8 * 1024 * 1024).default(1_048_576),
+    screenshotBudgetBytes: z
+      .number()
+      .int()
+      .min(64 * 1024)
+      .max(8 * 1024 * 1024)
+      .default(1_048_576),
     ariaSnapshotMaxNodes: z.number().int().min(200).max(20_000).default(4_000),
     autoCloseDialogs: z.boolean().default(true),
   })
@@ -139,7 +147,16 @@ export const stage4SettingsObjectSchema = z.object({
 export function resolveStage4Settings(
   source: Partial<Stage4Settings> | null | undefined,
 ): Stage4Settings {
-  return stage4SettingsObjectSchema.parse(source ?? {});
+  const resolved = stage4SettingsObjectSchema.parse(source ?? {});
+  // 旧版本会把默认值 `auto` 写入 setting.json；升级后按 off 解释，
+  // 否则用户仍会被旧的隐式 bwrap/seatbelt 隔离挡住 gh/ssh 凭据。
+  if (resolved.sandboxSettings.mode !== "auto") {
+    return resolved;
+  }
+  return {
+    ...resolved,
+    sandboxSettings: { ...resolved.sandboxSettings, mode: "off" },
+  };
 }
 
 export const stage4SettingsPatchSchema = z.object({

@@ -310,12 +310,8 @@ describe("desktopRuntimeEnv resolveRemoteAssetDirs", () => {
 
       expect(dirs.mockCdnDir).toMatch(/[\\/]mock-cdn$/);
       expect(dirs.sourceServerArtifactPolicy).toBe("development-content-addressed");
-      expect(dirs.remoteCdnBaseUrl).toBe(
-        "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-      );
-      expect(dirs.remoteCdnBaseUrls).toEqual([
-        "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-      ]);
+      expect(dirs.remoteCdnBaseUrl).toBeUndefined();
+      expect(dirs.remoteCdnBaseUrls).toBeUndefined();
       expect(dirs.remoteCacheDir).toMatch(/[\\/]userData[\\/]remote-assets-cache$/);
     });
   });
@@ -330,16 +326,12 @@ describe("desktopRuntimeEnv resolveRemoteAssetDirs", () => {
 
       expect(dirs.mockCdnDir).toBeUndefined();
       expect(dirs.sourceServerArtifactPolicy).toBe("development-content-addressed");
-      expect(dirs.remoteCdnBaseUrl).toBe(
-        "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-      );
-      expect(dirs.remoteCdnBaseUrls).toEqual([
-        "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-      ]);
+      expect(dirs.remoteCdnBaseUrl).toBeUndefined();
+      expect(dirs.remoteCdnBaseUrls).toBeUndefined();
       expect(dirs.remoteCacheDir).toMatch(/[\\/]userData[\\/]remote-assets-cache$/);
     });
   });
-  it("开发态打开开关后应直接走 CDN", async () => {
+  it("开发态 CDN 开关不再产生远程 CDN 地址", async () => {
     process.env["ZCODE_DEV_REMOTE_ASSET_USE_CDN"] = "TRUE";
     const { resolveRemoteAssetDirs } = await import("../src/main/desktopRuntimeEnv.js");
     const dirs = resolveRemoteAssetDirs({
@@ -348,17 +340,13 @@ describe("desktopRuntimeEnv resolveRemoteAssetDirs", () => {
     });
 
     expect(dirs.mockCdnDir).toBeUndefined();
-    expect(dirs.sourceServerArtifactPolicy).toBeUndefined();
-    expect(dirs.remoteCdnBaseUrl).toBe(
-      "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-    );
-    expect(dirs.remoteCdnBaseUrls).toEqual([
-      "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-    ]);
+    expect(dirs.sourceServerArtifactPolicy).toBe("development-content-addressed");
+    expect(dirs.remoteCdnBaseUrl).toBeUndefined();
+    expect(dirs.remoteCdnBaseUrls).toBeUndefined();
     expect(dirs.remoteCacheDir).toMatch(/[\\/]userData[\\/]remote-assets-cache$/);
   });
 
-  it("生产态应始终走 CDN 分支", async () => {
+  it("生产态不再暴露任何 CDN 地址", async () => {
     appMock.isPackaged = true;
     process.env["ZCODE_DEV_REMOTE_ASSET_USE_CDN"] = "0";
     process.env["ZCODE_REMOTE_ASSET_CDN_BASE_URL"] = "https://cdn.example.com/releases///";
@@ -370,8 +358,8 @@ describe("desktopRuntimeEnv resolveRemoteAssetDirs", () => {
 
     expect(dirs.mockCdnDir).toBeUndefined();
     expect(dirs.sourceServerArtifactPolicy).toBeUndefined();
-    expect(dirs.remoteCdnBaseUrl).toBe("https://cdn.example.com/releases");
-    expect(dirs.remoteCdnBaseUrls).toEqual(["https://cdn.example.com/releases"]);
+    expect(dirs.remoteCdnBaseUrl).toBeUndefined();
+    expect(dirs.remoteCdnBaseUrls).toBeUndefined();
     expect(dirs.remoteCacheDir).toMatch(/[\\/]userData[\\/]remote-assets-cache$/);
   });
 
@@ -403,7 +391,7 @@ describe("desktopRuntimeEnv resolveRemoteAssetDirs", () => {
     expect(dirs.remoteCacheDir).toBe(overrideCacheDir);
   });
 
-  it("开发态本地 env 文件可切到 CDN 并覆盖 CDN 与 cache", async () => {
+  it("开发态本地 env 文件不再提供 CDN，只覆盖 cache", async () => {
     const overrideCacheDir = join(tmpdir(), "zcode-local-env-cdn-remote-assets-cache");
     const { resolveRemoteAssetDirs } = await import("../src/main/desktopRuntimeEnv.js");
     const dirs = resolveRemoteAssetDirs(
@@ -419,8 +407,8 @@ describe("desktopRuntimeEnv resolveRemoteAssetDirs", () => {
     );
 
     expect(dirs.mockCdnDir).toBeUndefined();
-    expect(dirs.remoteCdnBaseUrl).toBe("https://cdn.example.com/releases");
-    expect(dirs.remoteCdnBaseUrls).toEqual(["https://cdn.example.com/releases"]);
+    expect(dirs.remoteCdnBaseUrl).toBeUndefined();
+    expect(dirs.remoteCdnBaseUrls).toBeUndefined();
     expect(dirs.remoteCacheDir).toBe(overrideCacheDir);
   });
 });
@@ -765,15 +753,16 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     expectRuntimePath(env.GLM_BINARY_PATH, bundledPath);
   });
 
-  it("本地 host 进程加载工作区 .env.development 的测试环境 API 与 ZAI 登录入口", async () => {
+  it("本地 host 进程不再把测试 endpoint 升级为 z.ai 默认值", async () => {
     const { loadHostProcessEnvFromLocalFiles } = await import("../src/main/desktopRuntimeEnv.js");
 
     const env = loadHostProcessEnvFromLocalFiles();
 
-    expect(env.ZCODE_BASE_URL).toBe("https://zcode.z.ai");
-    expect(env.ZAI_OAUTH_ORIGIN).toBe("https://chat.z.ai");
-    expect(env.ZAI_BUSINESS_BASE_URL).toBe("https://api.z.ai");
-    expect(env.ZAI_OAUTH_CLIENT_ID).toBe("client_P8X5CMWmlaRO9gyO-KSqtg");
+    expect(env.ZCODE_BASE_URL).toBeUndefined();
+    expect(env.ZAI_OAUTH_ORIGIN).toBeUndefined();
+    expect(env.ZAI_BUSINESS_BASE_URL).toBeUndefined();
+    expect(env.ZAI_OAUTH_CLIENT_ID).toBeUndefined();
+    expect(env.ZCODE_TEST_BASE_URL).toBeDefined();
   });
 
   it("main 进程 endpoint 临时覆盖优先读取命令行环境变量", async () => {
@@ -805,10 +794,10 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     const env = buildHostProcessEnv(loadHostProcessEnvFromLocalFiles());
 
     expect(env.ZCODE_ENV).toBe("test");
-    expect(env.ZCODE_BASE_URL).toBe("https://zcode.z.ai");
-    expect(env.ZAI_OAUTH_ORIGIN).toBe("https://chat.z.ai");
-    expect(env.ZAI_BUSINESS_BASE_URL).toBe("https://api.z.ai");
-    expect(env.ZAI_OAUTH_CLIENT_ID).toBe("client_P8X5CMWmlaRO9gyO-KSqtg");
+    expect(env.ZCODE_BASE_URL).toBeUndefined();
+    expect(env.ZAI_OAUTH_ORIGIN).toBeUndefined();
+    expect(env.ZAI_BUSINESS_BASE_URL).toBeUndefined();
+    expect(env.ZAI_OAUTH_CLIENT_ID).toBeUndefined();
     expect(env.ZCODE_CUA_HELPER_INSTALL_VARIANT).toBe("preview");
   });
 

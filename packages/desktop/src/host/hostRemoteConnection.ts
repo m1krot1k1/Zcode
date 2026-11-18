@@ -199,16 +199,8 @@ export async function createWindowRemoteConnectionHandle(params: {
             membershipIntent: params.membershipIntent,
             target: params.target,
             allowInstall: params.confirmSourceServerInstall === true,
-            resolveRelease: async (probe, target, options) =>
-              await resolveSourceServerReleaseAsset(
-                probe,
-                params.remoteAssets,
-                target,
-                {
-                  fetch: requireActiveHostApiNetworkTransport().fetch,
-                },
-                options,
-              ),
+            resolveRelease: async (probe, target) =>
+              await resolveSourceServerReleaseAsset(probe, params.remoteAssets, target),
             context: {
               signal: params.signal,
               onLog: (event) => {

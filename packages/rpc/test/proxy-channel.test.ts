@@ -76,6 +76,24 @@ describe("ProxyChannel", () => {
     dispose();
   });
 
+  it("should release function-style event subscriptions without throwing", async () => {
+    let releaseCalls = 0;
+    const service = {
+      onDidChange: (_listener: (value: string) => void) => () => {
+        releaseCalls += 1;
+      },
+    };
+
+    const { proxy, dispose } = createServicePair<{ onDidChange: Event<string> }>(service);
+    const subscription = proxy.onDidChange(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(() => subscription.dispose()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(releaseCalls).toBe(1);
+    dispose();
+  });
+
   it("should proxy dynamic events with arguments", async () => {
     const emitter = new Emitter<string>();
     const calls: unknown[] = [];

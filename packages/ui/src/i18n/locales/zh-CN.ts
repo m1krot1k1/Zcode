@@ -555,7 +555,7 @@ const zhCN: Record<string, string> = {
   "settings.stage4.sandbox.title": "沙箱与 Computer Use",
   "settings.stage4.sandbox.description": "bash 隔离与电脑操控权限。",
   "settings.stage4.sandbox.mode": "沙箱模式",
-  "settings.stage4.sandbox.mode.description": "`auto` 按平台选择，`bwrap`/`seatbelt` 强制启用，`off` 关闭隔离。",
+  "settings.stage4.sandbox.mode.description": "`off` 关闭隔离（默认），`bwrap`/`seatbelt` 仅在显式选择时启用。",
   "settings.stage4.sandbox.mode.auto": "自动",
   "settings.stage4.sandbox.mode.bwrap": "bubblewrap（Linux）",
   "settings.stage4.sandbox.mode.seatbelt": "seatbelt（macOS）",

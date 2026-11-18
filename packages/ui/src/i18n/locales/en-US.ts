@@ -594,7 +594,7 @@ const enUS: Record<string, string> = {
   "settings.stage4.sandbox.title": "Sandbox and computer use",
   "settings.stage4.sandbox.description": "Bash isolation and permissions for computer control.",
   "settings.stage4.sandbox.mode": "Sandbox mode",
-  "settings.stage4.sandbox.mode.description": "`auto` follows the platform, `bwrap`/`seatbelt` force it, `off` disables isolation.",
+  "settings.stage4.sandbox.mode.description": "`off` disables isolation (default). `bwrap`/`seatbelt` opt in explicitly.",
   "settings.stage4.sandbox.mode.auto": "Auto",
   "settings.stage4.sandbox.mode.bwrap": "bubblewrap (Linux)",
   "settings.stage4.sandbox.mode.seatbelt": "seatbelt (macOS)",

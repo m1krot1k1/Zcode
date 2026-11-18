@@ -7634,7 +7634,7 @@
   "settings.stage4.sandbox.title": "Песочница и Computer Use",
   "settings.stage4.sandbox.description": "Изоляция bash и разрешения для управления компьютером.",
   "settings.stage4.sandbox.mode": "Режим песочницы",
-  "settings.stage4.sandbox.mode.description": "`auto` — по платформе, `bwrap`/`seatbelt` — принудительно, `off` — без изоляции.",
+  "settings.stage4.sandbox.mode.description": "`off` — без изоляции (по умолчанию), `bwrap`/`seatbelt` — только при явном выборе.",
   "settings.stage4.sandbox.mode.auto": "Авто",
   "settings.stage4.sandbox.mode.bwrap": "bubblewrap (Linux)",
   "settings.stage4.sandbox.mode.seatbelt": "seatbelt (macOS)",

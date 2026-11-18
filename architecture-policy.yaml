@@ -2395,6 +2395,9 @@ exceptions:
       # Increment 4.6: React-хук доступа к PromptEnhancerService. Хук — это слой доступа
       # ui к сервису, а не самостоятельный модуль; ui unmanaged на уровне пакета.
       - packages/ui/src/hooks/usePromptEnhancer.ts
+      # Initial-import файл рекомендованных промптов; менялся только для удаления
+      # захардкоженных CDN-иконок. ui unmanaged на уровне пакета, поэтому path-exact.
+      - packages/ui/src/v4/featureSuggestedPrompts.ts
       # Increment 4.3: воспроизводимый бенчмарк кодового индекса. Это dev-скрипт
       # (запускается вручную, не попадает в сборку пакета), поэтому регистрировать его
       # как модуль не имеет смысла; держим исключение path-exact на один файл,

@@ -182,13 +182,17 @@ function bufferEvent<T>(event: Event<T>): Event<T> {
 
   const emitter = new Emitter<T>({
     onWillAddFirstListener: () => {
-      listener = event((e) => {
+      // Bug 原因：服务端 event 可能按 UI 合同返回函数式取消订阅，而 Emitter
+      // 的生命周期回调只认 IDisposable；直接调用 listener?.dispose() 会在
+      // 最后一个订阅者移除时抛出 “dispose is not a function”，并打断 Host。
+      const subscription: IDisposable | (() => void) = event((e) => {
         if (flushing) {
           emitter.fire(e);
         } else {
           buffer.push(e);
         }
       });
+      listener = typeof subscription === "function" ? { dispose: subscription } : subscription;
     },
     onDidRemoveLastListener: () => {
       listener?.dispose();

@@ -6,7 +6,10 @@ import {
   stage4SettingsPatchSchema,
 } from "./settings.js";
 import { chatAutocompleteSettingsSchema } from "../chat-autocomplete/contract.js";
-import { projectStage4SettingsToCliConfig, projectStage4SettingsToSessionPreferences } from "./host-runtime.js";
+import {
+  projectStage4SettingsToCliConfig,
+  projectStage4SettingsToSessionPreferences,
+} from "./host-runtime.js";
 import { resolvePromptDepthProfile } from "../prompt-depth.js";
 
 /**
@@ -20,8 +23,18 @@ describe("stage4 settings runtime projection", () => {
     const resolved = resolveStage4Settings({});
     expect(resolved.agentCoreAdvanced.workingContextCeilingTokens).toBe(120_000);
     expect(resolved.chatAutocompleteSettings.enabled).toBe(false);
-    expect(resolved.sandboxSettings.mode).toBe("auto");
+    expect(resolved.sandboxSettings.mode).toBe("off");
     expect(resolved.browserAssistantSettings.ariaSnapshotMaxNodes).toBe(4_000);
+  });
+
+  it("трактует сохранённый старый режим auto как off", () => {
+    const legacy = {
+      sandboxSettings: {
+        ...resolveStage4Settings({}).sandboxSettings,
+        mode: "auto" as const,
+      },
+    };
+    expect(resolveStage4Settings(legacy).sandboxSettings.mode).toBe("off");
   });
 
   it("проводит изменённые значения до session preferences", () => {
@@ -69,9 +82,9 @@ describe("stage4 settings runtime projection", () => {
   });
 
   it("отклоняет значения вне диапазона вместо тихого сброса", () => {
-    expect(agentCoreAdvancedSettingsSchema.safeParse({ autoRepairLoopMaxIterations: 99 }).success).toBe(
-      false,
-    );
+    expect(
+      agentCoreAdvancedSettingsSchema.safeParse({ autoRepairLoopMaxIterations: 99 }).success,
+    ).toBe(false);
     expect(chatAutocompleteSettingsSchema.safeParse({ debounceMs: 10 }).success).toBe(false);
   });
 
