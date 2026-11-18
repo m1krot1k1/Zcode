@@ -48,6 +48,76 @@ describe("DataRootLock", { retry: 1 }, () => {
     await expect(lock.acquire()).rejects.toThrow(/already running/);
   });
 
+  it("steals a lock when the recorded process start identity is stale", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-reused-pid-"));
+    const lockFile = join(root, "run", "server.lock");
+    await mkdir(join(root, "run"), { recursive: true });
+    // Bug 原因：PID 被另一个进程复用，而 lock 只记录 pid；新 lock 比较进程启动时间。
+    await writeFile(
+      lockFile,
+      `${JSON.stringify({
+        pid: process.pid,
+        processStartId: "different-process-start",
+        acquiredAt: 0,
+      })}\n`,
+      "utf8",
+    );
+
+    const lock = new DataRootLock(lockFile);
+    await expect(lock.inspect()).resolves.toMatchObject({ state: "stale", pid: process.pid });
+    await lock.acquire();
+    expect(JSON.parse(await readFile(lockFile, "utf8"))).toMatchObject({
+      pid: process.pid,
+      processStartId: expect.any(String),
+    });
+    await lock.release();
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "steals a legacy lock whose pid now belongs to another command",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-legacy-reused-"));
+      const lockFile = join(root, "run", "server.lock");
+      await mkdir(join(root, "run"), { recursive: true });
+      const child = spawn("sleep", ["60"], { stdio: "ignore" });
+      try {
+        await writeFile(lockFile, `${JSON.stringify({ pid: child.pid, acquiredAt: 0 })}\n`, "utf8");
+        const lock = new DataRootLock(lockFile);
+        await expect(lock.inspect()).resolves.toMatchObject({ state: "stale", pid: child.pid });
+        await lock.acquire();
+        await lock.release();
+      } finally {
+        child.kill("SIGKILL");
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "keeps a legacy lock held by a live zcode-like process",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-legacy-live-"));
+      const lockFile = join(root, "run", "server.lock");
+      await mkdir(join(root, "run"), { recursive: true });
+      const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
+        argv0: "server-cli",
+        stdio: "ignore",
+      });
+      try {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const commandLine = await readFile(`/proc/${child.pid}/cmdline`, "utf8").catch(() => "");
+          if (commandLine.includes("server-cli")) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await writeFile(lockFile, `${JSON.stringify({ pid: child.pid, acquiredAt: 0 })}\n`, "utf8");
+        const lock = new DataRootLock(lockFile);
+        await expect(lock.inspect()).resolves.toMatchObject({ state: "active", pid: child.pid });
+        await expect(lock.acquire()).rejects.toThrow(/already running/);
+      } finally {
+        child.kill("SIGKILL");
+      }
+    },
+  );
+
   it("reports missing, stale, active and malformed lock owners without mutating the file", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-inspect-"));
     const lockFile = join(root, "run", "server.lock");

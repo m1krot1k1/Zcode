@@ -51,5 +51,5 @@ CLI: observe crash-loop-stopped -> error with reason
 
 ## 不在范围
 
-- 自动清理远端 stale Supervisor 或 stale lock；需要单独证据和任务边界。
+- 自动清理远端 stale Supervisor；восстановление stale lock при переиспользовании PID описано в [source-server-lock-owner.md](2026-11-18-source-server-lock-owner.md).
 - UI 侧连接总超时、手机 relay 恢复链路。

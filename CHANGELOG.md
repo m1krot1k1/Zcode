@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.17.128](https://github.com/m1krot1k1/Zcode/compare/v3.17.127...v3.17.128) (2026-11-18)
+
+### Bug Fixes
+
+* **remote:** не блокировать Source Server устаревшим lock после переиспользования PID
+  * `run/server.lock` хранит `processStartId` (Linux `/proc/<pid>/stat`, macOS `ps lstart`) и сравнивает идентичность инстанса, а не только `kill(pid, 0)`
+  * legacy lock без identity признаётся stale, если PID занят посторонней командой; живой процесс `server-cli` не перехватывается
+  * зомби и недоступная командная строка обрабатываются консервативно; recovery gate и quarantine по-прежнему гарантируют одного владельца
+  * исправляет restart-loop Supervisor с `Another ZCode Server instance is already running`, когда PID из lock достался другому процессу
+
+### Tests
+
+* **remote:** покрыть перехват lock с чужим `processStartId`, legacy lock после переиспользования PID и сохранение lock за живым `server-cli`
+
 ## [3.17.127](https://github.com/m1krot1k1/Zcode/compare/v3.17.126...v3.17.127) (2026-11-18)
 
 ### Features
