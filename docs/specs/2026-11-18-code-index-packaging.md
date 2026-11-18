@@ -24,6 +24,7 @@
 
 - `packages/desktop/test/runtimeModulePackaging.test.ts` проверяет наличие обоих пакетов в двух списках.
 - `packages/zcode-server-cli/test/packaging.test.ts` проверяет, что staged-архив содержит `runtime/node_modules/tree-sitter-wasms` вместе с wasm-грамматикой.
+- `packages/services/test/code-intelligence/graphConnections.test.ts` собирает реальный индекс по двум TypeScript-файлам и падает, если `refs` или межфайловые `edges` пусты.
 - После сборки `listPackage(app.asar)` находит `web-tree-sitter` и `tree-sitter-wasms`.
 - В собранном 3.17.129: asar содержит 62 записи `web-tree-sitter` и 41 запись `tree-sitter-wasms`; Electron с `ELECTRON_RUN_AS_NODE` загрузил грамматику из asar и разобрал TypeScript в AST без ошибок.
 - После переиндексации на TypeScript-репозитории `refs` и `edges` не равны 0, а поиск по графу возвращает соседей.

@@ -16,7 +16,7 @@
 ### Tests
 
 * **agent:** проверить отсутствие `PtySession` в наборе по умолчанию, наличие `Read`/`Bash` и одноразовый вызов `Bash` в forensic-replay E2E
-* **code-index:** проверить оба списка упаковки tree-sitter runtime и наличие `tree-sitter-wasms` в staged-архиве сервера
+* **code-index:** проверить оба списка упаковки tree-sitter runtime, наличие `tree-sitter-wasms` в staged-архиве сервера и непустые `refs`/`edges` на реальном индексе
 
 ## [3.17.128](https://github.com/m1krot1k1/Zcode/compare/v3.17.127...v3.17.128) (2026-11-18)
 
