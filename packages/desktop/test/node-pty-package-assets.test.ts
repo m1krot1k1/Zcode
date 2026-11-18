@@ -4,8 +4,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   copyNodePtyRuntimePackage,
+  resolvePackagedBundledAgentNodePtyPrebuildPath,
   resolvePackagedNodePtyPrebuildPath,
   resolveSourceNodePtyPrebuildPath,
+  stageNodePtyIntoBundledAgent,
 } from "../scripts/node-pty-package-assets.mjs";
 
 describe("node-pty package assets", () => {
@@ -81,5 +83,62 @@ describe("node-pty package assets", () => {
     expect(resolvedPath).toMatch(
       /app\.asar\.unpacked\/node_modules\/node-pty\/prebuilds\/linux-x64\/pty\.node$/,
     );
+  });
+
+  it("stages node-pty beside the bundled agent so zcode.cjs can resolve it", () => {
+    const rootDir = mkdtempSync(resolve(tmpdir(), "zcode-agent-node-pty-"));
+    try {
+      const sourcePackageRoot = resolve(rootDir, "source/node-pty");
+      const glmDir = resolve(rootDir, "resources/glm");
+      for (const [relativePath, contents] of [
+        ["lib/index.js", "runtime"],
+        ["prebuilds/linux-x64/pty.node", "linux native"],
+        ["prebuilds/darwin-arm64/pty.node", "mac native"],
+      ] as const) {
+        const filePath = resolve(sourcePackageRoot, relativePath);
+        mkdirSync(resolve(filePath, ".."), { recursive: true });
+        writeFileSync(filePath, contents);
+      }
+
+      const targetRoot = stageNodePtyIntoBundledAgent({
+        glmDir,
+        sourcePackageRoot,
+        targetPlatform: { os: "linux", arch: "x64" },
+      });
+
+      expect(targetRoot).toBe(resolve(glmDir, "node_modules/node-pty"));
+      expect(readFileSync(resolve(targetRoot, "lib/index.js"), "utf8")).toBe("runtime");
+      expect(readFileSync(resolve(targetRoot, "prebuilds/linux-x64/pty.node"), "utf8")).toBe(
+        "linux native",
+      );
+      expect(existsSync(resolve(targetRoot, "prebuilds/darwin-arm64/pty.node"))).toBe(false);
+      expect(
+        resolvePackagedBundledAgentNodePtyPrebuildPath({
+          resourcesDir: resolve(rootDir, "resources"),
+          platformKey: "linux-x64",
+        }),
+      ).toBe(resolve(targetRoot, "prebuilds/linux-x64/pty.node"));
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects staging when the target platform prebuild is absent", () => {
+    const rootDir = mkdtempSync(resolve(tmpdir(), "zcode-agent-node-pty-missing-"));
+    try {
+      const sourcePackageRoot = resolve(rootDir, "source/node-pty");
+      mkdirSync(resolve(sourcePackageRoot, "lib"), { recursive: true });
+      writeFileSync(resolve(sourcePackageRoot, "lib/index.js"), "runtime");
+
+      expect(() =>
+        stageNodePtyIntoBundledAgent({
+          glmDir: resolve(rootDir, "resources/glm"),
+          sourcePackageRoot,
+          targetPlatform: { os: "linux", arch: "x64" },
+        }),
+      ).toThrow(/node-pty prebuild missing/);
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
   });
 });

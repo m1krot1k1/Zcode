@@ -13,7 +13,7 @@
  * - `dispose()` закрывает все сессии и снимает все таймеры: после него не
  *   остаётся живых дескрипторов.
  */
-import { spawn as spawnPty, type IPty } from "node-pty";
+import type { IPty } from "node-pty";
 
 import {
   PTY_DEFAULT_BUFFER_BYTES,
@@ -58,12 +58,28 @@ interface PtySession {
   waiters: Set<() => void>;
 }
 
+type NodePtySpawn = typeof import("node-pty").spawn;
+let cachedNodePtySpawn: NodePtySpawn | undefined;
+
+/**
+ * `node-pty` — нативный аддон. Загружаем его только при первом PTY-вызове:
+ * упакованный `zcode.cjs` исполняется из `resources/glm`, а storage startup
+ * и обычный запуск CLI не должны зависеть от наличия native-модуля.
+ */
+async function loadNodePtySpawn(): Promise<NodePtySpawn> {
+  if (!cachedNodePtySpawn) {
+    const nodePty = await import("node-pty");
+    cachedNodePtySpawn = nodePty.spawn;
+  }
+  return cachedNodePtySpawn;
+}
+
 export interface AgentPtyManagerOptions extends PtyManagerLimits {
   sandbox?: ExecutionSandboxContract;
   /** Платформа для песочницы и убийства дерева; подменяется в тестах. */
   platform?: NodeJS.Platform;
   /** Фабрика PTY; подменяется в тестах без реального `node-pty`. */
-  spawnPty?: typeof spawnPty;
+  spawnPty?: NodePtySpawn;
 }
 
 /** Дефолтный shell для платформы: у агента должен быть предсказуемый. */
@@ -81,14 +97,14 @@ export class AgentPtyManager implements AgentPtyManagerContract {
   private readonly idleTimeoutMs: number;
   private readonly sandbox: ExecutionSandboxContract;
   private readonly platform: NodeJS.Platform;
-  private readonly spawnPtyImpl: typeof spawnPty;
+  private readonly spawnPtyImpl?: NodePtySpawn;
   private disposed = false;
 
   constructor(options: AgentPtyManagerOptions = {}) {
     this.maxSessions = Math.max(1, options.maxSessions ?? PTY_DEFAULT_MAX_SESSIONS);
     this.idleTimeoutMs = Math.max(0, options.idleTimeoutMs ?? PTY_DEFAULT_IDLE_TIMEOUT_MS);
     this.platform = options.platform ?? process.platform;
-    this.spawnPtyImpl = options.spawnPty ?? spawnPty;
+    this.spawnPtyImpl = options.spawnPty;
     this.sandbox =
       options.sandbox ?? createExecutionSandbox({ platform: this.platform });
   }
@@ -137,7 +153,8 @@ export class AgentPtyManager implements AgentPtyManagerContract {
       sandboxMode = "none";
     }
 
-    const term = this.spawnPtyImpl(file, args, {
+    const spawnPty = this.spawnPtyImpl ?? (await loadNodePtySpawn());
+    const term = spawnPty(file, args, {
       name: "xterm-256color",
       cols,
       rows,

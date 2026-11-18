@@ -23,6 +23,7 @@ import {
   stageSharpIntoBundledAgents,
 } from "./sharp-package-assets.mjs";
 import { stageKoffiIntoBundledAgents } from "./koffi-package-assets.mjs";
+import { stageNodePtyIntoBundledAgent } from "./node-pty-package-assets.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(scriptDir, "..");
@@ -370,6 +371,19 @@ function stageBundle() {
   stageAgentBundle({ repoRoot, platformKey });
 }
 
+function stageNodePtyForAgentBundle() {
+  // PtySession входит в CLI bundle, а рядом с zcode.cjs в resources/glm нет node_modules.
+  // Без этого require("node-pty") падает ещё до первого кадра storage startup.
+  const targetPackageRoot = stageNodePtyIntoBundledAgent({
+    desktopPackageRoot: desktopRoot,
+    glmDir,
+    targetPlatform: { os: platform, arch },
+  });
+  console.log(
+    `[prepare:agent-bundle] staged node-pty into ${targetPackageRoot} (${platformKey})`,
+  );
+}
+
 function stageOfficialPlugins() {
   for (const plugin of officialPluginPackages) {
     const sourceRoot = resolve(repoRoot, plugin.relativePath);
@@ -459,6 +473,7 @@ function stageKoffiForCuaPlugin() {
 buildCliBundle();
 buildOfficialPluginRuntimes();
 stageBundle();
+stageNodePtyForAgentBundle();
 stageOfficialPlugins();
 stageKoffiForCuaPlugin();
 stageSharpForNodeReplPlugin();

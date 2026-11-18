@@ -83,6 +83,9 @@ export function createPackagingHooks(ctx, deps) {
     runTimedSync("afterPack:assertPackagedNodePtyPrebuild", () =>
       assertions.assertPackagedNodePtyPrebuild(context),
     );
+    runTimedSync("afterPack:assertPackagedBundledAgentNodePty", () =>
+      assertions.assertPackagedBundledAgentNodePty(context),
+    );
     runTimedSync("afterPack:assertPackagedCuaSharp", () =>
       assertions.assertPackagedCuaSharp(context),
     );

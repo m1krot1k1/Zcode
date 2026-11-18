@@ -6,6 +6,10 @@ import { CUA_HELPER_APP_NAME } from "./context.mjs";
 export function createExtraResources(ctx) {
   const { targetPlatform } = ctx;
   const bundledRemoteAssets = resolve(ctx.desktopPackageRoot, "bundled-remote-assets");
+  const bundledAgentGlmDir = resolve(
+    ctx.desktopPackageRoot,
+    `bundled-agents/${targetPlatform.key}/glm`,
+  );
   return [
     ...(existsSync(bundledRemoteAssets)
       ? [
@@ -100,10 +104,21 @@ export function createExtraResources(ctx) {
       // 桌面端内置的是 agent 的 JS bundle（glm/zcode.cjs，由 prepare:agent-bundle 生成），
       // Host 进程用 app 自带的 Electron Node runtime（ELECTRON_RUN_AS_NODE）执行 `zcode.cjs app-server --stdio`，
       // 不再随包内置独立 Node 二进制。远端 SSH/WSL 仍走原生二进制（无 Electron）。
-      from: `bundled-agents/${targetPlatform.key}/glm`,
+      from: bundledAgentGlmDir,
       to: "glm",
-      filter: ["**/*", "!**/*.map"],
+      // electron-builder пропускает node_modules под from-корнем; зависимость
+      // монтируется отдельной записью ниже, иначе zcode.cjs не найдёт node-pty.
+      filter: ["**/*", "!node_modules{,/**/*}", "!**/*.map"],
     },
+    ...(existsSync(resolve(bundledAgentGlmDir, "node_modules"))
+      ? [
+          {
+            from: resolve(bundledAgentGlmDir, "node_modules"),
+            to: "glm/node_modules",
+            filter: ["**/*", "!**/*.map"],
+          },
+        ]
+      : []),
     {
       // agent shell 之前完全依赖宿主系统 PATH，GUI 启动时经常拿不到用户自己装的 rg。
       // 这里把 ripgrep 作为桌面端内置 runtime tool 打进 resources/tools，

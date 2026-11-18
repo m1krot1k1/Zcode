@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.17.124](https://github.com/m1krot1k1/Zcode/compare/v3.17.123...v3.17.124) (2026-11-18)
+
+### Bug Fixes
+
+* **desktop:** убрать падение запуска из-за `node-pty` в упакованном agent bundle
+  * CLI bundle загружает `node-pty` лениво при первом `create()`; `--prepare-storage` больше не зависит от native-аддона
+  * `node-pty` с prebuild целевой платформы стейджится в `resources/glm/node_modules`, поэтому `PtySession` работает без доступа к `app.asar.unpacked`
+  * `afterPack` проверяет `lib/index.js` и `prebuilds/<platform>/pty.node` рядом с `zcode.cjs`
+
 ## [3.17.123](https://github.com/m1krot1k1/Zcode/compare/v3.17.122...v3.17.123) (2026-11-17)
 
 ### Features

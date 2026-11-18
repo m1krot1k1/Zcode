@@ -4,7 +4,11 @@ import { join, resolve } from "node:path";
 import { runCommand } from "../../../scripts/spawn-command.mjs";
 import { cleanupPackagedSourcemaps } from "../scripts/packaged-sourcemap-cleanup.mjs";
 import { replaceAppAsarFromStaging } from "../scripts/app-asar-repack.mjs";
-import { resolvePackagedNodePtyPrebuildPath } from "../scripts/node-pty-package-assets.mjs";
+import {
+  resolvePackagedBundledAgentNodePtyPrebuildPath,
+  resolvePackagedBundledAgentNodePtyRoot,
+  resolvePackagedNodePtyPrebuildPath,
+} from "../scripts/node-pty-package-assets.mjs";
 import {
   findDesktopNativePackageViolations,
   parseAsarListWithPackState,
@@ -96,6 +100,24 @@ export function createPackagingAssertions({ asar, ctx, runTimedSync, runTimedAsy
     });
     if (!existsSync(targetBinaryPath))
       throw new Error(`node-pty 预编译产物缺失: ${targetBinaryPath}`);
+  }
+
+  function assertPackagedBundledAgentNodePty(context) {
+    // zcode.cjs исполняется из resources/glm и не резолвит app.asar.unpacked.
+    // Без копии рядом агент падает на require("node-pty") до старта storage.
+    const resourcesDir = resolvePackagedResourcesDir(context);
+    const nodePtyRoot = resolvePackagedBundledAgentNodePtyRoot({ resourcesDir });
+    const entries = [
+      join(nodePtyRoot, "lib", "index.js"),
+      resolvePackagedBundledAgentNodePtyPrebuildPath({
+        resourcesDir,
+        platformKey: ctx.targetPlatform.key,
+      }),
+    ];
+    for (const entry of entries) {
+      if (!existsSync(entry))
+        throw new Error(`resources/glm не содержит node-pty: ${entry}`);
+    }
   }
 
   function assertPackagedCuaSharp(context) {
@@ -195,6 +217,7 @@ export function createPackagingAssertions({ asar, ctx, runTimedSync, runTimedAsy
   }
 
   return {
+    assertPackagedBundledAgentNodePty,
     assertPackagedCuaHelper,
     assertPackagedCuaKoffi,
     assertPackagedCuaSharp,
