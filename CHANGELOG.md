@@ -8,14 +8,15 @@
   * `PtySession` больше не регистрируется в runtime-наборе и не виден модели; `Read` и `Bash` остаются без изменений
   * обычная диагностическая команда снова выполняется одним вызовом `Bash`, без трёх последовательных `start` → `write` → `read`
   * PTY-порт и handler сохранены как внутренняя инфраструктура и покрыты unit-тестами
-* **code-index:** упаковать tree-sitter runtime в app.asar
+* **code-index:** упаковать tree-sitter runtime в app.asar и серверный архив
   * `web-tree-sitter` и `tree-sitter-wasms` добавлены в injection и финальную проверку bundle; без них packaged-версия молча уходила в text fallback и давала 0 связей
+  * `stage.ts` явно добавляет оба пакета в `runtime/node_modules` серверного архива: сканер bare-спецификаторов не видел wasm-грамматики, и remote-индекс оставался без refs/edges
   * `SCHEMA_VERSION` 4 перестраивает прежний text-fallback индекс при первом открытии
 
 ### Tests
 
 * **agent:** проверить отсутствие `PtySession` в наборе по умолчанию, наличие `Read`/`Bash` и одноразовый вызов `Bash` в forensic-replay E2E
-* **code-index:** проверить оба списка упаковки tree-sitter runtime
+* **code-index:** проверить оба списка упаковки tree-sitter runtime и наличие `tree-sitter-wasms` в staged-архиве сервера
 
 ## [3.17.128](https://github.com/m1krot1k1/Zcode/compare/v3.17.127...v3.17.128) (2026-11-18)
 
