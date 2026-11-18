@@ -19,6 +19,9 @@
 * **remote:** не обрывать холодный старт Source Server раньше бюджета Supervisor
   * внешнее ожидание `ready` увеличено с 10 до 25 секунд и теперь длиннее `CORE_READY_TIMEOUT_MS` (15 секунд)
   * при `crash-loop-stopped` CLI сразу сообщает `lastExitReason`; обычный таймаут показывает последнее состояние и путь к `status.json`
+* **release:** пересобирать bundled Source Server при смене commit
+  * рядом с bundled-release хранится `source-revision.txt`; при несовпадении с `git rev-parse HEAD` архив собирается заново
+  * без commit-маркера (старые релизы) переиспользование запрещено, чтобы фикс не остался вне приложения
 
 ### Tests
 

@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+
+import { shouldReuseBundledRelease } from "./bundled-remote-assets-reuse.mjs";
 
 /**
  * Fork-local Source Server release.
@@ -36,6 +38,17 @@ const version = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"
 const sourceReleaseDir = join(desktopPackageRoot, "mock-cdn", "releases", version);
 const bundledRoot = join(desktopPackageRoot, "bundled-remote-assets");
 const bundledReleaseDir = join(bundledRoot, "releases", version);
+const bundledRevisionFile = join(bundledReleaseDir, "source-revision.txt");
+
+function resolveSourceRevision() {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout.trim() || null : null;
+}
+
+const sourceRevision = resolveSourceRevision();
 
 async function sha256File(path) {
   const hash = createHash("sha256");
@@ -49,12 +62,20 @@ async function reusedRelease() {
   if (!text) return false;
   try {
     const descriptor = JSON.parse(text);
+    const recordedRevision = (await readFile(bundledRevisionFile, "utf8").catch(() => "")).trim();
     const archive = descriptor.archives?.find((entry) => entry.target === target);
     if (!archive) return false;
     const archivePath = join(bundledReleaseDir, archive.fileName);
     const fileStat = await stat(archivePath).catch(() => null);
-    if (!fileStat?.isFile() || fileStat.size !== archive.sizeBytes) return false;
-    return (await sha256File(archivePath)) === archive.sha256;
+    if (!fileStat?.isFile()) return false;
+    return shouldReuseBundledRelease({
+      descriptor,
+      target,
+      expectedRevision: sourceRevision,
+      recordedRevision,
+      archiveSizeBytes: fileStat.size,
+      archiveSha256: await sha256File(archivePath),
+    });
   } catch {
     return false;
   }
@@ -92,4 +113,7 @@ if (!(await stat(descriptorPath).catch(() => null))?.isFile()) {
 await rm(bundledRoot, { recursive: true, force: true });
 await mkdir(dirname(bundledReleaseDir), { recursive: true });
 await cp(sourceReleaseDir, bundledReleaseDir, { recursive: true });
+// Bundled-release без commit-маркера нельзя отличить от архива, собранного из другого
+// состояния исходников при том же version. Маркер делает повторную пересборку явной.
+if (sourceRevision) await writeFile(bundledRevisionFile, `${sourceRevision}\n`, "utf8");
 console.log(`[bundled-remote-assets] ${bundledReleaseDir}`);
