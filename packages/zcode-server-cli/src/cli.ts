@@ -66,6 +66,11 @@ const stdout = (io: CliIO, value: unknown): void =>
 const stderr = (io: CliIO, value: unknown): void =>
   io.stderr?.write(`${value instanceof Error ? value.message : String(value)}\n`);
 
+// Supervisor may spend the full CORE_READY_TIMEOUT_MS before it reports readiness.
+// The outer wait must outlive that budget plus service registration, otherwise a
+// healthy cold start is reported as a timeout.
+export const DAEMON_READY_WAIT_TIMEOUT_MS = CORE_READY_TIMEOUT_MS + 10_000;
+
 async function acquireLifecycleCommandLock(
   layout: ReturnType<typeof resolveServerLayout>,
   conflictMessage: string,
@@ -633,9 +638,11 @@ async function waitForPersistedStatus(
   assertStillWaiting?: () => void,
   expectedServiceRegistered?: boolean,
 ): Promise<ServerStatus> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + DAEMON_READY_WAIT_TIMEOUT_MS;
+  let lastStatus: ServerStatus | null = null;
   while (Date.now() < deadline) {
     const status = await readPersistedStatus(layout);
+    lastStatus = status;
     if (
       status?.state === expectedState &&
       status.updatedAt > minUpdatedAt &&
@@ -643,10 +650,33 @@ async function waitForPersistedStatus(
         status.serviceRegistered === expectedServiceRegistered)
     )
       return status;
+    if (
+      expectedState === "ready" &&
+      status !== null &&
+      status.updatedAt > minUpdatedAt &&
+      status.state === "crash-loop-stopped"
+    ) {
+      throw new Error(`Server Core entered crash-loop-stopped${formatLastExitReason(status)}`);
+    }
     assertStillWaiting?.();
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`Timed out waiting for Server ${expectedState}`);
+  throw new Error(
+    `Timed out waiting for Server ${expectedState}${formatDaemonStatusDetail(lastStatus, layout)}`,
+  );
+}
+
+function formatLastExitReason(status: ServerStatus): string {
+  const reason = status.lastExitReason?.replace(/\s+/g, " ").trim();
+  return reason === undefined || reason.length === 0 ? "" : `: ${reason.slice(0, 300)}`;
+}
+
+function formatDaemonStatusDetail(
+  status: ServerStatus | null,
+  layout: ReturnType<typeof resolveServerLayout>,
+): string {
+  if (status === null) return ` (status file: ${layout.statusFile})`;
+  return ` (last state: ${status.state}${formatLastExitReason(status)}; status file: ${layout.statusFile})`;
 }
 
 async function waitForSupervisorReady(supervisor: {

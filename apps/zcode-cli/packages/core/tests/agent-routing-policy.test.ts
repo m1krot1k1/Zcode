@@ -140,6 +140,47 @@ describe("Agent/Task caller routing policy", () => {
     );
   });
 
+  it("auto-backgrounds Agent calls that share a parallel batch", async () => {
+    const launch = vi.fn(async () => completedOutput("researcher"));
+
+    await agentToolEntry.handler(
+      { description: "delegate", prompt: "research", subagent_type: "researcher" },
+      createContext({
+        availableAgentTypes: ["researcher"],
+        parallelAgentBatchSize: 2,
+        subagentPort: { launch } as never,
+      }),
+    );
+
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ runInBackground: true }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps an explicit foreground Agent call blocking in a batch", async () => {
+    const launch = vi.fn(async () => completedOutput("researcher"));
+
+    await agentToolEntry.handler(
+      {
+        description: "delegate",
+        prompt: "research",
+        subagent_type: "researcher",
+        run_in_background: false,
+      },
+      createContext({
+        availableAgentTypes: ["researcher"],
+        parallelAgentBatchSize: 2,
+        subagentPort: { launch } as never,
+      }),
+    );
+
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ runInBackground: false }),
+      expect.anything(),
+    );
+  });
+
   it("forwards task_graph node write_paths to runTaskDag", async () => {
     const runTaskDag = vi.fn(async () => completedOutput("orchestrator"));
     await agentToolEntry.handler(
@@ -252,17 +293,19 @@ describe("Agent/Task caller routing policy", () => {
     expect(launch).not.toHaveBeenCalled();
   });
 
-  it("lets researcher delegate nested research", async () => {
-    const launch = vi.fn(async () => completedOutput("researcher"));
-    await agentToolEntry.handler(
-      { description: "nested research", prompt: "inspect one module", subagent_type: "researcher" },
-      createContext({
-        callerAgentType: "researcher",
-        availableAgentTypes: ["researcher"],
-        subagentPort: { launch } as never,
-      }),
-    );
-    expect(launch).toHaveBeenCalledTimes(1);
+  it("rejects researcher recursive delegation", async () => {
+    const launch = vi.fn();
+    await expect(
+      agentToolEntry.handler(
+        { description: "nested research", prompt: "inspect one module", subagent_type: "researcher" },
+        createContext({
+          callerAgentType: "researcher",
+          availableAgentTypes: ["researcher"],
+          subagentPort: { launch } as never,
+        }),
+      ),
+    ).rejects.toThrow("not available to researcher");
+    expect(launch).not.toHaveBeenCalled();
   });
 
   it("rejects researcher -> coder", async () => {

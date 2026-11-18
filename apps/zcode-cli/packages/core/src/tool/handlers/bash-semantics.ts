@@ -39,10 +39,6 @@ const SEMANTIC_NON_ERROR_MESSAGES = new Set([
 const SEMANTIC_NO_MATCH_COMMANDS = new Set(["egrep", "fgrep", "grep", "rg"]);
 const CLAUDE_CODE_HINT_LINE_RE = /^[ \t]*<claude-code-hint\s+([^>]*?)\s*\/>[ \t]*$/gm;
 
-export function isBashReadOnlyCommand(command: string): boolean {
-  return isRuntimeReadOnlyBashCommand(command);
-}
-
 export function isRuntimeReadOnlyBashCommand(
   command: string,
   context?: BashReadonlyRuntimeContext,

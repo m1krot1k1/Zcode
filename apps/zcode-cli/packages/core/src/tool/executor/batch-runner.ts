@@ -28,9 +28,19 @@ export async function executeToolBatch(
   options?: ToolBatchExecuteOptions,
 ): Promise<ToolExecutionResult[]> {
   const maxConcurrency = options?.maxConcurrency ?? deps.maxConcurrency;
+  const parallelAgentBatchSize = toolCalls.filter(
+    (tc) => tc.name === "Agent" || tc.name === "Task",
+  ).length;
 
   if (toolCalls.length <= maxConcurrency) {
-    return Promise.all(toolCalls.map((tc) => executeOne(tc, options)));
+    return Promise.all(
+      toolCalls.map((tc) =>
+        executeOne(tc, {
+          ...options,
+          parallelAgentBatchSize,
+        }),
+      ),
+    );
   }
 
   const results: ToolExecutionResult[] = [];
@@ -46,6 +56,7 @@ export async function executeToolBatch(
           subagentModelOverride: options?.subagentModelOverride,
           model: options?.model,
           toolSearch: options?.toolSearch,
+          parallelAgentBatchSize,
         }),
       ),
     );

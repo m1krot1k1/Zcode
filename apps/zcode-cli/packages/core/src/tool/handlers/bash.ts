@@ -64,10 +64,10 @@ import {
 import { applyBashReadFileStateEffects } from "./bash-read-file-state.js";
 import {
   prepareBashPermissionMatcherForCommand,
-  isBashReadOnlyCommand,
   isRuntimeReadOnlyBashCommand,
   type BashPermissionMatcher,
 } from "./bash-semantics.js";
+import type { BashReadonlyRuntimeContext } from "./bash-git-runtime-safety.js";
 import { isBashAutoBackgroundEligible } from "./bash-background-policy.js";
 import { supportsBashBackgroundLifecycle } from "./bash-background-lifecycle.js";
 import { resolveBashPermissionRulePolicy } from "./bash-command-permission-policy.js";
@@ -111,13 +111,19 @@ function _getBashPrompt(
   });
 }
 
-export function isBashInputReadOnly(input: unknown): boolean {
+export function isBashInputReadOnly(
+  input: unknown,
+  context?: BashReadonlyRuntimeContext,
+): boolean {
   const command = readStringProperty(input, "command");
-  return command ? isBashReadOnlyCommand(command) : false;
+  return command ? isRuntimeReadOnlyBashCommand(command, context) : false;
 }
 
-export function isBashInputConcurrencySafe(input: unknown): boolean {
-  return isBashInputReadOnly(input);
+export function isBashInputConcurrencySafe(
+  input: unknown,
+  context?: BashReadonlyRuntimeContext,
+): boolean {
+  return isBashInputReadOnly(input, context);
 }
 
 function _checkBashInputPermissions(input: unknown): { behavior: "allow" } | undefined {
@@ -528,6 +534,10 @@ export const bashToolEntry: ToolEntry = {
   handler: bashHandler,
   resolveTimeoutBudgetMs: createBashTimeoutBudgetResolver(DEFAULT_BASH_TIMEOUT_POLICY),
   resolvePermissionCapability: resolveBashPermissionCapability,
+  resolveConcurrencyCapability: (input, context) =>
+    isBashInputConcurrencySafe(input, context)
+      ? { readOnly: true, concurrentSafe: true, sideEffectScope: "none" }
+      : undefined,
   resolvePermissionRulePolicy: resolveBashPermissionRulePolicy,
   inputSchema: BashInputJsonSchema,
   outputSchema: BASH_PROVIDER_OUTPUT_SCHEMA,

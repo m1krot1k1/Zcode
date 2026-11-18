@@ -468,6 +468,7 @@ async function executeToolCallImpl(
         spanId: traceContext.spanId,
         parentSpanId: traceContext.parentSpanId,
         abortSignal: executionAbortController.signal,
+        parallelAgentBatchSize: options?.parallelAgentBatchSize,
         backgroundTaskControlPort: deps.backgroundTaskControlPort,
         emitEvent,
         executionPort: deps.executionPort,

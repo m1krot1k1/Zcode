@@ -167,6 +167,8 @@ export interface ToolExecutionContext {
   spanId?: string;
   parentSpanId?: string;
   abortSignal: AbortSignal;
+  /** Number of Agent/Task calls in the same parallel group. */
+  parallelAgentBatchSize?: number;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   emitEvent?: (event: SessionEvent) => Promise<void>;
   executionPort?: ExecutionPort;
@@ -439,6 +441,17 @@ export interface ToolEntry extends ToolContractDeclaration {
     input: unknown,
     context?: ToolRuntimePermissionCapabilityContext,
   ) => ToolRuntimePermissionCapability | undefined;
+  /**
+   * Per-call scheduling override. Tools with side effects stay serialized by
+   * metadata; this hook lets read-only command tools opt individual calls into a
+   * parallel group without weakening the default for mutating calls.
+   */
+  resolveConcurrencyCapability?: (
+    input: unknown,
+    context?: ToolRuntimePermissionCapabilityContext,
+  ) =>
+    | Pick<ToolMetadata, "readOnly" | "concurrentSafe" | "sideEffectScope">
+    | undefined;
   resolvePermissionRulePolicy?: (
     input: unknown,
     context?: ToolRuntimePermissionCapabilityContext,

@@ -43,17 +43,25 @@ export async function scheduleTools(
   const dependencies: ToolDependency[] = toolCalls.map((tc) => {
     const entry = this.registry.get(tc.name);
     const metadata = entry?.metadata;
-    const sideEffectScope = entry?.permission?.sideEffectScope ?? metadata?.sideEffectScope;
+    const capability = entry?.resolveConcurrencyCapability?.(tc.input, {
+      workingDirectory: this.workingDirectory,
+      workspaceRoot: this.workspaceRoot,
+    });
+    const sideEffectScope =
+      capability?.sideEffectScope ??
+      entry?.permission?.sideEffectScope ??
+      metadata?.sideEffectScope;
     return {
       toolCallId: tc.id as ToolCallId,
       toolName: tc.name,
       dependsOn: [],
       readOnly:
-        metadata?.readOnly === undefined
+        capability?.readOnly ??
+        (metadata?.readOnly === undefined
           ? undefined
-          : metadata.readOnly && sideEffectScope === "none",
+          : metadata.readOnly && sideEffectScope === "none"),
       destructive: metadata?.destructive,
-      concurrentSafe: metadata?.concurrentSafe,
+      concurrentSafe: capability?.concurrentSafe ?? metadata?.concurrentSafe,
       sideEffectScope,
     };
   });

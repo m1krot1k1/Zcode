@@ -210,6 +210,8 @@ export interface ToolExecuteOptions {
   model?: Model;
   finishReason?: string;
   consecutiveSchemaFailuresByTool?: Map<string, number>;
+  /** Agent/Task calls in the same parallel group before maxConcurrency splitting. */
+  parallelAgentBatchSize?: number;
 }
 
 export interface ToolBatchExecuteOptions extends ToolExecuteOptions {

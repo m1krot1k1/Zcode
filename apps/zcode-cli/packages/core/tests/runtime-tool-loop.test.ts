@@ -11886,12 +11886,18 @@ describe("AgentRuntime tool loop", () => {
       toolCallId: "malformed-ask-call",
       toolName: "AskUserQuestionFixture",
     });
-    expect(providerContentToText(failedToolResult?.content)).toBe(
-      [
-        "<tool_use_error>InputValidationError: AskUserQuestionFixture failed due to the following issue:",
-        "The required parameter `questions` is missing</tool_use_error>",
-      ].join("\n"),
+    const failedToolContent = providerContentToText(failedToolResult?.content);
+    expect(failedToolContent).toContain(
+      "<tool_use_error>InputValidationError: AskUserQuestionFixture failed due to the following issue:",
     );
+    expect(failedToolContent).toContain("The required parameter `questions` is missing");
+    expect(failedToolContent).toContain(
+      'Tool "AskUserQuestionFixture" input failed schema validation after automatic self-repair.',
+    );
+    expect(failedToolContent).toContain("Missing required fields: questions");
+    expect(failedToolContent).toContain("Expected schema diff:");
+    expect(failedToolContent).toContain('Retry budget remaining for "AskUserQuestionFixture"');
+    expect(failedToolContent.endsWith("</tool_use_error>")).toBe(true);
     expect(successfulToolResult).toMatchObject({
       isError: false,
       role: "tool",
@@ -15947,6 +15953,43 @@ describe("AgentRuntime tool loop", () => {
       readOnly: false,
       sideEffectScope: "workspace",
     });
+  });
+
+  it("parallelizes read-only Bash calls and keeps mutating Bash serialized", async () => {
+    const sessionId = createSessionId("runtime-tool-bash-concurrency");
+    const registry = createToolRegistry();
+
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo" },
+      {
+        eventStore: createTestSessionEventStore(),
+        toolRegistry: registry,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            throw new Error("model should not be called");
+          },
+        } as never),
+      },
+    );
+
+    const schedule = await runtime.scheduleTools([
+      { id: "bash-read-1", name: "Bash", input: { command: "pwd" } },
+      { id: "read-1", name: "Read", input: { file_path: "package.json" } },
+      { id: "bash-read-2", name: "Bash", input: { command: "ls -la" } },
+      {
+        id: "bash-write",
+        name: "Bash",
+        input: { command: "mkdir -p /tmp/zcode-schedule-test" },
+      },
+      { id: "bash-read-3", name: "Bash", input: { command: "git status --short" } },
+    ] as never);
+
+    expect(schedule.parallelGroups).toEqual([
+      ["bash-read-1", "read-1", "bash-read-2"],
+      ["bash-write"],
+      ["bash-read-3"],
+    ]);
   });
 
   it("links the turn abort signal to model requests and tool execution", async () => {

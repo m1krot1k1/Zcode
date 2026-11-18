@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.17.127](https://github.com/m1krot1k1/Zcode/compare/v3.17.126...v3.17.127) (2026-11-18)
+
+### Features
+
+* **core:** параллелить доказуемо read-only команды Bash
+  * `ToolEntry.resolveConcurrencyCapability` переопределяет статический `concurrentSafe` на уровне конкретного вызова
+  * `pwd`, `ls`, `git status` и другие read-only команды входят в общую параллельную группу с `Read`/`Grep`/`Glob`; write-команды остаются барьером
+  * классификация учитывает весь compound-command, а не только первый токен
+* **agents:** не ждать самый медленный Agent в общем batch
+  * при двух и более `Agent`/`Task` в одной параллельной группе запуск автоматически уходит в background
+  * каждый завершившийся Agent доставляет результат через существующую очередь `background_task.notification`; явный `run_in_background:false` сохраняет блокирующее поведение
+  * `task_graph` не переводится в auto-background
+* **docs:** зафиксировать Definition of Done и контракт параллельного исполнения
+
+### Bug Fixes
+
+* **remote:** не обрывать холодный старт Source Server раньше бюджета Supervisor
+  * внешнее ожидание `ready` увеличено с 10 до 25 секунд и теперь длиннее `CORE_READY_TIMEOUT_MS` (15 секунд)
+  * при `crash-loop-stopped` CLI сразу сообщает `lastExitReason`; обычный таймаут показывает последнее состояние и путь к `status.json`
+
+### Tests
+
+* **core:** привести ожидания `agent-routing-policy` и `runtime-tool-loop` к действующим правилам leaf-роли researcher и auto-repair
+
 ## [3.17.126](https://github.com/m1krot1k1/Zcode/compare/v3.17.125...v3.17.126) (2026-11-18)
 
 ### Bug Fixes
