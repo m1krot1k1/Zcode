@@ -85,11 +85,22 @@ parallel Agent batch
   -> notification(agent B completed) -> model turn
 ```
 
+### 5. 执行选项透传
+
+`executeToolSchedule` 传给 `executeBatch` 的选项对象和 `executeBatch` 的每个分支（快路径与按 `maxConcurrency` 分块的并发路径）都必须把完整的 `ToolBatchExecuteOptions`/`ToolExecuteOptions` 上下文转发给工具执行；禁止手工重建只含部分字段的选项对象，否则字段会随分支分叉而静默丢失。
+
+修复前，`executeBatch` 的快路径已经展开 `...options`，但按 `maxConcurrency` 分块的分支手工列举字段，漏掉 `finishReason` 与 `consecutiveSchemaFailuresByTool`；`executeToolSchedule` 传给 `executeBatch` 的选项对象同样手工重建，额外漏掉 `offPeakTurn`。
+
+- `offPeakTurn` 必须到达 `ToolExecutionContext`：`assertNotOffPeakTurn` 依赖本轮事实对 `Workflow` 与 `OffPeakCreate` 执行 handler 级闲时轮拒绝（`handlers/workflow.ts`、`handlers/off-peak.ts`），这是 provider denylist 之外的第二层防护；字段缺失时该函数提前返回，拒绝被绕过。`SendMessage` 按 `packages/shared/src/off-peak-execution.ts` 的约定在闲时轮允许执行，不在这层拒绝范围内。
+- `finishReason` 与 `consecutiveSchemaFailuresByTool` 必须到达 `call-runner-support`：前者保证 `finishReason: "length"` 的截断输入走截断恢复而不是普通自修复，后者保证调用方的连续 schema 失败计数持续更新。
+- 回归覆盖：`apps/zcode-cli/packages/core/tests/schedule-options-forwarding.test.ts` 经 `executeSchedule` 同时验证快路径与分块并发路径，以及三个字段是否到达 handler 与自修复准入。
+
 ## 验收
 
 - `runtime-tool-loop.test.ts`：只读 Bash 与 `Read` 进同一组；写 Bash 单独成组；后续只读命令在写屏障之后。
 - `agent-routing-policy.test.ts`：同组两个 Agent 自动 `runInBackground: true`；显式 `false` 保持前台。
 - 既有 `subagent-background.test.ts` 覆盖后台结果通知和去重。
+- `schedule-options-forwarding.test.ts`：快路径与按 `maxConcurrency` 分块的并发路径都完整转发 `offPeakTurn`/`finishReason`/`consecutiveSchemaFailuresByTool`；`executeSchedule` 路径再次手工重建部分选项视为回归。
 - 生产构建后，混合批次中只读命令的日志时间应重叠；写命令与前后只读命令不得重叠。
 
 ## 不在本次范围

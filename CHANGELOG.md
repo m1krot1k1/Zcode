@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.17.130](https://github.com/m1krot1k1/Zcode/compare/v3.17.129...v3.17.130) (2026-11-18)
+
+### Bug Fixes
+
+* **executor:** передавать полный контекст выполнения во все ветки `executeToolSchedule`
+  * `executeToolSchedule` больше не собирает опции батча вручную: объект, который он передаёт в `executeBatch`, и разбиение по `maxConcurrency` внутри `executeBatch` теперь расширяют `...options`, как это уже делал быстрый путь, поэтому поля `ToolExecuteOptions` не теряются на отдельных маршрутах
+  * восстановлен `offPeakTurn` в `ToolExecutionContext`: теперь он доходит до handler через `executeToolSchedule`, и `assertNotOffPeakTurn` снова отклоняет `Workflow` и `OffPeakCreate` в режиме простоя; ранее потеря поля заставляла проверку возвращаться без отказа
+  * восстановлены `finishReason` и `consecutiveSchemaFailuresByTool`: усечённый ответ (`finishReason: "length"`) снова идёт в восстановление после усечения, а счётчик последовательных schema-ошибок снова обновляется
+  * регрессионный тест `apps/zcode-cli/packages/core/tests/schedule-options-forwarding.test.ts` покрывает быстрый путь и разбиение по `maxConcurrency` и падал до исправления
+
 ## [3.17.129](https://github.com/m1krot1k1/Zcode/compare/v3.17.128...v3.17.129) (2026-11-18)
 
 ### Bug Fixes
