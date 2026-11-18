@@ -29,6 +29,27 @@
   * ограничение рабочего контекста и бюджета вывода с учетом рассуждений, чтобы большие
 
 
+### Bug Fixes
+
+* **privacy:** корректный range-скан pre-push гейта и baseline для уже исправленной истории ([ce0e8db](https://github.com/m1krot1k1/Zcode/commit/ce0e8db033af5b98410e8a20a39b7570a216abb6))
+  * `git rev-list --objects -z` не поддерживает `-z`, флаг молча игнорировался, вывод не содержал `path=`, поэтому push-диапазон фактически не сканировался
+  * парсинг `rev-list --objects` переведён на построчный формат `<sha> <path>` с обработкой пробелов и C-эскейпинга git
+  * добавлен `scripts/privacy-sanitized-history.json` — подавление только для уже исправленных исторических блобов (строгий матч path + blobSha + тип находки, только push-диапазон)
+  * механизм вынесен в `scripts/privacy-sanitized-history.mjs` и задокументирован в `docs/testing/pre-push-hook.md`
+
+* **prompts:** синхронизировать PRISM профиль и реестр с compact coding core ([a4d93ec](https://github.com/m1krot1k1/Zcode/commit/a4d93ec8d56de6f22ad33ab6f0ad93c66e6c5dbb))
+  * `identity.ts` перегенерирован из `scripts/prism10-runtime-profile.mjs`, поэтому `prism10:check` проходит
+  * обязательный маркер в `config/prompts/registry.json` приведён к актуальному тексту (`# Priorities`), поэтому `prompt:check` проходит
+
+
+### Chores
+
+* **knip:** устранить неиспользуемые экспорты и объявить динамические зависимости (этап 6.5) ([09ee32c](https://github.com/m1krot1k1/Zcode/commit/09ee32cd4f5fb93254a92704d23cb60be5dfbc79))
+  * удалён мёртвый код, не входящий в публичные контракты модулей (`tool/patch-apply.ts`, каскад стратегий в `edit-matchers.ts` и 28 неиспользуемых экспортов)
+  * устранены три реальных дефекта проводки: подключены `enforceByteLimit` в `hybridSearch`, `compactDatabase` в `indexEngine` и `SystemPromptEnhanceAction` в `SubagentForm`
+  * `knip.json` дополнен entry публичных entrypoints по `architecture-policy.yaml` и `ignoreDependencies` для динамически загружаемых `koffi`, `tree-sitter-wasms`, `web-tree-sitter`
+
+
 ### Documentation
 
 * **architecture:** аудит, целевая архитектура, бенчмарки и приёмочные отчёты (этапы 1-6) ([f14af28](https://github.com/m1krot1k1/Zcode/commit/f14af289d2966ccf7e9bdb81ee6492a0f65dd6f0))
