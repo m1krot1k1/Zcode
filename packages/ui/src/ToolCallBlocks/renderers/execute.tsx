@@ -345,8 +345,8 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         toolId={toolCall.toolId}
         icon={EXECUTE_TOOL_ICON}
         showIcon={context.showIcon !== false}
-        canToggle={!isOfficeMode && (context.canToggle ?? true)}
-        forceOpen={!isOfficeMode && (context.forceOpen ?? false)}
+        canToggle={context.canToggle ?? true}
+        forceOpen={context.forceOpen ?? false}
         hideSecondaryTextWhenOpen
         kindLabel={
           (isOfficeMode
@@ -368,7 +368,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
               toolCall.kind ??
               intl.formatMessage({ id: "chat.toolCall.execute.execute" }))
         }
-        secondaryText={isOfficeMode ? undefined : secondaryTextNode}
+        secondaryText={secondaryTextNode}
         statusLabel={statusLabel}
         statusTooltip={isOfficeMode ? undefined : failureVisibleText}
         showFailureStatus={toolCall.status === "failed"}
@@ -376,16 +376,14 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         title={isOfficeMode ? undefined : toolCall.title}
         renderContent={renderContent}
       />
-      {!isOfficeMode ? (
-        <ToolSnapshotFieldNotice
-          refs={toolCall.snapshotRefs ?? []}
-          onLoadFullToolCallFields={
-            context.onLoadFullToolCallFields
-              ? () => context.onLoadFullToolCallFields?.(toolCall.toolId)
-              : undefined
-          }
-        />
-      ) : null}
+      <ToolSnapshotFieldNotice
+        refs={toolCall.snapshotRefs ?? []}
+        onLoadFullToolCallFields={
+          context.onLoadFullToolCallFields
+            ? () => context.onLoadFullToolCallFields?.(toolCall.toolId)
+            : undefined
+        }
+      />
       {/* <pre className="text-[8px]">{JSON.stringify(toolCall, null, 2)}</pre> */}
     </>
   );

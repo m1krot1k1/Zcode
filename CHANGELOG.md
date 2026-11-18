@@ -22,6 +22,8 @@
 * **release:** пересобирать bundled Source Server при смене commit
   * рядом с bundled-release хранится `source-revision.txt`; при несовпадении с `git rev-parse HEAD` архив собирается заново
   * без commit-маркера (старые релизы) переиспользование запрещено, чтобы фикс не остался вне приложения
+* **ui:** показывать команду и детали tool call в office mode
+  * summary `execute` и `execute-group` снова содержит текст команды, карточка раскрывается, а `ToolSnapshotFieldNotice` доступен для догрузки полей
 
 ### Tests
 

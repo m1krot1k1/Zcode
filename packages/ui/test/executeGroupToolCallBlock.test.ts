@@ -8,7 +8,7 @@ import { ExecuteGroupToolCallBlock } from "@/ToolCallBlocks/renderers/execute-gr
 function renderExecuteGroup(
   locale: "zh-CN" | "en-US",
   statuses: Array<"pending" | "completed" | "failed" | "stopped" | "in_progress">,
-  options: { forceOpen?: boolean } = {},
+  options: { forceOpen?: boolean; isOfficeMode?: boolean } = {},
 ) {
   return renderToStaticMarkup(
     createElement(
@@ -59,6 +59,7 @@ function renderExecuteGroup(
         forceOpen: options.forceOpen ?? false,
         canToggle: true,
         showIcon: true,
+        isOfficeMode: options.isOfficeMode ?? false,
       }),
     ),
   );
@@ -77,6 +78,17 @@ describe("ExecuteGroupToolCallBlock", () => {
     expect(html).toContain(">·</span>");
     expect(enHtml).toContain(">Running</span>");
     expect(enHtml).toContain(">pnpm test</code>");
+  });
+
+  it("shows the active command and allows expanding the group in office mode", () => {
+    const html = renderExecuteGroup("en-US", ["completed", "in_progress"], {
+      isOfficeMode: true,
+    });
+
+    // Bug 根因：office mode не вычислял latestCommand и запрещал toggle,
+    // поэтому пользователь видел только «Running» без команды и деталей.
+    expect(html).toContain("pnpm test");
+    expect(html).toContain('aria-expanded="false"');
   });
 
   it("shows only the command count in the expanded running summary", () => {

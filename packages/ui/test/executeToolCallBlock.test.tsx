@@ -63,4 +63,58 @@ describe("ExecuteToolCallBlock", () => {
     expect(html).not.toContain("&quot;stdout&quot;");
     expect(html).not.toContain("&quot;exitCode&quot;");
   });
+
+  it("keeps the command visible and expandable in office mode", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "ru-RU" },
+        createElement(ExecuteToolCallBlock, {
+          toolCallNode: {
+            toolCall: {
+              toolId: "tool-office-execute",
+              kind: "execute",
+              title: "Сборка проекта",
+              input: {
+                command: "pnpm build",
+              },
+              output: {
+                stdout: "build complete",
+                exitCode: 0,
+              },
+              status: "completed",
+              raw: {},
+            },
+            childToolCalls: [],
+          },
+          workspacePath: "/workspace",
+          displayModel: {
+            inlinePreview: { type: "none" },
+            planResult: null,
+            viewerSource: null,
+            viewerLabelId: "codeViewer.viewCode",
+            showSummaryFileLink: true,
+            showInput: false,
+            showOutput: true,
+            showKind: false,
+          },
+          viewerSource: null,
+          rawFileSummaries: [],
+          isRunning: false,
+          statusLabel: "Completed",
+          childToolList: null,
+          forceOpen: false,
+          canToggle: true,
+          showIcon: true,
+          isOfficeMode: true,
+        }),
+      ),
+    );
+
+    // Bug 根因：office mode 把 secondaryText 置空并禁用 toggle，用户只看到
+    // «Команда выполнена»/«Выполняется» без самой команды и без доступа к деталям.
+    expect(html).toContain("pnpm build");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('data-testid="execute-detail"');
+  });
 });
