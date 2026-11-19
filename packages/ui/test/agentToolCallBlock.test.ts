@@ -1511,4 +1511,49 @@ describe("AgentToolCallBlock", () => {
     expect(ruHtml).toContain("кэш 42k");
     expect(renderAgentUsageRow("en-US", { totalTokens: 3_942_000 })).toContain("3.9M tok");
   });
+
+  it("rounds at the M/B boundary from the raw value without grouping", () => {
+    // 999 999 999 仍在 M 档：阈值按原始值判断，先选单位再四舍五入，
+    // 因此得到 1000,0M，而不是提前跳到 1,0B。
+    const nearBillionRu = renderAgentUsageRow("ru-RU", { totalTokens: 999_999_999 });
+    expect(nearBillionRu).toContain("1000,0M tok");
+    expect(nearBillionRu).not.toContain("1\u00a0000,0");
+    expect(nearBillionRu).not.toContain("1 000,0");
+    expect(nearBillionRu).not.toContain("1,0B");
+
+    const nearBillionEn = renderAgentUsageRow("en-US", { totalTokens: 999_999_999 });
+    expect(nearBillionEn).toContain("1000.0M tok");
+    expect(nearBillionEn).not.toContain("1,000.0");
+    expect(nearBillionEn).not.toContain("1.0B");
+
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 1_000_000_000 })).toContain("1,0B tok");
+    expect(renderAgentUsageRow("en-US", { totalTokens: 1_000_000_000 })).toContain("1.0B tok");
+  });
+
+  it("formats billion and trillion scale token counts with one decimal", () => {
+    const cases = [
+      ["ru-RU", 3_942_000_000, "3,9B"],
+      ["ru-RU", 1_000_000_000_000, "1,0T"],
+      ["ru-RU", 1_500_000_000_000, "1,5T"],
+      ["en-US", 3_942_000_000, "3.9B"],
+      ["en-US", 1_000_000_000_000, "1.0T"],
+      ["en-US", 1_500_000_000_000, "1.5T"],
+    ] as const;
+
+    for (const [locale, totalTokens, expected] of cases) {
+      expect(renderAgentUsageRow(locale, { totalTokens })).toContain(`${expected} tok`);
+    }
+  });
+
+  it("stops at T and keeps 1e15 grouped-free as 1000,0T", () => {
+    const htmlRu = renderAgentUsageRow("ru-RU", { totalTokens: 1_000_000_000_000_000 });
+    expect(htmlRu).toContain("1000,0T tok");
+    expect(htmlRu).not.toContain("1\u00a0000,0T");
+    expect(htmlRu).not.toMatch(/\d[PB] tok/u);
+
+    const htmlEn = renderAgentUsageRow("en-US", { totalTokens: 1_000_000_000_000_000 });
+    expect(htmlEn).toContain("1000.0T tok");
+    expect(htmlEn).not.toContain("1,000.0T");
+    expect(htmlEn).not.toMatch(/\d[PB] tok/u);
+  });
 });

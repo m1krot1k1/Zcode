@@ -31,16 +31,30 @@ import {
 
 const AGENT_TOOL_ICON = <BotIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
+function formatCompactUnitAmount(amount: number, locale: Locale): string {
+  // 单位换算后固定一位小数。关闭分组，避免 999 999 999 在 M 档渲染成
+  // “1 000,0”（NBSP）或 “1,000.0”；spec 要求 1000,0M 不带分组分隔符。
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+    useGrouping: false,
+  }).format(amount);
+}
+
 function formatCompactTokenCount(value: number, locale: Locale): string {
   if (value < 1_000) return String(value);
+  // 阈值按原始值判断，先选单位再四舍五入：999 999 999 仍是 M 档的 1000,0M，
+  // 而 1 000 000 000 已进入 B 档。T 是最高单位，1e15 渲染为 1000,0T。
+  if (value >= 1_000_000_000_000) {
+    return `${formatCompactUnitAmount(value / 1_000_000_000_000, locale)}T`;
+  }
+  if (value >= 1_000_000_000) {
+    return `${formatCompactUnitAmount(value / 1_000_000_000, locale)}B`;
+  }
   if (value >= 1_000_000) {
     // 旧实现对所有 >=1000 的值都用 k 和固定小数点，3 100 000 因此渲染成 3100k。
     // 百万级以上改用 locale-aware 的一位小数 M 缩写（ru-RU 得到 3,1M）。
-    const millions = new Intl.NumberFormat(locale, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    }).format(value / 1_000_000);
-    return `${millions}M`;
+    return `${formatCompactUnitAmount(value / 1_000_000, locale)}M`;
   }
   const thousands = value / 1_000;
   return `${thousands >= 10 ? Math.round(thousands) : thousands.toFixed(1)}k`;
@@ -88,10 +102,7 @@ function readAgentGraphUsage(output: unknown, locale: Locale): string | undefine
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-function buildAgentGraphNode(
-  node: AgentGraphToolNode,
-  locale: Locale,
-): AgentGraphNode | undefined {
+function buildAgentGraphNode(node: AgentGraphToolNode, locale: Locale): AgentGraphNode | undefined {
   const name = node.toolCall.toolName ?? node.toolCall.kind;
   if (!AGENT_TOOL_NAMES.has(name)) return undefined;
   const input = asRecord(node.toolCall.input);
@@ -104,9 +115,7 @@ function buildAgentGraphNode(
     label: textField(input, "description") ?? node.toolCall.title ?? name,
     agentType: textField(input, "subagent_type", "agent", "agentType") ?? name,
     status: node.toolCall.status,
-    ...(readAgentGraphUsage(output, locale)
-      ? { usage: readAgentGraphUsage(output, locale) }
-      : {}),
+    ...(readAgentGraphUsage(output, locale) ? { usage: readAgentGraphUsage(output, locale) } : {}),
     children,
   };
 }
