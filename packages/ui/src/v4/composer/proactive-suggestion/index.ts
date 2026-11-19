@@ -9,7 +9,6 @@ export {
   type ProactiveSuggestionDiffLike,
   type ProactiveSuggestionFileChangeLike,
   type ProactiveSuggestionRowLike,
-  type ProactiveSuggestionTestResult,
   type ProactiveSuggestionTransactionFileLike,
   type ProactiveSuggestionTransactionLike,
   type ProactiveSuggestionUiContext,

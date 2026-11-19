@@ -74,8 +74,6 @@ export interface ProactiveSuggestionDiffLike {
   summary?: string | undefined;
 }
 
-/** testResults уже в shared wire-контракте; UI-контекст — тот же shape. */
-export type ProactiveSuggestionTestResult = ProactiveSuggestionContext["testResults"][number];
 export type ProactiveSuggestionUiContext = ProactiveSuggestionContext;
 
 /**

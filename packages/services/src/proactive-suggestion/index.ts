@@ -8,7 +8,6 @@ export {
   type ProactiveSuggestionService,
 } from "./contract.js";
 export {
-  createProactiveSuggestionPorts,
   type ProactiveSuggestionModelResolver,
   type ProactiveSuggestionPorts,
   type ProactiveSuggestionTextGenerator,

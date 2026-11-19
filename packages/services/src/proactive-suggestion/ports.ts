@@ -36,9 +36,3 @@ export interface ProactiveSuggestionPorts {
   modelResolver?: ProactiveSuggestionModelResolver;
 }
 
-/** Позволяет явно передать порты в сервис, сохраняя один источник транспорта. */
-export function createProactiveSuggestionPorts(
-  ports: ProactiveSuggestionPorts,
-): ProactiveSuggestionPorts {
-  return ports;
-}
