@@ -119,6 +119,31 @@ nested Agent batch (turn-scoped caller)
 - `finishReason` 与 `consecutiveSchemaFailuresByTool` 必须到达 `call-runner-support`：前者保证 `finishReason: "length"` 的截断输入走截断恢复而不是普通自修复，后者保证调用方的连续 schema 失败计数持续更新。
 - 回归覆盖：`apps/zcode-cli/packages/core/tests/schedule-options-forwarding.test.ts` 经 `executeSchedule` 同时验证快路径与分块并发路径，以及三个字段是否到达 handler 与自修复准入。
 
+## 6. Параллельная оркестрация независимых задач и выбор профилей
+
+### Владельцы состояния
+
+- Root turn владеет исходной целью и финальной проверкой; он не переписывает план orchestrator.
+- Orchestrator владеет планом: todos (`TodoWrite`), назначением профилей, порядком зависимостей и централизованной сверкой отчётов. `TodoRead`/`TodoWrite` — control-plane плана, а не доступ к репозиторию; Read/Glob/Grep/Bash/Write/Edit остаются недоступны роутерам.
+- Worker владеет только своей веткой и её отчётом; вложенное делегирование разрешено в пределах профиля, глубины, бюджета и `maxParallel`.
+- Runtime владеет admission, слотами параллелизма, отменой, таймаутами и записью `session_task_link`; UI/store не дублируют эту истину.
+
+### Правила выполнения
+
+1. Зависимая задача сначала раскладывается на todos с владельцем-профилем и проверяемым критерием. Независимые листья уходят отдельными `Task` в одном assistant-сообщении; зависимые запускаются только после терминального отчёта prerequisites.
+2. Последовательный цикл `Task → ожидание → Task` для независимых пунктов запрещён: runtime исполняет несколько Agent/Task calls одного батча параллельно, и оркестратор обязан этим пользоваться.
+3. Профиль выбирается по компетенции: backend/runtime/protocol — `backend-coder`, UI/renderer — `frontend-coder`, build/release/CI — `infra-coder`, тесты — `test-engineer`, дефект — `debugger`, факты — `researcher`, проверка — `reviewer`/`security-reviewer`, новые устойчивые роли — `subagent-factory`. Один профиль не назначается всем независимым пунктам; повторное использование допустимо только для однотипных пунктов одной области.
+4. После join orchestrator обновляет todos, сверяет отчёты с исходной целью и отправляет repair-ветку при пробеле. Конфликтующие/неоднозначные результаты проходят через существующий review/verification механизм, а не разрешаются молчаливым выбором первого отчёта.
+5. Параллелизм не обходит `maxParallel`, бюджет, глубину, отмену и таймауты. Дочерние сессии наследуют allowlist родителя через `resolveSubagentToolAllowlist`; расширение доступа невозможно.
+
+### Marketplace
+
+Совместимые skills/plugins/MCP устанавливаются дочерним агентом через существующие нативные инструменты (`SkillSearch`, `SkillInstall`, `InstallCapability`) и общий механизм настройки; отдельного обхода для субагентов нет. Несовместимая платформа/окружение отклоняется fail-closed, а установка не расширяет allowlist родителя. Границы проверяются `capability-preflight`, `capability-install` и `subagent-skill-marketplace` тестами.
+
+### Воспроизводимость и метрики
+
+Сессия `session_a45d1d5f23b175e9f67ef3a8bd59485f` в локальных артефактах отсутствует: id не найден в `~/.zcode/cli/log/*.jsonl`, `~/.zcode/cli/db/db.sqlite` (таблицы `session`, `session_task_link`) и каталогах rollout/agents. Это зафиксированный блокер доступа, а не основание подменять данные. Эквивалентный регрессионный сценарий — `subagent-nested-join.test.ts`: три независимые ветки разных профилей запускаются одним батчем, счётчик одновременно активных веток должен достигнуть 3, а общая длительность — быть меньше последовательной суммы. Сравнение до/после: последовательная очередь трёх веток с барьером была бы ≥ 3× задержки одной ветки; параллельный батч завершается за одну задержку. Численный выигрыш фиксируется в отчёте прогона теста; при недоступности production-сессии остаётся риск, что конкретная модель сама сериализует вызовы, и это лечится контрактом промпта, а не рантаймом.
+
 ## 验收
 
 - `runtime-tool-loop.test.ts`：只读 Bash 与 `Read` 进同一组；写 Bash 单独成组；后续只读命令在写屏障之后。
@@ -126,6 +151,8 @@ nested Agent batch (turn-scoped caller)
 - `subagent-background.test.ts`：`allowBackground: false` 即使配置 `autoBackgroundMs` 也不会 detach；runner 直接拒绝嵌套显式 background；既有后台通知和去重不回归。
 - `subagent-terminal-gate.test.ts`：有未收敛直接子任务时返回 `agent_unresolved_children`；终态子任务、其他父级和非 agent 任务不误报。
 - `schedule-options-forwarding.test.ts`：快路径与按 `maxConcurrency` 分块的并发路径都完整转发 `offPeakTurn`/`finishReason`/`consecutiveSchemaFailuresByTool`；`executeSchedule` 路径再次手工重建部分选项视为回归。
+- `subagent-nested-join.test.ts`：三条 независимые ветки разных профилей одновременно активны (`maxActiveBranches === 3`), завершаются за время меньше последовательной очереди и попадают в `session_task_link` с разными `agentType`; прежний join-сценарий продолжает проходить.
+- `subagent-profile.test.ts`：orchestrator получает `Task` + `TodoRead`/`TodoWrite` и не получает Read/Glob/Grep/Bash/Write/Edit; контракт содержит todo-декомпозицию, запрет последовательного цикла для независимых пунктов, матрицу профилей и централизованную сверку.
 - 生产构建后，混合批次中只读命令的日志时间应重叠；写命令与前后只读命令不得重叠。
 
 ## 不在本次范围

@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.17.135](https://github.com/m1krot1k1/Zcode/compare/v3.17.134...v3.17.135) (2026-11-19)
+
+### Features
+
+* **agents:** параллельная оркестрация независимых задач и разные профили вместо повторной очереди
+  * `ROUTER_DELEGATION_TOOL_NAMES` расширен до `Task` + `TodoRead`/`TodoWrite`: orchestrator планирует и ведёт todos, но по-прежнему не получает Read/Glob/Grep/Bash/Write/Edit и не исследует репозиторий сам
+  * контракт orchestrator требует раскладывать зависимую задачу в todos с владельцем-профилем и критерием проверки, отправлять независимые листья несколькими `Task` в одном assistant-сообщении, запрещает последовательный цикл `Task → ожидание → Task` и централизованно сверяет отчёты после join
+  * выбор профиля закреплён матрицей компетенций (`debugger`, `backend-coder`, `frontend-coder`, `infra-coder`, `test-engineer`, `researcher`, `reviewer`/`security-reviewer`); один профиль на все независимые пункты запрещён, повторное использование допустимо только для однотипных задач одной области
+  * скорректирован устаревший тестовый список worker-инструментов (`ApplyPatch`, `MultiEdit`) и бюджет промптов после добавления todo-контроля
+  * регрессия: `subagent-nested-join.test.ts` запускает три независимые ветки разных профилей одним батчем, проверяет `maxActiveBranches === 3`, длительность меньше последовательной очереди и разные `agentType` в `session_task_link`; `subagent-profile.test.ts` проверяет todo-инструменты, fan-out, запрет последовательного цикла и матрицу профилей
+  * Marketplace-путь не менялся: дочерние агенты используют существующие `SkillSearch`/`SkillInstall`/`InstallCapability`, наследуют allowlist родителя, а `capability-preflight`/`capability-install`/`subagent-skill-marketplace` подтверждают fail-closed для несовместимых компонентов
+
 ## [3.17.134](https://github.com/m1krot1k1/Zcode/compare/v3.17.133...v3.17.134) (2026-11-19)
 
 ### Features

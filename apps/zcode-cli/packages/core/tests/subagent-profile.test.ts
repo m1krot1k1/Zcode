@@ -309,7 +309,9 @@ tools:
     expect(prompt).toContain(
       "(Tools: CodeIndex, Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, SkillSearch",
     );
-    expect(prompt).toContain("(Tools: CodeIndex, Read, Glob, Grep, Write, Edit, Bash");
+    expect(prompt).toContain(
+      "(Tools: CodeIndex, Read, Glob, Grep, Write, Edit, ApplyPatch, MultiEdit, Bash",
+    );
     expect(prompt).not.toContain("tools: Read");
     expect(prompt).not.toContain("background: true");
     expect(prompt).not.toContain("model:");
@@ -545,13 +547,13 @@ tools:
     }
   });
 
-  it("restricts router roles to Task so they cannot read or explore the repository", () => {
+  it("restricts router roles to Task and plan todos so they cannot read or explore the repository", () => {
     const swarmProfiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
     for (const name of ["start", "orchestrator"] as const) {
       const profile = swarmProfiles.find((candidate) => candidate.name === name);
-      expect(profile?.tools, name).toEqual(["Task"]);
+      expect(profile?.tools, name).toEqual(["Task", "TodoRead", "TodoWrite"]);
       const prompt = profile?.systemPrompt ?? "";
-      expect(prompt, name).toContain("Твой единственный инструмент — Task");
+      expect(prompt, name).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
       expect(prompt, name).toContain("не исследу");
       expect(prompt, name).not.toContain("Read-only триаж");
     }
@@ -775,7 +777,7 @@ Review carefully.`,
     it("states the single available tool and the L1-L4 nesting chain in the system prompt", () => {
       const prompt = startPrompt();
 
-      expect(prompt).toContain("Твой единственный инструмент — Task");
+      expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
       expect(prompt).toContain("Read, Glob, Grep, Skill, Bash, Write, Edit");
       expect(prompt).toContain("недоступны");
       expect(prompt).not.toContain("включая Read, Glob, Grep, Write, Edit, Bash");
@@ -1005,6 +1007,17 @@ describe("specialized worker roster", () => {
     expect(prompt).not.toContain("5–8 действительно независимых областей");
   });
 
+  it("requires todo decomposition, same-message fan-out and distinct profiles for independent items", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
+    expect(prompt).toContain("Зависимую задачу сначала разложи через TodoWrite");
+    expect(prompt).toContain("Независимые листья делегируй отдельными Task в одном assistant-сообщении");
+    expect(prompt).toContain("Последовательный цикл Task→ожидание→Task для независимых пунктов запрещён");
+    expect(prompt).toContain("Разные компетенции — разные профили");
+    expect(prompt).toContain("После join обнови todos и централизованно сверь отчёты");
+  });
+
   it("re-dispatches after claim conflict and reacts to each terminal report", () => {
     const prompt = profile("orchestrator")?.systemPrompt ?? "";
 
@@ -1051,7 +1064,7 @@ describe("built-in role capability matrix", () => {
   const toolsOf = (name: string): readonly string[] =>
     builtInProfiles().find((profile) => profile.name === name)?.tools ?? [];
 
-  const ROUTER_TOOLS = ["Task"];
+  const ROUTER_TOOLS = ["Task", "TodoRead", "TodoWrite"];
   const INSPECTION_TOOLS = [
     "CodeIndex",
     "Read",
@@ -1096,6 +1109,8 @@ describe("built-in role capability matrix", () => {
     "Grep",
     "Write",
     "Edit",
+    "ApplyPatch",
+    "MultiEdit",
     "Bash",
     "WebFetch",
     "WebSearch",
@@ -1218,11 +1233,11 @@ describe("built-in role capability matrix", () => {
     expect(prompt).not.toContain("запускай researcher-подагентов");
   });
 
-  it("advertises the Task-only router toolset in the orchestrator prompt", () => {
+  it("advertises the Task plus plan-todo router toolset in the orchestrator prompt", () => {
     const prompt =
       builtInProfiles().find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
 
-    expect(prompt).toContain("Твой единственный инструмент — Task");
+    expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
     expect(prompt).toContain("Read/Glob/Grep/Skill/Write/Edit/Bash недоступны");
   });
 });
