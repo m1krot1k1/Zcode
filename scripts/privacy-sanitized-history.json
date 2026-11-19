@@ -32,6 +32,14 @@
       "count": 2,
       "sanitizedInCommit": "77fe4f65",
       "reason": "Домашний путь и личный адрес убраны в 77fe4f65; исторический блоб остаётся в диапазоне origin/dev..HEAD."
+    },
+    {
+      "path": "docs/research/2026-11-19-gitnexus-and-code-intelligence.md",
+      "blobSha": "0829fc5881da7a87f6826f655b2e199b3bdb39c9",
+      "findingTypes": ["home-path"],
+      "count": 1,
+      "sanitizedInCommit": "76c95a9b",
+      "reason": "Путь заменён на «текущий checkout Zcode» в 76c95a9b; в 8c1248dc исторический блоб ещё содержит абсолютный путь."
     }
   ]
 }
