@@ -43,8 +43,26 @@ async function launchSubagent(
 ): Promise<AgentOutput> {
   const { profile, request } = resolveAgentProfileForRequest(ctx.getProfiles(), rawRequest);
   const executionRequest = toSubagentExecutionRequest(request);
+  const allowBackground = launchOptions?.allowBackground !== false;
+  if (rawRequest.runInBackground === true && !allowBackground) {
+    // 原因: turn-scoped runtime закрывается сразу после отчёта и отменяет детей;
+    // explicit background из вложенного агента терял бы результат без возможности join.
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      "Nested subagents cannot run in the background: their parent turn ends with the report. Remove run_in_background:true; Agent/Task calls from inside a subagent run in the foreground.",
+      {
+        context: {
+          code: AgentErrorCode.BACKGROUND_UNAVAILABLE,
+          agentType: request.agentType,
+          parentToolCallId: rawRequest.parentToolCallId,
+        },
+        recoverable: true,
+      },
+    );
+  }
+  // profile.background — лишь default для persistent root; turn-scoped caller его не наследует.
   const backgroundRequested =
-    rawRequest.runInBackground === true || profile.background === true;
+    allowBackground && (rawRequest.runInBackground === true || profile.background === true);
   if (backgroundRequested) {
     if (launchOptions?.modelOverride?.background === "deny") {
       // 单次执行的模型与动态鉴权不能脱离父 loop 生命周期进入后台。

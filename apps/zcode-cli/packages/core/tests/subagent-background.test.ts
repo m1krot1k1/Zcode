@@ -2547,6 +2547,60 @@ describe("subagent background notifications", () => {
     );
   });
 
+  it("keeps allowBackground:false child in the foreground despite autoBackgroundMs", async () => {
+    const sessionId = createSessionId("subagent-nested-foreground-auto-background");
+    const turnId = createTurnId("subagent-nested-foreground-auto-background-turn");
+    const childGate = createDeferred<void>();
+    const port = createExploreSubagentPort({
+      autoBackgroundMs: 1,
+      createAgentId: () => "agent_nested_foreground_auto_background",
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        await request.onSessionReady?.();
+        await childGate.promise;
+        return {
+          events: [],
+          response: "nested foreground child finished",
+          traceId: "trace_subagent_nested_foreground_auto_background",
+        };
+      },
+    });
+    let settled = false;
+    const outputPromise = port
+      .run(createSubagentRunRequest({ sessionId, turnId }), {
+        allowBackground: false,
+      })
+      .finally(() => {
+        settled = true;
+      });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(settled).toBe(false);
+    childGate.resolve();
+    await expect(outputPromise).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("rejects explicit nested background even when called through the port", async () => {
+    const sessionId = createSessionId("subagent-nested-explicit-background");
+    const turnId = createTurnId("subagent-nested-explicit-background-turn");
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_nested_explicit_background",
+      emitParentEvent: async () => {},
+      runExploreAgent: async () => ({
+        events: [],
+        response: "must not start",
+        traceId: "trace_subagent_nested_explicit_background",
+      }),
+    });
+
+    await expect(
+      port.launch?.(
+        { ...createSubagentRunRequest({ sessionId, turnId }), runInBackground: true },
+        { allowBackground: false },
+      ),
+    ).rejects.toThrow("Nested subagents cannot run in the background");
+  });
+
   it("does not mark background local agents notified without a parent notification queue", async () => {
     const sessionId = createSessionId("subagent-notification-queue-missing");
     const turnId = createTurnId("subagent-notification-queue-missing-turn");

@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.17.131](https://github.com/m1krot1k1/Zcode/compare/v3.17.130...v3.17.131) (2026-11-19)
+
+### Bug Fixes
+
+* **agent:** не терять ветки вложенного fan-out и запрещать фоновый запуск из turn-scoped caller
+  * `callerAgentType` теперь входит в политику `run_in_background`: root/main по-прежнему автоматически уходит в background при двух и более Agent/Task в одной группе, а `start`, `orchestrator` и worker выполняют свои ветки в foreground и join до конца turn
+  * явный `run_in_background: true` от turn-scoped caller отклоняется до spawn с `agent_background_unavailable`; профильный `background: true` не наследуется вложенным вызовом
+  * `allowBackground: false` отключает и `autoBackgroundMs`, и внешний background request, поэтому дочерний runtime не уходит в background перед закрытием родительского turn
+  * terminal gate проверяет прямых `local_agent` детей перед успешным отчётом и возвращает `agent_unresolved_children`, если ветка ещё не завершилась
+  * регрессии: `agent-routing-policy.test.ts`, `subagent-background.test.ts`, `subagent-terminal-gate.test.ts` и end-to-end `subagent-nested-join.test.ts` с тремя параллельными ветками orchestrator
+
 ## [3.17.130](https://github.com/m1krot1k1/Zcode/compare/v3.17.129...v3.17.130) (2026-11-18)
 
 ### Bug Fixes

@@ -209,6 +209,12 @@ export interface SubagentRunOptions {
     requestDependencies?: ModelRequestDependencies;
     background: "deny" | "allow";
   };
+  /**
+   * Whether the caller's lifetime can own a detached child. Turn-scoped callers must pass
+   * false: their runtime closes after the turn, so an unresolved background child would be
+   * cancelled without a report. Defaults to true for root/persistent callers.
+   */
+  allowBackground?: boolean;
 }
 
 export interface SubagentLaunchRequest extends SubagentRunRequest {

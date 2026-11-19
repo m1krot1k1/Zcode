@@ -41,6 +41,7 @@ import {
   isMirroredSubagentEvent,
   mirrorSubagentToolEvent,
 } from "../../../subagent/tool-event-mirror.js";
+import { assertNoUnresolvedChildTasks } from "./execution-guard.js";
 import {
   isBuiltInExploreAgentProfile,
   isDelegationRouterAgentType,
@@ -710,6 +711,8 @@ export function createDefaultSubagentPort(
               });
             }
             request.registerMessageSink?.(createSubagentMessageSink(childRuntime, request));
+            const assertTerminalChildren = (): void =>
+              assertNoUnresolvedChildTasks(this.runtimeTaskRegistry, request);
             try {
               if (executionGuard.signal.aborted) {
                 throw executionGuard.signal.reason ?? new Error("Subagent runtime start aborted");
@@ -741,6 +744,7 @@ export function createDefaultSubagentPort(
                 });
               } catch (turnError) {
                 if (!options?.signal?.aborted && executionGuard.getTermination()) {
+                  assertTerminalChildren();
                   return {
                     events: [...executionGuard.observedEvents],
                     response: executionGuard.buildStructuredTerminationResponse(),
@@ -752,6 +756,7 @@ export function createDefaultSubagentPort(
                 }
                 throw turnError;
               }
+              assertTerminalChildren();
               if (request.agentType === "subagent-factory") {
                 await this.reloadAgentDefinitions({
                   signal: options?.signal ?? new AbortController().signal,

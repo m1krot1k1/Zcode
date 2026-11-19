@@ -572,6 +572,7 @@ export const AgentErrorCode = {
   TASK_DAG_UNAVAILABLE: "agent_task_dag_unavailable",
   BACKGROUND_UNAVAILABLE: "agent_background_unavailable",
   UNKNOWN_AGENT_TYPE: "agent_unknown_type",
+  UNRESOLVED_CHILDREN: "agent_unresolved_children",
   CHILD_RUNTIME_FAILED: "agent_child_runtime_failed",
   CAPABILITY_MISSING: "agent_capability_missing",
   CAPABILITY_REQUIRES_ENVIRONMENT: "agent_capability_requires_environment",

@@ -3,14 +3,20 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
+  AgentErrorCode,
+  CoreErrorType,
   SessionEventType,
+  createCoreError,
   type Logger,
   type SessionEvent,
+  type SessionId,
   type SubagentExecutionBudget,
   type SubagentIsolationMode,
   type TraceContext,
 } from "@zcode/contracts";
 import type { IFileLockRegistry } from "../../../tool/file-transaction/contract.js";
+import type { RuntimeTaskRegistry } from "../../../runtime-task/registry.js";
+import { isTerminalRuntimeTask } from "../../../runtime-task/registry-types.js";
 
 const execFileAsync = promisify(execFileCallback);
 
@@ -375,4 +381,38 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+/**
+ * Инвариант завершения child turn: отчёт нельзя отдавать, пока живы direct-дети.
+ * Turn-scoped runtime закрывается сразу после ответа и отменяет их, поэтому успешный
+ * terminal с открытыми детьми означал бы молчаливую потерю веток.
+ */
+export function assertNoUnresolvedChildTasks(
+  registry: RuntimeTaskRegistry,
+  request: { readonly sessionId: SessionId; readonly agentType: string },
+): void {
+  const openChildren = Object.values(registry.all()).filter(
+    (task) =>
+      task.type === "local_agent" &&
+      task.parentSessionId === request.sessionId &&
+      !isTerminalRuntimeTask(task),
+  );
+  if (openChildren.length === 0) return;
+
+  const childTaskIds = openChildren.map((task) => task.taskId);
+  throw createCoreError(
+    CoreErrorType.ToolExecutionFailed,
+    `Subagent turn ended while ${openChildren.length} direct child task(s) were still active: ${childTaskIds.join(", ")}. Nested Agent/Task calls must finish before the parent turn ends; keep them in the foreground and retry.`,
+    {
+      context: {
+        code: AgentErrorCode.UNRESOLVED_CHILDREN,
+        agentType: request.agentType,
+        parentSessionId: request.sessionId,
+        childTaskIds,
+        toolName: "Agent",
+      },
+      recoverable: true,
+    },
+  );
 }

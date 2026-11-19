@@ -330,9 +330,12 @@ export async function runExploreSubagent(
 
   let autoBackgroundTimer: AutoBackgroundTimer | undefined;
   let runningInBackground = false;
+  // 原因: вложенный turn-scoped caller не переживает auto-background; его ребёнок
+  // должен быть доставлен в том же turn. false отключает и timer, и внешний background request.
+  const allowBackground = runOptions?.allowBackground !== false;
   try {
     autoBackgroundTimer =
-      !hasForegroundModelOverride && ctx.autoBackgroundMs !== undefined
+      allowBackground && !hasForegroundModelOverride && ctx.autoBackgroundMs !== undefined
         ? createAutoBackgroundTimer(
             ctx.registry,
             lifecycle.agentId,
@@ -340,7 +343,7 @@ export async function runExploreSubagent(
             taskAbort.signal,
           )
         : undefined;
-    const backgroundRequestPromise = !hasForegroundModelOverride
+    const backgroundRequestPromise = allowBackground && !hasForegroundModelOverride
       ? ctx.registry
           .waitForBackgroundRequest(lifecycle.agentId, {
             signal: taskAbort.signal,

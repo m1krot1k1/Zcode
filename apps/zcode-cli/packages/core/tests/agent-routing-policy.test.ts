@@ -116,6 +116,68 @@ describe("Agent/Task caller routing policy", () => {
     expect(launch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a root multi-Agent batch in the background", async () => {
+    const launch = vi.fn(async () => completedOutput("orchestrator"));
+    await agentToolEntry.handler(
+      { description: "delegate", prompt: "implement", subagent_type: "orchestrator" },
+      createContext({
+        availableAgentTypes: ["orchestrator", "researcher", "coder"],
+        parallelAgentBatchSize: 3,
+        subagentPort: { launch } as never,
+      }),
+    );
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ runInBackground: true }),
+      expect.anything(),
+    );
+  });
+
+  it.each(["orchestrator", "coder"])(
+    "keeps a %s multi-Agent batch in the foreground",
+    async (callerAgentType) => {
+      const launch = vi.fn(async () => completedOutput("coder"));
+      await agentToolEntry.handler(
+        { description: "delegate", prompt: "implement", subagent_type: "coder" },
+        createContext({
+          callerAgentType,
+          availableAgentTypes: ["researcher", "coder", "test-engineer"],
+          parallelAgentBatchSize: 3,
+          subagentPort: { launch } as never,
+        }),
+      );
+      expect(launch).toHaveBeenCalledWith(
+        expect.objectContaining({ runInBackground: false }),
+        expect.objectContaining({ allowBackground: false }),
+      );
+    },
+  );
+
+  it.each(["orchestrator", "coder"])(
+    "rejects explicit background from %s before spawn",
+    async (callerAgentType) => {
+      const launch = vi.fn();
+      await expect(
+        agentToolEntry.handler(
+          {
+            description: "delegate",
+            prompt: "implement",
+            subagent_type: "coder",
+            run_in_background: true,
+          },
+          createContext({
+            callerAgentType,
+            availableAgentTypes: ["researcher", "coder", "test-engineer"],
+            parallelAgentBatchSize: 3,
+            subagentPort: { launch } as never,
+          }),
+        ),
+      ).rejects.toThrow(
+        `Agent/Task called from ${callerAgentType} cannot run in the background`,
+      );
+      expect(launch).not.toHaveBeenCalled();
+    },
+  );
+
   it("forwards explicit write_paths to the subagent port", async () => {
     const launch = vi.fn(async () => completedOutput("coder"));
     await agentToolEntry.handler(

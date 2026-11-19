@@ -44,9 +44,9 @@
 
 Agent handler 的 `runInBackground` 解析顺序：
 
-1. 显式 `run_in_background: true/false` 优先。
-2. 未显式指定且同组 Agent/Task 数量 `> 1`：自动后台启动。
-3. 单 Agent 或存在 `task_graph`：保持前台阻塞语义。
+1. 显式 `run_in_background: true/false` 优先（turn-scoped caller 的 `true` 被拒绝，见 §3.1）。
+2. 未显式指定、caller 为 root/main（`callerAgentType === undefined`）、同组 Agent/Task 数量 `> 1`：自动后台启动。
+3. 单 Agent、存在 `task_graph` 或 turn-scoped caller：保持前台阻塞语义。
 
 后台 Agent 返回启动确认；每个 Agent 完成时通过既有 `background_task.notification` 队列进入模型上下文。模型可以先消费已完成的结果，不必等待最慢的 Agent。
 
@@ -57,13 +57,31 @@ Agent handler 的 `runInBackground` 解析顺序：
 - `maxConcurrency` 仍限制单组同时执行数，默认 10。
 - 同一批的 `batch_start`/`batch_complete` 事件顺序不变；后台 Agent 的完成通知独立于 batch。
 
+### 3.1 Turn-scoped caller invariant
+
+`callerAgentType !== undefined` 表示调用来自 subagent/`start`/`orchestrator`/worker，而不是持久 root。此类 caller 的 runtime 在本轮报告后立即关闭并取消所有直接子任务，因此：
+
+- 同批多个 `Agent`/`Task` 不得自动后台；全部在当前 turn 内 foreground 执行并 join。
+- 显式 `run_in_background: true` 在 spawn 前拒绝，返回 `agent_background_unavailable`；错误提示要求移除该字段并前台重试。
+- profile 的 `background: true` 只是 persistent root 的默认值；turn-scoped caller 以 `allowBackground: false` 覆盖它。
+- `allowBackground: false` 同时关闭 `autoBackgroundMs` 定时器和外部 background request，避免 turn 结束后才 detach。
+- `task_graph` 仍是静态 join 的替代路径；其节点继承同一 `allowBackground` 策略。
+
+### 3.2 Terminal gate
+
+child turn 成功结束时，runtime 在返回报告前检查直接子任务：
+
+- 只统计 `type === "local_agent"`、`parentSessionId` 等于当前 child session、且状态非终态的任务。
+- 若存在未收敛子任务，返回 `agent_unresolved_children` 错误，而不是成功报告；随后 runtime 关闭会取消这些子任务。
+- 该门禁是 §3.1 的防御层：即使未来路径绕过 foreground 策略，也不会把“已丢失的 branch”伪装成成功。
+
 ### 4. 状态所有者
 
 | 状态                    | 所有者                                                     |
 | ----------------------- | ---------------------------------------------------------- |
 | 工具是否可并行          | `ToolScheduler` + `ToolEntry.resolveConcurrencyCapability` |
 | 并行组与 maxConcurrency | `batch-runner`                                             |
-| Agent 是否后台          | Agent handler + `parallelAgentBatchSize`                   |
+| Agent 是否后台          | Agent handler + caller scope + `parallelAgentBatchSize`    |
 | 后台结果投递            | `runtime-command-queue` / `background_task.notification`   |
 
 事件顺序：
@@ -78,11 +96,17 @@ model stream
   -> batch_complete(group 1)
   -> model next request
 
-parallel Agent batch
+parallel Agent batch (root/main)
   -> Agent launches background (all siblings)
   -> batch_complete (launch acknowledgements)
   -> notification(agent A completed) -> model turn
   -> notification(agent B completed) -> model turn
+
+nested Agent batch (turn-scoped caller)
+  -> all Agent/Task calls run foreground in the same batch
+  -> each child settles and returns its report
+  -> batch_complete (all reports)
+  -> parent turn returns its report
 ```
 
 ### 5. 执行选项透传
@@ -98,8 +122,9 @@ parallel Agent batch
 ## 验收
 
 - `runtime-tool-loop.test.ts`：只读 Bash 与 `Read` 进同一组；写 Bash 单独成组；后续只读命令在写屏障之后。
-- `agent-routing-policy.test.ts`：同组两个 Agent 自动 `runInBackground: true`；显式 `false` 保持前台。
-- 既有 `subagent-background.test.ts` 覆盖后台结果通知和去重。
+- `agent-routing-policy.test.ts`：root 同组多个 Agent 自动 `runInBackground: true`；orchestrator/worker 同组多个 Agent 为 `runInBackground: false` 且 `allowBackground: false`；嵌套显式 `true` 在 spawn 前拒绝。
+- `subagent-background.test.ts`：`allowBackground: false` 即使配置 `autoBackgroundMs` 也不会 detach；runner 直接拒绝嵌套显式 background；既有后台通知和去重不回归。
+- `subagent-terminal-gate.test.ts`：有未收敛直接子任务时返回 `agent_unresolved_children`；终态子任务、其他父级和非 agent 任务不误报。
 - `schedule-options-forwarding.test.ts`：快路径与按 `maxConcurrency` 分块的并发路径都完整转发 `offPeakTurn`/`finishReason`/`consecutiveSchemaFailuresByTool`；`executeSchedule` 路径再次手工重建部分选项视为回归。
 - 生产构建后，混合批次中只读命令的日志时间应重叠；写命令与前后只读命令不得重叠。
 

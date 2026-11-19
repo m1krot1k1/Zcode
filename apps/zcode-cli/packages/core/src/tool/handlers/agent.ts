@@ -21,6 +21,7 @@ import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
 import {
   isAgentTypeAllowedForCaller,
   matchAgentTypeInCatalog,
+  resolveAgentBackgroundPolicy,
 } from "../../subagent/profile.js";
 
 const MAX_AGENT_MODEL_BYTES = 120_000;
@@ -370,7 +371,7 @@ function buildAgentProviderDescription(
     "- The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters.",
     "- Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.",
     "- Each agent type's model, reasoning effort, and tools come from its definition (`.zcode/agents/*.md` frontmatter).",
-    "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes. Two or more Agent calls in one batch are backgrounded automatically, so collect each result as it arrives instead of waiting for the slowest. Pass `run_in_background: false` only when you must block this turn.",
+    "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes. In a root/main session, two or more Agent calls in one batch are backgrounded automatically, so collect each result as it arrives instead of waiting for the slowest. Pass `run_in_background: false` only when you must block this turn. Inside a subagent, start, orchestrator, or worker turn, Agent/Task calls always run in the foreground and return their results before that turn ends; do not set `run_in_background: true` there; use `task_graph` when you need an explicit static DAG join.",
     "- For every write-capable subagent, pass `write_paths` with the exact files/directories this branch will write; use `[]` for a read-only branch. Write-capable spawns without `write_paths` are rejected at admission, and Write/Edit/ApplyPatch are limited to the declared scope.",
     // 只保留「用户点名工作流」这一种情形：工作流一律由用户显式请求触发，与系统提示词其余
     // 部分一致。不能把「结果层层喂给下一步的多代理编排」也划给 CreateWorkflow，
@@ -537,11 +538,16 @@ const agentHandler: ToolHandler = async (input, context) => {
       ? undefined
       : parsed.task_graph;
 
-  // 同一批里的多个 Agent 各自独立：默认改为后台启动，先返回的 agent 结果立即
-  // 进入通知队列，不必等最慢的一个。显式 run_in_background:false 仍保留阻塞语义。
-  const runInBackground =
-    parsed.run_in_background ??
-    (taskGraph === undefined && (context.parallelAgentBatchSize ?? 0) > 1);
+  // 同一批里的多个 Agent 各自独立：root 默认改为后台启动，先返回的 agent 结果立即
+  // 进入通知队列。Turn-scoped caller 不能后台化，否则它的 runtime 关闭时会取消孩子。
+  const { runInBackground, allowBackground } = resolveAgentBackgroundPolicy({
+    agentType,
+    callerAgentType,
+    requestedBackground: parsed.run_in_background,
+    hasTaskGraph: taskGraph !== undefined,
+    parallelAgentBatchSize: context.parallelAgentBatchSize,
+    toolCallId: context.toolCallId,
+  });
 
   if (taskGraph && (runInBackground || parsed.acceptance_criteria !== undefined)) {
     throw createCoreError(
@@ -693,6 +699,7 @@ const agentHandler: ToolHandler = async (input, context) => {
   };
   const options = {
     signal: context.abortSignal,
+    allowBackground,
     ...(context.model ? { model: context.model } : {}),
     ...(context.subagentModelOverride ? { modelOverride: context.subagentModelOverride } : {}),
   };

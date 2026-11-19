@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { EXPLORE_AGENT_TYPE } from "./explore.js";
 import { formatExploreAllowedToolsForAgentDescription } from "./explore-tools.js";
 import { filterSubagentChildToolNames } from "./tool-policy.js";
+import { AgentErrorCode, CoreErrorType, createCoreError } from "@zcode/contracts";
 import type { ModelSelection, AgentProfile } from "@zcode/shared";
 export { parseAgentProfileFromMarkdown } from "@zcode/shared";
 export type {
@@ -408,4 +409,51 @@ export function formatAgentProfileForPrompt(
 
 export function agentProfileDisplayName(profile: AgentProfile): string {
   return profile.path ? `${profile.name} (${basename(profile.path)})` : profile.name;
+}
+
+export interface AgentBackgroundPolicyInput {
+  agentType: string;
+  callerAgentType?: string;
+  requestedBackground?: boolean;
+  hasTaskGraph: boolean;
+  parallelAgentBatchSize?: number;
+  toolCallId?: string;
+}
+
+export interface AgentBackgroundPolicy {
+  runInBackground: boolean;
+  allowBackground: boolean;
+}
+
+/**
+ * turn-scoped caller закрывает runtime сразу после ответа, поэтому его ребёнок должен
+ * быть доставлен в этом же turn. Root/main сохраняет async-поведение для batch > 1.
+ */
+export function resolveAgentBackgroundPolicy(
+  input: AgentBackgroundPolicyInput,
+): AgentBackgroundPolicy {
+  const turnScoped = input.callerAgentType !== undefined;
+  if (turnScoped && input.requestedBackground === true) {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      `Agent/Task called from ${input.callerAgentType} cannot run in the background because this turn ends with the report. Remove run_in_background:true; nested Agent/Task calls run in the foreground and return their results before the turn ends.`,
+      {
+        context: {
+          code: AgentErrorCode.BACKGROUND_UNAVAILABLE,
+          agentType: input.agentType,
+          callerAgentType: input.callerAgentType,
+          toolCallId: input.toolCallId,
+          toolName: "Agent",
+        },
+        recoverable: true,
+      },
+    );
+  }
+
+  return {
+    runInBackground:
+      input.requestedBackground ??
+      (!turnScoped && !input.hasTaskGraph && (input.parallelAgentBatchSize ?? 0) > 1),
+    allowBackground: !turnScoped,
+  };
 }
