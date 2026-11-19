@@ -61,6 +61,74 @@ describe("AgentToolCallBlock", () => {
     useSubagentsStore.setState({ agents: [] });
   });
 
+  type UsageRowFields = {
+    totalTokens?: number;
+    subtreeTotalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    subtreeInputTokens?: number;
+    subtreeOutputTokens?: number;
+    subtreeCacheReadTokens?: number;
+  };
+
+  function renderAgentUsageRow(
+    locale: "ru-RU" | "en-US",
+    authoritativeSubagentUsage: UsageRowFields,
+  ): string {
+    return renderToStaticMarkup(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: locale },
+        createElement(
+          ServiceProvider,
+          { services: mockServices },
+          createElement(
+            StoreProvider,
+            { broadcastService: mockBroadcastService },
+            createElement(AgentToolCallBlock, {
+              toolCallNode: {
+                toolCall: {
+                  toolId: "tool-agent-token-format",
+                  kind: "Agent",
+                  title: "start",
+                  input: { prompt: "audit repository", subagent_type: "start" },
+                  output: [],
+                  status: "running",
+                  raw: { _meta: { zcode: { toolName: "Agent" } } },
+                },
+                childToolCalls: [],
+              },
+              workspacePath: "/workspace",
+              displayModel: {
+                inlinePreview: { type: "none" },
+                planResult: null,
+                viewerSource: null,
+                viewerLabelId: "codeViewer.viewCode",
+                showSummaryFileLink: false,
+                showInput: false,
+                showOutput: false,
+                showKind: false,
+              },
+              viewerSource: null,
+              rawFileSummaries: [],
+              isRunning: true,
+              statusLabel: "Running",
+              errorText: undefined,
+              childToolList: null,
+              showIcon: true,
+              forceOpen: false,
+              authoritativeAgentType: "start",
+              authoritativeSubagentUsage,
+              onOpenCodeViewer: undefined,
+              onOpenBrowserUrl: undefined,
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
   it("keeps an Agent without a persisted child as a static one-line summary", () => {
     const html = renderToStaticMarkup(
       createElement(
@@ -1395,5 +1463,52 @@ describe("AgentToolCallBlock", () => {
     expect(html).toContain("in 800");
     expect(html).toContain("out 100");
     expect(html).toContain("cache 700");
+  });
+
+  it("formats million-scale token counts with one decimal and locale separator", () => {
+    const cases = [
+      [1_000_000, "1,0M"],
+      [3_000_000, "3,0M"],
+      [3_100_000, "3,1M"],
+      [3_200_000, "3,2M"],
+      [3_942_000, "3,9M"],
+    ] as const;
+
+    for (const [totalTokens, expected] of cases) {
+      const html = renderAgentUsageRow("ru-RU", { totalTokens });
+      expect(html).toContain(`${expected} tok`);
+    }
+  });
+
+  it("does not fall back to thousands form for million-scale values", () => {
+    const html = renderAgentUsageRow("ru-RU", {
+      totalTokens: 100,
+      subtreeTotalTokens: 3_942_000,
+    });
+
+    expect(html).toContain("100 tok / 3,9M tok");
+    expect(html).not.toContain("3942");
+    expect(html).not.toContain("3942к");
+  });
+
+  it("keeps thousands form below one million", () => {
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 34_000 })).toContain("34k tok");
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 55_000 })).toContain("55k tok");
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 999_999 })).toContain("1000k tok");
+  });
+
+  it("formats million-scale breakdown and uses dot for en-US", () => {
+    const ruHtml = renderAgentUsageRow("ru-RU", {
+      totalTokens: 100,
+      subtreeTotalTokens: 3_942_000,
+      subtreeInputTokens: 3_600_000,
+      subtreeOutputTokens: 300_000,
+      subtreeCacheReadTokens: 42_000,
+    });
+
+    expect(ruHtml).toContain("вход 3,6M");
+    expect(ruHtml).toContain("выход 300k");
+    expect(ruHtml).toContain("кэш 42k");
+    expect(renderAgentUsageRow("en-US", { totalTokens: 3_942_000 })).toContain("3.9M tok");
   });
 });

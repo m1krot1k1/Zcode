@@ -1,7 +1,7 @@
 import { useToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCapabilities.js";
 import { BotIcon, WaypointsIcon } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import type { AgentColor } from "@zcode/shared";
+import type { AgentColor, Locale } from "@zcode/shared";
 import { formatBackgroundTaskElapsedLabel } from "@/BackgroundTaskElapsedLabel.js";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import { cn } from "@/components/lib/utils.js";
@@ -31,8 +31,17 @@ import {
 
 const AGENT_TOOL_ICON = <BotIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
-function formatCompactTokenCount(value: number): string {
+function formatCompactTokenCount(value: number, locale: Locale): string {
   if (value < 1_000) return String(value);
+  if (value >= 1_000_000) {
+    // 旧实现对所有 >=1000 的值都用 k 和固定小数点，3 100 000 因此渲染成 3100k。
+    // 百万级以上改用 locale-aware 的一位小数 M 缩写（ru-RU 得到 3,1M）。
+    const millions = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(value / 1_000_000);
+    return `${millions}M`;
+  }
   const thousands = value / 1_000;
   return `${thousands >= 10 ? Math.round(thousands) : thousands.toFixed(1)}k`;
 }
@@ -63,7 +72,7 @@ function textField(source: Record<string, unknown>, ...keys: string[]): string |
   return undefined;
 }
 
-function readAgentGraphUsage(output: unknown): string | undefined {
+function readAgentGraphUsage(output: unknown, locale: Locale): string | undefined {
   const text =
     typeof output === "string"
       ? output
@@ -73,26 +82,31 @@ function readAgentGraphUsage(output: unknown): string | undefined {
   const tokens = text.match(/subagent_tokens:\s*(\d+)/u)?.[1];
   const duration = text.match(/duration_ms:\s*(\d+)/u)?.[1];
   const parts = [
-    ...(tokens ? [`${formatCompactTokenCount(Number(tokens))} tok`] : []),
+    ...(tokens ? [`${formatCompactTokenCount(Number(tokens), locale)} tok`] : []),
     ...(duration ? [`${Math.round(Number(duration) / 1_000)}s`] : []),
   ];
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-function buildAgentGraphNode(node: AgentGraphToolNode): AgentGraphNode | undefined {
+function buildAgentGraphNode(
+  node: AgentGraphToolNode,
+  locale: Locale,
+): AgentGraphNode | undefined {
   const name = node.toolCall.toolName ?? node.toolCall.kind;
   if (!AGENT_TOOL_NAMES.has(name)) return undefined;
   const input = asRecord(node.toolCall.input);
   const output = node.toolCall.output;
   const children = node.childToolCalls
-    .map((child) => buildAgentGraphNode(child))
+    .map((child) => buildAgentGraphNode(child, locale))
     .filter((child): child is AgentGraphNode => child !== undefined);
   return {
     id: node.toolCall.toolId,
     label: textField(input, "description") ?? node.toolCall.title ?? name,
     agentType: textField(input, "subagent_type", "agent", "agentType") ?? name,
     status: node.toolCall.status,
-    ...(readAgentGraphUsage(output) ? { usage: readAgentGraphUsage(output) } : {}),
+    ...(readAgentGraphUsage(output, locale)
+      ? { usage: readAgentGraphUsage(output, locale) }
+      : {}),
     children,
   };
 }
@@ -321,12 +335,12 @@ function BackgroundAgentProcessSection({
 }
 
 export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
-  const { intl } = useZCodeIntl();
+  const { intl, locale } = useZCodeIntl();
   const { toolCall, childToolCalls } = context.toolCallNode;
   const [graphOpen, setGraphOpen] = useState(false);
   const graphRoot = useMemo(
-    () => buildAgentGraphNode(context.toolCallNode),
-    [context.toolCallNode],
+    () => buildAgentGraphNode(context.toolCallNode, locale),
+    [context.toolCallNode, locale],
   );
   const hasGraph = graphRoot !== undefined && graphRoot.children.length > 0;
   const prompt = getAgentPrompt(toolCall);
@@ -356,7 +370,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const tokenUsage = formatOwnVsSubtree(
     subagentUsage?.totalTokens,
     subagentUsage?.subtreeTotalTokens,
-    (value) => `${formatCompactTokenCount(value)} tok`,
+    (value) => `${formatCompactTokenCount(value, locale)} tok`,
   );
   const durationUsage = formatOwnVsSubtree(
     subagentUsage?.totalDurationMs,
@@ -382,19 +396,19 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
       ? undefined
       : intl.formatMessage(
           { id: "chat.toolCall.agent.usage.input" },
-          { count: formatCompactTokenCount(breakdownInput) },
+          { count: formatCompactTokenCount(breakdownInput, locale) },
         ),
     breakdownOutput === undefined
       ? undefined
       : intl.formatMessage(
           { id: "chat.toolCall.agent.usage.output" },
-          { count: formatCompactTokenCount(breakdownOutput) },
+          { count: formatCompactTokenCount(breakdownOutput, locale) },
         ),
     breakdownCacheRead === undefined
       ? undefined
       : intl.formatMessage(
           { id: "chat.toolCall.agent.usage.cache" },
-          { count: formatCompactTokenCount(breakdownCacheRead) },
+          { count: formatCompactTokenCount(breakdownCacheRead, locale) },
         ),
   ]
     .filter(Boolean)
