@@ -3,6 +3,7 @@ import {
   chatAutocompleteSettingsSchema,
   promptEnhancerSettingsSchema,
 } from "../chat-autocomplete/contract.js";
+import { proactiveSuggestionSettingsSchema } from "../proactive-suggestion/contract.js";
 
 /**
  * Единая схема настроек подсистем Этапов 4.1–4.6.
@@ -63,7 +64,12 @@ export const sandboxSettingsSchema = z
         clipboard: z.boolean().default(false),
       })
       .strict()
-      .default({ screenshot: true, pointer: false, keyboard: false, clipboard: false }),
+      .default({
+        screenshot: true,
+        pointer: false,
+        keyboard: false,
+        clipboard: false,
+      }),
   })
   .strict();
 export type SandboxSettings = z.infer<typeof sandboxSettingsSchema>;
@@ -100,7 +106,9 @@ export const stage4SettingsObjectSchema = z.object({
     includeConversationHistory: true,
   }),
   chatAutocompleteSettings: chatAutocompleteSettingsSchema.default({
-    enabled: false,
+    // Ghost-подсказка включена по умолчанию: запрос уходит только при паузе в
+    // наборе и укладывается в бюджет 48 выходных токенов (см. spec 2026-11-19).
+    enabled: true,
     debounceMs: 250,
     acceptWordOnArrowRight: true,
     minPrefixChars: 6,
@@ -113,6 +121,11 @@ export const stage4SettingsObjectSchema = z.object({
       codeIndex: true,
       userLexicon: true,
     },
+  }),
+  proactiveSuggestionSettings: proactiveSuggestionSettingsSchema.default({
+    // Включено по умолчанию: ровно один запрос на завершённый turn и только по focus/click.
+    enabled: true,
+    maxSuggestionsPerTurn: 1,
   }),
   parallelJobsSettings: parallelJobsSettingsSchema.default({
     maxParallelSubagents: 0,
@@ -129,7 +142,12 @@ export const stage4SettingsObjectSchema = z.object({
     mode: "off",
     allowBashNetwork: true,
     commandTimeoutMs: 180_000,
-    cuaPermissions: { screenshot: true, pointer: false, keyboard: false, clipboard: false },
+    cuaPermissions: {
+      screenshot: true,
+      pointer: false,
+      keyboard: false,
+      clipboard: false,
+    },
   }),
   browserAssistantSettings: browserAssistantSettingsSchema.default({
     telemetryEnabled: false,
@@ -163,6 +181,7 @@ export const stage4SettingsPatchSchema = z.object({
   agentCoreAdvanced: agentCoreAdvancedSettingsSchema.optional(),
   promptEnhancerSettings: promptEnhancerSettingsSchema.optional(),
   chatAutocompleteSettings: chatAutocompleteSettingsSchema.optional(),
+  proactiveSuggestionSettings: proactiveSuggestionSettingsSchema.optional(),
   parallelJobsSettings: parallelJobsSettingsSchema.optional(),
   codeIndexSettings: codeIndexSettingsSchema.optional(),
   sandboxSettings: sandboxSettingsSchema.optional(),

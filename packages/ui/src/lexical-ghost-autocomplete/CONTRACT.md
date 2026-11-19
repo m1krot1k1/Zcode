@@ -13,6 +13,10 @@ Ghost-text в поле ввода композера: нативная inline-н
 - IME (`compositionstart..compositionend`) полностью блокирует запрос и показ подсказки.
 - Решение «спрашивать ли модель» — чистая функция `resolveGhostAutocompleteSkip`: пустой ввод,
   короткий префикс, выделение, открытая панель, IME, курсор не в конце — причины отказа.
+- `DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.enabled = true` согласован с дефолтом
+  `AppSettings.chatAutocompleteSettings.enabled`. При отсутствии `chatAutocompleteService`
+  или ещё не загруженных настройках компонент не монтирует плагин (no-op), поэтому
+  дефолт не порождает запросов «в пустоту».
 - Дебаунс адаптивный (`resolveAdaptiveGhostDebounceMs` из `shared-chat-autocomplete`), устаревший
   запрос отменяется сразу при новом нажатии.
 

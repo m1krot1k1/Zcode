@@ -1,17 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
 import type { AppSettings } from "@zcode/shared";
-import {
-  PROMPT_DEPTH_PROFILES,
-  type PromptDepthProfile,
-} from "@zcode/shared";
+import { PROMPT_DEPTH_PROFILES, type PromptDepthProfile } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { SettingsGroupCard } from "@/settings/SettingsPageParts.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { resolveComputerUseAvailability } from "@/settings/computerUseAvailability.js";
-import { NumberSettingRow, SelectSettingRow, SwitchSettingRow, TextSettingRow } from "./controls.js";
+import {
+  NumberSettingRow,
+  SelectSettingRow,
+  SwitchSettingRow,
+  TextSettingRow,
+} from "./controls.js";
 import { matchesStage4Search, mergeStage4Section } from "./contract.js";
 
 /**
@@ -49,6 +51,7 @@ export function SettingsStage4Section({
   const agentCore = settings?.agentCoreAdvanced;
   const promptEnhancer = settings?.promptEnhancerSettings;
   const chatAutocomplete = settings?.chatAutocompleteSettings;
+  const proactiveSuggestion = settings?.proactiveSuggestionSettings;
   const parallelJobs = settings?.parallelJobsSettings;
   const codeIndex = settings?.codeIndexSettings;
   const sandbox = settings?.sandboxSettings;
@@ -66,10 +69,7 @@ export function SettingsStage4Section({
     [isLinuxDesktop, isMacDesktop, isWindowsDesktop, workspaceIdentity],
   );
 
-  const t = useCallback(
-    (id: string) => intl.formatMessage({ id }),
-    [intl],
-  );
+  const t = useCallback((id: string) => intl.formatMessage({ id }), [intl]);
 
   const patch = useCallback(
     async (next: Partial<AppSettings>) => {
@@ -104,6 +104,15 @@ export function SettingsStage4Section({
       void patch({ chatAutocompleteSettings: mergeStage4Section(chatAutocomplete, next) });
     },
     [chatAutocomplete, patch],
+  );
+  const updateProactiveSuggestion = useCallback(
+    (next: Partial<NonNullable<typeof proactiveSuggestion>>) => {
+      if (!proactiveSuggestion) return;
+      void patch({
+        proactiveSuggestionSettings: mergeStage4Section(proactiveSuggestion, next),
+      });
+    },
+    [patch, proactiveSuggestion],
   );
   const updateParallelJobs = useCallback(
     (next: Partial<NonNullable<typeof parallelJobs>>) => {
@@ -152,16 +161,25 @@ export function SettingsStage4Section({
     }
   }, [services, workspaceIdentity, workspacePath]);
 
-  if (!settings) return <p className="text-ui-base text-foreground-subtle">{t("settings.stage4.loading")}</p>;
+  if (!settings)
+    return <p className="text-ui-base text-foreground-subtle">{t("settings.stage4.loading")}</p>;
 
   const show = (...keys: string[]) => matchesStage4Search(searchQuery, keys);
 
   const promptDepth = settings.promptDepth ?? "standard";
   const grouped = [
-    show("agent", t("settings.stage4.agentReasoning.title"), t("settings.stage4.agentReasoning.description")) && agentCore ? (
+    show(
+      "agent",
+      t("settings.stage4.agentReasoning.title"),
+      t("settings.stage4.agentReasoning.description"),
+    ) && agentCore ? (
       <section key="agentReasoning" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.agentReasoning.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.agentReasoning.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.agentReasoning.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.agentReasoning.description")}
+        </p>
         <SettingsGroupCard>
           <SelectSettingRow<PromptDepthProfile>
             label={t("settings.stage4.promptDepth")}
@@ -221,8 +239,12 @@ export function SettingsStage4Section({
     ) : null,
     show("enhancer", "prompt", t("settings.stage4.promptEnhancer.title")) && promptEnhancer ? (
       <section key="promptEnhancer" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.promptEnhancer.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.promptEnhancer.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.promptEnhancer.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.promptEnhancer.description")}
+        </p>
         <SettingsGroupCard>
           <SwitchSettingRow
             label={t("settings.stage4.promptEnhancer.enabled")}
@@ -237,9 +259,15 @@ export function SettingsStage4Section({
             value={promptEnhancer.style}
             testId="settings-stage4-enhancer-style"
             options={[
-              { value: "structured_engineering", label: t("settings.stage4.promptEnhancer.style.structured") },
+              {
+                value: "structured_engineering",
+                label: t("settings.stage4.promptEnhancer.style.structured"),
+              },
               { value: "concise_direct", label: t("settings.stage4.promptEnhancer.style.concise") },
-              { value: "deep_architectural", label: t("settings.stage4.promptEnhancer.style.deep") },
+              {
+                value: "deep_architectural",
+                label: t("settings.stage4.promptEnhancer.style.deep"),
+              },
             ]}
             onChange={(next) => updatePromptEnhancer({ style: next })}
           />
@@ -267,10 +295,35 @@ export function SettingsStage4Section({
         </SettingsGroupCard>
       </section>
     ) : null,
-    show("autocomplete", "ghost", t("settings.stage4.chatAutocomplete.title")) && chatAutocomplete ? (
+    show("proactive", "suggestion", t("settings.stage4.proactiveSuggestion.title")) &&
+    proactiveSuggestion ? (
+      <section key="proactiveSuggestion" className="space-y-2">
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.proactiveSuggestion.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.proactiveSuggestion.description")}
+        </p>
+        <SettingsGroupCard>
+          <SwitchSettingRow
+            label={t("settings.stage4.proactiveSuggestion.enabled")}
+            description={t("settings.stage4.proactiveSuggestion.enabled.description")}
+            checked={proactiveSuggestion.enabled}
+            testId="settings-stage4-proactive-suggestion-enabled"
+            onChange={(next) => updateProactiveSuggestion({ enabled: next })}
+          />
+        </SettingsGroupCard>
+      </section>
+    ) : null,
+    show("autocomplete", "ghost", t("settings.stage4.chatAutocomplete.title")) &&
+    chatAutocomplete ? (
       <section key="chatAutocomplete" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.chatAutocomplete.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.chatAutocomplete.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.chatAutocomplete.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.chatAutocomplete.description")}
+        </p>
         <SettingsGroupCard>
           <SwitchSettingRow
             label={t("settings.stage4.chatAutocomplete.enabled")}
@@ -379,8 +432,12 @@ export function SettingsStage4Section({
     ) : null,
     show("parallel", "subagent", t("settings.stage4.parallelJobs.title")) && parallelJobs ? (
       <section key="parallelJobs" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.parallelJobs.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.parallelJobs.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.parallelJobs.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.parallelJobs.description")}
+        </p>
         <SettingsGroupCard>
           <NumberSettingRow
             label={t("settings.stage4.parallelJobs.maxSubagents")}
@@ -414,8 +471,12 @@ export function SettingsStage4Section({
     ) : null,
     show("index", "code", t("settings.stage4.codeIndex.title")) && codeIndex ? (
       <section key="codeIndex" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.codeIndex.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.codeIndex.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.codeIndex.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.codeIndex.description")}
+        </p>
         <SettingsGroupCard>
           <SwitchSettingRow
             label={t("settings.stage4.codeIndex.autoStart")}
@@ -460,8 +521,12 @@ export function SettingsStage4Section({
     ) : null,
     show("sandbox", "computer", "bwrap", t("settings.stage4.sandbox.title")) && sandbox ? (
       <section key="sandbox" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.sandbox.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.sandbox.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.sandbox.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.sandbox.description")}
+        </p>
         <SettingsGroupCard>
           <SelectSettingRow
             label={t("settings.stage4.sandbox.mode")}
@@ -541,8 +606,12 @@ export function SettingsStage4Section({
     ) : null,
     show("browser", t("settings.stage4.browser.title")) && browser ? (
       <section key="browser" className="space-y-2">
-        <h3 className="text-ui-md font-semibold text-foreground">{t("settings.stage4.browser.title")}</h3>
-        <p className="text-ui-sm text-foreground-subtle">{t("settings.stage4.browser.description")}</p>
+        <h3 className="text-ui-md font-semibold text-foreground">
+          {t("settings.stage4.browser.title")}
+        </h3>
+        <p className="text-ui-sm text-foreground-subtle">
+          {t("settings.stage4.browser.description")}
+        </p>
         <SettingsGroupCard>
           <SwitchSettingRow
             label={t("settings.stage4.browser.telemetry")}

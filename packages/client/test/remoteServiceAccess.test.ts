@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IChannel, IChannelClient } from "@zcode/rpc";
-import { ICodeIntelligenceService, ISourceServerManagementService } from "@zcode/services";
+import {
+  ICodeIntelligenceService,
+  IProactiveSuggestionService,
+  ISourceServerManagementService,
+} from "@zcode/services";
 import { IOpenCodeAcpRuntime } from "@zcode/services";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
 
@@ -24,6 +28,45 @@ describe("RemoteServiceAccess", () => {
     });
     expect(requested).toContain("client-config");
     expect(call.mock.calls[0]?.slice(0, 2)).toEqual(["getSnapshot", [{ forceRefresh: true }]]);
+  });
+
+  it("проксирует proactive-suggestion в canonical канал Host", async () => {
+    const response = {
+      requestId: "request-1234",
+      suggestion: "Run the failing test",
+      reason: null,
+      latencyMs: 5,
+      modelUsed: null,
+    };
+    const call = vi.fn(async () => response);
+    const requested: string[] = [];
+    const services = new RemoteServiceAccess({
+      getChannel: (name) => {
+        requested.push(name);
+        return { call, listen: vi.fn() } as IChannel;
+      },
+    });
+
+    await expect(
+      services.proactiveSuggestionService!.complete({
+        requestId: "request-1234",
+        workspacePath: "/repo",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        draftEmpty: true,
+        context: {
+          messages: [],
+          assistantResult: null,
+          toolResults: [],
+          testResults: [],
+          diffs: [],
+          openFiles: [],
+        },
+      }),
+    ).resolves.toEqual(response);
+    expect(requested).toContain(IProactiveSuggestionService.channelName);
+    expect(call).toHaveBeenCalledOnce();
+    expect(call.mock.calls[0]?.[0]).toBe("complete");
   });
 });
 

@@ -171,6 +171,8 @@ export const ServiceChannels = {
   PromptEnhancer: "prompt-enhancer",
   /** Предиктивное Tab-автодополнение в композере (ghost-text). */
   ChatAutocomplete: "chat-autocomplete",
+  /** Проактивная подсказка следующей задачи в пустом композере после завершённого turn. */
+  ProactiveSuggestion: "proactive-suggestion",
   /** 当前 workspace 的进程所属 Host 承载的显式 OpenCode ACP delegated agent */
   OpenCodeAcp: "open-code-acp",
   /** Commands 管理服务 */

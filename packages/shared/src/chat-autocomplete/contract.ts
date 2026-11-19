@@ -41,14 +41,17 @@ export const chatAutocompleteContextOptionsSchema = z
     userLexicon: z.boolean().default(true),
   })
   .strict();
-export type ChatAutocompleteContextOptions = z.infer<
-  typeof chatAutocompleteContextOptionsSchema
->;
+export type ChatAutocompleteContextOptions = z.infer<typeof chatAutocompleteContextOptionsSchema>;
 
 /** Настройки ghost-подсказки в композере; владелец — `AppSettings`. */
 export const chatAutocompleteSettingsSchema = z
   .object({
-    enabled: z.boolean().default(false),
+    /**
+     * По умолчанию включено: подсказка реально работает без ручного opt-in, а все
+     * слои no-op при отсутствии сервиса/настроек. Стоимость ограничена дебаунсом,
+     * `minPrefixChars`, кэшем и бюджетом 48 выходных токенов.
+     */
+    enabled: z.boolean().default(true),
     /** Базовый дебаунс; адаптивность поднимает его до 700 мс при быстром наборе. */
     debounceMs: z.number().int().min(120).max(800).default(250),
     /** Принимать слово по `ArrowRight` (иначе только `Tab` и клик). */
@@ -59,7 +62,10 @@ export const chatAutocompleteSettingsSchema = z
     cursorAtEndOnly: z.boolean().default(true),
     /** Быстрая модель; `null` — автовыбор быстрой модели провайдера. */
     modelOverride: z
-      .object({ providerId: z.string().trim().min(1), modelId: z.string().trim().min(1) })
+      .object({
+        providerId: z.string().trim().min(1),
+        modelId: z.string().trim().min(1),
+      })
       .strict()
       .nullable()
       .default(null),
@@ -84,7 +90,10 @@ export const promptEnhancerSettingsSchema = z
     /** Сколько источников контекста подключать (0 — только черновик). */
     maxContextSources: z.number().int().min(0).max(5).default(4),
     modelOverride: z
-      .object({ providerId: z.string().trim().min(1), modelId: z.string().trim().min(1) })
+      .object({
+        providerId: z.string().trim().min(1),
+        modelId: z.string().trim().min(1),
+      })
       .strict()
       .nullable()
       .default(null),
@@ -116,7 +125,10 @@ export const chatAutocompleteRequestSchema = z
       .default([]),
     /** Явный выбор быстрой модели; при отсутствии Host берёт дефолтную. */
     modelSelection: z
-      .object({ providerId: z.string().trim().min(1), modelId: z.string().trim().min(1) })
+      .object({
+        providerId: z.string().trim().min(1),
+        modelId: z.string().trim().min(1),
+      })
       .strict()
       .optional(),
     context: chatAutocompleteContextOptionsSchema.default({
@@ -168,9 +180,7 @@ export type ChatAutocompleteAcceptedSuggestion = z.infer<
 >;
 
 export const chatAutocompleteLexiconLanguageSchema = z.enum(["ru", "en", "zh", "unknown"]);
-export type ChatAutocompleteLexiconLanguage = z.infer<
-  typeof chatAutocompleteLexiconLanguageSchema
->;
+export type ChatAutocompleteLexiconLanguage = z.infer<typeof chatAutocompleteLexiconLanguageSchema>;
 
 export const chatAutocompleteLexiconPhraseSchema = z
   .object({

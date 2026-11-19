@@ -5,7 +5,7 @@
 export const sharedStage4SettingsModule = {
   id: "shared-stage4-settings",
   // `shared` нужен для `../prompt-depth.js`: enum глубины рассуждений общий с рантаймом.
-  requires: ["shared", "shared-chat-autocomplete"],
+  requires: ["shared", "shared-chat-autocomplete", "shared-proactive-suggestion"],
   provides: ["shared-stage4-settings"],
   publicEntrypoints: ["index.ts", "settings.ts"],
 } as const;

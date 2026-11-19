@@ -38,9 +38,18 @@ export interface GhostAutocompleteConfig {
 }
 
 export const DEFAULT_GHOST_AUTOCOMPLETE_CONFIG: GhostAutocompleteConfig = {
-  enabled: false,
+  // Согласовано с дефолтом `AppSettings.chatAutocompleteSettings.enabled`.
+  // До загрузки настроек `ChatGhostAutocomplete` принудительно выключает конфиг и
+  // без сервиса не монтирует плагин, поэтому запросов «по умолчанию» не возникает.
+  enabled: true,
   baseDebounceMs: 250,
-  context: { history: true, openFiles: true, diffs: true, codeIndex: true, userLexicon: true },
+  context: {
+    history: true,
+    openFiles: true,
+    diffs: true,
+    codeIndex: true,
+    userLexicon: true,
+  },
   keymap: { acceptAll: "Tab", acceptWord: "ArrowRight", dismiss: "Escape" },
   cursorAtEndOnly: true,
   minPrefixChars: 6,

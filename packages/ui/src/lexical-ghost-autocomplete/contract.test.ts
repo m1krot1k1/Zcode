@@ -20,8 +20,8 @@ describe("ui-lexical-ghost-autocomplete manifest", () => {
     expect(uiLexicalGhostAutocompleteModule.id).toBe("ui-lexical-ghost-autocomplete");
   });
 
-  it("ships autocomplete disabled by default so nothing fires without opt-in", () => {
-    expect(DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.enabled).toBe(false);
+  it("ships autocomplete enabled by default, gated by settings and service availability", () => {
+    expect(DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.enabled).toBe(true);
     expect(DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.keymap).toEqual({
       acceptAll: "Tab",
       acceptWord: "ArrowRight",
@@ -36,7 +36,9 @@ describe("resolveGhostAutocompleteSkip", () => {
   });
 
   it("skips when the feature is disabled", () => {
-    expect(resolveGhostAutocompleteSkip(baseState, { ...enabled, enabled: false })).toBe("disabled");
+    expect(resolveGhostAutocompleteSkip(baseState, { ...enabled, enabled: false })).toBe(
+      "disabled",
+    );
   });
 
   it("skips IME composition before anything else", () => {

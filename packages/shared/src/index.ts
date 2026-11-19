@@ -109,6 +109,7 @@ export * from "./zcode-tool-projection-memory.js";
 export * from "./zcode-slash-command-help.js";
 export * from "./prompt-enhancer/index.js";
 export * from "./chat-autocomplete/index.js";
+export * from "./proactive-suggestion/index.js";
 export * from "./stage4-settings/index.js";
 export * from "./prompt-depth.js";
 export * from "./zcodeEndpoint.js";

@@ -473,6 +473,7 @@ export interface AppSettings {
   agentCoreAdvanced?: Stage4Settings["agentCoreAdvanced"];
   promptEnhancerSettings?: Stage4Settings["promptEnhancerSettings"];
   chatAutocompleteSettings?: Stage4Settings["chatAutocompleteSettings"];
+  proactiveSuggestionSettings?: Stage4Settings["proactiveSuggestionSettings"];
   parallelJobsSettings?: Stage4Settings["parallelJobsSettings"];
   codeIndexSettings?: Stage4Settings["codeIndexSettings"];
   sandboxSettings?: Stage4Settings["sandboxSettings"];

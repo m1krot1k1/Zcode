@@ -40,6 +40,7 @@ export const REMOTE_WORKSPACE_RPC_CHANNELS = [
   "outputStyleService",
   "settingsSyncService",
   "promptAttachmentTransferService",
+  "proactiveSuggestionService",
 ] as const satisfies readonly (keyof IServiceAccessor)[];
 
 /**

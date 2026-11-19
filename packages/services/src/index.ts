@@ -319,6 +319,17 @@ export type {
   ChatAutocompleteModelResolver,
   ChatAutocompleteContextPorts,
 } from "./chat-autocomplete/service.js";
+export {
+  IProactiveSuggestionService,
+  ProactiveSuggestionError,
+  type ProactiveSuggestionService,
+} from "./proactive-suggestion/contract.js";
+export { createProactiveSuggestionService } from "./proactive-suggestion/service.js";
+export type {
+  ProactiveSuggestionModelResolver,
+  ProactiveSuggestionPorts,
+  ProactiveSuggestionTextGenerator,
+} from "./proactive-suggestion/ports.js";
 export { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/index.js";
 export type {
   OpenCodeAcpConfigOption,

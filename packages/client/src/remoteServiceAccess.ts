@@ -4,6 +4,7 @@ import {
   ICodeIntelligenceService,
   IPromptEnhancerService,
   IChatAutocompleteService,
+  IProactiveSuggestionService,
   IFileService,
   IMediaPreviewService,
   IGitService,
@@ -65,6 +66,7 @@ import {
   type IServiceAccessor,
   type PromptEnhancerService,
   type ChatAutocompleteService,
+  type ProactiveSuggestionService,
 } from "@zcode/services";
 
 /**
@@ -129,6 +131,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   /** Нативное улучшение промптов; доступно на любом Host, где зарегистрирован канал. */
   readonly promptEnhancerService: PromptEnhancerService;
   readonly chatAutocompleteService: ChatAutocompleteService;
+  /** Проактивная подсказка; Host без канала proactive-suggestion оставляет поле пустым. */
+  readonly proactiveSuggestionService?: ProactiveSuggestionService;
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
@@ -351,6 +355,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
     // Host, поэтому канал проксируется безусловно, как enhancer или git.
     this.chatAutocompleteService = ProxyChannel.toService<ChatAutocompleteService>(
       channelClient.getChannel(IChatAutocompleteService.channelName),
+    );
+    // Proactive suggestion использует тот же транспорт и паттерн, что ghost-подсказка;
+    // доступность канала определяется Host-регистрацией и allowlist attachment.
+    this.proactiveSuggestionService = ProxyChannel.toService<ProactiveSuggestionService>(
+      channelClient.getChannel(IProactiveSuggestionService.channelName),
     );
   }
 }

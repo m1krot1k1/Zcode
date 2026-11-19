@@ -4,10 +4,13 @@ import {
   CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS,
   chatAutocompleteRequestSchema,
   chatAutocompleteResponseSchema,
+  chatAutocompleteSettingsSchema,
 } from "./contract.js";
 import {
   clipGhostSuggestion,
+  detectAssistantVoiceSuggestion,
   detectLexiconLanguage,
+  filterAssistantVoiceSuggestion,
   removePrefixOverlap,
   sanitizeForLexicon,
   shannonEntropyPerChar,
@@ -43,9 +46,9 @@ describe("chat-autocomplete request contract", () => {
   });
 
   it("rejects unknown fields so transports cannot smuggle extra payload", () => {
-    expect(
-      chatAutocompleteRequestSchema.safeParse({ ...baseRequest, extra: "nope" }).success,
-    ).toBe(false);
+    expect(chatAutocompleteRequestSchema.safeParse({ ...baseRequest, extra: "nope" }).success).toBe(
+      false,
+    );
   });
 
   it("enforces prefix limits and the minimum sensible length", () => {
@@ -71,7 +74,11 @@ describe("chat-autocomplete request contract", () => {
         userLexicon: false,
       },
     });
-    expect(parsed.context).toMatchObject({ history: false, openFiles: true, diffs: false });
+    expect(parsed.context).toMatchObject({
+      history: false,
+      openFiles: true,
+      diffs: false,
+    });
   });
 });
 
@@ -108,9 +115,9 @@ describe("ghost suggestion post-processing", () => {
 
   it("drops trailing code comments and enforces the char cap", () => {
     expect(clipGhostSuggestion("верни диффы // внутренний комментарий")).toBe("верни диффы");
-    expect(clipGhostSuggestion("a".repeat(CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS + 40))).toHaveLength(
-      CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS,
-    );
+    expect(
+      clipGhostSuggestion("a".repeat(CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS + 40)),
+    ).toHaveLength(CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS);
   });
 
   it("removes overlap on a BPE boundary without gluing words", () => {
@@ -127,6 +134,71 @@ describe("ghost suggestion post-processing", () => {
   });
 });
 
+describe("assistant voice filter", () => {
+  it("rejects the observed assistant plan for the Russian draft", () => {
+    const phrase = "Сначала изучу текущую архитектуру и `searchChannels.ts`, затем проверю";
+    expect(detectAssistantVoiceSuggestion(phrase)).toBe("assistant_action_plan");
+    expect(filterAssistantVoiceSuggestion(phrase)).toBe("");
+  });
+
+  it("rejects first-person action plans in Russian and English", () => {
+    for (const phrase of [
+      "Затем проверю",
+      "Проверю сборку и тесты",
+      "Изучу текущую архитектуру",
+      "Сначала я посмотрю реестр",
+      "Давайте посмотрим",
+      "First, I will inspect the module",
+      "I'll check the tests",
+      "Let me look at the schema",
+    ]) {
+      expect(filterAssistantVoiceSuggestion(phrase), phrase).toBe("");
+    }
+  });
+
+  it("rejects assistant meta commentary and markdown plans", () => {
+    for (const phrase of [
+      "Конечно, вот что я предлагаю",
+      "Надеюсь, это поможет",
+      "Here's the plan",
+      "# План",
+      "```ts",
+      "Шаги: 1. Проверить сборку",
+      "Step 1: read the schema",
+    ]) {
+      expect(filterAssistantVoiceSuggestion(phrase), phrase).toBe("");
+    }
+  });
+
+  it("keeps legitimate user-voice continuations unchanged", () => {
+    for (const phrase of [
+      "Сначала надо проверить текущую архитектуру",
+      "Сначала нужно изучить альтернативы",
+      "Проверить, что сборка остаётся зелёной",
+      "Изучить зрелые инструменты и выбрать два",
+      "Затем добавить тесты на реестр",
+      "1. Добавить тесты на реестр",
+    ]) {
+      expect(filterAssistantVoiceSuggestion(phrase), phrase).toBe(phrase);
+    }
+  });
+
+  it("sees through quotes, markdown emphasis and list bullets", () => {
+    expect(filterAssistantVoiceSuggestion("**Сначала изучу** модуль")).toBe("");
+    expect(filterAssistantVoiceSuggestion("- Затем проверю тесты")).toBe("");
+    expect(filterAssistantVoiceSuggestion("«Проверю сборку»")).toBe("");
+  });
+});
+
+describe("chat autocomplete settings defaults", () => {
+  it("enables ghost autocomplete by default with bounded cost knobs", () => {
+    const parsed = chatAutocompleteSettingsSchema.parse({});
+    expect(parsed.enabled).toBe(true);
+    expect(parsed.minPrefixChars).toBe(6);
+    expect(parsed.debounceMs).toBe(250);
+  });
+});
+
 describe("lexicon privacy filter", () => {
   it("strips API keys, bearer tokens and emails", () => {
     const cleaned = sanitizeForLexicon(
@@ -139,9 +211,7 @@ describe("lexicon privacy filter", () => {
   });
 
   it("strips home-directory paths and password assignments", () => {
-    const cleaned = sanitizeForLexicon(
-      "открой /home/alice/secret/project и password=hunter2super",
-    );
+    const cleaned = sanitizeForLexicon("открой /home/alice/secret/project и password=hunter2super");
     expect(cleaned).not.toContain("/home/alice");
     expect(cleaned?.toLowerCase()).not.toContain("password=");
   });

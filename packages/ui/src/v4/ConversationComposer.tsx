@@ -40,6 +40,7 @@ import {
 import type { AppSlashCommand } from "@/slashCommandHelpers.js";
 import { advanceComposerDraftRevision } from "@/v4/composer/composerDraftRevision.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
+import { useConversationProactiveSuggestion } from "@/v4/composer/proactive-suggestion/index.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 import { isMediaChatComposerAttachment } from "@/lib/chatAttachments.js";
 import { resolveChatPlaceholderKey } from "@/lib/chatPlaceholder.js";
@@ -599,6 +600,18 @@ function ConversationComposerImpl(props: ConversationComposerProps) {
     openPptxElementReference,
   ]);
 
+  // Проактивная подсказка следующей задачи: адаптер владеет ленивым контекстом,
+  // turn identity, контейнером и принятием; композер передаёт только зависимости.
+  const proactive = useConversationProactiveSuggestion({
+    composer: props,
+    draft: text,
+    disabled,
+    inputApiRef,
+    updateText,
+    scheduleDraftPersist,
+    topContentNode,
+  });
+
   // 发送/停止控制簇（对齐旧 ChatViewComposer.submitControlNode 结构：
   // 左侧 model/thought/usage 簇 + 右侧 stop 或 send）。
   // useMemo：composer 随流式 snapshot 高频重渲染，控制簇只在语义依赖变化时重建，
@@ -812,7 +825,7 @@ function ConversationComposerImpl(props: ConversationComposerProps) {
     avoidIosInputFocusZoom,
     compactMobilePlaceholder,
     conversationSelectionLimitReason,
-    topContentNode,
+    ...proactive,
     attachmentAction,
     leadingActionsNode,
     submitControlNode,

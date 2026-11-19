@@ -1,4 +1,11 @@
-import type { ComponentProps, Dispatch, MutableRefObject, ReactNode, SetStateAction } from "react";
+import type {
+  ComponentProps,
+  Dispatch,
+  MutableRefObject,
+  ReactNode,
+  Ref,
+  SetStateAction,
+} from "react";
 import {
   TID_V4_COMPOSER,
   TID_V4_COMPOSER_CLEAR_QUEUE_SEND,
@@ -81,6 +88,8 @@ export interface ComposerRootInput {
   compactMobilePlaceholder: boolean;
   conversationSelectionLimitReason: string | null;
   topContentNode: ReactNode;
+  /** Реальный DOM-контейнер композера: focusin/focusout lifecycle подсказки. */
+  containerRef?: Ref<HTMLDivElement> | undefined;
   attachmentAction: AttachmentAction;
   leadingActionsNode: ReactNode;
   submitControlNode: ReactNode;
@@ -150,6 +159,7 @@ export function buildComposerRoot(input: ComposerRootInput): ReactNode {
     compactMobilePlaceholder,
     conversationSelectionLimitReason,
     topContentNode,
+    containerRef,
     attachmentAction,
     leadingActionsNode,
     submitControlNode,
@@ -215,6 +225,7 @@ export function buildComposerRoot(input: ComposerRootInput): ReactNode {
     // 视觉上会被误认为输入卡标题栏；将 surface 边界收窄到工作区头和编辑器后，桌面与手机
     // Web 仍共享同一 DOM 顺序，同时恢复错误提示与输入卡之间的独立层级。
     <div
+      ref={containerRef}
       data-testid={TID_V4_COMPOSER}
       data-input-routing={mode}
       aria-hidden={isBlockedByInteraction ? true : undefined}
@@ -367,9 +378,7 @@ export function buildComposerRoot(input: ComposerRootInput): ReactNode {
           // Bugfix 原因：命令目录必须完整来自 CLI workspace slash catalog；UI 只在
           // secondary pane 按产品能力隐藏 goal，不再追加任何内建命令或别名。
           excludedSlashCommandNames={suppressGoalCommands ? ["goal"] : undefined}
-          appSlashCommands={
-            runtimeBlocked ? [] : (appSlashCommandsOverride ?? appSlashCommands)
-          }
+          appSlashCommands={runtimeBlocked ? [] : (appSlashCommandsOverride ?? appSlashCommands)}
           enableMentionPanel
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}

@@ -7,6 +7,8 @@ import {
   chatAutocompleteRequestSchema,
   chatAutocompleteResponseSchema,
   clipGhostSuggestion,
+  detectAssistantVoiceSuggestion,
+  filterAssistantVoiceSuggestion,
   removePrefixOverlap,
   type ChatAutocompleteAcceptedSuggestion,
   type ChatAutocompleteErrorCode,
@@ -35,12 +37,19 @@ export interface ChatAutocompleteTextGenerator {
   generateText(params: {
     workspacePath: string;
     workspaceIdentity?: string;
-    selection: { providerId: string; modelId: string; options?: { reasoningLevel?: string } };
+    selection: {
+      providerId: string;
+      modelId: string;
+      options?: { reasoningLevel?: string };
+    };
     messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
     querySource: string;
     maxOutputTokens?: number;
     signal: AbortSignal;
-  }): Promise<{ text: string; selection: { providerId: string; modelId: string } }>;
+  }): Promise<{
+    text: string;
+    selection: { providerId: string; modelId: string };
+  }>;
 }
 
 export interface ChatAutocompleteModelResolver {
@@ -130,9 +139,13 @@ export { resolveAdaptiveGhostDebounceMs as resolveAdaptiveDebounceMs } from "@zc
 
 function buildSystemPrompt(): string {
   return [
-    "You predict the next few words the user is typing in a coding assistant chat composer.",
-    "Return ONLY the continuation text, no quotes, no markdown, no explanations.",
-    "Keep it under 12 words. Use the user's language. Never repeat the prefix.",
+    "You complete the user's own draft in the chat composer of a coding assistant.",
+    "The draft is a message the user is still writing to an AI coding agent.",
+    "Predict ONLY what this user would type next at the cursor, in the user's voice, language, person and register: a task, a question, a clarification, a constraint or an acceptance criterion.",
+    "Return ONLY the continuation suffix: never repeat the draft, no quotes, no markdown, one line, at most 12 words.",
+    "Never answer the draft, never explain it, never describe your own intentions or actions, and never write an assistant plan.",
+    'Forbidden openings include "Сначала изучу", "Сначала проверю", "Затем проверю", "Проверю", "Изучу", "Давайте", "I will", "I\'ll", "Let me", "First, I", numbered plans, headings and code fences.',
+    "If you cannot continue the user's thought, return an empty string.",
   ].join(" ");
 }
 
@@ -144,8 +157,16 @@ function buildUserMessage(input: {
   symbols: ReadonlyArray<{ path: string; symbolName?: string }>;
 }): string {
   const lines: string[] = [];
+  lines.push(
+    "The draft below is NOT sent yet. The draft and the context exist only to predict the user's next words.",
+  );
+  lines.push(
+    "Do not answer the draft and do not plan actions for an assistant. Write only the user's own continuation.",
+  );
   if (input.recentMessages.length > 0) {
-    lines.push("Recent conversation:");
+    lines.push(
+      "Conversation so far (context only, never answer it; assistant messages are project facts, not a voice to imitate):",
+    );
     for (const message of input.recentMessages) {
       lines.push(`${message.role}: ${message.text.slice(0, 240)}`);
     }
@@ -176,7 +197,14 @@ function buildUserMessage(input: {
   if (input.lexicon && input.lexicon.imperativePatterns.length > 0) {
     lines.push(`Typical phrasing: ${input.lexicon.imperativePatterns.slice(0, 5).join(" | ")}`);
   }
-  lines.push(`Continue this text:\n${input.request.prefix}`);
+  if (input.request.suffix.length > 0) {
+    lines.push("Cursor position: in the middle of the draft.");
+    lines.push(`Text after the cursor (do not repeat it): ${input.request.suffix}`);
+  } else {
+    lines.push("Cursor position: at the end of the draft.");
+  }
+  lines.push(`Draft before the cursor:\n${input.request.prefix}`);
+  lines.push("Continuation (start exactly at the cursor, user voice, one line):");
   return lines.join("\n");
 }
 
@@ -195,7 +223,11 @@ export function createChatAutocompleteService(
   const lexicon = options.lexiconStore ?? new UserLexiconStore({ now });
   const active = new Map<
     string,
-    { controller: AbortController; workspaceKey: string; abortCode: "aborted" | "timeout" | null }
+    {
+      controller: AbortController;
+      workspaceKey: string;
+      abortCode: "aborted" | "timeout" | null;
+    }
   >();
 
   /**
@@ -257,7 +289,11 @@ export function createChatAutocompleteService(
       const controller = new AbortController();
       // Причина отмены хранится в записи: ответ генератора может прийти раньше,
       // чем `signal.reason` доедет до catch, и код ошибки не должен от этого зависеть.
-      const entry = { controller, workspaceKey, abortCode: null as "aborted" | "timeout" | null };
+      const entry = {
+        controller,
+        workspaceKey,
+        abortCode: null as "aborted" | "timeout" | null,
+      };
       active.set(request.requestId, entry);
       const timeout = setTimeout(() => {
         entry.abortCode = "timeout";
@@ -268,7 +304,11 @@ export function createChatAutocompleteService(
         const picked =
           request.modelSelection ?? (await options.modelResolver?.resolveDefaultSelection());
         const selection = picked as
-          | { providerId: string; modelId: string; reasoningLevels?: readonly string[] }
+          | {
+              providerId: string;
+              modelId: string;
+              reasoningLevels?: readonly string[];
+            }
           | null
           | undefined;
         if (!selection) {
@@ -343,7 +383,16 @@ export function createChatAutocompleteService(
         });
 
         const normalized = clipGhostSuggestion(generated.text);
-        const suggestion = removePrefixOverlap(request.prefix, normalized);
+        const overlapped = removePrefixOverlap(request.prefix, normalized);
+        const suggestion = filterAssistantVoiceSuggestion(overlapped);
+        if (!suggestion && overlapped) {
+          // Модель ответила как ассистент. Подсказку не показываем и не кладём в кэш;
+          // в лог идёт только причина, без текста ответа.
+          logger.debug(undefined, "Chat autocomplete filtered assistant voice", {
+            requestId: request.requestId,
+            reason: detectAssistantVoiceSuggestion(overlapped),
+          });
+        }
         if (!suggestion.trim()) {
           throw new ChatAutocompleteError("empty_suggestion", "Model returned no continuation");
         }

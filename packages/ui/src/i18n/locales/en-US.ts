@@ -522,105 +522,147 @@ const enUS: Record<string, string> = {
   "settings.stage4.noMatches": "No settings match the search.",
   "settings.stage4.tokens": "tokens",
   "settings.stage4.agentReasoning.title": "Agent and reasoning",
-  "settings.stage4.agentReasoning.description": "Reasoning depth, working context and the auto-repair loop. Affects answer quality, speed and token spend.",
+  "settings.stage4.agentReasoning.description":
+    "Reasoning depth, working context and the auto-repair loop. Affects answer quality, speed and token spend.",
   "settings.stage4.promptDepth": "Reasoning depth",
-  "settings.stage4.promptDepth.description": "`standard` is faster and cheaper, `deep` adds analysis, `max_reasoning` maximises quality at the cost of tokens and latency.",
+  "settings.stage4.promptDepth.description":
+    "`standard` is faster and cheaper, `deep` adds analysis, `max_reasoning` maximises quality at the cost of tokens and latency.",
   "settings.stage4.promptDepth.standard": "Standard",
   "settings.stage4.promptDepth.deep": "Deep",
   "settings.stage4.promptDepth.max_reasoning": "Max reasoning",
   "settings.stage4.workingContextCeiling": "Working context ceiling",
-  "settings.stage4.workingContextCeiling.description": "Tokens the agent keeps in the working window. Higher is steadier on big tasks but costs more per request.",
+  "settings.stage4.workingContextCeiling.description":
+    "Tokens the agent keeps in the working window. Higher is steadier on big tasks but costs more per request.",
   "settings.stage4.autoRepair": "Auto-repair loop",
-  "settings.stage4.autoRepair.description": "Fix build, lint and test failures before handing the result over.",
+  "settings.stage4.autoRepair.description":
+    "Fix build, lint and test failures before handing the result over.",
   "settings.stage4.autoRepair.iterations": "Max iterations",
-  "settings.stage4.autoRepair.iterations.description": "Caps how many repair rounds run; each round spends tokens.",
+  "settings.stage4.autoRepair.iterations.description":
+    "Caps how many repair rounds run; each round spends tokens.",
   "settings.stage4.autoRepair.elapsed": "Auto-repair time limit",
   "settings.stage4.autoRepair.elapsed.description": "Total wall-clock budget for the repair loop.",
   "settings.stage4.promptEnhancer.title": "Prompt enhancement",
-  "settings.stage4.promptEnhancer.description": "The Enhance Prompt button and `/enhance` rewrite the draft with more structure while keeping intent.",
+  "settings.stage4.promptEnhancer.description":
+    "The Enhance Prompt button and `/enhance` rewrite the draft with more structure while keeping intent.",
   "settings.stage4.promptEnhancer.enabled": "Enable prompt enhancement",
-  "settings.stage4.promptEnhancer.enabled.description": "Disabling hides the button and the slash command from the composer.",
+  "settings.stage4.promptEnhancer.enabled.description":
+    "Disabling hides the button and the slash command from the composer.",
   "settings.stage4.promptEnhancer.style": "Enhancement style",
-  "settings.stage4.promptEnhancer.style.description": "`structured` is engineering-shaped, `concise` is shorter, `deep_architectural` suits system prompts.",
+  "settings.stage4.promptEnhancer.style.description":
+    "`structured` is engineering-shaped, `concise` is shorter, `deep_architectural` suits system prompts.",
   "settings.stage4.promptEnhancer.style.structured": "Structured",
   "settings.stage4.promptEnhancer.style.concise": "Concise and direct",
   "settings.stage4.promptEnhancer.style.deep": "Deep architectural",
   "settings.stage4.promptEnhancer.maxSources": "Context source limit",
-  "settings.stage4.promptEnhancer.maxSources.description": "How many sources (code, diffs, history) to blend. 0 means draft only.",
+  "settings.stage4.promptEnhancer.maxSources.description":
+    "How many sources (code, diffs, history) to blend. 0 means draft only.",
   "settings.stage4.promptEnhancer.codeIndex": "Use code index",
-  "settings.stage4.promptEnhancer.codeIndex.description": "Pull relevant symbols from the index: more precise, more expensive.",
+  "settings.stage4.promptEnhancer.codeIndex.description":
+    "Pull relevant symbols from the index: more precise, more expensive.",
   "settings.stage4.promptEnhancer.history": "Use conversation history",
-  "settings.stage4.promptEnhancer.history.description": "Consider recent messages so the task context is not lost.",
+  "settings.stage4.promptEnhancer.history.description":
+    "Consider recent messages so the task context is not lost.",
+  "settings.stage4.proactiveSuggestion.title": "Proactive next-task suggestion",
+  "settings.stage4.proactiveSuggestion.description":
+    "After a completed turn, focusing the empty composer suggests the next task. Tab or a click inserts it; it is never sent automatically.",
+  "settings.stage4.proactiveSuggestion.enabled": "Enable proactive suggestions",
+  "settings.stage4.proactiveSuggestion.enabled.description":
+    "On by default. One suggestion per completed turn, built from recent messages, diffs and tool results; each hint costs tokens. Leaving the composer or disabling the setting cancels a pending request.",
+  "composer.proactiveSuggestion.loading": "Thinking of a next step…",
+  "composer.proactiveSuggestion.hint": "Tab to insert",
+  "composer.proactiveSuggestion.dismiss": "Dismiss suggestion",
   "settings.stage4.chatAutocomplete.title": "Chat autocomplete",
-  "settings.stage4.chatAutocomplete.description": "Grey ghost text continues your thought in the composer. Tab accepts all, ArrowRight a word, Escape dismisses.",
+  "settings.stage4.chatAutocomplete.description":
+    "Grey ghost text continues your thought in the composer. Tab accepts all, ArrowRight a word, Escape dismisses.",
   "settings.stage4.chatAutocomplete.enabled": "Enable ghost autocomplete",
-  "settings.stage4.chatAutocomplete.enabled.description": "Calls a fast model when typing pauses.",
+  "settings.stage4.chatAutocomplete.enabled.description":
+    "On by default: a short request runs only after you pause typing (debounce 250–700 ms); each hint costs tens of tokens on a fast model.",
   "settings.stage4.chatAutocomplete.debounce": "Base delay",
-  "settings.stage4.chatAutocomplete.debounce.description": "Pause before the request; it grows automatically up to 700 ms while typing fast.",
+  "settings.stage4.chatAutocomplete.debounce.description":
+    "Pause before the request; it grows automatically up to 700 ms while typing fast.",
   "settings.stage4.chatAutocomplete.acceptWord": "Accept a word on ArrowRight",
-  "settings.stage4.chatAutocomplete.acceptWord.description": "Otherwise a word is accepted only by clicking the suggestion.",
+  "settings.stage4.chatAutocomplete.acceptWord.description":
+    "Otherwise a word is accepted only by clicking the suggestion.",
   "settings.stage4.chatAutocomplete.cursorAtEnd": "Only at end of text",
-  "settings.stage4.chatAutocomplete.cursorAtEnd.description": "Do not suggest with the caret mid-text, so editing stays predictable.",
+  "settings.stage4.chatAutocomplete.cursorAtEnd.description":
+    "Do not suggest with the caret mid-text, so editing stays predictable.",
   "settings.stage4.chatAutocomplete.history": "Context: conversation history",
   "settings.stage4.chatAutocomplete.openFiles": "Context: open files",
   "settings.stage4.chatAutocomplete.diffs": "Context: active diffs",
   "settings.stage4.chatAutocomplete.codeIndex": "Context: code index",
   "settings.stage4.chatAutocomplete.lexicon": "Adapt to my style",
-  "settings.stage4.chatAutocomplete.lexicon.description": "Personal term and language profile; only aggregates are stored and secrets are stripped.",
+  "settings.stage4.chatAutocomplete.lexicon.description":
+    "Personal term and language profile; only aggregates are stored and secrets are stripped.",
   "settings.stage4.chatAutocomplete.clearLexicon": "Clear lexicon profile",
-  "settings.stage4.chatAutocomplete.clearLexicon.description": "Deletes the stored vocabulary and style statistics for this workspace.",
+  "settings.stage4.chatAutocomplete.clearLexicon.description":
+    "Deletes the stored vocabulary and style statistics for this workspace.",
   "settings.stage4.chatAutocomplete.clearLexicon.action": "Clear",
   "settings.stage4.parallelJobs.title": "Parallel and background work",
-  "settings.stage4.parallelJobs.description": "How many subagents run and what happens when their paths overlap.",
+  "settings.stage4.parallelJobs.description":
+    "How many subagents run and what happens when their paths overlap.",
   "settings.stage4.parallelJobs.maxSubagents": "Max parallel subagents",
-  "settings.stage4.parallelJobs.maxSubagents.description": "0 auto-tunes to available cores. More parallelism is faster but heavier.",
+  "settings.stage4.parallelJobs.maxSubagents.description":
+    "0 auto-tunes to available cores. More parallelism is faster but heavier.",
   "settings.stage4.parallelJobs.pathConflict": "Path conflicts",
-  "settings.stage4.parallelJobs.pathConflict.description": "`block` waits, `wave` runs in waves, `worktree` isolates into a separate worktree.",
+  "settings.stage4.parallelJobs.pathConflict.description":
+    "`block` waits, `wave` runs in waves, `worktree` isolates into a separate worktree.",
   "settings.stage4.parallelJobs.pathConflict.block": "Block",
   "settings.stage4.parallelJobs.pathConflict.wave": "Waves",
   "settings.stage4.parallelJobs.pathConflict.worktree": "Separate worktree",
   "settings.stage4.parallelJobs.backgroundFileTasks": "Background file tasks",
-  "settings.stage4.parallelJobs.backgroundFileTasks.description": "Indexing and search run in the background without blocking the task.",
+  "settings.stage4.parallelJobs.backgroundFileTasks.description":
+    "Indexing and search run in the background without blocking the task.",
   "settings.stage4.codeIndex.title": "Code indexing",
-  "settings.stage4.codeIndex.description": "The hybrid index speeds up semantic search and autocomplete context.",
+  "settings.stage4.codeIndex.description":
+    "The hybrid index speeds up semantic search and autocomplete context.",
   "settings.stage4.codeIndex.autoStart": "Auto-start indexing",
   "settings.stage4.codeIndex.autoStart.description": "Start indexing when a workspace opens.",
   "settings.stage4.codeIndex.vectorChannel": "Vector channel",
-  "settings.stage4.codeIndex.vectorChannel.description": "Disabling switches search to lexical mode: cheaper, but without semantics.",
+  "settings.stage4.codeIndex.vectorChannel.description":
+    "Disabling switches search to lexical mode: cheaper, but without semantics.",
   "settings.stage4.codeIndex.tokenBudget": "Result budget",
-  "settings.stage4.codeIndex.tokenBudget.description": "How many tokens of results go into context.",
+  "settings.stage4.codeIndex.tokenBudget.description":
+    "How many tokens of results go into context.",
   "settings.stage4.codeIndex.excluded": "Excluded directories",
-  "settings.stage4.codeIndex.excluded.description": "Comma-separated list: skip generated and vendor directories.",
+  "settings.stage4.codeIndex.excluded.description":
+    "Comma-separated list: skip generated and vendor directories.",
   "settings.stage4.sandbox.title": "Sandbox and computer use",
   "settings.stage4.sandbox.description": "Bash isolation and permissions for computer control.",
   "settings.stage4.sandbox.mode": "Sandbox mode",
-  "settings.stage4.sandbox.mode.description": "`off` disables isolation (default). `bwrap`/`seatbelt` opt in explicitly.",
+  "settings.stage4.sandbox.mode.description":
+    "`off` disables isolation (default). `bwrap`/`seatbelt` opt in explicitly.",
   "settings.stage4.sandbox.mode.auto": "Auto",
   "settings.stage4.sandbox.mode.bwrap": "bubblewrap (Linux)",
   "settings.stage4.sandbox.mode.seatbelt": "seatbelt (macOS)",
   "settings.stage4.sandbox.mode.off": "Off",
   "settings.stage4.sandbox.network": "Bash network access",
-  "settings.stage4.sandbox.network.description": "Allow networking inside the sandbox. Disabling is safer but breaks dependency installs.",
+  "settings.stage4.sandbox.network.description":
+    "Allow networking inside the sandbox. Disabling is safer but breaks dependency installs.",
   "settings.stage4.sandbox.timeout": "Command timeout",
   "settings.stage4.sandbox.timeout.description": "Upper bound for a single command in the sandbox.",
   "settings.stage4.sandbox.cuaScreenshot": "Screen screenshots",
   "settings.stage4.sandbox.cuaScreenshot.description": "Let the agent read the screen.",
-  "settings.stage4.sandbox.cuaUnavailable": "Computer use is unavailable on this platform or in a remote workspace.",
+  "settings.stage4.sandbox.cuaUnavailable":
+    "Computer use is unavailable on this platform or in a remote workspace.",
   "settings.stage4.sandbox.cuaPointer": "Pointer control",
   "settings.stage4.sandbox.cuaKeyboard": "Keyboard input",
   "settings.stage4.sandbox.cuaClipboard": "Clipboard access",
   "settings.stage4.browser.title": "Browser",
   "settings.stage4.browser.description": "Telemetry and snapshot budgets for the embedded browser.",
   "settings.stage4.browser.telemetry": "Browser telemetry",
-  "settings.stage4.browser.telemetry.description": "Send anonymous usage statistics; off by default.",
+  "settings.stage4.browser.telemetry.description":
+    "Send anonymous usage statistics; off by default.",
   "settings.stage4.browser.screenshotBudget": "Screenshot budget",
-  "settings.stage4.browser.screenshotBudget.description": "Maximum size of a single screenshot in bytes.",
+  "settings.stage4.browser.screenshotBudget.description":
+    "Maximum size of a single screenshot in bytes.",
   "settings.stage4.browser.ariaNodes": "ARIA node limit",
   "settings.stage4.browser.ariaNodes.description": "How many nodes an ARIA snapshot includes.",
   "settings.stage4.browser.autoClose": "Auto-close dialogs",
-  "settings.stage4.browser.autoClose.description": "Automatically dismiss modal windows that block progress.",
+  "settings.stage4.browser.autoClose.description":
+    "Automatically dismiss modal windows that block progress.",
   "chat.composer.enhancePrompt": "Enhance prompt",
-  "chat.composer.enhancePromptHint": "Rewrite the draft more structurally, keeping intent and mentions",
+  "chat.composer.enhancePromptHint":
+    "Rewrite the draft more structurally, keeping intent and mentions",
   "chat.composer.enhancePromptCancel": "Cancel enhancement",
   "chat.composer.enhancePromptUndo": "Revert edit",
   "chat.slash.app.enhance.label": "Enhance prompt",
@@ -3432,9 +3474,11 @@ const enUS: Record<string, string> = {
   "settings.notificationSoundDescription":
     "When notifications are enabled, you can mute the task notification sound separately.",
   "settings.telemetryEnabled": "Send anonymous usage telemetry",
-  "settings.telemetryEnabledDescription": "Help improve ZCode with anonymous error and feature-usage events. Code, prompts, file paths and credentials are never sent.",
+  "settings.telemetryEnabledDescription":
+    "Help improve ZCode with anonymous error and feature-usage events. Code, prompts, file paths and credentials are never sent.",
   "settings.workspaceBoundary": "Workspace file boundary",
-  "settings.workspaceBoundaryDescription": "Controls access outside the workspace for Read/Write/Edit/Bash: strict denies, ask requires approval, allow keeps legacy behavior. Applies to new sessions.",
+  "settings.workspaceBoundaryDescription":
+    "Controls access outside the workspace for Read/Write/Edit/Bash: strict denies, ask requires approval, allow keeps legacy behavior. Applies to new sessions.",
   "settings.workspaceBoundary.strict": "Strict — deny outside paths",
   "settings.workspaceBoundary.ask": "Ask — require approval",
   "settings.workspaceBoundary.allow": "Allow — no restriction",
@@ -8888,7 +8932,8 @@ const enUS: Record<string, string> = {
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · {duration}s saved",
   "globalNotice.highspeed.close": "Close Highspeed share card",
   ...requestSecurityMessagesEnUS,
-  "subagentDirectory.hostAcceptance.verified": "Host check: declared command exited 0 · {passed}/{total} criteria",
+  "subagentDirectory.hostAcceptance.verified":
+    "Host check: declared command exited 0 · {passed}/{total} criteria",
   "subagentDirectory.hostAcceptance.rejected": "Host check failed · {passed}/{total} criteria",
   "subagentDirectory.hostAcceptance.unknown": "Host check not run · {passed}/{total} criteria",
 };

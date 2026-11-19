@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.17.134](https://github.com/m1krot1k1/Zcode/compare/v3.17.133...v3.17.134) (2026-11-19)
+
+### Features
+
+* **chat:** продолжать ghost-подсказкой черновик пользователя, а не отвечать на него
+  * промпт сервиса `chat-autocomplete` требует только суффикс продолжения в лице, языке и регистре пользователя; история диалога и ответы ассистента передаются как контекст, но не как образец голоса
+  * детерминированный фильтр `shared-chat-autocomplete/postprocess.ts` отбрасывает ассистентский план, мета-комментарий и markdown-план; отфильтрованный ответ возвращается как штатный `empty_suggestion`, не попадает в кэш и не показывается в UI
+  * `chatAutocompleteSettings.enabled` включён по умолчанию; запрос ограничен дебаунсом, `minPrefixChars`, кэшем префиксов и бюджетом 48 выходных токенов
+  * регрессия: `contract.test.ts`, `userVoiceContinuation.test.ts`, `useChatAutocomplete.test.tsx` и `lexical-ghost-autocomplete/contract.test.ts` покрывают user-voice, фильтрацию assistant-voice и клиентскую отмену/дебаунс
+* **composer:** предлагать следующую задачу после завершённого turn
+  * после `completedSuccess` при фокусе на пустом композере `ComposerProactiveSuggestion` запрашивает одну короткую подсказку и показывает её над вводом; черновик не отправляется автоматически
+  * `Tab` на редакторе или клик вставляют подсказку, `Escape` и кнопка dismiss скрывают; уход фокуса за пределы композера отменяет запрос
+  * анти-спам: не больше двух запросов на turn, успешный ответ кэшируется по turn и повторный focus не тратит токены; смена turn сбрасывает кэш и счётчик попыток
+  * сервис `proactive-suggestion` зарегистрирован в accessor и Node registration и доступен в Electron и Web (включая remote/mobile); настройка `proactiveSuggestionSettings` включена по умолчанию с одной подсказкой на turn, строки добавлены в `ru-RU`, `en-US`, `zh-CN`
+  * регрессия: `proactiveSuggestion.test.ts`, `proactiveSuggestionHook.test.tsx`, shared/services/composer contract-тесты, `remoteServiceAccess.test.ts` и host-тесты регистрации сервиса
+
 ## [3.17.133](https://github.com/m1krot1k1/Zcode/compare/v3.17.132...v3.17.133) (2026-11-19)
 
 ### Features

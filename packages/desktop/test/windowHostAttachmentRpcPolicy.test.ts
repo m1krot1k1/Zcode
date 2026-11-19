@@ -26,11 +26,14 @@ describe("Window Host attachment RPC policy", () => {
     expect(policy?.allowedChannels.has(ServiceChannels.TaskGroups)).toBe(true);
     expect(policy?.allowedChannels.has(ServiceChannels.RemoteProjects)).toBe(true);
     expect(policy?.allowedChannels.has("repo-wiki")).toBe(false);
+    // Новая подсказка монтируется в общем композере и на телефоне; неприкрытый
+    // канал даёт таймаут вместо no-op, поэтому allowlist проверяем явно.
+    expect(policy?.allowedChannels.has(ServiceChannels.ProactiveSuggestion)).toBe(true);
     const registeredChannels = new Set<string>(Object.values(ServiceChannels));
     expect([...policy!.allowedChannels].every((channel) => registeredChannels.has(channel))).toBe(
       true,
     );
-    expect(policy?.allowedChannels.size).toBe(46);
+    expect(policy?.allowedChannels.size).toBe(47);
   });
 
   it("keeps the complete service surface for desktop attachments", () => {

@@ -2288,6 +2288,7 @@ modules:
     requires:
       - shared
       - shared-chat-autocomplete
+      - shared-proactive-suggestion
     publicEntrypoints:
       - packages/shared/src/stage4-settings/index.ts
       - packages/shared/src/stage4-settings/settings.ts
@@ -2321,6 +2322,43 @@ modules:
     layers:
       adapters: .
     owner: conversation
+  # shared-proactive-suggestion：由 architecture:adopt 登记
+  - id: shared-proactive-suggestion
+    roots:
+      - packages/shared/src/proactive-suggestion
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/proactive-suggestion/index.ts
+      - packages/shared/src/proactive-suggestion/contract.ts
+    layers:
+      domain: .
+  # services-proactive-suggestion：由 architecture:adopt 登记
+  - id: services-proactive-suggestion
+    roots:
+      - packages/services/src/proactive-suggestion
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/proactive-suggestion/index.ts
+      - packages/services/src/proactive-suggestion/contract.ts
+    layers:
+      app: .
+  # ui-composer-proactive-suggestion：由 architecture:adopt 登记
+  - id: ui-composer-proactive-suggestion
+    roots:
+      - packages/ui/src/v4/composer/proactive-suggestion
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/proactive-suggestion/index.ts
+      - packages/ui/src/v4/composer/proactive-suggestion/contract.ts
+    layers:
+      ui: .
 
 exceptions:
   # Two focused helpers added with the root-auto and crash-resume specs. Keep the

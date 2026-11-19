@@ -3,6 +3,7 @@ import type {
   BrowserAssistantSettings,
   ChatAutocompleteSettings,
   CodeIndexSettings,
+  ProactiveSuggestionSettings,
   ParallelJobsSettings,
   PromptEnhancerSettings,
   SandboxSettings,
@@ -20,6 +21,7 @@ export type Stage4SettingsGroupId =
   | "agentReasoning"
   | "promptEnhancer"
   | "chatAutocomplete"
+  | "proactiveSuggestion"
   | "parallelJobs"
   | "codeIndex"
   | "sandbox"
@@ -49,6 +51,11 @@ export const STAGE4_SETTINGS_GROUPS: readonly Stage4SettingsGroupDescriptor[] = 
     descriptionId: "settings.stage4.chatAutocomplete.description",
   },
   {
+    id: "proactiveSuggestion",
+    titleId: "settings.stage4.proactiveSuggestion.title",
+    descriptionId: "settings.stage4.proactiveSuggestion.description",
+  },
+  {
     id: "parallelJobs",
     titleId: "settings.stage4.parallelJobs.title",
     descriptionId: "settings.stage4.parallelJobs.description",
@@ -75,6 +82,7 @@ export interface Stage4SettingsPatchSurface {
   agentCoreAdvanced?: AgentCoreAdvancedSettings;
   promptEnhancerSettings?: PromptEnhancerSettings;
   chatAutocompleteSettings?: ChatAutocompleteSettings;
+  proactiveSuggestionSettings?: ProactiveSuggestionSettings;
   parallelJobsSettings?: ParallelJobsSettings;
   codeIndexSettings?: CodeIndexSettings;
   sandboxSettings?: SandboxSettings;

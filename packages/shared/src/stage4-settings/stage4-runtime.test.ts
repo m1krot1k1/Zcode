@@ -22,7 +22,10 @@ describe("stage4 settings runtime projection", () => {
   it("подставляет дефолты для устаревшего setting.json без новых секций", () => {
     const resolved = resolveStage4Settings({});
     expect(resolved.agentCoreAdvanced.workingContextCeilingTokens).toBe(120_000);
-    expect(resolved.chatAutocompleteSettings.enabled).toBe(false);
+    // Ghost-подсказка включена по умолчанию; выключение — явный выбор пользователя.
+    expect(resolved.chatAutocompleteSettings.enabled).toBe(true);
+    expect(resolved.proactiveSuggestionSettings.enabled).toBe(true);
+    expect(resolved.proactiveSuggestionSettings.maxSuggestionsPerTurn).toBe(1);
     expect(resolved.sandboxSettings.mode).toBe("off");
     expect(resolved.browserAssistantSettings.ariaSnapshotMaxNodes).toBe(4_000);
     // Новый setting.json должен сразу сохранять off, а не только нормализоваться
@@ -58,13 +61,21 @@ describe("stage4 settings runtime projection", () => {
         mode: "bwrap" as const,
         allowBashNetwork: false,
         commandTimeoutMs: 60_000,
-        cuaPermissions: { screenshot: false, pointer: true, keyboard: false, clipboard: true },
+        cuaPermissions: {
+          screenshot: false,
+          pointer: true,
+          keyboard: false,
+          clipboard: true,
+        },
       },
     };
     const runtime = projectStage4SettingsToSessionPreferences(settings);
     expect(runtime.workingContextCeilingTokens).toBe(240_000);
     expect(runtime.enableAutoRepairLoop).toBe(true);
-    expect(runtime.autoRepairLoopLimits).toEqual({ maxIterations: 6, maxElapsedMs: 300_000 });
+    expect(runtime.autoRepairLoopLimits).toEqual({
+      maxIterations: 6,
+      maxElapsedMs: 300_000,
+    });
     expect(runtime.subagentMaxParallel).toBe(4);
     // Песочница вне `off` не ослабляет границу workspace.
     expect(runtime.workspaceBoundary).toBe("ask");
@@ -86,7 +97,9 @@ describe("stage4 settings runtime projection", () => {
 
   it("отклоняет значения вне диапазона вместо тихого сброса", () => {
     expect(
-      agentCoreAdvancedSettingsSchema.safeParse({ autoRepairLoopMaxIterations: 99 }).success,
+      agentCoreAdvancedSettingsSchema.safeParse({
+        autoRepairLoopMaxIterations: 99,
+      }).success,
     ).toBe(false);
     expect(chatAutocompleteSettingsSchema.safeParse({ debounceMs: 10 }).success).toBe(false);
   });

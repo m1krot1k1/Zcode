@@ -42,6 +42,7 @@ import {
   ITaskGroupService,
   IRemoteProjectService,
   IPromptAttachmentTransferService,
+  IProactiveSuggestionService,
   type ServiceDescriptor,
   type IServiceAccessor,
 } from "@zcode/services";
@@ -102,6 +103,7 @@ export const REMOTE_WORKSPACE_RPC_REGISTRATIONS = [
   ["outputStyleService", IOutputStyleService],
   ["settingsSyncService", ISettingsSyncService],
   ["promptAttachmentTransferService", IPromptAttachmentTransferService],
+  ["proactiveSuggestionService", IProactiveSuggestionService],
 ] as const satisfies readonly [keyof IServiceAccessor, ServiceDescriptor<unknown>][];
 
 const conversationShareLog = createServiceLogger("conversation-share");
@@ -256,7 +258,10 @@ export function createServerRemoteWorkspaceServiceCollection(params: {
     .register(
       IPromptAttachmentTransferService,
       params.connectionServices.promptAttachmentTransferService,
-    );
+    )
+    // Проактивная подсказка идёт тем же каналом, что ghost-autocomplete: если Source уже
+    // регистрирует сервис, Host только форвардит канал, не создавая второй модели-пайплайн.
+    .register(IProactiveSuggestionService, params.connectionServices.proactiveSuggestionService);
   // 新频道必须以握手能力为准；客户端总能生成 proxy，不能用对象存在性判断旧 Server 支持。
   if (params.virtualProjects) {
     if (

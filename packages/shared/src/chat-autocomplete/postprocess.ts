@@ -37,7 +37,10 @@ const MULTILINE_CUT = /[\r\n]/;
  * Срезает продолжение до первой строки и отбрасывает строки-комментарии кода:
  * ghost-текст должен оставаться коротким однострочным продолжением мысли.
  */
-export function clipGhostSuggestion(raw: string, maxChars = CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS): string {
+export function clipGhostSuggestion(
+  raw: string,
+  maxChars = CHAT_AUTOCOMPLETE_MAX_SUGGESTION_CHARS,
+): string {
   const trimmed = raw.replace(/^\s+/, "");
   if (!trimmed) return "";
   const newlineAt = trimmed.search(MULTILINE_CUT);
@@ -66,10 +69,160 @@ export function removePrefixOverlap(prefix: string, suggestion: string): string 
 }
 
 /** Следующее слово для пословного принятия подсказки (`ArrowRight`). */
-export function takeNextWord(suggestion: string): { word: string; rest: string } {
+export function takeNextWord(suggestion: string): {
+  word: string;
+  rest: string;
+} {
   const match = /^\s*\S+\s*/.exec(suggestion);
   if (!match) return { word: "", rest: suggestion };
   return { word: match[0], rest: suggestion.slice(match[0].length) };
+}
+
+/** Причина, по которой продолжение звучит как ответ или план ассистента. */
+export type AssistantVoiceViolation =
+  | "assistant_action_plan"
+  | "assistant_meta_commentary"
+  | "assistant_markup_plan";
+
+interface AssistantVoicePattern {
+  reason: AssistantVoiceViolation;
+  pattern: RegExp;
+}
+
+/** Глаголы первого лица, которыми ассистент описывает собственные действия. */
+const RU_ASSISTANT_ACTION_VERBS = [
+  "изучу",
+  "изучим",
+  "посмотрю",
+  "посмотрим",
+  "проверю",
+  "проверим",
+  "проанализирую",
+  "проанализируем",
+  "исследую",
+  "прочитаю",
+  "прочитаем",
+  "открою",
+  "откроем",
+  "найду",
+  "найд[её]м",
+  "разберусь",
+  "разбер[её]мся",
+  "запущу",
+  "запустим",
+  "выполню",
+  "выполним",
+  "гляну",
+  "глянем",
+  "начну",
+  "начн[её]м",
+].join("|");
+
+const RU_SEQUENCE_MARKERS =
+  "сначала|затем|потом|далее|после этого|теперь|сейчас|для начала|первым делом|в первую очередь";
+
+/**
+ * Детерминированный фильтр ассистентского голоса.
+ *
+ * Причина бага: модель иногда отвечает на черновик пользователя как ассистент
+ * («Сначала изучу…, затем проверю»). Промпт снижает вероятность, но не гарантирует
+ * голос, поэтому явные ассистентские конструкции отбрасываются на контракте.
+ * Проверяется только начало подсказки: легитимные пользовательские продолжения
+ * («Сначала надо проверить…», «Проверить, что…») не блокируются.
+ */
+const ASSISTANT_VOICE_PATTERNS: readonly AssistantVoicePattern[] = [
+  {
+    reason: "assistant_action_plan",
+    // «Сначала изучу…», «Затем проверю…», «Далее проанализирую…».
+    pattern: new RegExp(
+      `^(?:${RU_SEQUENCE_MARKERS})\\s*[,:]?\\s*(?:я\\s+)?(?:${RU_ASSISTANT_ACTION_VERBS})(?![а-яёa-z])`,
+      "iu",
+    ),
+  },
+  {
+    reason: "assistant_action_plan",
+    // «Проверю…», «Изучу…», «Начну с…» без временного маркера.
+    pattern: new RegExp(`^(?:я\\s+)?(?:${RU_ASSISTANT_ACTION_VERBS})(?![а-яёa-z])`, "iu"),
+  },
+  {
+    reason: "assistant_action_plan",
+    // «Давайте посмотрим…» — обращение к пользователю/себе.
+    pattern:
+      /^(?:давай|давайте)\s+(?:я\s+)?(?:посмотрим|проверим|изучим|разбер[её]мся|начн[её]м|глянем)(?![а-яёa-z])/iu,
+  },
+  {
+    reason: "assistant_action_plan",
+    // «First, I check…», «Then I will inspect…».
+    pattern:
+      /^(?:first|then|next)\s*,?\s*(?:i|i'll|i will|i'm going to|i am going to)\s+(?:check|review|examine|inspect|look|read|open|find|search|analy[sz]e|start|begin|implement|update|run|fix|add|write|verify|confirm)\b/i,
+  },
+  {
+    reason: "assistant_action_plan",
+    // «I'll check…», «Let me look…», «Let's start…».
+    pattern:
+      /^(?:i'll|i will|i'm going to|i am going to|let me|let's)\s+(?:check|review|examine|inspect|look|read|open|find|search|analy[sz]e|start|begin|implement|update|run|fix|add|write|verify|confirm)\b/i,
+  },
+  {
+    reason: "assistant_meta_commentary",
+    // «Конечно, вот…», «Понял, сейчас…», «Хорошо, я…».
+    pattern:
+      /^(?:конечно|разумеется|хорошо|отлично|понял|поняла|принято)\s*[,!.:]?\s*(?:вот|сейчас|давайте|я|ниже)(?![а-яёa-z])/iu,
+  },
+  {
+    reason: "assistant_meta_commentary",
+    // «Вот что…», «Ниже…», «Надеюсь…», «Как ИИ…».
+    pattern:
+      /^(?:вот что|вот как|ниже|итак|надеюсь|если (?:нужно|хотите|вам нужно)|дайте знать|обратите внимание|как (?:ии|ассистент|языковая модель))(?![а-яёa-z])/iu,
+  },
+  {
+    reason: "assistant_meta_commentary",
+    pattern:
+      /^(?:i'm sorry|i am sorry|i cannot|i can't|as an ai|as a language model|here's|here is|below is|hope this helps|feel free|of course|absolutely|great question)\b/i,
+  },
+  {
+    reason: "assistant_markup_plan",
+    // Заголовки, code fences, цитаты и именованные планы.
+    pattern: /^(?:#{1,6}\s|```|>\s|(?:план|шаги|steps?)\s*[:.-]|(?:шаг|step)\s*\d)/iu,
+  },
+];
+
+/**
+ * Снимает обёртки, не меняющие голос: кавычки, markdown-акценты, маркеры списка и
+ * номер пункта. Нумерованный пользовательский список сам по себе не запрещён —
+ * номер снимается только для распознавания начала фразы.
+ */
+function normalizeAssistantVoiceHead(suggestion: string): string {
+  return (
+    suggestion
+      .trimStart()
+      .replace(/^\d+[.)]\s+/, "")
+      .replace(/^[-+*•·]\s+/, "")
+      // Обратные кавычки не снимаем: code fence `\`\`\`` должен попасть в markup-правило.
+      .replace(/^["'«»*_]+/, "")
+      .trimStart()
+  );
+}
+
+/**
+ * Возвращает причину отказа, если продолжение звучит как ассистент, иначе `null`.
+ * Чистая функция: без IO и без обращения к модели.
+ */
+export function detectAssistantVoiceSuggestion(suggestion: string): AssistantVoiceViolation | null {
+  if (!suggestion.trim()) return null;
+  const head = normalizeAssistantVoiceHead(suggestion);
+  if (!head) return null;
+  for (const candidate of ASSISTANT_VOICE_PATTERNS) {
+    if (candidate.pattern.test(head)) return candidate.reason;
+  }
+  return null;
+}
+
+/**
+ * Пропускает пользовательское продолжение без изменений; ассистентский голос
+ * превращает в пустую строку (существующая семантика `empty_suggestion`).
+ */
+export function filterAssistantVoiceSuggestion(suggestion: string): string {
+  return detectAssistantVoiceSuggestion(suggestion) ? "" : suggestion;
 }
 
 const SECRET_PATTERNS: readonly RegExp[] = [
@@ -115,7 +268,13 @@ export function sanitizeForLexicon(value: string): string | null {
     .replace(PASSWORD_ASSIGNMENT_PATTERN, " ");
   const kept = text
     .split(/\s+/)
-    .filter((word) => !(word.length >= HIGH_ENTROPY_MIN_LENGTH && shannonEntropyPerChar(word) > HIGH_ENTROPY_THRESHOLD))
+    .filter(
+      (word) =>
+        !(
+          word.length >= HIGH_ENTROPY_MIN_LENGTH &&
+          shannonEntropyPerChar(word) > HIGH_ENTROPY_THRESHOLD
+        ),
+    )
     .join(" ")
     .trim();
   return kept.length >= 3 ? kept : null;

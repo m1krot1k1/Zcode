@@ -17,6 +17,7 @@ import {
   IPluginsService,
   ISubagentsService,
   ISettingsSyncService,
+  IProactiveSuggestionService,
   IProjectService,
   IRemoteProjectService,
   ITaskGroupService,
@@ -164,6 +165,9 @@ describe("server remote workspace host service wiring", () => {
       remoteServices.sourceServerWorkspaceService,
     );
     expect(services.get(IPluginSyncService)).toBe(remoteServices.pluginSyncService);
+    expect(services.get(IProactiveSuggestionService)).toBe(
+      remoteServices.proactiveSuggestionService,
+    );
     expect(services.get(IPluginsService)).toBe(remoteServices.pluginsService);
     expect(services.get(ISubagentsService)).toBe(remoteServices.subagentsService);
     expect(services.get(ISettingsSyncService)).toBe(remoteServices.settingsSyncService);

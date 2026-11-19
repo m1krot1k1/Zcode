@@ -122,6 +122,8 @@ export interface IServiceAccessor {
   readonly codeIntelligenceService?: CodeIntelligenceService;
   /** Ghost-text автодополнение; проксируется и на удалённый Host. */
   readonly chatAutocompleteService?: ChatAutocompleteService;
+  /** Проактивная подсказка следующей задачи; отсутствует, если Host не зарегистрировал канал. */
+  readonly proactiveSuggestionService?: import("./proactive-suggestion/contract.js").ProactiveSuggestionService;
   /** Нативное улучшение промптов; отсутствует на Host без соответствующего канала. */
   readonly promptEnhancerService?: PromptEnhancerService;
   /** Available only on the explicitly opted-in window-scoped local Desktop Host. */

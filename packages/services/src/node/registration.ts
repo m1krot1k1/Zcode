@@ -28,6 +28,10 @@ import {
   createChatAutocompleteService,
   IChatAutocompleteService,
 } from "../chat-autocomplete/index.js";
+import {
+  createProactiveSuggestionService,
+  IProactiveSuggestionService,
+} from "../proactive-suggestion/index.js";
 import { ICodingPlanSubscriptionService } from "../coding-plan-subscription/codingPlanSubscription.js";
 import { ServiceCollection } from "../collection.js";
 import { ICommandsService } from "../commands/commands.js";
@@ -502,6 +506,14 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
           gitService,
           zcodeSessionService,
         }),
+      }),
+    )
+    // Переиспользуем тот же транспорт/резолвер, что у ghost-автодополнения:
+    // второй владелец модели или копия путей не нужны.
+    .register(
+      IProactiveSuggestionService,
+      createProactiveSuggestionService({
+        ...createChatAutocompletePaths({ zcodeAgentService, providerRuntime }),
       }),
     )
     .register(ICommandsService, createCommandsService({ isDesktopRuntime: true }))
