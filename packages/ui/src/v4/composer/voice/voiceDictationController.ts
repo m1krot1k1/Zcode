@@ -206,7 +206,12 @@ class VoiceDictationController {
     const latest = getVoiceDictationState();
     const modelId = latest.modelId;
     if (!modelId) {
-      setState({ error: "voice-model-missing" });
+      setState({ status: "idle", settingsOpen: true, error: null });
+      return;
+    }
+    const selectedModel = latest.models.find((model) => model.id === modelId);
+    if (selectedModel && !selectedModel.installed) {
+      setState({ status: "idle", settingsOpen: true, error: null });
       return;
     }
     const input = getActiveLexicalChatInput();
