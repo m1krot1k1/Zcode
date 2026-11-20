@@ -1,27 +1,23 @@
-import { extname, relative, resolve, sep } from "node:path";
-import type { FSWatcher } from "node:fs";
-import chokidar from "chokidar";
+import { extname, resolve } from "node:path";
+import { statSync, watch, type FSWatcher } from "node:fs";
 import { INDEXED_EXTENSIONS } from "./ast/languageRegistry.js";
 import type { CodeWorkspaceRef } from "./contract.js";
 
 /**
- * Watcher изменений workspace на `chokidar@4.0.3`.
+ * Watcher изменений workspace на нативном рекурсивном `node:fs.watch`.
  *
- * Решаемые проблемы v1 (`fs.watch({ recursive: true })`):
- *  - на Linux `recursive` не поддерживается ядром одинаково: часть событий терялась, а
- *    дерево `node_modules` давало поток бесполезных событий;
- *  - не было пре-фильтрации до постановки watch, поэтому inotify-лимит выбивался на больших
- *    проектах (`ENOSPC`);
- *  - не различались create/modify/delete/rename, из-за чего инкрементальное обновление
- *    сводилось к полному rescану.
+ * Почему не `chokidar`: chokidar 4 ставит отдельный `fs.watch` на каждый файл. На macOS
+ * kqueue открывает по одному дескриптору на каждый наблюдаемый файл, поэтому workspace
+ * на 10k+ файлов выбивает `RLIMIT_NOFILE` процесса Host. После этого `spawn` любого
+ * дочернего процесса (Agent CLI, git) падает с `EBADF`, а создание draft-сессии в UI
+ * показывает «草稿会话创建失败». Рекурсивный `fs.watch` использует одну подписку
+ * (FSEvents/ReadDirectoryChangesW, на Linux — каталоговый fallback Node), поэтому число
+ * дескрипторов не зависит от количества файлов.
  *
- * Здесь: `ignored` пре-фильтрует директории до подписки, события коалесцируются дебаунсом
- * `500 мс`, а переполнение (переименование/массовые git-операции) поднимает флаг
- * `overflow`, по которому Host делает полный проход.
+ * События фильтруются по тем же статическим правилам, что и раньше: исключённые
+ * каталоги, бинарники, `.env`, `.min.js` и карты не планируют индексацию. Неизвестный
+ * путь или каталог помечают batch как `overflow` — сервис делает полный проход.
  */
-
-/** Верхняя граница ожидания первичного обхода: большой workspace не должен вешать подписку. */
-const READY_TIMEOUT_MS = 10_000;
 
 const IGNORED_DIRECTORIES = new Set([
   ".git",
@@ -65,25 +61,39 @@ export interface WorkspaceWatcherOptions {
   onChange: (workspace: CodeWorkspaceRef, batch: WatcherChangeBatch) => void;
   onError: (workspace: CodeWorkspaceRef, error: Error) => void;
   onReady?: (workspace: CodeWorkspaceRef) => void;
+  /**
+   * Инъекция для тестов. Продакшен всегда использует `node:fs.watch` с `recursive: true`;
+   * вызывающая сторона не может подменить его на per-file watcher.
+   */
+  watchFactory?: RecursiveWatchFactory;
 }
+
+type WatchEventType = "rename" | "change";
+type WatchListener = (eventType: WatchEventType, filename: string | null) => void;
+export type RecursiveWatchFactory = (
+  path: string,
+  options: { recursive: true; persistent: true },
+  listener: WatchListener,
+) => FSWatcher;
 
 interface WatchEntry {
   root: string;
-  watcher: FSWatcher | ReturnType<typeof chokidar.watch>;
+  watcher: FSWatcher;
   workspace: CodeWorkspaceRef;
   pendingChanged: Set<string>;
   pendingRemoved: Set<string>;
   overflow: boolean;
   timer?: ReturnType<typeof setTimeout>;
   failed: boolean;
-  /** Резолвится по событию `ready` — первичный обход дерева завершён. */
+  /** Резолвится сразу после установки подписки: рекурсивный watch не делает обход дерева. */
   ready: Promise<void>;
 }
 
-function relativePathOf(root: string, absolutePath: string): string | null {
-  const local = relative(root, absolutePath).split(sep).join("/");
-  if (!local || local.startsWith("../") || local === "..") return null;
-  return local;
+function normalizeEventPath(rawPath: string): string | null {
+  const normalized = rawPath.replaceAll("\\", "/").replace(/^\.\//u, "");
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//u.test(normalized)) return null;
+  if (normalized.split("/").includes("..")) return null;
+  return normalized;
 }
 
 function isIgnoredPath(relPath: string): boolean {
@@ -100,11 +110,12 @@ function isIndexable(relPath: string): boolean {
 
 /**
  * Реестр watcher'ов, ключ — `workspaceIdentity?.trim() || workspacePath`.
- * Один watcher на workspace независимо от количества окон и сессий.
+ * Один рекурсивный watcher на workspace независимо от количества окон и сессий.
  */
 export function createWorkspaceWatcherRegistry(options: WorkspaceWatcherOptions) {
   const entries = new Map<string, WatchEntry>();
   const debounceMs = options.debounceMs ?? 500;
+  const watchFactory: RecursiveWatchFactory = options.watchFactory ?? watch;
 
   const keyOf = (workspace: CodeWorkspaceRef): string =>
     workspace.workspaceIdentity?.trim() || workspace.workspacePath;
@@ -132,6 +143,78 @@ export function createWorkspaceWatcherRegistry(options: WorkspaceWatcherOptions)
     if (typeof entry.timer.unref === "function") entry.timer.unref();
   };
 
+  const queueOverflow = (entry: WatchEntry): void => {
+    entry.overflow = true;
+    schedule(entry);
+  };
+
+  const handleEvent = (
+    entry: WatchEntry,
+    eventType: WatchEventType,
+    rawFilename: string | null,
+  ): void => {
+    if (entry.failed) return;
+    if (rawFilename === null) {
+      // Платформа не сообщила путь: точечный инкремент невозможен, только полный проход.
+      queueOverflow(entry);
+      return;
+    }
+    const relPath = normalizeEventPath(rawFilename);
+    if (!relPath) {
+      queueOverflow(entry);
+      return;
+    }
+    // Исключённые каталоги и файлы не индексируются и не должны планировать работу.
+    if (isIgnoredPath(relPath)) return;
+
+    const absolutePath = resolve(entry.root, relPath);
+    let stats: ReturnType<typeof statSync> | undefined;
+    try {
+      stats = statSync(absolutePath);
+    } catch {
+      stats = undefined;
+    }
+
+    if (stats?.isDirectory()) {
+      // Новый/переименованный каталог может содержать готовые файлы (git checkout, распаковка).
+      queueOverflow(entry);
+      return;
+    }
+
+    if (eventType === "change") {
+      if (!isIndexable(relPath)) return;
+      if (!stats) {
+        entry.pendingChanged.delete(relPath);
+        entry.pendingRemoved.add(relPath);
+      } else {
+        entry.pendingRemoved.delete(relPath);
+        entry.pendingChanged.add(relPath);
+      }
+      schedule(entry);
+      return;
+    }
+
+    // rename: создание, замена на месте, удаление или перенос.
+    if (stats) {
+      if (!isIndexable(relPath)) return;
+      entry.pendingRemoved.delete(relPath);
+      entry.pendingChanged.add(relPath);
+      schedule(entry);
+      return;
+    }
+
+    if (isIndexable(relPath)) {
+      entry.pendingChanged.delete(relPath);
+      entry.pendingRemoved.add(relPath);
+      schedule(entry);
+      return;
+    }
+    // Путь исчез и не является индексируемым файлом: это может быть удалённый каталог
+    // (в том числе с точкой в имени) или extensionless-файл. Надёжнее сделать полный проход,
+    // но бинарники/карты и прочие явно неиндексируемые расширения не трогают индекс.
+    if (extname(relPath) === "") queueOverflow(entry);
+  };
+
   const stop = async (workspace: CodeWorkspaceRef | string): Promise<void> => {
     const identityKey = typeof workspace === "string" ? workspace : keyOf(workspace);
     const entry = entries.get(identityKey);
@@ -140,7 +223,7 @@ export function createWorkspaceWatcherRegistry(options: WorkspaceWatcherOptions)
     if (entry.timer) clearTimeout(entry.timer);
     entry.timer = undefined;
     try {
-      await entry.watcher.close();
+      entry.watcher.close();
     } catch {
       // Закрытие уже упавшего watcher'а безопасно игнорировать.
     }
@@ -151,7 +234,6 @@ export function createWorkspaceWatcherRegistry(options: WorkspaceWatcherOptions)
     const root = resolve(workspace.workspacePath);
     const existing = entries.get(identityKey);
     if (existing && existing.root === root && !existing.failed) {
-      // Повторная подписка должна дождаться готовности, а не сообщать о ней раньше времени.
       await existing.ready;
       return false;
     }
@@ -166,110 +248,43 @@ export function createWorkspaceWatcherRegistry(options: WorkspaceWatcherOptions)
       pendingRemoved: new Set(),
       overflow: false,
       failed: false,
-      // Причина отдельного промиса: `chokidar.watch` синхронен, но первичный обход дерева
-      // асинхронен. Пока он идёт, `ignoreInitial` глушит события, и файлы, созданные сразу
-      // после `watchWorkspace`, терялись — индекс расходился с диском до следующего события.
       ready: new Promise<void>((resolveReady) => {
         markReady = resolveReady;
       }),
     };
 
-    if (typeof chokidar.watch !== "function") {
-      // chokidar отсутствует в рантайме: сообщаем явно, а не имитируем наблюдение.
+    try {
+      entry.watcher = watchFactory(
+        root,
+        { recursive: true, persistent: true },
+        (eventType, filename) => handleEvent(entry, eventType, filename),
+      );
+    } catch (error) {
+      // Платформа не умеет рекурсивный watch: сообщаем явно и оставляем ручной Refresh,
+      // не откатываясь на per-file/per-directory подписки (они и выбивают дескрипторы).
       entry.failed = true;
       entries.set(identityKey, entry);
-      options.onError(workspace, new Error("chokidar is unavailable in this runtime."));
+      markReady();
+      options.onError(workspace, error instanceof Error ? error : new Error(String(error)));
       return false;
     }
 
-    const watcher = chokidar.watch(root, {
-      // Пре-фильтрация до постановки inotify-watch: исключённые каталоги не обходятся.
-      ignored: (candidatePath: string) => {
-        const relPath = relativePathOf(root, candidatePath);
-        if (relPath === null) return false;
-        if (relPath === "") return false;
-        return (
-          isIgnoredPath(relPath) && !INDEXED_EXTENSIONS.includes(extname(relPath).toLowerCase())
-        );
-      },
-      ignoreInitial: true,
-      persistent: true,
-      followSymlinks: false,
-      // Замена на месте и атомарные переименования (git checkout) приходят как change.
-      atomic: true,
-      awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 60 },
-    });
-
-    watcher.on("add", (path: string) => {
-      const relPath = relativePathOf(root, path);
-      if (!relPath || !isIndexable(relPath)) return;
-      entry.pendingRemoved.delete(relPath);
-      entry.pendingChanged.add(relPath);
-      schedule(entry);
-    });
-    watcher.on("change", (path: string) => {
-      const relPath = relativePathOf(root, path);
-      if (!relPath || !isIndexable(relPath)) return;
-      entry.pendingChanged.add(relPath);
-      schedule(entry);
-    });
-    watcher.on("unlink", (path: string) => {
-      const relPath = relativePathOf(root, path);
-      if (!relPath) {
-        entry.overflow = true;
-        schedule(entry);
-        return;
-      }
-      // Удалённый путь нельзя проверить по расширению через fs — опираемся на имя.
-      if (!isIndexable(relPath) && extname(relPath) !== "") return;
-      entry.pendingChanged.delete(relPath);
-      entry.pendingRemoved.add(relPath);
-      schedule(entry);
-    });
-    watcher.on("addDir", () => {
-      // Новый каталог может содержать готовые файлы (git checkout, распаковка архива).
-      entry.overflow = true;
-      schedule(entry);
-    });
-    watcher.on("raw", (event: string, path: string) => {
-      // Причина: `rename(2)` на Linux не всегда даёт `unlink` для старого пути, особенно при
-      // атомарной замене. Без этого переименованный файл оставался в индексе как «фантом».
-      // Поэтому `rename` трактуется как переполнение: полный проход точечно вычистит исчезнувшие.
-      if (event !== "rename") return;
-      const relPath = relativePathOf(root, path);
-      if (!relPath || !isIgnoredPath(relPath)) return;
-      entry.overflow = true;
-      schedule(entry);
-    });
-    watcher.on("unlinkDir", () => {
-      entry.overflow = true;
-      schedule(entry);
-    });
-    watcher.on("error", (error: unknown) => {
+    entry.watcher.on("error", (error: unknown) => {
       const normalised = error instanceof Error ? error : new Error(String(error));
       if (!entry.failed) options.onError(workspace, normalised);
       entry.failed = true;
       if (entry.timer) clearTimeout(entry.timer);
       entry.timer = undefined;
-      void watcher.close().catch(() => undefined);
-    });
-    watcher.on("ready", () => {
-      markReady();
-      options.onReady?.(workspace);
+      try {
+        entry.watcher.close();
+      } catch {
+        // Ошибка закрытия уже сломанного watcher'а не меняет диагностику.
+      }
     });
 
-    entry.watcher = watcher;
     entries.set(identityKey, entry);
-    // Ожидание ограничено: при ошибке watcher помечается `failed` и промис всё равно закроется,
-    // иначе подписка зависла бы навсегда на недоступном каталоге.
-    await Promise.race([
-      entry.ready,
-      new Promise<void>((resolveTimeout) => {
-        const timer = setTimeout(resolveTimeout, READY_TIMEOUT_MS);
-        if (typeof timer.unref === "function") timer.unref();
-      }),
-    ]);
-    if (entry.failed) return false;
+    markReady();
+    options.onReady?.(workspace);
     return true;
   };
 
@@ -280,9 +295,10 @@ export function createWorkspaceWatcherRegistry(options: WorkspaceWatcherOptions)
     if (!entry || entry.failed) return;
     let queued = false;
     for (const raw of paths) {
-      const relPath = raw.replaceAll("\\", "/").replace(/^\.\//u, "");
-      if (!relPath || relPath.startsWith("../")) continue;
+      const relPath = normalizeEventPath(raw);
+      if (!relPath) continue;
       if (!isIndexable(relPath)) continue;
+      entry.pendingRemoved.delete(relPath);
       entry.pendingChanged.add(relPath);
       queued = true;
     }

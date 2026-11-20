@@ -652,7 +652,7 @@ export async function runPartialIndex(options: PartialIndexOptions): Promise<Ind
       throw error;
     }
     indexedFiles += 1;
-    // Компенсация переименования: `chokidar` с `atomic` не гарантирует `unlink` для старого
+    // Компенсация переименования: рекурсивный `fs.watch` не гарантирует `unlink` для старого
     // пути, поэтому прежняя запись оставалась «фантомом» (файл есть в индексе, но не на диске).
     // Поиск по хешу содержимого точечный: обычно находится 0–1 кандидат.
     await dropStaleDuplicates(db, options.workspacePath, relPath);
