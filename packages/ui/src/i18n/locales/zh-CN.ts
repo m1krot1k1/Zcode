@@ -8478,6 +8478,10 @@ const zhCN: Record<string, string> = {
   "chat.voice.microphoneDenied": "麦克风访问被拒绝",
   "chat.voice.hint": "按住 ⌥ 或按两次",
   "settings.modelProvider.apiFormat.autoHint": "保存连接时自动检测，也可以手动覆盖。",
+  "settings.voice.title": "语音输入",
+  "settings.voice.description": "基于 Hex 的本地听写，音频不离开本机，语音模型在应用内下载。",
+  "settings.voice.shortcut": "按住 Option (⌥) 录音，或按两次保持录音。",
+  "settings.voice.localOnly": "音频和文字只在本机处理。",
 };
 
 export default zhCN;

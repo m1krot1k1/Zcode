@@ -10,3 +10,4 @@ export type { VoiceDictationApi } from "./useVoiceDictation.js";
 export type { VoiceDictationState, VoiceDictationStatus } from "./voiceDictationController.js";
 export { useVoiceDictation } from "./useVoiceDictation.js";
 export { VoiceDictationButton, VoiceDictationOverlay } from "./VoiceDictationControls.js";
+export { VoiceSettingsSection } from "./VoiceSettingsSection.js";

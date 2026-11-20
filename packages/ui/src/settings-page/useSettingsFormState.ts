@@ -100,7 +100,7 @@ export function useSettingsFormState({
   const [messageStreamShowTodos, setMessageStreamShowTodos] = useState(false);
   const [toolGroupingExploreEnabled, setToolGroupingExploreEnabled] = useState(true);
   const [toolGroupingTerminalEnabled, setToolGroupingTerminalEnabled] = useState(true);
-  const [toolGroupingChangesEnabled, setToolGroupingChangesEnabled] = useState(false);
+  const [toolGroupingChangesEnabled, setToolGroupingChangesEnabled] = useState(true);
   const [zcodeInteractionBehavior, setZCodeInteractionBehavior] =
     useState<ZCodeInteractionBehavior>("queue");
   const [defaultHomeDir, setDefaultHomeDir] = useState("");

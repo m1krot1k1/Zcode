@@ -238,7 +238,7 @@ describe("buildAssistantWorkRenderItems", () => {
     ).toEqual(["row", "row"]);
   });
 
-  it("keeps file-write tools as individual rows when Changes grouping uses the release default", () => {
+  it("groups file-write tools when Changes grouping uses the release default", () => {
     const rows = [
       toolCall(1, "Write", { file_path: "src/a.ts", content: "a" }),
       toolCall(2, "Edit", {
@@ -253,7 +253,7 @@ describe("buildAssistantWorkRenderItems", () => {
 
     expect(
       buildAssistantWorkRenderItems(rows, SHOW_ALL_REASONING).map((item) => item.kind),
-    ).toEqual(["row", "row", "row"]);
+    ).toEqual(["changesGroup"]);
   });
 
   it.each(["inputStreaming", "running"] as const)(

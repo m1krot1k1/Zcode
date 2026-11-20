@@ -7683,5 +7683,9 @@
   "chat.voice.unavailable": "Голосовой ввод недоступен",
   "chat.voice.microphoneDenied": "Нет доступа к микрофону",
   "chat.voice.hint": "Удерживайте ⌥ или нажмите дважды",
-  "settings.modelProvider.apiFormat.autoHint": "Определяется автоматически при сохранении. Можно переопределить."
+  "settings.modelProvider.apiFormat.autoHint": "Определяется автоматически при сохранении. Можно переопределить.",
+  "settings.voice.title": "Голосовой ввод",
+  "settings.voice.description": "Локальная диктовка на движке Hex. Аудио не покидает устройство; модели скачиваются в приложение.",
+  "settings.voice.shortcut": "Удерживайте Option (⌥) для записи или нажмите дважды, чтобы оставить запись включённой.",
+  "settings.voice.localOnly": "Аудио и текст обрабатываются только на этом компьютере."
 }

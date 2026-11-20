@@ -22,6 +22,7 @@ import {
   FileSearch,
   Workflow,
   Sparkles,
+  Mic,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -75,6 +76,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "modelProvider",
     icon: Package,
     titleId: "settings.modelProviderTitle",
+    groupId: "basics",
+  },
+  {
+    id: "voice",
+    icon: Mic,
+    titleId: "settings.voice.title",
     groupId: "basics",
   },
   {

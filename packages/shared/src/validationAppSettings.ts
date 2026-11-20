@@ -297,6 +297,23 @@ function migrateMessageStreamShowReasoningDefault(value: unknown): unknown {
   };
 }
 
+function migrateToolGroupingChangesDefault(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.toolGroupingChangesMigrationVersion === 1) {
+    return value;
+  }
+  return {
+    ...raw,
+    // 原因：旧版默认关闭且没有记录用户选择；本版本统一开启一次，
+    // 之后用户明确关闭会保留。
+    toolGroupingChangesEnabled: true,
+    toolGroupingChangesMigrationVersion: 1,
+  };
+}
+
 function migrateLegacyLocalePreference(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return value;
@@ -553,7 +570,9 @@ const appSettingsObjectSchema = z.object({
   messageStreamShowTodos: z.boolean().default(false),
   toolGroupingExploreEnabled: z.boolean().default(true),
   toolGroupingTerminalEnabled: z.boolean().default(true),
-  toolGroupingChangesEnabled: z.boolean().default(false),
+  toolGroupingChangesEnabled: z.boolean().default(true),
+  // 一次性迁移：旧版本把默认 false 与用户手动关闭都存成同一个值。
+  toolGroupingChangesMigrationVersion: z.literal(1).default(1),
   zcodeInteractionBehavior: zcodeInteractionBehaviorSchema.default("queue"),
   askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
   modelIoFullRetentionEnabled: z.boolean().default(false),
@@ -608,13 +627,15 @@ export const appSettingsSchema = z.preprocess(
   (value) =>
     sanitizeEmbeddedBrowserViewportPreference(
       sanitizeDesktopWindowSize(
-        migrateMessageStreamShowReasoningDefault(
-          migrateCloseToTrayOnWindowsDefault(
-            migrateLegacyLocalePreference(
-              sanitizeZCodeEndpointOrigin(
-                migrateLegacyWorkspaceSession(
-                  migrateLegacyBuiltinAgentCliProviders(
-                    migrateRemoteBoundaryIntroAcknowledgement(migrateTaskAutoArchiveReset(value)),
+        migrateToolGroupingChangesDefault(
+          migrateMessageStreamShowReasoningDefault(
+            migrateCloseToTrayOnWindowsDefault(
+              migrateLegacyLocalePreference(
+                sanitizeZCodeEndpointOrigin(
+                  migrateLegacyWorkspaceSession(
+                    migrateLegacyBuiltinAgentCliProviders(
+                      migrateRemoteBoundaryIntroAcknowledgement(migrateTaskAutoArchiveReset(value)),
+                    ),
                   ),
                 ),
               ),

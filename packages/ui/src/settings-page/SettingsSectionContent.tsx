@@ -26,6 +26,7 @@ import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
 import { SourceServerManagementPanel } from "@/settings/SourceServerManagementPanel.js";
 import { SubagentsSection } from "@/settings/SubagentsSection.js";
 import { UsageStatsSection } from "@/settings/UsageStatsSection.js";
+import { VoiceSettingsSection } from "@/v4/composer/voice/index.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { SettingsStage4Section } from "@/settings-stage4/SettingsStage4Section.js";
 import type { SettingsFormState } from "./useSettingsFormState.js";
@@ -273,6 +274,8 @@ export function SettingsSectionContent({
             })
           }
         />
+      ) : activeSection === "voice" ? (
+        <VoiceSettingsSection />
       ) : activeSection === "remoteDevices" ? (
         sharedSettings && isDesktop && sourceManagement ? (
           <SourceServerManagementPanel

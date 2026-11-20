@@ -139,7 +139,7 @@ export function useSettingsPageRuntime({
     form.setMessageStreamShowTodos(sharedSettings.messageStreamShowTodos ?? false);
     form.setToolGroupingExploreEnabled(sharedSettings.toolGroupingExploreEnabled ?? true);
     form.setToolGroupingTerminalEnabled(sharedSettings.toolGroupingTerminalEnabled ?? true);
-    form.setToolGroupingChangesEnabled(sharedSettings.toolGroupingChangesEnabled ?? false);
+    form.setToolGroupingChangesEnabled(sharedSettings.toolGroupingChangesEnabled ?? true);
     form.setZCodeInteractionBehavior(sharedSettings.zcodeInteractionBehavior ?? "queue");
     form.setReceivePreviewUpdates(sharedSettings.receivePreviewUpdates ?? false);
     form.setAutoDownloadAndInstallUpdates(sharedSettings.autoDownloadAndInstallUpdates ?? false);

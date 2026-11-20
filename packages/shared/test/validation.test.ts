@@ -597,7 +597,19 @@ describe("hostResponseMessageSchema", () => {
 
     expect(parsed.toolGroupingExploreEnabled).toBe(true);
     expect(parsed.toolGroupingTerminalEnabled).toBe(true);
-    expect(parsed.toolGroupingChangesEnabled).toBe(false);
+    expect(parsed.toolGroupingChangesEnabled).toBe(true);
+    expect(parsed.toolGroupingChangesMigrationVersion).toBe(1);
+    // Старый default false без отметки миграции включается один раз.
+    expect(
+      appSettingsSchema.parse({ toolGroupingChangesEnabled: false }).toolGroupingChangesEnabled,
+    ).toBe(true);
+    // Явное выключение после миграции сохраняется.
+    expect(
+      appSettingsSchema.parse({
+        toolGroupingChangesEnabled: false,
+        toolGroupingChangesMigrationVersion: 1,
+      }).toolGroupingChangesEnabled,
+    ).toBe(false);
     expect(patch).toMatchObject({
       toolGroupingExploreEnabled: false,
       toolGroupingTerminalEnabled: false,

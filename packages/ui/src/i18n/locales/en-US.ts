@@ -8956,6 +8956,11 @@ const enUS: Record<string, string> = {
   "chat.voice.hint": "Hold ⌥ or tap twice",
   "settings.modelProvider.apiFormat.autoHint":
     "Detected automatically when the connection is saved. You can override it.",
+  "settings.voice.title": "Voice input",
+  "settings.voice.description":
+    "Local Hex dictation. Audio stays on this device; speech models download into the app.",
+  "settings.voice.shortcut": "Hold Option (⌥) to record, or tap twice to keep recording.",
+  "settings.voice.localOnly": "Audio and text are processed only on this computer.",
 };
 
 export default enUS;
