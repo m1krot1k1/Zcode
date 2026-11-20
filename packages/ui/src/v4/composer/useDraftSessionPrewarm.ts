@@ -41,6 +41,8 @@ export function startDraftSessionPrewarm(params: {
   onReady: (sessionId: string) => void;
   /** single-flight owner 用于等待不可取消的 createSession 收口；无论成功失败都只调用一次。 */
   onSettled?: () => void;
+  /** Последняя причина отказа createSession; попадает в текст ошибки отправки, не в лог-секрет. */
+  onFailure?: (reason: string) => void;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
   resolveInitialConfig?: () => Partial<SessionConfigState> | undefined;
   /** 仅当前 Composer 明确选中 OpenCode ACP 时，允许走 Host 只读创建路径。 */
@@ -51,6 +53,7 @@ export function startDraftSessionPrewarm(params: {
     dispatchCommand,
     onReady,
     onSettled,
+    onFailure,
     resolveInitialConfig,
     openCodeAcpDraft = false,
   } = params;
@@ -105,6 +108,7 @@ export function startDraftSessionPrewarm(params: {
           reasonCode: ack.reasonCode ?? null,
           workspaceKey,
         });
+        onFailure?.(ack.reasonCode ?? ack.status);
         return;
       }
       createdSessionId = ack.result.sessionId;
@@ -120,10 +124,12 @@ export function startDraftSessionPrewarm(params: {
       onReady(createdSessionId);
     })
     .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
       logger.warn("[v4-draft-prewarm] createSession 失败", {
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         workspaceKey,
       });
+      onFailure?.(message);
     })
     .finally(() => {
       onSettled?.();
@@ -189,6 +195,8 @@ interface DraftPrewarmCurrent {
   retiring: boolean;
   /** 本代是第几次退避重试的产物；0 表示首发。 */
   retryAttempt: number;
+  /** Последняя причина отказа createSession для этой генерации. */
+  failureReason: string | null;
 }
 
 /**
@@ -259,7 +267,7 @@ class DraftSessionPrewarmCoordinator {
           (subscriber) => subscriber.generation === generation,
         )
       )
-        throw new Error("草稿会话已切换，请重新发送");
+        throw new Error("Draft session changed. Send the message again.");
     };
     assertCurrentSubscriber();
     // 新草稿已接管时，旧创建仍可能在回收；这是等待窗口，不是用户再次切换。
@@ -277,7 +285,7 @@ class DraftSessionPrewarmCoordinator {
       this.startCurrent(invalidationVersion);
     }
     const current = this.current;
-    if (!current) throw new Error("草稿会话尚未开始创建");
+    if (!current) throw new Error("Draft session creation has not started.");
     // Bug 根因：binding=null 同时表示创建在途和失败，首发据此另建会话会与预热并发。
     // 创建只归此 owner；等待捕获的一代，不能在 await 后悄悄换成另一个会话发送。
     await current.completion;
@@ -288,8 +296,13 @@ class DraftSessionPrewarmCoordinator {
       current.invalidationVersion !== invalidationVersion ||
       this.requestedInvalidationVersion() !== invalidationVersion
     )
-      throw new Error("草稿会话已切换，请重新发送");
-    if (!current.binding) throw new Error("草稿会话创建失败，请重试");
+      throw new Error("Draft session changed. Send the message again.");
+    if (!current.binding)
+      throw new Error(
+        current.failureReason
+          ? `Draft session creation failed: ${current.failureReason}`
+          : "Draft session creation failed. Retry the send.",
+      );
     return current.binding;
   }
 
@@ -453,6 +466,11 @@ class DraftSessionPrewarmCoordinator {
           this.onEmpty();
         }
       },
+      onFailure: (reason) => {
+        // Причина нужна только текущей генерации: после retry/смены workspace
+        // пользователь не должен увидеть ошибку прошлой попытки.
+        if (this.current === current) current.failureReason = reason;
+      },
     });
     current = {
       invalidationVersion,
@@ -462,6 +480,7 @@ class DraftSessionPrewarmCoordinator {
       completion,
       retiring: false,
       retryAttempt,
+      failureReason: null,
     };
     this.current = current;
   }
@@ -612,7 +631,7 @@ export function useDraftSessionPrewarm(params: {
   }, [coordinator, enabled, generation, invalidationVersion]);
 
   const waitForSession = useCallback(async () => {
-    if (!enabled) throw new Error("草稿会话尚未启用");
+    if (!enabled) throw new Error("Draft session prewarm is disabled.");
     return coordinator.waitForSession(invalidationVersion, generation);
   }, [coordinator, enabled, generation, invalidationVersion]);
 

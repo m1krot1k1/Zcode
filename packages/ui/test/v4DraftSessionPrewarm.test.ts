@@ -608,6 +608,57 @@ describe("useDraftSessionPrewarm workspace owner", () => {
     expect(await sent).toBe("new-draft");
     expect(calls.filter((call) => call.type === "createSession")).toHaveLength(2);
   });
+  it("失败原因进入 waitForSession 错误详情，而不是只显示通用占用提示", async () => {
+    const { dispatch } = createDispatchRecorder({
+      onCreate: () => ({ ...NOOP_ACK, status: "failed", reasonCode: "agent.spawnEbadf" }),
+    });
+    const root = createRoot(installMinimalDom());
+    mountedRoots.push(root);
+    let owner!: ReturnType<typeof useDraftSessionPrewarm>;
+    await act(async () => {
+      root.render(
+        createElement(PrewarmHarness, {
+          workspaceKey: "/workspace",
+          transportIdentity: {},
+          dispatchCommand: dispatch,
+          onRender: () => {},
+          onOwner: (value) => {
+            owner = value;
+          },
+        }),
+      );
+    });
+
+    const error = await act(async () => owner.waitForSession().catch((caught) => caught));
+    expect(String(error)).toContain("agent.spawnEbadf");
+    expect(String(error)).not.toMatch(/[\u4e00-\u9fff]/u);
+  });
+
+  it("transport 拒绝的原始原因也进入 waitForSession 错误详情", async () => {
+    const { dispatch } = createDispatchRecorder({
+      onCreate: () => Promise.reject(new Error("spawn EBADF")),
+    });
+    const root = createRoot(installMinimalDom());
+    mountedRoots.push(root);
+    let owner!: ReturnType<typeof useDraftSessionPrewarm>;
+    await act(async () => {
+      root.render(
+        createElement(PrewarmHarness, {
+          workspaceKey: "/workspace",
+          transportIdentity: {},
+          dispatchCommand: dispatch,
+          onRender: () => {},
+          onOwner: (value) => {
+            owner = value;
+          },
+        }),
+      );
+    });
+
+    const error = await act(async () => owner.waitForSession().catch((caught) => caught));
+    expect(String(error)).toContain("spawn EBADF");
+  });
+
   it.each(["failed", "discarded"] as const)(
     "%s 后显式重试仍由同一个 owner 单飞创建",
     async (outcome) => {

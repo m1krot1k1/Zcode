@@ -545,7 +545,8 @@ export function useSessionPaneSend(params: UseSessionPaneSendParams) {
       const draftBinding = sessionId === null ? await waitForDraftSession() : null;
       if (draftBinding) {
         await ensureDraftPrewarmConfigBeforeSendRef.current(draftBinding.sessionId);
-        if (!draftBinding.beginPromotion()) throw new Error("草稿会话已切换，请重新发送");
+        if (!draftBinding.beginPromotion())
+          throw new Error("Draft session changed. Send the message again.");
       }
       const targetSessionId = sessionId ?? draftBinding!.sessionId;
       if (draftBinding && draftSlashCommand) {
