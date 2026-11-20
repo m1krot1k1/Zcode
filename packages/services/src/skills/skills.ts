@@ -62,7 +62,8 @@ export interface ISkillsService {
   /**
    * 安装 skills.sh 快照到 `<workspace>/.agents/skills/<name>` 或
    * `~/.agents/skills/<name>`。快照是不可信输入：只允许相对路径，限制大小，
-   * 且绝不执行下载内容。返回 SKILL.md 中实际声明的名称。
+   * 且绝不执行下载内容。返回 SKILL.md 中实际声明的名称；成功安装还会创建同名
+   * user-scope 专用 agent（见 `docs/specs/2026-11-20-skill-installed-agents.md`）。
    */
   installMarketplaceSkill(
     request: InstallMarketplaceSkillRequest,

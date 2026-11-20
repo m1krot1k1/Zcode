@@ -53,6 +53,17 @@ const logger = createServiceLogger("skills.service");
 
 interface SkillsServiceOptions {
   isDesktopRuntime?: boolean;
+  /**
+   * Called after a marketplace skill is written. The host uses it to persist a matching
+   * specialized agent; provisioning failure must not roll back a successful install.
+   */
+  onMarketplaceSkillInstalled?: (skill: {
+    name: string;
+    description?: string;
+    whenToUse?: string;
+    scope: SkillInstallScope;
+    path: string;
+  }) => Promise<{ agentName?: string } | void> | { agentName?: string } | void;
 }
 
 function resolveCapabilities(options?: SkillsServiceOptions): SkillsCapability {
@@ -347,7 +358,39 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
           skillId: reference.skillId,
           scope,
         });
-        return { name: written.installedName, scope, path: written.path };
+        // Provision a matching agent before returning: Settings and the next turn then see
+        // the skill and its specialist together. Failure is a warning, not an install failure.
+        const discovered = await discoverSkills(
+          {
+            workspacePath: workspacePath ?? process.cwd(),
+            includeUserSkills: true,
+            provider: "glm",
+          },
+          { metadataCache },
+        ).catch(() => ({ skills: [], diagnostics: [], totalDiscovered: 0 }));
+        const installed = discovered.skills.find((skill) => skill.name === written.installedName);
+        let agentName: string | undefined;
+        try {
+          const provisioned = await options?.onMarketplaceSkillInstalled?.({
+            name: written.installedName,
+            ...(installed?.description ? { description: installed.description } : {}),
+
+            scope,
+            path: written.path,
+          });
+          agentName = provisioned?.agentName;
+        } catch (error) {
+          logger.warn(undefined, "marketplace skill agent provisioning failed", {
+            name: written.installedName,
+            error: String(error),
+          });
+        }
+        return {
+          name: written.installedName,
+          scope,
+          path: written.path,
+          ...(agentName ? { agentName } : {}),
+        };
       };
       // 与 setEnabled 共用写队列：同一技能的并发安装/覆盖必须串行，避免 rename 竞争。
       const queued = writeQueue.then(runInstall, runInstall);

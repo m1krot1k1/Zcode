@@ -257,6 +257,19 @@ export function SkillsMarketplacePanel({
         </p>
       ) : null}
 
+      {marketplace.installedAgentName ? (
+        <p
+          role="status"
+          data-testid="plugin-store-skills-agent-created"
+          className="rounded-lg bg-success-surface px-3 py-2 text-ui-base text-success-surface-foreground"
+        >
+          {intl.formatMessage(
+            { id: "settings.plugins.store.skills.agentCreated" },
+            { name: marketplace.installedAgentName },
+          )}
+        </p>
+      ) : null}
+
       {marketplace.error ? (
         <div
           role="alert"
@@ -550,7 +563,9 @@ function SkillMarketplaceRow({
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-foreground-subtle">
             <span className="break-all font-mono">{item.source}</span>
-            {typeof item.installs === "number" && Number.isFinite(item.installs) && item.installs >= 0 ? (
+            {typeof item.installs === "number" &&
+            Number.isFinite(item.installs) &&
+            item.installs >= 0 ? (
               <span>
                 {intl.formatMessage(
                   { id: "settings.plugins.store.skills.installs" },

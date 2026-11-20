@@ -51,11 +51,30 @@ describe("app settings", () => {
     expect(appSettingsSchema.parse(reopened)).toEqual(reopened);
   });
 
-  it("defaults ToolSearch off and accepts only the three App modes", () => {
-    expect(appSettingsSchema.parse({}).toolSearchMode).toBe("off");
+  it("defaults ToolSearch off for fresh settings and upgrades an existing explicit off once", () => {
+    const fresh = appSettingsSchema.parse({});
+    expect(fresh).toMatchObject({
+      toolSearchMode: "off",
+      toolSearchModeMigrationVersion: 1,
+    });
+    const migrated = appSettingsSchema.parse({ toolSearchMode: "off" });
+    expect(migrated).toMatchObject({
+      toolSearchMode: "auto",
+      toolSearchModeMigrationVersion: 1,
+    });
+    expect(appSettingsSchema.parse(migrated)).toEqual(migrated);
+    const optedOut = appSettingsSchema.parse({
+      ...migrated,
+      ...appSettingsPatchSchema.parse({ toolSearchMode: "off" }),
+    });
+    expect(optedOut.toolSearchMode).toBe("off");
+    expect(appSettingsSchema.parse(optedOut).toolSearchMode).toBe("off");
     expect(appSettingsPatchSchema.parse({})).not.toHaveProperty("toolSearchMode");
     for (const mode of ["auto", "local", "off"]) {
-      expect(appSettingsSchema.parse({ toolSearchMode: mode }).toolSearchMode).toBe(mode);
+      expect(
+        appSettingsSchema.parse({ toolSearchMode: mode, toolSearchModeMigrationVersion: 1 })
+          .toolSearchMode,
+      ).toBe(mode);
       expect(appSettingsPatchSchema.parse({ toolSearchMode: mode }).toolSearchMode).toBe(mode);
     }
     for (const mode of ["native", "invalid", true, null]) {

@@ -12,7 +12,10 @@ import {
   resolveSubagentStateFile,
   resolveUserSubagentRoot,
 } from "../src/subagents/subagentStorage.js";
-import { createSubagentsService } from "../src/subagents/subagentsService.js";
+import {
+  createSubagentsService,
+  provisionSkillAgentProfile,
+} from "../src/subagents/subagentsService.js";
 
 const tempRoots: string[] = [];
 
@@ -1468,5 +1471,44 @@ tools:
     );
     expect(listed.agents.find((agent) => agent.name === "cleanup-recovery-v2")?.enabled).toBe(true);
     await expect(readFile(created.agent.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("provisions a user agent for an installed skill and never overwrites it", async () => {
+    const home = await makeTempHome();
+    const workspacePath = join(home, "workspace");
+    const first = await provisionSkillAgentProfile({
+      homeDir: home,
+      skillName: "frontend-design",
+      description: "Designs distinctive interfaces.",
+    });
+    expect(first.created).toBe(true);
+    expect(first.agentName).toBe("frontend-design");
+    const content = await readFile(first.path, "utf8");
+    expect(content).toContain('name: "frontend-design"');
+    expect(content).toContain("frontend-design");
+
+    const second = await provisionSkillAgentProfile({
+      homeDir: home,
+      skillName: "frontend-design",
+      description: "Changed description",
+    });
+    expect(second.created).toBe(false);
+    expect(second.reason).toBe("exists");
+    expect(await readFile(first.path, "utf8")).toBe(content);
+
+    const listed = await createSubagentsService({
+      homeDir: home,
+      isDesktopRuntime: true,
+    }).list({
+      workspacePath,
+      provider: "glm",
+      mode: "settingsUserOnly",
+    });
+    expect(listed.agents.find((agent) => agent.name === "frontend-design")).toMatchObject({
+      source: "user",
+      scope: "user",
+      skills: ["frontend-design"],
+      readOnly: false,
+    });
   });
 });

@@ -2,8 +2,10 @@ import { access, link, lstat, mkdir, readFile, readdir, rm, writeFile } from "no
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
+  buildSkillAgentProfile,
   createPluginAgentStateId,
   parsePluginSubagentModelSelectionOverrides,
+  serializeSkillAgentMarkdown,
   DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
   type SubagentRuntimeConfig,
@@ -260,6 +262,45 @@ export async function writeAgentStateFile(
   const stateFile = await resolveSubagentStateFile(options);
   await mkdir(dirname(stateFile), { recursive: true });
   await atomicWriteText(stateFile, JSON.stringify(next, null, 2));
+}
+
+export interface ProvisionSkillAgentResult {
+  agentName: string;
+  created: boolean;
+  path: string;
+  reason?: "exists" | "built-in" | "invalid";
+}
+
+/**
+ * Persists a generated agent for an installed marketplace skill under the user agent root.
+ * It is idempotent by default: an existing user profile wins, so a generated agent never
+ * overwrites a hand-edited profile. `overwrite` is only for an explicit reinstall.
+ */
+export async function provisionSkillAgentProfile(input: {
+  skillName: string;
+  description?: string;
+  whenToUse?: string;
+  homeDir?: string;
+  overwrite?: boolean;
+}): Promise<ProvisionSkillAgentResult> {
+  const profile = buildSkillAgentProfile({
+    name: input.skillName,
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.whenToUse ? { whenToUse: input.whenToUse } : {}),
+  });
+  const root = await resolveUserSubagentRoot({ homeDir: input.homeDir });
+  await mkdir(root, { recursive: true });
+  const path = join(root, profile.fileName);
+  if (!input.overwrite && (await exists(path))) {
+    return { agentName: profile.agentName, created: false, path, reason: "exists" };
+  }
+  await atomicWriteText(path, serializeSkillAgentMarkdown(profile.config));
+  return {
+    agentName: profile.agentName,
+    created: true,
+    path,
+    ...(profile.nameAdjusted ? { reason: profile.nameAdjusted } : {}),
+  };
 }
 
 export async function collectAgentMarkdownPaths(

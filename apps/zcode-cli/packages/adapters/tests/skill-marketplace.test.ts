@@ -93,10 +93,14 @@ describe("skills.sh marketplace adapter", () => {
       skillId: "find-skills",
       filesWritten: 3,
       alreadyInstalled: false,
+      agentName: "find-skills",
     });
     expect(
       await readFile(join(workspace, ".agents", "skills", "find-skills", "SKILL.md"), "utf8"),
     ).toContain("name: find-skills");
+    expect(
+      await readFile(join(workspace, "home", ".zcode", "agents", "find-skills.md"), "utf8"),
+    ).toContain('name: "find-skills"');
     const metadata = JSON.parse(
       await readFile(
         join(workspace, ".agents", "skills", "find-skills", "_meta.json"),

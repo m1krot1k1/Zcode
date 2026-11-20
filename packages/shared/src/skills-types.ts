@@ -104,6 +104,8 @@ export interface InstallMarketplaceSkillResult {
   name: string;
   scope: SkillInstallScope;
   path: string;
+  /** Generated specialist agent persisted for this skill, when provisioning succeeded. */
+  agentName?: string;
 }
 
 /**

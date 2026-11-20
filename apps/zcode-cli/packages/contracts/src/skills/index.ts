@@ -150,6 +150,8 @@ export interface SkillMarketplaceInstallResult {
   filesWritten: number;
   hash?: string;
   alreadyInstalled: boolean;
+  /** Generated specialist agent persisted for this skill, when provisioning succeeded. */
+  agentName?: string;
 }
 
 export interface SkillPort {

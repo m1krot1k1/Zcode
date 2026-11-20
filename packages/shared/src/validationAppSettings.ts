@@ -314,6 +314,30 @@ function migrateToolGroupingChangesDefault(value: unknown): unknown {
   };
 }
 
+function migrateToolSearchDefault(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.toolSearchModeMigrationVersion === 1) {
+    return value;
+  }
+  // Fresh settings have no persisted mode and keep the conservative schema default. An
+  // existing explicit "off" is the old default; upgrade it once to the measured 45% context
+  // win. A later manual "off" survives because the migration version is already 1.
+  if (!Object.hasOwn(raw, "toolSearchMode")) {
+    return { ...raw, toolSearchModeMigrationVersion: 1 };
+  }
+  if (raw.toolSearchMode !== "off") {
+    return { ...raw, toolSearchModeMigrationVersion: 1 };
+  }
+  return {
+    ...raw,
+    toolSearchMode: "auto",
+    toolSearchModeMigrationVersion: 1,
+  };
+}
+
 function migrateLegacyLocalePreference(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return value;
@@ -588,6 +612,8 @@ const appSettingsObjectSchema = z.object({
   providerFamilyDomainMigrated: z.boolean().default(false),
   nativeSearchEnhancementsEnabled: z.boolean().default(true),
   toolSearchMode: appToolSearchModeSchema.default("off"),
+  // One-time migration: the old default and an explicit opt-out were indistinguishable.
+  toolSearchModeMigrationVersion: z.literal(1).default(1),
   // Инкремент 4.4: профиль глубины рассуждений. Владелец — настройки; рантайм читает его
   // при сборке системного промпта и при выборе thinking/maxOutputTokens. UI-переключатель
   // появится в 4.6, но схема и рантайм-поддержка готовы здесь.
@@ -627,14 +653,18 @@ export const appSettingsSchema = z.preprocess(
   (value) =>
     sanitizeEmbeddedBrowserViewportPreference(
       sanitizeDesktopWindowSize(
-        migrateToolGroupingChangesDefault(
-          migrateMessageStreamShowReasoningDefault(
-            migrateCloseToTrayOnWindowsDefault(
-              migrateLegacyLocalePreference(
-                sanitizeZCodeEndpointOrigin(
-                  migrateLegacyWorkspaceSession(
-                    migrateLegacyBuiltinAgentCliProviders(
-                      migrateRemoteBoundaryIntroAcknowledgement(migrateTaskAutoArchiveReset(value)),
+        migrateToolSearchDefault(
+          migrateToolGroupingChangesDefault(
+            migrateMessageStreamShowReasoningDefault(
+              migrateCloseToTrayOnWindowsDefault(
+                migrateLegacyLocalePreference(
+                  sanitizeZCodeEndpointOrigin(
+                    migrateLegacyWorkspaceSession(
+                      migrateLegacyBuiltinAgentCliProviders(
+                        migrateRemoteBoundaryIntroAcknowledgement(
+                          migrateTaskAutoArchiveReset(value),
+                        ),
+                      ),
                     ),
                   ),
                 ),

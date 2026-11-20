@@ -5234,6 +5234,7 @@ const zhCN: Record<string, string> = {
   "settings.plugins.store.skills.installing": "安装中…",
   "settings.plugins.store.skills.installFailed": "无法安装 {name}，请重试。",
   "settings.plugins.store.skills.installedNotice": "{name} 已安装",
+  "settings.plugins.store.skills.agentCreated": "已创建并保存专用智能体「{name}」。",
   "settings.plugins.store.skills.scopeLabel": "安装到",
   "settings.plugins.store.skills.scope.workspace": "当前工作区",
   "settings.plugins.store.skills.scope.user": "所有工作区",

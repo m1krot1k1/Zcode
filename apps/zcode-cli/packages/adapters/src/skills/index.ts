@@ -4,7 +4,8 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
-import { open, readFile, realpath, stat } from "node:fs/promises";
+import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type {
   SkillContent,
@@ -20,6 +21,10 @@ import type {
   SkillRoot,
   SkillScope,
 } from "@zcode/contracts";
+import {
+  buildSkillAgentProfile,
+  serializeSkillAgentMarkdown,
+} from "@zcode/shared";
 import {
   downloadSkillsShSnapshot,
   resolveMarketplaceInstallRoot,
@@ -205,6 +210,13 @@ export class NodeSkillAdapter implements SkillPort {
         `Installed skill ${request.skillId} was not discoverable under ${written.path}`,
       );
     }
+    const agentName = await provisionSkillAgent({
+      homeDirectory: this.options.homeDirectory,
+      skillName: installed.name,
+      description: installed.description,
+      whenToUse: installed.whenToUse,
+      overwrite: request.overwrite === true,
+    }).catch(() => undefined);
     return {
       name: installed.name,
       source: request.source,
@@ -214,6 +226,7 @@ export class NodeSkillAdapter implements SkillPort {
       filesWritten: written.filesWritten,
       ...(snapshot.hash ? { hash: snapshot.hash } : {}),
       alreadyInstalled: written.alreadyInstalled,
+      ...(agentName ? { agentName } : {}),
     };
   }
 
@@ -830,6 +843,26 @@ function isNotFoundError(error: unknown): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === "ENOENT"
   );
+}
+
+async function provisionSkillAgent(input: {
+  homeDirectory?: string;
+  skillName: string;
+  description: string;
+  whenToUse?: string;
+  overwrite: boolean;
+}): Promise<string | undefined> {
+  const profile = buildSkillAgentProfile({
+    name: input.skillName,
+    description: input.description,
+    ...(input.whenToUse ? { whenToUse: input.whenToUse } : {}),
+  });
+  const root = join(input.homeDirectory ?? homedir(), ".zcode", "agents");
+  await mkdir(root, { recursive: true });
+  const path = join(root, profile.fileName);
+  if (!input.overwrite && existsSync(path)) return profile.agentName;
+  await writeFile(path, serializeSkillAgentMarkdown(profile.config), "utf8");
+  return profile.agentName;
 }
 
 function throwIfAborted(options: SkillOperationOptions | undefined): void {

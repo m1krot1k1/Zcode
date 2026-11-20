@@ -701,6 +701,7 @@
   "settings.plugins.store.skills.installs": "Установлено: {count}",
   "settings.plugins.store.skills.installFailed": "Не удалось установить {name}. Повторите попытку.",
   "settings.plugins.store.skills.installedNotice": "Установлено: {name}",
+  "settings.plugins.store.skills.agentCreated": "Создан и сохранён специализированный агент «{name}».",
   "settings.plugins.store.skills.enabled": "Включено",
   "settings.plugins.store.skills.disabled": "Отключено",
   "settings.plugins.store.featured": "Рекомендуемое",

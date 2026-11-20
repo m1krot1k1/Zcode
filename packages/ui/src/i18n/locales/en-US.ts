@@ -5614,6 +5614,8 @@ const enUS: Record<string, string> = {
   "settings.plugins.store.skills.installing": "Installing…",
   "settings.plugins.store.skills.installFailed": "Could not install {name}. Try again.",
   "settings.plugins.store.skills.installedNotice": "{name} installed",
+  "settings.plugins.store.skills.agentCreated":
+    'Specialist agent "{name}" created and saved for later.',
   "settings.plugins.store.skills.scopeLabel": "Install to",
   "settings.plugins.store.skills.scope.workspace": "This workspace",
   "settings.plugins.store.skills.scope.user": "All workspaces",

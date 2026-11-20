@@ -64,15 +64,13 @@ interface UseSkillsMarketplaceResult {
   installingKey: string | null;
   installError: SkillsMarketplaceInstallError | null;
   installedNotice: string | null;
+  installedAgentName: string | null;
   scheduleSearch: (query: string) => void;
   search: (query: string) => Promise<void>;
   retry: () => Promise<void>;
   refreshInstalled: () => Promise<void>;
   refreshCatalog: () => Promise<void>;
-  install: (
-    item: MarketplaceSkillInfo,
-    scope: SkillInstallScope,
-  ) => Promise<void>;
+  install: (item: MarketplaceSkillInfo, scope: SkillInstallScope) => Promise<void>;
 }
 
 /**
@@ -99,9 +97,9 @@ export function useSkillsMarketplace(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [installingKey, setInstallingKey] = useState<string | null>(null);
-  const [installError, setInstallError] =
-    useState<SkillsMarketplaceInstallError | null>(null);
+  const [installError, setInstallError] = useState<SkillsMarketplaceInstallError | null>(null);
   const [installedNotice, setInstalledNotice] = useState<string | null>(null);
+  const [installedAgentName, setInstalledAgentName] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
   const searchDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightQueryRef = useRef<string | null>(null);
@@ -166,13 +164,10 @@ export function useSkillsMarketplace(
     setCatalogLoading(true);
     setCatalogError(null);
     try {
-      const result = await skillsService.searchMarketplace(
-        SKILLS_CATALOG_SEED_QUERY,
-        {
-          ...(workspacePath ? { workspacePath } : {}),
-          ...(workspaceIdentity ? { workspaceIdentity } : {}),
-        },
-      );
+      const result = await skillsService.searchMarketplace(SKILLS_CATALOG_SEED_QUERY, {
+        ...(workspacePath ? { workspacePath } : {}),
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      });
       if (seq !== catalogRequestSeqRef.current || !mountedRef.current) return;
       setCatalogItems(result);
       setCatalogLoading(false);
@@ -302,16 +297,17 @@ export function useSkillsMarketplace(
       setInstallingKey(key);
       setInstallError(null);
       setInstalledNotice(null);
+      setInstalledAgentName(null);
       try {
-        const result: InstallMarketplaceSkillResult =
-          await skillsService.installMarketplaceSkill({
-            name: installName,
-            scope,
-            ...(workspacePath ? { workspacePath } : {}),
-            ...(workspaceIdentity ? { workspaceIdentity } : {}),
-          });
+        const result: InstallMarketplaceSkillResult = await skillsService.installMarketplaceSkill({
+          name: installName,
+          scope,
+          ...(workspacePath ? { workspacePath } : {}),
+          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        });
         if (!mountedRef.current) return;
         setInstalledNotice(result.name);
+        setInstalledAgentName(result.agentName ?? null);
         // 先按安装结果标记当前行，避免刷新搜索期间按钮仍显示可安装。
         setItems((current) =>
           current.map((entry) =>
@@ -339,14 +335,7 @@ export function useSkillsMarketplace(
         if (mountedRef.current) setInstallingKey(null);
       }
     },
-    [
-      refreshCatalog,
-      refreshInstalled,
-      runSearch,
-      skillsService,
-      workspaceIdentity,
-      workspacePath,
-    ],
+    [refreshCatalog, refreshInstalled, runSearch, skillsService, workspaceIdentity, workspacePath],
   );
 
   return {
@@ -364,6 +353,7 @@ export function useSkillsMarketplace(
     installingKey,
     installError,
     installedNotice,
+    installedAgentName,
     scheduleSearch,
     search,
     retry,

@@ -304,6 +304,46 @@ describe("skills marketplace", () => {
     expect(Number.isNaN(Date.parse(String(meta.installedAt)))).toBe(false);
   });
 
+  it("уведомляет host о новом навыке и возвращает созданного агента", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          installPayload([
+            {
+              path: "SKILL.md",
+              contents:
+                "---\nname: yandex-direct\ndescription: Yandex Direct API\n---\n\n# Direct\n",
+            },
+          ]),
+        ),
+      ),
+    );
+    process.env.HOME = homePath;
+    vi.resetModules();
+    const mod = await import("../src/skills/skillsService.js");
+    const onInstalled = vi.fn(async () => ({ agentName: "yandex-direct" }));
+    const service = mod.createSkillsService({
+      isDesktopRuntime: true,
+      onMarketplaceSkillInstalled: onInstalled,
+    });
+
+    const result = await service.installMarketplaceSkill({
+      name: "elsvv/yandex-direct-skill/yandex-direct",
+      scope: "workspace",
+      workspacePath,
+    });
+
+    expect(onInstalled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "yandex-direct",
+        description: "Yandex Direct API",
+        scope: "workspace",
+      }),
+    );
+    expect(result).toMatchObject({ name: "yandex-direct", agentName: "yandex-direct" });
+  });
+
   it("兼容 files 对象映射与 content 字段", async () => {
     vi.stubGlobal(
       "fetch",
@@ -345,7 +385,9 @@ describe("skills marketplace", () => {
         }),
       )
       .mockResolvedValueOnce(
-        jsonResponse(installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\n" }])),
+        jsonResponse(
+          installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\n" }]),
+        ),
       );
     vi.stubGlobal("fetch", fetchMock);
     const service = await createService();
@@ -484,9 +526,13 @@ describe("skills marketplace", () => {
   it("缺少根 SKILL.md 时拒绝", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(installPayload([{ path: "docs/SKILL.md", contents: "---\nname: x\n---\n" }])),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(
+            installPayload([{ path: "docs/SKILL.md", contents: "---\nname: x\n---\n" }]),
+          ),
+        ),
     );
     const service = await createService();
     await expectMarketplaceError(
@@ -498,9 +544,13 @@ describe("skills marketplace", () => {
   it("user scope 写入 ~/.agents/skills", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-metrica\n---\n" }])),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(
+            installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-metrica\n---\n" }]),
+          ),
+        ),
     );
     const service = await createService();
 
@@ -525,9 +575,13 @@ describe("skills marketplace", () => {
     writeFileSync(join(target, "SKILL.md"), "hand written", "utf8");
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\n" }])),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(
+            installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\n" }]),
+          ),
+        ),
     );
     const service = await createService();
 
@@ -546,10 +600,14 @@ describe("skills marketplace", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        jsonResponse(installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\nv1\n" }])),
+        jsonResponse(
+          installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\nv1\n" }]),
+        ),
       )
       .mockResolvedValueOnce(
-        jsonResponse(installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\nv2\n" }])),
+        jsonResponse(
+          installPayload([{ path: "SKILL.md", contents: "---\nname: yandex-direct\n---\nv2\n" }]),
+        ),
       );
     vi.stubGlobal("fetch", fetchMock);
     const service = await createService();

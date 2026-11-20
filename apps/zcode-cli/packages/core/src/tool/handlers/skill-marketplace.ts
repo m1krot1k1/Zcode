@@ -102,9 +102,14 @@ export const skillInstallHandler: ToolHandler = async (input, context) => {
   const action = result.alreadyInstalled ? "already installed" : "installed";
   return [
     `Skill "${sanitizeLine(result.name)}" is ${action} from ${sanitizeLine(result.source)} at ${result.path}.`,
+    result.agentName
+      ? `Specialist agent "${sanitizeLine(result.agentName)}" is saved and becomes available next turn.`
+      : undefined,
     `Load it now with Skill { skill: "${sanitizeLine(result.name)}" }.`,
     `Files written: ${result.filesWritten}. Scope: ${result.scope}.`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 };
 
 export const skillSearchToolEntry: ToolEntry = {

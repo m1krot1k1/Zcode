@@ -129,9 +129,13 @@ subagent admission и compaction. Это правильная граница; о
 - У профиля есть `skills: string[]`; `"*"` означает «можно любой навык».
   `FilteredSkillPort` фильтрует `discoverSkills`/`loadSkill` по этому списку.
   **[код: `runtime/methods/subagent/skill-port.ts`]**
-- В Settings навыки и агенты — разные сущности. Установка навыка **не создаёт агента**,
-  который его использует. `subagent-factory` умеет создать профиль вручную, но
-  автоматической упаковки «навык → агент» нет. **[код + вывод]**
+- Установка marketplace-навыка **создаёт специализированного агента** с тем же именем и
+  сохраняет его в `~/.zcode/agents/<name>.md`. Это работает и для UI-установки
+  (`SkillsService`), и для tool-установки (`NodeSkillAdapter`); имя при коллизии с
+  built-in получает суффикс `-skill`, при недопустимых символах — sanitized.
+  **[код: `subagent-catalog/skillAgent.ts`, `skillsService.ts`, `adapters/skills`]**
+- `subagent-factory` остаётся для ручных профилей; marketplace-навык теперь не требует
+  ручного создания агента.
 
 ### 2.5 Инструменты
 
@@ -308,10 +312,16 @@ custom OpenAI-compatible/DeepSeek нужно проверить, поддерж�
 4. **`start`/`orchestrator` model override больше не теряется**:
    `subagentRuntimeStateSchema` и `normalizeBuiltInSelectionOverrides()` принимают их.
 5. **Contract test** сверяет shared-каталог с runtime-ростером.
-6. Тесты: shared/services/UI/bootstrap; typecheck UI/bootstrap/services/shared проходит.
+6. **Marketplace-навык создаёт агента с тем же именем** и сохраняет его в
+   `~/.zcode/agents`; это работает и из Settings, и из tool `SkillInstall`.
+7. **ToolSearch включается один раз для существующего `off`** через
+   `toolSearchModeMigrationVersion: 1`. Fresh settings остаются на безопасном `off`;
+   явный `off` после миграции сохраняется.
+8. Тесты: shared/services/UI/bootstrap/adapters/core; typecheck проходит.
 
-Ограничение: это visibility/routing fix, а не решение проблемы 40k контекста. Чтобы
-увидеть его в установленном приложении, нужен новый build/release.
+Ограничение: visibility/routing и tool search migration реализованы; lazy MCP,
+observation masking, role-scoped `preferredSkills` и fast path ещё впереди. Чтобы увидеть
+изменения в установленном приложении, нужен новый build/release.
 
 ---
 
@@ -350,12 +360,15 @@ Lazy (connect on first use):
 
 ### 5.3 Специализация: навык → агент
 
-- У профиля два поля: `preferredSkills` (каталог, который видит модель) и `allowedSkills`
-  (что можно загрузить, включая marketplace).
-- `"*"` остаётся только как fallback, но не попадает в каталог.
-- `SkillInstall` может предложить «создать агента под этот навык»; `subagent-factory`
-  валидирует профиль на реальной задаче.
-- Settings показывает, какие навыки реально используются агентом, и кто их выбрал.
+- **Уже реализовано:** marketplace-навык создаёт агента с тем же именем, сохраняет его
+  в `~/.zcode/agents` и подключает навык в `skills`. Агент доступен в следующем turn и
+  виден в Settings.
+- Следующий шаг: у профиля два поля — `preferredSkills` (каталог, который видит модель)
+  и `allowedSkills` (что можно загрузить, включая marketplace). Сейчас `"*"` остаётся
+  fallback и попадает в каталог; это ещё не жёсткая специализация.
+- `subagent-factory` валидирует ручные профили; автоматическая генерация уже не требует
+  его вызова.
+- Settings показывает concrete skills; позже — какие из них реально загружались.
 
 ### 5.4 Один владелец каталога
 
@@ -382,14 +395,14 @@ Shared-каталог (уже добавлен) — единственная п�
 
 ### P0 — контекст и ресурсы (сначала это)
 
-| #    | Что                                                                                                     | Ожидаемый эффект                         | Риск                                      | Файлы                                                      |
-| ---- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
-| P0.1 | Включить `toolSearchMode: auto` для моделей с tool calls; one-time migration с сохранением явного `off` | −45% input, −20–40% TTFT/стоимости       | средний: модель должна освоить ToolSearch | `validationAppSettings.ts`, `tool/search/exposure.ts`, E2E |
-| P0.2 | Lazy MCP: не подключать documents/pdf/presentations/spreadsheets без первого обращения                  | −14% input + меньше процессов            | средний                                   | `mcp-sync`, `plugin-runtime-catalog`, startup              |
-| P0.3 | Сжать skills/agent listing: бюджет 10–12k, partial descriptions, agent listing в 1 строку               | −8–12% input                             | низкий                                    | `context/sections/skills.ts`, `subagent/listing.ts`        |
-| P0.4 | Снизить `maxParallelSubagents` на 16 ГБ до 4–6 (1 ГБ/агент + резерв)                                    | меньше contention, стабильнее wall-clock | низкий                                    | `runtime-task/registry-types.ts`                           |
-| P0.5 | `workingContextCeilingTokens` 120k → 80k + observation masking старых tool outputs                      | короче контекст, дешевле шаги            | средний: можно потерять детали            | `runtime-config`, compact/history                          |
-| P0.6 | Проверить и включить prompt cache для поддерживаемых провайдеров; показывать cache hit                  | 50–90% input cost на cached prefix       | зависит от провайдера                     | `adapters/model/cache-control`, provider factory           |
+| #    | Что                                                                                                  | Ожидаемый эффект                         | Риск                                      | Файлы                                                      |
+| ---- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| P0.1 | ✅ `toolSearchMode: auto` для existing explicit `off`; one-time migration с сохранением явного `off` | −45% input, −20–40% TTFT/стоимости       | средний: модель должна освоить ToolSearch | `validationAppSettings.ts`, `tool/search/exposure.ts`, E2E |
+| P0.2 | Lazy MCP: не подключать documents/pdf/presentations/spreadsheets без первого обращения               | −14% input + меньше процессов            | средний                                   | `mcp-sync`, `plugin-runtime-catalog`, startup              |
+| P0.3 | Сжать skills/agent listing: бюджет 10–12k, partial descriptions, agent listing в 1 строку            | −8–12% input                             | низкий                                    | `context/sections/skills.ts`, `subagent/listing.ts`        |
+| P0.4 | Снизить `maxParallelSubagents` на 16 ГБ до 4–6 (1 ГБ/агент + резерв)                                 | меньше contention, стабильнее wall-clock | низкий                                    | `runtime-task/registry-types.ts`                           |
+| P0.5 | `workingContextCeilingTokens` 120k → 80k + observation masking старых tool outputs                   | короче контекст, дешевле шаги            | средний: можно потерять детали            | `runtime-config`, compact/history                          |
+| P0.6 | Проверить и включить prompt cache для поддерживаемых провайдеров; показывать cache hit               | 50–90% input cost на cached prefix       | зависит от провайдера                     | `adapters/model/cache-control`, provider factory           |
 
 ### P1 — routing и специализация
 
@@ -480,8 +493,9 @@ Shared-каталог (уже добавлен) — единственная п�
 - 33/54 инструмента — срез текущей сессии; точный набор зависит от плагинов, портов и
   gate-флагов.
 - Все проценты ускорения в P0/P1 — гипотезы до A/B.
-- Код в этой работе меняет только roster/overrides; tool search, lazy MCP, skill scoping
-  и routing fast path не реализованы.
+- В этой работе реализованы roster/overrides, skill→agent provisioning и one-time
+  ToolSearch migration; lazy MCP, skill scoping, observation masking и routing fast path
+  ещё не реализованы.
 
 ---
 
@@ -491,7 +505,7 @@ Shared-каталог (уже добавлен) — единственная п�
 2. Назначить `start` и `orchestrator` быструю/дешёвую модель, если она есть.
 3. Открыть Context Usage в чате и посмотреть, сколько занимают tools/MCP/skills.
 4. На 16 ГБ поставить `maxParallelSubagents` = 4.
-5. Если провайдер и модель уверенно работают с tool search — включить
-   Settings → General → Tool search → Auto/Local и сравнить качество/скорость.
+5. ToolSearch: существующий явный `off` мигрирует в `auto` один раз. Если модель плохо
+   вызывает редкие инструменты — вернуть `Off`; после миграции выбор сохраняется.
 6. Не включать все плагины документов, если они не нужны: это 20 инструментов и ~14%
    входа.

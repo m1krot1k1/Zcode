@@ -19,7 +19,10 @@ import {
 import { createPluginUiAccountBindings } from "../plugin-ui-bridge/instanceAccounts.js";
 import { createSkillsService } from "../skills/skillsService.js";
 import { createSourceServerWorkspaceService } from "../source-server-workspace/sourceServerWorkspaceService.js";
-import { createSubagentsService } from "../subagents/subagentsService.js";
+import {
+  createSubagentsService,
+  provisionSkillAgentProfile,
+} from "../subagents/subagentsService.js";
 import { join } from "node:path";
 import { getZCodeDataRootDir as projectDataRoot } from "#src/paths.js";
 
@@ -52,7 +55,23 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
       }),
   };
   // mcpSync/hooks 里引用 zcodeAgentService 的闭包是惰性调用，声明顺序不影响初始化。
-  const skillsService = createSkillsService({ isDesktopRuntime: true });
+  const subagentsService = createSubagentsService({
+    isDesktopRuntime: true,
+  });
+  const skillsService = createSkillsService({
+    isDesktopRuntime: true,
+    onMarketplaceSkillInstalled: async (skill) => {
+      const provisioned = await provisionSkillAgentProfile({
+        skillName: skill.name,
+        ...(skill.description ? { description: skill.description } : {}),
+        ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+      });
+      if (provisioned.created) {
+        await subagentsService.prepareRuntimeState();
+      }
+      return { agentName: provisioned.agentName };
+    },
+  });
   const mcpSyncService = createMcpSyncService({
     // mcp/list 的 host 消费点收拢到 mcpSync 服务；真实状态检查仍在 agent 进程。
     listMcpServerStatuses: (params) => agentService().listMcpServerStatuses(params),
@@ -97,9 +116,6 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
     unregisterAppToolsForUi: (params) => agentService().unregisterAppToolsForUi(params),
     claimAppToolCallForUi: (params) => agentService().claimAppToolCallForUi(params),
     resolveAppToolCallForUi: (params) => agentService().resolveAppToolCallForUi(params),
-  });
-  const subagentsService = createSubagentsService({
-    isDesktopRuntime: true,
   });
   const codeIntelligenceService = createCodeIntelligenceService({
     indexRootDir: join(projectDataRoot(), "code-intelligence"),
