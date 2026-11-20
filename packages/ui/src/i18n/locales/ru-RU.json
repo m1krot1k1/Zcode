@@ -7682,5 +7682,5 @@
   "chat.voice.noModels": "Нет доступных моделей",
   "chat.voice.unavailable": "Голосовой ввод недоступен",
   "chat.voice.microphoneDenied": "Нет доступа к микрофону",
-  "chat.voice.hint": "Удерживайте ⌘⇧Пробел или нажмите дважды"
+  "chat.voice.hint": "Удерживайте ⌥ или нажмите дважды"
 }

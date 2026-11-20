@@ -106,6 +106,7 @@ class VoiceDictationController {
   private levelFrame = 0;
   private lastLevelUpdate = 0;
   private finalizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private startToken = 0;
 
   configure(port: VoiceDictationPort | null): void {
     if (this.port === port) return;
@@ -197,8 +198,10 @@ class VoiceDictationController {
   async start(): Promise<void> {
     const port = this.port;
     if (!port || (state.status !== "idle" && state.status !== "error")) return;
+    const startToken = (this.startToken += 1);
     if (state.models.length === 0 || !state.modelId) {
       await this.refresh(true);
+      if (startToken !== this.startToken) return;
     }
     const latest = getVoiceDictationState();
     const modelId = latest.modelId;
@@ -224,8 +227,17 @@ class VoiceDictationController {
         model: modelId,
         language: latest.language,
       });
+      if (startToken !== this.startToken) {
+        await port.cancel().catch(() => undefined);
+        return;
+      }
       input.beginVoiceDictation();
       await this.openMicrophone();
+      if (startToken !== this.startToken) {
+        this.cleanupAudio();
+        await port.cancel().catch(() => undefined);
+        return;
+      }
       setState({
         status: "listening",
         mode: result.mode,
@@ -309,6 +321,7 @@ class VoiceDictationController {
   }
 
   async cancel(): Promise<void> {
+    this.startToken += 1;
     const port = this.port;
     const input = getActiveLexicalChatInput();
     input?.cancelVoiceDictation();

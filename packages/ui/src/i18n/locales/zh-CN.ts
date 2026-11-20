@@ -8476,7 +8476,7 @@ const zhCN: Record<string, string> = {
   "chat.voice.noModels": "没有可用的语音模型",
   "chat.voice.unavailable": "语音输入不可用",
   "chat.voice.microphoneDenied": "麦克风访问被拒绝",
-  "chat.voice.hint": "按住 ⌘⇧空格或按两次",
+  "chat.voice.hint": "按住 ⌥ 或按两次",
 };
 
 export default zhCN;

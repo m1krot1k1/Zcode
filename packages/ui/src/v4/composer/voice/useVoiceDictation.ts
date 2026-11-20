@@ -35,8 +35,13 @@ function useVoiceDictationHotkey(api: VoiceDictationApi): void {
       if (stopTimer.current) clearTimeout(stopTimer.current);
       stopTimer.current = null;
     };
+    const isDictationKey = (event: KeyboardEvent) =>
+      (event.code === "AltLeft" || event.code === "AltRight") &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || !event.shiftKey || !(event.metaKey || event.ctrlKey)) return;
+      if (!isDictationKey(event)) return;
       event.preventDefault();
       event.stopPropagation();
       const current = apiRef.current;
@@ -48,25 +53,34 @@ function useVoiceDictationHotkey(api: VoiceDictationApi): void {
           handsFree.current = true;
           return;
         }
-        if (handsFree.current) {
-          handsFree.current = false;
-          void current.stop();
+        handsFree.current = false;
+        void current.stop();
+        return;
+      }
+      if (current.state.status === "starting") {
+        if (stopTimer.current) {
+          clearStopTimer();
+          handsFree.current = true;
         }
         return;
       }
-      if (current.state.status === "starting" || current.state.status === "stopping") return;
+      if (current.state.status === "stopping") return;
       handsFree.current = false;
       void current.start();
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return;
+      if (!isDictationKey(event)) return;
       const current = apiRef.current;
-      if (current.state.status !== "listening" || handsFree.current) return;
+      if (handsFree.current) return;
+      if (current.state.status === "idle" || current.state.status === "stopping") return;
       clearStopTimer();
       stopTimer.current = setTimeout(() => {
         stopTimer.current = null;
-        if (apiRef.current.state.status === "listening") {
+        const status = apiRef.current.state.status;
+        if (status === "listening") {
           void apiRef.current.stop();
+        } else if (status === "starting") {
+          void apiRef.current.cancel();
         }
       }, 350);
     };

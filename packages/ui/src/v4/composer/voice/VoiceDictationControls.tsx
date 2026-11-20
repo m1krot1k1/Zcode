@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, MicIcon, Settings2Icon, SquareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -80,7 +81,7 @@ function VoiceDictationButtonImpl({ disabled }: { disabled: boolean }) {
         data-mode={state.mode ?? undefined}
         aria-label={label}
         aria-pressed={listening}
-        disabled={disabled || busy}
+        disabled={busy || (disabled && !listening)}
         onClick={onClick}
         className={cn(
           "group/voice h-7 w-fit justify-center gap-1 rounded-lg px-1.5 py-1.5 text-ui-base",
@@ -268,7 +269,8 @@ function VoiceDictationOverlayImpl() {
         ? intl.formatMessage({ id: "chat.voice.rollingHint" })
         : null;
   const bars = [0.35, 0.6, 0.9, 0.55, 0.4];
-  return (
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <>
       <div
         className="fixed left-1/2 top-4 z-50 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2 shadow-lg"
@@ -336,7 +338,8 @@ function VoiceDictationOverlayImpl() {
         ) : null}
       </div>
       <VoiceSettingsDialog api={api} />
-    </>
+    </>,
+    document.body,
   );
 }
 

@@ -85,12 +85,6 @@ export function registerVoiceDictationIpc(logger: {
     }
     callback(true);
   });
-  defaultSession.setPermissionCheckHandler((_contents, permission, _origin, details) => {
-    if (permission === "media") {
-      return "mediaType" in details ? details.mediaType === "audio" : false;
-    }
-    return true;
-  });
   ipcMain.handle(PlatformChannels.VoiceDictation, async (event, raw: unknown) => {
     const parsed = parseCommand(raw);
     if (!parsed.ok) throw new Error(parsed.error);

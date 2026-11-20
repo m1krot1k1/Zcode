@@ -8953,7 +8953,7 @@ const enUS: Record<string, string> = {
   "chat.voice.noModels": "No speech models available",
   "chat.voice.unavailable": "Voice input is unavailable",
   "chat.voice.microphoneDenied": "Microphone access was denied",
-  "chat.voice.hint": "Hold ⌘⇧Space or tap twice",
+  "chat.voice.hint": "Hold ⌥ or tap twice",
 };
 
 export default enUS;
