@@ -38,6 +38,7 @@ import { useOptionalRemoteWorkspaceController } from "@/remote/useRemoteWorkspac
 import { useRemoteProjectReconnect } from "@/hooks/RemoteProjectPresentationContext.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
+import { VoiceDictationOverlay } from "@/v4/composer/voice/index.js";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
 import type { AppSlashCommand } from "@/slashCommandHelpers.js";
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
@@ -334,6 +335,7 @@ export function buildComposerRoot(input: ComposerRootInput): ReactNode {
             })}
           </div>
         ) : null}
+        <VoiceDictationOverlay />
         <ChatPromptEditor
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}

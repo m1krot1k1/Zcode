@@ -60,6 +60,7 @@ import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerDesktopCommandIpcHandler } from "./desktopCommandIpc.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
+import { registerVoiceDictationIpc } from "./voice/index.js";
 
 export function registerPlatformIpcHandlers(options: {
   fetchHelpConfig?: () => Promise<unknown>;
@@ -112,6 +113,7 @@ export function registerPlatformIpcHandlers(options: {
   /** Browser tab 关闭、挂起、恢复与跨重启 shell IPC。 */
   browserViewResidencyHandlers?: BrowserViewResidencyIpcHandlers;
 }) {
+  registerVoiceDictationIpc(options.logger);
   ipcMain.handle(PlatformChannels.SelectDirectory, async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],

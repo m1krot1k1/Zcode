@@ -7666,5 +7666,21 @@
   "settings.stage4.browser.ariaNodes": "Лимит ARIA-узлов",
   "settings.stage4.browser.ariaNodes.description": "Сколько узлов попадает в ARIA-снимок страницы.",
   "settings.stage4.browser.autoClose": "Авто-закрытие диалогов",
-  "settings.stage4.browser.autoClose.description": "Автоматически закрывать модальные окна, мешающие работе."
+  "settings.stage4.browser.autoClose.description": "Автоматически закрывать модальные окна, мешающие работе.",
+  "chat.voice.start": "Голосовой ввод",
+  "chat.voice.stop": "Остановить",
+  "chat.voice.cancel": "Отменить",
+  "chat.voice.listening": "Слушаю…",
+  "chat.voice.streamingHint": "Текст появляется по мере речи",
+  "chat.voice.rollingHint": "Текст появляется на паузах",
+  "chat.voice.settings": "Настройки голоса",
+  "chat.voice.model": "Модель",
+  "chat.voice.language": "Язык",
+  "chat.voice.download": "Скачать",
+  "chat.voice.downloaded": "Установлена",
+  "chat.voice.downloading": "Загрузка",
+  "chat.voice.noModels": "Нет доступных моделей",
+  "chat.voice.unavailable": "Голосовой ввод недоступен",
+  "chat.voice.microphoneDenied": "Нет доступа к микрофону",
+  "chat.voice.hint": "Удерживайте ⌘⇧Пробел или нажмите дважды"
 }

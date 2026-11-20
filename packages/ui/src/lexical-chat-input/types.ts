@@ -22,6 +22,9 @@ export interface LexicalChatInputHandle {
   getMarkdown: () => string;
   getText: () => string;
   appendText: (text: string) => void;
+  beginVoiceDictation: () => void;
+  applyVoiceDictation: (text: string, final?: boolean) => void;
+  cancelVoiceDictation: () => void;
   appendFileMention: (
     label: string,
     value: string,

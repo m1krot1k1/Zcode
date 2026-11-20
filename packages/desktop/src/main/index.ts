@@ -107,6 +107,17 @@ if (!app.isPackaged && process.env.ZCODE_DISABLE_FIXED_REMOTE_DEBUGGING_PORT !==
   app.commandLine.appendSwitch("remote-debugging-port", "9229");
 }
 
+// Dev-only fake microphone for voice-dictation verification. Production builds
+// ignore the env var and always capture the real device.
+if (!app.isPackaged) {
+  const fakeMicFile = process.env.ZCODE_DEV_FAKE_MIC_FILE?.trim();
+  if (fakeMicFile) {
+    app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+    app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+    app.commandLine.appendSwitch("use-file-for-fake-audio-capture", fakeMicFile);
+  }
+}
+
 app.setName(runtimeApplicationName);
 if (runtimeHomePath) {
   app.setPath("home", runtimeHomePath);

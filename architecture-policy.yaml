@@ -2359,6 +2359,46 @@ modules:
       - packages/ui/src/v4/composer/proactive-suggestion/contract.ts
     layers:
       ui: .
+  # ui-voice-dictation：由 architecture:adopt 登记
+  - id: ui-voice-dictation
+    roots:
+      - packages/ui/src/v4/composer/voice
+    managed: true
+    requires:
+      - shared
+      - ui
+      - ui-lexical-chat-input
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/voice/index.ts
+      - packages/ui/src/v4/composer/voice/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # desktop-voice-dictation：由 architecture:adopt 登记
+  - id: desktop-voice-dictation
+    roots:
+      - packages/desktop/src/main/voice
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/voice/index.ts
+      - packages/desktop/src/main/voice/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # shared-voice-dictation：由 architecture:adopt 登记
+  - id: shared-voice-dictation
+    roots:
+      - packages/shared/src/voice-dictation
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/voice-dictation/index.ts
+      - packages/shared/src/voice-dictation/contract.ts
+    layers:
+      contract: .
+    owner: conversation
 
 exceptions:
   # Two focused helpers added with the root-auto and crash-resume specs. Keep the

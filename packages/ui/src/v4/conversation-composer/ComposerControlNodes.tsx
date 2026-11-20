@@ -8,6 +8,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { resolveFollowupModifierTooltip } from "@/v4/composer/followupModeSettings.js";
 import { ConversationBackgroundWorkTrigger } from "@/v4/composer/ConversationBackgroundWorkTrigger.js";
 import { V4ComposerCuaEntry } from "@/v4/composer/V4ComposerCuaEntry.js";
+import { VoiceDictationButton } from "@/v4/composer/voice/index.js";
 import {
   V4ComposerModeSwitch,
   V4ComposerModelControls,
@@ -280,6 +281,7 @@ export function buildLeadingActions(input: LeadingActionsInput): ReactNode {
         isWebRemoteControl={isWebRemoteControl}
         currentSessionBusy={canStop}
       />
+      <VoiceDictationButton disabled={disabled || runtimeBlocked} />
       <ConversationBackgroundWorkTrigger
         backgroundWorks={backgroundWorks}
         runningSubagentCount={runningSubagentCount}

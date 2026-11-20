@@ -10,6 +10,7 @@ export function createDesktopPlatform(options: {
   return {
     canSelectFilePath: true,
     canOpenLocalFiles: true,
+    voiceDictation: window.zcode.voice,
     pluginSandbox: createDesktopPluginSandboxPlatform(),
     createLocalMediaPreviewUrl: buildLocalMediaPreviewUrl,
     isLocalDevelopmentRuntime: options.isLocalDevelopmentRuntime,

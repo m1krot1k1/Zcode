@@ -5,7 +5,11 @@
  */
 import { useEffect } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { COMMAND_PRIORITY_LOW, FOCUS_COMMAND } from "lexical";
 import {
+  applyEditorVoiceDictation,
+  beginEditorVoiceDictation,
+  cancelEditorVoiceDictation,
   getEditorMarkdown,
   replaceEditorStateJson,
   replaceEditorText,
@@ -23,6 +27,7 @@ import {
 } from "@/lexical-chat-input/editorOperations.js";
 import type { MentionItemData } from "@/mentions/mentionTypes.js";
 import type { LexicalChatInputHandle } from "@/lexical-chat-input/types.js";
+import { setActiveLexicalChatInput } from "@/lexical-chat-input/activeInput.js";
 
 /** 编辑器可编辑状态控制插件 */
 export function EditablePlugin({ editable }: { editable: boolean }) {
@@ -143,6 +148,10 @@ export function EditorApiPlugin({
       getMarkdown: () => getEditorMarkdown(editor.getEditorState()),
       getText: () => getEditorMarkdown(editor.getEditorState()),
       appendText: (text: string) => appendEditorPlainText(editor, text),
+      beginVoiceDictation: () => beginEditorVoiceDictation(editor),
+      applyVoiceDictation: (text: string, final = false) =>
+        applyEditorVoiceDictation(editor, text, final),
+      cancelVoiceDictation: () => cancelEditorVoiceDictation(editor),
       appendFileMention: (
         label: string,
         value: string,
@@ -169,8 +178,20 @@ export function EditorApiPlugin({
       ) => replaceEditorWithSlashCommandMention(editor, commandName, markdown, trailingText),
     };
 
+    setActiveLexicalChatInput(editorApiRef.current);
+    const unregisterFocus = editor.registerCommand(
+      FOCUS_COMMAND,
+      () => {
+        if (editorApiRef.current) setActiveLexicalChatInput(editorApiRef.current);
+        return false;
+      },
+      COMMAND_PRIORITY_LOW,
+    );
+
     return () => {
+      unregisterFocus();
       editorApiRef.current = null;
+      setActiveLexicalChatInput(null);
     };
   }, [editor, editorApiRef]);
 

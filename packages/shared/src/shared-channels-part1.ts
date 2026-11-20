@@ -275,6 +275,10 @@ export const PlatformChannels = {
   GetCloseToTrayCapability: "zcode:get-close-to-tray-capability",
   /** Renderer 日志转发到 main 进程统一存储 */
   Log: "zcode:log",
+  /** Renderer → Main: local voice dictation command (start/stop/audio/models). */
+  VoiceDictation: "zcode:voice-dictation",
+  /** Main → Renderer: bounded voice dictation transcript/progress event. */
+  VoiceDictationEvent: "zcode:voice-dictation-event",
   /** Renderer → Main：同步当前窗口所有 tab 的 workspace 路径 */
   SyncWindowTabs: "zcode:sync-window-tabs",
   /** Renderer → Main：同步当前窗口可供 Web 远程控制切换的 workspace */

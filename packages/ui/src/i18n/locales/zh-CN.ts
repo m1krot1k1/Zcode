@@ -8461,6 +8461,22 @@ const zhCN: Record<string, string> = {
     "主机校验：声明的命令返回 0 · {passed}/{total} 项标准",
   "subagentDirectory.hostAcceptance.rejected": "主机校验未通过 · {passed}/{total} 项标准",
   "subagentDirectory.hostAcceptance.unknown": "主机校验未执行 · {passed}/{total} 项标准",
+  "chat.voice.start": "语音输入",
+  "chat.voice.stop": "停止",
+  "chat.voice.cancel": "取消",
+  "chat.voice.listening": "正在聆听…",
+  "chat.voice.streamingHint": "说话时实时显示文字",
+  "chat.voice.rollingHint": "停顿后显示文字",
+  "chat.voice.settings": "语音设置",
+  "chat.voice.model": "模型",
+  "chat.voice.language": "语言",
+  "chat.voice.download": "下载",
+  "chat.voice.downloaded": "已安装",
+  "chat.voice.downloading": "下载中",
+  "chat.voice.noModels": "没有可用的语音模型",
+  "chat.voice.unavailable": "语音输入不可用",
+  "chat.voice.microphoneDenied": "麦克风访问被拒绝",
+  "chat.voice.hint": "按住 ⌘⇧空格或按两次",
 };
 
 export default zhCN;

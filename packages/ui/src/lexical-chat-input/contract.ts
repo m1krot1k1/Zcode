@@ -1,9 +1,9 @@
 /**
- * ui-lexical-chat-input 对外契约：调用方要想正确调用就必须知道的一切都写在这里；其余对外不可见。
- * 每个方法注释写清：前置/后置条件、幂等性、发出哪些事件、是否等待持久化。
+ * ui-lexical-chat-input 对外契约。
+ *
+ * Composer 的 imperative API 仍是唯一草稿写入入口。其它 UI 模块只能通过
+ * `getActiveLexicalChatInput()` 取得当前焦点编辑器，不得直接创建第二份
+ * Lexical 状态。
  */
-export type UiLexicalChatInputId = string & { readonly __brand: "UiLexicalChatInputId" };
-
-export interface UiLexicalChatInputContract {
-  // TODO(ui-lexical-chat-input): 一个意图一个方法，不超过 8 个。
-}
+export type { LexicalChatInputHandle } from "./types.js";
+export { getActiveLexicalChatInput, setActiveLexicalChatInput } from "./activeInput.js";

@@ -10,6 +10,7 @@ export function createExtraResources(ctx) {
     ctx.desktopPackageRoot,
     `bundled-agents/${targetPlatform.key}/glm`,
   );
+  const bundledVoiceDir = resolve(ctx.desktopPackageRoot, `bundled-voice/${targetPlatform.key}`);
   return [
     ...(existsSync(bundledRemoteAssets)
       ? [
@@ -23,6 +24,16 @@ export function createExtraResources(ctx) {
         ]
       : []),
     { from: resolve(ctx.workspaceRoot, noticesFileName), to: noticesFileName },
+    ...(existsSync(bundledVoiceDir)
+      ? [
+          {
+            // Local voice dictation engine (Hex, MIT). Signed per-platform during packaging.
+            from: bundledVoiceDir,
+            to: "voice",
+            filter: ["**/*"],
+          },
+        ]
+      : []),
     ...(targetPlatform.os === "darwin"
       ? [
           ...(ctx.shouldPackageComputerUseHelper

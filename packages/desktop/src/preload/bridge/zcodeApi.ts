@@ -1,4 +1,9 @@
-import { ipcRenderer, webUtils } from "electron";
+import { ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
+import type {
+  VoiceDictationEvent,
+  VoiceDictationPort,
+  VoiceModelPrepareProgress,
+} from "@zcode/shared";
 import type {
   AppSettings,
   ApplicationIconRequest,
@@ -75,7 +80,10 @@ import {
   registerUpdateReadyCallback,
   registerUpdateStateCallback,
 } from "./updates.js";
-import { registerOpenWorkspacePathCallback, registerShareImportCallback } from "./workspaceEvents.js";
+import {
+  registerOpenWorkspacePathCallback,
+  registerShareImportCallback,
+} from "./workspaceEvents.js";
 
 /**
  * Preload bridge —— 仅暴露需要 main 进程参与的平台操作
@@ -88,7 +96,52 @@ export function createZCodeApi({
 }: {
   reportRendererHeapSample: (sample: RendererHeapSample) => void;
 }) {
+  const voice: VoiceDictationPort = {
+    getStatus: () => ipcRenderer.invoke(PlatformChannels.VoiceDictation, { action: "status" }),
+    listModels: (language?: string) =>
+      ipcRenderer.invoke(PlatformChannels.VoiceDictation, {
+        action: "models",
+        ...(language ? { language } : {}),
+      }),
+    prepareModel: (
+      modelId: string,
+      language: string,
+      onProgress: (progress: VoiceModelPrepareProgress) => void,
+    ) => {
+      const requestId = crypto.randomUUID();
+      const listener = (_event: IpcRendererEvent, event: VoiceDictationEvent) => {
+        if (event.type === "prepare-progress" && event.requestId === requestId) {
+          onProgress(event.progress);
+        }
+      };
+      ipcRenderer.on(PlatformChannels.VoiceDictationEvent, listener);
+      return ipcRenderer
+        .invoke(PlatformChannels.VoiceDictation, {
+          action: "prepare",
+          requestId,
+          modelId,
+          language,
+        })
+        .finally(() => {
+          ipcRenderer.removeListener(PlatformChannels.VoiceDictationEvent, listener);
+        });
+    },
+    start: (request) =>
+      ipcRenderer.invoke(PlatformChannels.VoiceDictation, { action: "start", request }),
+    appendAudio: (samples: ArrayBuffer) =>
+      ipcRenderer.invoke(PlatformChannels.VoiceDictation, { action: "appendAudio", samples }),
+    stop: () => ipcRenderer.invoke(PlatformChannels.VoiceDictation, { action: "stop" }),
+    cancel: () => ipcRenderer.invoke(PlatformChannels.VoiceDictation, { action: "cancel" }),
+    onEvent: (listener: (event: VoiceDictationEvent) => void) => {
+      const wrapped = (_event: IpcRendererEvent, event: VoiceDictationEvent) => {
+        listener(event);
+      };
+      ipcRenderer.on(PlatformChannels.VoiceDictationEvent, wrapped);
+      return () => ipcRenderer.removeListener(PlatformChannels.VoiceDictationEvent, wrapped);
+    },
+  };
   return {
+    voice,
     connectRemote: (
       options: RemoteTarget,
       requestId?: string,
@@ -138,7 +191,8 @@ export function createZCodeApi({
     },
     disposeRemoteSession: (sessionId: string): Promise<void> =>
       ipcRenderer.invoke(PlatformChannels.DisposeRemoteSession, sessionId),
-    isDockerAvailable: (): Promise<boolean> => ipcRenderer.invoke(PlatformChannels.IsDockerAvailable),
+    isDockerAvailable: (): Promise<boolean> =>
+      ipcRenderer.invoke(PlatformChannels.IsDockerAvailable),
     listWSLDistros: () => ipcRenderer.invoke(PlatformChannels.ListWSLDistros),
     listDockerContainers: () => ipcRenderer.invoke(PlatformChannels.ListDockerContainers),
     listSSHConfigAliases: (): Promise<SSHConfigAliasOption[]> =>
@@ -267,8 +321,11 @@ export function createZCodeApi({
       return () => ipcRenderer.removeListener(PlatformChannels.CloseActiveContextRequest, handler);
     },
     /** 注册内置 webview 的受控新页面请求，返回 disposer */
-    onOpenBrowserUrl: (callback: (request: EmbeddedBrowserOpenUrlRequest) => void): (() => void) => {
-      const handler = (_event: unknown, request: EmbeddedBrowserOpenUrlRequest) => callback(request);
+    onOpenBrowserUrl: (
+      callback: (request: EmbeddedBrowserOpenUrlRequest) => void,
+    ): (() => void) => {
+      const handler = (_event: unknown, request: EmbeddedBrowserOpenUrlRequest) =>
+        callback(request);
       ipcRenderer.on(PlatformChannels.OpenBrowserUrl, handler);
       return () => ipcRenderer.removeListener(PlatformChannels.OpenBrowserUrl, handler);
     },
@@ -364,7 +421,9 @@ export function createZCodeApi({
       return () =>
         ipcRenderer.removeListener(PlatformChannels.BrowserViewScreenshotSurfaceRelease, handler);
     },
-    browserViewScreenshotSurfaceReady: (payload: BrowserViewScreenshotSurfaceReadyPayload): void => {
+    browserViewScreenshotSurfaceReady: (
+      payload: BrowserViewScreenshotSurfaceReadyPayload,
+    ): void => {
       ipcRenderer.send(PlatformChannels.BrowserViewScreenshotSurfaceReady, payload);
     },
     onBrowserViewVisibility: (
@@ -469,9 +528,12 @@ export function createZCodeApi({
       callback: (metrics: WindowControlsOverlayMetrics) => void,
     ): (() => void) => {
       const handler = (_event: unknown, metrics: WindowControlsOverlayMetrics) => callback(metrics);
-      callback(getLatestWindowControlsOverlayMetrics() ?? readCurrentWindowControlsOverlayMetrics());
+      callback(
+        getLatestWindowControlsOverlayMetrics() ?? readCurrentWindowControlsOverlayMetrics(),
+      );
       ipcRenderer.on(PlatformChannels.WindowControlsOverlayChanged, handler);
-      return () => ipcRenderer.removeListener(PlatformChannels.WindowControlsOverlayChanged, handler);
+      return () =>
+        ipcRenderer.removeListener(PlatformChannels.WindowControlsOverlayChanged, handler);
     },
     /** 同步读取当前桌面窗口页面缩放档位 */
     getDesktopZoomLevel: async (): Promise<DesktopZoomState> => {
@@ -506,7 +568,8 @@ export function createZCodeApi({
     canOpenCommunity: (locale: Locale): Promise<boolean> =>
       ipcRenderer.invoke(PlatformChannels.CanOpenCommunity, locale),
     /** 在系统文件管理器中打开指定路径 */
-    openInFileManager: (path: string) => ipcRenderer.invoke(PlatformChannels.OpenInFileManager, path),
+    openInFileManager: (path: string) =>
+      ipcRenderer.invoke(PlatformChannels.OpenInFileManager, path),
     /** 使用系统默认应用打开本地文件 */
     openExternalFile: (path: string) => ipcRenderer.invoke(PlatformChannels.OpenExternalFile, path),
     /** 打开 ZCode Computer Use 完整权限引导 */

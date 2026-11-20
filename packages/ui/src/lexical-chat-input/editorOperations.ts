@@ -10,6 +10,7 @@ import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 import { PROGRAMMATIC_UPDATE_TAG } from "@/lib/editorUpdateTags.js";
 import {
   $createParagraphNode,
+  $createRangeSelection,
   $createTextNode,
   $getNodeByKey,
   $getRoot,
@@ -20,7 +21,10 @@ import {
   type EditorState,
   type LexicalEditor,
 } from "lexical";
-import { $createPromptMentionNode, $isPromptMentionNode } from "@/mentions/nodes/PromptMentionNode.js";
+import {
+  $createPromptMentionNode,
+  $isPromptMentionNode,
+} from "@/mentions/nodes/PromptMentionNode.js";
 
 /** 提取编辑器内容；mention 节点会在这里输出 markdown */
 export function getEditorMarkdown(editorState: EditorState): string {
@@ -155,7 +159,7 @@ export function prependEditorMentionIfMissing(
       separator.selectEnd();
       inserted = true;
     },
-    { discrete: true, tag: PROGRAMMATIC_UPDATE_TAG },
+    { tag: PROGRAMMATIC_UPDATE_TAG },
   );
   return inserted;
 }
@@ -315,4 +319,104 @@ export function insertEditorMention(
     },
     { tag: PROGRAMMATIC_UPDATE_TAG },
   );
+}
+
+// Голосовая диктовка вставляет текст в текущую позицию и затем заменяет только
+// собственный диапазон. Диапазон хранится на редактор, чтобы кнопка микрофона,
+// оверлей и Lexical-плагин не создавали второй owner текста.
+interface VoiceDictationRange {
+  startKey: string;
+  startOffset: number;
+  startType: "text" | "element";
+  endKey: string;
+  endOffset: number;
+  endType: "text" | "element";
+}
+
+const voiceDictationRanges = new WeakMap<LexicalEditor, VoiceDictationRange>();
+
+function captureVoiceEnd(range: VoiceDictationRange): void {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return;
+  range.endKey = selection.anchor.key;
+  range.endOffset = selection.anchor.offset;
+  range.endType = selection.anchor.type;
+}
+
+export function beginEditorVoiceDictation(editor: LexicalEditor) {
+  editor.update(
+    () => {
+      let selection = $getSelection();
+      if (!$isRangeSelection(selection)) {
+        $getRoot().selectEnd();
+        selection = $getSelection();
+      }
+      if (!$isRangeSelection(selection)) return;
+      const range: VoiceDictationRange = {
+        startKey: selection.anchor.key,
+        startOffset: selection.anchor.offset,
+        startType: selection.anchor.type,
+        endKey: selection.anchor.key,
+        endOffset: selection.anchor.offset,
+        endType: selection.anchor.type,
+      };
+      voiceDictationRanges.set(editor, range);
+    },
+    { tag: PROGRAMMATIC_UPDATE_TAG, discrete: true },
+  );
+}
+
+export function applyEditorVoiceDictation(editor: LexicalEditor, text: string, final = false) {
+  editor.update(
+    () => {
+      const range = voiceDictationRanges.get(editor);
+      if (!range) return;
+      const startNode = $getNodeByKey(range.startKey);
+      const endNode = $getNodeByKey(range.endKey);
+      const selection = $createRangeSelection();
+      if (startNode && endNode) {
+        selection.anchor.set(range.startKey, range.startOffset, range.startType);
+        selection.focus.set(range.endKey, range.endOffset, range.endType);
+      } else {
+        // Пользователь мог изменить draft во время записи: не дублируем текст,
+        // а продолжаем с конца. Диапазон пересчитывается после вставки.
+        $getRoot().selectEnd();
+        const endSelection = $getSelection();
+        if (!$isRangeSelection(endSelection)) return;
+        selection.anchor.set(
+          endSelection.anchor.key,
+          endSelection.anchor.offset,
+          endSelection.anchor.type,
+        );
+        selection.focus.set(
+          endSelection.anchor.key,
+          endSelection.anchor.offset,
+          endSelection.anchor.type,
+        );
+        range.startKey = endSelection.anchor.key;
+        range.startOffset = endSelection.anchor.offset;
+        range.startType = endSelection.anchor.type;
+      }
+      $setSelection(selection);
+      selection.insertText(text);
+      captureVoiceEnd(range);
+      if (range.startType === "element") {
+        // An empty Composer starts with an element selection. After the first
+        // insert, remember the inserted text range so the next partial replaces
+        // it instead of appending a second copy.
+        const after = $getSelection();
+        if ($isRangeSelection(after) && after.anchor.type === "text") {
+          range.startKey = after.anchor.key;
+          range.startOffset = Math.max(0, after.anchor.offset - text.length);
+          range.startType = "text";
+        }
+      }
+      if (final) voiceDictationRanges.delete(editor);
+    },
+    { tag: PROGRAMMATIC_UPDATE_TAG, discrete: true },
+  );
+}
+
+export function cancelEditorVoiceDictation(editor: LexicalEditor) {
+  applyEditorVoiceDictation(editor, "", true);
 }

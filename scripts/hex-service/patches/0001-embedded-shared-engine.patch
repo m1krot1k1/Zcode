@@ -1,0 +1,63 @@
+diff --git a/src/local_api.rs b/src/local_api.rs
+index b4d5b74..c2e59c4 100644
+--- a/src/local_api.rs
++++ b/src/local_api.rs
+@@ -383,6 +383,19 @@ pub fn run_service(
+         event_path
+     };
+     let events = EventLog::create(&service_event_path)?;
++    // ZCode fork: an embedded service still needs a shared engine for /streams.
++    // Host holds the Arc, so the shared engine lives for the service lifetime.
++    let shared_engine = if embedded {
++        let engine = std::sync::Arc::new(
++            crate::transcription::engine::TranscriptionEngine::start(
++                crate::transcription::WarmTranscriber::default(),
++            )?,
++        );
++        engine.share();
++        Some(engine)
++    } else {
++        None
++    };
+     let local_api = if embedded {
+         // This service runs no launch that publishes settings, so read them
+         // here: transcription biases on the saved vocabulary rather than an
+@@ -426,6 +439,7 @@ pub fn run_service(
+     while !shutdown.load(Ordering::Relaxed) {
+         thread::sleep(Duration::from_millis(100));
+     }
++    drop(shared_engine);
+     drop(local_api);
+     if embedded
+         && let Err(error) = fs::remove_file(&service_event_path)
+@@ -1146,6 +1160,7 @@ fn model_infos(path: &str) -> std::result::Result<Vec<ModelInfo>, &'static str>
+                 download_bytes: model.download_bytes(),
+                 languages: model.presentation_languages(),
+                 supports_language_detection: model.supports_language_detection,
++                streams: model.streams,
+                 source: crate::control::model_source(model, &language),
+             }
+         })
+@@ -1185,6 +1200,13 @@ fn stream_model_prepare(
+             bail!("model preparation canceled");
+         }
+         crate::transcription::models::ModelPreparationStage::Loading.store(&stage);
++        // ZCode fork: load the model into the shared engine so /streams can use it.
++        if let Some(engine) = crate::transcription::engine::TranscriptionEngine::shared() {
++            engine
++                .reload(selection)
++                .map_err(|error| eyre!("model preparation failed: {error:?}"))?;
++            return Ok(());
++        }
+         transcription
+             .prepare(selection, canceled)
+             .map_err(|error| eyre!("model preparation failed: {error:?}"))
+@@ -1431,6 +1453,8 @@ struct ModelInfo {
+     download_bytes: Option<u64>,
+     languages: Vec<&'static str>,
+     supports_language_detection: bool,
++    /// Whether the loaded runtime can publish partial text while listening.
++    streams: bool,
+     /// `found: owner/name@abcdef1` (another app's download, used where it
+     /// is), `imported`, `hex`, or `download`.
+     source: String,

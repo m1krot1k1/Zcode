@@ -8938,6 +8938,22 @@ const enUS: Record<string, string> = {
     "Host check: declared command exited 0 · {passed}/{total} criteria",
   "subagentDirectory.hostAcceptance.rejected": "Host check failed · {passed}/{total} criteria",
   "subagentDirectory.hostAcceptance.unknown": "Host check not run · {passed}/{total} criteria",
+  "chat.voice.start": "Voice input",
+  "chat.voice.stop": "Stop",
+  "chat.voice.cancel": "Cancel",
+  "chat.voice.listening": "Listening…",
+  "chat.voice.streamingHint": "Text appears as you speak",
+  "chat.voice.rollingHint": "Text appears at pauses",
+  "chat.voice.settings": "Voice settings",
+  "chat.voice.model": "Model",
+  "chat.voice.language": "Language",
+  "chat.voice.download": "Download",
+  "chat.voice.downloaded": "Installed",
+  "chat.voice.downloading": "Downloading",
+  "chat.voice.noModels": "No speech models available",
+  "chat.voice.unavailable": "Voice input is unavailable",
+  "chat.voice.microphoneDenied": "Microphone access was denied",
+  "chat.voice.hint": "Hold ⌘⇧Space or tap twice",
 };
 
 export default enUS;
