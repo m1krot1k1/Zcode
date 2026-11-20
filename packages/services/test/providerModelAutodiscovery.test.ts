@@ -186,7 +186,7 @@ describe("Provider 模型自动发现", () => {
         providerId: "p",
         modelId: "gamma",
         config: {
-          properties: { contextWindow: 200_000 },
+          properties: { contextWindow: 200_000, displayName: "Gamma" },
           optionSpecs: {
             reasoningLevel: { values: ["low", "high"] },
             maxOutputTokens: { max: 64_000 },

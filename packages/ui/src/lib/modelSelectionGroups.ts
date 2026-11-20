@@ -102,7 +102,7 @@ export function buildRegistryModelSelectGroups(
           return {
             key: `registry-provider:${provider.providerId}:${modelId}`,
             value: encodeCustomModelValue(provider.providerId, modelId),
-            name: modelId,
+            name: config.properties?.displayName ?? modelId,
             ...(contextBadgeLabel ? { badgeLabel: contextBadgeLabel } : {}),
             ...(shouldShowModelVisionBadge(
               modelId,

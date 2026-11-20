@@ -410,9 +410,16 @@ function toDiscoveredModelConfig(model: DiscoveredModel): ModelConfigObject {
     ...(model.maxOutput === undefined ? {} : { maxOutputTokens: { max: model.maxOutput } }),
   };
   return {
-    ...(model.contextWindow === undefined
+    ...(model.contextWindow === undefined && model.displayName === model.id
       ? {}
-      : { properties: { contextWindow: model.contextWindow } }),
+      : {
+          properties: {
+            ...(model.contextWindow === undefined
+              ? {}
+              : { contextWindow: model.contextWindow }),
+            ...(model.displayName === model.id ? {} : { displayName: model.displayName }),
+          },
+        }),
     ...(Object.keys(optionSpecs).length === 0 ? {} : { optionSpecs }),
   };
 }

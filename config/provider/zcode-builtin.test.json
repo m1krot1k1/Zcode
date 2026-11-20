@@ -2669,6 +2669,14 @@
               }
             }
           }
+        },
+        {
+          "modelMatch": "(?:^|/)deepseek-v4\\.1-flash$",
+          "config": {
+            "properties": {
+              "displayName": "DeepSeek V4.1 Flash 1017"
+            }
+          }
         }
       ],
       "modelApiRules": [

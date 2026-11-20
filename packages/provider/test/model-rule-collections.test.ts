@@ -228,6 +228,14 @@ describe("Todo104 规则集合读写与应用", () => {
     expect(
       resolve("https://api.anthropic.com/v1", "vendor/claude-test")?.supportsNativeWebSearch,
     ).toBe(true);
+    expect(
+      resolve("https://opencode.ai/zen/go/v1", "deepseek-v4.1-flash", "openai-chat-completions")
+        ?.displayName,
+    ).toBe("DeepSeek V4.1 Flash 1017");
+    expect(
+      resolve("https://opencode.ai/zen/go/v1", "deepseek-v4.1-flash-free", "openai-chat-completions")
+        ?.displayName,
+    ).toBeUndefined();
     expect(resolve("https://attacker.test/v1", "vendor/claude-test")?.supportsNativeWebSearch).toBe(
       false,
     );

@@ -43,7 +43,38 @@ describe("model selection groups", () => {
     expect(items[2]!.supportsVisionInput).toBe(true);
     expect(view.providers[0]!.models[0]!.config.properties?.inputFormat?.supportsImage).toBe(true);
   });
+  it("模型选择显示 Provider 目录的 displayName，未提供时回退 modelId", () => {
+    const view: ModelSelectionView = {
+      revision: 1,
+      providers: [
+        {
+          providerId: "opencode-go",
+          providerName: "OpenCode Go",
+          config: {
+            access: { type: "api-key" },
+            api: {
+              type: "openai-chat-completions",
+              baseUrl: "https://opencode.ai/zen/go/v1",
+            },
+          },
+          models: [
+            {
+              modelId: "deepseek-v4.1-flash",
+              config: { properties: { displayName: "DeepSeek V4.1 Flash 1017" } },
+            },
+            { modelId: "deepseek-v4-pro", config: {} },
+          ],
+        },
+      ],
+    };
+
+    const items = buildRegistryModelSelectGroups("glm", view)[0]!.items;
+    expect(items[0]?.name).toBe("DeepSeek V4.1 Flash 1017");
+    expect(items[1]?.name).toBe("deepseek-v4-pro");
+  });
+
   it("保留带前缀和多段斜杠的精确模型 ID；不从名称推断视觉能力", () => {
+
     const modelId = "upstream/family/vision-preview";
     const view: ModelSelectionView = {
       revision: 1,
