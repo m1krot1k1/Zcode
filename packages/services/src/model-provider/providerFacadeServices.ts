@@ -43,10 +43,38 @@ interface ProviderSettingsServiceOptions {
   readonly now?: () => number;
 }
 
+export type ProviderApiWireFormat =
+  | "anthropic-messages"
+  | "openai-chat-completions"
+  | "openai-responses";
+
+export interface DetectApiFormatInput {
+  readonly baseUrl: string;
+  readonly apiKey?: string;
+  readonly modelId: string;
+  /** The currently saved format is probed first; a manual change remains stable when it works. */
+  readonly preferred?: ProviderApiWireFormat;
+}
+
+export interface ApiFormatDetectionAttempt {
+  readonly format: ProviderApiWireFormat;
+  readonly ok: boolean;
+  readonly httpStatus?: number;
+  readonly error?: "network" | "timeout";
+}
+
+export interface ApiFormatDetectionResult {
+  readonly format: ProviderApiWireFormat | null;
+  readonly reason: "detected" | "none" | "auth" | "network";
+  readonly attempts: readonly ApiFormatDetectionAttempt[];
+}
+
 export interface IProviderSettingsService {
   readonly onDidChange: Event<ProviderSettingsView>;
   getView(): Promise<ProviderSettingsView>;
   refresh(reason: string): Promise<ProviderSettingsView>;
+  /** Probe the configured endpoint and pick the wire format that actually answers. */
+  detectApiFormat(input: DetectApiFormatInput): Promise<ApiFormatDetectionResult>;
   createPersonalProvider(
     input?: Parameters<ProviderSettingsFacade["createPersonalProvider"]>[0],
   ): Promise<ProviderSettingsCreationResult>;
@@ -161,6 +189,88 @@ export function createProviderSettingsService(
       return [];
     }
   };
+  const detectApiFormat = async (
+    input: DetectApiFormatInput,
+  ): Promise<ApiFormatDetectionResult> => {
+    const baseUrl = input.baseUrl.trim().replace(/\/+$/, "");
+    const modelId = input.modelId.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(baseUrl);
+    } catch {
+      return { format: null, reason: "none", attempts: [] };
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { format: null, reason: "none", attempts: [] };
+    }
+    if (!modelId) return { format: null, reason: "none", attempts: [] };
+    const order: ProviderApiWireFormat[] = [
+      "anthropic-messages",
+      "openai-chat-completions",
+      "openai-responses",
+    ];
+    const formats = [
+      ...(input.preferred ? [input.preferred] : []),
+      ...order.filter((format) => format !== input.preferred),
+    ];
+    const probe = async (format: ProviderApiWireFormat): Promise<ApiFormatDetectionAttempt> => {
+      const path =
+        format === "anthropic-messages"
+          ? baseUrl.endsWith("/v1")
+            ? "/messages"
+            : "/v1/messages"
+          : format === "openai-chat-completions"
+            ? "/chat/completions"
+            : "/responses";
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (format === "anthropic-messages") {
+        headers["anthropic-version"] = "2023-06-01";
+        if (input.apiKey) headers["x-api-key"] = input.apiKey;
+        if (input.apiKey) headers.Authorization = `Bearer ${input.apiKey}`;
+      } else if (input.apiKey) {
+        headers.Authorization = `Bearer ${input.apiKey}`;
+      }
+      const body =
+        format === "anthropic-messages"
+          ? { model: modelId, max_tokens: 8, messages: [{ role: "user", content: "ping" }] }
+          : format === "openai-chat-completions"
+            ? {
+                model: modelId,
+                max_tokens: 8,
+                messages: [{ role: "user", content: "ping" }],
+                stream: false,
+              }
+            : { model: modelId, input: "ping", max_output_tokens: 16 };
+      try {
+        const response = await fetchImpl(`${baseUrl}${path}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(10_000),
+        });
+        // Consume the small probe body so the connection is reusable.
+        await response.text().catch(() => "");
+        return { format, ok: response.ok, httpStatus: response.status };
+      } catch (error) {
+        const timedOut = error instanceof Error && error.name === "TimeoutError";
+        return {
+          format,
+          ok: false,
+          ...(timedOut ? { error: "timeout" as const } : { error: "network" as const }),
+        };
+      }
+    };
+    const attempts = await Promise.all(formats.map(probe));
+    const working = attempts.find((attempt) => attempt.ok);
+    if (working) return { format: working.format, reason: "detected", attempts };
+    const statuses = attempts.flatMap((attempt) =>
+      attempt.httpStatus === undefined ? [] : [attempt.httpStatus],
+    );
+    if (statuses.length > 0 && statuses.every((status) => status === 401 || status === 403)) {
+      return { format: null, reason: "auth", attempts };
+    }
+    return { format: null, reason: "network", attempts };
+  };
   return {
     onDidChange: toEvent((listener) => facade.onDidChange(listener)),
     getView: async () => {
@@ -170,6 +280,10 @@ export function createProviderSettingsService(
     refresh: async (reason) => {
       await ensureReady();
       return facade.refresh(reason);
+    },
+    detectApiFormat: async (input) => {
+      await ensureReady();
+      return detectApiFormat(input);
     },
     createPersonalProvider: async (input) => {
       await ensureReady();
@@ -414,9 +528,7 @@ function toDiscoveredModelConfig(model: DiscoveredModel): ModelConfigObject {
       ? {}
       : {
           properties: {
-            ...(model.contextWindow === undefined
-              ? {}
-              : { contextWindow: model.contextWindow }),
+            ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
             ...(model.displayName === model.id ? {} : { displayName: model.displayName }),
           },
         }),

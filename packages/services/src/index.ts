@@ -9,6 +9,10 @@ export {
   type ModelSelectionViewInput,
   type ProviderSettingsProviderView,
   type ProviderSettingsView,
+  type ApiFormatDetectionAttempt,
+  type ApiFormatDetectionResult,
+  type DetectApiFormatInput,
+  type ProviderApiWireFormat,
 } from "./model-provider/providerFacadeServices.js";
 export {
   createAccountRequestAuthService,

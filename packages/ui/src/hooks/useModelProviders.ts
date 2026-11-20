@@ -1,7 +1,10 @@
 import { useState, useCallback, useMemo, useRef } from "react";
-import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
+import {
+  getProviderFormApiKey,
+  type ProviderSettingsFormProvider,
+} from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
-import type { ProviderSettingsView } from "@zcode/services";
+import type { ProviderApiWireFormat, ProviderSettingsView } from "@zcode/services";
 import { useServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
 import { useProviderSettingsServiceView } from "@/hooks/useProviderSettingsView.js";
@@ -84,9 +87,56 @@ export function useModelProviders(target: {
         (candidate) => candidate.providerId === provider.providerId,
       );
       const connectionChanged = hasProviderConnectionChange(previousProvider, provider);
+      const baseUrl = provider.config.api?.baseUrl?.trim() ?? "";
+      const previousBaseUrl = previousProvider?.config.api?.baseUrl?.trim() ?? "";
+      const apiKey = getProviderFormApiKey(provider);
+      const modelId =
+        provider.models[0]?.modelId ??
+        provider.config.personalModelIds?.[0] ??
+        provider.config.builtinModelIds?.[0] ??
+        "";
+      let providerToSave = provider;
+      // First setup or an endpoint change: ask the endpoint which wire format
+      // answers and persist that choice. A format-only edit keeps the manual
+      // selection because the base URL did not change.
+      if (
+        connectionChanged &&
+        baseUrl &&
+        apiKey &&
+        modelId &&
+        (!previousProvider || previousBaseUrl !== baseUrl)
+      ) {
+        try {
+          const detection = await providerSettingsService.detectApiFormat({
+            baseUrl,
+            apiKey,
+            modelId,
+            ...(provider.config.api?.type && provider.config.api.type !== "opencode-sdk"
+              ? { preferred: provider.config.api.type as ProviderApiWireFormat }
+              : {}),
+          });
+          if (detection.format && detection.format !== provider.config.api?.type) {
+            providerToSave = {
+              ...provider,
+              personalConfig: {
+                ...provider.personalConfig,
+                api: {
+                  ...(provider.personalConfig.api ?? {}),
+                  type: detection.format,
+                },
+              },
+            };
+          }
+        } catch (err) {
+          logger.warn("[useModelProviders] API format detection failed", err);
+        }
+      }
       // 新建 Provider 尚未进入 Registry，自然也不会出现在当前 Settings View。
       // 保存边界允许缺少继承层，并直接从新建表单构造完整配置。
-      const savedView = await persistPersonalProvider({ provider, providerSettingsService });
+      const savedView = await persistPersonalProvider({
+        provider: providerToSave,
+        providerSettingsService,
+      });
       commitProviderSettingsView(savedView);
       if (connectionChanged) {
         // 自动发现是保存后的增量动作：不阻塞保存，也不让发现失败回滚已保存的连接配置。
@@ -225,6 +275,12 @@ export function useModelProviders(target: {
     ],
   );
 
+  const detectApiFormat = useCallback(
+    (input: Parameters<typeof providerSettingsService.detectApiFormat>[0]) =>
+      providerSettingsService.detectApiFormat(input),
+    [providerSettingsService],
+  );
+
   return {
     modelProviders: effectiveModelProviders,
     providerTemplates: providerSettingsView?.providerTemplates ?? [],
@@ -246,6 +302,7 @@ export function useModelProviders(target: {
     reorderProviderModels,
     saveDisplayOrder,
     testModelConnectivity,
+    detectApiFormat,
     providerSettingsView,
   };
 }
