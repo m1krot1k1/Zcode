@@ -22,6 +22,7 @@ import { buildCurrentDateSection } from "./sections/current-date.js";
 import { buildContextLedgerSection, buildMemorySection } from "./sections/memory.js";
 import { ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH } from "../memory/project-memory-retrieval-branch.js";
 import { buildDesktopContextSection } from "./sections/desktop.js";
+import { buildWorkspaceFactsSection } from "./sections/workspace-facts.js";
 import {
   buildContextManagementSection,
   buildDynamicBehaviorSection,
@@ -173,6 +174,13 @@ export class ContextBuilder {
           this.config.additionalDirectories,
         ),
       );
+
+      // Явно управляемая секция: только enriched facts из cache-пути.
+      // Legacy projectContext без workspaceFacts остаётся невидимым в промпте.
+      const workspaceFactsSection = buildWorkspaceFactsSection(this.config.projectContext);
+      if (workspaceFactsSection) {
+        sections.push(workspaceFactsSection);
+      }
 
       // Output Style
       const outputStyleSection = buildOutputStyleSection(activeOutputStyle);

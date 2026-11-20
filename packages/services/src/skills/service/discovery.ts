@@ -7,6 +7,7 @@ import { basename, dirname } from "node:path";
 import type { SkillDiagnostic, SkillScope, SkillSummary, ZCodeProvider } from "@zcode/shared";
 import { normalizeSkillConfigPath } from "./cliConfig.js";
 import { MAX_DESCRIPTION_LENGTH, readFrontmatter, readSkillMetadata } from "./skillFrontmatter.js";
+import type { SkillMetadataCache } from "./skillMetadataCache.js";
 import {
   dedupeRoots,
   dedupeScanRootsByRealpath,
@@ -20,14 +21,19 @@ import {
   collectSkillNameKeysInRoot,
   isUserAgentsSkillCoveredByZcode,
 } from "./skillScan.js";
-import {
-  resolvePluginSkillRootDescriptors,
-  type SkillRootDescriptor,
-} from "./pluginRoots.js";
+import { resolvePluginSkillRootDescriptors, type SkillRootDescriptor } from "./pluginRoots.js";
 
 interface DiscoverResult {
   skills: SkillSummary[];
   diagnostics: SkillDiagnostic[];
+}
+
+export interface DiscoverSkillsOptions {
+  /**
+   * Кеш `_meta.json` (создаётся владельцем сервиса). Без него discovery работает
+   * как раньше: тело SKILL.md и `_meta.json` читаются на каждый вызов.
+   */
+  metadataCache?: SkillMetadataCache;
 }
 
 function hashStableIdPart(value: string): string {
@@ -43,12 +49,15 @@ function buildSkillId(params: {
   return `${params.provider}:${params.scope}:${params.name}:${hashStableIdPart(params.path)}`;
 }
 
-export async function discoverSkills(params: {
-  workspacePath: string;
-  workspaceIdentity?: string;
-  includeUserSkills: boolean;
-  provider: ZCodeProvider;
-}): Promise<DiscoverResult> {
+export async function discoverSkills(
+  params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    includeUserSkills: boolean;
+    provider: ZCodeProvider;
+  },
+  options: DiscoverSkillsOptions = {},
+): Promise<DiscoverResult> {
   const workspaceRoots = dedupeRoots(await resolveAncestorWorkspaceRoots(params.workspacePath));
   const roots: SkillRootDescriptor[] = workspaceRoots.map((rootPath) => ({
     scope: "workspace" as const,
@@ -150,7 +159,11 @@ export async function discoverSkills(params: {
       // 这些字段不影响 ZCode 读取 name/description，继续报 warning 只会制造无操作价值的噪音。
 
       const body = parsed.body.trim();
-      const metadata = await readSkillMetadata(skillPath);
+      // Тело SKILL.md читается всегда (публичный SkillSummary.body), кешируется
+      // только разбор соседнего `_meta.json`.
+      const metadata = options.metadataCache
+        ? await options.metadataCache.read(skillPath)
+        : await readSkillMetadata(skillPath);
       skills.push({
         id: buildSkillId({
           provider: params.provider,

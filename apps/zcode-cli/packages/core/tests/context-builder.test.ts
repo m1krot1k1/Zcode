@@ -1047,6 +1047,58 @@ describe("ContextBuilder meta user context", () => {
     expect(meta).toContain("# currentDate");
   });
 
+  it("renders a compact workspace facts section only for cache-enriched facts", () => {
+    const baseConfig = {
+      workingDirectory: "/workspace",
+      currentDate: "2026-05-04",
+      envInfo: {
+        cwd: "/workspace",
+        platform: "linux",
+        shell: "bash",
+        osVersion: "Linux 6.6.0",
+        nodeVersion: "v24.14.0",
+      },
+    };
+
+    const enriched = createContextBuilder({
+      ...baseConfig,
+      projectContext: {
+        type: "node",
+        packageManager: "pnpm",
+        scripts: { build: "vite build" },
+        workspaceFacts: {
+          classifiedScripts: {
+            test: [{ name: "test", command: "vitest run", kind: "test", matchedBy: "name" }],
+            lint: [{ name: "lint", command: "eslint .", kind: "lint", matchedBy: "name" }],
+            typecheck: [],
+            build: [{ name: "build", command: "vite build", kind: "build", matchedBy: "name" }],
+            dev: [],
+          },
+          monorepo: { isMonorepo: true, workspaces: ["packages/*"] },
+          toolchain: { node: "20.11.0", nodeRuntime: "v24.14.0", packageManager: "pnpm@9.15.0" },
+          verifiedCommands: [],
+          verifiedCommandsStatus: "unavailable",
+          provenance: { computedAt: "2026-05-04T00:00:00.000Z", inputs: [] },
+        },
+      },
+    }).build();
+
+    const section = enriched.sections.find((item) => item.name === "Workspace Facts");
+    expect(section).toBeDefined();
+    expect(section?.content).toContain("# Workspace facts");
+    expect(section?.content).toContain("test (`vitest run`)");
+    expect(section?.content).toContain("monorepo (packages/*)");
+    expect(section?.content).toContain("pnpm@9.15.0");
+    expect(section?.content).not.toContain("gitHead");
+    expect(section?.chars).toBeLessThan(1000);
+
+    const legacy = createContextBuilder({
+      ...baseConfig,
+      projectContext: { type: "node", packageManager: "pnpm", scripts: { build: "pnpm build" } },
+    }).build();
+    expect(legacy.sections.some((item) => item.name === "Workspace Facts")).toBe(false);
+  });
+
   it("renders a resolved instruction source under agentsMd", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
@@ -1507,7 +1559,7 @@ describe("ContextBuilder meta user context", () => {
     expect(section?.content).toContain("Goal: Ship the prompt eval lab");
     expect(section?.content).toContain("evidence: built-in-profiles.ts");
     expect(section?.content).toContain("Which holdout tasks are protected?");
-    expect((section?.content.length ?? 0)).toBeLessThanOrEqual(2_500);
+    expect(section?.content.length ?? 0).toBeLessThanOrEqual(2_500);
     expect(buildContextLedgerSection({ goal: "   " })).toBeNull();
   });
 
@@ -1519,7 +1571,9 @@ describe("ContextBuilder meta user context", () => {
     expect(section.content).toContain("# Cognitive protocols");
     expect(section.content).toContain("Protocol 3 — Evidence-Grounded Verification");
     expect(section.content).toContain("primary sources");
-    expect(section.content).toContain("Summaries, memory, TODO notes, and agent reports are leads, not proof");
+    expect(section.content).toContain(
+      "Summaries, memory, TODO notes, and agent reports are leads, not proof",
+    );
     expect(section.content).toContain("Protocol 5 — Zero-Stub and Surgical Edit Mandate");
   });
 

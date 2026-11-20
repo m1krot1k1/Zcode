@@ -2,6 +2,7 @@
 // Node Skill Adapter
 // ============================================================
 
+import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { open, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -37,6 +38,7 @@ const SAFE_FRONTMATTER_KEYS = new Set([
   "metadata",
 ]);
 const DEFAULT_MAX_SKILL_BYTES = 100_000;
+const DEFAULT_SKILL_CATALOG_MAX_ENTRIES = 512;
 const MAX_PLUGIN_MANIFEST_SEARCH_DEPTH = 5;
 const PLUGIN_MANIFEST_RELATIVE_PATHS = [
   ".zcode-plugin/plugin.json",
@@ -60,16 +62,21 @@ export interface NodeSkillAdapterOptions extends SkillRootResolutionOptions {
    * Динамические plugin roots: live plugin install не пересоздаёт adapter,
    * поэтому discover/load должны видеть текущий набор при каждом вызове.
    */
-  getExtraResolvedRoots?: () =>
-    | readonly SkillRoot[]
-    | Promise<readonly SkillRoot[]>;
+  getExtraResolvedRoots?: () => readonly SkillRoot[] | Promise<readonly SkillRoot[]>;
+  /**
+   * Общий лимит записей metadata-кеша каталога skill. Кеш хранит только разобранные
+   * метаданные (без тела SKILL.md); при переполнении вытесняются самые старые записи.
+   */
+  catalogCacheMaxEntries?: number;
 }
 
 export class NodeSkillAdapter implements SkillPort {
   private readonly disabledPaths: ReadonlySet<string>;
   private readonly pluginNameBySkillRoot = new Map<string, Promise<string | undefined>>();
+  private readonly catalogCache: SkillCatalogCache;
 
   constructor(private readonly options: NodeSkillAdapterOptions = {}) {
+    this.catalogCache = new SkillCatalogCache(options.catalogCacheMaxEntries);
     this.disabledPaths = new Set(
       Array.from(options.disabledPaths ?? []).flatMap((path) => {
         const resolvedPath = resolve(path);
@@ -88,27 +95,27 @@ export class NodeSkillAdapter implements SkillPort {
     throwIfAborted(options);
 
     const workingDirectory = resolve(request.workingDirectory);
-    const dynamicRoots = request.roots
-      ? undefined
-      : await this.options.getExtraResolvedRoots?.();
+    const dynamicRoots = request.roots ? undefined : await this.options.getExtraResolvedRoots?.();
     const roots =
       request.roots ??
       (await resolveDefaultSkillRoots(workingDirectory, {
         ...this.options,
-        extraResolvedRoots: [
-          ...(this.options.extraResolvedRoots ?? []),
-          ...(dynamicRoots ?? []),
-        ],
+        extraResolvedRoots: [...(this.options.extraResolvedRoots ?? []), ...(dynamicRoots ?? [])],
       }));
     const diagnostics: SkillDiagnostic[] = [];
     const selected = new Map<string, SkillMetadata>();
+    // 本次调用实际扫描到的路径/根：用于在结束后清掉从磁盘消失的缓存记录。
+    const scannedPaths = new Set<string>();
+    const scannedRootPaths: string[] = [];
     let totalDiscovered = 0;
 
     for (const root of roots.toSorted((a, b) => a.priority - b.priority)) {
       throwIfAborted(options);
+      scannedRootPaths.push(root.path);
       const skillPaths = await this.skillFilesUnderRoot(root, diagnostics);
       for (const path of skillPaths) {
         throwIfAborted(options);
+        scannedPaths.add(path);
         const parsed = await this.parseSkill(path, root, diagnostics);
         if (!parsed) continue;
         if (await this.isDisabledSkillPath(parsed.path)) continue;
@@ -120,6 +127,8 @@ export class NodeSkillAdapter implements SkillPort {
         selected.set(parsed.path, parsed);
       }
     }
+    // 只清理本次扫描覆盖的根：loadSkill 可能只传部分 roots，不能误删其它根的记录。
+    this.catalogCache.pruneMissingEntries(scannedRootPaths, scannedPaths);
 
     // 同名时按 scope 优先级排序：项目技能必须排在用户/内建技能之前，loadSkill 的
     // 「第一个命中生效」才会让项目局部定制压过全局安装。roots 顺序已按此排列，
@@ -189,11 +198,12 @@ export class NodeSkillAdapter implements SkillPort {
       options,
     );
     const installed = outcome.skills.find(
-      (skill) =>
-        skill.directory === written.path || skill.path.startsWith(`${written.path}${sep}`),
+      (skill) => skill.directory === written.path || skill.path.startsWith(`${written.path}${sep}`),
     );
     if (!installed) {
-      throw new Error(`Installed skill ${request.skillId} was not discoverable under ${written.path}`);
+      throw new Error(
+        `Installed skill ${request.skillId} was not discoverable under ${written.path}`,
+      );
     }
     return {
       name: installed.name,
@@ -276,80 +286,78 @@ export class NodeSkillAdapter implements SkillPort {
     root: SkillRoot,
     diagnostics: SkillDiagnostic[],
   ): Promise<SkillMetadata | null> {
-    let rawContent: string;
-    try {
-      rawContent = await readFile(path, "utf8");
-    } catch (error) {
-      if (isNotFoundError(error)) return null;
-      diagnostics.push({
-        code: "skill_read_failed",
-        severity: "warning",
-        message: error instanceof Error ? error.message : `Failed to read skill: ${path}`,
-        path,
-      });
-      return null;
-    }
-
-    const frontmatter = extractFrontmatter(rawContent);
-    // 无 frontmatter 的手写 skill 仍可按目录名加载，避免设置页/CLI 出现无修复价值的错误。
-    const parsed = frontmatter
-      ? parseFlatYaml(frontmatter, path, diagnostics)
-      : { values: {}, keys: [] };
-    const name =
-      parseScalar(parsed.values.name) ?? (frontmatter ? undefined : basename(dirname(path)));
-    if (!name) {
-      diagnostics.push({
-        code: "skill_missing_name",
-        severity: "error",
-        message: `Skill frontmatter must include a name: ${path}`,
-        path,
-      });
-      return null;
-    }
-    const rawDescription = parseScalar(parsed.values.description);
-    if (!rawDescription && frontmatter) {
-      diagnostics.push({
-        code: "skill_missing_description",
-        severity: "error",
-        message: `Skill frontmatter must include a description: ${path}`,
-        path,
-        skillName: name,
-      });
-      return null;
-    }
-    const description = rawDescription ?? "";
-    if (description.length > MAX_DESCRIPTION_LENGTH) {
-      diagnostics.push({
-        code: "skill_description_too_long",
-        severity: "error",
-        message: `Skill description is too long: ${name}`,
-        path,
-        skillName: name,
-      });
-      return null;
-    }
-
-    // 第三方/旧版 skill 常带 version、homepage 等扩展字段。
-    // 这些字段不影响加载，不再作为 warning 暴露，只保留 safeToAutoLoad 的保守判断。
-    const pluginAlias = await this.resolvePluginSkillAlias(name, root);
+    const entry = await this.loadSkillCatalogEntry(path, diagnostics);
+    if (!entry?.metadata) return null;
+    const { metadata } = entry;
+    // root 派生字段（scope/source/namespace/pluginName）不进缓存：同一个文件经不同根
+    // 命中时必须拿到当前根的语义，否则 cache hit 会混淆项目/用户/插件作用域。
+    const pluginAlias = await this.resolvePluginSkillAlias(metadata.name, root);
 
     return {
-      name,
-      description,
-      whenToUse: parseScalar(parsed.values.when_to_use),
+      name: metadata.name,
+      description: metadata.description,
+      ...(metadata.whenToUse === undefined ? {} : { whenToUse: metadata.whenToUse }),
       ...pluginAlias,
-      ...(root.namespace ? { qualifiedName: `${root.namespace}/${name}` } : {}),
+      ...(root.namespace ? { qualifiedName: `${root.namespace}/${metadata.name}` } : {}),
       path,
       directory: dirname(path),
       rootPath: root.path,
       scope: root.scope,
       source: root.source,
-      safeToAutoLoad: parsed.keys.every((key) => SAFE_FRONTMATTER_KEYS.has(key)),
-      frontmatterKeys: parsed.keys,
+      safeToAutoLoad: metadata.safeToAutoLoad,
+      // 复制数组，避免调用方修改返回值时污染缓存条目。
+      frontmatterKeys: [...metadata.frontmatterKeys],
       policy: {
         allowImplicitInvocation: true,
       },
     };
+  }
+
+  /**
+   * Возвращает metadata-запись каталога. Чтение файла пропускается, если mtimeMs+sizeBytes
+   * не изменились; тело SKILL.md в кеш не попадает и читается только loadSkill.
+   */
+  private async loadSkillCatalogEntry(
+    path: string,
+    diagnostics: SkillDiagnostic[],
+  ): Promise<SkillCatalogEntry | null> {
+    let fileStat: Awaited<ReturnType<typeof stat>>;
+    try {
+      fileStat = await stat(path);
+    } catch (error) {
+      if (isNotFoundError(error)) return null;
+      pushSkillReadFailedDiagnostic(diagnostics, path, error);
+      return null;
+    }
+
+    const stamp: SkillCatalogStamp = {
+      mtimeMs: fileStat.mtimeMs,
+      sizeBytes: fileStat.size,
+    };
+    const cached = this.catalogCache.get(path, stamp);
+    if (cached) {
+      replaySkillCatalogDiagnostics(cached, diagnostics);
+      return cached;
+    }
+
+    let entry: SkillCatalogEntry;
+    try {
+      // single-flight: 并发 discover 共享同一文件的一次读取。
+      entry = await this.catalogCache.load(path, async () => {
+        const [buffer, canonicalPath] = await Promise.all([
+          readFile(path),
+          realpath(path).catch(() => path),
+        ]);
+        return buildSkillCatalogEntry(path, canonicalPath, stamp, buffer);
+      });
+    } catch (error) {
+      if (isNotFoundError(error)) return null;
+      pushSkillReadFailedDiagnostic(diagnostics, path, error);
+      return null;
+    }
+
+    replaySkillCatalogDiagnostics(entry, diagnostics);
+    return entry;
   }
 
   private async isDisabledSkillPath(path: string): Promise<boolean> {
@@ -391,6 +399,204 @@ export class NodeSkillAdapter implements SkillPort {
 
 export function createNodeSkillAdapter(options: NodeSkillAdapterOptions = {}): NodeSkillAdapter {
   return new NodeSkillAdapter(options);
+}
+
+interface SkillCatalogStamp {
+  mtimeMs: number;
+  sizeBytes: number;
+}
+
+interface SkillCatalogFileMetadata {
+  name: string;
+  description: string;
+  whenToUse?: string;
+  safeToAutoLoad: boolean;
+  frontmatterKeys: string[];
+}
+
+interface SkillCatalogEntry extends SkillCatalogStamp {
+  path: string;
+  canonicalPath: string;
+  contentHash: string;
+  metadata: SkillCatalogFileMetadata | null;
+  diagnostics: readonly SkillDiagnostic[];
+}
+
+/**
+ * In-memory metadata-кеш каталога skill. Один экземпляр на NodeSkillAdapter.
+ * Хранит только разобранные метаданные (без тела SKILL.md), инвалидируется по mtimeMs+sizeBytes,
+ * ограничен числом записей и дедуплицирует одновременные чтения одного файла.
+ */
+class SkillCatalogCache {
+  private readonly entries = new Map<string, SkillCatalogEntry>();
+  private readonly inFlight = new Map<string, Promise<SkillCatalogEntry>>();
+  private readonly maxEntries: number;
+
+  constructor(maxEntries: number | undefined) {
+    this.maxEntries =
+      typeof maxEntries === "number" && Number.isFinite(maxEntries)
+        ? Math.max(1, Math.trunc(maxEntries))
+        : DEFAULT_SKILL_CATALOG_MAX_ENTRIES;
+  }
+
+  get(path: string, stamp: SkillCatalogStamp): SkillCatalogEntry | undefined {
+    const entry = this.entries.get(path);
+    if (!entry || entry.mtimeMs !== stamp.mtimeMs || entry.sizeBytes !== stamp.sizeBytes) {
+      return undefined;
+    }
+    // LRU: hit переносит запись в конец, поэтому вытесняются давно не использованные.
+    this.entries.delete(path);
+    this.entries.set(path, entry);
+    return entry;
+  }
+
+  async load(path: string, loader: () => Promise<SkillCatalogEntry>): Promise<SkillCatalogEntry> {
+    const pending = this.inFlight.get(path);
+    if (pending) return pending;
+
+    const promise = loader()
+      .then((entry) => {
+        this.store(path, entry);
+        return entry;
+      })
+      .finally(() => {
+        this.inFlight.delete(path);
+      });
+    this.inFlight.set(path, promise);
+    return promise;
+  }
+
+  pruneMissingEntries(rootPaths: readonly string[], seenPaths: ReadonlySet<string>): void {
+    if (this.entries.size === 0) return;
+    const prefixes = rootPaths.map((rootPath) =>
+      rootPath.endsWith(sep) ? rootPath : `${rootPath}${sep}`,
+    );
+    // Снимок ключей: prune удаляет записи во время обхода, живой итератор Map
+    // менял бы набор обходимых элементов. Array.from сохраняет прежнюю семантику.
+    for (const path of Array.from(this.entries.keys())) {
+      if (seenPaths.has(path)) continue;
+      if (prefixes.some((prefix) => path.startsWith(prefix))) {
+        this.entries.delete(path);
+      }
+    }
+  }
+
+  private store(path: string, entry: SkillCatalogEntry): void {
+    this.entries.delete(path);
+    this.entries.set(path, entry);
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next();
+      if (oldest.done) break;
+      this.entries.delete(oldest.value);
+    }
+  }
+}
+
+function buildSkillCatalogEntry(
+  path: string,
+  canonicalPath: string,
+  stamp: SkillCatalogStamp,
+  buffer: Buffer,
+): SkillCatalogEntry {
+  const parsedDiagnostics: SkillDiagnostic[] = [];
+  const frontmatter = extractFrontmatter(buffer.toString("utf8"));
+  // 无 frontmatter 的手写 skill 仍可按目录名加载，避免设置页/CLI 出现无修复价值的错误。
+  const parsed = frontmatter
+    ? parseFlatYaml(frontmatter, path, parsedDiagnostics)
+    : { values: {}, keys: [] };
+  const name =
+    parseScalar(parsed.values.name) ?? (frontmatter ? undefined : basename(dirname(path)));
+  const metadata = buildSkillCatalogFileMetadata(
+    name,
+    frontmatter,
+    parsed,
+    path,
+    parsedDiagnostics,
+  );
+
+  return {
+    path,
+    canonicalPath,
+    mtimeMs: stamp.mtimeMs,
+    sizeBytes: stamp.sizeBytes,
+    contentHash: createHash("sha256").update(buffer).digest("hex"),
+    metadata,
+    diagnostics: parsedDiagnostics.map((diagnostic) => ({ ...diagnostic })),
+  };
+}
+
+function buildSkillCatalogFileMetadata(
+  name: string | undefined,
+  frontmatter: string | null,
+  parsed: { values: Record<string, string>; keys: string[] },
+  path: string,
+  diagnostics: SkillDiagnostic[],
+): SkillCatalogFileMetadata | null {
+  if (!name) {
+    diagnostics.push({
+      code: "skill_missing_name",
+      severity: "error",
+      message: `Skill frontmatter must include a name: ${path}`,
+      path,
+    });
+    return null;
+  }
+  const rawDescription = parseScalar(parsed.values.description);
+  if (!rawDescription && frontmatter) {
+    diagnostics.push({
+      code: "skill_missing_description",
+      severity: "error",
+      message: `Skill frontmatter must include a description: ${path}`,
+      path,
+      skillName: name,
+    });
+    return null;
+  }
+  const description = rawDescription ?? "";
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    diagnostics.push({
+      code: "skill_description_too_long",
+      severity: "error",
+      message: `Skill description is too long: ${name}`,
+      path,
+      skillName: name,
+    });
+    return null;
+  }
+  const whenToUse = parseScalar(parsed.values.when_to_use);
+
+  // 第三方/旧版 skill 常带 version、homepage 等扩展字段。
+  // 这些字段不影响加载，不再作为 warning 暴露，只保留 safeToAutoLoad 的保守判断。
+  return {
+    name,
+    description,
+    ...(whenToUse === undefined ? {} : { whenToUse }),
+    safeToAutoLoad: parsed.keys.every((key) => SAFE_FRONTMATTER_KEYS.has(key)),
+    frontmatterKeys: parsed.keys,
+  };
+}
+
+function replaySkillCatalogDiagnostics(
+  entry: SkillCatalogEntry,
+  diagnostics: SkillDiagnostic[],
+): void {
+  for (const diagnostic of entry.diagnostics) {
+    // 复制诊断对象：调用方可能修改数组/对象，缓存模板必须保持只读。
+    diagnostics.push({ ...diagnostic });
+  }
+}
+
+function pushSkillReadFailedDiagnostic(
+  diagnostics: SkillDiagnostic[],
+  path: string,
+  error: unknown,
+): void {
+  diagnostics.push({
+    code: "skill_read_failed",
+    severity: "warning",
+    message: error instanceof Error ? error.message : `Failed to read skill: ${path}`,
+    path,
+  });
 }
 
 function extractFrontmatter(content: string): string | null {

@@ -2460,6 +2460,13 @@ exceptions:
       # того же unmanaged zcode-cli core; поведение и порядок событий не менялись.
       - apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-diagnostics.ts
       - apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-output-limit.ts
+      # Этап 5: разбиение `context/index.ts` (831 → 795 значимых строк) под лимит
+      # `max-lines`. Кеш и секция workspace facts вынесены в отдельные файлы того же
+      # unmanaged zcode-cli; публичные экспорты, ключи и порядок источников не менялись.
+      - apps/zcode-cli/packages/adapters/src/context/workspace-facts.ts
+      - apps/zcode-cli/packages/adapters/src/context/workspace-facts-cache.ts
+      - apps/zcode-cli/packages/adapters/src/context/workspace-facts-wiring.ts
+      - apps/zcode-cli/packages/core/src/context/sections/workspace-facts.ts
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

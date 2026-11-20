@@ -348,7 +348,7 @@ const enUS: Record<string, string> = {
   "remote.infoUnavailable": "Unavailable",
   "remote.installSize": "Installation package size",
   "remote.runningTasksUnavailable":
-    "The device did not provide a task list. Forcing the update will interrupt running tasks.",
+    "The device did not report its task list. A forced update interrupts running tasks and restarts only the ZCode service. The session reconnects automatically.",
   "remote.transferTimeUnknown": "Estimating remaining time",
   "remote.transferTimeRemaining": "About {seconds} s remaining",
   "remote.phase.channel.ssh": "Connecting to SSH host",
@@ -2611,12 +2611,12 @@ const enUS: Record<string, string> = {
   "remote.connectingStepTitle": "Establish link",
   "remote.connectingStepDescription": "Connecting through {method}…",
   "remote.connectingSubtitleConnected": "Connected to {device} · ready to choose a directory",
-  "remote.connectingSubtitleUpdating": "Updating the remote server",
+  "remote.connectingSubtitleUpdating": "Updating the ZCode remote component…",
   "remote.phaseSub.uploading": "Uploading the archive",
   "remote.phaseSub.extracting": "Extracting server files",
   "remote.phaseSub.verifyingArchive": "Verifying the archive",
   "remote.phaseSub.verifyingFiles": "Verifying server files",
-  "remote.phaseSub.restarting": "Restarting the remote server",
+  "remote.phaseSub.restarting": "Restarting the ZCode service",
   "remote.connectingSubtitleFailed":
     "Connection failed · retry, or adjust the configuration and try again",
   "remote.phase.channel": "Connect to device",
@@ -2883,7 +2883,9 @@ const enUS: Record<string, string> = {
   "settings.source.unknownDevice": "Remote device",
   "settings.source.updateAvailable": "A remote component update is available.",
   "settings.source.updateRequired": "Update the remote component before connecting.",
-  "settings.source.updateInProgress": "Updating the remote component…",
+  "settings.source.updateInProgress": "Updating the ZCode remote component…",
+  "settings.source.updateScopeNote":
+    "Only the ZCode remote component is updated and restarted. Your OS and device are not rebooted.",
   "settings.source.updateProgress": "Remote component update progress",
   "settings.source.updatePhase.preparing": "Preparing the update",
   "settings.source.updatePhase.checking": "Checking the device and update files",
@@ -2948,7 +2950,7 @@ const enUS: Record<string, string> = {
   "settings.source.forceUpdate": "Force update",
   "settings.source.forceUpdateTitle": "Force-update this device?",
   "settings.source.forceUpdateDescription":
-    "A forced update stops tasks that are still running on this device. Confirm that those tasks may be interrupted.",
+    "A forced update interrupts tasks that are still running on this device and restarts only the ZCode service. The session reconnects automatically. Confirm that these tasks may be interrupted.",
   "settings.source.controllerUpdateRequired":
     "Update this ZCode Desktop first; the Server cannot be updated from here.",
   "settings.source.neverConnected": "Not connected",

@@ -27,8 +27,13 @@ import {
 } from "../skillMarketplace.js";
 import { SKILL_FILE_NAME } from "../skillDiscoveryWalk.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
-import { normalizeSkillConfigPath, readSkillEnabledMap, writeSkillEnabledMap } from "./cliConfig.js";
+import {
+  normalizeSkillConfigPath,
+  readSkillEnabledMap,
+  writeSkillEnabledMap,
+} from "./cliConfig.js";
 import { attachEnabledState, discoverSkills } from "./discovery.js";
+import { createSkillMetadataCache } from "./skillMetadataCache.js";
 import {
   appendSkillsAuditLog,
   buildActivatedSkillsPromptBlock,
@@ -61,6 +66,10 @@ function resolveCapabilities(options?: SkillsServiceOptions): SkillsCapability {
 export function createSkillsService(options?: SkillsServiceOptions): ISkillsService {
   // 技能状态写与 marketplace 安装共用一个串行队列；Promise<unknown> 允许链上返回安装结果。
   let writeQueue: Promise<unknown> = Promise.resolve();
+  // Один metadata-кеш на сервис: `list` и `setEnabled` разделяют разбор `_meta.json`.
+  // Кешируется только `_meta.json`; тело SKILL.md, enabled-map и plugin state читаются
+  // на каждый вызов (см. docs/specs/skill-catalog-cache.md).
+  const metadataCache = createSkillMetadataCache();
 
   return {
     async list(params: {
@@ -70,12 +79,15 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
     }): Promise<SkillsListResult> {
       const capability = resolveCapabilities(options);
       const provider = "glm";
-      const { skills: discovered, diagnostics } = await discoverSkills({
-        workspacePath: params.workspacePath,
-        workspaceIdentity: params.workspaceIdentity,
-        includeUserSkills: capability.userScopeAvailable,
-        provider,
-      });
+      const { skills: discovered, diagnostics } = await discoverSkills(
+        {
+          workspacePath: params.workspacePath,
+          workspaceIdentity: params.workspaceIdentity,
+          includeUserSkills: capability.userScopeAvailable,
+          provider,
+        },
+        { metadataCache },
+      );
       const enabledByPath = await readSkillEnabledMap();
       return {
         skills: attachEnabledState(discovered, enabledByPath),
@@ -95,12 +107,15 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
       const runUpdate = async () => {
         const provider = "glm";
         const capability = resolveCapabilities(options);
-        const { skills } = await discoverSkills({
-          workspacePath: params.workspacePath,
-          workspaceIdentity: params.workspaceIdentity,
-          includeUserSkills: capability.userScopeAvailable,
-          provider,
-        });
+        const { skills } = await discoverSkills(
+          {
+            workspacePath: params.workspacePath,
+            workspaceIdentity: params.workspaceIdentity,
+            includeUserSkills: capability.userScopeAvailable,
+            provider,
+          },
+          { metadataCache },
+        );
         const skill = skills.find((item) => item.id === params.skillId);
         if (!skill) {
           throw new Error(`Skill not found: ${params.skillId}`);
@@ -301,7 +316,10 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
       }
       const scope: SkillInstallScope = request.scope ?? "workspace";
       if (scope !== "workspace" && scope !== "user") {
-        throw new SkillMarketplaceError("invalid_input", `unsupported skill scope: ${String(scope)}`);
+        throw new SkillMarketplaceError(
+          "invalid_input",
+          `unsupported skill scope: ${String(scope)}`,
+        );
       }
       const workspacePath = request.workspacePath?.trim();
       if (scope === "workspace" && !workspacePath) {

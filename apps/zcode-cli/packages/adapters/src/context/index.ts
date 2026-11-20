@@ -12,6 +12,7 @@ import type {
   ContextSourceRequest,
   ContextSourceSnapshot,
   EnvInfo,
+  Logger,
   PackageManager,
   ProjectContext,
   ProjectType,
@@ -22,6 +23,12 @@ import type {
   UserInstructionsOptions,
 } from "@zcode/contracts";
 import { resolveGitSnapshot } from "./git-snapshot.js";
+import type { WorkspaceFactsIo } from "./workspace-facts.js";
+import type { WorkspaceFactsCache } from "./workspace-facts-cache.js";
+import {
+  createWorkspaceFactsCache,
+  resolveWorkspaceProjectContext,
+} from "./workspace-facts-wiring.js";
 
 const DEFAULT_PRIORITY_FILES = ["AGENTS.md"];
 const DEFAULT_MAX_BYTES = 100 * 1024;
@@ -43,15 +50,38 @@ export interface NodeContextSourceAdapterOptions {
   env?: NodeJS.ProcessEnv;
   /** Explicit package asset root; normally supplied by bootstrap for Desktop and SEA. */
   bundledHarnessRulesDirectory?: string;
+  /**
+   * Cache root workspace facts. `false` отключает персистентный кеш.
+   * По умолчанию — `$HOME/.zcode/v2/cache/workspace-facts`, если HOME/USERPROFILE
+   * резолвится из env адаптера; иначе кеш отключён (fail-open без записи в чужой home).
+   */
+  workspaceFactsCacheRoot?: string | false;
+  /** TTL записи кеша; по умолчанию 24 часа. */
+  workspaceFactsTtlMs?: number;
+  /** Test seam: подмена IO с подсчётом чтений. */
+  workspaceFactsIo?: WorkspaceFactsIo;
+  now?: () => number;
+  logger?: Pick<Logger, "debug" | "warn">;
 }
 
 export class NodeContextSourceAdapter implements ContextSourcePort {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bundledHarnessRulesDirectory?: string;
+  private readonly workspaceFactsCache: WorkspaceFactsCache | undefined;
+  private readonly now: () => number;
 
   constructor(options: NodeContextSourceAdapterOptions = {}) {
     this.env = options.env ?? process.env;
     this.bundledHarnessRulesDirectory = options.bundledHarnessRulesDirectory;
+    this.now = options.now ?? Date.now;
+    this.workspaceFactsCache = createWorkspaceFactsCache({
+      env: this.env,
+      now: this.now,
+      workspaceFactsCacheRoot: options.workspaceFactsCacheRoot,
+      workspaceFactsTtlMs: options.workspaceFactsTtlMs,
+      workspaceFactsIo: options.workspaceFactsIo,
+      logger: options.logger,
+    });
   }
 
   async resolveContextSources(request: ContextSourceRequest): Promise<ContextSourceSnapshot> {
@@ -83,7 +113,8 @@ export class NodeContextSourceAdapter implements ContextSourcePort {
       diagnostics,
     );
     const projectContext =
-      request.projectContext ?? (projectRoot ? await detectProjectContext(projectRoot) : undefined);
+      request.projectContext ??
+      (projectRoot ? await this.resolveProjectContext(projectRoot, request, envInfo) : undefined);
 
     return {
       workingDirectory,
@@ -95,6 +126,25 @@ export class NodeContextSourceAdapter implements ContextSourcePort {
       projectContext,
       diagnostics,
     };
+  }
+
+  /**
+   * Связка с workspace facts живёт в ./workspace-facts-wiring:
+   * derivation identity key, git-подпись и fail-open fallback — там.
+   */
+  private async resolveProjectContext(
+    projectRoot: string,
+    request: ContextSourceRequest,
+    envInfo: EnvInfo,
+  ): Promise<ProjectContext> {
+    return resolveWorkspaceProjectContext({
+      cache: this.workspaceFactsCache,
+      projectRoot,
+      request,
+      envInfo,
+      now: this.now,
+      fallback: detectProjectContextLegacy,
+    });
   }
 
   private async detectEnvInfo(
@@ -724,7 +774,7 @@ function resolveUserHomeDir(env: NodeJS.ProcessEnv): string {
   return envHome && envHome.length > 0 ? envHome : homedir();
 }
 
-async function detectProjectContext(projectRoot: string): Promise<ProjectContext> {
+async function detectProjectContextLegacy(projectRoot: string): Promise<ProjectContext> {
   let type: ProjectType = "unknown";
   let packageManager: PackageManager | undefined;
   let scripts: Record<string, string> | undefined;

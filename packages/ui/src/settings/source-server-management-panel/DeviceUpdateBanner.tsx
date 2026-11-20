@@ -60,8 +60,7 @@ export function DeviceUpdateBanner({
                   },
                 )}
       </span>
-      {serverState.updateAvailability === "available" &&
-      serverState.state !== "updating" ? (
+      {serverState.updateAvailability === "available" && serverState.state !== "updating" ? (
         <Button
           type="button"
           variant="ghost"
@@ -102,7 +101,17 @@ export function DeviceUpdateBanner({
         </Button>
       ) : null}
       {serverState.state === "updating" ? (
-        <SourceServerUpdateActivity active={serverState.state === "updating"} logs={operationLogs} />
+        <>
+          <SourceServerUpdateActivity
+            active={serverState.state === "updating"}
+            logs={operationLogs}
+          />
+          <p className="basis-full text-ui-xs opacity-80">
+            {intl.formatMessage({
+              id: "settings.source.updateScopeNote",
+            })}
+          </p>
+        </>
       ) : serverState.currentVersion && serverState.minimumVersion ? (
         <p className="basis-full text-ui-xs opacity-80">
           {intl.formatMessage(

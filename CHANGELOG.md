@@ -1,5 +1,40 @@
 # Changelog
 
+## [3.17.136](https://github.com/m1krot1k1/Zcode/compare/v3.17.135...v3.17.136) (2026-11-20)
+
+### Features
+
+- **remote:** обновление удалённого компонента без формулировок о перезагрузке устройства
+  - `remote.phaseSub.restarting` = «Перезапуск службы ZCode»; `settings.source.updateInProgress` и `remote.connectingSubtitleUpdating` = «Обновление удалённого компонента ZCode…» в `ru-RU`, `en-US`, `zh-CN`
+  - `settings.source.updateScopeNote` в `DeviceUpdateBanner` сообщает: обновляется и перезапускается только компонент ZCode, ОС и устройство не перезагружаются, сессия переподключается автоматически
+  - при `source-server-update-running-tasks` первый запрос уходит с `force: false`; confirm перечисляет задачи и предупреждает об их прерывании, перезапуске только службы ZCode и автопереподключении; после подтверждения выполняется ровно один `force: true`, автоматических повторов нет
+  - при отсутствии списка задач показывается `remote.runningTasksUnavailable` с тем же предупреждением; успешное обновление инвалидирует Source-соединение и переподключает его автоматически
+- **context:** персистентный кеш workspace facts для системного контекста
+  - `WorkspaceFactsCache` — единственный владелец и путь записи снимка на identity-ключ (`workspaceIdentity?.trim() || workspacePath`): git HEAD и dirty signature, SHA-256 и stat-отпечатки `package.json`, lockfile, workspace-конфигов, `mise`/`.nvmrc`/`.node-version`, root `tsconfig*` и test-конфигов; remote identity получает отдельную запись
+  - инвалидация по изменению входов, git HEAD/dirty, версии runtime и TTL; запись атомарная (tmp + rename), конкурентные resolve дедуплицируются, ошибки кеша fail-open к прежнему `detectProjectContext`
+  - enriched facts (классификация scripts `test`/`lint`/`typecheck`/`build`/`dev`, monorepo, toolchain, provenance) рендерятся компактной untrusted-секцией `workspace_facts` с общим лимитом `MAX_WORKSPACE_FACTS_SECTION_CHARS = 1200`; `verifiedCommands` остаются `unavailable`, команды не исполняются
+- **skills:** кеш метаданных каталога skills
+  - `SkillCatalogCache` в `NodeSkillAdapter` инвалидируется по `mtimeMs` + `sizeBytes`, перечитывает только изменившийся `SKILL.md`, вытесняет LRU-записи свыше 512 и single-flight-дедуплицирует конкурентные discovery
+  - тело `SKILL.md` не кешируется и читается лениво в `loadSkill`; Host `SkillsService` кеширует только разбор `_meta.json`, а тело, enabled/plugin state, permissions и hook trust читает на каждый вызов
+
+### Bug Fixes
+
+- **remote:** живучесть сессии при обрыве, переподключении и рестарте CLI
+  - `docs/specs/remote-session-survival.md` фиксирует владельцев состояния и инварианты: закрытие сокета освобождает только connection scope, не отменяет turn и не очищает очередь команд; повторная привязка идёт по `workspaceIdentity`/`remoteSessionId` к тому же session/run
+  - replay выполняется по `logEpoch` + `seq`: `resume` только в пределах epoch и окна retention, иначе `snapshot`; повторно доставленные кадры дедуплицируются, stale epoch после рестарта не продолжает старый run и не перезапускает Task
+  - сбой, таймаут, permission-ошибка и повторный `stop` завершают turn как `cancelled`/`error` и выполняются ровно один раз; несовпавший stop target остаётся no-op, crash recovery fail-closed не перезапускает in-flight tools
+  - регрессия: `coreHttpReconnect.test.ts`, `session-survival-reconnect.test.ts`, `v4SessionDataLayer.test.ts`, а также существующие `auto-resume.test.ts` и `v4-native-commands.test.ts`
+- **remote:** статическая защита от перезагрузки ОС/устройства при обновлении
+  - `remoteUpdateNoHostReboot.test.ts` сканирует update/release/service/recovery модули и падает при появлении `reboot`/`poweroff`/`shutdown -r`/`systemctl reboot`; комментарии, docs и внутренняя команда остановки Core исключены из проверки
+- **security:** redaction и containment для workspace facts
+  - редактируются secret-присваивания, auth-схемы `Bearer`/`Basic`/`Token`, bare `Authorization: <token>`, query/fragment/assignment-параметры с секретным сегментом имени (включая percent-encoded до трёх проходов и вложенные параметры) и известные префиксы токенов; обычные идентификаторы вроде `app-sk-production` не затрагиваются
+  - symlink-входы и `.git`/`gitdir:`/`commondir` за пределы `realpath(projectRoot)` не читаются (fail-closed); CR/LF/TAB/FF/VT, прочие C0/C1 и Unicode NEL/LS/PS нормализуются в пробел, поэтому недоверенное значение не создаёт новых строк промпта
+
+### Tests
+
+- точечные наборы: `workspace-facts-cache.test.ts`, `workspaceFactsSection.test.ts`, `skill-catalog-cache.test.ts`, `skillCatalogCache.test.ts`, `session-survival-reconnect.test.ts`, `coreHttpReconnect.test.ts`, `remoteUpdateNoHostReboot.test.ts`, `remoteComponentUpdateUx.test.ts`, `sourceServerUpdateAction.test.ts`, `v4SessionDataLayer.test.ts`
+- проверка ограничена этими наборами: полный `pnpm test`, typecheck и сборка в рамках этого изменения не заявляются
+
 ## [3.17.135](https://github.com/m1krot1k1/Zcode/compare/v3.17.134...v3.17.135) (2026-11-19)
 
 ### Features

@@ -38,8 +38,6 @@ import {
   resolveGenUiOutputDirectory,
 } from "../helpers/gen-ui-output.js";
 
-
-
 export async function ensureContextInitialized(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
@@ -55,6 +53,12 @@ export async function ensureContextInitialized(
       ? await this.contextSourcePort.resolveContextSources(
           {
             workingDirectory: this.workingDirectory,
+            // Identity отделяет remote workspace от локального с тем же путём:
+            // контракт resolveContextSources использует его как ключ производных данных.
+            ...(this.config.workspaceIdentity
+              ? { workspaceIdentity: this.config.workspaceIdentity.toString() }
+              : {}),
+            ...(this.config.workspacePath ? { workspacePath: this.config.workspacePath } : {}),
             currentDate: this.config.currentDate,
             effectiveShellDisplayName: shellDisplayName,
             envInfo: this.config.envInfo,
