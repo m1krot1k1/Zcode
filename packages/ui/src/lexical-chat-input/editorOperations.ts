@@ -159,7 +159,9 @@ export function prependEditorMentionIfMissing(
       separator.selectEnd();
       inserted = true;
     },
-    { tag: PROGRAMMATIC_UPDATE_TAG },
+    // Prefill callers inspect/serialize the editor immediately after this helper returns.
+    // A batched update would leave the new chip out of the current editor state.
+    { tag: PROGRAMMATIC_UPDATE_TAG, discrete: true },
   );
   return inserted;
 }

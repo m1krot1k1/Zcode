@@ -111,14 +111,14 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
     <ToolLayout
       toolId={toolCall.toolId}
       icon={EXECUTE_GROUP_ICON}
-      canToggle={context.canToggle ?? true}
-      forceOpen={context.forceOpen ?? false}
+      canToggle={!isOfficeMode && (context.canToggle ?? true)}
+      forceOpen={!isOfficeMode && (context.forceOpen ?? false)}
       kindLabel={intl.formatMessage({ id: "chat.toolCall.executeGroup.label" })}
       expandedKindLabel={intl.formatMessage({
         id: "chat.toolCall.executeGroup.label",
       })}
       primaryText={isRunning && runningActionLabel ? runningPrimaryText : completedSummary}
-      secondaryText={isRunning ? runningSecondaryText : undefined}
+      secondaryText={isOfficeMode ? undefined : isRunning ? runningSecondaryText : undefined}
       summaryContentSeparator="·"
       expandedPrimaryText={completedSummary}
       // ToolLayout 默认会在展开态沿用 secondaryText，导致命令数量后残留当前命令。

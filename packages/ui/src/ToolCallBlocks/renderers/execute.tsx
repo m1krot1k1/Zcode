@@ -345,8 +345,8 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
         toolId={toolCall.toolId}
         icon={EXECUTE_TOOL_ICON}
         showIcon={context.showIcon !== false}
-        canToggle={context.canToggle ?? true}
-        forceOpen={context.forceOpen ?? false}
+        canToggle={!isOfficeMode && (context.canToggle ?? true)}
+        forceOpen={!isOfficeMode && (context.forceOpen ?? false)}
         hideSecondaryTextWhenOpen
         kindLabel={
           (isOfficeMode
@@ -368,7 +368,7 @@ export function ExecuteToolCallBlock(context: ToolCallBlockRenderContext) {
               toolCall.kind ??
               intl.formatMessage({ id: "chat.toolCall.execute.execute" }))
         }
-        secondaryText={secondaryTextNode}
+        secondaryText={isOfficeMode ? null : secondaryTextNode}
         statusLabel={statusLabel}
         statusTooltip={isOfficeMode ? undefined : failureVisibleText}
         showFailureStatus={toolCall.status === "failed"}

@@ -86,7 +86,7 @@ async function captureScreenEventually(
 
 describe("LinuxCuaHost: честная недоступность", () => {
   it("без DISPLAY и WAYLAND_DISPLAY возвращает cua_unavailable с точной причиной", async () => {
-    const host = createLinuxCuaHost({ env: {}, probeCacheMs: 0 });
+    const host = createLinuxCuaHost({ platform: "linux", env: {}, probeCacheMs: 0 });
     const report = await host.probe();
     expect(report.available).toBe(false);
     expect(report.backend).toBe("headless");
@@ -112,7 +112,7 @@ describe("LinuxCuaHost: честная недоступность", () => {
   });
 
   it("запрет screenshot возвращает permission_denied до любых действий", async () => {
-    const host = createLinuxCuaHost({ env: {}, probeCacheMs: 0 });
+    const host = createLinuxCuaHost({ platform: "linux", env: {}, probeCacheMs: 0 });
     const result = await host.execute({ kind: "screenshot" }, ALL_DENY);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -123,7 +123,7 @@ describe("LinuxCuaHost: честная недоступность", () => {
   });
 
   it("запрет pointer и keyboard даёт permission_denied с указанием политики", async () => {
-    const host = createLinuxCuaHost({ env: {}, probeCacheMs: 0 });
+    const host = createLinuxCuaHost({ platform: "linux", env: {}, probeCacheMs: 0 });
     const pointer = await host.execute({ kind: "click", options: { x: 1, y: 1 } }, ALL_DENY);
     const keyboard = await host.execute({ kind: "type", options: { text: "x" } }, ALL_DENY);
     expect(pointer.ok).toBe(false);
@@ -134,7 +134,7 @@ describe("LinuxCuaHost: честная недоступность", () => {
   });
 
   it("dispose идемпотентен", async () => {
-    const host = createLinuxCuaHost({ env: {}, probeCacheMs: 0 });
+    const host = createLinuxCuaHost({ platform: "linux", env: {}, probeCacheMs: 0 });
     await host.dispose();
     await host.dispose();
     const afterDispose = await host.probe();

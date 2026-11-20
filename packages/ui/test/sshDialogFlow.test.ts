@@ -531,7 +531,7 @@ it.each(["success", "failure", "force", "force-cancel"] as const)(
       if (outcome === "force-cancel") {
         fireEvent.click(screen.getAllByRole("button", { name: "取消连接" }).at(-1)!);
         await screen.findByText("已取消");
-        expect(screen.queryByText("正在更新远端服务")).toBeNull();
+        expect(screen.queryByText("正在更新 ZCode 远程组件…")).toBeNull();
         expect(ports.management.updateSource).toHaveBeenCalledTimes(1);
         onConnect
           .mockReset()
@@ -556,7 +556,7 @@ it.each(["success", "failure", "force", "force-cancel"] as const)(
         force: outcome === "force",
       }),
     );
-    await screen.findByText("正在更新远端服务");
+    await screen.findByText("正在更新 ZCode 远程组件…");
     if (outcome === "failure") {
       await act(async () => update.reject(new Error("archive verification failed")));
       await screen.findByTestId("ssh-error");
