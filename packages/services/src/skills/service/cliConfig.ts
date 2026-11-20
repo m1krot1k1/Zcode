@@ -7,8 +7,13 @@ import { join } from "node:path";
 import { isObjectRecord } from "./valueGuards.js";
 import { resolveUserHomeDir } from "./skillPaths.js";
 
-export const SKILL_CLI_SETTINGS_DIR = join(resolveUserHomeDir(), ".zcode", "cli");
-export const SKILL_CLI_CONFIG_FILE = join(SKILL_CLI_SETTINGS_DIR, "config.json");
+function skillCliSettingsDir(): string {
+  return join(resolveUserHomeDir(), ".zcode", "cli");
+}
+
+function skillCliConfigFile(): string {
+  return join(skillCliSettingsDir(), "config.json");
+}
 
 export function normalizeSkillConfigPath(path: string): string {
   return path.replaceAll("\\", "/");
@@ -16,7 +21,7 @@ export function normalizeSkillConfigPath(path: string): string {
 
 export async function readCliConfigFile(): Promise<Record<string, unknown>> {
   try {
-    const raw = await readFile(SKILL_CLI_CONFIG_FILE, "utf-8");
+    const raw = await readFile(skillCliConfigFile(), "utf-8");
     const parsed = JSON.parse(raw) as unknown;
     return isObjectRecord(parsed) ? parsed : {};
   } catch {
@@ -60,6 +65,6 @@ export async function writeSkillEnabledMap(next: Record<string, boolean>): Promi
   } else {
     delete config.skills;
   }
-  await mkdir(SKILL_CLI_SETTINGS_DIR, { recursive: true });
-  await writeFile(SKILL_CLI_CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+  await mkdir(skillCliSettingsDir(), { recursive: true });
+  await writeFile(skillCliConfigFile(), `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }

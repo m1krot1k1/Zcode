@@ -60,7 +60,7 @@ import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerDesktopCommandIpcHandler } from "./desktopCommandIpc.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
-import { registerVoiceDictationIpc } from "./voice/index.js";
+import { registerVoiceDictationIpc } from "./voice/registerVoiceDictationIpc.js";
 
 export function registerPlatformIpcHandlers(options: {
   fetchHelpConfig?: () => Promise<unknown>;

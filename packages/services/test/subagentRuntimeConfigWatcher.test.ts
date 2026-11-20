@@ -72,7 +72,7 @@ async function pair(prepareHome?: (homeDir: string) => Promise<void>, isDesktopR
     });
   return { a, b, workspace, homeDir, both };
 }
-const config = (name = "researcher", systemPrompt = "old") => ({
+const config = (name = "watcher-researcher", systemPrompt = "old") => ({
   name,
   description: "Research",
   systemPrompt,
@@ -93,14 +93,17 @@ describe("native subagent Host watchers", () => {
   it("keeps the last published profile when atomic update fails before rename", async () => {
     const f = await pair();
     const { agent } = await f.a.createAgent({ config: config() });
-    await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    await f.both({
+      kind: "ready",
+      profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+    });
     setFsFaultInjectorForTests(
       createFsFaultInjector([
         {
           id: "subagent-watcher-update-rename-failure",
           code: "EACCES",
           operations: ["rename"],
-          pathEndsWith: "/researcher.md",
+          pathEndsWith: "/watcher-researcher.md",
         },
       ]),
     );
@@ -109,14 +112,17 @@ describe("native subagent Host watchers", () => {
       f.a.updateAgent({
         agentId: agent.id,
         oldFilePath: agent.path,
-        config: config("researcher", "partial update must not publish"),
+        config: config("watcher-researcher", "partial update must not publish"),
       }),
     ).rejects.toMatchObject({
       code: "EACCES",
       zcodeFsFaultId: "subagent-watcher-update-rename-failure",
     });
 
-    await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    await f.both({
+      kind: "ready",
+      profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+    });
     expect(await readFile(agent.path, "utf8")).toContain("old");
     expect(await readFile(agent.path, "utf8")).not.toContain("partial update must not publish");
   });
@@ -126,15 +132,15 @@ describe("native subagent Host watchers", () => {
     const root = join(f.homeDir, ".zcode", "agents");
     await rm(root, { recursive: true, force: true });
     await f.both({ kind: "ready", profiles: [] });
-    const path = join(root, "researcher.md");
+    const path = join(root, "watcher-researcher.md");
     await mkdir(root, { recursive: true });
     let active = true,
       writes = 0;
-    await writeFile(path, markdown("researcher", `write-${writes}`));
+    await writeFile(path, markdown("watcher-researcher", `write-${writes}`));
     const writer = (async () => {
       while (active) {
         await delay(100);
-        if (active) await writeFile(path, markdown("researcher", `write-${++writes}`));
+        if (active) await writeFile(path, markdown("watcher-researcher", `write-${++writes}`));
       }
     })();
     const stop = async () => {
@@ -184,26 +190,29 @@ describe("native subagent Host watchers", () => {
           await mkdir(actual, { recursive: true });
           if (!(await sameDirectory(actual, join(parent, "agents"))))
             skip("Requires a case-insensitive test filesystem");
-          await writeFile(join(actual, "researcher.md"), markdown("researcher"));
+          await writeFile(join(actual, "watcher-researcher.md"), markdown("watcher-researcher"));
         });
-        await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
+        await f.both({
+          kind: "ready",
+          profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+        });
         const parent =
           scope === "user" ? join(f.homeDir, ".zcode") : join(f.workspace.workspacePath, ".zcode");
-        const logical = join(parent, "agents", "researcher.md");
-        const actual = join(parent, "AGENTS", "researcher.md");
+        const logical = join(parent, "agents", "watcher-researcher.md");
+        const actual = join(parent, "AGENTS", "watcher-researcher.md");
         if (operation === "delete") await rm(logical);
         else {
           const agentId =
             scope === "user"
-              ? "user:user:researcher"
-              : `workspace:${f.workspace.workspacePath}:researcher`;
+              ? "user:user:watcher-researcher"
+              : `workspace:${f.workspace.workspacePath}:watcher-researcher`;
           await f.a.updateAgent({
             agentId,
             oldFilePath: logical,
             ...(scope === "project"
               ? ({ scope: "workspace", workspacePath: f.workspace.workspacePath } as const)
               : {}),
-            config: config(operation === "rename" ? "renamed" : "researcher", "new"),
+            config: config(operation === "rename" ? "renamed" : "watcher-researcher", "new"),
           });
           expect(
             await readFile(
@@ -219,7 +228,12 @@ describe("native subagent Host watchers", () => {
           profiles:
             operation === "delete"
               ? []
-              : [{ name: operation === "rename" ? "renamed" : "researcher", systemPrompt: "new" }],
+              : [
+                  {
+                    name: operation === "rename" ? "renamed" : "watcher-researcher",
+                    systemPrompt: "new",
+                  },
+                ],
         });
       }, 15000);
     }
@@ -238,14 +252,17 @@ describe("native subagent Host watchers", () => {
       const logical = join(parent, "agents");
       if (mode === "recreation") {
         await mkdir(logical, { recursive: true });
-        await writeFile(join(logical, "researcher.md"), markdown("researcher"));
-        await f.both({ profiles: [{ name: "researcher", systemPrompt: "old" }] });
+        await writeFile(join(logical, "watcher-researcher.md"), markdown("watcher-researcher"));
+        await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "old" }] });
         await rm(logical, { recursive: true });
         await f.both({ profiles: [] });
       }
       await mkdir(join(parent, "AGENTS"), { recursive: true });
-      await writeFile(join(logical, "researcher.md"), markdown("researcher", "new"));
-      await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+      await writeFile(
+        join(logical, "watcher-researcher.md"),
+        markdown("watcher-researcher", "new"),
+      );
+      await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
     }, 20000);
   }
 
@@ -258,34 +275,37 @@ describe("native subagent Host watchers", () => {
       if (await sameDirectory(root, join(home, ".zcode", "AGENTS")))
         skip("Requires a case-sensitive test filesystem");
       await mkdir(join(home, ".zcode", "AGENTS"));
-      await writeFile(join(root, "researcher.md"), markdown("researcher"));
+      await writeFile(join(root, "watcher-researcher.md"), markdown("watcher-researcher"));
       await writeFile(join(home, ".zcode", "AGENTS", "unrelated.md"), markdown("unrelated"));
     });
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "old" }] });
     await writeFile(
       join(f.homeDir, ".zcode", "AGENTS", "unrelated.md"),
       markdown("unrelated", "wrong"),
     );
     await writeFile(
-      join(f.homeDir, ".zcode", "agents", "researcher.md"),
-      markdown("researcher", "new"),
+      join(f.homeDir, ".zcode", "agents", "watcher-researcher.md"),
+      markdown("watcher-researcher", "new"),
     );
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
   });
 
   it("removes the old cache entry after a filename-only case rename", async () => {
     const f = await pair(async (home) => {
       await mkdir(join(home, ".zcode", "agents"), { recursive: true });
-      await writeFile(join(home, ".zcode", "agents", "Researcher.MD"), markdown("researcher"));
+      await writeFile(
+        join(home, ".zcode", "agents", "Researcher.MD"),
+        markdown("watcher-researcher"),
+      );
     });
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "old" }] });
     const root = join(f.homeDir, ".zcode", "agents");
-    await rename(join(root, "Researcher.MD"), join(root, "researcher.md"));
-    await writeFile(join(root, "researcher.md"), markdown("researcher", "new"));
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+    await rename(join(root, "Researcher.MD"), join(root, "watcher-researcher.md"));
+    await writeFile(join(root, "watcher-researcher.md"), markdown("watcher-researcher", "new"));
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
     // macOS 可延后送达大小写重命名的 unlink；先让该批次完成，再验证独立删除事件。
     await delay(500);
-    await rm(join(root, "researcher.md"));
+    await rm(join(root, "watcher-researcher.md"));
     expect(await readdir(root)).toEqual([]);
     await f.both({ profiles: [] });
   });
@@ -302,21 +322,24 @@ describe("native subagent Host watchers", () => {
         process.platform === "win32" ? "junction" : "dir",
       );
       await writeFile(
-        join(storage, "agents", "researcher.md"),
-        "---\nname: researcher\ndescription: Research\n---\nold",
+        join(storage, "agents", "watcher-researcher.md"),
+        "---\nname: watcher-researcher\ndescription: Research\n---\nold",
       );
     });
-    await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
-    const agentId = "user:user:researcher";
+    await f.both({
+      kind: "ready",
+      profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+    });
+    const agentId = "user:user:watcher-researcher";
     await f.a.updateAgent({
       agentId,
-      oldFilePath: join(f.homeDir, ".zcode", "agents", "researcher.md"),
-      config: config("researcher", "new"),
+      oldFilePath: join(f.homeDir, ".zcode", "agents", "watcher-researcher.md"),
+      config: config("watcher-researcher", "new"),
     });
     expect(
-      await readFile(join(f.homeDir, "linked-storage", "agents", "researcher.md"), "utf8"),
+      await readFile(join(f.homeDir, "linked-storage", "agents", "watcher-researcher.md"), "utf8"),
     ).toContain("new");
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
     await f.a.setEnabled({ agentId, enabled: false });
     await f.both({ profiles: [] });
   }, 15000);
@@ -335,7 +358,7 @@ describe("native subagent Host watchers", () => {
     async (operation) => {
       const f = await pair();
       const { agent } = await f.a.createAgent({ config: config() });
-      await f.both({ kind: "ready", profiles: [{ name: "researcher" }] });
+      await f.both({ kind: "ready", profiles: [{ name: "watcher-researcher" }] });
       if (operation === "enable" || operation === "rename") {
         await f.a.setEnabled({ agentId: agent.id, enabled: false });
         await f.both({ profiles: [] });
@@ -346,7 +369,7 @@ describe("native subagent Host watchers", () => {
         await f.a.updateAgent({
           agentId: agent.id,
           oldFilePath: agent.path,
-          config: config(operation === "rename" ? "renamed" : "researcher", "new"),
+          config: config(operation === "rename" ? "renamed" : "watcher-researcher", "new"),
         });
       if (operation === "delete")
         await f.a.deleteAgent({ agentId: agent.id, filePath: agent.path });
@@ -359,7 +382,7 @@ describe("native subagent Host watchers", () => {
         });
       if (operation === "plugin")
         await f.a.setPluginAgentModelOverride({
-          agentId: "plugin:test:researcher",
+          agentId: "plugin:test:watcher-researcher",
           modelSelection: { providerId: "test", modelId: "new" },
         });
       await until(async () => {
@@ -465,7 +488,7 @@ describe("native subagent Host watchers", () => {
   it("reads state from the prepared path without re-resolving CLI storage on every event", async () => {
     const f = await pair();
     const { agent } = await f.a.createAgent({ config: config() });
-    await f.both({ profiles: [{ name: "researcher" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher" }] });
     const cliRoot = join(f.homeDir, ".zcode", "cli");
     await mkdir(cliRoot, { recursive: true });
     await writeFile(
@@ -504,13 +527,13 @@ describe("native subagent Host watchers", () => {
     async () => {
       const f = await pair(undefined, true);
       const { agent } = await f.a.createAgent({ config: config() });
-      await f.both({ profiles: [{ name: "researcher" }] });
+      await f.both({ profiles: [{ name: "watcher-researcher" }] });
       await expect(f.a.createAgent({ config: config() })).rejects.toThrow();
       await f.both({ profiles: [{ systemPrompt: "old" }] });
       await f.a.setEnabled({ agentId: agent.id, enabled: false });
       await f.both({ profiles: [] });
       await f.a.setEnabled({ agentId: agent.id, enabled: true });
-      await f.both({ profiles: [{ name: "researcher" }] });
+      await f.both({ profiles: [{ name: "watcher-researcher" }] });
       // 在目标发布前注入故障，验证 journal 留存后由下一次 profile 读取安全完成事务。
       setFsFaultInjectorForTests(
         createFsFaultInjector([
@@ -525,7 +548,7 @@ describe("native subagent Host watchers", () => {
       await expect(
         f.a.updateAgent({ agentId: agent.id, oldFilePath: agent.path, config: config("renamed") }),
       ).rejects.toThrow();
-      expect(await readdir(join(f.homeDir, ".zcode", "agents"))).toContain("researcher.md");
+      expect(await readdir(join(f.homeDir, ".zcode", "agents"))).toContain("watcher-researcher.md");
       setFsFaultInjectorForTests(null);
       // 恢复由 SubagentsService 的下一次 profile 读取入口拥有；watcher 只观察已恢复的文件。
       const recovered = await f.a.list({ workspacePath: f.workspace.workspacePath });
@@ -545,7 +568,10 @@ describe("native subagent Host watchers", () => {
     await f.both({ kind: "ready", profiles: [] });
     await rm(root);
     await rename(root + "-saved", root);
-    await writeFile(join(root, "researcher.md"), markdown("researcher", "restored"));
+    await writeFile(
+      join(root, "watcher-researcher.md"),
+      markdown("watcher-researcher", "restored"),
+    );
     await f.both({ kind: "ready", profiles: [{ systemPrompt: "restored" }] });
   }, 20000);
 });

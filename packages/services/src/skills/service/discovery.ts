@@ -207,6 +207,11 @@ export function attachEnabledState(
 ): SkillSummary[] {
   return skills.map((skill) => ({
     ...skill,
-    enabled: enabledByPath[normalizeSkillConfigPath(skill.path)] ?? true,
+    enabled:
+      enabledByPath[normalizeSkillConfigPath(skill.path)] ??
+      // macOS `/var` → `/private/var` and symlinked roots: the config is written from the
+      // scanned path, while `path` is realpath-resolved. Check both before defaulting to on.
+      (skill.sourcePath ? enabledByPath[normalizeSkillConfigPath(skill.sourcePath)] : undefined) ??
+      true,
   }));
 }

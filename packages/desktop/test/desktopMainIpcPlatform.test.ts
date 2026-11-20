@@ -43,10 +43,22 @@ vi.mock("electron", () => ({
     themeSource: "system",
   },
   nativeImage: {},
+  session: {
+    defaultSession: {
+      setPermissionRequestHandler: vi.fn(),
+    },
+  },
+  app: {
+    once: vi.fn(),
+  },
   shell: {
     openExternal: vi.fn(),
     showItemInFolder: vi.fn(),
   },
+}));
+
+vi.mock("../src/main/voice/registerVoiceDictationIpc.js", () => ({
+  registerVoiceDictationIpc: vi.fn(),
 }));
 
 vi.mock("../src/main/editors.js", () => ({

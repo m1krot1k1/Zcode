@@ -76,8 +76,10 @@ export function registerVoiceDictationIpc(logger: {
   // Electron leaves getUserMedia pending forever (the UI would sit in
   // "starting" with no prompt). Media audio is the only permission this layer
   // grants; other requests keep Electron's previous allow behavior.
-  const defaultSession = session.defaultSession;
-  defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+  // Unit hosts and non-Electron test doubles may not expose `session`/`app`; registration
+  // must remain side-effect free there instead of crashing the whole IPC module.
+  const defaultSession = session?.defaultSession;
+  defaultSession?.setPermissionRequestHandler?.((_contents, permission, callback, details) => {
     if (permission === "media") {
       const types = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
       callback(types.includes("audio"));
@@ -99,7 +101,7 @@ export function registerVoiceDictationIpc(logger: {
       throw error;
     }
   });
-  app.once("before-quit", () => {
+  app?.once?.("before-quit", () => {
     service.dispose();
   });
   return service;
