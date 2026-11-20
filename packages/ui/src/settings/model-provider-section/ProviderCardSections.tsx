@@ -38,14 +38,18 @@ import { ModelRowInput } from "./ProviderFormControls.js";
 import { PresetProviderApiKeyBanner } from "./PresetProviderApiKeyBanner.js";
 import { type ProviderModelDraftValues } from "@/settings/model-provider-section/ProviderModelMetadata.js";
 import { ProviderModelMetadataDialog } from "@/settings/model-provider-section/ProviderModelMetadataDialog.js";
-import { type ProviderConnectionApiFormat, ProviderApiFormatSelect, resolveProviderConnectionApiFormatDisplayLabel } from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
+import {
+  type ProviderConnectionApiFormat,
+  ProviderApiFormatSelect,
+  resolveProviderConnectionApiFormatDisplayLabel,
+} from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
 import { SortableProviderModelList } from "@/settings/model-provider-section/SortableProviderModelList.js";
 import { useProviderModelDraft } from "@/settings/model-provider-section/useProviderModelDraft.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
 import type { ProviderConfigObject } from "@zcode/provider";
 
-
-export { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";function shouldShowProviderApiFormat(
+export { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";
+function shouldShowProviderApiFormat(
   _provider: Pick<ProviderSettingsFormProvider, "providerId">,
 ): boolean {
   return true;
@@ -269,6 +273,9 @@ export function ProviderConnectionSection({
             {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
           </label>
           <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} />
+          <p className="mt-1 text-ui-xs text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.modelProvider.apiFormat.autoHint" })}
+          </p>
         </div>
       ) : null}
     </>

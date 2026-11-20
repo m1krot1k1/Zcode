@@ -8954,6 +8954,8 @@ const enUS: Record<string, string> = {
   "chat.voice.unavailable": "Voice input is unavailable",
   "chat.voice.microphoneDenied": "Microphone access was denied",
   "chat.voice.hint": "Hold ⌥ or tap twice",
+  "settings.modelProvider.apiFormat.autoHint":
+    "Detected automatically when the connection is saved. You can override it.",
 };
 
 export default enUS;

@@ -8477,6 +8477,7 @@ const zhCN: Record<string, string> = {
   "chat.voice.unavailable": "语音输入不可用",
   "chat.voice.microphoneDenied": "麦克风访问被拒绝",
   "chat.voice.hint": "按住 ⌥ 或按两次",
+  "settings.modelProvider.apiFormat.autoHint": "保存连接时自动检测，也可以手动覆盖。",
 };
 
 export default zhCN;
