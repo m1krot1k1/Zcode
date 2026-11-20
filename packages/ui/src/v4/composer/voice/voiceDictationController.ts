@@ -398,10 +398,6 @@ class VoiceDictationController {
 
 const controller = new VoiceDictationController();
 
-export function useVoiceDictationController(): VoiceDictationController {
-  return controller;
-}
-
 export function getVoiceDictationController(): VoiceDictationController {
   return controller;
 }
