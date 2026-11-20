@@ -2,12 +2,10 @@ import { access, link, lstat, mkdir, readFile, readdir, rm, writeFile } from "no
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  createAgentStateId,
   createPluginAgentStateId,
   parsePluginSubagentModelSelectionOverrides,
   DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
-  modelSelectionSchema,
   type SubagentRuntimeConfig,
   type AgentCreateParams,
   type AgentDeleteParams,
@@ -45,6 +43,13 @@ import {
 } from "@zcode/shared/node";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { createSubagentRuntimeConfigCache } from "./subagentRuntimeConfig.js";
+import {
+  BUILT_IN_AGENT_NAMES,
+  createBuiltInAgents,
+  normalizeBuiltInSelectionOverrides,
+} from "./builtInAgents.js";
+
+export { BUILT_IN_AGENT_NAMES, createBuiltInAgents, normalizeBuiltInSelectionOverrides };
 
 // Часть 1/2 модуля subagents-service: вынесено по лимиту строк.
 
@@ -100,8 +105,6 @@ export interface AgentProfileRenameJournal {
   targetWasDisabled: boolean;
 }
 
-export const BUILT_IN_AGENT_NAMES = new Set(["Explore"]);
-
 export const PROFILE_RENAME_JOURNAL_PREFIX = ".zcode-profile-rename-";
 
 export const MAX_PROFILE_RENAME_CONTENT_BYTES = 1024 * 1024;
@@ -111,34 +114,6 @@ export const PLUGIN_MANIFEST_PATHS = [
   join(".claude-plugin", "plugin.json"),
   join(".codex-plugin", "plugin.json"),
 ] as const;
-
-export function createBuiltInAgents(
-  modelSelectionOverrides: BuiltInSubagentModelSelectionOverrides = {},
-): AgentSummary[] {
-  const exploreOverride = modelSelectionOverrides.Explore;
-  return [
-    {
-      id: createAgentStateId({
-        name: "Explore",
-        scope: "built-in",
-        source: "built-in",
-      }),
-      name: "Explore",
-      description: "Read-only search agent for broad fan-out searches.",
-      color: "cyan",
-      injectAgentsMd: false,
-      modelSelection: exploreOverride,
-      modelSelectionOverride: exploreOverride,
-      systemPrompt: "",
-      tools: ["Bash", "Glob", "Grep", "Read", "WebFetch", "WebSearch", "TodoWrite"],
-      path: "built-in:Explore",
-      scope: "built-in",
-      source: "built-in",
-      enabled: true,
-      readOnly: true,
-    },
-  ];
-}
 
 export async function exists(path: string): Promise<boolean> {
   try {
@@ -287,7 +262,10 @@ export async function writeAgentStateFile(
   await atomicWriteText(stateFile, JSON.stringify(next, null, 2));
 }
 
-export async function collectAgentMarkdownPaths(rootPath: string, recursive = false): Promise<string[]> {
+export async function collectAgentMarkdownPaths(
+  rootPath: string,
+  recursive = false,
+): Promise<string[]> {
   if (!(await exists(rootPath))) {
     return [];
   }
@@ -329,7 +307,9 @@ export function attachEnabledState(agents: AgentSummary[], state: AgentsStateFil
   }));
 }
 
-export async function readPluginConfig(options?: SubagentStorageOptions): Promise<PluginConfigSummary> {
+export async function readPluginConfig(
+  options?: SubagentStorageOptions,
+): Promise<PluginConfigSummary> {
   try {
     const configPath = join(resolveUserHomeDir(options), ".zcode", "cli", "config.json");
     const raw = await readFile(configPath, "utf-8");
@@ -361,7 +341,9 @@ export function isInstalledPluginRecord(value: unknown): value is InstalledPlugi
   );
 }
 
-export async function readPluginManifest(rootPath: string): Promise<Record<string, unknown> | null> {
+export async function readPluginManifest(
+  rootPath: string,
+): Promise<Record<string, unknown> | null> {
   for (const relativePath of PLUGIN_MANIFEST_PATHS) {
     try {
       const raw = await readFile(join(rootPath, relativePath), "utf-8");
@@ -374,7 +356,10 @@ export async function readPluginManifest(rootPath: string): Promise<Record<strin
   return null;
 }
 
-export function applyPluginAgentOverrides(agent: AgentSummary, state: AgentsStateFile): AgentSummary {
+export function applyPluginAgentOverrides(
+  agent: AgentSummary,
+  state: AgentsStateFile,
+): AgentSummary {
   const override = state.pluginAgentModelSelectionOverrides[agent.id];
   // 插件文件只提供默认值；覆盖替换整份选择，不能混入原模型的档位。
   return {
@@ -382,18 +367,6 @@ export function applyPluginAgentOverrides(agent: AgentSummary, state: AgentsStat
     defaultModelSelection: agent.modelSelection,
     ...(override ? { modelSelection: override, modelSelectionOverride: override } : {}),
   };
-}
-
-export function normalizeBuiltInSelectionOverrides(
-  structured: unknown,
-): BuiltInSubagentModelSelectionOverrides {
-  const result: BuiltInSubagentModelSelectionOverrides = {};
-  const structuredRecord = isRecord(structured) ? structured : {};
-  const generalPurpose = modelSelectionSchema.safeParse(structuredRecord["general-purpose"]).data;
-  const explore = modelSelectionSchema.safeParse(structuredRecord.Explore).data;
-  if (generalPurpose) result["general-purpose"] = generalPurpose;
-  if (explore) result.Explore = explore;
-  return result;
 }
 
 export function assertNotBuiltInName(name: string): void {
@@ -543,7 +516,9 @@ export async function collectPluginAgentMarkdownPaths(rootPath: string): Promise
   return paths.flat().sort((left, right) => left.localeCompare(right));
 }
 
-export async function readAgentStateFile(options?: SubagentsServiceOptions): Promise<AgentsStateFile> {
+export async function readAgentStateFile(
+  options?: SubagentsServiceOptions,
+): Promise<AgentsStateFile> {
   return readAgentStateAtPath(await resolveSubagentStateFile(options));
 }
 
@@ -571,7 +546,12 @@ export async function readEnabledPluginRecords(
     for (const versionRoot of cacheRoot.versionRoots) {
       const manifest = await readPluginManifest(versionRoot);
       if (manifest?.name !== cacheRoot.name) continue;
-      records.push({ id, installPath: versionRoot, name: cacheRoot.name, scope: "user" });
+      records.push({
+        id,
+        installPath: versionRoot,
+        name: cacheRoot.name,
+        scope: "user",
+      });
       seenIds.add(id);
       break;
     }

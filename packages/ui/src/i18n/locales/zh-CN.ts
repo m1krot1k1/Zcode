@@ -5091,6 +5091,7 @@ const zhCN: Record<string, string> = {
   "settings.subagents.table.enabled": "启用",
   "settings.subagents.footerSummary": "共 {total} 个子智能体 · {enabled} 个已启用",
   "settings.subagents.toolsCount": "{count} 个工具",
+  "settings.subagents.skillsCount": "{count} 个技能",
   "settings.subagents.tools.inherit": "继承工具",
   "settings.subagents.tools.all": "全部工具",
   "settings.subagents.toggleAria": "切换 {name}",

@@ -45,7 +45,7 @@ export {
 export {
   subagentRuntimeConfigSchema,
   type SubagentRuntimeConfig,
-} from "../subagent-runtime-config.js";
+} from "../subagent-catalog/runtimeConfig.js";
 
 // 启动入口的独立存储命令与严格结果 schema，和 CLI 共用一份契约。
 export {

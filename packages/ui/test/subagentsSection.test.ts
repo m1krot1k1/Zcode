@@ -425,6 +425,7 @@ vi.mock("@/i18n/IntlProvider.js", () => ({
           "settings.subagents.model.main": "Main model",
           "settings.subagents.reasoningUnavailable": "Reasoning effort unavailable",
           "settings.subagents.toolsCount": `${values?.count ?? 0} tools`,
+          "settings.subagents.skillsCount": `${values?.count ?? 0} skills`,
           "settings.subagents.tools.all": "All tools",
           "settings.subagents.tools.inherit": "Inherit tools",
           "settings.subagents.toggleAria": `Toggle ${values?.name ?? ""}`,
@@ -856,6 +857,36 @@ describe("SubagentsSection", () => {
     expect(html).toContain("Explore");
     expect(html).toContain("All tools");
     expect(html).not.toContain("1 tools");
+  });
+
+  it("shows concrete preferred skills instead of counting the wildcard", async () => {
+    stateOverrides = new Map<number, unknown>([
+      [
+        1,
+        [
+          {
+            id: "built-in:coder",
+            name: "coder",
+            description: "Writes production code",
+            systemPrompt: "Code.",
+            path: "built-in:coder",
+            scope: "built-in",
+            source: "built-in",
+            enabled: true,
+            readOnly: true,
+            tools: ["Read", "Edit"],
+            skills: ["*", "code-craft", "zcode-verification"],
+          },
+        ],
+      ],
+      [2, { userScopeAvailable: true }],
+    ]);
+
+    const html = await renderSubagentsSection();
+
+    expect(html).toContain("coder");
+    expect(html).toContain("2 skills");
+    expect(html).not.toContain("3 skills");
   });
 
   it("renders model controls for built-in subagents while keeping user model badges", async () => {

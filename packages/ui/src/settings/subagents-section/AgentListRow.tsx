@@ -70,6 +70,16 @@ export function AgentListRow({
   const toolsLabel = allowsAllTools(agent.tools)
     ? intl.formatMessage({ id: "settings.subagents.tools.all" })
     : intl.formatMessage({ id: "settings.subagents.toolsCount" }, { count: String(toolCount) });
+  // The `*` entry means "may load any skill"; it is not a specialization and would make
+  // every built-in row look identical. Show the concrete preferred skills instead.
+  const preferredSkills = [...new Set((agent.skills ?? []).filter((skill) => skill !== "*"))];
+  const skillsLabel =
+    preferredSkills.length > 0
+      ? intl.formatMessage(
+          { id: "settings.subagents.skillsCount" },
+          { count: String(preferredSkills.length) },
+        )
+      : null;
   const displayName =
     agent.source === "plugin" && agent.name.includes(":")
       ? agent.name.slice(agent.name.indexOf(":") + 1)
@@ -112,6 +122,11 @@ export function AgentListRow({
           <span className="truncate text-ui-base font-medium text-foreground">{displayName}</span>
           {showModelBadge ? <AgentBadge>{modelLabel}</AgentBadge> : null}
           <AgentBadge>{toolsLabel}</AgentBadge>
+          {skillsLabel ? (
+            <span title={preferredSkills.join(", ")}>
+              <AgentBadge>{skillsLabel}</AgentBadge>
+            </span>
+          ) : null}
         </div>
         <p className="mt-0.5 line-clamp-2 text-ui-sm text-foreground-subtle">
           {agent.description || intl.formatMessage({ id: "settings.subagents.noDescription" })}

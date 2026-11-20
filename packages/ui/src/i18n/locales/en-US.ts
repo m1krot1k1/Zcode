@@ -5457,6 +5457,7 @@ const enUS: Record<string, string> = {
   "settings.subagents.table.enabled": "Enabled",
   "settings.subagents.footerSummary": "{total} subagents · {enabled} enabled",
   "settings.subagents.toolsCount": "{count} tools",
+  "settings.subagents.skillsCount": "{count} skills",
   "settings.subagents.tools.inherit": "Inherit tools",
   "settings.subagents.tools.all": "All tools",
   "settings.subagents.toggleAria": "Toggle {name}",

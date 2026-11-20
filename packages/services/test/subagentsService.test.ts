@@ -722,6 +722,21 @@ describe("createSubagentsService", () => {
         options: { reasoningLevel: "max" },
       },
     });
+    await service.setBuiltInModelOverride({
+      agentName: "start",
+      modelSelection: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+      },
+    });
+    await service.setBuiltInModelOverride({
+      agentName: "orchestrator",
+      modelSelection: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
+      },
+    });
 
     const result = await service.list({
       workspacePath,
@@ -749,6 +764,26 @@ describe("createSubagentsService", () => {
       },
       readOnly: true,
     });
+    // Regression: the Settings roster must expose the router roles, and the formal reader
+    // must preserve their overrides instead of dropping them after a Host restart.
+    expect(result.agents.find((agent) => agent.name === "start")).toMatchObject({
+      modelSelection: { providerId: "custom-openai", modelId: "glm-5.2" },
+      modelSelectionOverride: { providerId: "custom-openai", modelId: "glm-5.2" },
+      readOnly: true,
+    });
+    expect(result.agents.find((agent) => agent.name === "orchestrator")).toMatchObject({
+      modelSelection: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
+      },
+      modelSelectionOverride: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
+      },
+      readOnly: true,
+    });
     expect(state.builtInModelSelectionOverrides).toEqual({
       Explore: {
         providerId: "custom-openai",
@@ -759,6 +794,15 @@ describe("createSubagentsService", () => {
         providerId: "custom-openai",
         modelId: "gpt-5.4",
         options: { reasoningLevel: "high" },
+      },
+      start: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+      },
+      orchestrator: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
       },
     });
   });
@@ -837,8 +881,36 @@ describe("createSubagentsService", () => {
       mode: "settingsUserOnly",
     });
 
-    expect(result.agents.map((agent) => agent.name)).toEqual(["Explore", "code-reviewer"]);
+    expect(
+      result.agents.filter((agent) => agent.scope === "built-in").map((agent) => agent.name),
+    ).toEqual([
+      "Explore",
+      "start",
+      "orchestrator",
+      "researcher",
+      "debugger",
+      "implementer",
+      "coder",
+      "frontend-coder",
+      "backend-coder",
+      "infra-coder",
+      "reviewer",
+      "security-reviewer",
+      "test-engineer",
+      "evaluator",
+      "self-improver",
+      "knowledge-curator",
+      "subagent-factory",
+    ]);
+    expect(
+      result.agents.filter((agent) => agent.scope === "user").map((agent) => agent.name),
+    ).toEqual(["code-reviewer"]);
     expect(result.agents.every((agent) => agent.scope !== "workspace")).toBe(true);
+    expect(result.agents.find((agent) => agent.name === "coder")).toMatchObject({
+      tools: expect.arrayContaining(["Read", "Edit", "Bash"]),
+      skills: expect.arrayContaining(["*", "code-craft", "zcode-test-driven-development"]),
+      readOnly: true,
+    });
 
     // Bugfix 回归：workspace profile 曾被 parser 标为 readOnly，于是在设置页既不可编辑
     // 也不可删除，还被归入“内置”分组。只有内置 agent 才是真正只读的。

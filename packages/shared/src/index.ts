@@ -295,6 +295,7 @@ export * from "./plugin-sync.js";
 export * from "./remote-sync.js";
 export * from "./plugin-types.js";
 export * from "./subagents-types.js";
+export * from "./subagent-catalog/index.js";
 export * from "./settings-source.js";
 export * from "./settings-errors.js";
 export * from "./app-runtime-preferences.js";
@@ -345,8 +346,6 @@ export * from "./processResourceTelemetry.js";
 export * from "./execution-state.js";
 
 export { bashOutputDisplaySchema } from "./bash-output-display.js";
-
-export * from "./subagent-runtime-config.js";
 
 export * from "./subagent-profile.js";
 export { parseAgentProfileFromMarkdown } from "./subagent-profile-parser.js";

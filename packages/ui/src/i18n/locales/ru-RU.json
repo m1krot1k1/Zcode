@@ -341,6 +341,7 @@
   "settings.subagents.table.enabled": "Включён",
   "settings.subagents.footerSummary": "Субагентов: {total} · включено: {enabled}",
   "settings.subagents.toolsCount": "Инструментов: {count}",
+  "settings.subagents.skillsCount": "Навыков: {count}",
   "settings.subagents.form.name.label": "Название",
   "settings.subagents.form.description.label": "Описание",
   "settings.subagents.form.model.label": "Модель",

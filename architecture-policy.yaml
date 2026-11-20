@@ -2400,6 +2400,19 @@ modules:
       contract: .
     owner: conversation
 
+  # shared-subagent-catalog：由 architecture:adopt 登记
+  - id: shared-subagent-catalog
+    roots:
+      - packages/shared/src/subagent-catalog
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - packages/shared/src/subagent-catalog/index.ts
+      - packages/shared/src/subagent-catalog/contract.ts
+    layers:
+      domain: .
+
 exceptions:
   # Two focused helpers added with the root-auto and crash-resume specs. Keep the
   # exception path-exact; do not widen it to the whole zcode-cli tree.
