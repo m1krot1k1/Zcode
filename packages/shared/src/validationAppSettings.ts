@@ -314,6 +314,35 @@ function migrateToolGroupingChangesDefault(value: unknown): unknown {
   };
 }
 
+function migrateWorkingContextCeilingDefault(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.workingContextCeilingMigrationVersion === 1) {
+    return value;
+  }
+  const agentCore = raw.agentCoreAdvanced;
+  const nextCore =
+    agentCore && typeof agentCore === "object" && !Array.isArray(agentCore)
+      ? (agentCore as Record<string, unknown>)
+      : undefined;
+  return {
+    ...raw,
+    // The old 120k default was indistinguishable from a custom value. Migrate it once;
+    // later explicit 120k or any other custom ceiling is preserved by the version gate.
+    ...(nextCore?.workingContextCeilingTokens === 120_000
+      ? {
+          agentCoreAdvanced: {
+            ...nextCore,
+            workingContextCeilingTokens: 80_000,
+          },
+        }
+      : {}),
+    workingContextCeilingMigrationVersion: 1,
+  };
+}
+
 function migrateToolSearchDefault(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return value;
@@ -614,6 +643,8 @@ const appSettingsObjectSchema = z.object({
   toolSearchMode: appToolSearchModeSchema.default("off"),
   // One-time migration: the old default and an explicit opt-out were indistinguishable.
   toolSearchModeMigrationVersion: z.literal(1).default(1),
+  // One-time migration of the old 120k working-context default to 80k.
+  workingContextCeilingMigrationVersion: z.literal(1).default(1),
   // Инкремент 4.4: профиль глубины рассуждений. Владелец — настройки; рантайм читает его
   // при сборке системного промпта и при выборе thinking/maxOutputTokens. UI-переключатель
   // появится в 4.6, но схема и рантайм-поддержка готовы здесь.
@@ -653,16 +684,18 @@ export const appSettingsSchema = z.preprocess(
   (value) =>
     sanitizeEmbeddedBrowserViewportPreference(
       sanitizeDesktopWindowSize(
-        migrateToolSearchDefault(
-          migrateToolGroupingChangesDefault(
-            migrateMessageStreamShowReasoningDefault(
-              migrateCloseToTrayOnWindowsDefault(
-                migrateLegacyLocalePreference(
-                  sanitizeZCodeEndpointOrigin(
-                    migrateLegacyWorkspaceSession(
-                      migrateLegacyBuiltinAgentCliProviders(
-                        migrateRemoteBoundaryIntroAcknowledgement(
-                          migrateTaskAutoArchiveReset(value),
+        migrateWorkingContextCeilingDefault(
+          migrateToolSearchDefault(
+            migrateToolGroupingChangesDefault(
+              migrateMessageStreamShowReasoningDefault(
+                migrateCloseToTrayOnWindowsDefault(
+                  migrateLegacyLocalePreference(
+                    sanitizeZCodeEndpointOrigin(
+                      migrateLegacyWorkspaceSession(
+                        migrateLegacyBuiltinAgentCliProviders(
+                          migrateRemoteBoundaryIntroAcknowledgement(
+                            migrateTaskAutoArchiveReset(value),
+                          ),
                         ),
                       ),
                     ),

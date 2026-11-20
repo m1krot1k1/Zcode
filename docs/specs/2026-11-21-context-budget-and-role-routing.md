@@ -67,6 +67,17 @@ subagents. The result was expensive, slow, and only nominally specialized.
 2. On 16 GB this yields 6 slots; on 8 GB, 3 slots. CPU remains the other bound.
 3. A user-configured `maxParallelSubagents` may only reduce the adaptive ceiling.
 
+### Working context ceiling
+
+1. The default working context ceiling is 80k tokens (was 120k).
+2. The old persisted 120k default migrates once to 80k; an explicit custom value and
+   a later explicit 120k are preserved by `workingContextCeilingMigrationVersion: 1`.
+3. Observation masking is already enabled by default: stale large Read/Bash/Grep/Edit
+   observations are replaced with target metadata and a digest in quantized groups, so
+   lowering the ceiling does not turn old tool output into a hard loss of identity.
+4. Cache hit rate is already projected into Context Usage; no new provider API is
+   invented when the provider does not expose prefix-cache usage.
+
 ## Acceptance
 
 - A 16 GB host resolves at most 6 parallel subagents.
@@ -86,9 +97,12 @@ subagents. The result was expensive, slow, and only nominally specialized.
 - `apps/zcode-cli/packages/core/tests/subagent-skill-marketplace.test.ts`
 - `apps/zcode-cli/packages/core/tests/subagent-profile.test.ts`
 - `apps/zcode-cli/packages/core/tests/spawn-budget.test.ts`
+- `apps/zcode-cli/packages/core/tests/microcompact-budget.test.ts`
+- `packages/shared/test/appSettings.test.ts`
 
 ## Not enabled in this pass
 
-Lazy MCP connection and observation masking remain opt-in/A-B work: both can remove
-tools or facts the model needs, so they are not enabled blindly. ToolSearch deferral
-(P0.1) already removes deferred MCP schemas from the resident prompt.
+Lazy MCP connection and isolation of autocomplete/proactive/memory model calls remain
+opt-in/A-B work: both can remove tools or starve background features, so they are not
+enabled blindly. ToolSearch deferral (P0.1) already removes deferred MCP schemas from
+the resident prompt, and observation masking is enabled with the lower 80k ceiling.

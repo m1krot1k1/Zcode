@@ -8,7 +8,7 @@ export const DEFAULT_COMPACT_CONTEXT_WINDOW = 200_000;
  * Эффективный рабочий потолок контекста для сверхдлинных моделей (> 200K, например 1M окон):
  * предотвращает разбухание истории до 400K+ токенов и квадратичный перерасход входного бюджета.
  */
-export const DEFAULT_WORKING_CONTEXT_CEILING_TOKENS = 140_000;
+export const DEFAULT_WORKING_CONTEXT_CEILING_TOKENS = 80_000;
 // 正常请求默认输出已收敛到 32K，auto compact 必须预留同一目标；
 // 否则请求预算和压缩窗口会继续按两套常量计算。
 export const DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 32_000;

@@ -31,16 +31,16 @@ function buildToolRound(
 }
 
 describe("Increment 4.1 (F-04): effective working context ceiling & quantized cache-friendly microcompact", () => {
-  it("caps auto-compact and microcompact working thresholds at 120K–140K even for 1M-context models", () => {
+  it("caps auto-compact and microcompact working thresholds at 80K even for 1M-context models", () => {
     const oneMillionAutoThreshold = getAutoCompactThreshold({
       contextWindow: 1_000_000,
     });
     expect(oneMillionAutoThreshold).toBe(DEFAULT_WORKING_CONTEXT_CEILING_TOKENS);
-    expect(oneMillionAutoThreshold).toBe(140_000);
+    expect(oneMillionAutoThreshold).toBe(80_000);
 
     const defaultMicroThreshold = buildDefaultMicrocompactThreshold(oneMillionAutoThreshold);
-    expect(defaultMicroThreshold).toBe(DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS);
-    expect(defaultMicroThreshold).toBe(120_000);
+    expect(defaultMicroThreshold).toBe(Math.floor(DEFAULT_WORKING_CONTEXT_CEILING_TOKENS * 0.9));
+    expect(defaultMicroThreshold).toBeLessThanOrEqual(DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS);
 
     // Явное переопределение через конфиг рантайма принимается без жёсткого хардкода.
     const overriddenAutoThreshold = getAutoCompactThreshold({
