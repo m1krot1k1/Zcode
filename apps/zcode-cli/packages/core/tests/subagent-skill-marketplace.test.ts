@@ -61,6 +61,49 @@ describe("FilteredSkillPort marketplace delegation", () => {
     ).rejects.toThrow(/marketplace install is not available/u);
   });
 
+  it("shows only preferred skills in the catalog while still allowing other allowed skills", async () => {
+    const skills = ["alpha", "beta"].map((name) => ({
+      name,
+      description: `${name} skill`,
+      directory: `/w/.agents/skills/${name}`,
+      frontmatterKeys: ["name", "description"],
+      path: `/w/.agents/skills/${name}/SKILL.md`,
+      rootPath: "/w/.agents/skills",
+      safeToAutoLoad: true,
+      scope: "project" as const,
+      source: "agents" as const,
+    }));
+    const loadSkill = vi.fn(async (request: { name: string }) => {
+      const metadata = skills.find((skill) => skill.name === request.name);
+      if (!metadata) throw new Error("not installed");
+      return {
+        metadata,
+        content: `${metadata.name} instructions`,
+        baseDirectory: metadata.directory,
+        bytesRead: 20,
+        sizeBytes: 20,
+        truncated: false,
+      };
+    });
+    const parent = createPort({
+      discoverSkills: async () => ({
+        skills: skills.map((skill) => ({ ...skill })),
+        diagnostics: [],
+        totalDiscovered: skills.length,
+      }),
+      loadSkill,
+    } as never);
+    const port = resolveSubagentSkillPort(parent, ["*"], cuaPolicy, ["alpha"])!;
+
+    await expect(port.discoverSkills({ workingDirectory: "/w" })).resolves.toMatchObject({
+      skills: [expect.objectContaining({ name: "alpha" })],
+      totalDiscovered: 1,
+    });
+    await expect(
+      port.loadSkill({ name: "beta", workingDirectory: "/w" }),
+    ).resolves.toMatchObject({ content: "beta instructions" });
+  });
+
   it("lets the next child discover and load a skill installed through the previous child port", async () => {
     const installed: SkillLoadOutcome["skills"] = [];
     const parent = createPort({

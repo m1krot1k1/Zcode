@@ -44,6 +44,7 @@ export function collectAgentListingAttachment(input: {
     addedTypes: added.map((profile) => profile.name),
     addedLines: added.map((profile) =>
       formatAgentProfileForPrompt(profile, {
+        compact: true,
         embeddedSearchEnabled: input.embeddedSearchEnabled,
         availableToolNames: input.tools.map((tool) => tool.name),
       }),

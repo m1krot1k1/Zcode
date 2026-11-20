@@ -74,6 +74,25 @@ describe("agent listing attachments", () => {
     expect(collect([])).toBeUndefined();
   });
 
+  it("keeps long worker rows compact in the main-turn catalog", () => {
+    const worker: AgentProfile = {
+      ...profile("worker", "x".repeat(400)),
+      tools: Array.from({ length: 12 }, (_, index) => `Tool${index}`),
+    };
+    const entry = collectAgentListingAttachment({
+      definitions: { activeAgents: [worker] },
+      entries: [],
+      tools: [
+        { name: "Agent" },
+        ...Array.from({ length: 12 }, (_, index) => ({ name: `Tool${index}` })),
+      ],
+    })!;
+
+    expect(entry.content).toContain("...");
+    expect(entry.content).toContain("+6 more");
+    expect(entry.content.length).toBeLessThan(400);
+  });
+
   it("announces the same named role catalog to Task-only child runtimes", () => {
     const entry = collect(["researcher", "implementer"], [], [{ name: "Task" }]);
 

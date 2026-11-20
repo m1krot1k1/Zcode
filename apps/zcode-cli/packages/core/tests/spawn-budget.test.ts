@@ -54,8 +54,11 @@ describe("legacy spawn budget compatibility", () => {
     expect(registry.registerSubagentTask(task("worker-2", root, createSessionId("worker-2-child"), turnId), settled())).toMatchObject({ accepted: true });
     expect(registry.registerSubagentTask(task("worker-3", root, createSessionId("worker-3-child"), turnId), settled())).toEqual({ accepted: false, reason: "active_limit" });
 
-    expect(resolveAdaptiveSubagentMaxParallel(1)).toBe(1);
-    expect(resolveAdaptiveSubagentMaxParallel(8)).toBe(8);
+    const gb = 1024 ** 3;
+    expect(resolveAdaptiveSubagentMaxParallel(1, { totalMemoryBytes: 16 * gb })).toBe(1);
+    expect(resolveAdaptiveSubagentMaxParallel(8, { totalMemoryBytes: 16 * gb })).toBe(6);
+    expect(resolveAdaptiveSubagentMaxParallel(8, { totalMemoryBytes: 8 * gb })).toBe(3);
+    expect(resolveAdaptiveSubagentMaxParallel(8, { totalMemoryBytes: 0 })).toBe(8);
     expect(resolveSubagentMaxParallel(1)).toBe(1);
     expect(resolveSubagentMaxParallel(999)).toBe(resolveAdaptiveSubagentMaxParallel());
   });

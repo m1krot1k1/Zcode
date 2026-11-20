@@ -139,9 +139,6 @@ export function isDelegationRouterAgentType(agentType: string): boolean {
   return agentType === "start" || agentType === "orchestrator";
 }
 
-/** start has exactly one delegation target; everything else is owned by orchestrator. */
-export const START_ROUTING_TARGET_AGENT_TYPE = "orchestrator";
-
 function normalizeAgentTypeName(agentType: string | null | undefined): string {
   return agentType?.trim().toLocaleLowerCase("en-US") ?? "";
 }
@@ -161,9 +158,9 @@ function isSubagentCaller(caller: string): boolean {
 
 /**
  * Admission predicate shared by the Agent/Task handler and the catalog filter.
- * start -> orchestrator only; inspection roles -> researcher only (parallel evidence,
- * no recursive review/writers); other subagent callers -> any role except router roles;
- * root/main (undefined) -> unrestricted.
+ * start -> any worker or orchestrator, never itself; inspection roles -> researcher only
+ * (parallel evidence, no recursive review/writers); other subagent callers -> any role
+ * except router roles; root/main (undefined) -> unrestricted.
  */
 export function isAgentTypeAllowedForCaller(
   agentType: string,
@@ -171,7 +168,9 @@ export function isAgentTypeAllowedForCaller(
 ): boolean {
   const caller = normalizeAgentTypeName(callerAgentType);
   if (caller === "start") {
-    return normalizeAgentTypeName(agentType) === START_ROUTING_TARGET_AGENT_TYPE;
+    // Fast path: a single bounded task may go straight to a matching worker.
+    // Orchestrator remains available for real fan-out/planning.
+    return normalizeAgentTypeName(agentType) !== "start";
   }
   if (caller === RESEARCH_LEAF_CALLER_ROLE_NAME) {
     return false;
@@ -363,6 +362,8 @@ export interface AgentProfilePromptOptions {
   embeddedSearchEnabled?: boolean;
   /** Actual provider-visible tool names; when present, the catalog is filtered to them. */
   availableToolNames?: readonly string[];
+  /** Keep the main-turn catalog to one short line per role instead of full tool lists. */
+  compact?: boolean;
 }
 
 export function formatAgentProfilesForPrompt(
@@ -403,8 +404,22 @@ export function formatAgentProfileForPrompt(
   ) {
     listedTools.push("Skill");
   }
-  const toolText = typeof tools === "string" ? tools : listedTools?.join(", ");
-  return `- ${profile.name}: ${profile.description}${toolText ? ` (Tools: ${toolText})` : ""}`;
+  const description =
+    options.compact && profile.description.length > 140
+      ? `${profile.description.slice(0, 137)}...`
+      : profile.description;
+  let toolText = typeof tools === "string" ? tools : listedTools?.join(", ");
+  if (options.compact && listedTools && listedTools.length > 6) {
+    // Routers need to know that Skill is available even when it sorts after the
+    // worker set; keep it in the visible prefix and report the omitted tail.
+    const ordered = listedTools.includes("Skill")
+      ? ["Skill", ...listedTools.filter((toolName) => toolName !== "Skill")]
+      : listedTools;
+    const visible = ordered.slice(0, 6);
+    const omitted = ordered.length - visible.length;
+    toolText = `${visible.join(", ")}${omitted > 0 ? ` +${omitted} more` : ""}`;
+  }
+  return `- ${profile.name}: ${description}${toolText ? ` (Tools: ${toolText})` : ""}`;
 }
 
 export function agentProfileDisplayName(profile: AgentProfile): string {

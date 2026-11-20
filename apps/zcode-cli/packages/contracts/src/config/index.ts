@@ -373,7 +373,8 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
   skills: {
     enabled: true,
     includeInstructions: true,
-    metadataBudget: 20_000,
+    // Progressive disclosure: descriptions fit until 12k, then names remain.
+    metadataBudget: 12_000,
     roots: [],
   },
   skillOverrides: {},

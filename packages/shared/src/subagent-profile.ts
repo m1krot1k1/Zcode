@@ -20,6 +20,8 @@ export interface AgentProfile {
   name: string;
   path?: string;
   permissionMode?: AgentPermissionMode;
+  /** Skills shown in the role-scoped catalog; `skills` still controls what may load. */
+  preferredSkills?: readonly string[];
   skills?: readonly string[];
   source: AgentProfileSource;
   systemPrompt: string;
@@ -59,6 +61,7 @@ export const agentProfileSchema = z
     tools: z.array(z.string()).readonly().optional(),
     disallowedTools: z.array(z.string()).readonly().optional(),
     includeInSwarm: z.boolean().optional(),
+    preferredSkills: z.array(z.string()).readonly().optional(),
     skills: z.array(z.string()).readonly().optional(),
     mcpServers: z.array(z.string()).readonly().optional(),
   })

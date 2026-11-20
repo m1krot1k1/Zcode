@@ -6,8 +6,8 @@ import type { SkillLoadOutcome, SkillMetadata } from "@zcode/contracts";
 import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
 
-const DEFAULT_SKILL_METADATA_BUDGET = 20_000;
-const MAX_DESCRIPTION_CHARS = 250;
+const DEFAULT_SKILL_METADATA_BUDGET = 12_000;
+const MAX_DESCRIPTION_CHARS = 160;
 
 interface SkillsSectionOptions {
   outcome: SkillLoadOutcome;
@@ -48,16 +48,21 @@ function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
   const sortedSkills = [...skills].sort((a, b) =>
     skillDisplayName(a).localeCompare(skillDisplayName(b)),
   );
-  const skillLines = sortedSkills.map((skill) => formatSkillLine(skill, MAX_DESCRIPTION_CHARS));
-  const full = [...lines, ...skillLines].join("\n");
-  if (full.length <= budget) {
-    return full;
+  // Progressive disclosure: keep full descriptions for the skills that fit, then fall
+  // back to names only for the tail. This preserves useful routing hints instead of
+  // dropping every description as soon as the catalog crosses the budget.
+  let content = lines.join("\n");
+  for (const skill of sortedSkills) {
+    const line = formatSkillLine(skill, MAX_DESCRIPTION_CHARS);
+    const nameLine = formatSkillNameLine(skill);
+    const next = content.length + 1 + line.length <= budget ? line : nameLine;
+    content += `\n${next}`;
   }
+  return content;
+}
 
-  const namesOnly = sortedSkills.map(
-    (skill) => `- ${skillDisplayName(skill)}${bareAliasSuffix(skill)} (file: ${skill.path})`,
-  );
-  return [...lines, ...namesOnly].join("\n");
+function formatSkillNameLine(skill: SkillMetadata): string {
+  return `- ${skillDisplayName(skill)}${bareAliasSuffix(skill)} (file: ${skill.path})`;
 }
 
 function formatSkillLine(skill: SkillMetadata, maxDescriptionChars: number): string {

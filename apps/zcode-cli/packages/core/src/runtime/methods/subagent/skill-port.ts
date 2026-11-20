@@ -19,17 +19,40 @@ import {
   type OfficialCuaPolicy,
 } from "../../../subagent/computer-use-policy.js";
 
+/**
+ * Catalog projection for a role. Built-ins keep `skills: ["*", ...concrete]` for
+ * compatibility; showing only the concrete names makes the role actually specialized
+ * while `allowedSkills` still governs what can be loaded (including marketplace skills).
+ */
+export function resolvePreferredSkillNames(profile: {
+  preferredSkills?: readonly string[] | undefined;
+  skills?: readonly string[] | undefined;
+}): readonly string[] | undefined {
+  if (profile.preferredSkills && profile.preferredSkills.length > 0) {
+    return profile.preferredSkills;
+  }
+  const concrete = profile.skills?.filter((name) => name !== "*") ?? [];
+  if (concrete.length > 0) return concrete;
+  return profile.skills;
+}
+
 export function resolveSubagentSkillPort(
   parentSkillPort: SkillPort | undefined,
   skillNames: readonly string[] | undefined,
   cuaPolicy: OfficialCuaPolicy,
+  preferredSkillNames?: readonly string[] | undefined,
 ): SkillPort | undefined {
   if (!parentSkillPort) {
     return parentSkillPort;
   }
   // 根因：把空数组压成 undefined 会被过滤器解释为不限权，导致子代理拿到父级全部技能。
   // 修复依据：缺省和显式空白名单都应没有权限；只有逐项声明的技能可穿过此边界。
-  return new FilteredSkillPort(parentSkillPort, new Set(skillNames ?? []), cuaPolicy);
+  return new FilteredSkillPort(
+    parentSkillPort,
+    new Set(skillNames ?? []),
+    cuaPolicy,
+    preferredSkillNames ? new Set(preferredSkillNames) : undefined,
+  );
 }
 
 class FilteredSkillPort implements SkillPort {
@@ -37,9 +60,23 @@ class FilteredSkillPort implements SkillPort {
     private readonly parent: SkillPort,
     private readonly allowedSkills: ReadonlySet<string> | undefined,
     private readonly cuaPolicy: OfficialCuaPolicy,
+    private readonly preferredSkills: ReadonlySet<string> | undefined,
   ) {}
 
   async discoverSkills(
+    request: Parameters<SkillPort["discoverSkills"]>[0],
+    options?: SkillOperationOptions,
+  ): Promise<SkillLoadOutcome> {
+    const outcome = await this.discoverAllowedSkills(request, options);
+    const skills = outcome.skills.filter((skill) => this.isPreferredSkill(skill));
+    return {
+      ...outcome,
+      skills,
+      totalDiscovered: skills.length,
+    };
+  }
+
+  private async discoverAllowedSkills(
     request: Parameters<SkillPort["discoverSkills"]>[0],
     options?: SkillOperationOptions,
   ): Promise<SkillLoadOutcome> {
@@ -146,11 +183,19 @@ class FilteredSkillPort implements SkillPort {
     );
   }
 
+  private isPreferredSkill(skill: SkillContent["metadata"]): boolean {
+    if (!this.preferredSkills || this.preferredSkills.has("*")) return true;
+    return (
+      this.preferredSkills.has(skill.name) ||
+      (skill.qualifiedName !== undefined && this.preferredSkills.has(skill.qualifiedName))
+    );
+  }
+
   private async resolveAllowedSkillRequestName(
     request: Parameters<SkillPort["loadSkill"]>[0],
     options?: SkillOperationOptions,
   ): Promise<string | undefined> {
-    const outcome = await this.discoverSkills(
+    const outcome = await this.discoverAllowedSkills(
       {
         workingDirectory: request.workingDirectory,
         roots: request.roots,

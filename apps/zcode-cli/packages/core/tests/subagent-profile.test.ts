@@ -964,12 +964,13 @@ describe("specialized worker roster", () => {
     expect(profile("infra-coder")?.systemPrompt).toContain("Linux");
   });
 
-  it("routes start exclusively through the orchestrator instead of direct workers", () => {
+  it("routes a single bounded task to a worker with orchestrator reserved for fan-out", () => {
     const prompt = profile("start")?.systemPrompt ?? "";
 
+    expect(prompt).toContain("одной ограниченной задачи");
+    expect(prompt).toContain("профильным worker");
     expect(prompt).toContain('Task(subagent_type: "orchestrator")');
-    expect(prompt).toContain("Твой единственный маршрут");
-    expect(prompt).toContain("Task(subagent_type: \"orchestrator\")");
+    expect(prompt).not.toContain("Твой единственный маршрут");
     expect(prompt).toContain("не передаёт task_graph");
     expect(prompt).toContain("следующий wave");
     expect(prompt).toContain("накопленным контекстом");
@@ -1309,8 +1310,11 @@ describe("caller-scoped agent catalog", () => {
   const namesFor = (caller?: string) =>
     filterAgentTypesForCaller(profiles(), caller).map((profile) => profile.name);
 
-  it("gives start exactly one delegation target", () => {
-    expect(namesFor("start")).toEqual(["orchestrator"]);
+  it("gives start workers plus orchestrator, but never itself", () => {
+    expect(namesFor("start")).toEqual(
+      expect.arrayContaining(["orchestrator", "researcher", "coder", "reviewer"]),
+    );
+    expect(namesFor("start")).not.toContain("start");
   });
 
   it("gives orchestrator worker roles but not the router roles", () => {
@@ -1357,7 +1361,8 @@ describe("caller-scoped agent catalog", () => {
 
   it("shares the admission predicate with the catalog", () => {
     expect(isAgentTypeAllowedForCaller("orchestrator", "start")).toBe(true);
-    expect(isAgentTypeAllowedForCaller("coder", "start")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("coder", "start")).toBe(true);
+    expect(isAgentTypeAllowedForCaller("start", "start")).toBe(false);
     expect(isAgentTypeAllowedForCaller("orchestrator", "orchestrator")).toBe(false);
     expect(isAgentTypeAllowedForCaller("start", "orchestrator")).toBe(false);
     expect(isAgentTypeAllowedForCaller("coder", "orchestrator")).toBe(true);

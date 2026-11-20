@@ -155,7 +155,9 @@ export type RuntimeTaskAdmissionResult =
  * `kern.maxprocperuid`, дав `spawn /bin/zsh EAGAIN`. Watchdog тогда ещё был выключен,
  * поэтому агенты висели часами.
  *
- * Теперь потолок — минимум из двух оценок: CPU и доступная память (по 512 МБ на агента).
+ * Теперь потолок — минимум из двух оценок: CPU и доступная память (1 ГБ на агента).
+ * На 16 ГБ это 6 слотов вместо прежних 10: каждый агент запускает shell, файловые
+ * операции и отдельный model-запрос, поэтому 512 МБ на агента давали thrashing.
  * Явная настройка пользователя по-прежнему может только уменьшать потолок.
  */
 export function resolveAdaptiveSubagentMaxParallel(
@@ -172,14 +174,14 @@ export function resolveAdaptiveSubagentMaxParallel(
   return Math.max(1, effective);
 }
 
-const AGENT_MEMORY_FOOTPRINT_BYTES = 512 * 1024 * 1024;
+const AGENT_MEMORY_FOOTPRINT_BYTES = 1024 * 1024 * 1024;
+/** 40% RAM: остальное — Host, Electron, code index и файловый кэш ОС. */
+const AGENT_MEMORY_BUDGET_RATIO = 0.4;
 
 function resolveMemoryBoundAgentCount(host: { totalMemoryBytes?: number }): number | undefined {
-  // Берём долю от total, а не free: ОС отдаёт кэш под нагрузкой, а субагенты стартуют
-  // не мгновенно. Половина RAM оставляет место Host, Electron и индексу кода.
   const total = host.totalMemoryBytes;
   if (!Number.isFinite(total) || (total ?? 0) <= 0) return undefined;
-  const budget = Math.floor((total as number) * 0.5);
+  const budget = Math.floor((total as number) * AGENT_MEMORY_BUDGET_RATIO);
   return Math.max(1, Math.floor(budget / AGENT_MEMORY_FOOTPRINT_BYTES));
 }
 

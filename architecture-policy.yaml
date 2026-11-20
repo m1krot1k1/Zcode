@@ -2427,6 +2427,12 @@ exceptions:
       - packages/desktop/src/main/desktopEarlyAppVersionBootstrap.ts
       - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
       - apps/zcode-cli/packages/core/src/subagent/definitions.ts
+      # Skill→agent provisioning: the runtime listing and the shared profile
+      # contract/parser live in legacy unmanaged package roots. Keep these three
+      # paths exact instead of registering a module around single contract files.
+      - apps/zcode-cli/packages/core/src/subagent/listing.ts
+      - packages/shared/src/subagent-profile.ts
+      - packages/shared/src/subagent-profile-parser.ts
       - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
       # Child effort resolver for the relative effort class; path-exact for the
       # same unmanaged zcode-cli module.

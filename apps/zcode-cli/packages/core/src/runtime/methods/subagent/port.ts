@@ -85,6 +85,7 @@ import {
   validateSubagentMcpRequirements,
 } from "./mcp-access.js";
 import {
+  resolvePreferredSkillNames,
   resolveSubagentSkillPort,
   validateSubagentComputerUseConfiguration,
 } from "./skill-port.js";
@@ -394,6 +395,7 @@ export function createDefaultSubagentPort(
               this.skillPort,
               request.profile.skills,
               childCuaPolicy,
+              resolvePreferredSkillNames(request.profile),
             );
             const childModelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]> = (target) =>
               target.selection.providerId === childSelection.providerId &&
