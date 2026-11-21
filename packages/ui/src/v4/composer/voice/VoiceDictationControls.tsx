@@ -284,7 +284,7 @@ function VoiceDictationOverlayImpl() {
   return createPortal(
     <>
       <div
-        className="fixed left-1/2 top-4 z-50 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2 shadow-lg"
+        className="pointer-events-auto fixed left-1/2 top-4 z-50 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2 shadow-lg [app-region:no-drag]"
         data-testid="voice-dictation-overlay"
         data-state={state.status}
       >

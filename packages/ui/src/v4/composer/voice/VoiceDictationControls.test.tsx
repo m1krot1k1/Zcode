@@ -78,6 +78,12 @@ describe("voice dictation overlay settings action", () => {
   it("navigates to Settings › Voice instead of opening a duplicate modal", () => {
     render(<VoiceDictationOverlay />);
 
+    // The overlay sits over the native window titlebar; without no-drag Electron
+    // consumes every click even though hover/tooltip still work.
+    expect(screen.getByTestId("voice-dictation-overlay").className).toContain(
+      "[app-region:no-drag]",
+    );
+
     fireEvent.click(screen.getByRole("button", { name: "chat.voice.openSettings" }));
 
     expect(mocks.setPending).toHaveBeenCalledWith("voice");
