@@ -33,6 +33,10 @@ export const promptEnhanceCapabilitySuggestionSchema = z
     /** Exact installed/marketplace name when known; never a command or URL. */
     name: z.string().trim().min(1).max(256),
     reason: z.string().trim().min(1).max(500),
+    /** True only when the Host found the capability in its installed index. */
+    installed: z.boolean().default(false),
+    /** `model` — proposed by the enhancer; `index` — deterministic installed match. */
+    source: z.enum(["model", "index"]).default("model"),
     /** Suggestions are informational; installing/using is always a separate consent step. */
     requiresConsent: z.boolean().default(true),
   })

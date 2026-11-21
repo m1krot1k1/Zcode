@@ -43,9 +43,26 @@ Do not copy an example from the draft if it is unrelated; adapt the supplied con
 Keep the prompt short: one task, one action, one measurable goal. Do not add sections or ceremony.`,
 };
 
+const TASK_KIND_GUIDANCE: Record<string, string> = {
+  bugfix: `Required brief: symptom, reproduction, expected vs actual, root-cause evidence, minimal fix,
+regression test. Do not let the agent guess the failure.`,
+  feature: `Required brief: user-visible goal, interface/data contract, non-goals, acceptance tests.
+Separate "what changes" from "what must not change".`,
+  review: `Required brief: review scope, diff/base, risk areas, severity scale, required evidence.
+Forbid stylistic rewrites unless the author asked for them.`,
+  research: `Required brief: question, decision it informs, sources/primary evidence, comparison criteria,
+confidence and open questions. Never present a guess as a source.`,
+  writing: `Required brief: audience, channel, goal, voice/example, length, call to action, facts that must stay exact.`,
+  planning: `Required brief: outcome, constraints, phases, owners, dependencies, risks, definition of done.`,
+  design: `Required brief: user problem, state inventory, interaction rules, visual direction, accessibility,
+responsive behavior and the acceptance evidence.`,
+  general: `Required brief: goal, concrete scope, constraints and a verifiable done condition.`,
+};
+
 const STYLE_GUIDANCE: Record<PromptEnhanceStyle, string> = {
-  structured_engineering: `Structure the prompt as: Goal, Relevant code/areas, Constraints, Acceptance criteria.
-Keep it as tight as the request allows. One short paragraph per section; no filler sentences.`,
+  structured_engineering: `Structure the prompt as a compact task brief: Goal, Context, Scope, Non-goals,
+Inputs, Constraints, Acceptance criteria, Deliverables, Verification. Include Risks only when the draft
+names one. Keep it as tight as the request allows; no filler sentences and no questions.`,
   concise_direct: `Compress aggressively. Keep the author's intent, drop redundancy, and prefer imperative sentences.
 Do not add sections the draft does not need. Never invent requirements to make it look thorough.`,
   deep_architectural: `Make the prompt demand engineering rigour: decompose into ordered steps, name the single state owner,
@@ -91,6 +108,9 @@ export function buildPromptEnhancerSystemPrompt(
           "",
           "## Classification",
           `domain=${classification.domain}; task=${classification.taskKind}. Treat this as a hint, not a new requirement.`,
+          "",
+          "## Task brief",
+          TASK_KIND_GUIDANCE[classification.taskKind] ?? TASK_KIND_GUIDANCE.general!,
         ]
       : []),
     "",

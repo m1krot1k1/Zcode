@@ -70,8 +70,10 @@ accept or reject the result.**
 - `packages/ui/src/prompt-enhancer-ui/enhancePromptButton.test.tsx`
 - `apps/zcode-cli/packages/cli/tests/enhance-command.test.ts`
 
-## Not in this pass
+## Capability Resolver follow-up
 
-Automatic installation of suggested marketplace skills/MCP servers is intentionally not
-included. The suggestion list is the handoff to the future Capability Resolver; actual
-installation still follows the existing permission/consent path.
+The suggestion list is now resolved against the installed capability index and surfaced
+with `installed`/`source` provenance; see
+[`2026-11-21-task-brief-capability-resolver.md`](./2026-11-21-task-brief-capability-resolver.md).
+Installing a suggested skill still requires two explicit clicks and follows the existing
+permission/consent path; nothing is installed or invoked automatically.

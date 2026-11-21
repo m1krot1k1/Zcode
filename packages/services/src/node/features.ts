@@ -21,10 +21,14 @@ import { createSkillsService } from "../skills/skillsService.js";
 import { createSourceServerWorkspaceService } from "../source-server-workspace/sourceServerWorkspaceService.js";
 import {
   createSubagentsService,
+  auditAgentSkillLibrary,
   provisionSkillAgentProfile,
 } from "../subagents/subagentsService.js";
 import { join } from "node:path";
 import { getZCodeDataRootDir as projectDataRoot } from "#src/paths.js";
+import { createServiceLogger } from "#src/logger/serviceLogger.js";
+
+const logger = createServiceLogger("feature-services");
 
 export function createFeatureServices(args: BuildContext & CoreServices & ProviderServices) {
   const {
@@ -58,8 +62,53 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
   const subagentsService = createSubagentsService({
     isDesktopRuntime: true,
   });
+  const isMarketplaceSkillPath = (path: string): boolean =>
+    /[\\/]\.agents[\\/]skills[\\/]/u.test(path) && !/[\\/]\.zcode[\\/]skills[\\/]/u.test(path);
   const skillsService = createSkillsService({
     isDesktopRuntime: true,
+    // Existing marketplace skills did not get a same-name agent before the
+    // provisioning feature; reconcile once per workspace when Settings lists them.
+    onSkillsListed: async ({ workspacePath, workspaceIdentity, skills }) => {
+      let changed = false;
+      for (const skill of skills) {
+        if (skill.scope === "plugin" || skill.pluginName) continue;
+        if (!isMarketplaceSkillPath(skill.path)) continue;
+        const provisioned = await provisionSkillAgentProfile({
+          skillName: skill.name,
+          description: skill.description,
+        });
+        changed ||= provisioned.created;
+      }
+      if (changed) await subagentsService.prepareRuntimeState();
+      // Read-only Librarian pass: report drift after backfill so a user can see why an
+      // agent is missing or stale. Never delete a hand-edited profile here.
+      try {
+        const agents = await subagentsService.list({
+          workspacePath,
+          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          mode: "settingsUserOnly",
+        });
+        const audit = auditAgentSkillLibrary({ agents: agents.agents, skills });
+        if (
+          audit.orphanedSkillAgents.length > 0 ||
+          audit.agentsWithMissingSkills.length > 0 ||
+          audit.skillsWithoutAgent.length > 0
+        ) {
+          logger.info(undefined, "agent skill library drift", {
+            workspacePath,
+            generatedSkillAgents: audit.generatedSkillAgents,
+            orphanedSkillAgents: audit.orphanedSkillAgents.length,
+            agentsWithMissingSkills: audit.agentsWithMissingSkills.length,
+            skillsWithoutAgent: audit.skillsWithoutAgent.length,
+          });
+        }
+      } catch (error) {
+        logger.warn(undefined, "agent skill library audit failed", {
+          workspacePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
     onMarketplaceSkillInstalled: async (skill) => {
       const provisioned = await provisionSkillAgentProfile({
         skillName: skill.name,

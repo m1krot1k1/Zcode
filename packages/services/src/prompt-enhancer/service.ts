@@ -10,6 +10,8 @@ import {
   parseEnhancedPromptResponse,
   promptEnhanceRequestSchema,
   promptEnhanceResultSchema,
+  resolvePromptEnhanceCapabilities,
+  type PromptEnhanceCapabilityIndexEntry,
   type PromptEnhanceCancelParams,
   type PromptEnhanceRequest,
   type PromptEnhanceResult,
@@ -75,10 +77,22 @@ export function pickLowestReasoningLevel(
   return values[0];
 }
 
+export interface PromptEnhancerCapabilityIndexProvider {
+  /**
+   * Installed capability facts for one workspace. The Host wires this to its skills,
+   * agents and (when cheap) MCP/plugin catalogs. A failure must not fail enhancement.
+   */
+  list(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<readonly PromptEnhanceCapabilityIndexEntry[]>;
+}
+
 export interface PromptEnhancerServiceOptions {
   textGenerator: PromptEnhancerTextGenerator;
   modelResolver?: PromptEnhancerModelResolver;
   contextPorts?: PromptEnhanceContextPorts;
+  capabilityIndex?: PromptEnhancerCapabilityIndexProvider;
   logger?: ServiceLogger;
   /** Оценка токенов; внедряется, чтобы тесты не зависели от токенизатора. */
   estimateTokens?: (text: string) => { tokens: number; method: "tokenlens" | "char-ratio" };
@@ -197,6 +211,37 @@ export function createPromptEnhancerService(
         }
         controller.signal.throwIfAborted();
 
+        // Start the installed-capability lookup before the model call. The index is
+        // advisory: it must never add latency to the enhancement or fail the request.
+        // The short cap handles a slow first Settings scan; later calls hit the Host cache.
+        const capabilityIndexPromise = (async (): Promise<
+          readonly PromptEnhanceCapabilityIndexEntry[]
+        > => {
+          if (!options.capabilityIndex) return [];
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            return await Promise.race([
+              options.capabilityIndex.list({
+                workspacePath: request.workspacePath,
+                ...(request.workspaceIdentity
+                  ? { workspaceIdentity: request.workspaceIdentity }
+                  : {}),
+              }),
+              new Promise<readonly PromptEnhanceCapabilityIndexEntry[]>((resolve) => {
+                timer = setTimeout(() => resolve([]), 2_000);
+              }),
+            ]);
+          } catch (error) {
+            logger.warn(undefined, "Capability index unavailable for prompt enhancement", {
+              requestId: request.requestId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        })();
+
         const classification = classifyPromptEnhanceTask({
           draftText: request.draftText,
           target: request.target,
@@ -274,6 +319,22 @@ export function createPromptEnhancerService(
 
         const before = estimateTokens(request.draftText);
         const after = estimateTokens(response.enhancedText);
+        const capabilityIndex = await capabilityIndexPromise;
+        const capabilitySuggestions = resolvePromptEnhanceCapabilities({
+          draftText: request.draftText,
+          classification: {
+            domain: classification.domain,
+            taskKind: classification.taskKind,
+            framework: classification.framework,
+          },
+          modelSuggestions: response.capabilitySuggestions.map((suggestion) => ({
+            ...suggestion,
+            installed: false,
+            source: "model" as const,
+            requiresConsent: true as const,
+          })),
+          index: capabilityIndex,
+        });
         const result: PromptEnhanceResult = {
           requestId: request.requestId,
           enhancedText: response.enhancedText,
@@ -283,10 +344,7 @@ export function createPromptEnhancerService(
           taskKind: classification.taskKind,
           addedClarifications: response.addedClarifications,
           assumptions: response.assumptions,
-          capabilitySuggestions: response.capabilitySuggestions.map((suggestion) => ({
-            ...suggestion,
-            requiresConsent: true,
-          })),
+          capabilitySuggestions,
           usedContext: context.sources,
           modelUsed: {
             providerId: generated.selection.providerId,
@@ -309,6 +367,10 @@ export function createPromptEnhancerService(
           domain: validated.domain,
           taskKind: validated.taskKind,
           capabilitySuggestionCount: validated.capabilitySuggestions.length,
+          installedCapabilityCount: validated.capabilitySuggestions.filter(
+            (suggestion) => suggestion.installed,
+          ).length,
+          capabilityIndexSize: capabilityIndex.length,
           tokenDelta: validated.tokenDelta.after - validated.tokenDelta.before,
           elapsedMs: validated.elapsedMs,
         });

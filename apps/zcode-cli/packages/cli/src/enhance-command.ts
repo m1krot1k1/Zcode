@@ -167,6 +167,10 @@ export async function runEnhanceCommand(
       assumptions: parsed.assumptions,
       capabilitySuggestions: parsed.capabilitySuggestions.map((suggestion) => ({
         ...suggestion,
+        // CLI has no Host capability index; a suggestion stays a proposal until the
+        // user installs it through the normal consent path.
+        installed: false,
+        source: "model" as const,
         requiresConsent: true,
       })),
       usedContext: [],

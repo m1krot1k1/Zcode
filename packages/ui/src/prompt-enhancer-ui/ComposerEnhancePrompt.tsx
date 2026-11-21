@@ -1,6 +1,9 @@
-import { forwardRef, useCallback, useImperativeHandle, useEffect, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { PromptEnhanceCapabilitySuggestion } from "@zcode/shared";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
 import { Button } from "@/components/ui/button.js";
+import { useOptionalServices } from "@/hooks/useServices.js";
+import { logger } from "@/logger.js";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +58,9 @@ export const ComposerEnhancePrompt = forwardRef<
   ref,
 ) {
   const { intl } = useZCodeIntl();
+  const services = useOptionalServices();
+  const [installingSkill, setInstallingSkill] = useState<string | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
   const draftRef = useRef(draftText);
   draftRef.current = draftText;
 
@@ -82,8 +88,49 @@ export const ComposerEnhancePrompt = forwardRef<
       void enhance.cancel();
       return;
     }
+    setInstallError(null);
     void enhance.enhance(draftRef.current);
   }, [enhance]);
+
+  /**
+   * Two-step consent lives in `EnhancePromptDetails`: this callback only runs after the
+   * user confirms. Installation still goes through the same skills service as Settings,
+   * so skill→agent provisioning and audit logging stay in one place.
+   */
+  const installSkill = useCallback(
+    async (suggestion: PromptEnhanceCapabilitySuggestion) => {
+      const skillsService = services?.skillsService;
+      if (!skillsService) {
+        setInstallError(intl.formatMessage({ id: "chat.composer.enhanceCapabilityUnavailable" }));
+        return;
+      }
+      setInstallingSkill(suggestion.name);
+      setInstallError(null);
+      try {
+        const result = await skillsService.installMarketplaceSkill({
+          name: suggestion.name,
+          scope: "workspace",
+          workspacePath,
+        });
+        logger.info("Capability suggestion installed with consent", {
+          kind: suggestion.kind,
+          name: result.name,
+          agentName: result.agentName,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn("Capability suggestion install failed", {
+          kind: suggestion.kind,
+          name: suggestion.name,
+          error: message,
+        });
+        setInstallError(message);
+      } finally {
+        setInstallingSkill(null);
+      }
+    },
+    [intl, services, workspacePath],
+  );
 
   useImperativeHandle(ref, () => ({ trigger }), [trigger]);
 
@@ -154,7 +201,12 @@ export const ComposerEnhancePrompt = forwardRef<
                   </pre>
                 </section>
               </div>
-              <EnhancePromptDetails result={enhance.preview.result} />
+              <EnhancePromptDetails
+                result={enhance.preview.result}
+                onInstallSkill={services?.skillsService ? installSkill : undefined}
+                installingSkill={installingSkill}
+                installError={installError}
+              />
             </>
           ) : null}
           <DialogFooter>

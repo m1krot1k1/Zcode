@@ -2,6 +2,7 @@ import type { CodeIntelligenceService } from "../code-intelligence/contract.js";
 import type { IFileService } from "../file/file.js";
 import type { IGitService } from "../git/git.js";
 import type {
+  PromptEnhancerCapabilityIndexProvider,
   PromptEnhancerModelResolver,
   PromptEnhancerTextGenerator,
 } from "../prompt-enhancer/index.js";
@@ -9,9 +10,12 @@ import type {
   PromptEnhanceContextPorts,
   PromptEnhanceHistoryPort,
 } from "../prompt-enhancer/index.js";
+import type { ISkillsService } from "../skills/skills.js";
+import type { ISubagentsService } from "../subagents/subagents.js";
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { IZCodeSessionService } from "../zcode-session/zcodeSession.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
+import { buildPromptEnhanceCapabilityIndex } from "@zcode/shared";
 
 /**
  * Проводка `PromptEnhancerService` к Host-портам.
@@ -22,6 +26,75 @@ import { createServiceLogger } from "../logger/serviceLogger.js";
  */
 
 const logger = createServiceLogger("prompt-enhancer-ports");
+
+/**
+ * Installed capability facts for the enhancer. Skills and user agents are already
+ * workspace-scoped and cheap after the first scan; MCP/plugin suggestions stay
+ * model-proposed until their own consent-driven install surfaces are used.
+ *
+ * A short TTL prevents one Settings scan per keystroke and keeps the enhancer on the
+ * background queue rather than triggering repeated filesystem walks.
+ */
+export function createPromptEnhancerCapabilityIndexProvider(input: {
+  skillsService: Pick<ISkillsService, "list">;
+  subagentsService: Pick<ISubagentsService, "list">;
+  now?: () => number;
+  ttlMs?: number;
+}): PromptEnhancerCapabilityIndexProvider {
+  const ttlMs = input.ttlMs ?? 60_000;
+  const cache = new Map<
+    string,
+    { expiresAt: number; entries: ReturnType<typeof buildPromptEnhanceCapabilityIndex> }
+  >();
+  return {
+    async list(params) {
+      const key = params.workspaceIdentity?.trim() || params.workspacePath;
+      const now = input.now?.() ?? Date.now();
+      const cached = cache.get(key);
+      if (cached && cached.expiresAt > now) return cached.entries;
+      const [skillsResult, agentsResult] = await Promise.allSettled([
+        input.skillsService.list({
+          workspacePath: params.workspacePath,
+          ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+        }),
+        input.subagentsService.list({
+          workspacePath: params.workspacePath,
+          ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+          mode: "settingsUserOnly",
+        }),
+      ]);
+      const entries = buildPromptEnhanceCapabilityIndex({
+        skills:
+          skillsResult.status === "fulfilled"
+            ? skillsResult.value.skills.map((skill) => ({
+                id: skill.id,
+                name: skill.name,
+                description: skill.description,
+                enabled: skill.enabled,
+              }))
+            : [],
+        agents:
+          agentsResult.status === "fulfilled"
+            ? agentsResult.value.userAgents.map((agent) => ({
+                id: agent.id,
+                name: agent.name,
+                description: agent.description,
+                enabled: agent.enabled,
+              }))
+            : [],
+      });
+      cache.set(key, { expiresAt: now + ttlMs, entries });
+      logger.debug(undefined, "Prompt enhancer capability index built", {
+        workspaceKey: key,
+        skillCount: entries.filter((entry) => entry.kind === "skill").length,
+        agentCount: entries.filter((entry) => entry.kind === "agent").length,
+        skillsFailed: skillsResult.status === "rejected",
+        agentsFailed: agentsResult.status === "rejected",
+      });
+      return entries;
+    },
+  };
+}
 
 /** Лимит сообщений/символов совпадает с контрактом context-collector. */
 const HISTORY_MESSAGE_LIMIT = 6;

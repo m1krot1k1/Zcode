@@ -6,6 +6,7 @@ import {
   chatAutocompleteAcceptedSuggestionSchema,
   chatAutocompleteRequestSchema,
   chatAutocompleteResponseSchema,
+  classifyPromptEnhanceTask,
   clipGhostSuggestion,
   detectAssistantVoiceSuggestion,
   filterAssistantVoiceSuggestion,
@@ -157,6 +158,13 @@ function buildUserMessage(input: {
   symbols: ReadonlyArray<{ path: string; symbolName?: string }>;
 }): string {
   const lines: string[] = [];
+  // Same deterministic classifier as the prompt enhancer: no extra model call, but the
+  // continuation knows whether the draft is a bugfix/feature/etc. and can bias toward the
+  // next missing part of a task brief instead of an assistant plan.
+  const classification = classifyPromptEnhanceTask({
+    draftText: input.request.prefix,
+    target: "chat_user_prompt",
+  });
   lines.push(
     "The draft below is NOT sent yet. The draft and the context exist only to predict the user's next words.",
   );
@@ -197,6 +205,9 @@ function buildUserMessage(input: {
   if (input.lexicon && input.lexicon.imperativePatterns.length > 0) {
     lines.push(`Typical phrasing: ${input.lexicon.imperativePatterns.slice(0, 5).join(" | ")}`);
   }
+  lines.push(
+    `Draft shape: ${classification.taskKind}/${classification.domain}. Continue with the next missing part of the user's task brief (scope, constraint, acceptance criterion or missing input), not with an assistant plan.`,
+  );
   if (input.request.suffix.length > 0) {
     lines.push("Cursor position: in the middle of the draft.");
     lines.push(`Text after the cursor (do not repeat it): ${input.request.suffix}`);

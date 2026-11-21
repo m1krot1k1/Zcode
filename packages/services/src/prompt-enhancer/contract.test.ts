@@ -106,6 +106,8 @@ describe("prompt-enhancer contract", () => {
         kind: "skill",
         name: "yandex-direct",
         reason: "Matches the task domain",
+        installed: false,
+        source: "model",
         requiresConsent: true,
       },
     ]);

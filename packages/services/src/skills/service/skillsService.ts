@@ -9,6 +9,7 @@ import type {
   MarketplaceSkillInfo,
   SkillInstallScope,
   SkillScope,
+  SkillSummary,
   SkillsCapability,
   SkillsListResult,
   SkillsPromptContext,
@@ -64,6 +65,16 @@ interface SkillsServiceOptions {
     scope: SkillInstallScope;
     path: string;
   }) => Promise<{ agentName?: string } | void> | { agentName?: string } | void;
+  /**
+   * One-shot reconciliation for skills installed before skill→agent provisioning
+   * existed. The Host provisions missing same-name profiles; a failure must not
+   * break Settings listing.
+   */
+  onSkillsListed?: (input: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    skills: readonly SkillSummary[];
+  }) => Promise<void> | void;
 }
 
 function resolveCapabilities(options?: SkillsServiceOptions): SkillsCapability {
@@ -81,6 +92,7 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
   // Кешируется только `_meta.json`; тело SKILL.md, enabled-map и plugin state читаются
   // на каждый вызов (см. docs/specs/skill-catalog-cache.md).
   const metadataCache = createSkillMetadataCache();
+  const reconciledWorkspaces = new Set<string>();
 
   return {
     async list(params: {
@@ -100,8 +112,26 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
         { metadataCache },
       );
       const enabledByPath = await readSkillEnabledMap();
+      const skills = attachEnabledState(discovered, enabledByPath);
+      const workspaceKey = params.workspaceIdentity?.trim() || params.workspacePath;
+      if (options?.onSkillsListed && !reconciledWorkspaces.has(workspaceKey)) {
+        reconciledWorkspaces.add(workspaceKey);
+        try {
+          await options.onSkillsListed({
+            workspacePath: params.workspacePath,
+            ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+            skills,
+          });
+        } catch (error) {
+          reconciledWorkspaces.delete(workspaceKey);
+          logger.warn(undefined, "skill agent reconciliation failed", {
+            workspacePath: params.workspacePath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       return {
-        skills: attachEnabledState(discovered, enabledByPath),
+        skills,
         capability,
         diagnostics,
       };

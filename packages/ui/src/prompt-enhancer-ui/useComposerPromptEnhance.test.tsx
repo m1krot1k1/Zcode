@@ -39,6 +39,8 @@ function result(text: string): PromptEnhanceResult {
         kind: "skill",
         name: "yandex-direct",
         reason: "Domain match",
+        installed: false,
+        source: "model",
         requiresConsent: true,
       },
     ],

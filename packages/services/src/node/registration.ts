@@ -19,6 +19,7 @@ import { createClientScenesService } from "../client-scenes/clientScenesService.
 import { ICodeIntelligenceService } from "../code-intelligence/contract.js";
 import { createPromptEnhancerService, IPromptEnhancerService } from "../prompt-enhancer/index.js";
 import {
+  createPromptEnhancerCapabilityIndexProvider,
   createPromptEnhancerContextPorts,
   createPromptEnhancerPaths,
 } from "./prompt-enhancer-ports.js";
@@ -494,6 +495,10 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
           gitService,
           fileService,
           zcodeSessionService,
+        }),
+        capabilityIndex: createPromptEnhancerCapabilityIndexProvider({
+          skillsService,
+          subagentsService,
         }),
       }),
     )

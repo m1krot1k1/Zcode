@@ -4,6 +4,7 @@ export {
   parseEnhancerResponse,
   pickLowestReasoningLevel,
   type PromptEnhancerModelResolver,
+  type PromptEnhancerCapabilityIndexProvider,
   type PromptEnhancerServiceOptions,
   type PromptEnhancerTextGenerator,
 } from "./service.js";
