@@ -193,6 +193,8 @@ export async function runRegularTurnLoop(
 
     const finishMcp = beginLocalTurnPreparation(state.turnTraceContext, "mcp");
     await this.initializeMcp(state.turnTraceContext);
+    // Lazy plugin servers pay their process cost only when this turn names their format.
+    await this.activateLazyMcpServersForInput(state.input, state.turnTraceContext);
     // tools/list_changed 只在回合开始前生效。
     await this.refreshMcpToolsIfChanged(state.turnTraceContext);
     finishMcp();

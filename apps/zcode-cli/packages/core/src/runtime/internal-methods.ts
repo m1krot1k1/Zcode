@@ -282,6 +282,11 @@ export interface AgentRuntimeCoreMethods {
   ): Promise<void>;
   startMcpStartup(traceContext: TraceContext): Promise<McpConnectionSnapshot> | undefined;
   initializeMcp(traceContext: TraceContext): Promise<void>;
+  activateLazyMcpServers(
+    names: readonly string[],
+    traceContext: TraceContext,
+  ): Promise<{ activated: string[]; failed: Array<{ name: string; error: string }> }>;
+  activateLazyMcpServersForInput(input: string, traceContext: TraceContext): Promise<void>;
   refreshMcpToolsIfChanged(traceContext: TraceContext): Promise<void>;
   discoverSkillsForContext(traceContext: TraceContext): Promise<SkillLoadOutcome | undefined>;
   createConfigOnlyContextSnapshot(workingDirectory: string): ContextSourceSnapshot;

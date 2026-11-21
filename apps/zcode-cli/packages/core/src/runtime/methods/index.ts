@@ -85,7 +85,12 @@ import { createContextBuilderFromSnapshot } from "./context.js";
 import { loadProjectMemoryRoot } from "./context.js";
 import { logMemorySkipped } from "./context.js";
 import { injectPluginReferenceReminderFromTurn } from "./plugin-reference.js";
-import { initializeMcp, refreshMcpToolsIfChanged } from "./mcp.js";
+import {
+  activateLazyMcpServers,
+  activateLazyMcpServersForInput,
+  initializeMcp,
+  refreshMcpToolsIfChanged,
+} from "./mcp.js";
 import { startMcpStartup } from "./mcp.js";
 import { discoverSkillsForContext } from "./context.js";
 import { createConfigOnlyContextSnapshot } from "./context.js";
@@ -290,6 +295,8 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.logMemorySkipped = logMemorySkipped;
   proto.injectPluginReferenceReminderFromTurn = injectPluginReferenceReminderFromTurn;
   proto.initializeMcp = initializeMcp;
+  proto.activateLazyMcpServers = activateLazyMcpServers;
+  proto.activateLazyMcpServersForInput = activateLazyMcpServersForInput;
   proto.refreshMcpToolsIfChanged = refreshMcpToolsIfChanged;
   proto.startMcpStartup = startMcpStartup;
   proto.discoverSkillsForContext = discoverSkillsForContext;

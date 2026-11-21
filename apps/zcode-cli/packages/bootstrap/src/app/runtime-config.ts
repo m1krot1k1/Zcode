@@ -6,6 +6,7 @@ import { GEN_UI_OUTPUT_ROOT_ENV } from "@zcode/shared/node";
 import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode/provider";
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import {
+  isLazyPluginMcpServerConfig,
   ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY,
   ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY,
   readSubagentMaxParallel,
@@ -45,6 +46,23 @@ interface ResolvedAppRuntimeConfig {
  * 显式 `0` 表示关闭超时（broker 只在有限正数上排 timer），`??` 不会吞掉 0。
  */
 const DEFAULT_PERMISSION_APPROVAL_TIMEOUT_MS = 300_000;
+
+/**
+ * Official document plugins are large MCP servers with a small task surface.
+ * They are started on demand when the turn mentions their format or capability.
+ * A user-provided server with the same name is never treated as lazy.
+ */
+export function resolveLazyPluginMcpServers(input: {
+  explicitServerNames: ReadonlySet<string>;
+  pluginMcpServers?: Record<string, McpServerConfig> | undefined;
+}): Record<string, McpServerConfig> {
+  return Object.fromEntries(
+    Object.entries(input.pluginMcpServers ?? {}).filter(
+      ([name, config]) =>
+        !input.explicitServerNames.has(name) && isLazyPluginMcpServerConfig(config),
+    ),
+  );
+}
 
 /**
  * 审批等待上限的单一投影：显式会话值 > 配置文件 `permission.approvalTimeoutMs` > 300000。
@@ -170,9 +188,23 @@ export function resolveAppRuntimeConfig(input: {
     trust: input.projectMcpTrust,
     hostOwnedServerNames: new Set(Object.keys(builtInMcpServers ?? {})),
   });
+  const explicitMcpServerNames = new Set(
+    Object.keys({
+      ...configResult.config.mcp.servers,
+      ...options.runtimeConfig?.mcp?.servers,
+    }),
+  );
+  const lazyMcpServers = resolveLazyPluginMcpServers({
+    explicitServerNames: explicitMcpServerNames,
+    pluginMcpServers,
+  });
   const autoConnectMcpServers = omitMcpServers(
     configuredMcpServers,
-    untrustedProjectMcpServers,
+    new Set([
+      ...untrustedProjectMcpServers,
+      ...cuaBridgeServerNames,
+      ...Object.keys(lazyMcpServers),
+    ]),
     cuaBridgeServerNames,
   );
   const runtimeBuiltInModelSelectionOverrides =
@@ -244,6 +276,7 @@ export function resolveAppRuntimeConfig(input: {
     mcp: {
       enabled: options.runtimeConfig?.mcp?.enabled ?? configResult.config.features.mcp,
       servers: autoConnectMcpServers,
+      ...(Object.keys(lazyMcpServers).length > 0 ? { lazyServers: lazyMcpServers } : {}),
       trustedOfficialCuaServerNames: [...trustedOfficialCuaServerNames],
     },
     hooks: mergeRuntimeHooks(
@@ -370,6 +403,8 @@ export function runtimeConfigLogContext(
     : undefined;
   return {
     mcpEnabled: runtimeConfig.mcp?.enabled !== false,
+    mcpLazyServerCount: Object.keys(runtimeConfig.mcp?.lazyServers ?? {}).length,
+    mcpServerCount: Object.keys(runtimeConfig.mcp?.servers ?? {}).length,
     memoryEnabled: runtimeConfig.memory?.enabled !== false,
     memoryExtractionEnabled: runtimeConfig.memory?.extractionEnabled !== false,
     memoryRoot,

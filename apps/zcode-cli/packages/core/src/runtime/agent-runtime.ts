@@ -10,6 +10,7 @@ import {
 import { WORKER_SUBAGENT_TOOL_NAMES } from "../subagent/profile.js";
 import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
+  isLazyPluginMcpServerConfig,
   resolveExecutionState,
 } from "@zcode/shared";
 
@@ -108,12 +109,17 @@ export class AgentRuntime {
     const connected: string[] = [];
     const disconnected: string[] = [];
     const failed: Array<{ name: string; error: string }> = [];
+    const lazyToAdd: Record<string, McpServerConfig> = {};
 
     if (this.mcpPort) {
       const statuses = await this.mcpPort.status();
       for (const [name, pluginConfig] of Object.entries(toConnect)) {
         if (preserved.has(name) || statuses[name]?.status === "connected") continue;
         const config = currentServers[name] ?? pluginConfig;
+        if (isLazyPluginMcpServerConfig(config)) {
+          lazyToAdd[name] = config;
+          continue;
+        }
         try {
           const status = await this.mcpPort.connectServer(name, config, {
             signal: input.signal,
@@ -152,8 +158,18 @@ export class AgentRuntime {
     }
 
     const merged = { ...input.mcpServers, ...currentServers };
-    for (const name of removed) delete merged[name];
-    this.config.mcp = { ...this.config.mcp, enabled: true, servers: merged };
+    const lazyMerged = { ...this.config.mcp?.lazyServers, ...lazyToAdd };
+    for (const name of Object.keys(lazyToAdd)) delete merged[name];
+    for (const name of removed) {
+      delete merged[name];
+      delete lazyMerged[name];
+    }
+    this.config.mcp = {
+      ...this.config.mcp,
+      enabled: true,
+      servers: merged,
+      lazyServers: lazyMerged,
+    };
     if (input.pluginReferenceCatalog) {
       this.config.pluginReferenceCatalog = input.pluginReferenceCatalog;
     }

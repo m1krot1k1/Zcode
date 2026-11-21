@@ -14,6 +14,23 @@ export const ZCODE_CUA_OFFICIAL_MCP_NAMESPACE_NAME = "plugin:computer-use:comput
 // 插件身份 env key：resolver（adapters/src/plugins/mcp.ts）权威写入 loaded.id，manifest/user env 不可覆盖。
 // bootstrap + cli/plugin-host-command.ts 复用此常量识别 official zcode-cua plugin server，避免字面量漂移。
 export const ZCODE_PLUGIN_ID_ENV_KEY = "ZCODE_PLUGIN_ID";
+/**
+ * Official document plugins are activated by the turn that names their format,
+ * not at session/plugin-install startup. Keep this list in one place so bootstrap
+ * config projection and live plugin refresh cannot drift.
+ */
+export const LAZY_PLUGIN_MCP_PLUGIN_IDS = [
+  "documents@zcode-plugins-official",
+  "pdf@zcode-plugins-official",
+  "presentations@zcode-plugins-official",
+  "spreadsheets@zcode-plugins-official",
+] as const;
+const LAZY_PLUGIN_MCP_PLUGIN_ID_SET = new Set<string>(LAZY_PLUGIN_MCP_PLUGIN_IDS);
+
+export function isLazyPluginMcpServerConfig(config: McpServerConfig): boolean {
+  const pluginId = config.env?.[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase();
+  return pluginId !== undefined && LAZY_PLUGIN_MCP_PLUGIN_ID_SET.has(pluginId);
+}
 
 export type McpSource =
   | "mcp"

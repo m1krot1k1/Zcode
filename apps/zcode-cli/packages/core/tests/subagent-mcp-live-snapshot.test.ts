@@ -93,6 +93,79 @@ describe("subagent MCP live snapshot", () => {
     });
   });
 
+  it("activates a lazy server required by a child profile before admission", async () => {
+    const sessionId = createSessionId("subagent-lazy-mcp-profile");
+    const traceContext = { sessionId, traceId: createTraceId() };
+    const live: McpConnectionSnapshot = { statuses: {}, tools: [] };
+    const connectServer = vi.fn(async (serverName: string) => {
+      live.statuses[serverName] = connected();
+      live.tools = [descriptor(serverName, "create_docx")];
+      return live.statuses[serverName]!;
+    });
+    const mcpPort: McpPort = {
+      connectConfiguredServers: async () => ({ statuses: {}, tools: [] }),
+      connectServer,
+      disconnectServer: async () => undefined,
+      status: async () => live.statuses,
+      listTools: async () => live.tools,
+      currentSnapshot: async () => live,
+      callTool: async () => ({ content: [{ type: "text", text: "pong" }] }),
+      close: async () => {},
+    };
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        workingDirectory: "/workspace/project",
+        mcp: {
+          enabled: true,
+          servers: {},
+          lazyServers: {
+            documents: {
+              type: "stdio",
+              command: "node",
+              args: ["documents.mjs"],
+            },
+          },
+        },
+      },
+      { eventStore: createTestSessionEventStore(), mcpPort, modelFactory: createTestModelFactory({}) },
+    );
+    const internal = runtime as any;
+    await internal.mcpStartupPromise;
+
+    const access = await resolveSubagentMcpAccess.call(
+      internal,
+      {
+        agentId: "documents-agent",
+        agentType: "documents-agent",
+        allowedTools: [],
+        background: false,
+        sessionId,
+        description: "Create DOCX",
+        prompt: "Create a DOCX document",
+        profile: {
+          name: "documents-agent",
+          description: "Documents",
+          source: "project",
+          systemPrompt: "",
+          mcpServers: ["documents"],
+        },
+        workingDirectory: "/workspace/project",
+        workspaceRoot: "/workspace/project",
+        traceContext,
+      },
+      new Set(),
+    );
+
+    expect(connectServer).toHaveBeenCalledWith(
+      "documents",
+      expect.objectContaining({ command: "node" }),
+      expect.any(Object),
+    );
+    expect(access.snapshot?.tools).toEqual([descriptor("documents", "create_docx")]);
+  });
+
   it("applies a live plugin MCP server and removes it on disable", async () => {
     const sessionId = createSessionId("subagent-plugin-mcp-live");
     const traceContext = { sessionId, traceId: createTraceId() };

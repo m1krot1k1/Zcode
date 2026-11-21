@@ -246,6 +246,12 @@ export interface AgentRuntimeConfig {
     enabled?: boolean;
     servers?: Record<string, McpServerConfig>;
     /**
+     * Plugin-owned servers that are connected only when the turn input or the
+     * selected capability explicitly needs them. They never start at session
+     * creation; activation mutates them into `servers`.
+     */
+    lazyServers?: Record<string, McpServerConfig>;
+    /**
      * Process-local provenance supplied by bootstrap after resolving bundled
      * official plugins. Never derive this list from serialized MCP config.
      */

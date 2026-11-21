@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZCODE_PLUGIN_ID_ENV_KEY } from "@zcode/shared";
 import {
   SessionEventType,
   createSessionId,
@@ -10,6 +11,7 @@ import {
   type SessionId,
 } from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
+import { resolveLazyMcpServerNamesForInput } from "../src/runtime/methods/mcp.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 
@@ -545,6 +547,272 @@ describe("AgentRuntime MCP integration", () => {
     expect(toolMessage?.content).toContain(
       "Plan mode only allows read-only, non-destructive tools",
     );
+  });
+
+  it("keeps lazy document MCP servers out of startup and activates them by turn input", async () => {
+    const sessionId = createSessionId("runtime-mcp-lazy-documents");
+    const eventStore = createTestSessionEventStore();
+    const lazyConfig = {
+      type: "stdio" as const,
+      command: "node",
+      args: ["documents.mjs"],
+      env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+    };
+    let connected: string[] = [];
+    let tools: McpConnectionSnapshot["tools"] = [];
+    const toolNamesByRequest: string[][] = [];
+    let connectConfiguredNames: string[] = [];
+    const mcpPort = createMockMcpPort({
+      connectConfiguredServers: async (servers) => {
+        connectConfiguredNames = Object.keys(servers);
+        return emptyMcpSnapshot();
+      },
+      connectServer: async (name) => {
+        connected.push(name);
+        tools = [
+          {
+            serverName: name,
+            toolName: "create_docx",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ];
+        return {
+          status: "connected",
+          transport: "stdio",
+          toolCount: 1,
+          updatedAt: "now",
+        };
+      },
+      listTools: async () => tools,
+      status: async () => ({}),
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        mcp: {
+          enabled: true,
+          servers: {
+            local: {
+              type: "stdio",
+              command: "node",
+              args: ["local.mjs"],
+            },
+          },
+          lazyServers: { documents: lazyConfig },
+        },
+      },
+      {
+        eventStore,
+        mcpPort,
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            toolNamesByRequest.push((request.tools ?? []).map((tool) => tool.name));
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "done",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    expect(connectConfiguredNames).toEqual(["local"]);
+    expect(connected).toEqual([]);
+
+    await runtime.executeTurn("Создай DOCX с описанием проекта");
+
+    expect(connected).toEqual(["documents"]);
+    expect(toolNamesByRequest[0]).toContain("mcp__documents__create_docx");
+  });
+
+  it("matches only the lazy document format named by the turn", () => {
+    const lazyServers = {
+      documents: {
+        type: "stdio" as const,
+        command: "node",
+        env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+      },
+      pdf: {
+        type: "stdio" as const,
+        command: "node",
+        env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "pdf@zcode-plugins-official" },
+      },
+      presentations: {
+        type: "stdio" as const,
+        command: "node",
+        env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "presentations@zcode-plugins-official" },
+      },
+      spreadsheets: {
+        type: "stdio" as const,
+        command: "node",
+        env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "spreadsheets@zcode-plugins-official" },
+      },
+    };
+
+    expect(resolveLazyMcpServerNamesForInput(lazyServers, "сделай xlsx")).toEqual([
+      "spreadsheets",
+    ]);
+    expect(resolveLazyMcpServerNamesForInput(lazyServers, "проверь PDF")).toEqual(["pdf"]);
+    expect(resolveLazyMcpServerNamesForInput(lazyServers, "сделай презентацию")).toEqual([
+      "presentations",
+    ]);
+    expect(resolveLazyMcpServerNamesForInput(lazyServers, "обычный вопрос")).toEqual([]);
+  });
+
+  it("keeps the turn usable when lazy document activation fails", async () => {
+    const sessionId = createSessionId("runtime-mcp-lazy-failure");
+    const eventStore = createTestSessionEventStore();
+    let attempts = 0;
+    const mcpPort = createMockMcpPort({
+      connectServer: async () => {
+        attempts += 1;
+        throw new Error("document server crashed");
+      },
+      listTools: async () => [],
+      status: async () => ({}),
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        mcp: {
+          enabled: true,
+          servers: {},
+          lazyServers: {
+            documents: {
+              type: "stdio",
+              command: "node",
+              args: ["documents.mjs"],
+              env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+            },
+          },
+        },
+      },
+      {
+        eventStore,
+        mcpPort,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "done without documents",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await expect(runtime.executeTurn("создай docx")).resolves.toMatchObject({
+      response: "done without documents",
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("keeps a live-installed document plugin lazy until its format is requested", async () => {
+    const sessionId = createSessionId("runtime-mcp-lazy-live-install");
+    const traceContext = {
+      sessionId,
+      traceId: createTraceId("runtime-mcp-lazy-live-install"),
+    };
+    let connectServerCalls = 0;
+    const mcpPort = createMockMcpPort({
+      connectServer: async () => {
+        connectServerCalls += 1;
+        return {
+          status: "connected",
+          transport: "stdio",
+          toolCount: 1,
+          updatedAt: "now",
+        };
+      },
+      listTools: async () => [],
+      status: async () => ({}),
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build", mcp: { enabled: true, servers: {} } },
+      { eventStore: createTestSessionEventStore(), mcpPort, modelFactory: createTestModelFactory({}) },
+    );
+    const documentsConfig = {
+      type: "stdio" as const,
+      command: "node",
+      args: ["documents.mjs"],
+      env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+    };
+
+    await runtime.applyPluginRuntime({
+      mcpServers: { documents: documentsConfig },
+      previousPluginMcpServerNames: [],
+      preservedMcpServerNames: [],
+      reloadAgentDefinitions: false,
+      signal: new AbortController().signal,
+      traceContext,
+    });
+
+    expect(connectServerCalls).toBe(0);
+    const internal = runtime as any;
+    expect(internal.config.mcp.lazyServers.documents).toEqual(documentsConfig);
+    expect(internal.config.mcp.servers.documents).toBeUndefined();
+  });
+
+  it("does not start a lazy document server for an unrelated turn", async () => {
+    const sessionId = createSessionId("runtime-mcp-lazy-unrelated");
+    const eventStore = createTestSessionEventStore();
+    let connected: string[] = [];
+    const mcpPort = createMockMcpPort({
+      connectServer: async (name) => {
+        connected.push(name);
+        return {
+          status: "connected",
+          transport: "stdio",
+          toolCount: 1,
+          updatedAt: "now",
+        };
+      },
+      listTools: async () => [],
+      status: async () => ({}),
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        mcp: {
+          enabled: true,
+          servers: {},
+          lazyServers: {
+            documents: {
+              type: "stdio",
+              command: "node",
+              args: ["documents.mjs"],
+              env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+            },
+          },
+        },
+      },
+      {
+        eventStore,
+        mcpPort,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "done",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await runtime.executeTurn("Explain the current branch");
+
+    expect(connected).toEqual([]);
   });
 });
 

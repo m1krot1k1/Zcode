@@ -648,6 +648,44 @@ describe("resolveAppRuntimeConfig", () => {
     expect(resolved.runtimeConfig.mcp?.servers).toEqual(resolved.configuredMcpServers);
   });
 
+  it("keeps document plugin MCP servers lazy unless the user explicitly configured them", () => {
+    const name = "plugin:documents:documents";
+    const lazyConfig = {
+      type: "stdio" as const,
+      command: "node",
+      args: ["documents.mjs"],
+      env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+    };
+    const baseInput = {
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult(),
+      pluginMcpServers: { [name]: lazyConfig },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents-output",
+      subagentProfiles: [],
+      workingDirectory,
+    };
+
+    const lazy = resolveAppRuntimeConfig({
+      ...baseInput,
+      options: { runtimeConfig: { mcp: { enabled: true } }, workingDirectory },
+    });
+    expect(lazy.configuredMcpServers[name]).toEqual(lazyConfig);
+    expect(lazy.runtimeConfig.mcp?.servers?.[name]).toBeUndefined();
+    expect(lazy.runtimeConfig.mcp?.lazyServers?.[name]).toEqual(lazyConfig);
+
+    const explicit = resolveAppRuntimeConfig({
+      ...baseInput,
+      options: {
+        runtimeConfig: {
+          mcp: { enabled: true, servers: { [name]: lazyConfig } },
+          workingDirectory,
+        },
+      },
+    });
+    expect(explicit.runtimeConfig.mcp?.servers?.[name]).toEqual(lazyConfig);
+    expect(explicit.runtimeConfig.mcp?.lazyServers?.[name]).toBeUndefined();
+  });
+
   it("keeps official CUA provenance only while the bundled plugin config is unmodified", () => {
     const name = "plugin:computer-use:computer-use";
     const officialPluginConfig = {

@@ -47,6 +47,16 @@ export async function resolveSubagentMcpAccess(
     };
   }
 
+  // A profile may explicitly require a lazy plugin server before the root turn
+  // named its format. Activate only the requested scoped servers; do not wake the
+  // whole lazy set for every child.
+  const scopedLazyServers = (scopedServerNames ?? []).filter(
+    (serverName) => this.config.mcp?.lazyServers?.[serverName] !== undefined,
+  );
+  if (scopedLazyServers.length > 0) {
+    await this.activateLazyMcpServers(scopedLazyServers, request.traceContext);
+  }
+
   // child не владеет жизненным циклом соединений, но снимок берём live: MCP,
   // подключённый через InstallCapability после старта сессии, должен быть виден
   // следующей дочерней задаче без reload. Startup promise остаётся barrier'ом
@@ -76,6 +86,12 @@ export async function resolveSubagentMcpAccess(
         status: "failed",
       });
     }
+  } else if (scopedLazyServers.length > 0) {
+    // Ports without currentSnapshot still need the freshly activated server.
+    parentSnapshot = {
+      statuses: await this.mcpPort.status(),
+      tools: await this.mcpPort.listTools(),
+    };
   }
 
   const unavailableScopedServerNames = (scopedServerNames ?? []).filter(
