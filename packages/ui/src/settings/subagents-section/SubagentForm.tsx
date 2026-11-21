@@ -592,9 +592,12 @@ export function SubagentForm({
         />
         {/* Причина: действие «Улучшить системный промпт» было реализовано, но не подключено
             ни к одной поверхности, поэтому модель улучшения системных инструкций была
-            недоступна из UI. Правка применяется только после подтверждения в диалоге. */}
+            недоступна из UI. Результат сразу подставляется в поле как черновик формы. */}
+        {/* 原因：切换目标 agent 时本 Action 会复用实例，旧请求完成后会把结果写进新 agent
+            的字段；用 key 随目标重建，卸载清理会取消仍在进行的请求。 */}
         {systemPromptWorkspacePath ? (
           <SystemPromptEnhanceAction
+            key={initialFormStateKey}
             workspacePath={systemPromptWorkspacePath}
             {...(workspaceIdentity ? { workspaceIdentity } : {})}
             draftText={systemPrompt}

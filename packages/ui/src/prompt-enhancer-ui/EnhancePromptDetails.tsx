@@ -4,10 +4,10 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Button } from "@/components/ui/button.js";
 
 /**
- * Read-only provenance for an enhanced prompt plus an explicit, two-step install action
- * for skill suggestions. Nothing is installed on render: the first click only arms the
- * confirmation, the second click calls the Host install path. MCP/plugin/agent suggestions
- * stay informational because their installation has its own settings surface.
+ * Read-only provenance for an enhanced prompt plus an explicit, single-click install action
+ * for skill suggestions. Nothing is installed on render: one click on the install button
+ * calls the Host install path. MCP/plugin/agent suggestions stay informational because
+ * their installation has its own settings surface.
  */
 export interface EnhancePromptDetailsProps {
   result: PromptEnhanceResult;
@@ -23,17 +23,11 @@ export function EnhancePromptDetails({
   installError = null,
 }: EnhancePromptDetailsProps) {
   const { intl } = useZCodeIntl();
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [installedLocally, setInstalledLocally] = useState<ReadonlySet<string>>(new Set());
 
   const install = async (suggestion: PromptEnhanceCapabilitySuggestion) => {
     if (!onInstallSkill || suggestion.kind !== "skill") return;
     const key = suggestion.name;
-    if (confirming !== key) {
-      setConfirming(key);
-      return;
-    }
-    setConfirming(null);
     await onInstallSkill(suggestion);
     setInstalledLocally((previous) => new Set(previous).add(key));
   };
@@ -103,17 +97,13 @@ export function EnhancePromptDetails({
                     <Button
                       type="button"
                       size="sm"
-                      variant={confirming === suggestion.name ? "default" : "outline"}
+                      variant="outline"
                       disabled={isInstalling}
                       onClick={() => void install(suggestion)}
                     >
                       {isInstalling
                         ? intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstalling" })
-                        : confirming === suggestion.name
-                          ? intl.formatMessage({
-                              id: "chat.composer.enhanceCapabilityConfirmInstall",
-                            })
-                          : intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstall" })}
+                        : intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstall" })}
                     </Button>
                   ) : null}
                   {suggestion.requiresConsent && !installed ? (

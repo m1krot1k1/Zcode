@@ -93,9 +93,10 @@ export const ComposerEnhancePrompt = forwardRef<
   }, [enhance]);
 
   /**
-   * Two-step consent lives in `EnhancePromptDetails`: this callback only runs after the
-   * user confirms. Installation still goes through the same skills service as Settings,
-   * so skill→agent provisioning and audit logging stay in one place.
+   * A single explicit click on the install button in `EnhancePromptDetails` runs this
+   * callback; nothing is installed while suggestions render, and no extra confirmation
+   * happens here. Installation goes through the same skills service as Settings, so
+   * skill→agent provisioning and audit logging stay in one place.
    */
   const installSkill = useCallback(
     async (suggestion: PromptEnhanceCapabilitySuggestion) => {

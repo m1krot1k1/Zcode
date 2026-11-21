@@ -21,6 +21,9 @@ annotation, and cloud speech providers.
   toolbar. It starts and stops one dictation for the focused Composer only.
 - While dictating, an in-window overlay appears above the Composer: level meter, elapsed time, selected
   model/language, and Stop/Cancel. It never creates an OS-level floating window.
+- While the Settings tab is active, the overlay hides the moving activity indicator (pulse dot and
+  level bars) so the settings page stays still; the elapsed time, model, gear, and Stop/Cancel remain
+  available, so an in-progress dictation can still be cancelled or stopped from Settings.
 - The shortcut defaults to in-app hold-to-talk and double-tap-to-toggle. A Settings switch may register
   the toggle globally while ZCode is running; global hold-to-talk is not promised until the platform
   input bridge exists. The shortcut acts only on the active ZCode Composer.

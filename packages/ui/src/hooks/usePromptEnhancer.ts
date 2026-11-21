@@ -125,7 +125,9 @@ export function usePromptEnhancer(options: UsePromptEnhancerOptions) {
       setState({ status: "running", streamingText: "", previousDraft: draftText });
       try {
         const result = await options.promptEnhancerService.enhance(request);
-        if (!mounted.current) return result;
+        // Bug 原因：卸载后 Service 可能晚于 cancel 才 resolve（等待 capabilityIndex / 远端取消）。
+        // 旧实例不能再把上一个 agent 的文本回传给调用方，否则会经 onApply 写入新表单。
+        if (!mounted.current) return null;
         activeRequestId.current = null;
         setState({
           status: "ready",

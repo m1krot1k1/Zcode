@@ -43,23 +43,22 @@ function result(overrides: Partial<PromptEnhanceResult> = {}): PromptEnhanceResu
 
 afterEach(cleanup);
 
-describe("EnhancePromptDetails capability consent", () => {
-  it("requires a second explicit click before installing a skill", async () => {
+describe("EnhancePromptDetails capability install", () => {
+  it("installs a suggested skill from a single explicit click", async () => {
     const onInstallSkill = vi.fn().mockResolvedValue(undefined);
     render(<EnhancePromptDetails result={result()} onInstallSkill={onInstallSkill} />);
-
-    const first = screen.getByRole("button", {
-      name: "chat.composer.enhanceCapabilityInstall",
-    });
-    fireEvent.click(first);
     expect(onInstallSkill).not.toHaveBeenCalled();
 
-    const confirm = screen.getByRole("button", {
-      name: "chat.composer.enhanceCapabilityConfirmInstall",
-    });
-    fireEvent.click(confirm);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "chat.composer.enhanceCapabilityInstall",
+      }),
+    );
 
     await waitFor(() => expect(onInstallSkill).toHaveBeenCalledTimes(1));
+    expect(onInstallSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "skill", name: "frontend-design" }),
+    );
     await waitFor(() =>
       expect(screen.getByText("chat.composer.enhanceCapabilityInstalled")).toBeTruthy(),
     );

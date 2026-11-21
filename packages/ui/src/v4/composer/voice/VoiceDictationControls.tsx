@@ -14,6 +14,7 @@ import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
+import { isSettingsTab } from "@/store/tabStore.js";
 import { cn } from "@/components/lib/utils.js";
 import { useVoiceDictation, type VoiceDictationApi } from "./useVoiceDictation.js";
 import { describeVoiceError } from "./voiceErrorMessages.js";
@@ -259,6 +260,9 @@ function VoiceDictationOverlayImpl() {
   const intl = useZCodeIntl().intl;
   const api = useVoiceDictation();
   const openSettingsTab = useTabStore((state) => state.openSettingsTab);
+  const isSettingsTabActive = useTabStore((state) =>
+    state.tabs.some((tab) => tab.id === state.activeTabId && isSettingsTab(tab)),
+  );
   const { state } = api;
   const elapsed = useElapsed(state.startedAt);
   const active = state.status !== "idle" || state.settingsOpen;
@@ -288,22 +292,26 @@ function VoiceDictationOverlayImpl() {
         data-testid="voice-dictation-overlay"
         data-state={state.status}
       >
-        <span
-          className={cn(
-            "size-2 shrink-0 rounded-full",
-            listening ? "animate-pulse bg-[var(--color-danger)]" : "bg-foreground-subtle",
-          )}
-          aria-hidden
-        />
-        <div className="flex min-w-[96px] items-center gap-0.5" aria-hidden>
-          {bars.map((base, index) => (
+        {isSettingsTabActive ? null : (
+          <div className="flex shrink-0 items-center gap-3" data-testid="voice-dictation-activity">
             <span
-              key={index}
-              className="w-1 rounded-full bg-current text-foreground-subtle transition-[height]"
-              style={{ height: `${Math.max(3, Math.round(base * state.level * 18))}px` }}
+              className={cn(
+                "size-2 shrink-0 rounded-full",
+                listening ? "animate-pulse bg-[var(--color-danger)]" : "bg-foreground-subtle",
+              )}
+              aria-hidden
             />
-          ))}
-        </div>
+            <div className="flex min-w-[96px] items-center gap-0.5" aria-hidden>
+              {bars.map((base, index) => (
+                <span
+                  key={index}
+                  className="w-1 rounded-full bg-current text-foreground-subtle transition-[height]"
+                  style={{ height: `${Math.max(3, Math.round(base * state.level * 18))}px` }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-ui-base text-foreground">
             {state.status === "error"

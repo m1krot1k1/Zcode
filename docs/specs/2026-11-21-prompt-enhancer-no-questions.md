@@ -34,11 +34,15 @@ accept or reject the result.**
    - `ORACLE` for long/open-ended work and the fallback.
 4. **Capability suggestions.** The model may return
    `skill`/`mcp`/`agent`/`plugin` suggestions with a reason. The Host marks every
-   suggestion `requiresConsent: true`. Suggestions are never installed, invoked or
-   claimed as installed.
+   suggestion `requiresConsent: true`. Nothing is installed on render; a suggested skill
+   is installed only by one explicit click on its install button. `requiresConsent`
+   remains a provenance/status marker for display, not a second confirmation step.
 5. **Preview/consent.** Composer enhancement opens a before/after dialog. The editor is
    not mutated until Apply. Cancel discards. After Apply, Undo restores the exact original
    draft for 30 seconds.
+   System-instruction editors (e.g. the subagent system prompt field) apply the result
+   straight into the field as a form draft, without a dialog; only explicitly saving the
+   form commits it. Composer preview/consent behavior is unchanged.
 6. **Cancellation/timeout.** Existing request abort/timeout behavior is preserved; a
    canceled request never applies text.
 7. **Language and mentions.** The rewrite stays in the author's language and preserves
@@ -59,6 +63,8 @@ accept or reject the result.**
   dropped.
 - Composer does not mutate the draft before Apply; Cancel leaves it unchanged; Undo
   restores the original.
+- A suggested skill installs from one explicit click; nothing is installed before the
+  click.
 - Existing streaming/cancel/mention-protection tests stay green.
 
 ## Evidence
@@ -68,6 +74,7 @@ accept or reject the result.**
 - `packages/services/src/prompt-enhancer/contract.test.ts`
 - `packages/services/test/prompt-enhancer/promptEnhancerService.test.ts`
 - `packages/ui/src/prompt-enhancer-ui/enhancePromptButton.test.tsx`
+- `packages/ui/src/prompt-enhancer-ui/EnhancePromptDetails.test.tsx`
 - `apps/zcode-cli/packages/cli/tests/enhance-command.test.ts`
 
 ## Capability Resolver follow-up
@@ -75,5 +82,8 @@ accept or reject the result.**
 The suggestion list is now resolved against the installed capability index and surfaced
 with `installed`/`source` provenance; see
 [`2026-11-21-task-brief-capability-resolver.md`](./2026-11-21-task-brief-capability-resolver.md).
-Installing a suggested skill still requires two explicit clicks and follows the existing
-permission/consent path; nothing is installed or invoked automatically.
+Installing a suggested skill takes one explicit click on the suggestion's install button
+and then runs through the existing marketplace skill install service; nothing is installed
+or invoked automatically. The `requiresConsent` flag is still surfaced as a status text
+next to a not-yet-installed suggestion, but the install button itself is the consent
+action rather than a first step of a two-step confirmation.
