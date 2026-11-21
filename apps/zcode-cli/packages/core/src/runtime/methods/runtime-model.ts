@@ -28,9 +28,11 @@ export function createRuntimeModel(
      * 目前只有带 selectionFallback 声明的执行作用域 Selection 使用 single-attempt。
      */
     retryBudget?: ModelRetryBudget;
+    /** Explicitly use the low-priority queue for background sidecars. */
+    admissionPriority?: "main" | "background";
   },
 ): Model {
-  const { retryBudget, scope = "session", ...factoryInput } = input;
+  const { admissionPriority = "main", retryBudget, scope = "session", ...factoryInput } = input;
   // 未绑定 Session 可恢复历史；仅在执行入口拒绝缺失选择，Factory 契约仍严格。
   // Bugfix：历史快照与未校验的协议输入会传 `{ providerId: "glm", modelId: null | "" }`，
   // 旧守卫只判断 selection 是否存在，这种空模型会一路走到 registry（model-not-found 被包成
@@ -48,6 +50,7 @@ export function createRuntimeModel(
       ? "other"
       : resolveModelRequestSessionTypeFromTaskType(runtime.config.taskType),
     retryBudget,
+    admissionPriority,
   );
   return getOffPeakModelBinding(input.requestDependencies)?.wrap(model) ?? model;
 }
@@ -97,7 +100,12 @@ function withRuntimeInvocationLayer(
   model: Model,
   sessionType: ModelRequestSessionType,
   retryBudget?: ModelRetryBudget,
+  admissionPriority: "main" | "background" = "main",
 ): Model {
+  const admission =
+    admissionPriority === "background"
+      ? (runtime.backgroundModelRequestAdmission ?? runtime.modelRequestAdmission)
+      : runtime.modelRequestAdmission;
   const layer: ModelInvocationContext = {
     // Bugfix: вспомогательные запросы OpenCode (инструменты, compaction, заголовки) обходили
     // основной turn wrapper и теряли workspace. Привязываем каталог к каждому runtime model handle.
@@ -107,9 +115,7 @@ function withRuntimeInvocationLayer(
     modelRequestSessionType: sessionType,
     // 带退回声明的执行句柄显式传入 single-attempt，其余沿用 taskType 默认预算。
     modelRetryBudget: retryBudget ?? resolveModelRetryBudgetFromTaskType(runtime.config.taskType),
-    ...(runtime.modelRequestAdmission === undefined
-      ? {}
-      : { modelRequestAdmission: runtime.modelRequestAdmission }),
+    ...(admission === undefined ? {} : { modelRequestAdmission: admission }),
   };
   return withModelInvocationContext(model, () => layer);
 }

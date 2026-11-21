@@ -14,6 +14,7 @@ import { getSessionShellSelectionFromConfig } from "../methods/session-shell-env
 import { prepareRuntimeProviderRequest } from "./runtime-provider-request-messages.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "../methods/model-runtime-headers.js";
 import { createRuntimeModel, withModelInvocationContext } from "../methods/runtime-model.js";
+import { modelSelectionFromActiveModel } from "../methods/subagent/model-factory.js";
 
 export interface ProjectMemoryAgentContext {
   causation?: AgentTelemetryCausation;
@@ -39,11 +40,15 @@ export function captureProjectMemoryAgentContext(
     traceContext: TraceContext;
   },
 ): ProjectMemoryAgentContext {
-  const baseModel =
-    input.model ??
-    createRuntimeModel(runtime, {
-      selection: runtime.getSessionModelSelection(),
-    });
+  const baseModel = createRuntimeModel(runtime, {
+    // Memory extraction/dream run after the turn; use the low-priority queue even
+    // when the turn model is inherited. A fresh handle also avoids carrying the
+    // main turn's admission (observer) into a background sidecar.
+    selection: input.model
+      ? modelSelectionFromActiveModel(input.model)
+      : runtime.getSessionModelSelection(),
+    admissionPriority: "background",
+  });
   const model = withModelInvocationContext(baseModel, (request) => ({
     // Extraction 是 transcript 的消费者；不把它自己的请求写回同一 model-io 目录，
     // 避免后台链路占用 rollout 槽位并在后续 Extraction 中自反馈。

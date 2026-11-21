@@ -480,6 +480,11 @@ export interface AgentRuntimeDeps {
    * 包装（受闸门约束），主 runtime 拿治理器的 observer（只喂信号）；缺席即不设闸门。
    */
   modelRequestAdmission?: ModelRequestAdmission;
+  /**
+   * Low-priority admission for autocomplete/proactive/title/memory. Missing falls
+   * back to the main admission so headless/embedded runtimes stay compatible.
+   */
+  backgroundModelRequestAdmission?: ModelRequestAdmission;
   onOffPeakLifecycleEvent?: (
     event: import("./off-peak/lifecycle.js").OffPeakLifecycleEvent,
   ) => void;

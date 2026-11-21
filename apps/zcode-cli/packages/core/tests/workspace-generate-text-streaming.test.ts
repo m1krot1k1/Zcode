@@ -127,6 +127,42 @@ describe("workspace generateText streaming aggregation", () => {
     },
   );
 
+  it("routes background query sources to the low-priority admission", async () => {
+    const seen: ModelInvocationContext[] = [];
+    const mainAdmission = { acquire: async () => ({ publish() {}, release() {} }) };
+    const backgroundAdmission = { acquire: async () => ({ publish() {}, release() {} }) };
+    const model = createStreamingModel();
+    model.generateText = async () => {
+      seen.push(getCurrentModelInvocationContext());
+      return { text: "ok", finishReason: "stop" };
+    };
+    const runtime = createTestAgentRuntime(
+      createSessionId("workspace-generate-text-background-admission"),
+      { modelSelection: createTestModelSelection("test-provider/glm-test", {}) },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: () => model,
+        modelRequestAdmission: mainAdmission as never,
+        backgroundModelRequestAdmission: backgroundAdmission as never,
+      },
+    );
+    const selection = { providerId: "test-provider", modelId: "glm-test" };
+
+    await runtime.generateWorkspaceText({
+      selection,
+      prompt: "continue",
+      querySource: "chat_autocomplete",
+    });
+    await runtime.generateWorkspaceText({
+      selection,
+      prompt: "plan",
+      querySource: "swarm_planner",
+    });
+
+    expect(seen[0]?.modelRequestAdmission).toBe(backgroundAdmission);
+    expect(seen[1]?.modelRequestAdmission).toBe(mainAdmission);
+  });
+
   it("connectivity test creates the selected formal Model and consumes streamText", async () => {
     let streamConsumed = false;
     async function* events() {

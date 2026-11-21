@@ -27,6 +27,18 @@ const CONNECTIVITY_PROBE_MAX_OUTPUT_TOKENS = 1;
 const CONNECTIVITY_PROBE_SYSTEM = "You are ZCode connectivity probe.";
 const CONNECTIVITY_PROBE_USER = "hi";
 const GIT_COMMIT_MESSAGE_QUERY_SOURCE = "git_commit_message";
+const BACKGROUND_QUERY_SOURCES = new Set([
+  "chat_autocomplete",
+  "proactive_suggestion",
+  "session_title",
+  "goal_summary_title",
+  "project_memory_extract",
+  "project_memory_dream",
+]);
+
+function isBackgroundQuerySource(querySource: string): boolean {
+  return BACKGROUND_QUERY_SOURCES.has(querySource);
+}
 
 export interface WorkspaceGenerateTextInput {
   selection: ModelSelection;
@@ -147,7 +159,11 @@ async function generateWorkspaceTextImpl(
   assertWorkspaceModelInput(input);
   const requestedSelection = input.selection;
   const querySource = input.querySource.trim() || "workspace_generate_text";
-  const baseModel = createRuntimeModel(this, { selection: requestedSelection, scope: "workspace" });
+  const baseModel = createRuntimeModel(this, {
+    selection: requestedSelection,
+    scope: "workspace",
+    admissionPriority: isBackgroundQuerySource(querySource) ? "background" : "main",
+  });
   // 辅助请求需要的是最低公开档位，不是扫描 off/nothink 等名称后强制关闭。
   const model =
     querySource === GIT_COMMIT_MESSAGE_QUERY_SOURCE

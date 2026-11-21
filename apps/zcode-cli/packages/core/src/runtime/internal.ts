@@ -95,6 +95,7 @@ export interface AgentRuntimeInternal
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
   browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
+  backgroundModelRequestAdmission?: AgentRuntimeDeps["backgroundModelRequestAdmission"];
   sessionModelSelection: ModelSelection | undefined;
   /**
    * Явно ли пользователь выбрал текущий reasoningLevel. Default модели/workspace

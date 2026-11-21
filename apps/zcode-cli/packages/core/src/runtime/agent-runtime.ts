@@ -217,6 +217,8 @@ export class AgentRuntime {
   private browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   /** 模型请求准入端口；随每次模型请求进调用上下文。 */
   private modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
+  /** Низкоприоритетный admission для autocomplete/proactive/title/memory. */
+  private backgroundModelRequestAdmission?: AgentRuntimeDeps["backgroundModelRequestAdmission"];
   private sessionModelSelection: ModelSelection | undefined;
   private reasoningLevelExplicit = false;
   private messageHistory: MessageHistory;
@@ -391,6 +393,7 @@ export class AgentRuntime {
     this.providerRuntimeHeadersPort = deps.providerRuntimeHeadersPort;
     this.browserControlPort = deps.browserControlPort;
     this.modelRequestAdmission = deps.modelRequestAdmission;
+    this.backgroundModelRequestAdmission = deps.backgroundModelRequestAdmission;
     configureOffPeakRuntime(
       this as unknown as import("./internal.js").AgentRuntimeInternal,
       deps.onOffPeakLifecycleEvent,

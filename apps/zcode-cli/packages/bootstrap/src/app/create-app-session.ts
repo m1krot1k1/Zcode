@@ -418,6 +418,7 @@ export function prepareAppSession(
     agentTelemetry: modelTelemetry.agentExecution,
     // 主代理的模型请求过治理器的 observer：立即放行，但让治理器看见它的 429 / 成功。
     modelRequestAdmission: workflowConcurrencyGovernor.observer(),
+    backgroundModelRequestAdmission: workflowConcurrencyGovernor.background(),
     eventStore: options.eventStore ?? createInMemorySessionEventStore(),
     sessionStore,
     sessionMailboxPort,

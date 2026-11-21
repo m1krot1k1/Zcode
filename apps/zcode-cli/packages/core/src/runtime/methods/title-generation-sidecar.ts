@@ -130,6 +130,7 @@ async function generateTitleCandidateImpl(
   const baseModel = createRuntimeModel(this, {
     selection: requestedModelSelection,
     requestDependencies: context.requestDependencies,
+    admissionPriority: "background",
   });
   const model = baseModel.bind(auxiliaryModelOptions(baseModel));
   const modelSelection = cloneModelSelection(requestedModelSelection);

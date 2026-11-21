@@ -260,6 +260,52 @@ describe("workflow concurrency governor — 桶与闸门（决策 34）", () => 
     expect(governor.snapshot(KEY_A)?.inFlight).toBe(0);
   });
 
+  it("background admission waits for the main turn, caps concurrency, and never blocks main", async () => {
+    const { governor } = makeGovernor(2);
+    const background = governor.background();
+    const main = await governor.observer().acquire({ model: MODEL_A });
+
+    expect(background.tryAcquire?.({ model: MODEL_A })).toBeUndefined();
+    const waiting = track(background.acquire({ model: MODEL_A }));
+    await flush();
+    expect(waiting.settled).toBe(false);
+
+    // Main still gets an immediate ticket while background is queued.
+    const mainAgain = await governor.observer().acquire({ model: MODEL_A });
+    mainAgain.release();
+    main.release();
+    await flush();
+    expect(waiting.ticket).toBeDefined();
+
+    // One background request is in flight; the next one waits.
+    expect(background.tryAcquire?.({ model: MODEL_A })).toBeUndefined();
+    const second = track(background.acquire({ model: MODEL_A }));
+    await flush();
+    expect(second.settled).toBe(false);
+    waiting.ticket!.release();
+    await flush();
+    expect(second.ticket).toBeDefined();
+    second.ticket!.release();
+  });
+
+  it("background admission rejects a queued request when its signal aborts", async () => {
+    const { governor } = makeGovernor(2);
+    const main = await governor.observer().acquire({ model: MODEL_A });
+    const background = governor.background();
+    const controller = new AbortController();
+    const waiting = track(
+      background.acquire({ model: MODEL_A, signal: controller.signal }),
+    );
+    await flush();
+    expect(waiting.settled).toBe(false);
+
+    controller.abort(new Error("autocomplete superseded"));
+    await flush();
+    expect(waiting.error).toBeInstanceOf(Error);
+    expect((waiting.error as Error).message).toBe("autocomplete superseded");
+    main.release();
+  });
+
   it("observer 不排队、不看冷却，但计入 inFlight（决策 37）", async () => {
     const { governor, observe, admitNow, clock } = makeGovernor(1);
     const busy = admitNow("A");
