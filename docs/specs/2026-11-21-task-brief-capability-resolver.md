@@ -131,6 +131,9 @@ their installation remains in Settings.
 - `packages/shared/src/prompt-enhancer/capabilities.test.ts`
 - `packages/services/src/prompt-enhancer/contract.test.ts`
 - `packages/services/test/prompt-enhancer/promptEnhancerService.test.ts`
+- `packages/services/test/skillAgentCapabilityFlow.test.ts` — end-to-end
+  skill → same-name agent → installed capability → resolver suggestion flow, plus
+  hand-edited profile preservation.
 - `packages/services/src/node/prompt-enhancer-ports.test.ts`
 - `packages/services/src/subagents/agentLibraryAudit.test.ts`
 - `packages/services/test/skillsService.test.ts`
