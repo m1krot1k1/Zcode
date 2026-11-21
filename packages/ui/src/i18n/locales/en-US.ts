@@ -562,6 +562,9 @@ const enUS: Record<string, string> = {
   "settings.stage4.promptEnhancer.history": "Use conversation history",
   "settings.stage4.promptEnhancer.history.description":
     "Consider recent messages so the task context is not lost.",
+  "settings.stage4.promptEnhancer.autoInstallSkills": "Auto-install suggested skills",
+  "settings.stage4.promptEnhancer.autoInstallSkills.description":
+    "On by default. Skills the enhancer itself suggests are installed from skills.sh without a click; each row shows its status and can be removed. Skills from the marketplace stay manual.",
   "settings.stage4.proactiveSuggestion.title": "Proactive next-task suggestion",
   "settings.stage4.proactiveSuggestion.description":
     "After a completed turn, focusing the empty composer suggests the next task. Tab or a click inserts it; it is never sent automatically.",

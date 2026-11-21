@@ -104,6 +104,7 @@ export const stage4SettingsObjectSchema = z.object({
     modelOverride: null,
     includeCodeIndexContext: true,
     includeConversationHistory: true,
+    autoInstallSuggestedSkills: true,
   }),
   chatAutocompleteSettings: chatAutocompleteSettingsSchema.default({
     // Ghost-подсказка включена по умолчанию: запрос уходит только при паузе в

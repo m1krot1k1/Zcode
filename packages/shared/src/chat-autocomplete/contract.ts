@@ -99,6 +99,11 @@ export const promptEnhancerSettingsSchema = z
       .default(null),
     includeCodeIndexContext: z.boolean().default(true),
     includeConversationHistory: z.boolean().default(true),
+    /**
+     * 产品要求：系统自己提出的能力建议由系统自动安装，不再等用户确认。
+     * 默认开启；关闭后建议行回落到手动安装按钮。
+     */
+    autoInstallSuggestedSkills: z.boolean().default(true),
   })
   .strict();
 export type PromptEnhancerSettings = z.infer<typeof promptEnhancerSettingsSchema>;

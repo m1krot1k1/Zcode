@@ -2,35 +2,41 @@ import { useState } from "react";
 import type { PromptEnhanceCapabilitySuggestion, PromptEnhanceResult } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Button } from "@/components/ui/button.js";
+import type { SuggestedSkillInstallEntry } from "./useSuggestedSkillAutoInstall.js";
 
 /**
- * Read-only provenance for an enhanced prompt plus an explicit, single-click install action
- * for skill suggestions. Nothing is installed on render: one click on the install button
- * calls the Host install path. MCP/plugin/agent suggestions stay informational because
- * their installation has its own settings surface.
+ * Provenance for an enhanced prompt plus live status of the automatic skill installs.
+ *
+ * The composer starts installation itself when the suggestion list arrives; this component
+ * only renders `installing`/`installed`/`error`, offers a manual retry after a failure and
+ * lets the author remove a skill this flow installed. MCP/plugin/agent suggestions stay
+ * informational because their installation has its own settings surface.
  */
 export interface EnhancePromptDetailsProps {
   result: PromptEnhanceResult;
-  onInstallSkill?: (suggestion: PromptEnhanceCapabilitySuggestion) => Promise<void>;
-  installingSkill?: string | null;
-  installError?: string | null;
+  /** Per-skill auto-install status owned by `useSuggestedSkillAutoInstall`. */
+  skillStates?: Readonly<Record<string, SuggestedSkillInstallEntry>>;
+  /** Host install path is unavailable: show the reason instead of dead actions. */
+  installAvailable?: boolean;
+  /** Auto-install is off in settings: keep the manual install action on the row. */
+  autoInstallEnabled?: boolean;
+  onRetryInstallSkill?: (suggestion: PromptEnhanceCapabilitySuggestion) => void;
+  onRemoveInstalledSkill?: (suggestion: PromptEnhanceCapabilitySuggestion) => void;
+  removingSkill?: string | null;
 }
 
 export function EnhancePromptDetails({
   result,
-  onInstallSkill,
-  installingSkill = null,
-  installError = null,
+  skillStates = {},
+  installAvailable = true,
+  autoInstallEnabled = true,
+  onRetryInstallSkill,
+  onRemoveInstalledSkill,
+  removingSkill = null,
 }: EnhancePromptDetailsProps) {
   const { intl } = useZCodeIntl();
-  const [installedLocally, setInstalledLocally] = useState<ReadonlySet<string>>(new Set());
-
-  const install = async (suggestion: PromptEnhanceCapabilitySuggestion) => {
-    if (!onInstallSkill || suggestion.kind !== "skill") return;
-    const key = suggestion.name;
-    await onInstallSkill(suggestion);
-    setInstalledLocally((previous) => new Set(previous).add(key));
-  };
+  // 删除技能是破坏性操作：行内二次确认，不复用全局弹窗以免增强面板依赖应用根。
+  const [confirmingRemoval, setConfirmingRemoval] = useState<string | null>(null);
 
   return (
     <div className="space-y-3 text-ui-sm">
@@ -70,9 +76,15 @@ export function EnhancePromptDetails({
           </h4>
           <ul className="space-y-2 text-foreground-subtle">
             {result.capabilitySuggestions.map((suggestion, index) => {
-              const locallyInstalled = installedLocally.has(suggestion.name);
-              const installed = suggestion.installed || locallyInstalled;
-              const isInstalling = installingSkill === suggestion.name;
+              const state = skillStates[suggestion.name];
+              const isSkill = suggestion.kind === "skill";
+              const removed = state?.phase === "removed";
+              const installed = isSkill
+                ? (suggestion.installed && !removed) || state?.phase === "installed"
+                : suggestion.installed;
+              const isInstalling = state?.phase === "installing";
+              const failed = state?.phase === "error";
+              const confirming = confirmingRemoval === suggestion.name;
               return (
                 <li
                   key={`${suggestion.kind}:${suggestion.name}:${index}`}
@@ -93,33 +105,95 @@ export function EnhancePromptDetails({
                       {intl.formatMessage({ id: "chat.composer.enhanceCapabilityNotInstalled" })}
                     </span>
                   )}
-                  {suggestion.kind === "skill" && !installed && onInstallSkill ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={isInstalling}
-                      onClick={() => void install(suggestion)}
-                    >
-                      {isInstalling
-                        ? intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstalling" })
-                        : intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstall" })}
-                    </Button>
-                  ) : null}
-                  {suggestion.requiresConsent && !installed ? (
-                    <span className="text-ui-xs text-foreground-subtlest">
-                      ({intl.formatMessage({ id: "chat.composer.enhanceRequiresConsent" })})
-                    </span>
+                  {isSkill ? (
+                    <>
+                      {installed ? (
+                        <span className="text-ui-xs text-foreground-subtlest">skills.sh</span>
+                      ) : null}
+                      {!installed && isInstalling ? (
+                        <span className="text-ui-xs text-foreground-subtlest">
+                          {intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstalling" })}
+                        </span>
+                      ) : null}
+                      {!installed && !isInstalling && !failed && !installAvailable ? (
+                        <span className="text-ui-xs text-foreground-subtlest">
+                          {intl.formatMessage({ id: "chat.composer.enhanceCapabilityUnavailable" })}
+                        </span>
+                      ) : null}
+                      {!installed &&
+                      !isInstalling &&
+                      !failed &&
+                      installAvailable &&
+                      !autoInstallEnabled &&
+                      onRetryInstallSkill ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onRetryInstallSkill(suggestion)}
+                        >
+                          {intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstall" })}
+                        </Button>
+                      ) : null}
+                      {failed ? (
+                        <>
+                          <span className="text-ui-xs text-destructive" role="alert">
+                            {state?.error}
+                          </span>
+                          {installAvailable && onRetryInstallSkill ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onRetryInstallSkill(suggestion)}
+                            >
+                              {intl.formatMessage({ id: "chat.composer.enhanceCapabilityInstall" })}
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                      {state?.phase === "installed" && onRemoveInstalledSkill ? (
+                        confirming ? (
+                          <span className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={removingSkill === suggestion.name}
+                              onClick={() => {
+                                setConfirmingRemoval(null);
+                                onRemoveInstalledSkill(suggestion);
+                              }}
+                            >
+                              {intl.formatMessage({ id: "common.delete" })}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setConfirmingRemoval(null)}
+                            >
+                              {intl.formatMessage({ id: "common.cancel" })}
+                            </Button>
+                          </span>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={removingSkill === suggestion.name}
+                            onClick={() => setConfirmingRemoval(suggestion.name)}
+                          >
+                            {intl.formatMessage({ id: "common.delete" })}
+                          </Button>
+                        )
+                      ) : null}
+                    </>
                   ) : null}
                 </li>
               );
             })}
           </ul>
-          {installError ? (
-            <p className="text-ui-xs text-destructive" role="alert">
-              {installError}
-            </p>
-          ) : null}
         </section>
       ) : null}
     </div>

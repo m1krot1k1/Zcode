@@ -7616,6 +7616,8 @@
   "settings.stage4.promptEnhancer.codeIndex.description": "Подтягивать релевантные символы из индекса — точнее, но дороже.",
   "settings.stage4.promptEnhancer.history": "Использовать историю диалога",
   "settings.stage4.promptEnhancer.history.description": "Учитывать последние сообщения, чтобы не терять контекст задачи.",
+  "settings.stage4.promptEnhancer.autoInstallSkills": "Автоустановка предложенных навыков",
+  "settings.stage4.promptEnhancer.autoInstallSkills.description": "Включено по умолчанию. Навыки, которые предложил сам улучшитель, устанавливаются из skills.sh без клика; в строке виден статус и доступно удаление. Навыки из каталога по-прежнему ставятся вручную.",
   "settings.stage4.chatAutocomplete.title": "Автодополнение в чате",
   "settings.stage4.chatAutocomplete.description": "Серый ghost-текст продолжает мысль в поле ввода. Tab принимает всё, ArrowRight — слово, Escape — отклоняет.",
   "settings.stage4.chatAutocomplete.enabled": "Включить ghost-автодополнение",

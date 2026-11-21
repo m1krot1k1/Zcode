@@ -292,6 +292,13 @@ export function SettingsStage4Section({
             checked={promptEnhancer.includeConversationHistory}
             onChange={(next) => updatePromptEnhancer({ includeConversationHistory: next })}
           />
+          <SwitchSettingRow
+            label={t("settings.stage4.promptEnhancer.autoInstallSkills")}
+            description={t("settings.stage4.promptEnhancer.autoInstallSkills.description")}
+            checked={promptEnhancer.autoInstallSuggestedSkills}
+            testId="settings-stage4-enhancer-auto-install-skills"
+            onChange={(next) => updatePromptEnhancer({ autoInstallSuggestedSkills: next })}
+          />
         </SettingsGroupCard>
       </section>
     ) : null,

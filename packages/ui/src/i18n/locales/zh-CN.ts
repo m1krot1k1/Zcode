@@ -528,6 +528,9 @@ const zhCN: Record<string, string> = {
   "settings.stage4.promptEnhancer.codeIndex.description": "从索引提取相关符号：更准确，也更贵。",
   "settings.stage4.promptEnhancer.history": "使用会话历史",
   "settings.stage4.promptEnhancer.history.description": "参考最近的对话，避免丢失任务上下文。",
+  "settings.stage4.promptEnhancer.autoInstallSkills": "自动安装建议的技能",
+  "settings.stage4.promptEnhancer.autoInstallSkills.description":
+    "默认开启。增强器自己建议的技能会直接从 skills.sh 安装，无需点击；每一行显示状态并可移除。商店中的技能仍需手动安装。",
   "settings.stage4.chatAutocomplete.title": "聊天自动补全",
   "settings.stage4.chatAutocomplete.description":
     "灰色 ghost 文本在输入框中续写思路。Tab 接受全部，ArrowRight 接受一个词，Escape 关闭。",

@@ -1,9 +1,8 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { PromptEnhanceCapabilitySuggestion } from "@zcode/shared";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
 import { Button } from "@/components/ui/button.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
-import { logger } from "@/logger.js";
+import { useSkillStore } from "@/store/skillStore.js";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +15,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useComposerPromptEnhance } from "./useComposerPromptEnhance.js";
 import { EnhancePromptButton } from "./EnhancePromptButton.js";
 import { EnhancePromptDetails } from "./EnhancePromptDetails.js";
+import { useSuggestedSkillAutoInstall } from "./useSuggestedSkillAutoInstall.js";
 
 /**
  * Мост между Lexical-редактором и сервисом улучшения промптов.
@@ -59,8 +59,6 @@ export const ComposerEnhancePrompt = forwardRef<
 ) {
   const { intl } = useZCodeIntl();
   const services = useOptionalServices();
-  const [installingSkill, setInstallingSkill] = useState<string | null>(null);
-  const [installError, setInstallError] = useState<string | null>(null);
   const draftRef = useRef(draftText);
   draftRef.current = draftText;
 
@@ -88,50 +86,30 @@ export const ComposerEnhancePrompt = forwardRef<
       void enhance.cancel();
       return;
     }
-    setInstallError(null);
     void enhance.enhance(draftRef.current);
   }, [enhance]);
 
+  const refreshSkills = useCallback(() => {
+    const skillsService = services?.skillsService;
+    if (!skillsService) return;
+    // 安装/删除后技能列表必须立即可见：复用 skillStore 的 refresh 入口，
+    // 不为建议面板另建缓存。
+    void useSkillStore.getState().refresh(skillsService, workspaceIdentity).catch(() => {});
+  }, [services, workspaceIdentity]);
+
   /**
-   * A single explicit click on the install button in `EnhancePromptDetails` runs this
-   * callback; nothing is installed while suggestions render, and no extra confirmation
-   * happens here. Installation goes through the same skills service as Settings, so
-   * skill→agent provisioning and audit logging stay in one place.
+   * 系统自动安装建议里的技能：增强结果一到达就由这个 effect 触发，
+   * 不等用户点击，也没有第二次确认。幂等、重试和错误隔离都在 hook 内。
+   * 安装走与设置面板相同的 skills service，技能→agent 供给与审计保持单一路径。
    */
-  const installSkill = useCallback(
-    async (suggestion: PromptEnhanceCapabilitySuggestion) => {
-      const skillsService = services?.skillsService;
-      if (!skillsService) {
-        setInstallError(intl.formatMessage({ id: "chat.composer.enhanceCapabilityUnavailable" }));
-        return;
-      }
-      setInstallingSkill(suggestion.name);
-      setInstallError(null);
-      try {
-        const result = await skillsService.installMarketplaceSkill({
-          name: suggestion.name,
-          scope: "workspace",
-          workspacePath,
-        });
-        logger.info("Capability suggestion installed with consent", {
-          kind: suggestion.kind,
-          name: result.name,
-          agentName: result.agentName,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.warn("Capability suggestion install failed", {
-          kind: suggestion.kind,
-          name: suggestion.name,
-          error: message,
-        });
-        setInstallError(message);
-      } finally {
-        setInstallingSkill(null);
-      }
-    },
-    [intl, services, workspacePath],
-  );
+  const suggestedSkills = useSuggestedSkillAutoInstall({
+    result: enhance.preview?.result ?? null,
+    workspacePath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+    enabled: enhance.autoInstallSuggestedSkills,
+    install: services?.skillsService ?? null,
+    onSkillListChanged: refreshSkills,
+  });
 
   useImperativeHandle(ref, () => ({ trigger }), [trigger]);
 
@@ -204,9 +182,14 @@ export const ComposerEnhancePrompt = forwardRef<
               </div>
               <EnhancePromptDetails
                 result={enhance.preview.result}
-                onInstallSkill={services?.skillsService ? installSkill : undefined}
-                installingSkill={installingSkill}
-                installError={installError}
+                skillStates={suggestedSkills.statuses}
+                installAvailable={Boolean(services?.skillsService)}
+                autoInstallEnabled={enhance.autoInstallSuggestedSkills}
+                onRetryInstallSkill={(suggestion) => suggestedSkills.retry(suggestion.name)}
+                onRemoveInstalledSkill={(suggestion) =>
+                  void suggestedSkills.remove(suggestion.name)
+                }
+                removingSkill={suggestedSkills.removingSkill}
               />
             </>
           ) : null}

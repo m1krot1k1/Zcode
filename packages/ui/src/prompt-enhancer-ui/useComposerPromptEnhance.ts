@@ -37,6 +37,8 @@ export interface ComposerPromptEnhanceState {
   available: boolean;
   /** Включено в настройках (`promptEnhancerSettings.enabled`). */
   enabledBySettings: boolean;
+  /** Автоустановка предложенных навыков (`autoInstallSuggestedSkills`, по умолчанию true). */
+  autoInstallSuggestedSkills: boolean;
   isRunning: boolean;
   /** Черновик достаточно содержателен для запуска. */
   canEnhance: boolean;
@@ -62,6 +64,7 @@ export function useComposerPromptEnhance(
   const { settings } = useSettings({ services: services ?? undefined });
   const enhancerSettings = settings?.promptEnhancerSettings;
   const enabledBySettings = enhancerSettings?.enabled ?? true;
+  const autoInstallSuggestedSkills = enhancerSettings?.autoInstallSuggestedSkills ?? true;
   const [canUndo, setCanUndo] = useState(false);
   const [preview, setPreview] = useState<ComposerPromptEnhancePreview | null>(null);
   const [appliedOriginal, setAppliedOriginal] = useState<string | null>(null);
@@ -144,6 +147,7 @@ export function useComposerPromptEnhance(
   return {
     available: service !== null,
     enabledBySettings,
+    autoInstallSuggestedSkills,
     isRunning: enhancer.isRunning,
     canEnhance: enabledBySettings,
     canUndo,
