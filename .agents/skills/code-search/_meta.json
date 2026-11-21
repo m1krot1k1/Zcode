@@ -1,0 +1,10 @@
+{
+  "source": "ctrlcarlitos/skills",
+  "skillId": "code-search",
+  "name": "code-search",
+  "scope": "workspace",
+  "hash": "sha256:fdcbc49573aaf15665fd7a36f2972dbf7e79d71548d651b7c431b0490836b448",
+  "remoteHash": "fdcbc49573aaf15665fd7a36f2972dbf7e79d71548d651b7c431b0490836b448",
+  "installedAt": "2026-11-21T10:38:55.048Z",
+  "manager": "skills.sh"
+}
