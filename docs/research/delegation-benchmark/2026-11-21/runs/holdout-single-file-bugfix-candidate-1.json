@@ -1,0 +1,33 @@
+{
+  "taskId": "holdout-single-file-bugfix",
+  "family": "single-file-bugfix",
+  "arm": "candidate",
+  "repeat": 1,
+  "startedAt": "2026-11-21T07:52:04.568Z",
+  "durationMs": 47211,
+  "tokens": 224248,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "slugify acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [
+    {
+      "toolCallId": "call_00_NfK9Gromr35K4qRWqCcx2640",
+      "agentType": "implementer"
+    }
+  ],
+  "modelSelection": {
+    "providerId": "deepseek",
+    "modelId": "deepseek-flash",
+    "options": {
+      "reasoningLevel": "max"
+    }
+  },
+  "turnStarts": 2,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Routed to `implementer` once as instructed, then verified its work independently. The fix is correct and the acceptance criteria are met.\n\n**Final content of `src/slugify.mjs`** (the only file touched):\n\n```js\nexport function slugify(input) {\n  return String(input)\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, \"-\")\n    .replace(/^-+|-+$/g, \"\");\n}\n```\n\nThe old implementation only replaced `\\s+`, so punctuation survived and edge hyphens were never trimmed; the new regex collapses each run of non-alphanumerics into a single hyphen and then strips edge hyphens.\n\n**Evidence I observed myself** (not just the child's report):\n\n- My own `node` assertions from the workspace root passed all required cases: `'Hello, World!'` → `'hello-world'`, `'  A  B  '` → `'a-b'`, `'C++ & Rust'` → `'c-rust'`.\n- Additional checks I ran passed: `'!!!'` → `''` (no throw), `''` → `''`, `'a--b__c'` → `'a-b-c'`, `'---'` → `''`, `'123 Test!!'` → `'123-test'`, and no result contained a leading, trailing, or doubled h",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

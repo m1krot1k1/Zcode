@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-independent-research-implementation",
+  "family": "independent-research-implementation",
+  "arm": "baseline",
+  "repeat": 2,
+  "startedAt": "2026-11-21T08:05:13.350Z",
+  "durationMs": 23933,
+  "tokens": 125501,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "calculator + docs acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both workstreams are done and verified.\n\n**Changes**\n\n- `docs/api.md` (new): documents `add(a, b)` and `subtract(a, b)`, each with its signature, a one-line description, and one runnable example (`add(2, 3) // 5`, `subtract(5, 3) // 2`).\n- `src/calculator.mjs`: appended `multiply(a, b)` and `divide(a, b)`; `divide` throws `new RangeError('Division by zero')` when `b === 0`. `add` and `subtract` were left byte-for-byte unchanged — the edit replaced their block with identical text and only added the two new exports.\n\n**Verification**\n\nI ran an assertion script with `node` against the actual module, and all assertions passed:\n\n- module exports `add`, `subtract`, `multiply`, `divide` as functions\n- `add(2, 3)` → 5 and `subtract(5, 3)` → 2 (regression check on untouched code)\n- `multiply(6, 7)` → 42\n- `divide(8, 2)` → 4\n- `divide(1, 0)` throws `RangeError` (checked with `assert.throws`)\n\nI also grepped `docs/api.md` to confirm both signatures and both examples are present at lines 7, 16, 21",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

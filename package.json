@@ -49,6 +49,7 @@
     "prompt:snapshot": "node scripts/prompt-registry.mjs --snapshot config/prompts/baseline.json",
     "test:prompt-registry": "node --test scripts/test/prompt-registry.test.mjs",
     "test:delegation-routing-benchmark": "node --test scripts/test/delegation-routing-benchmark.test.mjs scripts/test/delegation-routing-benchmark-plan.test.mjs",
+    "benchmark:delegation:real": "node scripts/delegation-routing-benchmark-real.mjs",
     "test:knip-baseline": "node --test scripts/test/knip-baseline.test.mjs",
     "test:cross-platform-preview-release": "node --test scripts/test/cross-platform-preview-release.test.mjs",
     "verify:pre-push": "pnpm run prism10:check && pnpm run test:prism10-experiment-gate && pnpm run lint && pnpm run test:prompt-registry && pnpm run test:skills-mining && pnpm run prompt:check && node scripts/check-stale-max-lines-disables.mjs && node scripts/check-tracked-privacy.mjs && pnpm run db:schema:check && pnpm run test:architecture && pnpm run architecture:check -- --changed && pnpm run test:unit:affected --scope push && pnpm run test:self-improve-pr && pnpm run test:delegation-routing-benchmark && pnpm run test:knip-baseline && pnpm run test:cross-platform-preview-release && pnpm run knip && pnpm run test:brainstorming-companion",

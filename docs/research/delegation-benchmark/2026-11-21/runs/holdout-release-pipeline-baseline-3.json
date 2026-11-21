@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-release-pipeline",
+  "family": "release-pipeline",
+  "arm": "baseline",
+  "repeat": 3,
+  "startedAt": "2026-11-21T08:16:26.343Z",
+  "durationMs": 25066,
+  "tokens": 206454,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "release acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Release 1.1.0 is done and verified. All four acceptance criteria pass:\n\n- `package.json` version is now `1.1.0` (checked by parsing the file with Node, so it is still valid JSON with `name` and `scripts.build` intact).\n- `CHANGELOG.md` has a `## 1.1.0` section above `## 1.0.0`, matching the file's existing bullet style.\n- I ran the existing build (`node build.mjs`, exit 0) and `dist/app.txt` now contains `v1.1.0`.\n- `build.mjs` is byte-identical: SHA-256 was `1e870e01…c3234cc8e0` both before and after, and I never wrote to it.\n\nThe fixture lives under an untracked `docs/research/delegation-benchmark/...` directory, so no other working-tree files were touched. Everything else in the repo is unchanged.",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

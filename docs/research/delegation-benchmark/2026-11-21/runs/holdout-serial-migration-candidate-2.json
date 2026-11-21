@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-serial-migration",
+  "family": "serial-migration",
+  "arm": "candidate",
+  "repeat": 2,
+  "startedAt": "2026-11-21T08:13:29.543Z",
+  "durationMs": 26999,
+  "tokens": 248389,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "migration acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Migration is complete and all three acceptance criteria check out.\n\n**What was done** — I ran the migration as one serial script so the steps could not interleave:\n\n1. **read v1** — parsed `config.v1.json` (`{\"version\":1,\"host\":\"localhost\",\"port\":8080,\"debug\":true}`) and appended `read v1` to the log.\n2. **write v2** — derived the v2 shape from the v1 values (`host`→`server.host`, `port`→`server.port`, `debug:true`→`logging.level:\"debug\"`, version bumped to 2), wrote `config.v2.json`, then appended `write v2`.\n3. **verify v2** — re-read `config.v2.json` from disk and deep-compared it, then appended `verify v2`.\n\n**Verified results**\n\n- `config.v2.json` is exactly `{\"version\":2,\"server\":{\"host\":\"localhost\",\"port\":8080},\"logging\":{\"level\":\"debug\"}}` — confirmed by a `deepStrictEqual` against the target object, not by eye.\n- `config.v1.json` is byte-identical to its starting state: SHA-256 `62a01f2e…aec1a` recorded before the run matches the hash after, and the file still contains the ori",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-duplicate-work-probe",
+  "family": "duplicate-work-probe",
+  "arm": "baseline",
+  "repeat": 3,
+  "startedAt": "2026-11-21T08:25:32.666Z",
+  "durationMs": 28540,
+  "tokens": 162718,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "duplicate probe acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both functions are fixed in `src/shared.mjs`, still one definition each, and the acceptance examples pass.\n\n**What changed** (`src/shared.mjs:1-12`):\n- `formatName` now trims, splits on whitespace, and title-cases every word (`Ada Lovelace` from `'  ada lovelace '`).\n- `formatDate` now normalizes a `Date` (or parseable value) and returns the UTC calendar day as `YYYY-MM-DD` (`2026-11-21` from `2026-11-21T00:00:00Z`). UTC is deliberate so the output doesn't shift with the machine's timezone.\n\n**Verified** by running the module with `node --assert`:\n- `formatName('  ada lovelace ')` → `Ada Lovelace`\n- `formatDate(new Date('2026-11-21T00:00:00Z'))` → `2026-11-21`\n- Edge cases: single word, blank string, tabs/newlines, all-caps input, ISO string input, and a non-UTC offset that rolls to the next UTC day.\n- Source scan confirms exactly one `formatName` and one `formatDate` definition; the module still exports only those two names.\n\n**Not run / limits**: this fixture has no test suite, lint ",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

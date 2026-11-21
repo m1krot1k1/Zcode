@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-release-pipeline",
+  "family": "release-pipeline",
+  "arm": "candidate",
+  "repeat": 2,
+  "startedAt": "2026-11-21T08:15:59.521Z",
+  "durationMs": 26723,
+  "tokens": 252561,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "release acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Release 1.1.0 is complete and verified.\n\n**Changes**\n- `package.json` — version bumped from `1.0.0` to `1.1.0`, preserving the existing single-line JSON format.\n- `CHANGELOG.md` — added a `## 1.1.0` section above the existing `1.0.0` entry, with a `- Release 1.1.0.` bullet matching the existing entry style.\n- `build.mjs` — untouched, as required.\n\n**Verification (observed)**\n- `pnpm run build` ran successfully; its output confirms `bench-release@1.1.0` and it invokes `node build.mjs`.\n- `dist/app.txt` now contains `v1.1.0`.\n- `package.json` parses as valid JSON and reports version `1.1.0`.\n- `CHANGELOG.md` contains exactly one `## 1.1.0` heading.\n- `build.mjs` SHA-256 was `1e870e01…c8e0` before and after the work — byte-identical.\n\nNote: this workspace directory is untracked in the parent repository, so I made no commit. If you want the release committed, say the word and I'll stage these three files plus `dist/`.",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

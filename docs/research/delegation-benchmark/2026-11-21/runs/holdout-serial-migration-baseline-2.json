@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-serial-migration",
+  "family": "serial-migration",
+  "arm": "baseline",
+  "repeat": 2,
+  "startedAt": "2026-11-21T08:13:00.275Z",
+  "durationMs": 29166,
+  "tokens": 255948,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "migration acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "The migration is done and verified against all three acceptance criteria.\n\nThe three steps ran serially, each depending on the previous one: a first command read `config.v1.json` into a staging state, a second command wrote `config.v2.json` from that staged state, and a third command re-read the output and checked it before logging completion. Each `migration.log` line was appended only after its step succeeded.\n\nWhat's on disk now:\n\n- `config.v2.json` contains `{\"version\":2,\"server\":{\"host\":\"localhost\",\"port\":8080},\"logging\":{\"level\":\"debug\"}}`, which is a deep-equal match to the target object.\n- `config.v1.json` is byte-identical to before: its SHA-256 is still `62a01f2e…aec1a`, the same value recorded before any writes.\n- `migration.log` has exactly three lines — `read v1`, `write v2`, `verify v2` — with no extras.\n\nThe mapping applied was `host`/`port` into `server`, `version` to 2, and `debug: true` to `logging.level: \"debug\"`. Temporary staging files were kept outside the workspa",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

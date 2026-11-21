@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-release-pipeline",
+  "family": "release-pipeline",
+  "arm": "candidate",
+  "repeat": 1,
+  "startedAt": "2026-11-21T08:15:14.625Z",
+  "durationMs": 23081,
+  "tokens": 188927,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "release acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Release 1.1.0 is complete and verified.\n\n- `package.json`: version bumped from `1.0.0` to `1.1.0`.\n- `CHANGELOG.md`: added a `## 1.1.0` section above `## 1.0.0`.\n- `node build.mjs` ran with exit code 0 and produced `dist/app.txt` containing `v1.1.0`.\n- `build.mjs` is untouched — its MD5 stayed `1a02960760df308fba3635e76e399a1a` before and after the change.\n\nNo commit was made since the workspace is an untracked benchmark fixture and you didn't ask for one.",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

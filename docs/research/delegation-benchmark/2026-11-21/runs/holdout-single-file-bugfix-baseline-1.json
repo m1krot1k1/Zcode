@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-single-file-bugfix",
+  "family": "single-file-bugfix",
+  "arm": "baseline",
+  "repeat": 1,
+  "startedAt": "2026-11-21T07:51:37.338Z",
+  "durationMs": 27135,
+  "tokens": 203928,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "slugify acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Fixed `src/slugify.mjs` and verified all acceptance cases pass.\n\n**What changed** — the old implementation only replaced whitespace runs (`/\\s+/g`), so punctuation was left in and leading/trailing hyphens survived. It now lowercases, collapses each run of non-alphanumeric characters (`/[^a-z0-9]+/g`) into a single hyphen, then strips leading and trailing hyphens.\n\n**Verification** — ran the module directly with Node against the three acceptance cases plus five edge cases; all passed:\n\n- `slugify('Hello, World!')` → `hello-world`\n- `slugify('  A  B  ')` → `a-b`\n- `slugify('C++ & Rust')` → `c-rust`\n- `slugify('')` → `''`, `slugify('---')` → `''`, `slugify('Already-slugged')` → `already-slugged`, `slugify('Foo__Bar')` → `foo-bar`, `slugify('a1b2')` → `a1b2`\n\n**Scope check** — file timestamps confirm only `src/slugify.mjs` was modified; `package.json` is untouched at its original fixture mtime. The workspace is an untracked fixture directory inside the parent repo, so there is no per-works",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

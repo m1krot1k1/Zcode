@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-independent-research-implementation",
+  "family": "independent-research-implementation",
+  "arm": "baseline",
+  "repeat": 1,
+  "startedAt": "2026-11-21T08:01:33.867Z",
+  "durationMs": 24188,
+  "tokens": 152195,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "calculator + docs acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both workstreams are complete and verified against the real module — every acceptance criterion passes.\n\n**What changed**\n\n- `docs/api.md` (new) — documents `add(a, b)` and `subtract(a, b)`, each with its signature and one runnable example.\n- `src/calculator.mjs` — `add` and `subtract` are untouched; `multiply(a, b)` and `divide(a, b)` are appended. `divide` throws `RangeError` when the divisor is zero (`b === 0` also catches `-0`, since `-0 === 0`).\n\n**Verified by running the module in Node**\n\n| Check | Result |\n| --- | --- |\n| Exports | `add, divide, multiply, subtract` |\n| `multiply(6, 7)` | `42` |\n| `divide(8, 2)` | `4` |\n| `divide(1, 0)` | throws `RangeError: divide: divisor must not be zero` |\n| `add` / `subtract` | still `5` / `3` for the documented examples |\n\nI also confirmed `divide(1, -0)` throws and that real division still works (`divide(1, 4) = 0.25`, `divide(8, -2) = -4`), so the guard rejects only zero.\n\n**Not done / residual risk:** `docs/api.md` documents only `add` a",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-serial-migration",
+  "family": "serial-migration",
+  "arm": "candidate",
+  "repeat": 3,
+  "startedAt": "2026-11-21T08:14:25.042Z",
+  "durationMs": 23972,
+  "tokens": 246389,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "migration acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Migration complete and verified.\n\n- `config.v2.json` created with the exact target structure: `{\"version\":2,\"server\":{\"host\":\"localhost\",\"port\":8080},\"logging\":{\"level\":\"debug\"}}`. A `deepStrictEqual` against the target object passed.\n- `config.v1.json` is unchanged — SHA-256 `62a01f2e…68aec1a` before and after, and its parsed content still matches the original v1 object.\n- `migration.log` contains exactly the three required lines in order: `read v1`, `write v2`, `verify v2`.\n\nThe steps ran serially: I read and hashed v1, wrote v2, verified v2 by parsing it back and deep-comparing, then wrote the log. The final acceptance check re-validated all three files in one pass. Nothing else in the workspace was touched.",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

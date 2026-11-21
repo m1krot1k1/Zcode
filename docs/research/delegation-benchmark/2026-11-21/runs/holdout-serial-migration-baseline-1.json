@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-serial-migration",
+  "family": "serial-migration",
+  "arm": "baseline",
+  "repeat": 1,
+  "startedAt": "2026-11-21T08:11:38.963Z",
+  "durationMs": 39343,
+  "tokens": 158954,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "migration acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Migration complete and verified. All three acceptance checks pass on the actual files:\n\n**`config.v2.json`** — 84 bytes, single compact line matching the v1 style:\n```\n{\"version\":2,\"server\":{\"host\":\"localhost\",\"port\":8080},\"logging\":{\"level\":\"debug\"}}\n```\nAn independent re-parse of the file deep-equals the required target (checked with `util.isDeepStrictEqual`, not by reusing the migration script's own assertion). Keys are exactly `version`, `server`, `logging`.\n\n**`config.v1.json`** — unchanged. SHA-256 is identical before and after (`62a01f2e…68aec1a`), same 58-byte size and original mtime; the script only ever read it.\n\n**`migration.log`** — 27 bytes, byte-level dump confirms exactly three lines and nothing else:\n```\nread v1\nwrite v2\nverify v2\n```\n\nHow it ran: a single Node process executed the steps strictly in order — parse v1 (after refusing anything whose `version` isn't 1), append `read v1`, derive v2 from the v1 values (`host`/`port` nest under `server`, `debug: true` becomes ",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

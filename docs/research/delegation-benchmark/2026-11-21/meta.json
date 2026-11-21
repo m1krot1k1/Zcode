@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "kind": "real-delegation-routing-benchmark",
+  "startedAt": "2026-11-21T07:51:37.327Z",
+  "finishedAt": "2026-11-21T08:28:27.421Z",
+  "cli": "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+  "gitHead": "c53a8cdf9584c4a47171d9c8c712668c97a44448",
+  "repeats": 3,
+  "timeoutMs": 360000,
+  "tasks": [
+    {
+      "id": "holdout-single-file-bugfix",
+      "family": "single-file-bugfix",
+      "route": "delegate_single",
+      "routeReason": "one bounded fix in one file",
+      "fixtureHash": "1b58648591422aab61dc2594e5a1eb740b5e066225c4aafdecc381e5f545cf8d"
+    },
+    {
+      "id": "holdout-multi-file-refactor",
+      "family": "multi-file-refactor",
+      "route": "delegate_single",
+      "routeReason": "one coherent refactor with a shared module",
+      "fixtureHash": "5a48a738bfedb0776e51daaf3d572a8a25c6d0cfbc4786f21683b9a59d86f474"
+    },
+    {
+      "id": "holdout-independent-research-implementation",
+      "family": "independent-research-implementation",
+      "route": "orchestrate",
+      "routeReason": "two independent workstreams: docs and code",
+      "fixtureHash": "2d695fc774655a84164ee52d3f42613c18742a921edc4ca90f3be99d0bb2cba8"
+    },
+    {
+      "id": "holdout-serial-migration",
+      "family": "serial-migration",
+      "route": "integrate_inline",
+      "routeReason": "each step depends on the previous config",
+      "fixtureHash": "14fa0766ff71032e07ae46d4322a3bb4c7ffde7c5932c10c2c8b2381740bec3f"
+    },
+    {
+      "id": "holdout-release-pipeline",
+      "family": "release-pipeline",
+      "route": "integrate_inline",
+      "routeReason": "version, changelog, build and verification are serial",
+      "fixtureHash": "e06d5bd09e777853140694dd8c7e7081df9d7d4aaa88048748eeb9bfd81fa0a2"
+    },
+    {
+      "id": "holdout-duplicate-work-probe",
+      "family": "duplicate-work-probe",
+      "route": "orchestrate",
+      "routeReason": "two independent fixes that share one file",
+      "fixtureHash": "7f9e6379a23b4958782f3d639f3f9db7bc196d2b93b8abb57047e24591f64097"
+    }
+  ],
+  "note": "Records are produced by executing the built ZCode CLI. Raw streams are not committed; per-run parsed evidence is in runs/.",
+  "modelSelection": {
+    "providerId": "deepseek",
+    "modelId": "deepseek-flash",
+    "options": {
+      "reasoningLevel": "max"
+    }
+  }
+}

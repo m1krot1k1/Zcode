@@ -1,0 +1,49 @@
+{
+  "taskId": "holdout-duplicate-work-probe",
+  "family": "duplicate-work-probe",
+  "arm": "candidate",
+  "repeat": 3,
+  "startedAt": "2026-11-21T08:26:01.308Z",
+  "durationMs": 145904,
+  "tokens": 165816,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "duplicate probe acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [
+    {
+      "toolCallId": "call_00_GnnTAR0NzTNzEQVai1w86421",
+      "agentType": "orchestrator"
+    },
+    {
+      "toolCallId": "call_01_3Un6oQ6vE1ZSrp7aEJDt6761",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_f156cf8b-d788-4bc7-955e-d803871c4812_call_01_3Un6oQ6vE1ZSrp7aEJDt6761",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "call_01_mnhdK6f9Mq6txveygbBv6051",
+      "agentType": "reviewer"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_f156cf8b-d788-4bc7-955e-d803871c4812_call_01_mnhdK6f9Mq6txveygbBv6051",
+      "agentType": "reviewer"
+    }
+  ],
+  "modelSelection": {
+    "providerId": "deepseek",
+    "modelId": "deepseek-flash",
+    "options": {
+      "reasoningLevel": "max"
+    }
+  },
+  "turnStarts": 4,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both fixes are in `src/shared.mjs` and each function exists exactly once.\n\n**What changed**\n\n- `formatName` (src/shared.mjs:1) now trims, splits on whitespace, capitalizes the first letter of each word, lowercases the rest, and rejoins with single spaces. `formatName('  ada lovelace ')` returns `'Ada Lovelace'`.\n- `formatDate` (src/shared.mjs:9) now formats through the date's ISO representation and slices the date part, so the output is UTC-stable regardless of the host timezone. `formatDate(new Date('2026-11-21T00:00:00Z'))` returns `'2026-11-21'`.\n\n**Routing and serialization**\n\nThe orchestrator used one writer (`implementer`, scoped to `src/shared.mjs`) that made both fixes in a single edit, plus a read-only `reviewer` gate that ran strictly afterward. Because only one worker held the write claim, no overlapping-claim rejection occurred and no serialization was needed — both fixes are present, neither was dropped. That single-writer split is the correct call given the intentional on",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\n"
+}

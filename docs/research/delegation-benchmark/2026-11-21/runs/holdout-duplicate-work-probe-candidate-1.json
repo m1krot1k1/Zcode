@@ -1,0 +1,65 @@
+{
+  "taskId": "holdout-duplicate-work-probe",
+  "family": "duplicate-work-probe",
+  "arm": "candidate",
+  "repeat": 1,
+  "startedAt": "2026-11-21T08:17:38.483Z",
+  "durationMs": 251730,
+  "tokens": 265618,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "duplicate probe acceptance ok",
+  "claimConflicts": 3,
+  "taskSpawns": [
+    {
+      "toolCallId": "call_01_s0A2Dpiba6mj4uWTwTUY6482",
+      "agentType": "orchestrator"
+    },
+    {
+      "toolCallId": "call_00_1YlMF23AtxVeoLPUGahd4483",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_44f83dcf-07f1-40ec-bac5-14f9ee78cb52_call_00_1YlMF23AtxVeoLPUGahd4483",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "call_01_dQz0qtOaH3jfNSWK4Vea4630",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_44f83dcf-07f1-40ec-bac5-14f9ee78cb52_call_01_dQz0qtOaH3jfNSWK4Vea4630",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "call_01_uvekMGlVzVvpv3ibzsCn2279",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_44f83dcf-07f1-40ec-bac5-14f9ee78cb52_call_01_uvekMGlVzVvpv3ibzsCn2279",
+      "agentType": "implementer"
+    },
+    {
+      "toolCallId": "call_01_iVffMQULLTA1i1qCYtIj0484",
+      "agentType": "evaluator"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_44f83dcf-07f1-40ec-bac5-14f9ee78cb52_call_01_iVffMQULLTA1i1qCYtIj0484",
+      "agentType": "evaluator"
+    }
+  ],
+  "modelSelection": {
+    "providerId": "deepseek",
+    "modelId": "deepseek-flash",
+    "options": {
+      "reasoningLevel": "max"
+    }
+  },
+  "turnStarts": 5,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both functions are fixed in `src/shared.mjs:1` and `src/shared.mjs:9`, with exactly one definition of each. I verified the final state myself rather than trusting the subagent report.\n\n**Final content**\n\n```js\nexport function formatName(name) {\n  return name\n    .trim()\n    .split(/\\s+/)\n    .filter(Boolean)\n    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())\n    .join(' ');\n}\nexport function formatDate(value) {\n  return value.toISOString().slice(0, 10);\n}\n```\n\n**Routing and the overlap**\n\nI called `Task` once with `subagent_type: orchestrator` and a self-contained envelope listing the two independent fixes, the single shared file scope, and the three acceptance commands. The orchestrator attempted both writer branches in one batch; the runtime rejected the second spawn with `write_claim_conflict`, so it serialized them — Branch A edited and verified, then Branch B edited the same file while preserving `formatName`. Both fixes are present; neither was dropped",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\n"
+}

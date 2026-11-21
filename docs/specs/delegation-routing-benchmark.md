@@ -91,10 +91,21 @@ A candidate is accepted only when:
 Otherwise the result is `inconclusive` (no proven gain) or `reject` (regression). Do not present
 synthetic fixtures or a single lucky run as evidence of a general capability gain.
 
+## Real runs
+
+`scripts/delegation-routing-benchmark.mjs` only compares recorded JSONL. To produce real
+records, use `scripts/delegation-routing-benchmark-real.mjs` (npm script
+`benchmark:delegation:real`). It executes the built ZCode CLI on isolated fixture
+workspaces for both arms, runs hidden acceptance checks, records per-run evidence, and
+writes aggregated `baseline.jsonl`, `candidate.jsonl`, `runs.jsonl`, `meta.json` and the
+gate report. The protocol and fixtures are specified in
+[`2026-11-21-delegation-routing-benchmark-real-run.md`](./2026-11-21-delegation-routing-benchmark-real-run.md).
+
 ## Limitations
 
-- The script compares recorded results; it does not run an LLM and cannot verify that the records
-  are genuine.
+- The gate script compares recorded results; it does not run an LLM and cannot verify
+  that the records are genuine. The real runner above is the only supported way to
+  produce non-synthetic records.
 - Synthetic fixtures test the gate itself, not model behavior.
 - A real run needs the packaged app/runtime, the same provider/model, and a budget for repeats and
   a protected holdout.
