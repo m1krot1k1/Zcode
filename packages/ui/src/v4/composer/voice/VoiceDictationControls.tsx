@@ -12,8 +12,11 @@ import {
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
+import { useTabStore } from "@/store/TabStoreProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { useVoiceDictation, type VoiceDictationApi } from "./useVoiceDictation.js";
+import { describeVoiceError } from "./voiceErrorMessages.js";
 
 function formatBytes(value: number | null): string {
   if (!value || value <= 0) return "";
@@ -241,7 +244,9 @@ function VoiceSettingsDialog({ api }: { api: VoiceDictationApi }) {
               </div>
             ) : null}
             {state.error ? (
-              <p className="text-ui-base text-[var(--color-danger)]">{state.error}</p>
+              <p className="text-ui-base text-[var(--color-danger)]">
+                {describeVoiceError(intl, state.error)}
+              </p>
             ) : null}
           </div>
         )}
@@ -253,6 +258,7 @@ function VoiceSettingsDialog({ api }: { api: VoiceDictationApi }) {
 function VoiceDictationOverlayImpl() {
   const intl = useZCodeIntl().intl;
   const api = useVoiceDictation();
+  const openSettingsTab = useTabStore((state) => state.openSettingsTab);
   const { state } = api;
   const elapsed = useElapsed(state.startedAt);
   const active = state.status !== "idle" || state.settingsOpen;
@@ -262,6 +268,11 @@ function VoiceDictationOverlayImpl() {
   );
   if (!active) return null;
   const listening = state.status === "listening";
+  const openVoiceSettings = () => {
+    api.setSettingsOpen(false);
+    setPendingSettingsSectionIntent("voice");
+    openSettingsTab();
+  };
   const hint =
     state.mode === "streaming"
       ? intl.formatMessage({ id: "chat.voice.streamingHint" })
@@ -296,11 +307,7 @@ function VoiceDictationOverlayImpl() {
         <div className="min-w-0 flex-1">
           <div className="truncate text-ui-base text-foreground">
             {state.status === "error"
-              ? state.error?.includes("NotAllowed") ||
-                state.error?.includes("Permission") ||
-                state.error?.includes("denied")
-                ? intl.formatMessage({ id: "chat.voice.microphoneDenied" })
-                : state.error
+              ? describeVoiceError(intl, state.error)
               : listening
                 ? intl.formatMessage({ id: "chat.voice.listening" })
                 : state.status === "starting"
@@ -315,13 +322,13 @@ function VoiceDictationOverlayImpl() {
         <span className="text-ui-xs tabular-nums text-foreground-subtle">
           {Math.floor(elapsed / 1000)}s
         </span>
-        <ControlHintTooltip title={intl.formatMessage({ id: "chat.voice.settings" })}>
+        <ControlHintTooltip title={intl.formatMessage({ id: "chat.voice.openSettings" })}>
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={intl.formatMessage({ id: "chat.voice.settings" })}
-            onClick={() => api.setSettingsOpen(true)}
+            aria-label={intl.formatMessage({ id: "chat.voice.openSettings" })}
+            onClick={openVoiceSettings}
           >
             <Settings2Icon className="size-4" aria-hidden />
           </Button>

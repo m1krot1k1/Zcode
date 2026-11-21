@@ -7,8 +7,7 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { app, BrowserWindow, type WebContents } from "electron";
+import { BrowserWindow, type WebContents } from "electron";
 import {
   PlatformChannels,
   type VoiceDictationEvent,
@@ -19,151 +18,31 @@ import {
   type VoiceSpeechModel,
 } from "@zcode/shared";
 
-const SAMPLE_RATE = 16_000;
-const READY_TIMEOUT_MS = 20_000;
-const REQUEST_TIMEOUT_MS = 15_000;
-const ROLLING_TICK_MS = 700;
-const ROLLING_MIN_SAMPLES = SAMPLE_RATE * 1.2;
-const ROLLING_MAX_SAMPLES = SAMPLE_RATE * 15;
-const SILENCE_RMS = 0.008;
-const SILENCE_COMMIT_MS = 650;
-const HEARTBEAT_MS = 4_000;
-
-type VoiceCommand =
-  | { readonly action: "status" }
-  | { readonly action: "models"; readonly language?: string }
-  | {
-      readonly action: "prepare";
-      readonly requestId: string;
-      readonly modelId: string;
-      readonly language: string;
-    }
-  | { readonly action: "start"; readonly request: VoiceDictationStartRequest }
-  | { readonly action: "appendAudio"; readonly samples: ArrayBuffer }
-  | { readonly action: "stop" }
-  | { readonly action: "cancel" };
-
-interface EngineEndpoint {
-  readonly url: string;
-  readonly token: string;
-  readonly version?: string;
-}
-
-interface StreamingSession {
-  readonly mode: "streaming";
-  readonly id: number;
-  readonly ownerToken: string;
-  readonly model: string;
-  readonly language: string;
-  readonly abort: AbortController;
-  readonly heartbeat: ReturnType<typeof setInterval>;
-}
-
-interface RollingSession {
-  readonly mode: "rolling";
-  readonly model: string;
-  readonly language: string;
-  samples: Int16Array[];
-  committedText: string;
-  tentativeText: string;
-  silentMs: number;
-  lastTickAt: number;
-  busy: boolean;
-  finishing: boolean;
-}
-
-type Session = StreamingSession | RollingSession;
-
-function binaryName(): string {
-  return process.platform === "win32" ? "hex-service.exe" : "hex-service";
-}
-
-function resolveEngineBinary(): string {
-  const override = process.env.ZCODE_HEX_SERVICE_PATH?.trim();
-  if (override && existsSync(override)) return override;
-  const name = binaryName();
-  const candidates = app.isPackaged
-    ? [join(process.resourcesPath, "voice", name)]
-    : [
-        join(process.cwd(), "bundled-voice", `${process.platform}-${process.arch}`, name),
-        join(app.getAppPath(), "bundled-voice", `${process.platform}-${process.arch}`, name),
-      ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
-}
-
-function platformSupported(): boolean {
-  return (
-    process.platform === "darwin" || process.platform === "win32" || process.platform === "linux"
-  );
-}
-
-function toWav(samples: Int16Array): Uint8Array<ArrayBuffer> {
-  const dataBytes = samples.length * 2;
-  const buffer = new ArrayBuffer(44 + dataBytes);
-  const view = new DataView(buffer);
-  const writeAscii = (offset: number, text: string) => {
-    for (let index = 0; index < text.length; index += 1) {
-      view.setUint8(offset + index, text.charCodeAt(index));
-    }
-  };
-  writeAscii(0, "RIFF");
-  view.setUint32(4, 36 + dataBytes, true);
-  writeAscii(8, "WAVE");
-  writeAscii(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(28, SAMPLE_RATE * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeAscii(36, "data");
-  view.setUint32(40, dataBytes, true);
-  new Uint8Array(buffer, 44).set(new Uint8Array(samples.buffer, samples.byteOffset, dataBytes));
-  return new Uint8Array(buffer);
-}
-
-async function readSse(
-  response: Response,
-  onData: (payload: unknown) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  if (!response.body) return;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (!signal?.aborted) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const data = block
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (data) {
-        try {
-          onData(JSON.parse(data));
-        } catch {
-          // A malformed provider event must not tear down the dictation stream.
-        }
-      }
-      boundary = buffer.indexOf("\n\n");
-    }
-  }
-  await reader.cancel().catch(() => undefined);
-}
-
-function int16FromArrayBuffer(buffer: ArrayBuffer): Int16Array {
-  if (buffer.byteLength % 2 !== 0) {
-    return new Int16Array(buffer, 0, Math.floor(buffer.byteLength / 2));
-  }
-  return new Int16Array(buffer);
-}
+import {
+  HEARTBEAT_MS,
+  LOADED_MODEL_TIMEOUT_MS,
+  PREPARE_TIMEOUT_MS,
+  READY_TIMEOUT_MS,
+  REQUEST_TIMEOUT_MS,
+  ROLLING_MAX_SAMPLES,
+  ROLLING_MIN_SAMPLES,
+  ROLLING_TICK_MS,
+  SAMPLE_RATE,
+  SILENCE_COMMIT_MS,
+  SILENCE_RMS,
+  STREAM_START_RETRIES,
+  STREAM_START_RETRY_MS,
+  int16FromArrayBuffer,
+  platformSupported,
+  readSse,
+  resolveEngineBinary,
+  toWav,
+  type EngineEndpoint,
+  type RollingSession,
+  type Session,
+  type StreamingSession,
+  type VoiceCommand,
+} from "./hexVoiceServiceSupport.js";
 
 export class HexVoiceService {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -172,6 +51,7 @@ export class HexVoiceService {
   private stderrTail: string[] = [];
   private session: Session | null = null;
   private startError: string | null = null;
+  private loadedModelId: string | null = null;
   private readonly models = new Map<string, VoiceSpeechModel>();
   private disposed = false;
 
@@ -294,6 +174,7 @@ export class HexVoiceService {
         this.endpoint = null;
         this.child = null;
         this.session = null;
+        this.loadedModelId = null;
         if (!this.disposed && code !== 0) {
           this.startError = `engine-exited-${code ?? "unknown"}`;
           this.emit({
@@ -355,41 +236,45 @@ export class HexVoiceService {
     return models;
   }
 
-  private async prepareModel(
-    requestId: string,
+  /**
+   * Consumes Hex's prepare SSE. The stream closes with `type:"ok"` after the
+   * model is downloaded/verified, but the shared engine may still be swapping it
+   * in; `startStream` retries `/streams` until that swap is observable.
+   */
+  private async runModelPrepare(
+    endpoint: EngineEndpoint,
     modelId: string,
     language: string,
-    sender?: WebContents,
+    onProgress?: (progress: VoiceModelPrepareProgress) => void,
+    timeoutMs = PREPARE_TIMEOUT_MS,
   ): Promise<void> {
-    const endpoint = await this.ensureEngine();
-    const sendProgress = (progress: VoiceModelPrepareProgress) => {
-      if (sender && !sender.isDestroyed()) {
-        sender.send(PlatformChannels.VoiceDictationEvent, {
-          type: "prepare-progress",
-          requestId,
-          progress,
-        } satisfies VoiceDictationEvent);
-      }
-    };
-    const response = await this.request(
-      endpoint,
-      `/models/${encodeURIComponent(modelId)}/prepare?language=${encodeURIComponent(language)}`,
-      { method: "POST" },
-      24 * 60 * 60 * 1000,
-    );
+    let response: Response;
+    try {
+      response = await this.request(
+        endpoint,
+        `/models/${encodeURIComponent(modelId)}/prepare?language=${encodeURIComponent(language)}`,
+        { method: "POST" },
+        timeoutMs,
+      );
+    } catch (error) {
+      throw new Error(
+        `model-load-failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     if (!response.ok) {
       const message = await response.text().catch(() => "");
       const progress: VoiceModelPrepareProgress = {
         modelId,
         stage: "error",
         downloadedBytes: 0,
-        totalBytes: 0,
+        totalBytes: this.models.get(modelId)?.downloadBytes ?? 0,
         code: `prepare-${response.status}`,
         message: message.slice(0, 500),
       };
-      sendProgress(progress);
+      onProgress?.(progress);
       throw new Error(progress.code);
     }
+    let failure: string | null = null;
     await readSse(response, (payload) => {
       if (typeof payload !== "object" || payload === null) return;
       const data = payload as {
@@ -415,10 +300,91 @@ export class HexVoiceService {
         ...(data.code ? { code: data.code } : {}),
         ...(data.message ? { message: data.message } : {}),
       };
-      sendProgress(progress);
+      onProgress?.(progress);
+      if (stage === "error") {
+        failure = data.message || data.code || "model-load-failed";
+        return false;
+      }
+      return stage === "ok" ? false : undefined;
     });
+    if (failure) throw new Error(failure);
+  }
+
+  private async prepareModel(
+    requestId: string,
+    modelId: string,
+    language: string,
+    sender?: WebContents,
+  ): Promise<void> {
+    const endpoint = await this.ensureEngine();
+    const sendProgress = (progress: VoiceModelPrepareProgress) => {
+      if (sender && !sender.isDestroyed()) {
+        sender.send(PlatformChannels.VoiceDictationEvent, {
+          type: "prepare-progress",
+          requestId,
+          progress,
+        } satisfies VoiceDictationEvent);
+      }
+    };
+    await this.runModelPrepare(endpoint, modelId, language, sendProgress);
+    this.loadedModelId = modelId;
     // Refresh installed state for the UI after a successful download.
     void this.listModels(language).catch(() => undefined);
+  }
+
+  /**
+   * Starts a streaming session only after the installed model is loaded.
+   *
+   * Root cause of `stream-start-503`: Hex's shared engine reports `ok` before the
+   * asynchronous model swap finishes; the old code posted `/streams` immediately
+   * and never prepared an installed model at all. We prepare once and retry the
+   * bounded 503/model-not-loaded window instead of surfacing a raw IPC error.
+   */
+  private async startStream(
+    endpoint: EngineEndpoint,
+    request: VoiceDictationStartRequest,
+  ): Promise<Response> {
+    const body = JSON.stringify({
+      sampleFormat: "s16le",
+      sampleRate: SAMPLE_RATE,
+      model: request.model,
+      language: request.language,
+    });
+    let prepared = this.loadedModelId === request.model;
+    for (let attempt = 0; attempt < STREAM_START_RETRIES; attempt += 1) {
+      if (!prepared) {
+        const model = this.models.get(request.model);
+        if (!model || !model.installed) throw new Error("model-not-installed");
+        await this.runModelPrepare(
+          endpoint,
+          request.model,
+          request.language,
+          undefined,
+          LOADED_MODEL_TIMEOUT_MS,
+        );
+        prepared = true;
+        continue;
+      }
+      const response = await this.request(endpoint, "/streams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (response.ok) {
+        this.loadedModelId = request.model;
+        return response;
+      }
+      const text = await response.text().catch(() => "");
+      if (response.status === 503 && text.includes("model-not-loaded")) {
+        // The engine accepted prepare but is still swapping the model. A 503 on
+        // an already-loaded model means it was unloaded; force one fresh prepare.
+        if (attempt === 0) prepared = false;
+        await new Promise((resolve) => setTimeout(resolve, STREAM_START_RETRY_MS));
+        continue;
+      }
+      throw new Error(`stream-start-${response.status}${text ? `: ${text.slice(0, 300)}` : ""}`);
+    }
+    throw new Error("stream-start-503: model-not-loaded");
   }
 
   private async start(request: VoiceDictationStartRequest): Promise<VoiceDictationStartResult> {
@@ -433,19 +399,7 @@ export class HexVoiceService {
     if (!model.installed) throw new Error("model-not-installed");
 
     if (model.streams) {
-      const response = await this.request(endpoint, "/streams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sampleFormat: "s16le",
-          sampleRate: SAMPLE_RATE,
-          model: request.model,
-          language: request.language,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`stream-start-${response.status}`);
-      }
+      const response = await this.startStream(endpoint, request);
       const created = (await response.json()) as {
         id: number;
         ownerToken: string;
@@ -494,6 +448,19 @@ export class HexVoiceService {
       busy: false,
       finishing: false,
     };
+    // Non-streaming models are transcribed lazily per window, but loading the
+    // installed model now avoids a slow/failed first window and matches the
+    // streaming path's readiness contract.
+    if (this.loadedModelId !== request.model) {
+      await this.runModelPrepare(
+        endpoint,
+        request.model,
+        request.language,
+        undefined,
+        LOADED_MODEL_TIMEOUT_MS,
+      );
+      this.loadedModelId = request.model;
+    }
     this.session = session;
     const result: VoiceDictationStartResult = {
       mode: "rolling",
@@ -741,6 +708,7 @@ export class HexVoiceService {
 
   dispose(): void {
     this.disposed = true;
+    this.loadedModelId = null;
     this.clearSession();
     this.child?.stdin.end();
     this.child?.kill();

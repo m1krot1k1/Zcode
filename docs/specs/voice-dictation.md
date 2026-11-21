@@ -101,6 +101,25 @@ sequenceDiagram
 - At most one live stream exists. A second start while one is active is refused in the UI; the Host
   cancels the previous stream on window close or renderer unload.
 
+## Model preload and error contract (2026-11-21)
+
+A real run exposed `stream-start-503 {"code":"model-not-loaded"}` when an installed
+model was started directly. Hex's shared engine reports `prepare` `ok` before the
+asynchronous model swap is finished, and the old Host never prepared an installed
+model at all. The Host now:
+
+- prepares the selected installed model before the first stream (and before a rolling
+  model's first window);
+- retries the bounded `503/model-not-loaded` window instead of surfacing an Electron
+  IPC string, and prepares again if an already-loaded model was unloaded;
+- keeps `loadedModelId` per Host and clears it when the child exits;
+- preserves the user's installed model on catalog refresh when it supports the current
+  language, and never keeps an English-only stored model for a Russian dictation.
+
+The overlay gear navigates to **Settings › Voice** (`setPendingSettingsSectionIntent`
+plus `openSettingsTab`) instead of opening a second settings surface. The in-composer
+model picker remains only for the "no installed model" flow.
+
 ## Failure, privacy, and capacity
 
 - Audio stays in memory and is sent only to the loopback Hex service. Logs never contain audio,
@@ -147,6 +166,12 @@ sequenceDiagram
   editor unit tests.
 - The Desktop main process exposed status, catalog, prepare, start, appendAudio, stop, and cancel over
   the `zcode:voice-dictation` channel; no token or model path crossed to the renderer.
+- 2026-11-21, macOS arm64: reproduced `stream-start-503 {"code":"model-not-loaded"}`
+  against the bundled Hex 3.4.0 service. `POST /models/parakeet_unified_en/prepare`
+  loaded the model; `/streams` succeeded after the ~1 s asynchronous swap once the
+  Host retried. The Host now preloads an installed model and retries that bounded
+  window; the overlay renders a localized model-load message instead of the raw
+  Electron IPC wrapper.
 - Not verified here: Windows/Linux binaries, real-microphone TCC approval on a clean machine, and a
   global hold shortcut. The current shortcut is in-app (hold ⌘⇧Space, tap twice to keep recording);
   a global toggle is a deliberate follow-up rather than a hidden partial path.

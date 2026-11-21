@@ -77,13 +77,37 @@ function writeStored(key: string, value: string): void {
   }
 }
 
+function modelSupportsLanguage(model: VoiceSpeechModel, language: string): boolean {
+  return (
+    model.languages.includes(language) ||
+    model.languages.includes("auto") ||
+    model.languages.includes("*")
+  );
+}
+
 function preferredModel(models: readonly VoiceSpeechModel[], language: string): string | null {
   const stored = readStored(MODEL_STORAGE_KEY);
-  if (stored && models.some((model) => model.id === stored)) return stored;
+  const storedModel = stored ? models.find((model) => model.id === stored) : undefined;
+  // Never keep an English-only model for a Russian dictation just because it was
+  // selected earlier. The stored preference is valid only when it fits the language.
+  if (storedModel?.installed && modelSupportsLanguage(storedModel, language)) {
+    return storedModel.id;
+  }
   const installed = models.filter((model) => model.installed);
-  const exactLanguage = installed.find((model) => model.languages.includes(language));
-  const anyStreaming = installed.find((model) => model.streams);
-  return exactLanguage?.id ?? anyStreaming?.id ?? installed[0]?.id ?? models[0]?.id ?? null;
+  const supported = models.filter((model) => modelSupportsLanguage(model, language));
+  const installedSupported = installed.filter((model) => modelSupportsLanguage(model, language));
+  const exactLanguage = installedSupported.find((model) => model.languages.includes(language));
+  const anyStreaming = installedSupported.find((model) => model.streams);
+  return (
+    exactLanguage?.id ??
+    anyStreaming?.id ??
+    installedSupported[0]?.id ??
+    installed.find((model) => model.streams)?.id ??
+    installed[0]?.id ??
+    supported[0]?.id ??
+    models[0]?.id ??
+    null
+  );
 }
 
 function joinTranscript(stable: string, tentative: string): string {
@@ -134,13 +158,20 @@ class VoiceDictationController {
       if (!status.available) return;
       if (loadModels || state.models.length === 0) {
         const models = await port.listModels(state.language || undefined);
-        const modelId = preferredModel(models, state.language);
+        const current = state.modelId
+          ? models.find((model) => model.id === state.modelId)
+          : undefined;
+        // A refresh must not silently replace a user's installed model with a
+        // different stored/default one when the current model still fits.
+        const keepCurrent =
+          current?.installed === true && modelSupportsLanguage(current, state.language);
+        const modelId = keepCurrent ? current.id : preferredModel(models, state.language);
         const selected = models.find((model) => model.id === modelId);
         setState({
           models,
           modelId,
           language:
-            selected && !selected.languages.includes(state.language)
+            selected && !modelSupportsLanguage(selected, state.language)
               ? (selected.languages[0] ?? state.language)
               : state.language,
         });
@@ -160,7 +191,7 @@ class VoiceDictationController {
     setState({
       modelId,
       language:
-        model && !model.languages.includes(state.language)
+        model && !modelSupportsLanguage(model, state.language)
           ? (model.languages[0] ?? state.language)
           : state.language,
     });

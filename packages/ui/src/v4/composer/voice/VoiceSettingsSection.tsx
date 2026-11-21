@@ -5,6 +5,7 @@ import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { useVoiceDictation } from "./useVoiceDictation.js";
+import { describeVoiceError } from "./voiceErrorMessages.js";
 
 function formatBytes(value: number | null): string {
   if (!value || value <= 0) return "";
@@ -143,7 +144,9 @@ function VoiceSettingsSectionImpl() {
         />
       </SettingsGroupCard>
       {state.error ? (
-        <p className="text-ui-base text-[var(--color-danger)]">{state.error}</p>
+        <p className="text-ui-base text-[var(--color-danger)]">
+          {describeVoiceError(intl, state.error)}
+        </p>
       ) : null}
     </div>
   );

@@ -8972,6 +8972,15 @@ const enUS: Record<string, string> = {
   "chat.voice.noModels": "No speech models available",
   "chat.voice.unavailable": "Voice input is unavailable",
   "chat.voice.microphoneDenied": "Microphone access was denied",
+  "chat.voice.microphoneUnavailable": "The microphone is unavailable.",
+  "chat.voice.modelNotInstalled":
+    "The speech model is not installed. Open Voice settings to download it.",
+  "chat.voice.modelLoadFailed":
+    "The speech model could not be loaded. Try again or choose another model.",
+  "chat.voice.alreadyActive": "A dictation is already running.",
+  "chat.voice.inputMissing": "Focus the message input and try again.",
+  "chat.voice.failed": "Voice input failed. Open Voice settings and retry.",
+  "chat.voice.openSettings": "Open voice settings",
   "chat.voice.hint": "Hold ⌥ or tap twice",
   "settings.modelProvider.apiFormat.autoHint":
     "Detected automatically when the connection is saved. You can override it.",
