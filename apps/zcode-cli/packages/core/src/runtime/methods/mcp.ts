@@ -32,7 +32,8 @@ export function resolveLazyMcpServerNamesForInput(
   if (!input.trim()) return [];
   const names: string[] = [];
   for (const [name, config] of Object.entries(lazyServers)) {
-    const pluginId = config.env?.[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase();
+    const pluginId =
+      "env" in config ? config.env?.[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase() : undefined;
     const pattern = pluginId ? LAZY_MCP_INPUT_HINTS[pluginId] : undefined;
     if (pattern?.test(input)) names.push(name);
   }
