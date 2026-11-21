@@ -145,9 +145,9 @@ describe("PromptEnhancerService.enhance", () => {
       logger: silentLogger,
     });
 
-    await expect(
-      service.enhance(baseRequest({ draftText: "x" })),
-    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(service.enhance(baseRequest({ draftText: "x" }))).rejects.toMatchObject({
+      code: "invalid_request",
+    });
     expect(generator.calls).toHaveLength(0);
   });
 

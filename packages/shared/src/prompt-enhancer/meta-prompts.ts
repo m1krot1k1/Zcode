@@ -1,4 +1,9 @@
-import type { PromptEnhanceRequest, PromptEnhanceStyle } from "./contract.js";
+import type {
+  PromptEnhanceFramework,
+  PromptEnhanceRequest,
+  PromptEnhanceStyle,
+} from "./contract.js";
+import type { PromptEnhanceClassification } from "./classify.js";
 
 /**
  * Мета-промпты улучшения промптов.
@@ -15,13 +20,28 @@ import type { PromptEnhanceRequest, PromptEnhanceStyle } from "./contract.js";
 
 /** Общий контракт вывода: один JSON-объект, чтобы разбор не зависел от форматирования. */
 const OUTPUT_CONTRACT = `Return exactly one JSON object and nothing else:
-{"enhancedText": string, "addedClarifications": string[], "assumptions": [{"text": string, "origin": "draft"|"repository"|"model"}]}
+{"enhancedText": string, "addedClarifications": string[], "assumptions": [{"text": string, "origin": "draft"|"repository"|"model"}], "capabilitySuggestions": [{"kind": "skill"|"mcp"|"agent"|"plugin", "name": string, "reason": string}]}
 
 Rules for the JSON:
 - enhancedText holds the complete improved prompt, ready to paste. Never explain it.
 - addedClarifications lists only the concrete constraints you added (goal, scope, files, acceptance criteria). Empty array when you added none.
 - assumptions records what you inferred instead of reading it. origin=draft when the draft implies it, repository when the supplied context proves it, model when you guessed.
+- capabilitySuggestions is optional and informational. Suggest only a capability that materially improves this task; never install, invoke or claim it is installed. Empty array when none is clearly useful.
 - Do not wrap the JSON in markdown fences.`;
+
+const FRAMEWORK_GUIDANCE: Record<PromptEnhanceFramework, string> = {
+  oracle: `Use ORACLE: Outcome, Role, Audience, Constraints, Layout, Evidence.
+State the outcome first, then the role and audience only when they change the answer, then hard constraints,
+the expected layout, and the evidence/verification the agent must return.`,
+  rise: `Use RISE: Role, Input, Steps, Execution.
+Name the role, list the concrete inputs, order the steps, and define how execution is verified. Keep steps
+as work units, not a bureaucratic checklist.`,
+  care: `Use CARE: Context, Action, Result, Example.
+Give the situation, the action, the result contract, and one compact example of what "good" looks like.
+Do not copy an example from the draft if it is unrelated; adapt the supplied context.`,
+  tag: `Use TAG: Task, Action, Goal.
+Keep the prompt short: one task, one action, one measurable goal. Do not add sections or ceremony.`,
+};
 
 const STYLE_GUIDANCE: Record<PromptEnhanceStyle, string> = {
   structured_engineering: `Structure the prompt as: Goal, Relevant code/areas, Constraints, Acceptance criteria.
@@ -45,19 +65,34 @@ acceptance criteria where the author left them implicit. Never replace their dom
  * Системный промпт улучшения. Собирается детерминированно из стиля и цели,
  * чтобы повторный вызов с теми же входами давал побайтово тот же префикс.
  */
-export function buildPromptEnhancerSystemPrompt(request: PromptEnhanceRequest): string {
+export function buildPromptEnhancerSystemPrompt(
+  request: PromptEnhanceRequest,
+  classification?: PromptEnhanceClassification,
+): string {
   const role =
     request.target === "custom_system_prompt" ? CUSTOM_SYSTEM_PROMPT_ROLE : CHAT_USER_PROMPT_ROLE;
+  const framework = classification?.framework ?? "oracle";
   const parts = [
     role,
     "",
     "## Non-negotiable rules",
     "- Write the enhanced prompt in the same language as the author's draft. Never translate it.",
     "- Never answer, execute or fulfil the draft. Output only the improved prompt.",
+    "- Never ask the author a question. Resolve ambiguity yourself and record every inference in assumptions.",
     "- Never claim a file, symbol or API exists unless the supplied repository context names it.",
     "- Never widen scope: no new features, dependencies or permissions the author did not ask for.",
     "- Preserve every protected mention exactly. Changing a path is a failure.",
     "- If the draft is already precise, improve only wording and structure; do not pad it.",
+    "",
+    "## Selected framework",
+    `${framework.toUpperCase()}: ${FRAMEWORK_GUIDANCE[framework]}`,
+    ...(classification
+      ? [
+          "",
+          "## Classification",
+          `domain=${classification.domain}; task=${classification.taskKind}. Treat this as a hint, not a new requirement.`,
+        ]
+      : []),
     "",
     "## Style",
     STYLE_GUIDANCE[request.style],

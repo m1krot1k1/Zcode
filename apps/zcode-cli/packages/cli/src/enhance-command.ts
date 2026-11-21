@@ -4,6 +4,7 @@ import {
   buildMentionViolationFeedback,
   buildPromptEnhancerSystemPrompt,
   buildPromptEnhancerUserMessage,
+  classifyPromptEnhanceTask,
   extractPromptMentions,
   findMissingPromptMentions,
   formatPromptEnhanceMentions,
@@ -100,7 +101,12 @@ export async function runEnhanceCommand(
   const abortSignal = options.abortSignal
     ? AbortSignal.any([options.abortSignal, AbortSignal.timeout(options.timeoutMs ?? 90_000)])
     : AbortSignal.timeout(options.timeoutMs ?? 90_000);
-  const systemPrompt = buildPromptEnhancerSystemPrompt(request);
+  const classification = classifyPromptEnhanceTask({
+    draftText: request.draftText,
+    target: request.target,
+    ...(request.collaborationMode ? { collaborationMode: request.collaborationMode } : {}),
+  });
+  const systemPrompt = buildPromptEnhancerSystemPrompt(request, classification);
   const userMessage = buildPromptEnhancerUserMessage({
     draftText: request.draftText,
     mentions: formatPromptEnhanceMentions(request),
@@ -154,8 +160,15 @@ export async function runEnhanceCommand(
       requestId: request.requestId,
       enhancedText: parsed.enhancedText,
       style: request.style,
+      framework: classification.framework,
+      domain: classification.domain,
+      taskKind: classification.taskKind,
       addedClarifications: parsed.addedClarifications,
       assumptions: parsed.assumptions,
+      capabilitySuggestions: parsed.capabilitySuggestions.map((suggestion) => ({
+        ...suggestion,
+        requiresConsent: true,
+      })),
       usedContext: [],
       modelUsed: {
         providerId: generated.selection.providerId,
@@ -170,6 +183,10 @@ export async function runEnhanceCommand(
 /** Человекочитаемый вывод для TUI и неинтерактивного `-p`. */
 export function formatEnhanceOutcome(outcome: EnhanceCommandOutcome): string {
   const lines = ["Enhanced prompt:", "", outcome.enhancedText];
+  lines.push(
+    "",
+    `Framework: ${outcome.result.framework.toUpperCase()} · domain: ${outcome.result.domain} · task: ${outcome.result.taskKind}`,
+  );
   if (outcome.result.addedClarifications.length > 0) {
     lines.push("", "Added clarifications:", ...outcome.result.addedClarifications.map((item) => `- ${item}`));
   }

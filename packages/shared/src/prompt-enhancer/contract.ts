@@ -23,6 +23,24 @@ export type PromptEnhanceStyle = z.infer<typeof promptEnhanceStyleSchema>;
 
 export const PROMPT_ENHANCE_DEFAULT_STYLE: PromptEnhanceStyle = "structured_engineering";
 
+/** Deterministic prompt-shape selected by the enhancer, never by a clarifying question. */
+export const promptEnhanceFrameworkSchema = z.enum(["oracle", "rise", "care", "tag"]);
+export type PromptEnhanceFramework = z.infer<typeof promptEnhanceFrameworkSchema>;
+
+export const promptEnhanceCapabilitySuggestionSchema = z
+  .object({
+    kind: z.enum(["skill", "mcp", "agent", "plugin"]),
+    /** Exact installed/marketplace name when known; never a command or URL. */
+    name: z.string().trim().min(1).max(256),
+    reason: z.string().trim().min(1).max(500),
+    /** Suggestions are informational; installing/using is always a separate consent step. */
+    requiresConsent: z.boolean().default(true),
+  })
+  .strict();
+export type PromptEnhanceCapabilitySuggestion = z.infer<
+  typeof promptEnhanceCapabilitySuggestionSchema
+>;
+
 /** Размеры ограничены, чтобы RPC-кадр и последующий запрос к модели оставались предсказуемыми. */
 export const PROMPT_ENHANCE_MAX_DRAFT_CHARS = 32_000;
 export const PROMPT_ENHANCE_MAX_ACTIVE_FILES = 10;
@@ -97,9 +115,14 @@ export const promptEnhanceResultSchema = z
     requestId: z.string().min(1),
     enhancedText: z.string().min(1),
     style: promptEnhanceStyleSchema,
+    framework: promptEnhanceFrameworkSchema.default("oracle"),
+    /** Coarse task/domain classification inferred without asking the author. */
+    domain: z.string().trim().min(1).max(64).default("general"),
+    taskKind: z.string().trim().min(1).max(64).default("general"),
     /** Явные уточнения, добавленные к черновику (не пересказ всего текста). */
     addedClarifications: z.array(z.string().trim().min(1).max(1_000)).max(20).default([]),
     assumptions: z.array(promptEnhanceAssumptionSchema).max(20).default([]),
+    capabilitySuggestions: z.array(promptEnhanceCapabilitySuggestionSchema).max(10).default([]),
     usedContext: z.array(promptEnhanceContextSourceSchema).max(10).default([]),
     modelUsed: z.object({ providerId: z.string().min(1), modelId: z.string().min(1) }).strict(),
     /** Прирост входа: `tokensAfter - tokensBefore`; оценка тем же методом, что и в рантайме. */

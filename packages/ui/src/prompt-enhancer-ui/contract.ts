@@ -10,9 +10,9 @@ import type { PromptEnhanceStyle, PromptEnhanceTarget } from "@zcode/shared";
 
 /** Узкий порт сервиса: ровно то, что нужно кнопке. */
 export interface PromptEnhancerServicePort {
-  enhance(request: import("@zcode/shared").PromptEnhanceRequest): Promise<
-    import("@zcode/shared").PromptEnhanceResult
-  >;
+  enhance(
+    request: import("@zcode/shared").PromptEnhanceRequest,
+  ): Promise<import("@zcode/shared").PromptEnhanceResult>;
   cancel(params: import("@zcode/shared").PromptEnhanceCancelParams): Promise<void>;
 }
 

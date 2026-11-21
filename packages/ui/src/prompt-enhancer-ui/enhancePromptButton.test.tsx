@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { COMPOSER_ENHANCE_TARGET, isEnhancePromptEnabled, resolveEnhanceUndoText } from "./contract.js";
+import {
+  COMPOSER_ENHANCE_TARGET,
+  isEnhancePromptEnabled,
+  resolveEnhanceUndoText,
+} from "./contract.js";
 
 /**
  * Логика кнопки `Enhance Prompt`: активность по черновику и корректный откат.
@@ -17,7 +21,13 @@ describe("enhance prompt button contract", () => {
   });
 
   it("для системного промпта требуется более длинный текст", () => {
-    expect(isEnhancePromptEnabled("short prompt", { target: "custom_system_prompt", minDraftChars: 20, style: "deep_architectural" })).toBe(false);
+    expect(
+      isEnhancePromptEnabled("short prompt", {
+        target: "custom_system_prompt",
+        minDraftChars: 20,
+        style: "deep_architectural",
+      }),
+    ).toBe(false);
   });
 
   it("возвращает исходный черновик для Undo и ничего при отсутствии изменений", () => {

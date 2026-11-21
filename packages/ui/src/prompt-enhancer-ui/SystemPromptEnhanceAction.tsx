@@ -9,11 +9,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.js";
+import type { PromptEnhanceResult } from "@zcode/shared";
 import { usePromptEnhancer } from "@/hooks/usePromptEnhancer.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { SYSTEM_PROMPT_ENHANCE_TARGET, isEnhancePromptEnabled } from "./contract.js";
+import { EnhancePromptDetails } from "./EnhancePromptDetails.js";
 
 /**
  * Действие «Улучшить системный промпт» для редакторов кастомных инструкций.
@@ -40,7 +42,11 @@ export function SystemPromptEnhanceAction({
   const { intl } = useZCodeIntl();
   const services = useOptionalServices();
   const service = services?.promptEnhancerService;
-  const [preview, setPreview] = useState<{ before: string; after: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    before: string;
+    after: string;
+    result: PromptEnhanceResult;
+  } | null>(null);
   const enhancer = usePromptEnhancer({
     promptEnhancerService: service ?? {
       enhance: () => Promise.reject(new Error("prompt enhancer is unavailable")),
@@ -61,7 +67,7 @@ export function SystemPromptEnhanceAction({
       });
       return;
     }
-    setPreview({ before: draftText, after: result.enhancedText });
+    setPreview({ before: draftText, after: result.enhancedText, result });
   }, [draftText, enhancer]);
 
   if (!service) return null;
@@ -89,7 +95,9 @@ export function SystemPromptEnhanceAction({
       <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{intl.formatMessage({ id: "settings.systemPromptEnhanceTitle" })}</DialogTitle>
+            <DialogTitle>
+              {intl.formatMessage({ id: "settings.systemPromptEnhanceTitle" })}
+            </DialogTitle>
             <DialogDescription>
               {intl.formatMessage({ id: "settings.systemPromptEnhanceDescription" })}
             </DialogDescription>
@@ -114,6 +122,7 @@ export function SystemPromptEnhanceAction({
               </section>
             </div>
           ) : null}
+          {preview ? <EnhancePromptDetails result={preview.result} /> : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setPreview(null)}>
               {intl.formatMessage({ id: "common.cancel" })}

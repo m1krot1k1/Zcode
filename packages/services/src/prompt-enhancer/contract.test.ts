@@ -63,6 +63,56 @@ describe("prompt-enhancer contract", () => {
     expect(calls).toBe(0);
   });
 
+  it("classifies the draft, selects a framework and returns consent-aware capabilities", async () => {
+    let systemPrompt = "";
+    const service = createPromptEnhancerService({
+      textGenerator: {
+        async generateText(params) {
+          systemPrompt = params.messages[0]?.content ?? "";
+          return {
+            text: JSON.stringify({
+              enhancedText: "Implement the TypeScript endpoint, add tests, then verify the build.",
+              assumptions: [{ text: "The endpoint belongs to the existing API", origin: "draft" }],
+              capabilitySuggestions: [
+                { kind: "skill", name: "yandex-direct", reason: "Matches the task domain" },
+              ],
+            }),
+            selection: { providerId: "p", modelId: "m" },
+          };
+        },
+      },
+      modelResolver: {
+        async resolveDefaultSelection() {
+          return { providerId: "p", modelId: "m" };
+        },
+      },
+      estimateTokens: () => ({ tokens: 1, method: "char-ratio" as const }),
+    });
+
+    const result = await service.enhance(
+      promptEnhanceRequestSchema.parse({
+        requestId: "req_service_classify_1",
+        workspacePath: "/repo/zcode",
+        target: "chat_user_prompt",
+        draftText: "Implement a TypeScript endpoint, add tests, then verify the build",
+      }),
+    );
+
+    expect(result.framework).toBe("rise");
+    expect(result.domain).toBe("coding");
+    expect(result.taskKind).toBe("feature");
+    expect(result.capabilitySuggestions).toEqual([
+      {
+        kind: "skill",
+        name: "yandex-direct",
+        reason: "Matches the task domain",
+        requiresConsent: true,
+      },
+    ]);
+    expect(systemPrompt).toContain("Never ask the author a question");
+    expect(systemPrompt).toContain("RISE");
+  });
+
   it("accepts the shared request schema shape", () => {
     expect(
       promptEnhanceRequestSchema.safeParse({

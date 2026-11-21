@@ -16,11 +16,19 @@ export interface ParsedEnhancerResponse {
   enhancedText: string;
   addedClarifications: string[];
   assumptions: Array<{ text: string; origin: "draft" | "repository" | "model" }>;
+  capabilitySuggestions: Array<{
+    kind: "skill" | "mcp" | "agent" | "plugin";
+    name: string;
+    reason: string;
+  }>;
 }
 
 const MAX_CLARIFICATIONS = 20;
 const MAX_ASSUMPTIONS = 20;
 const MAX_ASSUMPTION_CHARS = 1_000;
+const MAX_CAPABILITY_SUGGESTIONS = 10;
+const MAX_CAPABILITY_NAME_CHARS = 256;
+const MAX_CAPABILITY_REASON_CHARS = 500;
 
 /**
  * Разбор ответа модели. Модель может обернуть JSON в fence или добавить преамбулу —
@@ -39,7 +47,12 @@ export function parseEnhancedPromptResponse(raw: string): ParsedEnhancerResponse
     if (plain.length === 0) {
       throw new PromptEnhanceError("empty_result", "Empty model output");
     }
-    return { enhancedText: plain, addedClarifications: [], assumptions: [] };
+    return {
+      enhancedText: plain,
+      addedClarifications: [],
+      assumptions: [],
+      capabilitySuggestions: [],
+    };
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new PromptEnhanceError("model_failed", "Enhancer response is not a JSON object");
@@ -67,7 +80,33 @@ export function parseEnhancedPromptResponse(raw: string): ParsedEnhancerResponse
         })
         .slice(0, MAX_ASSUMPTIONS)
     : [];
-  return { enhancedText, addedClarifications: clarifications, assumptions };
+  const capabilitySuggestions: ParsedEnhancerResponse["capabilitySuggestions"] = Array.isArray(
+    record.capabilitySuggestions,
+  )
+    ? record.capabilitySuggestions
+        .flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const entry = item as Record<string, unknown>;
+          const kind =
+            entry.kind === "skill" ||
+            entry.kind === "mcp" ||
+            entry.kind === "agent" ||
+            entry.kind === "plugin"
+              ? entry.kind
+              : undefined;
+          const name = typeof entry.name === "string" ? entry.name.trim() : "";
+          const reason = typeof entry.reason === "string" ? entry.reason.trim() : "";
+          if (!kind || name.length === 0 || reason.length === 0) return [];
+          const suggestion: ParsedEnhancerResponse["capabilitySuggestions"][number] = {
+            kind,
+            name: name.slice(0, MAX_CAPABILITY_NAME_CHARS),
+            reason: reason.slice(0, MAX_CAPABILITY_REASON_CHARS),
+          };
+          return [suggestion];
+        })
+        .slice(0, MAX_CAPABILITY_SUGGESTIONS)
+    : [];
+  return { enhancedText, addedClarifications: clarifications, assumptions, capabilitySuggestions };
 }
 
 /** Проверяет, что все protected mentions уцелели дословно. */

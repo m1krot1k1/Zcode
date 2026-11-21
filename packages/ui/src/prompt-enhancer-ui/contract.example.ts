@@ -10,9 +10,6 @@ export function canEnhanceComposerDraft(draftText: string): boolean {
 }
 
 /** «Undo Enhance» возвращает ровно исходный текст или `null`, если откатывать нечего. */
-export function undoEnhance(
-  previousDraft: string | undefined,
-  currentText: string,
-): string | null {
+export function undoEnhance(previousDraft: string | undefined, currentText: string): string | null {
   return resolveEnhanceUndoText(previousDraft, currentText);
 }

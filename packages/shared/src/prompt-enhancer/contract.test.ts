@@ -6,6 +6,7 @@ import {
   promptEnhanceRequestSchema,
   promptEnhanceResultSchema,
 } from "./contract.js";
+import { parseEnhancedPromptResponse } from "./pipeline.js";
 
 const baseRequest = {
   requestId: "req_enhance_0001",
@@ -74,6 +75,28 @@ describe("prompt-enhancer result contract", () => {
     expect(parsed.addedClarifications).toEqual([]);
     expect(parsed.assumptions).toEqual([]);
     expect(parsed.usedContext).toEqual([]);
+    expect(parsed.framework).toBe("oracle");
+    expect(parsed.domain).toBe("general");
+    expect(parsed.taskKind).toBe("general");
+    expect(parsed.capabilitySuggestions).toEqual([]);
+  });
+
+  it("parses capability suggestions and drops malformed entries", () => {
+    const parsed = parseEnhancedPromptResponse(
+      JSON.stringify({
+        enhancedText: "Do the task",
+        capabilitySuggestions: [
+          { kind: "skill", name: "yandex-direct", reason: "Matches the advertising task" },
+          { kind: "unknown", name: "x", reason: "bad kind" },
+          { kind: "mcp", name: "", reason: "missing name" },
+          { kind: "agent", name: "coder", reason: "Implementation" },
+        ],
+      }),
+    );
+    expect(parsed.capabilitySuggestions).toEqual([
+      { kind: "skill", name: "yandex-direct", reason: "Matches the advertising task" },
+      { kind: "agent", name: "coder", reason: "Implementation" },
+    ]);
   });
 
   it("allows a shrinking rewrite but rejects negative token counts and an empty prompt", () => {

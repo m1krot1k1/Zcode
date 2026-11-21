@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PromptEnhanceResult } from "@zcode/shared";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { usePromptEnhancer } from "@/hooks/usePromptEnhancer.js";
@@ -25,6 +26,12 @@ export interface UseComposerPromptEnhanceOptions {
   onApply: (enhancedText: string) => void;
 }
 
+export interface ComposerPromptEnhancePreview {
+  before: string;
+  after: string;
+  result: PromptEnhanceResult;
+}
+
 export interface ComposerPromptEnhanceState {
   /** Сервис и настройка доступны: кнопку можно показывать. */
   available: boolean;
@@ -35,9 +42,13 @@ export interface ComposerPromptEnhanceState {
   canEnhance: boolean;
   /** Исходный черновик доступен для отката. */
   canUndo: boolean;
+  /** Результат ждёт явного Apply; ничего не записывается в редактор до согласия. */
+  preview: ComposerPromptEnhancePreview | null;
   errorCode: string | null;
   enhance: (draftText: string) => Promise<boolean>;
   cancel: () => Promise<void>;
+  acceptPreview: () => void;
+  discardPreview: () => void;
   undo: () => void;
 }
 
@@ -52,6 +63,8 @@ export function useComposerPromptEnhance(
   const enhancerSettings = settings?.promptEnhancerSettings;
   const enabledBySettings = enhancerSettings?.enabled ?? true;
   const [canUndo, setCanUndo] = useState(false);
+  const [preview, setPreview] = useState<ComposerPromptEnhancePreview | null>(null);
+  const [appliedOriginal, setAppliedOriginal] = useState<string | null>(null);
   const undoExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { onApply } = options;
 
@@ -59,6 +72,7 @@ export function useComposerPromptEnhance(
     if (undoExpiry.current) clearTimeout(undoExpiry.current);
     undoExpiry.current = null;
     setCanUndo(false);
+    setAppliedOriginal(null);
   }, []);
 
   useEffect(() => clearUndo, [clearUndo]);
@@ -82,31 +96,50 @@ export function useComposerPromptEnhance(
     async (draftText: string): Promise<boolean> => {
       if (!service || !enabledBySettings) return false;
       if (!isEnhancePromptEnabled(draftText, COMPOSER_ENHANCE_TARGET)) return false;
-      // Исходный черновик хранит сам хук (`previousDraft`), чтобы Undo возвращал байт-в-байт.
+      setPreview(null);
       const result = await enhancer.enhance(draftText);
       if (!result) return false;
-      onApply(result.enhancedText);
-      setCanUndo(true);
-      if (undoExpiry.current) clearTimeout(undoExpiry.current);
-      undoExpiry.current = setTimeout(() => setCanUndo(false), UNDO_VISIBLE_MS);
-      logger.info("Prompt enhanced in composer", {
+      // Preview is the consent boundary: the editor is not mutated until Apply.
+      setPreview({ before: draftText, after: result.enhancedText, result });
+      logger.info("Prompt enhancement ready for review", {
         target: COMPOSER_ENHANCE_TARGET.target,
+        framework: result.framework,
+        domain: result.domain,
+        taskKind: result.taskKind,
         chars: result.enhancedText.length,
+        capabilitySuggestionCount: result.capabilitySuggestions.length,
       });
       return true;
     },
-    [enabledBySettings, enhancer, onApply, service],
+    [enabledBySettings, enhancer, service],
   );
 
   const cancel = useCallback(async () => {
     await enhancer.cancel();
   }, [enhancer]);
 
+  const acceptPreview = useCallback(() => {
+    if (!preview) return;
+    onApply(preview.after);
+    setAppliedOriginal((previous) => previous ?? preview.before);
+    setCanUndo(true);
+    if (undoExpiry.current) clearTimeout(undoExpiry.current);
+    undoExpiry.current = setTimeout(() => setCanUndo(false), UNDO_VISIBLE_MS);
+    setPreview(null);
+    enhancer.reset();
+  }, [enhancer, onApply, preview]);
+
+  const discardPreview = useCallback(() => {
+    setPreview(null);
+    enhancer.reset();
+  }, [enhancer]);
+
   const undo = useCallback(() => {
-    const previousDraft = enhancer.undo();
+    const previousDraft = appliedOriginal ?? enhancer.undo();
     if (previousDraft !== undefined) onApply(previousDraft);
     clearUndo();
-  }, [clearUndo, enhancer, onApply]);
+    enhancer.reset();
+  }, [appliedOriginal, clearUndo, enhancer, onApply]);
 
   return {
     available: service !== null,
@@ -114,9 +147,12 @@ export function useComposerPromptEnhance(
     isRunning: enhancer.isRunning,
     canEnhance: enabledBySettings,
     canUndo,
+    preview,
     errorCode: enhancer.error?.code ?? null,
     enhance,
     cancel,
+    acceptPreview,
+    discardPreview,
     undo,
   };
 }

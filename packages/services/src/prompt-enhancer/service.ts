@@ -4,6 +4,7 @@ import {
   buildMentionViolationFeedback,
   buildPromptEnhancerSystemPrompt,
   buildPromptEnhancerUserMessage,
+  classifyPromptEnhanceTask,
   findMissingPromptMentions,
   formatPromptEnhanceMentions,
   parseEnhancedPromptResponse,
@@ -196,7 +197,12 @@ export function createPromptEnhancerService(
         }
         controller.signal.throwIfAborted();
 
-        const systemPrompt = buildPromptEnhancerSystemPrompt(request);
+        const classification = classifyPromptEnhanceTask({
+          draftText: request.draftText,
+          target: request.target,
+          ...(request.collaborationMode ? { collaborationMode: request.collaborationMode } : {}),
+        });
+        const systemPrompt = buildPromptEnhancerSystemPrompt(request, classification);
         const userMessage = buildPromptEnhancerUserMessage({
           draftText: request.draftText,
           mentions: formatPromptEnhanceMentions(request),
@@ -209,6 +215,9 @@ export function createPromptEnhancerService(
           requestId: request.requestId,
           target: request.target,
           style: request.style,
+          framework: classification.framework,
+          domain: classification.domain,
+          taskKind: classification.taskKind,
           draftChars: request.draftText.length,
           contextSources: context.sources.length,
           providerId: selection.providerId,
@@ -269,8 +278,15 @@ export function createPromptEnhancerService(
           requestId: request.requestId,
           enhancedText: response.enhancedText,
           style: request.style,
+          framework: classification.framework,
+          domain: classification.domain,
+          taskKind: classification.taskKind,
           addedClarifications: response.addedClarifications,
           assumptions: response.assumptions,
+          capabilitySuggestions: response.capabilitySuggestions.map((suggestion) => ({
+            ...suggestion,
+            requiresConsent: true,
+          })),
           usedContext: context.sources,
           modelUsed: {
             providerId: generated.selection.providerId,
@@ -289,6 +305,10 @@ export function createPromptEnhancerService(
           requestId: request.requestId,
           target: request.target,
           style: request.style,
+          framework: validated.framework,
+          domain: validated.domain,
+          taskKind: validated.taskKind,
+          capabilitySuggestionCount: validated.capabilitySuggestions.length,
           tokenDelta: validated.tokenDelta.after - validated.tokenDelta.before,
           elapsedMs: validated.elapsedMs,
         });

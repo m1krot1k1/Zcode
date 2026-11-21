@@ -1,7 +1,18 @@
 import { forwardRef, useCallback, useImperativeHandle, useEffect, useRef } from "react";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
+import { Button } from "@/components/ui/button.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useComposerPromptEnhance } from "./useComposerPromptEnhance.js";
 import { EnhancePromptButton } from "./EnhancePromptButton.js";
+import { EnhancePromptDetails } from "./EnhancePromptDetails.js";
 
 /**
  * Мост между Lexical-редактором и сервисом улучшения промптов.
@@ -43,6 +54,7 @@ export const ComposerEnhancePrompt = forwardRef<
   },
   ref,
 ) {
+  const { intl } = useZCodeIntl();
   const draftRef = useRef(draftText);
   draftRef.current = draftText;
 
@@ -97,14 +109,64 @@ export const ComposerEnhancePrompt = forwardRef<
   if (!enhance.available) return null;
 
   return (
-    <EnhancePromptButton
-      draftText={draftText}
-      isRunning={enhance.isRunning}
-      disabled={disabled || !enhance.enabledBySettings}
-      canUndo={enhance.canUndo}
-      onEnhance={(text) => void enhance.enhance(text)}
-      onCancel={() => void enhance.cancel()}
-      onUndo={enhance.undo}
-    />
+    <>
+      <EnhancePromptButton
+        draftText={draftText}
+        isRunning={enhance.isRunning}
+        disabled={disabled || !enhance.enabledBySettings}
+        canUndo={enhance.canUndo}
+        onEnhance={(text) => void enhance.enhance(text)}
+        onCancel={() => void enhance.cancel()}
+        onUndo={enhance.undo}
+      />
+      <Dialog
+        open={enhance.preview !== null}
+        onOpenChange={(open) => {
+          if (!open) enhance.discardPreview();
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {intl.formatMessage({ id: "chat.composer.enhancePreviewTitle" })}
+            </DialogTitle>
+            <DialogDescription>
+              {intl.formatMessage({ id: "chat.composer.enhancePreviewDescription" })}
+            </DialogDescription>
+          </DialogHeader>
+          {enhance.preview ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-2">
+                <section className="min-w-0">
+                  <h3 className="mb-1 text-ui-base font-semibold text-foreground">
+                    {intl.formatMessage({ id: "settings.systemPromptEnhanceBefore" })}
+                  </h3>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-ui-sm text-foreground-subtle">
+                    {enhance.preview.before}
+                  </pre>
+                </section>
+                <section className="min-w-0">
+                  <h3 className="mb-1 text-ui-base font-semibold text-foreground">
+                    {intl.formatMessage({ id: "settings.systemPromptEnhanceAfter" })}
+                  </h3>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-ui-sm text-foreground">
+                    {enhance.preview.after}
+                  </pre>
+                </section>
+              </div>
+              <EnhancePromptDetails result={enhance.preview.result} />
+            </>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={enhance.discardPreview}>
+              {intl.formatMessage({ id: "common.cancel" })}
+            </Button>
+            <Button type="button" onClick={enhance.acceptPreview}>
+              {intl.formatMessage({ id: "chat.composer.enhanceApply" })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 });
