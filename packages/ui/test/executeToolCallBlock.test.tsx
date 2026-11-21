@@ -111,10 +111,12 @@ describe("ExecuteToolCallBlock", () => {
       ),
     );
 
-    // Bug 根因：office mode 把 secondaryText 置空并禁用 toggle，用户只看到
-    // «Команда выполнена»/«Выполняется» без самой команды и без доступа к деталям.
-    expect(html).toContain("pnpm build");
-    expect(html).toContain('aria-expanded="false"');
+    // Privacy decision (376bfce5): general/office mode must not expose the command,
+    // output or error in the collapsed summary. The status label remains visible.
+    expect(html).not.toContain("pnpm build");
+    expect(html).not.toContain('aria-expanded="false"');
+    expect(html).not.toContain('aria-expanded="true"');
     expect(html).not.toContain('data-testid="execute-detail"');
+    expect(html).toContain("Команда выполнена");
   });
 });

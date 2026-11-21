@@ -85,10 +85,12 @@ describe("ExecuteGroupToolCallBlock", () => {
       isOfficeMode: true,
     });
 
-    // Bug 根因：office mode не вычислял latestCommand и запрещал toggle,
-    // поэтому пользователь видел только «Running» без команды и деталей.
-    expect(html).toContain("pnpm test");
-    expect(html).toContain('aria-expanded="false"');
+    // Privacy decision (376bfce5): office mode hides the command and disables the
+    // expand control, so a shared/office screen never leaks command details.
+    expect(html).not.toContain("pnpm test");
+    expect(html).not.toContain('aria-expanded="false"');
+    expect(html).toContain(">Running</span>");
+    expect(html).not.toContain('data-slot="collapsible-trigger"');
   });
 
   it("shows only the command count in the expanded running summary", () => {
