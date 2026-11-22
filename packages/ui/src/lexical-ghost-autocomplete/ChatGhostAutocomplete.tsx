@@ -1,12 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { GhostTextAutocompletePlugin } from "./GhostTextAutocompletePlugin.js";
 import { useChatAutocomplete } from "./useChatAutocomplete.js";
-import {
-  DEFAULT_GHOST_AUTOCOMPLETE_CONFIG,
-  type GhostAutocompleteConfig,
-} from "./contract.js";
+import { DEFAULT_GHOST_AUTOCOMPLETE_CONFIG, type GhostAutocompleteConfig } from "./contract.js";
 
 /**
  * Точка подключения ghost-подсказки к композеру.
@@ -26,6 +23,8 @@ export interface ChatGhostAutocompleteProps {
   isTriggerPanelOpen: () => boolean;
   /** Отключить подсказку в конкретном редакторе (inline-режим, disabled и т.п.). */
   disabled?: boolean;
+  /** Композер вызывает cancel перед send, чтобы ghost-запрос не занимал очередь. */
+  cancelRef?: MutableRefObject<(() => void) | null>;
 }
 
 export function ChatGhostAutocomplete({
@@ -36,19 +35,16 @@ export function ChatGhostAutocomplete({
   openTabPaths,
   isTriggerPanelOpen,
   disabled = false,
+  cancelRef,
 }: ChatGhostAutocompleteProps) {
   const services = useOptionalServices();
   const { settings } = useSettings({ services: services ?? undefined });
   const settingsState = settings?.chatAutocompleteSettings;
-  const [config, setConfig] = useState<GhostAutocompleteConfig>(
-    DEFAULT_GHOST_AUTOCOMPLETE_CONFIG,
-  );
+  const [config, setConfig] = useState<GhostAutocompleteConfig>(DEFAULT_GHOST_AUTOCOMPLETE_CONFIG);
 
   useEffect(() => {
     if (!settingsState) {
-      setConfig((previous) =>
-        previous.enabled ? { ...previous, enabled: false } : previous,
-      );
+      setConfig((previous) => (previous.enabled ? { ...previous, enabled: false } : previous));
       return;
     }
     setConfig({
@@ -62,9 +58,7 @@ export function ChatGhostAutocomplete({
         ...DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.keymap,
         acceptWord: settingsState.acceptWordOnArrowRight ? "ArrowRight" : "off",
       },
-      ...(settingsState.modelOverride
-        ? { modelSelection: settingsState.modelOverride }
-        : {}),
+      ...(settingsState.modelOverride ? { modelSelection: settingsState.modelOverride } : {}),
     });
   }, [disabled, settingsState]);
 
@@ -82,6 +76,16 @@ export function ChatGhostAutocomplete({
   // Хук живёт между рендерами; плагин держит ссылку, чтобы не пересоздавать команды.
   const autocompleteRef = useRef(autocomplete);
   autocompleteRef.current = autocomplete;
+
+  // Композер должен уметь снять ghost-запрос до отправки сообщения. Иначе модель
+  // автодополнения занимает очередь агента и send ждёт её ответа десятки секунд.
+  useEffect(() => {
+    if (!cancelRef) return;
+    cancelRef.current = autocomplete.reset;
+    return () => {
+      if (cancelRef.current === autocomplete.reset) cancelRef.current = null;
+    };
+  }, [autocomplete.reset, cancelRef]);
 
   if (!config.enabled || !service) return null;
 

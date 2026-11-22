@@ -193,6 +193,22 @@ UI-дефолт `DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.enabled` также `true` д
 до загрузки настроек компонент остаётся выключенным: эффект `ChatGhostAutocomplete`
 явно ставит `enabled: false`, пока `chatAutocompleteSettings` недоступны.
 
+## 7.1. Отмена при отправке
+
+Ghost-запрос — это полноценный `workspace/generateText` в очереди агента. Если он уже
+выполняется, send-команда встаёт за ним и ждёт весь ответ модели. Наблюдаемый дефект:
+перед `main_turn` в `model-io` висел `chat_autocomplete` **14 606 мс**, поэтому клик
+«Отправить» не начинал ход 14.6 с.
+
+Правило: `runComposerSubmit` перед первым сетевым шагом вызывает
+`inputApiRef.current.cancelGhostAutocomplete()`. Это `reset()` хука:
+- очищает debounce-таймер;
+- отправляет `cancel({requestId})` для активного запроса;
+- сбрасывает подсказку и `isLoading`.
+
+Отмена best-effort и не ждёт модель; успешный `cancel` предыдущего autocomplete в том же
+логе занимал ~36 мс. Send-команда после этого не обязана ждать ghost-ответ.
+
 ## 8. Acceptance-сценарии
 
 1. Черновик «Что из не только новых но и любых технологий любых годов нам можно и нужно
@@ -210,6 +226,9 @@ UI-дефолт `DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.enabled` также `true` д
 6. `resolveStage4Settings({})` даёт `chatAutocompleteSettings.enabled === true`; UI
    использует это значение; при отсутствии сервиса запросов нет.
 7. Настройка `enabled = false` полностью отключает монтирование плагина.
+8. Клик «Отправить» при активном ghost-запросе вызывает `cancelGhostAutocomplete` до
+   отправки; `cancel({requestId})` уходит сразу, а send не ждёт ответа автодополнения.
+9. Поздний ответ отменённого ghost-запроса не появляется в редакторе.
 
 ## 9. Проверки
 

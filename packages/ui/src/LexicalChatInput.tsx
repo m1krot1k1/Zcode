@@ -78,6 +78,7 @@ export function LexicalChatInput({
     workspacePath,
     workspaceIdentity,
   );
+  const cancelGhostAutocompleteRef = useRef<(() => void) | null>(null);
   useLexicalChatInputReadyLog({
     activeTaskProvider,
     disabled,
@@ -171,7 +172,10 @@ export function LexicalChatInput({
           <PromptHistoryPlugin entries={promptHistory} disabled={disabled} />
           <EditablePlugin editable={!disabled} />
           <E2ELexicalInputBridgePlugin inputTestId={inputTestId} />
-          <EditorApiPlugin editorApiRef={editorApiRef} />
+          <EditorApiPlugin
+            editorApiRef={editorApiRef}
+            onCancelGhostAutocomplete={() => cancelGhostAutocompleteRef.current?.()}
+          />
           <LeadingChineseSlashAliasPlugin disabled={disabled} />
           <PasteCapturePlugin disabled={disabled} onPaste={onPaste} />
           <ChatGhostAutocomplete
@@ -180,6 +184,7 @@ export function LexicalChatInput({
             sessionId={skillCatalogSessionId ?? taskId}
             isTriggerPanelOpen={isTriggerPanelOpen}
             disabled={disabled}
+            cancelRef={cancelGhostAutocompleteRef}
           />
         </div>
         <SlashCommandPlugin

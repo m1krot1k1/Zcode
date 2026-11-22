@@ -213,6 +213,9 @@ export async function runComposerSubmit(
   });
   pendingRef.current = true;
   setPending(true);
+  // Ghost autocomplete is a model request in the same agent queue. Cancel it before the
+  // send command so a slow suggestion cannot delay the user's turn by its whole latency.
+  inputApiRef.current?.cancelGhostAutocomplete?.();
   // Bug 根因：草稿 intent 只保存用户显式改动，正常继承模型位于冻结初始化 config。
   // prewarm snapshot 尚未到达时若只读 draftConfig，send_btn 会错误落成空模型/glm。
   const telemetryConfig = telemetryDraftConfig ?? snapshotRef.current?.config ?? draftConfig;

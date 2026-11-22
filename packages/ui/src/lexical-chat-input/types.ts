@@ -18,6 +18,8 @@ export interface ChatComposerPasteEvent {
 export interface LexicalChatInputHandle {
   clear: () => void;
   focus: () => void;
+  /** Cancel an in-flight ghost suggestion before a submit; best-effort and idempotent. */
+  cancelGhostAutocomplete?: () => void;
   getEditorState: () => EditorState;
   getMarkdown: () => string;
   getText: () => string;

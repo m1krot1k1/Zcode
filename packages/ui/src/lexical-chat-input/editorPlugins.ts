@@ -131,8 +131,10 @@ export function E2ELexicalInputBridgePlugin({ inputTestId }: { inputTestId?: str
 
 export function EditorApiPlugin({
   editorApiRef,
+  onCancelGhostAutocomplete,
 }: {
   editorApiRef?: React.MutableRefObject<LexicalChatInputHandle | null>;
+  onCancelGhostAutocomplete?: () => void;
 }) {
   const [editor] = useLexicalComposerContext();
 
@@ -144,6 +146,7 @@ export function EditorApiPlugin({
     editorApiRef.current = {
       clear: () => resetEditor(editor),
       focus: () => editor.focus(),
+      ...(onCancelGhostAutocomplete ? { cancelGhostAutocomplete: onCancelGhostAutocomplete } : {}),
       getEditorState: () => editor.getEditorState(),
       getMarkdown: () => getEditorMarkdown(editor.getEditorState()),
       getText: () => getEditorMarkdown(editor.getEditorState()),
@@ -193,7 +196,7 @@ export function EditorApiPlugin({
       editorApiRef.current = null;
       setActiveLexicalChatInput(null);
     };
-  }, [editor, editorApiRef]);
+  }, [editor, editorApiRef, onCancelGhostAutocomplete]);
 
   return null;
 }

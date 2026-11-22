@@ -103,6 +103,50 @@ describe("useChatAutocomplete", () => {
     );
   });
 
+  it("reset cancels the in-flight suggestion without waiting for the model", async () => {
+    vi.useFakeTimers();
+    let resolveComplete: ((value: ChatAutocompleteResponse) => void) | undefined;
+    const complete = vi.fn(
+      (request: ChatAutocompleteRequest) =>
+        new Promise<ChatAutocompleteResponse>((resolve) => {
+          resolveComplete = () => resolve(response(request.requestId, " late suggestion"));
+        }),
+    );
+    const cancel = vi.fn(async () => {});
+    const service: GhostAutocompleteServicePort = {
+      complete,
+      cancel,
+      recordAcceptedSuggestion: vi.fn(async () => {}),
+    };
+    const hook = renderHook(() =>
+      useChatAutocomplete({
+        service,
+        workspacePath: "/repo/zcode",
+        config: DEFAULT_GHOST_AUTOCOMPLETE_CONFIG,
+      }),
+    );
+
+    await act(async () => {
+      hook.result.current.request(promptState);
+      vi.advanceTimersByTime(DEFAULT_GHOST_AUTOCOMPLETE_CONFIG.baseDebounceMs);
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+    const requestId = complete.mock.calls[0]?.[0].requestId;
+    expect(requestId).toBeTruthy();
+
+    act(() => {
+      hook.result.current.reset();
+    });
+    expect(cancel).toHaveBeenCalledWith({ requestId });
+    expect(hook.result.current.suggestion).toBe("");
+    expect(hook.result.current.isLoading).toBe(false);
+
+    await act(async () => {
+      resolveComplete?.(response(requestId!, " late suggestion"));
+    });
+    expect(hook.result.current.suggestion).toBe("");
+  });
+
   it("treats a filtered empty_suggestion as a normal hidden hint", async () => {
     vi.useFakeTimers();
     const complete = vi.fn(
