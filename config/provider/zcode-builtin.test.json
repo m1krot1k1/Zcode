@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 36,
+  "revision": 37,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -368,6 +368,28 @@
               "gpt-5.4-nano",
               "gpt-5.3-codex"
             ],
+            "logo": {
+              "type": "builtin",
+              "key": "openai"
+            }
+          }
+        },
+        {
+          "templateId": "local-openai-compatible",
+          "templateNameMap": {
+            "zh-CN": "本地 OpenAI 兼容服务",
+            "en-US": "Local OpenAI-compatible"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://github.com/ggml-org/llama.cpp"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "http://127.0.0.1:8000/v1"
+            },
+            "builtinModelIds": ["qwen3.8-pi"],
             "logo": {
               "type": "builtin",
               "key": "openai"
@@ -7396,6 +7418,13 @@
         {
           "templateId": "opencode-zen-messages",
           "modelId": "claude-fable-5-1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "modelId": "qwen3.8-pi",
+          "templateId": "local-openai-compatible",
           "config": {
             "enabled": true
           }

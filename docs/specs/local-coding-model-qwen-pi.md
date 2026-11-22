@@ -29,6 +29,19 @@ release; the user starts a local server and then adds it with the normal provide
 The UI already accepts the OpenAI-compatible endpoint and model, and the local embedding
 manager follows the same install-only-what-you-need rule.
 
+## Provider preset
+
+The built-in provider catalog now includes **Local OpenAI-compatible**
+(`local-openai-compatible`). Creating it prefills:
+
+- API format: `openai-chat-completions`
+- Base URL: `http://127.0.0.1:8000/v1`
+- Model: `qwen3.8-pi`
+
+Open **Settings → Model providers → Add provider → Local OpenAI-compatible**, start the
+server below, then test the connection. The API-key field accepts any local placeholder
+(for example `local`); it is not sent anywhere except the local server.
+
 ## vLLM
 
 ```sh
