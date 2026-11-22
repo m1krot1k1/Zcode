@@ -20,7 +20,7 @@ The built-in roster contains **24 profiles**:
 
 `packages/shared/src/subagent-catalog/builtInAgents.ts` is the UI/Services projection.
 `apps/zcode-cli/packages/core/src/subagent/built-in-profiles.ts` owns the runtime prompts
-and tool surfaces; `specialist-profiles.ts` owns the specialty data so the main module
+and tool surfaces; `specialistProfiles.ts` owns the specialty data so the main module
 stays below the 800-line policy. The bootstrap contract test keeps the two projections
 identical (name, description, color, tools, skills, `injectAgentsMd`, memory).
 
@@ -73,5 +73,5 @@ Parallelism has three independent layers:
 - The tool scheduler produces a parallel group for independent read-only calls and a
   serial group for `Edit`/`Bash`-mutation calls.
 - `/start` prompt contains the parallel fan-out and same-message tool-batch rules.
-- `built-in-profiles.ts` remains below 800 lines; `specialist-profiles.ts` is the only
+- `built-in-profiles.ts` remains below 800 lines; `specialistProfiles.ts` is the only
   added data module.
